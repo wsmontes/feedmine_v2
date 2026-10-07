@@ -58,10 +58,14 @@ The explicitly approved composition exception is `FeedSession.init(publicationHi
 
 ## 8. Local viewport movement
 
-ViewportObservation contains only a PresentationAnchor and a finite observedAt Date. The date is durable checkpoint metadata, with no exposure or dwell semantics. No viewport observation performs acquisition.
+ViewportObservation contains only a logical PresentationAnchor, with a non-failable initializer and no timestamp or telemetry. No viewport observation performs acquisition.
 
-Without state, submitViewport returns nil without I/O. Stale observations whose card is absent from the current window are ignored. An identical anchor is a no-op even when observedAt changes, with no read or checkpoint write. Placement-only changes are valid.
+Without state, submitViewport returns nil without I/O. Stale observations whose card is absent from the current window are ignored. An identical anchor is a no-op, with no read or mutation. Placement-only changes are valid.
 
-An accepted observation moves the finite window within one immutable Edition using the capacities supplied at restore. It materializes retained local history first, projects a new snapshot, persists the new logical cursor second, and installs in-memory state last. Materialization or checkpoint failure preserves the previous presentation. ContextKey and EditionID stay unchanged, and published history is never modified or deleted. At local history boundaries the window contains only what exists.
+An accepted observation moves the finite window within one immutable Edition using the capacities supplied at restore. It materializes retained local history, projects a new snapshot, and installs in-memory state only after successful materialization. A materialization failure propagates and preserves the previous presentation. ContextKey and EditionID stay unchanged, and published history is never modified or deleted. At local history boundaries the window contains only what exists.
 
-FeedSessionState contains exactly presentation, backwardCapacity and forwardCapacity; it does not duplicate context, Edition or anchor. Actor isolation establishes one mutable state owner without locks, detached tasks or queues. UI streams, exposure and Runway remain deferred.
+FeedSessionState contains exactly presentation, backwardCapacity and forwardCapacity; it does not duplicate context, Edition or anchor. Actor isolation establishes one mutable state owner without locks, detached tasks or queues.
+
+Viewport movement updates the actor-owned current local session state but does not itself durably checkpoint that state. After moving from a saved P4/center to a current P6/center, reopening restores P4/center because ordinary scroll never writes the SQLite checkpoint. Placement-only changes are also memory-local.
+
+Durable cursor checkpoint policy is deferred until a concrete lifecycle/milestone owner exists. No lifecycle milestones, checkpoint batching or idempotent milestone save are implemented here. UI streams, exposure and Runway remain deferred.

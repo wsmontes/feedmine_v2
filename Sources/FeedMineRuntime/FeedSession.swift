@@ -54,8 +54,6 @@ public actor FeedSession {
             forwardCapacity: current.forwardCapacity)
         let snapshot = FeedPresentationSnapshot(contextKey: current.presentation.contextKey,
             editionID: current.presentation.editionID, publishedWindow: window)
-        let cursor = SessionCursor(editionID: current.presentation.editionID, anchor: anchor)
-        try publicationHistory.saveCursor(cursor, updatedAt: observation.observedAt)
         state = FeedSessionState(presentation: snapshot,
             backwardCapacity: current.backwardCapacity, forwardCapacity: current.forwardCapacity)
         return snapshot

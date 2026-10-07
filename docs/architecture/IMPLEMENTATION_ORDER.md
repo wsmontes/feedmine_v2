@@ -57,4 +57,6 @@ Phase 2G — complete
 
 Phase 2H — stateful local session + viewport window shift — current
 
+Viewport movement is memory-local; durable cursor checkpoint policy remains deferred until a concrete lifecycle/milestone owner exists.
+
 Phase 2G is a vertical restore slice before the remaining macro Runtime/acquisition sequence. The macro phase numbering above remains unchanged.
