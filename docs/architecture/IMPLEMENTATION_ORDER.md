@@ -51,4 +51,8 @@ Phase 2D — publication/session relational schema design — complete
 
 Phase 2E — exact offline restore storage — complete
 
-Phase 2F — semantic publication history + FeedWindow — current
+Phase 2F — semantic publication history + FeedWindow — complete
+
+Phase 2G — warm Runtime presentation — current
+
+Phase 2G is a vertical restore slice before the remaining macro Runtime/acquisition sequence. The macro phase numbering above remains unchanged.

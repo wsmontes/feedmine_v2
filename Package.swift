@@ -60,6 +60,7 @@ let package = Package(
         .testTarget(name: "FeedMinePersistenceTests", dependencies: ["FeedMinePersistence", "FeedMineDomain", .product(name: "GRDB", package: "GRDB.swift")]),
         .testTarget(name: "FeedMineDomainTests", dependencies: ["FeedMineDomain"]),
         .testTarget(name: "FeedMinePublicationTests", dependencies: ["FeedMinePublication", "FeedMineDomain", "FeedMineMedia", "FeedMinePersistence"]),
+        .testTarget(name: "FeedMineRuntimeTests", dependencies: ["FeedMineRuntime", "FeedMineDomain", "FeedMinePublication", "FeedMinePersistence", "FeedMineMedia"]),
         .testTarget(
             name: "ArchitectureSmokeTests",
             dependencies: ["FeedMineDomain", "FeedMinePersistence", "FeedMineAcquisition", "FeedMineSyndication", "FeedMineEditorial", "FeedMineMedia", "FeedMinePublication", "FeedMineRuntime", "FeedMineUI", "FeedMineComposition"]

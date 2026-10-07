@@ -1,30 +1,61 @@
-//
 // File: FeedPresentationSnapshot.swift
 // Module: FeedMineRuntime
-//
-// Responsibility:
-//   Representar a projeção finita voltada à UI do estado local atual da sessão.
-//
-// Owns:
-//   Finite immediately renderable local session presentation state containing future PresentationCard values.
-//
-// Does not own:
-//   Publication semantics, direct PublishedCard exposure to FeedMineUI, network requirements or remote resource resolution.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMinePersistence, FeedMineAcquisition, FeedMineEditorial, FeedMineMedia, FeedMinePublication. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-01, INV-02, INV-07, INV-08; Snapshot existence requires no network.
-//
-// Planned public surface:
-//   FeedPresentationSnapshot containing/presenting future PresentationCard values. No API is declared.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Owns: immutable ready local presentation, finite window and logical anchor.
+// Does not own: publication authority, pagination, pixels or mutable session state.
 
-// FeedPresentationSnapshot = finite UI-facing projection of current local session state.
-// FeedPresentationSnapshot contains/presents future PresentationCard values.
-// It does not expose PublishedCard directly to FeedMineUI.
-// Snapshot não contém necessidade de network para existir.
+import FeedMineDomain
+import FeedMinePublication
+
+public enum PresentationAnchorPlacement: String, Hashable, Sendable {
+    case top
+    case center
+}
+
+public struct PresentationAnchor: Hashable, Sendable {
+    public let cardID: PublicationCardID
+    public let placement: PresentationAnchorPlacement
+
+    public init(cardID: PublicationCardID, placement: PresentationAnchorPlacement) {
+        self.cardID = cardID
+        self.placement = placement
+    }
+}
+
+public struct FeedWindowSnapshot: Hashable, Sendable {
+    public let items: [PresentationCard]
+    public let anchor: PresentationAnchor
+
+    public init?(items: [PresentationCard], anchor: PresentationAnchor) {
+        guard !items.isEmpty,
+            Set(items.map(\.id)).count == items.count,
+            items.contains(where: { $0.id == anchor.cardID }) else { return nil }
+        self.items = items
+        self.anchor = anchor
+    }
+
+    /// FeedWindow already guarantees nonempty unique cards and anchor membership.
+    /// The one-to-one projection preserves those invariants and supplied order.
+    init(publishedWindow: FeedWindow) {
+        items = publishedWindow.cards.map(PresentationCard.init(publishedCard:))
+        let placement: PresentationAnchorPlacement
+        switch publishedWindow.anchor.placement {
+        case .top: placement = .top
+        case .center: placement = .center
+        }
+        anchor = PresentationAnchor(cardID: publishedWindow.anchor.cardID, placement: placement)
+    }
+}
+
+/// Existence means retained local cards are ready for baseline presentation.
+/// Hero/thumbnail geometry can render placeholders without materialized media.
+public struct FeedPresentationSnapshot: Hashable, Sendable {
+    public let contextKey: ContextKey
+    public let editionID: FeedEditionID
+    public let window: FeedWindowSnapshot
+
+    init(restoredPublication: RestoredPublication) {
+        contextKey = restoredPublication.edition.contextKey
+        editionID = restoredPublication.edition.id
+        window = FeedWindowSnapshot(publishedWindow: restoredPublication.window)
+    }
+}

@@ -1,47 +1,26 @@
-//
 // File: FeedSession.swift
 // Module: FeedMineRuntime
-//
-// Responsibility:
-//   Owner de uma sessão de consumo.
-//
-// Owns:
-//   Future ownership: Consumption session receiving intents, viewport observations and outcomes; producing snapshots and semantic effects.
-//
-// Does not own:
-//   SQL, HTTP, SwiftUI or ownership of all feed services.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMinePersistence, FeedMineAcquisition, FeedMineEditorial, FeedMineMedia, FeedMinePublication. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-03, INV-07, INV-12; Session owns consumption.
-//
-// Planned public surface:
-//   Consumption session receiving intents, viewport observations and outcomes; producing snapshots and semantic effects. Documentation only; no API is declared in this phase.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Owns: synchronous read-only warm restore into immutable presentation snapshots.
+// Does not own: direct storage, mutable session state, network or coordination yet.
 
-// Specification notes:
-// Responsibility:
-//
-// Owner de uma sessão de consumo.
-//
-// Recebe:
-//
-// - intents;
-// - viewport observations;
-// - service outcomes.
-//
-// Produz:
-//
-// - presentation snapshots;
-// - effects semânticos.
-//
-// Não faz SQL.
-//
-// Não faz HTTP.
-//
-// Não importa SwiftUI.
+import FeedMinePublication
+
+public final class FeedSession: Sendable {
+    private let publicationHistory: PublicationHistory
+
+    /// Composition-only exception: accepts the semantic Publication read boundary.
+    /// UI consumes Runtime presentation results without importing Publication.
+    public init(publicationHistory: PublicationHistory) {
+        self.publicationHistory = publicationHistory
+    }
+
+    /// Capacities are explicit finite materialization bounds, never a page/feed size.
+    /// Nil means no saved checkpoint. Errors propagate without fallback state.
+    public func restoreLocalPresentation(
+        backwardCapacity: Int,
+        forwardCapacity: Int
+    ) throws -> FeedPresentationSnapshot? {
+        try publicationHistory.restore(backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity)
+            .map(FeedPresentationSnapshot.init(restoredPublication:))
+    }
+}

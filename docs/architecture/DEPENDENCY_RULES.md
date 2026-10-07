@@ -69,26 +69,14 @@ Media → Publication          PROIBIDO
 Acquisition → Publication    PROIBIDO
 ```
 
-Somente as arestas do grafo em ARCHITECTURE.md são permitidas. Nenhum módulo depende de FeedMineComposition. Imports transitivos não autorizam violar esse grafo; os arquivos de produção deste scaffold não possuem imports. UI consome PresentationCard através de FeedPresentationSnapshot pelo boundary Runtime, sem importar Publication diretamente. Persistence registra durabilidade de publicação sem depender de tipos de Publication. As APIs para esses boundaries serão definidas nas phases futuras.
+Somente as arestas do grafo em ARCHITECTURE.md são permitidas. Nenhum módulo depende de FeedMineComposition. Imports transitivos não autorizam violar esse grafo. UI consome PresentationCard através de FeedPresentationSnapshot pelo boundary Runtime, sem importar Publication diretamente. Persistence registra durabilidade de publicação sem depender de tipos de Publication. PublicationHistory implementa o boundary semântico de leitura; Phase 2G implementa a projeção Runtime de apresentação.
 
-# Publication/Persistence boundary gate
+# Publication/Persistence semantic boundary
 
-FeedMinePublication owns publication semantics.
+Publication owns semantic values. Persistence owns mechanical records and storage, without depending on Publication or creating a parallel publication domain.
 
-FeedMinePersistence owns storage mechanics.
+PublicationPersistenceMapping is internal to Publication. PublicationHistory is the concrete semantic read boundary over private PublicationStore and SessionStore instances. Runtime consumes Publication semantic values/boundaries; UI consumes Runtime projection only, with Domain identity and Foundation values.
 
-Persistence must not create a parallel publication domain.
+The explicitly approved composition exception is FeedSession's public initializer accepting PublicationHistory. Presentation values and the restore result do not expose Publication, Persistence or Media types. UI never imports those modules or receives mechanical store records.
 
-The representation boundary required to durably store FeedEdition,
-FeedSegment and PublishedCard is intentionally not designed in Phase 0.
-
-Before implementation of durable publication storage, the architecture
-must explicitly select a dependency-safe representation strategy.
-
-Until that decision exists:
-
-- PublicationStore remains scaffold-only;
-- no publication persistence DTOs are authorized;
-- no publication repository protocol is authorized;
-- no dependency edge may be added;
-- no publication model may be moved between modules.
+No dependency edge is added and no publication model is moved between modules.

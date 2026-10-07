@@ -1,37 +1,74 @@
-//
 // File: PresentationCard.swift
 // Module: FeedMineRuntime
-//
-// Responsibility:
-//   Representar a projeção local, finita e presentation-ready de um card que pode ser consumida por FeedMineUI.
-//
-// Owns:
-//   Future presentation-facing representation of a published card.
-//
-// Does not own:
-//   Publication identity, publication history, editorial selection, acquisition, networking, remote media resolution or SwiftUI rendering.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMinePersistence, FeedMineAcquisition, FeedMineEditorial, FeedMineMedia, FeedMinePublication. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-01, INV-02, INV-08.
-//
-// Planned public surface:
-//   PresentationCard. Documentation only; no API is declared.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Owns: disposable immutable UI-facing projection of published card values.
+// Does not own: publication authority, storage, provenance, media or action execution.
 
-// PublishedCard
-//     ↓ Runtime projection
-// PresentationCard
-//     ↓
-// FeedMineUI
-//
-// PublishedCard is publication state.
-// PresentationCard is presentation state.
-// UI knows PresentationCard; UI does not know PublishedCard.
-// PresentationCard is not a second source of truth.
-// It is a projection derived from published history for UI consumption.
+import Foundation
+import FeedMineDomain
+import FeedMinePublication
+
+public enum PresentationCardLayout: String, Hashable, Sendable {
+    case hero
+    case thumbnail
+    case textOnly
+}
+
+public enum PresentationTimestampKind: String, Hashable, Sendable {
+    case authored
+    case modified
+    case observed
+}
+
+public struct PresentationTimestamp: Hashable, Sendable {
+    public let value: Date
+    public let kind: PresentationTimestampKind
+}
+
+public enum PresentationPrimaryActionKind: String, Hashable, Sendable {
+    case externalURL
+    case mediaPlayback
+    case localContentDetail
+}
+
+/// Presentation is reconstructible; frozen publication remains the authority.
+/// Action targets and backend provenance deliberately do not cross this surface.
+public struct PresentationCard: Identifiable, Hashable, Sendable {
+    public let id: PublicationCardID
+    public let title: String?
+    public let primaryText: String?
+    public let timestamp: PresentationTimestamp?
+    public let sourceDisplayName: String?
+    public let providerDisplayName: String?
+    public let layout: PresentationCardLayout
+    public let mediaAspectRatio: Double?
+    public let primaryActionKind: PresentationPrimaryActionKind?
+
+    init(publishedCard: PublishedCard) {
+        id = publishedCard.id
+        title = publishedCard.text.title
+        primaryText = publishedCard.text.primaryText
+        sourceDisplayName = publishedCard.origin.sourceDisplayName
+        providerDisplayName = publishedCard.origin.providerDisplayName
+        timestamp = publishedCard.timestamp.map { timestamp in
+            let kind: PresentationTimestampKind
+            switch timestamp.kind {
+            case .authored: kind = .authored
+            case .modified: kind = .modified
+            case .observed: kind = .observed
+            }
+            return PresentationTimestamp(value: timestamp.value, kind: kind)
+        }
+        switch publishedCard.renderContract.layout {
+        case .hero: layout = .hero
+        case .thumbnail: layout = .thumbnail
+        case .textOnly: layout = .textOnly
+        }
+        mediaAspectRatio = publishedCard.renderContract.mediaAspectRatio
+        switch publishedCard.primaryAction {
+        case nil: primaryActionKind = nil
+        case .externalURL: primaryActionKind = .externalURL
+        case .mediaPlayback: primaryActionKind = .mediaPlayback
+        case .localContentDetail: primaryActionKind = .localContentDetail
+        }
+    }
+}
