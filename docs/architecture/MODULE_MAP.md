@@ -2,10 +2,10 @@
 
 ## FeedMineDomain
 
-- purpose: Canonical semantic vocabulary.
+- purpose: Canonical semantic vocabulary. Phase 1A implements identity, source and content value models; other Domain files remain scaffolds.
 - owns: Identifiers, context, intent, plans, sources, content, media evidence, interaction offers.
 - does not own: I/O, persistence, protocol implementations or UI.
-- allowed imports: Swift standard library only; no other FeedMine module. No imports are used by production scaffolds.
+- allowed imports: Swift standard library and Foundation value types (UUID, Date, URL); no other FeedMine module.
 - downstream consumers: FeedMinePersistence, FeedMineAcquisition, FeedMineSyndication, FeedMineEditorial, FeedMineMedia, FeedMinePublication, FeedMineRuntime, FeedMineUI, FeedMineComposition.
 
 ## FeedMinePersistence

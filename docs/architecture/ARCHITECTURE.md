@@ -49,7 +49,7 @@ FeedMineUI -> FeedMineDomain, FeedMineRuntime
 FeedMineComposition -> FeedMineDomain, FeedMinePersistence, FeedMineAcquisition, FeedMineSyndication, FeedMineEditorial, FeedMineMedia, FeedMinePublication, FeedMineRuntime, FeedMineUI
 ```
 
-Há exatamente dez targets de produção e um target adicional ArchitectureSmokeTests, necessário ao smoke test solicitado. Um único Swift Package usa Swift tools 6.0, sem dependências externas. Os arquivos de produção contêm apenas documentação: nenhuma API ou implementação é antecipada.
+Há exatamente dez targets de produção e dois targets de testes: ArchitectureSmokeTests e FeedMineDomainTests. Um único Swift Package usa Swift tools 6.0, sem dependências externas. Phase 1A implementa somente os value models canônicos em FeedIdentifiers.swift, Source.swift e Content.swift; os outros arquivos permanecem scaffolds. FeedMineDomain may depend on Swift standard library and Foundation value types. It does not depend on another FeedMine module. Veja [Domain model](DOMAIN_MODEL.md).
 
 ## Local presentation and immutable publication
 

@@ -2,12 +2,12 @@
 
 | Module | File | Responsibility | Explicitly does not own |
 | --- | --- | --- | --- |
-| FeedMineDomain | FeedIdentifiers.swift | Definir o local conceitual futuro de identificadores estáveis pertencentes ao domínio FeedMine. | Endpoint identity, protocol-specific identity or transport-derived ID generation |
+| FeedMineDomain | FeedIdentifiers.swift | Phase 1A implemented: seven nominal UUID IDs for source, provider, origin record/revision, source binding, content entity and cluster. | Endpoint identity, protocol-specific identity or transport-derived ID generation |
 | FeedMineDomain | FeedContext.swift | Representar o contexto editorial solicitado pelo usuário. | Acquisition, network, database, UI navigation or connector metadata |
 | FeedMineDomain | FeedIntent.swift | Representar intenções semânticas emitidas pelo usuário/UI. | Intent execution, networking or persistence |
 | FeedMineDomain | FeedPlan.swift | Representar uma política editorial resolvida para um contexto. | Policy execution, fetching or UI queries |
-| FeedMineDomain | Source.swift | Definir os conceitos canônicos futuros: | Endpoint identity, acquisition targets or transport execution |
-| FeedMineDomain | Content.swift | Local conceitual dos modelos canônicos de conteúdo aceitos após admission. | FeedKit models, XML, Mastodon models, ATProto records, Nostr events or downstream raw protocol JSON |
+| FeedMineDomain | Source.swift | Phase 1A implemented: Source, Provider, ConnectorKind, declarative SourceBinding and SourceBindingState. | Endpoint identity, acquisition targets or transport execution |
+| FeedMineDomain | Content.swift | Phase 1A implemented: opaque ExternalIdentity, OriginRecord, immutable OriginRevision, separate membership, content relations, entity and cluster. | FeedKit models, XML, Mastodon models, ATProto records, Nostr events or downstream raw protocol JSON |
 | FeedMineDomain | MediaCandidate.swift | Representar evidência/candidatos de mídia associados a conteúdo canônico. | Rendered images, SwiftUI Image, downloaded assets or publication media identity |
 | FeedMineDomain | InteractionOffer.swift | Representar ações semanticamente disponíveis para um item. | Action execution or SDK-specific action objects |
 | FeedMinePersistence | RuntimeDatabase.swift | Futuro owner do database local e lifecycle da conexão. | Database implementation or selection of GRDB, CoreData or SwiftData in this phase |

@@ -4,7 +4,7 @@
 // Module: FeedMine package manifest
 //
 // Responsibility:
-//   Declare compiler-enforced module boundaries and the architecture smoke test.
+//   Declare compiler-enforced module boundaries and architecture/domain test targets.
 //
 // Owns:
 //   Package products and target dependency graph.
@@ -16,7 +16,7 @@
 //   PackageDescription only; no external package dependencies.
 //
 // Architectural invariants:
-//   INV-12, INV-15; ten production modules and one test target.
+//   INV-12, INV-15; ten production modules and architecture/domain test targets.
 //
 // Planned public surface:
 //   The ten FeedMine library modules; no runtime API is declared here.
@@ -53,6 +53,7 @@ let package = Package(
         .target(name: "FeedMineRuntime", dependencies: ["FeedMineDomain", "FeedMinePersistence", "FeedMineAcquisition", "FeedMineEditorial", "FeedMineMedia", "FeedMinePublication"]),
         .target(name: "FeedMineUI", dependencies: ["FeedMineDomain", "FeedMineRuntime"]),
         .target(name: "FeedMineComposition", dependencies: ["FeedMineDomain", "FeedMinePersistence", "FeedMineAcquisition", "FeedMineSyndication", "FeedMineEditorial", "FeedMineMedia", "FeedMinePublication", "FeedMineRuntime", "FeedMineUI"]),
+        .testTarget(name: "FeedMineDomainTests", dependencies: ["FeedMineDomain"]),
         .testTarget(
             name: "ArchitectureSmokeTests",
             dependencies: ["FeedMineDomain", "FeedMinePersistence", "FeedMineAcquisition", "FeedMineSyndication", "FeedMineEditorial", "FeedMineMedia", "FeedMinePublication", "FeedMineRuntime", "FeedMineUI", "FeedMineComposition"]
