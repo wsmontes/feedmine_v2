@@ -1,4 +1,4 @@
-# Persistence design — Phase 2A
+# Persistence design — Phase 2A lifecycle / Phase 2E restore storage
 
 ## 1. Frozen physical topology
 
@@ -6,7 +6,7 @@
 - `runtime.sqlite`: non-replaceable semantic runtime state, including durable user state.
 - Asset filesystem: media bytes, with durable metadata intended for runtime storage later.
 
-Phase 2A implements runtime lifecycle only. Catalog and asset storage remain unimplemented. No code or schema from the historical project is copied.
+Phase 2A implements runtime lifecycle; Phase 2E adds the first publication/session storage slice. Catalog and asset storage remain unimplemented. No code or schema from the historical project is copied.
 
 ## 2. Runtime database lifecycle
 
@@ -24,9 +24,9 @@ No failure becomes nil, an empty collection, a success flag or a new empty store
 
 ## 4. Migration authority
 
-RuntimeMigrations is the single schema-evolution owner. Its internal current migrator registers the empty `runtime-foundation-v1` migration. GRDB's `grdb_migrations` bookkeeping is the authority; there is no separate metadata/schema-version table or user_version counter. Erase-on-schema-change is explicitly disabled both in the current migration configuration and when an internally supplied migrator is opened.
+RuntimeMigrations is the single schema-evolution owner. Its internal current migrator preserves the empty `runtime-foundation-v1` migration and registers `publication-restore-v1` after it. GRDB's `grdb_migrations` bookkeeping is the authority; there is no separate metadata/schema-version table or user_version counter. Erase-on-schema-change is explicitly disabled both in the current migration configuration and when an internally supplied migrator is opened.
 
-Tests verify reopen retains one foundation entry, and a failing test-only migration cannot erase a previously durable sentinel or commit its partial deletion. Production migrations create no domain tables.
+Tests verify foundation exists exactly once, full applied history survives reopen unchanged, and a failing test-only migration cannot erase a previously durable sentinel or advance committed migration history. publication-restore-v1 creates exactly feed_editions, feed_segments, published_cards and session_checkpoint.
 
 ## 5. WAL and concurrency
 
@@ -53,17 +53,17 @@ References: [official release](https://github.com/groue/GRDB.swift/releases/tag/
 
 ## 7. What is intentionally absent
 
-ContentStore, PublicationStore and SessionStore remain scaffolds. There are no source, origin, bookmark, read-state, publication, session, acquisition, search/FTS or selection-supply tables. Catalog, assets, retention, backup, read-only/degraded modes, repositories, database facades and protocols are unimplemented. Test sentinel/parent/child/checkpoint tables exist only in isolated test databases.
+ContentStore remains a scaffold. PublicationStore and SessionStore implement immutable publication history and one logical checkpoint through mechanical records; semantic mapping belongs to FeedMinePublication. There are no source, origin, bookmark, read-state, acquisition, search/FTS or selection-supply tables. Catalog, assets, retention, backup, read-only/degraded modes, repositories, database facades and protocols are unimplemented. Test sentinel/parent/child/checkpoint tables exist only in isolated test databases.
 
 ## 8. Next schema slice
 
-Future slices must explicitly design their domain storage and atomicity boundaries before adding migrations. Local persistence as a whole is not complete. This task ends at the runtime physical lifecycle and failure contract; it does not implement the next user-state, canonical supply, catalog or publication slice.
+The first durable semantic vertical slice is implemented: exact publication/session restore without canonical supply, catalog or network. Local persistence as a whole is not complete. User-state, canonical supply, catalog, assets and retention remain future slices requiring explicit storage and atomicity design.
 
-Phase 2C closes the baseline semantic PublishedCard payload. Publication/session schema design: [PERSISTENCE_PUBLICATION_SCHEMA.md](PERSISTENCE_PUBLICATION_SCHEMA.md). Phase 2D designs but does not implement the first domain schema. Implementation remains gated on architectural review and merge. Phase 2B defines publication identity and exact logical restore semantics only; see [Publication restore contract](PUBLICATION_RESTORE_CONTRACT.md).
+Phase 2C closes the baseline semantic PublishedCard payload. Publication/session schema design: [PERSISTENCE_PUBLICATION_SCHEMA.md](PERSISTENCE_PUBLICATION_SCHEMA.md). Phase 2D designed the first domain schema; Phase 2E implements its migration, concrete stores and internal semantic mapping. Phase 2E awaits review and merge. Phase 2B defines publication identity and exact logical restore semantics only; see [Publication restore contract](PUBLICATION_RESTORE_CONTRACT.md).
 
 ## 9. Restore-first product contract
 
-The following product decisions are frozen contracts for future slices. Phase 2A closure documents them only; it adds no domain schema or publication/session implementation.
+The following product decisions are frozen contracts for future slices. Phase 2A closure documented them; Phase 2E now implements durable publication/session storage and exact reopen restoration, without Runtime/UI execution.
 
 > The first complete persistence-driven FeedMine experience is exact warm/offline restoration of previously published local history.
 
@@ -107,7 +107,7 @@ Warm/offline first presentation does not depend on network, catalog refresh, a c
 - Presentation-ready frozen card data.
 - Local user-state overlays when applicable.
 
-These concepts remain unimplemented in this phase.
+Phase 2E persists the frozen history and logical cursor values. Runtime first-presentation execution and local user-state overlays remain deferred.
 
 ## 10. Bookmark contract
 

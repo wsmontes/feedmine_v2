@@ -41,12 +41,12 @@ final class RuntimeDatabaseTests: XCTestCase {
         XCTAssertEqual(RuntimeDatabaseLocation.applicationSupport(root).databaseURL.path, "/application-support/FeedMine/runtime.sqlite")
     }
 
-    func testOpenCreatesFileWithOnlyMigrationBookkeeping() throws {
+    func testOpenCreatesFileAndMigrationBookkeeping() throws {
         let location = try location()
         let database = try RuntimeDatabase(location: location)
         XCTAssertTrue(FileManager.default.fileExists(atPath: location.databaseURL.path))
         let tables = try database.read { try String.fetchAll($0, sql: "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'") }
-        XCTAssertEqual(tables, ["grdb_migrations"])
+        XCTAssertTrue(tables.contains("grdb_migrations"))
     }
 
     func testPoolUsesWALAndForeignKeysOnReaderAndWriter() throws {

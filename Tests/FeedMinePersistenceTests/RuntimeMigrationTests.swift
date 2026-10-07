@@ -36,21 +36,28 @@ final class RuntimeMigrationTests: XCTestCase {
         return RuntimeDatabaseLocation(directory: directory)
     }
 
-    func testReopenRetainsExactlyOneFoundationMigration() throws {
+    func testReopenPreservesAppliedMigrationHistory() throws {
         let location = location()
+        let firstHistory: [String]
         do {
             let database = try RuntimeDatabase(location: location)
-            XCTAssertEqual(try database.read { try String.fetchAll($0, sql: "SELECT identifier FROM grdb_migrations") }, ["runtime-foundation-v1"])
+            firstHistory = try database.read { try String.fetchAll($0, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid") }
+            XCTAssertEqual(firstHistory.first, "runtime-foundation-v1")
+            XCTAssertEqual(firstHistory.filter { $0 == "runtime-foundation-v1" }.count, 1)
         }
         let reopened = try RuntimeDatabase(location: location)
-        XCTAssertEqual(try reopened.read { try String.fetchAll($0, sql: "SELECT identifier FROM grdb_migrations") }, ["runtime-foundation-v1"])
+        let secondHistory = try reopened.read { try String.fetchAll($0, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid") }
+        XCTAssertEqual(secondHistory, firstHistory)
+        XCTAssertEqual(secondHistory.filter { $0 == "runtime-foundation-v1" }.count, 1)
         XCTAssertFalse(RuntimeMigrations.current.eraseDatabaseOnSchemaChange)
     }
 
     func testFailedMigrationPreservesExistingSentinel() throws {
         let location = location()
+        let baselineMigrationHistory: [String]
         do {
             let database = try RuntimeDatabase(location: location)
+            baselineMigrationHistory = try database.read { try String.fetchAll($0, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid") }
             try database.write { db in
                 try db.execute(sql: "CREATE TABLE sentinel (value TEXT)")
                 try db.execute(sql: "INSERT INTO sentinel VALUES ('durable')")
@@ -64,6 +71,8 @@ final class RuntimeMigrationTests: XCTestCase {
         XCTAssertThrowsError(try RuntimeDatabase(location: location, migrator: failing))
         let reopened = try RuntimeDatabase(location: location)
         XCTAssertEqual(try reopened.read { try String.fetchAll($0, sql: "SELECT value FROM sentinel") }, ["durable"])
-        XCTAssertEqual(try reopened.read { try String.fetchAll($0, sql: "SELECT identifier FROM grdb_migrations") }, ["runtime-foundation-v1"])
+        let afterFailure = try reopened.read { try String.fetchAll($0, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid") }
+        XCTAssertEqual(afterFailure, baselineMigrationHistory)
+        XCTAssertFalse(afterFailure.contains("test-deliberate-failure"))
     }
 }

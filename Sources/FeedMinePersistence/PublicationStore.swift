@@ -1,33 +1,507 @@
-//
 // File: PublicationStore.swift
 // Module: FeedMinePersistence
-//
-// Responsibility:
-//   Future persistence mechanism for durable publication history.
-//
-// Owns:
-//   Future storage mechanics and local durability of publication history and metadata.
-//
-// Does not own:
-//   Publication semantics, parallel publication domain models, editorial selection, production of segments or networking.
-//
-// Allowed dependencies:
-//   FeedMineDomain. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-08, INV-12; Publication survives temporary raw reconstructible evidence; publication semantics have one owner.
-//
-// Planned public surface:
-//   Future PublicationStore persistence mechanism. API and storage representation remain blocked by the representation boundary gate.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Owns: concrete atomic immutable history storage and mechanical boundary records.
+// Does not own: publication semantics, rendering, coordination, canonical data or retention.
+// Dependencies: FeedMineDomain, Foundation and private GRDB access only.
 
-// PublicationStore does not own publication semantics.
-// PublishedCard, FeedEdition and FeedSegment semantics belong to FeedMinePublication.
-// PublicationStore must not create a second publication domain model.
-// The concrete representation boundary between FeedMinePublication and persistence is intentionally unresolved in Phase 0.
-// No PublicationStore API or storage representation may be implemented until that boundary is explicitly designed in the relevant implementation phase.
-// No publication persistence DTO, repository protocol, database row, serializer or mapper is authorized.
-// Publication durability must survive temporary raw reconstructible evidence.
+import Foundation
+import GRDB
+import FeedMineDomain
+
+public enum PublicationStoreError: Error, Equatable, Sendable {
+    case invalidRepresentation(String)
+    case missingEdition
+    case editorialRevisionConflict
+    case invalidFirstSegment
+    case invalidAppendOrdinal
+    case publicationSchemaMismatch
+    case cardIdentityMismatch
+    case corruption(String)
+    case invalidCapacity
+}
+
+public struct PublicationStore: Sendable {
+    private let database: RuntimeDatabase
+
+    public init(database: RuntimeDatabase) { self.database = database }
+
+    public struct EditionRecord: Hashable, Sendable {
+        public let id: FeedEditionID
+        public let editorialRevision: EditorialRevision
+        public let publicationSchemaVersion: UInt64
+        public let selectionSeed: UInt64
+        public let createdAt: Date
+
+        public init(
+            id: FeedEditionID,
+            editorialRevision: EditorialRevision,
+            publicationSchemaVersion: UInt64,
+            selectionSeed: UInt64,
+            createdAt: Date
+        ) {
+            self.id = id
+            self.editorialRevision = editorialRevision
+            self.publicationSchemaVersion = publicationSchemaVersion
+            self.selectionSeed = selectionSeed
+            self.createdAt = createdAt
+        }
+    }
+
+    public struct SegmentRecord: Hashable, Sendable {
+        public let id: FeedSegmentID
+        public let editionID: FeedEditionID
+        public let ordinal: UInt64
+        public let segmentSeed: UInt64
+        public let publicationSchemaVersion: UInt64
+        public let createdAt: Date
+        public let cardIDs: [PublicationCardID]
+
+        public init(
+            id: FeedSegmentID,
+            editionID: FeedEditionID,
+            ordinal: UInt64,
+            segmentSeed: UInt64,
+            publicationSchemaVersion: UInt64,
+            createdAt: Date,
+            cardIDs: [PublicationCardID]
+        ) {
+            self.id = id
+            self.editionID = editionID
+            self.ordinal = ordinal
+            self.segmentSeed = segmentSeed
+            self.publicationSchemaVersion = publicationSchemaVersion
+            self.createdAt = createdAt
+            self.cardIDs = cardIDs
+        }
+    }
+
+    public struct CardRecord: Hashable, Sendable {
+        public let id: PublicationCardID
+        public let originRecordID: OriginRecordID
+        public let originRevisionID: OriginRevisionID
+        public let sourceID: SourceID?
+        public let providerID: ProviderID?
+        public let sourceDisplayName: String?
+        public let providerDisplayName: String?
+        public let contentEntityID: ContentEntityID?
+        public let contentClusterID: ContentClusterID?
+        public let title: String?
+        public let primaryText: String?
+        public let timestampValue: Date?
+        public let timestampKind: String?
+        public let mediaKey: String?
+        public let mediaPixelWidth: Int?
+        public let mediaPixelHeight: Int?
+        public let mediaMimeType: String?
+        public let renderLayout: String
+        public let renderMediaAspectRatio: Double?
+        public let primaryActionKind: String?
+        public let primaryActionReference: String?
+
+        public init(
+            id: PublicationCardID,
+            originRecordID: OriginRecordID,
+            originRevisionID: OriginRevisionID,
+            sourceID: SourceID?,
+            providerID: ProviderID?,
+            sourceDisplayName: String?,
+            providerDisplayName: String?,
+            contentEntityID: ContentEntityID?,
+            contentClusterID: ContentClusterID?,
+            title: String?,
+            primaryText: String?,
+            timestampValue: Date?,
+            timestampKind: String?,
+            mediaKey: String?,
+            mediaPixelWidth: Int?,
+            mediaPixelHeight: Int?,
+            mediaMimeType: String?,
+            renderLayout: String,
+            renderMediaAspectRatio: Double?,
+            primaryActionKind: String?,
+            primaryActionReference: String?
+        ) {
+            self.id = id
+            self.originRecordID = originRecordID
+            self.originRevisionID = originRevisionID
+            self.sourceID = sourceID
+            self.providerID = providerID
+            self.sourceDisplayName = sourceDisplayName
+            self.providerDisplayName = providerDisplayName
+            self.contentEntityID = contentEntityID
+            self.contentClusterID = contentClusterID
+            self.title = title
+            self.primaryText = primaryText
+            self.timestampValue = timestampValue
+            self.timestampKind = timestampKind
+            self.mediaKey = mediaKey
+            self.mediaPixelWidth = mediaPixelWidth
+            self.mediaPixelHeight = mediaPixelHeight
+            self.mediaMimeType = mediaMimeType
+            self.renderLayout = renderLayout
+            self.renderMediaAspectRatio = renderMediaAspectRatio
+            self.primaryActionKind = primaryActionKind
+            self.primaryActionReference = primaryActionReference
+        }
+    }
+
+    public func createEdition(_ edition: EditionRecord, firstSegment: SegmentRecord, cards: [CardRecord]) throws {
+        try database.write { db in
+            guard firstSegment.editionID == edition.id, firstSegment.ordinal == 0 else {
+                throw PublicationStoreError.invalidFirstSegment
+            }
+            try Self.validate(firstSegment, cards: cards, version: edition.publicationSchemaVersion)
+            let editionValues = try Self.editionValues(edition)
+            let existing = try Row.fetchAll(db, sql: "SELECT * FROM feed_editions WHERE editorial_revision_id = ?",
+                arguments: [PersistenceValueCoding.uuid(edition.editorialRevision.id.rawValue)])
+            for row in existing {
+                guard try Self.decodeEdition(row).editorialRevision == edition.editorialRevision else {
+                    throw PublicationStoreError.editorialRevisionConflict
+                }
+            }
+            try Self.insert(db, table: "feed_editions", columns: Self.editionColumns, values: editionValues)
+            try Self.insertSegment(firstSegment, cards: cards, db: db)
+        }
+    }
+
+    public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord]) throws {
+        try database.write { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?",
+                arguments: [PersistenceValueCoding.uuid(segment.editionID.rawValue)]) else { throw PublicationStoreError.missingEdition }
+            let edition = try Self.decodeEdition(row)
+            // Read and validate the actual tail within the serialized writer transaction.
+            let editionKey = PersistenceValueCoding.uuid(segment.editionID.rawValue)
+            let retained = try Row.fetchAll(db, sql: "SELECT ordinal, publication_schema_version FROM feed_segments WHERE edition_id = ? ORDER BY ordinal", arguments: [editionKey])
+            guard !retained.isEmpty else { throw PublicationStoreError.corruption("empty edition") }
+            for (index, row) in retained.enumerated() {
+                let fields = PublicationRecordFields(row)
+                guard try fields.counter("ordinal") == UInt64(index),
+                    try fields.counter("publication_schema_version") == edition.publicationSchemaVersion else {
+                    throw PublicationStoreError.corruption("retained segment ordinal/schema")
+                }
+            }
+            let tailRow = try Row.fetchOne(db, sql: "SELECT MAX(ordinal) AS tail FROM feed_segments WHERE edition_id = ?", arguments: [editionKey])!
+            let tail = try PublicationRecordFields(tailRow).integer("tail")
+            guard tail >= 0, tail < Int64.max, segment.ordinal == UInt64(tail) + 1 else {
+                throw PublicationStoreError.invalidAppendOrdinal
+            }
+            try Self.validate(segment, cards: cards, version: edition.publicationSchemaVersion)
+            try Self.insertSegment(segment, cards: cards, db: db)
+        }
+    }
+
+    public func edition(id: FeedEditionID) throws -> EditionRecord? {
+        try database.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?", arguments: [PersistenceValueCoding.uuid(id.rawValue)])
+                .map(Self.decodeEdition)
+        }
+    }
+
+    public func card(id: PublicationCardID) throws -> CardRecord? {
+        try database.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM published_cards WHERE id = ?", arguments: [PersistenceValueCoding.uuid(id.rawValue)])
+                .map(Self.decodeCard)
+        }
+    }
+
+    public func segments(editionID: FeedEditionID) throws -> [SegmentRecord] {
+        try database.read { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?", arguments: [PersistenceValueCoding.uuid(editionID.rawValue)]) else {
+                throw PublicationStoreError.missingEdition
+            }
+            let edition = try Self.decodeEdition(row)
+            let rows = try Row.fetchAll(db, sql: "SELECT * FROM feed_segments WHERE edition_id = ? ORDER BY ordinal",
+                arguments: [PersistenceValueCoding.uuid(editionID.rawValue)])
+            guard !rows.isEmpty else { throw PublicationStoreError.corruption("empty edition") }
+            return try rows.enumerated().map { index, row in
+                let segment = try Self.decodeSegment(row, db: db)
+                guard segment.ordinal == UInt64(index), segment.publicationSchemaVersion == edition.publicationSchemaVersion else {
+                    throw PublicationStoreError.corruption("segment ordinal/schema")
+                }
+                return segment
+            }
+        }
+    }
+
+    public func cards(editionID: FeedEditionID, around anchorID: PublicationCardID, backwardCapacity: Int, forwardCapacity: Int) throws -> [CardRecord] {
+        guard backwardCapacity >= 0, forwardCapacity >= 0 else { throw PublicationStoreError.invalidCapacity }
+        return try database.read { db in
+            let editionKey = PersistenceValueCoding.uuid(editionID.rawValue)
+            guard let editionRow = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?", arguments: [editionKey]) else {
+                throw PublicationStoreError.missingEdition
+            }
+            let edition = try Self.decodeEdition(editionRow)
+            guard let anchor = try Row.fetchOne(db, sql: """
+                SELECT c.*, s.ordinal AS segment_ordinal, s.edition_id AS anchor_edition_id
+                FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+                WHERE c.id = ?
+                """, arguments: [PersistenceValueCoding.uuid(anchorID.rawValue)]),
+                try PublicationRecordFields(anchor).string("anchor_edition_id") == editionKey else {
+                throw PublicationStoreError.corruption("anchor membership")
+            }
+            let f = PublicationRecordFields(anchor)
+            let segmentOrdinal = try f.integer("segment_ordinal"), cardOrdinal = try f.integer("ordinal")
+            guard segmentOrdinal >= 0, cardOrdinal >= 0 else { throw PublicationStoreError.corruption("anchor position") }
+            // Metadata aggregate detects retained Segment gaps without loading every Segment/card payload.
+            let summary = try Row.fetchOne(db, sql: "SELECT COUNT(*) AS count, MIN(ordinal) AS low, MAX(ordinal) AS high FROM feed_segments WHERE edition_id = ?", arguments: [editionKey])!
+            let sf = PublicationRecordFields(summary)
+            let count = try sf.integer("count"), low = try sf.integer("low"), high = try sf.integer("high")
+            guard count > 0, low == 0, high == count - 1 else { throw PublicationStoreError.corruption("segment continuity") }
+            let query = "SELECT c.*, s.ordinal AS segment_ordinal FROM feed_segments s JOIN published_cards c ON c.segment_id = s.id WHERE s.edition_id = ? AND (s.ordinal, c.ordinal) "
+            let backward = try Row.fetchAll(db, sql: query + "< (?, ?) ORDER BY s.ordinal DESC, c.ordinal DESC LIMIT ?",
+                arguments: [editionKey, segmentOrdinal, cardOrdinal, backwardCapacity])
+            let forward = try Row.fetchAll(db, sql: query + "> (?, ?) ORDER BY s.ordinal ASC, c.ordinal ASC LIMIT ?",
+                arguments: [editionKey, segmentOrdinal, cardOrdinal, forwardCapacity])
+            let rows = Array(backward.reversed()) + [anchor] + forward
+            let touched = try Set(rows.map { try PublicationRecordFields($0).string("segment_id") })
+            for segmentKey in touched {
+                guard let segmentRow = try Row.fetchOne(db, sql: "SELECT * FROM feed_segments WHERE id = ?", arguments: [segmentKey]) else {
+                    throw PublicationStoreError.corruption("missing segment")
+                }
+                let segment = try Self.decodeSegment(segmentRow, db: db)
+                guard segment.editionID == editionID, segment.publicationSchemaVersion == edition.publicationSchemaVersion else {
+                    throw PublicationStoreError.corruption("segment membership/schema")
+                }
+            }
+            // Also reject empty Segments crossed by the required neighborhood.
+            let firstPosition = try PublicationRecordFields(rows.first!).integer("segment_ordinal")
+            let lastPosition = try PublicationRecordFields(rows.last!).integer("segment_ordinal")
+            // An exhausted requested side traversed to the Edition boundary even if
+            // an empty Segment produced no joined card row. Validate that full interval.
+            let requiredFirst = backward.count < backwardCapacity ? 0 : firstPosition
+            let requiredLast = forward.count < forwardCapacity ? high : lastPosition
+            let crossed = try Row.fetchAll(db, sql: "SELECT * FROM feed_segments WHERE edition_id = ? AND ordinal BETWEEN ? AND ? ORDER BY ordinal", arguments: [editionKey, requiredFirst, requiredLast])
+            for row in crossed {
+                let segment = try Self.decodeSegment(row, db: db)
+                guard segment.publicationSchemaVersion == edition.publicationSchemaVersion else { throw PublicationStoreError.corruption("segment schema") }
+            }
+            return try rows.map(Self.decodeCard)
+        }
+    }
+
+    private static func validate(_ segment: SegmentRecord, cards: [CardRecord], version: UInt64) throws {
+        guard segment.publicationSchemaVersion == version else { throw PublicationStoreError.publicationSchemaMismatch }
+        guard !cards.isEmpty, segment.cardIDs == cards.map(\.id), Set(segment.cardIDs).count == segment.cardIDs.count else {
+            throw PublicationStoreError.cardIdentityMismatch
+        }
+        _ = try segmentValues(segment)
+        for card in cards { try validateCard(card); _ = try cardValues(card) }
+    }
+
+    private static func validateCard(_ card: CardRecord) throws {
+        func require(_ condition: Bool, _ field: String) throws {
+            guard condition else { throw PublicationStoreError.invalidRepresentation(field) }
+        }
+        try require((card.timestampValue == nil && card.timestampKind == nil)
+            || (card.timestampValue != nil && ["authored", "modified", "observed"].contains(card.timestampKind ?? "")), "timestamp")
+        if let key = card.mediaKey {
+            try require(!key.isEmpty, "media_key")
+            try require((card.mediaPixelWidth == nil && card.mediaPixelHeight == nil)
+                || ((card.mediaPixelWidth ?? 0) > 0 && (card.mediaPixelHeight ?? 0) > 0), "media dimensions")
+        } else {
+            try require(card.mediaPixelWidth == nil && card.mediaPixelHeight == nil && card.mediaMimeType == nil, "media group")
+        }
+        try require(["hero", "thumbnail", "textOnly"].contains(card.renderLayout), "render_layout")
+        if let ratio = card.renderMediaAspectRatio { try require(ratio.isFinite && ratio > 0, "render ratio") }
+        try require(card.renderLayout != "textOnly" || (card.mediaKey == nil && card.renderMediaAspectRatio == nil), "textOnly media")
+        switch card.primaryActionKind {
+        case nil: try require(card.primaryActionReference == nil, "action")
+        case "localContentDetail": try require(card.primaryActionReference == nil, "action")
+        case "externalURL", "mediaPlayback":
+            guard let reference = card.primaryActionReference, let url = URL(string: reference), url.absoluteString == reference else {
+                throw PublicationStoreError.invalidRepresentation("action URL")
+            }
+        default: throw PublicationStoreError.invalidRepresentation("action kind")
+        }
+    }
+
+    // These insert envelopes are private. No public row type or generic CRUD API escapes.
+    private static func insert(_ db: Database, table: String, columns: [String], values: [DatabaseValue]) throws {
+        let marks = Array(repeating: "?", count: columns.count).joined(separator: ",")
+        try db.execute(sql: "INSERT INTO \(table) (\(columns.joined(separator: ","))) VALUES (\(marks))", arguments: StatementArguments(values))
+    }
+
+    private static func insertSegment(_ segment: SegmentRecord, cards: [CardRecord], db: Database) throws {
+        try insert(db, table: "feed_segments", columns: segmentColumns, values: segmentValues(segment))
+        for (ordinal, card) in cards.enumerated() {
+            try insert(db, table: "published_cards", columns: ["segment_id", "ordinal"] + cardColumns,
+                values: [PersistenceValueCoding.uuid(segment.id.rawValue).databaseValue, Int64(ordinal).databaseValue] + cardValues(card))
+        }
+    }
+
+    private static let editionColumns = ["id", "editorial_revision_id", "context_kind", "context_source_id", "context_search_query", "catalog_generation", "user_selection_version", "eligibility_policy_version", "scoring_policy_version", "sequencing_policy_version", "exposure_policy_version", "selection_schema_version", "publication_schema_version", "selection_seed", "created_at"]
+    private static let segmentColumns = ["id", "edition_id", "ordinal", "segment_seed", "publication_schema_version", "created_at"]
+    private static func editionValues(_ e: EditionRecord) throws -> [DatabaseValue] {
+        let r = e.editorialRevision
+        let kind: String, source: String?, query: String?
+        switch r.contextKey.request {
+        case .main: kind = "main"; source = nil; query = nil
+        case .source(let id): kind = "source"; source = PersistenceValueCoding.uuid(id.rawValue); query = nil
+        case .search(let search): kind = "search"; source = nil; query = search.query
+        }
+        return try [
+            PersistenceValueCoding.uuid(e.id.rawValue).databaseValue,
+            PersistenceValueCoding.uuid(r.id.rawValue).databaseValue,
+            kind.databaseValue, source.databaseValue, query.databaseValue,
+            PersistenceValueCoding.counter(r.catalogGeneration.rawValue, field: "catalogGeneration").databaseValue,
+            PersistenceValueCoding.counter(r.userSelectionVersion.rawValue, field: "userSelectionVersion").databaseValue,
+            PersistenceValueCoding.counter(r.eligibilityPolicyVersion.rawValue, field: "eligibilityPolicyVersion").databaseValue,
+            PersistenceValueCoding.counter(r.scoringPolicyVersion.rawValue, field: "scoringPolicyVersion").databaseValue,
+            PersistenceValueCoding.counter(r.sequencingPolicyVersion.rawValue, field: "sequencingPolicyVersion").databaseValue,
+            PersistenceValueCoding.counter(r.exposurePolicyVersion.rawValue, field: "exposurePolicyVersion").databaseValue,
+            PersistenceValueCoding.counter(r.selectionSchemaVersion.rawValue, field: "selectionSchemaVersion").databaseValue,
+            PersistenceValueCoding.counter(e.publicationSchemaVersion, field: "publication_schema_version").databaseValue,
+            PersistenceValueCoding.seed(e.selectionSeed).databaseValue,
+            PersistenceValueCoding.date(e.createdAt, field: "created_at").databaseValue
+        ]
+    }
+
+    private static func segmentValues(_ s: SegmentRecord) throws -> [DatabaseValue] {
+        try [PersistenceValueCoding.uuid(s.id.rawValue).databaseValue,
+             PersistenceValueCoding.uuid(s.editionID.rawValue).databaseValue,
+             PersistenceValueCoding.counter(s.ordinal, field: "ordinal").databaseValue,
+             PersistenceValueCoding.seed(s.segmentSeed).databaseValue,
+             PersistenceValueCoding.counter(s.publicationSchemaVersion, field: "publication_schema_version").databaseValue,
+             PersistenceValueCoding.date(s.createdAt, field: "created_at").databaseValue]
+    }
+
+    private static func decodeEdition(_ row: Row) throws -> EditionRecord {
+        let f = PublicationRecordFields(row)
+        let request: FeedContextRequest
+        let source = try f.optionalUUID("context_source_id"), query = try f.optionalString("context_search_query")
+        switch try f.string("context_kind") {
+        case "main" where source == nil && query == nil: request = .main
+        case "source" where source != nil && query == nil: request = .source(SourceID(rawValue: source!))
+        case "search" where source == nil && query != nil:
+            guard let search = SearchContext(query: query!) else { throw PublicationStoreError.corruption("search context") }
+            request = .search(search)
+        default: throw PublicationStoreError.corruption("context")
+        }
+        let revision = EditorialRevision(id: EditorialRevisionID(rawValue: try f.uuid("editorial_revision_id")),
+            contextKey: ContextKey(request: request),
+            catalogGeneration: CatalogGeneration(rawValue: try f.counter("catalog_generation")),
+            userSelectionVersion: PolicyVersion(rawValue: try f.counter("user_selection_version")),
+            eligibilityPolicyVersion: PolicyVersion(rawValue: try f.counter("eligibility_policy_version")),
+            scoringPolicyVersion: PolicyVersion(rawValue: try f.counter("scoring_policy_version")),
+            sequencingPolicyVersion: PolicyVersion(rawValue: try f.counter("sequencing_policy_version")),
+            exposurePolicyVersion: PolicyVersion(rawValue: try f.counter("exposure_policy_version")),
+            selectionSchemaVersion: SelectionSchemaVersion(rawValue: try f.counter("selection_schema_version")))
+        return EditionRecord(id: FeedEditionID(rawValue: try f.uuid("id")), editorialRevision: revision,
+            publicationSchemaVersion: try f.counter("publication_schema_version"),
+            selectionSeed: PersistenceValueCoding.seed(try f.integer("selection_seed")), createdAt: try f.date("created_at"))
+    }
+
+    private static func decodeSegment(_ row: Row, db: Database) throws -> SegmentRecord {
+        let f = PublicationRecordFields(row)
+        let id = try f.uuid("id")
+        let positions = try Row.fetchAll(db, sql: "SELECT id, ordinal FROM published_cards WHERE segment_id = ? ORDER BY ordinal", arguments: [PersistenceValueCoding.uuid(id)])
+        guard !positions.isEmpty else { throw PublicationStoreError.corruption("empty segment") }
+        let ids = try positions.enumerated().map { index, row -> PublicationCardID in
+            let fields = PublicationRecordFields(row)
+            guard try fields.counter("ordinal") == UInt64(index) else { throw PublicationStoreError.corruption("card ordinal") }
+            return PublicationCardID(rawValue: try fields.uuid("id"))
+        }
+        guard Set(ids).count == ids.count else { throw PublicationStoreError.corruption("duplicate occurrence") }
+        return SegmentRecord(id: FeedSegmentID(rawValue: id), editionID: FeedEditionID(rawValue: try f.uuid("edition_id")),
+            ordinal: try f.counter("ordinal"), segmentSeed: PersistenceValueCoding.seed(try f.integer("segment_seed")),
+            publicationSchemaVersion: try f.counter("publication_schema_version"), createdAt: try f.date("created_at"), cardIDs: ids)
+    }
+    private static let cardColumns = ["id", "origin_record_id", "origin_revision_id", "source_id", "provider_id", "source_display_name", "provider_display_name", "content_entity_id", "content_cluster_id", "title", "primary_text", "timestamp_value", "timestamp_kind", "media_key", "media_pixel_width", "media_pixel_height", "media_mime_type", "render_layout", "render_media_aspect_ratio", "primary_action_kind", "primary_action_reference"]
+    private static func cardValues(_ c: CardRecord) throws -> [DatabaseValue] {
+        try [
+            (PersistenceValueCoding.uuid(c.id.rawValue)).databaseValue,
+            (PersistenceValueCoding.uuid(c.originRecordID.rawValue)).databaseValue,
+            (PersistenceValueCoding.uuid(c.originRevisionID.rawValue)).databaseValue,
+            (c.sourceID.map { PersistenceValueCoding.uuid($0.rawValue) }).databaseValue,
+            (c.providerID.map { PersistenceValueCoding.uuid($0.rawValue) }).databaseValue,
+            (c.sourceDisplayName).databaseValue,
+            (c.providerDisplayName).databaseValue,
+            (c.contentEntityID.map { PersistenceValueCoding.uuid($0.rawValue) }).databaseValue,
+            (c.contentClusterID.map { PersistenceValueCoding.uuid($0.rawValue) }).databaseValue,
+            (c.title).databaseValue,
+            (c.primaryText).databaseValue,
+            (c.timestampValue.map { try PersistenceValueCoding.date($0, field: "timestamp_value") }).databaseValue,
+            (c.timestampKind).databaseValue,
+            (c.mediaKey).databaseValue,
+            (c.mediaPixelWidth).databaseValue,
+            (c.mediaPixelHeight).databaseValue,
+            (c.mediaMimeType).databaseValue,
+            (c.renderLayout).databaseValue,
+            (c.renderMediaAspectRatio).databaseValue,
+            (c.primaryActionKind).databaseValue,
+            (c.primaryActionReference).databaseValue
+        ]
+    }
+    private static func decodeCard(_ row: Row) throws -> CardRecord {
+        let f = PublicationRecordFields(row)
+        let card = CardRecord(
+            id: PublicationCardID(rawValue: try f.uuid("id")),
+            originRecordID: OriginRecordID(rawValue: try f.uuid("origin_record_id")),
+            originRevisionID: OriginRevisionID(rawValue: try f.uuid("origin_revision_id")),
+            sourceID: try f.optionalUUID("source_id").map { SourceID(rawValue: $0) },
+            providerID: try f.optionalUUID("provider_id").map { ProviderID(rawValue: $0) },
+            sourceDisplayName: try f.optionalString("source_display_name"),
+            providerDisplayName: try f.optionalString("provider_display_name"),
+            contentEntityID: try f.optionalUUID("content_entity_id").map { ContentEntityID(rawValue: $0) },
+            contentClusterID: try f.optionalUUID("content_cluster_id").map { ContentClusterID(rawValue: $0) },
+            title: try f.optionalString("title"),
+            primaryText: try f.optionalString("primary_text"),
+            timestampValue: try f.optionalDate("timestamp_value"),
+            timestampKind: try f.optionalString("timestamp_kind"),
+            mediaKey: try f.optionalString("media_key"),
+            mediaPixelWidth: try f.optionalInt("media_pixel_width"),
+            mediaPixelHeight: try f.optionalInt("media_pixel_height"),
+            mediaMimeType: try f.optionalString("media_mime_type"),
+            renderLayout: try f.string("render_layout"),
+            renderMediaAspectRatio: try f.optionalReal("render_media_aspect_ratio"),
+            primaryActionKind: try f.optionalString("primary_action_kind"),
+            primaryActionReference: try f.optionalString("primary_action_reference")
+        )
+        do { try validateCard(card) } catch { throw PublicationStoreError.corruption("card payload: \(error)") }
+        return card
+    }
+}
+
+// Internal scalar field checks shared by the two concrete stores; no row types escape.
+struct PublicationRecordFields {
+    let row: Row
+    init(_ row: Row) { self.row = row }
+    func value(_ field: String) -> DatabaseValue { row[field] }
+    func optionalString(_ field: String) throws -> String? {
+        switch value(field).storage {
+        case .null: return nil
+        case .string(let string): return string
+        default: throw PublicationStoreError.corruption(field)
+        }
+    }
+    func string(_ field: String) throws -> String {
+        guard let string = try optionalString(field) else { throw PublicationStoreError.corruption(field) }
+        return string
+    }
+    func integer(_ field: String) throws -> Int64 {
+        guard case .int64(let integer) = value(field).storage else { throw PublicationStoreError.corruption(field) }
+        return integer
+    }
+    func optionalInt(_ field: String) throws -> Int? {
+        if case .null = value(field).storage { return nil }
+        guard let integer = Int(exactly: try self.integer(field)) else { throw PublicationStoreError.corruption(field) }
+        return integer
+    }
+    func optionalReal(_ field: String) throws -> Double? {
+        switch value(field).storage {
+        case .null: return nil
+        case .double(let real) where real.isFinite: return real
+        default: throw PublicationStoreError.corruption(field)
+        }
+    }
+    func date(_ field: String) throws -> Date {
+        guard let real = try optionalReal(field) else { throw PublicationStoreError.corruption(field) }
+        return try PersistenceValueCoding.date(real, field: field)
+    }
+    func optionalDate(_ field: String) throws -> Date? {
+        try optionalReal(field).map { try PersistenceValueCoding.date($0, field: field) }
+    }
+    func uuid(_ field: String) throws -> UUID { try PersistenceValueCoding.uuid(string(field), field: field) }
+    func optionalUUID(_ field: String) throws -> UUID? { try optionalString(field).map { try PersistenceValueCoding.uuid($0, field: field) } }
+    func counter(_ field: String) throws -> UInt64 { try PersistenceValueCoding.counter(integer(field), field: field) }
+}

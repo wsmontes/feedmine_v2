@@ -1,10 +1,10 @@
-# Publication and session relational schema — Phase 2D
+# Publication and session relational schema — Phase 2D / implemented in Phase 2E
 
 ## 1. Scope
 
-Design only, grounded in the approved Phase 2B identity/restore contract and Phase 2C frozen card baseline. Exactly four domain tables are proposed in runtime.sqlite: feed_editions, feed_segments, published_cards and session_checkpoint. Existing GRDB migration bookkeeping is not a domain table.
+Phase 2E implemented the approved Phase 2D design, grounded in the Phase 2B identity/restore contract and Phase 2C frozen card baseline. Exactly four domain tables are implemented in runtime.sqlite: feed_editions, feed_segments, published_cards and session_checkpoint. Existing GRDB migration bookkeeping is not a domain table.
 
-The DDL and queries below are review artifacts, not installed migrations or executable production SQL. Sources, tests, package graph and stores remain unchanged. No SQL is executed in this phase.
+The DDL below is installed by publication-restore-v1 after the unchanged runtime-foundation-v1 migration. Concrete PublicationStore and SessionStore implement atomic storage and checkpoint operations; internal FeedMinePublication mapping reconstructs semantic values. No additional domain table or index is introduced.
 
 This baseline preserves retained published history without canonical supply, catalog, network, Selection, Acquisition or remote image fetch. It does not promise permanent history or asset retention.
 
@@ -399,6 +399,6 @@ User-state, canonical supply, asset durability, retention, multi-context reuse a
 
 ## 18. Implementation gate
 
-Phase 2D designs but does not implement the first domain schema. Only this document, PERSISTENCE_DESIGN.md and IMPLEMENTATION_ORDER.md change. RuntimeMigrations, RuntimeDatabase, PublicationStore, SessionStore, ContentStore, every production Swift/test file and Package.swift remain intact. No DDL has been executed and no persistence test or mapper/store code has begun.
+Phase 2D designed the first domain schema; Phase 2E implemented it without changing the DDL. RuntimeDatabase and ContentStore remain intact. Lifecycle tests now preserve foundation/reopen/non-erasure invariants without assuming zero domain tables or a fixed migration count.
 
-After architectural review and merge, a separately authorized implementation phase may add this schema and the explicit mechanical boundary. Its gate includes four-table migration verification; UInt64 boundary/seed bit-pattern/date/UUID round trips; invalid nullable groups and semantic inputs rejected without silent defaults; atomic first publication/append rollback; exact E1/P4/center close/reopen window restoration with no canonical/catalog/network; checkpoint membership validation on write/read; restricted deletes protecting retained history; and scope/graph verification. These are future acceptance requirements, not tests implemented now.
+Phase 2E verification covers four-table migration verification; UInt64 boundary/seed bit-pattern/date/UUID round trips; invalid nullable groups and semantic inputs rejected without silent defaults; atomic first publication/append rollback; exact E1/P4/center close/reopen window restoration with no canonical/catalog/network; checkpoint membership validation on write/read; restricted deletes protecting retained history; and scope/graph verification. The close/reopen test restores E1/P4/center and exact frozen cards without canonical/catalog rows or media bytes. Runtime FeedWindow, coordination, retention and all other deferred slices remain unimplemented. Phase 2E remains subject to review and merge.
