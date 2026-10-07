@@ -59,7 +59,7 @@ ContentStore, PublicationStore and SessionStore remain scaffolds. There are no s
 
 Future slices must explicitly design their domain storage and atomicity boundaries before adding migrations. Local persistence as a whole is not complete. This task ends at the runtime physical lifecycle and failure contract; it does not implement the next user-state, canonical supply, catalog or publication slice.
 
-Phase 2C closes the baseline semantic PublishedCard payload. After review and merge, publication/session relational schema design may begin. Phase 2B defines publication identity and exact logical restore semantics only; see [Publication restore contract](PUBLICATION_RESTORE_CONTRACT.md).
+Phase 2C closes the baseline semantic PublishedCard payload. Publication/session schema design: [PERSISTENCE_PUBLICATION_SCHEMA.md](PERSISTENCE_PUBLICATION_SCHEMA.md). Phase 2D designs but does not implement the first domain schema. Implementation remains gated on architectural review and merge. Phase 2B defines publication identity and exact logical restore semantics only; see [Publication restore contract](PUBLICATION_RESTORE_CONTRACT.md).
 
 ## 9. Restore-first product contract
 

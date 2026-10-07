@@ -45,4 +45,6 @@ Phase 2A — runtime persistence lifecycle — complete
 
 Phase 2B — publication identity and exact restore semantics — complete
 
-Phase 2C — frozen PublishedCard baseline — current
+Phase 2C — frozen PublishedCard baseline — complete
+
+Phase 2D — publication/session relational schema design — current
