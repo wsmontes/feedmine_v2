@@ -98,9 +98,11 @@ MediaCandidate and InteractionOffer remain scaffolds. FeedContext, FeedIntent an
 
 FeedContext = what the user wants. FeedPlan = the explicit editorial policy configuration resolved for that context. EditorialRevision = identity of the concrete editorial rules that produced published history.
 
-ContextKey and EditorialRevisionID are separate nominal UUID values using the same explicit/raw or independently generated UUID construction as the existing IDs. ContextKey is supplied by the constructor's caller; it is not derived from query, SourceID, URL or a deterministic hash. No context lifecycle, registry or factory exists here.
+ContextKey is the reusable logical identity of what the user requested. Equivalent FeedContext requests produce equal ContextKeys. It contains only FeedContextRequest and belongs to FeedContext.swift, with no UUID, random generation or deterministic hash. EditorialRevisionID remains a nominal UUID identifier.
 
-FeedContext contains exactly key: ContextKey and request: FeedContextRequest. Two FeedContext values may request the same semantic surface while having different ContextKeys. ContextKey is identity. FeedContextRequest is meaning.
+FeedContext stores only request; its key is derived as ContextKey(request: request). There is no separate instance identity. ContextKey is NOT a session ID, FeedContext instance ID or publication ID. Same main requests share a key; source requests with the same SourceID share a key. Search identity is the stored original query exactly: "Swift" and "  Swift  " have different keys, without normalization.
+
+Stable ContextKey allows Runtime/Persistence to recognize reusable work belonging to the same logical context. Returning to a recently prepared context does not require defining a new context identity. This does not authorize cache, expiry or retention implementation.
 
 FeedContextRequest has exactly main, source(SourceID) and search(SearchContext). It does not describe how content is acquired and carries no endpoint, connector, HTTP configuration, acquisition target, checkpoint or network state.
 
@@ -108,9 +110,9 @@ SearchContext contains the original query. Its failable initializer requires at 
 
 PolicyVersion, CatalogGeneration and SelectionSchemaVersion are small immutable UInt64 version values. Comparable compares rawValue. A single PolicyVersion type describes all opaque policy versions without defining policy objects. CatalogGeneration is neither SourceBinding generation, an acquisition checkpoint nor a database migration version.
 
-EditorialRevision contains exactly id, catalogGeneration, userSelectionVersion, eligibilityPolicyVersion, scoringPolicyVersion, sequencingPolicyVersion, exposurePolicyVersion, acquisitionPolicyVersion and selectionSchemaVersion. These explicit components identify the resolved concrete editorial rules. Changes to catalog generation, user selection, eligibility/scoring/sequencing/exposure/acquisition policy or selection schema may create a new revision. There is no automatic generation, compatibility comparison or supersession logic.
+EditorialRevision contains exactly id, contextKey, catalogGeneration, userSelectionVersion, eligibilityPolicyVersion, scoringPolicyVersion, sequencingPolicyVersion, exposurePolicyVersion and selectionSchemaVersion. These explicit components identify the resolved concrete editorial rules. EditorialRevision belongs to exactly one ContextKey. Changes to ContextKey, catalog generation, user selection, eligibility/scoring/sequencing/exposure policy or selection schema may create a new revision. There is no automatic generation, compatibility comparison or supersession logic.
 
-Connector implementation, network availability, HTTP redirect, acquisition target checkpoint, download retry, image cache state, Dynamic Type, screen size and render rematerialization do not create a new EditorialRevision by themselves.
+Acquisition policy, connector implementation, network availability, endpoint, checkpoint, retry policy, background scheduling, media cache, Dynamic Type, screen size and render environment do not create a new EditorialRevision by themselves.
 
 ```text
 EditorialRevision
@@ -122,7 +124,7 @@ EditorialRevision
 
 RenderEnvironmentRevision is intentionally not part of EditorialRevision. It belongs to a later Runtime/Presentation phase. Editorial history identity is distinct from visual materialization environment. A future FeedEdition belongs to an EditorialRevision; neither that edition nor render environment models are implemented here.
 
-FeedPlan contains exactly context: FeedContext and revision: EditorialRevision, supplied explicitly. It does not select, score, fetch, resolve, publish or load. acquisitionPolicyVersion identifies a policy that may contribute to editorial definition; it does not execute acquisition. FeedPlan has no connector, endpoint, transport request, pagination or strategy object. Future concrete policies belong to Editorial, with no policy protocols introduced in Phase 1B.
+FeedPlan contains exactly context: FeedContext and revision: EditorialRevision, supplied explicitly. It is valid only when plan.context.key == plan.revision.contextKey; its failable initializer and explicit decoding reject mismatches. It does not select, score, fetch, resolve, publish or load. EditorialRevision does not include acquisition policy version. Acquisition strategy may change without changing the editorial identity of already-produced history. FeedPlan has no connector, endpoint, transport request, pagination or strategy object. Future concrete policies belong to Editorial, with no policy protocols introduced in Phase 1B.
 
 FeedIntent has exactly changeContext(FeedContext) and refresh. It describes what the user requested, not how Runtime executes it. A context change reprioritizes future work and does not semantically require destruction of reusable work from the previous context. It does not imply network cancellation, runway destruction, URL fetching or database reload. Refresh does not imply clearing cache, restarting the application or downloading all feeds. Runtime and future policies own those decisions. No effects, interactions or bookmark/read state are implemented.
 

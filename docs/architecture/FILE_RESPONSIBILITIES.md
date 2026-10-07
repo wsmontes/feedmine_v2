@@ -2,10 +2,10 @@
 
 | Module | File | Responsibility | Explicitly does not own |
 | --- | --- | --- | --- |
-| FeedMineDomain | FeedIdentifiers.swift | Phase 1A implemented: seven nominal UUID IDs for source, provider, origin record/revision, source binding, content entity and cluster. Phase 1B adds ContextKey and EditorialRevisionID without changing existing IDs. | Endpoint identity, protocol-specific identity or transport-derived ID generation |
-| FeedMineDomain | FeedContext.swift | Phase 1B implementation: explicit context identity/request and original non-whitespace SearchContext. | Acquisition, network, database, UI navigation or connector metadata |
+| FeedMineDomain | FeedIdentifiers.swift | Phase 1A implemented: seven nominal UUID IDs for source, provider, origin record/revision, source binding, content entity and cluster. Phase 1B adds EditorialRevisionID; semantic ContextKey belongs to FeedContext.swift. | Endpoint identity, protocol-specific identity or transport-derived ID generation |
+| FeedMineDomain | FeedContext.swift | Phase 1B implementation: semantic reusable ContextKey/request and original non-whitespace SearchContext. | Acquisition, network, database, UI navigation or connector metadata |
 | FeedMineDomain | FeedIntent.swift | Phase 1B implementation: feed-level changeContext and refresh semantic intentions only. | Intent execution, networking or persistence |
-| FeedMineDomain | FeedPlan.swift | Phase 1B implementation: opaque policy/catalog/schema versions, EditorialRevision and context/revision FeedPlan association. | Policy execution, fetching or UI queries |
+| FeedMineDomain | FeedPlan.swift | Phase 1B implementation: opaque policy/catalog/schema versions, context-bound EditorialRevision and validated context/revision FeedPlan association. | Policy execution, fetching or UI queries |
 | FeedMineDomain | Source.swift | Phase 1A implemented: independent Source and Provider; ConnectorKind; declarative SourceBinding with principal-derived connector and consistent aliases; SourceBindingState. | Endpoint identity, acquisition targets or transport execution |
 | FeedMineDomain | Content.swift | Phase 1A implemented: opaque ExternalIdentity owning connector kind; OriginRecord deriving that kind; immutable OriginRevision owning optional provider attribution; separate membership, relations, entity and cluster. | FeedKit models, XML, Mastodon models, ATProto records, Nostr events or downstream raw protocol JSON |
 | FeedMineDomain | MediaCandidate.swift | Representar evidência/candidatos de mídia associados a conteúdo canônico. | Rendered images, SwiftUI Image, downloaded assets or publication media identity |

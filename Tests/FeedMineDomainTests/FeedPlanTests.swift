@@ -42,7 +42,7 @@ final class FeedPlanTests: XCTestCase {
     }
 
     func testEditorialRevisionRoundTripPreservesDistinctPolicyComponents() throws {
-        let revision = EditorialRevision(id: EditorialRevisionID(), catalogGeneration: CatalogGeneration(rawValue: 1), userSelectionVersion: PolicyVersion(rawValue: 2), eligibilityPolicyVersion: PolicyVersion(rawValue: 3), scoringPolicyVersion: PolicyVersion(rawValue: 4), sequencingPolicyVersion: PolicyVersion(rawValue: 5), exposurePolicyVersion: PolicyVersion(rawValue: 6), acquisitionPolicyVersion: PolicyVersion(rawValue: 7), selectionSchemaVersion: SelectionSchemaVersion(rawValue: 8))
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: FeedContext(request: .main).key, catalogGeneration: CatalogGeneration(rawValue: 1), userSelectionVersion: PolicyVersion(rawValue: 2), eligibilityPolicyVersion: PolicyVersion(rawValue: 3), scoringPolicyVersion: PolicyVersion(rawValue: 4), sequencingPolicyVersion: PolicyVersion(rawValue: 5), exposurePolicyVersion: PolicyVersion(rawValue: 6), selectionSchemaVersion: SelectionSchemaVersion(rawValue: 8))
         let decoded = try JSONDecoder().decode(EditorialRevision.self, from: JSONEncoder().encode(revision))
         XCTAssertEqual(decoded.id, revision.id)
         XCTAssertEqual(decoded.catalogGeneration.rawValue, 1)
@@ -51,18 +51,24 @@ final class FeedPlanTests: XCTestCase {
         XCTAssertEqual(decoded.scoringPolicyVersion.rawValue, 4)
         XCTAssertEqual(decoded.sequencingPolicyVersion.rawValue, 5)
         XCTAssertEqual(decoded.exposurePolicyVersion.rawValue, 6)
-        XCTAssertEqual(decoded.acquisitionPolicyVersion.rawValue, 7)
+        XCTAssertEqual(decoded.contextKey, FeedContext(request: .main).key)
         XCTAssertEqual(decoded.selectionSchemaVersion.rawValue, 8)
     }
 
     func testFeedPlanPreservesExactlyContextAndEditorialRevision() throws {
-        let context = FeedContext(key: ContextKey(), request: .source(SourceID()))
-        let revision = EditorialRevision(id: EditorialRevisionID(), catalogGeneration: CatalogGeneration(rawValue: 11), userSelectionVersion: PolicyVersion(rawValue: 12), eligibilityPolicyVersion: PolicyVersion(rawValue: 13), scoringPolicyVersion: PolicyVersion(rawValue: 14), sequencingPolicyVersion: PolicyVersion(rawValue: 15), exposurePolicyVersion: PolicyVersion(rawValue: 16), acquisitionPolicyVersion: PolicyVersion(rawValue: 17), selectionSchemaVersion: SelectionSchemaVersion(rawValue: 18))
-        let plan = FeedPlan(context: context, revision: revision)
+        let context = FeedContext(request: .source(SourceID()))
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key, catalogGeneration: CatalogGeneration(rawValue: 11), userSelectionVersion: PolicyVersion(rawValue: 12), eligibilityPolicyVersion: PolicyVersion(rawValue: 13), scoringPolicyVersion: PolicyVersion(rawValue: 14), sequencingPolicyVersion: PolicyVersion(rawValue: 15), exposurePolicyVersion: PolicyVersion(rawValue: 16), selectionSchemaVersion: SelectionSchemaVersion(rawValue: 18))
+        let plan = try XCTUnwrap(FeedPlan(context: context, revision: revision))
         XCTAssertEqual(plan.context, context)
         XCTAssertEqual(plan.revision, revision)
         let decoded = try JSONDecoder().decode(FeedPlan.self, from: JSONEncoder().encode(plan))
         XCTAssertEqual(decoded.context, context)
         XCTAssertEqual(decoded.revision, revision)
+        XCTAssertNil(FeedPlan(context: FeedContext(request: .main), revision: revision))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(plan)) as? [String: Any])
+        var revisionObject = try XCTUnwrap(object["revision"] as? [String: Any])
+        revisionObject["contextKey"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(ContextKey(request: .main)))
+        object["revision"] = revisionObject
+        XCTAssertThrowsError(try JSONDecoder().decode(FeedPlan.self, from: JSONSerialization.data(withJSONObject: object)))
     }
 }

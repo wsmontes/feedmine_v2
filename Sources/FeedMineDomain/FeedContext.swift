@@ -6,7 +6,7 @@
 //   Describe what feed the user wants, independently of acquisition.
 //
 // Owns:
-//   FeedContext, FeedContextRequest and SearchContext.
+//   FeedContext, ContextKey, FeedContextRequest and SearchContext.
 //
 // Does not own:
 //   URL, endpoint, connector, HTTP configuration, acquisition target, checkpoint, network status or context lifecycle.
@@ -15,10 +15,10 @@
 //   Swift standard library and Foundation value types when needed; no other FeedMine module.
 //
 // Architectural invariants:
-//   INV-10, INV-13; ContextKey is identity; FeedContextRequest is meaning.
+//   INV-10, INV-13; ContextKey is reusable logical identity for the semantic request.
 //
 // Planned public surface:
-//   FeedContext, FeedContextRequest and SearchContext. No execution API is authorized in this phase.
+//   FeedContext, ContextKey, FeedContextRequest and SearchContext. No execution API is authorized in this phase.
 //
 // Status:
 //   Phase 1B context and editorial revision value implementation.
@@ -26,14 +26,25 @@
 
 import Foundation
 
-/// A stable semantic context instance supplied with an explicit ContextKey.
-/// Two contexts may request the same surface while having different keys.
+/// A requested logical context; equivalent requests produce equal reusable keys.
 public struct FeedContext: Hashable, Codable, Sendable {
-    public let key: ContextKey
     public let request: FeedContextRequest
 
-    public init(key: ContextKey, request: FeedContextRequest) {
-        self.key = key
+    public init(request: FeedContextRequest) {
+        self.request = request
+    }
+
+    public var key: ContextKey {
+        ContextKey(request: request)
+    }
+}
+
+/// Reusable logical request identity, not a session, context instance or publication ID.
+/// Search identity uses the original stored query exactly; no normalization or hashing.
+public struct ContextKey: Hashable, Codable, Sendable {
+    public let request: FeedContextRequest
+
+    public init(request: FeedContextRequest) {
         self.request = request
     }
 }

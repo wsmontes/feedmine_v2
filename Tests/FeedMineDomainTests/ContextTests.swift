@@ -30,13 +30,13 @@ import FeedMineDomain
 
 final class ContextTests: XCTestCase {
     func testMainContextCodableRoundTrip() throws {
-        let context = FeedContext(key: ContextKey(), request: .main)
+        let context = FeedContext(request: .main)
         XCTAssertEqual(try JSONDecoder().decode(FeedContext.self, from: JSONEncoder().encode(context)), context)
     }
 
     func testSourceContextPreservesSourceID() throws {
         let sourceID = SourceID()
-        let context = FeedContext(key: ContextKey(), request: .source(sourceID))
+        let context = FeedContext(request: .source(sourceID))
         let decoded = try JSONDecoder().decode(FeedContext.self, from: JSONEncoder().encode(context))
         XCTAssertEqual(decoded.request, .source(sourceID))
         XCTAssertEqual(decoded.key, context.key)
@@ -45,7 +45,7 @@ final class ContextTests: XCTestCase {
     func testSearchPreservesOriginalQuery() throws {
         let search = try XCTUnwrap(SearchContext(query: "  Swift  \n"))
         XCTAssertEqual(search.query, "  Swift  \n")
-        let context = FeedContext(key: ContextKey(), request: .search(search))
+        let context = FeedContext(request: .search(search))
         XCTAssertEqual(try JSONDecoder().decode(FeedContext.self, from: JSONEncoder().encode(context)), context)
     }
 
@@ -60,23 +60,24 @@ final class ContextTests: XCTestCase {
         XCTAssertThrowsError(try JSONDecoder().decode(SearchContext.self, from: data))
     }
 
-    func testContextIdentityIsIndependentOfRequestMeaning() {
-        let first = FeedContext(key: ContextKey(), request: .main)
-        let second = FeedContext(key: ContextKey(), request: .main)
-        XCTAssertEqual(first.request, second.request)
-        XCTAssertNotEqual(first.key, second.key)
-        XCTAssertNotEqual(first, second)
+    func testEquivalentMainRequestsHaveSameKey() {
+        XCTAssertEqual(FeedContext(request: .main).key, FeedContext(request: .main).key)
     }
 
-    func testExplicitContextAndEditorialIDsPreserveRawUUID() throws {
-        let raw = UUID()
-        let key = ContextKey(rawValue: raw)
-        let revisionID = EditorialRevisionID(rawValue: raw)
-        XCTAssertEqual(key.rawValue, raw)
-        XCTAssertEqual(key.description, raw.uuidString)
-        XCTAssertEqual(revisionID.rawValue, raw)
-        XCTAssertEqual(revisionID.description, raw.uuidString)
-        XCTAssertEqual(try JSONDecoder().decode(EditorialRevisionID.self, from: JSONEncoder().encode(revisionID)), revisionID)
-        // Nominally distinct IDs cannot substitute for each other even with the same UUID.
+    func testSourceIdentityDeterminesLogicalKey() {
+        let source = SourceID()
+        let first = FeedContext(request: .source(source))
+        XCTAssertEqual(first.key, FeedContext(request: .source(source)).key)
+        XCTAssertNotEqual(first.key, FeedContext(request: .source(SourceID())).key)
+        XCTAssertNotEqual(first.key, FeedContext(request: .main).key)
+    }
+
+    func testSearchKeyUsesOriginalQueryExactly() throws {
+        let plain = try XCTUnwrap(SearchContext(query: "Swift"))
+        let spaced = try XCTUnwrap(SearchContext(query: "  Swift  "))
+        let first = FeedContext(request: .search(plain))
+        XCTAssertEqual(first.key, FeedContext(request: .search(plain)).key)
+        XCTAssertNotEqual(first.key, FeedContext(request: .search(spaced)).key)
+        XCTAssertEqual(try JSONDecoder().decode(ContextKey.self, from: JSONEncoder().encode(first.key)), first.key)
     }
 }

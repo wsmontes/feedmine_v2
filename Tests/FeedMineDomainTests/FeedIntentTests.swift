@@ -30,7 +30,7 @@ import FeedMineDomain
 
 final class FeedIntentTests: XCTestCase {
     func testChangeContextCodableRoundTrip() throws {
-        let context = FeedContext(key: ContextKey(), request: .main)
+        let context = FeedContext(request: .main)
         let intent = FeedIntent.changeContext(context)
         XCTAssertEqual(try JSONDecoder().decode(FeedIntent.self, from: JSONEncoder().encode(intent)), .changeContext(context))
     }

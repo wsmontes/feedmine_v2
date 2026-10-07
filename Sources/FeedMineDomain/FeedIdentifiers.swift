@@ -6,7 +6,7 @@
 //   Define nominal FeedMine-owned identities independent of transport.
 //
 // Owns:
-//   SourceID, ProviderID, OriginRecordID, OriginRevisionID, SourceBindingID, ContentEntityID, ContentClusterID.
+//   SourceID, ProviderID, OriginRecordID, OriginRevisionID, SourceBindingID, ContentEntityID, ContentClusterID, EditorialRevisionID.
 //
 // Does not own:
 //   External identities, endpoint-derived identity or a generic identity framework.
@@ -19,10 +19,10 @@
 //   INV-13; FeedMine internal identity is not external identity or network location.
 //
 // Planned public surface:
-//   Only the seven canonical IDs are implemented in Phase 1A.
+//   Eight nominal canonical IDs implemented across Phase 1A and Phase 1B; ContextKey belongs to FeedContext.swift.
 //
 // Status:
-//   Phase 1A canonical domain implementation.
+//   Phase 1A/1B canonical nominal identifier implementation.
 //
 
 import Foundation
@@ -142,22 +142,6 @@ public struct ContentClusterID: Hashable, Codable, Sendable, CustomStringConvert
     }
 }
 
-/// Phase 1B nominal identity; never derived deterministically from request or transport.
-public struct ContextKey: Hashable, Codable, Sendable, CustomStringConvertible {
-    public let rawValue: UUID
-
-    public init(rawValue: UUID) {
-        self.rawValue = rawValue
-    }
-
-    public init() {
-        self.rawValue = UUID()
-    }
-
-    public var description: String {
-        rawValue.uuidString
-    }
-}
 
 /// Phase 1B nominal identity; never derived deterministically from request or transport.
 public struct EditorialRevisionID: Hashable, Codable, Sendable, CustomStringConvertible {
