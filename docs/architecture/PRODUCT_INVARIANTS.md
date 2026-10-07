@@ -170,3 +170,18 @@ Um caminho.
 Não criar abstração porque ela poderá ser útil futuramente.
 
 Criar abstração somente quando existe responsabilidade real atual.
+
+# Boundary consequences
+
+INV-01 + INV-02:
+FeedMineUI consumes presentation projections, not publication models.
+
+INV-08:
+PublishedCard remains publication history even when its PresentationCard
+projection changes because of presentation environment.
+
+INV-12:
+Publication semantics have one owner: FeedMinePublication.
+
+Persistence stores publication history but does not independently define
+what publication means.

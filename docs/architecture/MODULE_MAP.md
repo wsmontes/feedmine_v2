@@ -11,8 +11,8 @@
 ## FeedMinePersistence
 
 - purpose: Local durability and queries.
-- owns: Database lifecycle, schema evolution and content/publication/session storage.
-- does not own: Networking or editorial decisions.
+- owns: Storage mechanics and local durability; database lifecycle, schema evolution and content/publication/session storage subject to the publication representation gate.
+- does not own: Publication semantics, parallel publication models, networking or editorial decisions.
 - allowed imports: FeedMineDomain. No imports are used by production scaffolds.
 - downstream consumers: FeedMineAcquisition, FeedMineEditorial, FeedMineMedia, FeedMinePublication, FeedMineRuntime, FeedMineComposition.
 
@@ -51,7 +51,7 @@
 ## FeedMinePublication
 
 - purpose: Immutable local published history.
-- owns: Frozen cards, render contracts, editions, segments, windows and publication coordination.
+- owns: PublishedCard, FeedEdition, FeedSegment and publication semantics; render contracts, windows and publication coordination.
 - does not own: Acquisition, protocol parsing or remote media resolution.
 - allowed imports: FeedMineDomain, FeedMinePersistence, FeedMineEditorial, FeedMineMedia. No imports are used by production scaffolds.
 - downstream consumers: FeedMineRuntime, FeedMineComposition.
@@ -59,7 +59,7 @@
 ## FeedMineRuntime
 
 - purpose: Consumption, runway and service coordination.
-- owns: Session state/transitions/effects, UI boundary, local snapshots, viewport, adaptive demand, interactions and background entry.
+- owns: Projection from published state to presentation-facing state (PresentationCard); session state/transitions/effects, UI boundary, local snapshots, viewport, adaptive demand, interactions and background entry.
 - does not own: SQL, HTTP, concrete connectors, SwiftUI or monolithic feed ownership.
 - allowed imports: FeedMineDomain, FeedMinePersistence, FeedMineAcquisition, FeedMineEditorial, FeedMineMedia, FeedMinePublication. No imports are used by production scaffolds.
 - downstream consumers: FeedMineUI, FeedMineComposition.
@@ -67,6 +67,8 @@
 ## FeedMineUI
 
 - purpose: Local presentation and semantic user input.
+- consumes: PresentationCard through FeedPresentationSnapshot via FeedSessionUI.
+- does not consume: PublishedCard directly.
 - owns: Screen bridge, feed/card/loading presentation and input forwarding.
 - does not own: Feed production, database, acquisition, selection, remote media or publication.
 - allowed imports: FeedMineDomain, FeedMineRuntime. No imports are used by production scaffolds.

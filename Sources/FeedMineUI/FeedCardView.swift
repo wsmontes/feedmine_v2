@@ -3,36 +3,27 @@
 // Module: FeedMineUI
 //
 // Responsibility:
-//   Renderizar um `PublishedCard`/presentation card já pronto.
+//   Renderizar um PresentationCard já local e presentation-ready.
 //
 // Owns:
-//   Future ownership: Rendering of already-ready PublishedCard/presentation card data through the runtime surface.
+//   Future rendering of PresentationCard received through the Runtime presentation boundary.
 //
 // Does not own:
-//   Image downloads, URL resolution, connectors, SQL or acquisition.
+//   Publication model translation, remote image resolution, downloads, URL resolution, networking, database, acquisition or connector access.
 //
 // Allowed dependencies:
 //   FeedMineDomain, FeedMineRuntime. No imports are necessary in this scaffold.
 //
 // Architectural invariants:
-//   INV-01, INV-02; No direct Publication import is permitted.
+//   INV-01, INV-02; import FeedMinePublication is prohibited.
 //
 // Planned public surface:
-//   Rendering of already-ready PublishedCard/presentation card data through the runtime surface. Documentation only; no API is declared in this phase.
+//   FeedCardView rendering PresentationCard. Documentation only; no API is declared.
 //
 // Status:
 //   Architecture scaffold only. Production behavior is intentionally absent.
 //
 
-// Specification notes:
-// Responsibility:
-//
-// Renderizar um `PublishedCard`/presentation card já pronto.
-//
-// Proibido:
-//
-// - baixar imagem;
-// - resolver URL;
-// - chamar connector;
-// - fazer SQL;
-// - adquirir conteúdo.
+// FeedCardView never consumes PublishedCard directly.
+// Remote image resolution, network, database, acquisition and connector access are prohibited.
+// Presentation resources are already local and ready before rendering.

@@ -57,6 +57,46 @@ A UI navega uma janela bounded de história publicada; memória limitada não li
 
 PublishedCard é um snapshot congelado, não uma projeção viva de OriginRecord. FeedSegment é ordenado e imutável. Nova acquisition modifica supply e publicação futuras, sem reordenar segmentos antigos. FeedEdition pode ter sucessoras quando a realidade editorial muda. A durabilidade publicada independe de evidence bruta temporária. Background prepara capacidade futura sem perturbar história visível.
 
+## Publication / presentation boundary
+
+```text
+Publication
+    │
+    │ immutable publication semantics
+    ▼
+PublishedCard
+    │
+    │ Runtime projection
+    ▼
+PresentationCard
+    │
+    ▼
+FeedPresentationSnapshot
+    │
+    ▼
+FeedSessionUI
+    │
+    ▼
+FeedScreenStore
+    │
+    ▼
+FeedCardView
+```
+
+Publication models are not UI models.
+
+PresentationCard is a projection, not a second source of truth.
+
+PublishedCard permanece estado da história publicada interna e imutável. Runtime projeta esse estado em PresentationCard local, finito e presentation-ready. FeedPresentationSnapshot apresenta esses valores pela superfície FeedSessionUI. A UI conhece PresentationCard, não PublishedCard, e não realiza a tradução. Alterações do ambiente de apresentação podem mudar a projeção sem mudar a história publicada.
+
+## Publication / persistence boundary
+
+FeedMinePublication owns publication semantics: PublishedCard, FeedEdition and FeedSegment.
+
+FeedMinePersistence owns storage mechanics and local durability. Persistence must not create a parallel publication domain.
+
+A representação concreta para armazenar a história publicada permanece intencionalmente não resolvida na Phase 0. Nenhuma API ou representação de PublicationStore pode ser implementada antes da escolha explícita de uma estratégia compatível com as dependências. O [phase gate](DEPENDENCY_RULES.md#publicationpersistence-boundary-gate) proíbe DTOs de publicação, repository protocols, novas arestas e movimentação de modelos entre módulos. Não há mudança no grafo nesta correção.
+
 ## Adaptive runway
 
 Scroll emite ViewportObservation, nunca loadMore ou fetchNextPage. RunwayController compara runway publicado, supply local, observação e condições operacionais e emite demanda futura. RunwayPolicy responde a velocidade de consumo, quantidade disponível, custo de acquisition, rede, background, mídia, histórico recente, contexto editorial, memória, energia e capacidade do device. Quantidades podem limitar operação, mas fixed page sizes, timers ou thresholds fixos não definem a estratégia. Após os primeiros cards, preparação continua enquanto houver benefício e orçamento. Mudanças de contexto repriorizam trabalho futuro e preservam trabalho local reutilizável quando válido.

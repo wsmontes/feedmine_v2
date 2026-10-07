@@ -9,7 +9,7 @@
 //   Future ownership: Future @MainActor bridge: screen presentation state and forwarding intents/viewport observations.
 //
 // Does not own:
-//   Business logic, acquisition, publication or persistence.
+//   Business logic, publication model translation, acquisition, publication or persistence.
 //
 // Allowed dependencies:
 //   FeedMineDomain, FeedMineRuntime. No imports are necessary in this scaffold.
@@ -36,3 +36,8 @@
 // - forwarding de viewport observation.
 //
 // Não conter business logic.
+
+// FeedScreenStore receives FeedPresentationSnapshot / PresentationCard through FeedSessionUI.
+// It does not translate publication models itself.
+// FeedScreenStore does not consume PublishedCard directly.
+// Projection from published state to presentation state belongs to Runtime.

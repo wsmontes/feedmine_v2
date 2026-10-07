@@ -69,4 +69,26 @@ Media → Publication          PROIBIDO
 Acquisition → Publication    PROIBIDO
 ```
 
-Somente as arestas do grafo em ARCHITECTURE.md são permitidas. Nenhum módulo depende de FeedMineComposition. Imports transitivos não autorizam violar esse grafo; os arquivos de produção deste scaffold não possuem imports. UI consome presentation cards pelo boundary Runtime, sem importar Publication diretamente. Persistence registra durabilidade de publicação sem depender de tipos de Publication. As APIs para esses boundaries serão definidas nas phases futuras.
+Somente as arestas do grafo em ARCHITECTURE.md são permitidas. Nenhum módulo depende de FeedMineComposition. Imports transitivos não autorizam violar esse grafo; os arquivos de produção deste scaffold não possuem imports. UI consome PresentationCard através de FeedPresentationSnapshot pelo boundary Runtime, sem importar Publication diretamente. Persistence registra durabilidade de publicação sem depender de tipos de Publication. As APIs para esses boundaries serão definidas nas phases futuras.
+
+# Publication/Persistence boundary gate
+
+FeedMinePublication owns publication semantics.
+
+FeedMinePersistence owns storage mechanics.
+
+Persistence must not create a parallel publication domain.
+
+The representation boundary required to durably store FeedEdition,
+FeedSegment and PublishedCard is intentionally not designed in Phase 0.
+
+Before implementation of durable publication storage, the architecture
+must explicitly select a dependency-safe representation strategy.
+
+Until that decision exists:
+
+- PublicationStore remains scaffold-only;
+- no publication persistence DTOs are authorized;
+- no publication repository protocol is authorized;
+- no dependency edge may be added;
+- no publication model may be moved between modules.

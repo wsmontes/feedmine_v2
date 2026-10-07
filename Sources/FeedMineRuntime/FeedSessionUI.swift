@@ -6,7 +6,7 @@
 //   Boundary mínima consumível pela camada UI.
 //
 // Owns:
-//   Future ownership: Minimal UI boundary for snapshot stream/state, intents and viewport observations.
+//   Future ownership: Minimal UI boundary for FeedPresentationSnapshot / PresentationCard, FeedIntent input and ViewportObservation input.
 //
 // Does not own:
 //   Exposed acquisition, publication or storage internals.
@@ -18,7 +18,7 @@
 //   INV-02, INV-03; UI observes local state and sends semantic input.
 //
 // Planned public surface:
-//   Minimal UI boundary for snapshot stream/state, intents and viewport observations. Documentation only; no API is declared in this phase.
+//   Minimal UI boundary for FeedPresentationSnapshot / PresentationCard, FeedIntent input and ViewportObservation input. Documentation only; no API is declared in this phase.
 //
 // Status:
 //   Architecture scaffold only. Production behavior is intentionally absent.
@@ -36,3 +36,11 @@
 // - viewport observations.
 //
 // Não expor internals de acquisition/publication/storage.
+
+// Future UI surface exposes only:
+// - FeedPresentationSnapshot / PresentationCard presentation stream/state;
+// - FeedIntent input;
+// - ViewportObservation input.
+// It does not expose PublishedCard, FeedSegment, FeedEdition,
+// PublicationCoordinator, AcquisitionCoordinator or persistence stores.
+// No API is implemented in Phase 0.
