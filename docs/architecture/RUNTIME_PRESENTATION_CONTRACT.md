@@ -1,4 +1,4 @@
-# Runtime presentation contract — Phase 2G
+# Runtime presentation contract — Phase 2H
 
 ## 1. Purpose
 
@@ -16,7 +16,7 @@ FeedPresentationSnapshot
 PresentationCard[]
 ```
 
-No checkpoint returns nil, without a fake empty snapshot. Errors propagate. Restore is synchronous and read-only: no checkpoint timestamp update, selection, network, catalog, canonical supply or media bytes. FeedSession holds only an immutable PublicationHistory dependency, with no current session state, actor, lock or async wrapper. The future owner chooses the executor for local database work.
+No checkpoint returns nil, without a fake empty snapshot. Errors propagate. Restore is synchronous and read-only: no checkpoint timestamp update, selection, network, catalog, canonical supply or media bytes. FeedSession is now an actor owning explicit current local state through one optional internal FeedSessionState. Its only other stored property is the immutable PublicationHistory dependency. Local history operations remain synchronous; external callers use await for actor isolation, without an async wrapper. Successful restore installs the snapshot and supplied capacities; no checkpoint clears state; a failed restore preserves prior state. currentPresentation returns the installed snapshot without I/O.
 
 backwardCapacity / forwardCapacity are finite materialization bounds, not page size, feed size or runway strategy. They are explicit caller inputs with no defaults; zero/zero restores the anchor alone. Published order and the exact anchor occurrence/placement remain unchanged.
 
@@ -48,7 +48,7 @@ Snapshot existence means a local Edition and semantically presentable local card
 
 ## 6. What is deliberately deferred
 
-Mutable FeedSessionState ownership, FeedSessionUI, AsyncStream, reducer/effects, intents, viewport observations, scroll shifts, runway, refresh, context switching, exposure, action execution, media materialization, cold-start bootstrap and UI implementation remain deferred.
+FeedSessionUI, AsyncStream, reducer/effects, intents, runway, refresh, context switching, exposure, action execution, media materialization, cold-start bootstrap and UI implementation remain deferred.
 
 ## 7. UI dependency boundary
 
@@ -56,6 +56,12 @@ FeedMineUI consumes only FeedMineDomain, FeedMineRuntime and Foundation types. P
 
 The explicitly approved composition exception is `FeedSession.init(publicationHistory:)`: this public initializer accepts PublicationHistory so composition can supply the semantic boundary. It exposes a Publication type only at construction; `restoreLocalPresentation` returns solely Runtime presentation values. FeedSession does not accept RuntimeDatabase or mechanical stores. UI does not construct this dependency or import Publication.
 
-## 8. Next runtime step
+## 8. Local viewport movement
 
-A future phase may establish explicit FeedSessionState ownership and the necessary coordination semantics before adding UI streams, intents or viewport-driven changes. Phase 2G stops at warm restore and pure immutable projection; it does not implement that next step.
+ViewportObservation contains only a PresentationAnchor and a finite observedAt Date. The date is durable checkpoint metadata, with no exposure or dwell semantics. No viewport observation performs acquisition.
+
+Without state, submitViewport returns nil without I/O. Stale observations whose card is absent from the current window are ignored. An identical anchor is a no-op even when observedAt changes, with no read or checkpoint write. Placement-only changes are valid.
+
+An accepted observation moves the finite window within one immutable Edition using the capacities supplied at restore. It materializes retained local history first, projects a new snapshot, persists the new logical cursor second, and installs in-memory state last. Materialization or checkpoint failure preserves the previous presentation. ContextKey and EditionID stay unchanged, and published history is never modified or deleted. At local history boundaries the window contains only what exists.
+
+FeedSessionState contains exactly presentation, backwardCapacity and forwardCapacity; it does not duplicate context, Edition or anchor. Actor isolation establishes one mutable state owner without locks, detached tasks or queues. UI streams, exposure and Runway remain deferred.

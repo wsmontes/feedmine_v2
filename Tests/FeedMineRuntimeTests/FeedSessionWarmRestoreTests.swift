@@ -6,10 +6,10 @@ import FeedMinePersistence
 @testable import FeedMineRuntime
 
 final class FeedSessionWarmRestoreTests: XCTestCase {
-    private func withLocation(_ body: (RuntimeDatabaseLocation) throws -> Void) throws {
+    private func withLocation(_ body: (RuntimeDatabaseLocation) async throws -> Void) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        try body(RuntimeDatabaseLocation(directory: directory))
+        try await body(RuntimeDatabaseLocation(directory: directory))
     }
 
     // The database and both stores leave scope before the caller reopens runtime.sqlite.
@@ -32,23 +32,29 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
             cursor, updatedAt: Date(timeIntervalSince1970: 300.75)))
     }
 
-    func testNoCheckpointReturnsNil() throws {
-        try withLocation { location in
+    func testNoCheckpointReturnsNil() async throws {
+        try await withLocation { location in
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            XCTAssertNil(try session.restoreLocalPresentation(backwardCapacity: 4, forwardCapacity: 1))
+            let restored = try await session.restoreLocalPresentation(backwardCapacity: 4, forwardCapacity: 1)
+            let current = await session.currentPresentation()
+            XCTAssertNil(restored)
+            XCTAssertNil(current)
         }
     }
 
-    func testFullWarmRestoreAfterClosingAndReopeningPreservesPresentationAndCheckpoint() throws {
-        try withLocation { location in
+    func testFullWarmRestoreAfterClosingAndReopeningPreservesPresentationAndCheckpoint() async throws {
+        try await withLocation { location in
             let edition = WarmPresentationFixture.edition()
             let cards = try (0..<6).map { _ in try WarmPresentationFixture.card() }
             try persist(edition: edition, cards: cards, location: location)
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
             let savedCheckpoint = try XCTUnwrap(SessionStore(database: database).checkpoint())
-            let snapshot = try XCTUnwrap(session.restoreLocalPresentation(backwardCapacity: 4, forwardCapacity: 1))
+            let restored = try await session.restoreLocalPresentation(backwardCapacity: 4, forwardCapacity: 1)
+            let snapshot = try XCTUnwrap(restored)
+            let current = await session.currentPresentation()
+            XCTAssertEqual(current, snapshot)
             XCTAssertEqual(snapshot.contextKey, edition.contextKey)
             XCTAssertEqual(snapshot.editionID, edition.id)
             XCTAssertEqual(snapshot.window.anchor.cardID, cards[4].id)
@@ -68,8 +74,8 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
         }
     }
 
-    func testZeroCapacitiesRestoreOnlyAnchorWithoutCheckpointWrite() throws {
-        try withLocation { location in
+    func testZeroCapacitiesRestoreOnlyAnchorWithoutCheckpointWrite() async throws {
+        try await withLocation { location in
             let edition = WarmPresentationFixture.edition()
             let cards = try (0..<6).map { _ in try WarmPresentationFixture.card() }
             try persist(edition: edition, cards: cards, location: location)
@@ -77,7 +83,10 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
             let store = SessionStore(database: database)
             let before = try XCTUnwrap(store.checkpoint())
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            let snapshot = try XCTUnwrap(session.restoreLocalPresentation(backwardCapacity: 0, forwardCapacity: 0))
+            let restored = try await session.restoreLocalPresentation(backwardCapacity: 0, forwardCapacity: 0)
+            let snapshot = try XCTUnwrap(restored)
+            let current = await session.currentPresentation()
+            XCTAssertEqual(current, snapshot)
             XCTAssertEqual(snapshot.window.items.map(\.id), [cards[4].id])
             XCTAssertEqual(snapshot.window.anchor.cardID, cards[4].id)
             XCTAssertEqual(snapshot.window.anchor.placement, .center)
@@ -85,8 +94,8 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
         }
     }
 
-    func testCapacityFailurePropagatesWithoutReplacingCheckpoint() throws {
-        try withLocation { location in
+    func testCapacityFailurePropagatesWithoutReplacingCheckpoint() async throws {
+        try await withLocation { location in
             let edition = WarmPresentationFixture.edition()
             let cards = try (0..<6).map { _ in try WarmPresentationFixture.card() }
             try persist(edition: edition, cards: cards, location: location)
@@ -95,11 +104,25 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
             let before = try XCTUnwrap(store.checkpoint())
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
             for capacities in [(-1, 0), (0, -1)] {
-                XCTAssertThrowsError(try session.restoreLocalPresentation(
-                    backwardCapacity: capacities.0, forwardCapacity: capacities.1)) { error in
+                do {
+                    _ = try await session.restoreLocalPresentation(
+                        backwardCapacity: capacities.0, forwardCapacity: capacities.1)
+                    XCTFail("Expected invalid capacity")
+                } catch {
                     XCTAssertEqual(error as? PublicationStoreError, .invalidCapacity)
                 }
+                let current = await session.currentPresentation()
+                XCTAssertNil(current)
             }
+            let restored = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 1)
+            do {
+                _ = try await session.restoreLocalPresentation(backwardCapacity: -1, forwardCapacity: 1)
+                XCTFail("Expected invalid capacity")
+            } catch {
+                XCTAssertEqual(error as? PublicationStoreError, .invalidCapacity)
+            }
+            let current = await session.currentPresentation()
+            XCTAssertEqual(current, restored)
             XCTAssertEqual(try store.checkpoint(), before)
         }
     }

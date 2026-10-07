@@ -54,8 +54,13 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
     public let window: FeedWindowSnapshot
 
     init(restoredPublication: RestoredPublication) {
-        contextKey = restoredPublication.edition.contextKey
-        editionID = restoredPublication.edition.id
-        window = FeedWindowSnapshot(publishedWindow: restoredPublication.window)
+        self.init(contextKey: restoredPublication.edition.contextKey,
+            editionID: restoredPublication.edition.id, publishedWindow: restoredPublication.window)
+    }
+
+    init(contextKey: ContextKey, editionID: FeedEditionID, publishedWindow: FeedWindow) {
+        self.contextKey = contextKey
+        self.editionID = editionID
+        window = FeedWindowSnapshot(publishedWindow: publishedWindow)
     }
 }

@@ -99,6 +99,27 @@ final class PublicationHistoryTests: XCTestCase {
         }
     }
 
+    func testSaveCursorPersistsEquivalentLogicalPositionAndRestoresTop() throws {
+        try withDatabase { _, database in
+            let edition = RestoreFixture.edition()
+            let cards = try (0..<6).map { try RestoreFixture.card(index: $0) }
+            try persist(edition, cards: cards, database: database)
+            let history = PublicationHistory(database: database)
+            let cursor = SessionCursor(editionID: edition.id,
+                anchor: FeedWindowAnchor(cardID: cards[4].id, placement: .top))
+            let time = Date(timeIntervalSince1970: 700.5)
+            try history.saveCursor(cursor, updatedAt: time)
+            let checkpoint = try XCTUnwrap(SessionStore(database: database).checkpoint())
+            XCTAssertEqual(checkpoint.editionID, edition.id)
+            XCTAssertEqual(checkpoint.cardID, cards[4].id)
+            XCTAssertEqual(checkpoint.anchorPlacement, "top")
+            XCTAssertEqual(checkpoint.updatedAt, time)
+            let restored = try XCTUnwrap(history.restore(backwardCapacity: 1, forwardCapacity: 1))
+            XCTAssertEqual(restored.cursor, cursor)
+            XCTAssertEqual(restored.window.anchor, cursor.anchor)
+        }
+    }
+
     func testRestoredPublicationRejectsContradictorySemanticValues() throws {
         let edition = RestoreFixture.edition()
         let cards = try (0..<2).map { try RestoreFixture.card(index: $0) }

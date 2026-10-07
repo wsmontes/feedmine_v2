@@ -1,34 +1,10 @@
-//
 // File: FeedSessionState.swift
 // Module: FeedMineRuntime
-//
-// Responsibility:
-//   Value state completo necessário para reduzir eventos de sessão.
-//
-// Owns:
-//   Future ownership: Explicit complete value state needed to reduce session events.
-//
-// Does not own:
-//   Scattered independent flags, I/O or UI rendering.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMinePersistence, FeedMineAcquisition, FeedMineEditorial, FeedMineMedia, FeedMinePublication. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-07, INV-12; Session state stays explicit.
-//
-// Planned public surface:
-//   Explicit complete value state needed to reduce session events. Documentation only; no API is declared in this phase.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Owns: minimal local session value and current finite materialization bounds.
+// Does not own: duplicated context, Edition, anchor or persistence values.
 
-// Specification notes:
-// Responsibility:
-//
-// Value state completo necessário para reduzir eventos de sessão.
-//
-// Manter estado explícito.
-//
-// Evitar flags independentes espalhadas.
+struct FeedSessionState: Hashable, Sendable {
+    let presentation: FeedPresentationSnapshot
+    let backwardCapacity: Int
+    let forwardCapacity: Int
+}

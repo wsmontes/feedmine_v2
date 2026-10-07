@@ -53,6 +53,8 @@ Phase 2E — exact offline restore storage — complete
 
 Phase 2F — semantic publication history + FeedWindow — complete
 
-Phase 2G — warm Runtime presentation — current
+Phase 2G — complete
+
+Phase 2H — stateful local session + viewport window shift — current
 
 Phase 2G is a vertical restore slice before the remaining macro Runtime/acquisition sequence. The macro phase numbering above remains unchanged.

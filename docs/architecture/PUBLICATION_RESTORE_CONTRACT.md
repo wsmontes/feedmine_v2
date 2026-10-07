@@ -108,7 +108,7 @@ The Phase 2B handoff identified the following payload concepts for Phase 2C:
 
 Phase 2C closes the baseline described below. PublishedInteractionSummary is explicitly deferred because counts are not required by the first restore/read flow; future UI requirements may evolve PublicationSchemaVersion.
 
-Phase 2F implements FeedWindow and semantic restore through PublicationHistory. Phase 2E owns atomic persisted create/append. PublicationCoordinator, single-flight, PublicationToken and Runtime session behavior remain deferred. Phase 2C implements RenderContract values only.
+Phase 2F implements FeedWindow and semantic restore through PublicationHistory. Phase 2E owns atomic persisted create/append. PublicationCoordinator, single-flight, PublicationToken and full Runtime coordination remain deferred. Phase 2C implements RenderContract values only.
 
 ## 12. Acceptance invariants
 
@@ -188,7 +188,7 @@ RestoredPublication
            PublishedCard[]
 ```
 
-PublicationHistory is a concrete Sendable read boundary initialized with RuntimeDatabase. It constructs private PublicationStore and SessionStore values, uses only internal PublicationPersistenceMapping for record conversion, and exposes semantic results. Future Runtime consumers use this semantic side without assembling stores or knowing EditionRecord, SegmentRecord, CardRecord or CheckpointRecord. The mapping remains internal.
+PublicationHistory is a concrete Sendable semantic boundary for retained local publication history and its logical session checkpoint, initialized with RuntimeDatabase. It constructs private PublicationStore and SessionStore values, uses only internal PublicationPersistenceMapping for record conversion, and exposes semantic results. Future Runtime consumers use this semantic side without assembling stores or knowing EditionRecord, SegmentRecord, CardRecord or CheckpointRecord. The mapping remains internal.
 
 `restore(backwardCapacity:forwardCapacity:)` returns nil only when no saved checkpoint exists. Otherwise it reconstructs the cursor, reads and maps its Edition, materializes the window around the exact restored anchor, and validates the combined RestoredPublication. Edition identity, EditorialRevision, anchor occurrence, placement, frozen card payload and published order survive exactly. A missing referenced Edition throws missingEdition; invalidWindow and inconsistentRestore describe failed semantic value invariants. Store, database and mapping failures propagate without a generic storage translation or fallback Edition.
 
@@ -212,4 +212,4 @@ Phase 2F deliberately uses existing separate store reads without a combined SQL 
 
 Before introducing concurrent retention, history deletion or concurrent persisted session switching during restore, reassess whether checkpoint + Edition + window need one Persistence read snapshot. That mechanism is deferred until such a consumer exists.
 
-PublicationHistory does not publish, select, acquire, change checkpoints, run retention, download media or own session state. Restore requires no Selection, network, catalog, canonical lookup or media bytes. Runtime FeedSession and presentation remain outside Phase 2F.
+PublicationHistory supports semantic saveCursor(_:updatedAt:) through the existing private SessionStore boundary and internal PublicationPersistenceMapping. No storage mechanics are exposed by that API. It does not publish, select, acquire, run retention, download media or own Runtime session state. Restore requires no Selection, network, catalog, canonical lookup or media bytes. Runtime FeedSession and presentation remain outside Phase 2F.
