@@ -3,30 +3,45 @@
 // Module: FeedMinePublication
 //
 // Responsibility:
-//   Definir quais recursos um PublishedCard precisa garantir para ser apresentável.
+//   Freeze self-contained semantic values for deterministic local published presentation.
 //
 // Owns:
-//   Future ownership: Resource guarantees required for a presentable PublishedCard.
+//   Published layout and optional slot geometry for deterministic local presentation.
 //
 // Does not own:
-//   Renderer implementation, acquisition or remote resolution.
+//   RenderEnvironment, pixel materialization, acquisition or media resolution.
 //
 // Allowed dependencies:
-//   FeedMineDomain, FeedMinePersistence, FeedMineEditorial, FeedMineMedia. No imports are necessary in this scaffold.
+//   Foundation value types and FeedMineDomain; PublishedCard also uses FeedMineMedia.
 //
 // Architectural invariants:
-//   INV-01; Guaranteed resources make local presentation possible.
+//   INV-08, INV-12; published history survives canonical eviction without live joins.
 //
-// Planned public surface:
-//   Resource guarantees required for a presentable PublishedCard. Documentation only; no API is declared in this phase.
+// Public surface:
+//   Phase 2C immutable semantic values; no Codable storage blobs or execution API.
 //
 // Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
+//   Phase 2C frozen PublishedCard baseline implemented.
 //
 
-// Specification notes:
-// Responsibility:
-//
-// Definir quais recursos um PublishedCard precisa garantir para ser apresentável.
-//
-// Não implementa renderer.
+public enum PublishedCardLayout: String, Hashable, Sendable {
+    case hero
+    case thumbnail
+    case textOnly
+}
+
+/// Freezes editorial slot structure, independent of device and Dynamic Type.
+/// A nil media ratio uses the future renderer's deterministic default for that layout.
+/// Slot geometry need not equal source asset geometry.
+public struct RenderContract: Hashable, Sendable {
+    public let layout: PublishedCardLayout
+    public let mediaAspectRatio: Double?
+
+    public init?(layout: PublishedCardLayout, mediaAspectRatio: Double?) {
+        if let mediaAspectRatio {
+            guard mediaAspectRatio.isFinite, mediaAspectRatio > 0, layout != .textOnly else { return nil }
+        }
+        self.layout = layout
+        self.mediaAspectRatio = mediaAspectRatio
+    }
+}

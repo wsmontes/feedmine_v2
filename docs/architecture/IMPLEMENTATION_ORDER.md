@@ -43,4 +43,6 @@ Persistence Discovery — complete
 
 Phase 2A — runtime persistence lifecycle — complete
 
-Phase 2B — publication identity and exact restore semantics — current
+Phase 2B — publication identity and exact restore semantics — complete
+
+Phase 2C — frozen PublishedCard baseline — current
