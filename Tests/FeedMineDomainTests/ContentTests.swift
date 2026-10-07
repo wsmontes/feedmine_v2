@@ -31,9 +31,13 @@ import FeedMineDomain
 final class ContentTests: XCTestCase {
     func testOriginRecordCodablePreservesIdentityRevisionAvailabilityAndTimes() throws {
         let identity = ExternalIdentity(connectorKind: .syndication, namespace: "objects", value: "Object A", role: .object)
-        let record = OriginRecord(id: OriginRecordID(), connectorKind: .syndication, externalObjectIdentity: identity, currentRevisionID: OriginRevisionID(), availability: .revoked, firstObservedAt: Date(timeIntervalSince1970: 100), lastObservedAt: Date(timeIntervalSince1970: 200))
+        let record = OriginRecord(id: OriginRecordID(), externalObjectIdentity: identity, currentRevisionID: OriginRevisionID(), availability: .revoked, firstObservedAt: Date(timeIntervalSince1970: 100), lastObservedAt: Date(timeIntervalSince1970: 200))
         let decoded = try JSONDecoder().decode(OriginRecord.self, from: JSONEncoder().encode(record))
         XCTAssertEqual(decoded, record)
+        XCTAssertEqual(record.connectorKind, identity.connectorKind)
+        XCTAssertEqual(decoded.connectorKind, decoded.externalObjectIdentity.connectorKind)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
+        XCTAssertNil(object["connectorKind"])
     }
 
     func testRevisionKeepsMissingEditorialValuesMissing() throws {

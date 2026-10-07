@@ -29,21 +29,23 @@ import Foundation
 
 
 /// A stable FeedMine editorial entity, not a URL, endpoint, external account or connector.
+/// Source answers: through which editorial unit does content participate in FeedMine?
+/// Provider answers: who is attributed as producer/editor/author for this content?
+/// A Source may yield content from many Providers; a Provider may occur through many Sources.
+/// Source has no ProviderID or structural Source-to-Provider relationship.
+/// Current provider attribution belongs to OriginRevision.providerID.
 public struct Source: Hashable, Codable, Sendable {
     public let id: SourceID
     public let displayName: String
-    public let providerID: ProviderID?
     public let isEnabled: Bool
 
     public init(
         id: SourceID,
         displayName: String,
-        providerID: ProviderID?,
         isEnabled: Bool
     ) {
         self.id = id
         self.displayName = displayName
-        self.providerID = providerID
         self.isEnabled = isEnabled
     }
 }
@@ -89,30 +91,52 @@ public enum SourceBindingState: String, Hashable, Codable, Sendable {
 /// When declarative acquisition authorization changes semantically, generation changes.
 /// The caller supplies generation explicitly; this value does not compute or increment it.
 /// Operational acquisition configuration and provenance belong to a later phase.
+/// ExternalIdentity owns the connector namespace; aliases share the principal connector kind.
+/// This value validates only connector consistency, including during Codable decoding.
 public struct SourceBinding: Hashable, Codable, Sendable {
     public let id: SourceBindingID
     public let sourceID: SourceID
-    public let connectorKind: ConnectorKind
     public let externalPrincipal: ExternalIdentity
     public let aliases: [ExternalIdentity]
     public let generation: UInt64
     public let state: SourceBindingState
 
-    public init(
+    /// Derived from externalPrincipal; never duplicated as independent stored state.
+    public var connectorKind: ConnectorKind {
+        externalPrincipal.connectorKind
+    }
+
+    public init?(
         id: SourceBindingID,
         sourceID: SourceID,
-        connectorKind: ConnectorKind,
         externalPrincipal: ExternalIdentity,
         aliases: [ExternalIdentity],
         generation: UInt64,
         state: SourceBindingState
     ) {
+        guard aliases.allSatisfy({ $0.connectorKind == externalPrincipal.connectorKind }) else {
+            return nil
+        }
         self.id = id
         self.sourceID = sourceID
-        self.connectorKind = connectorKind
         self.externalPrincipal = externalPrincipal
         self.aliases = aliases
         self.generation = generation
         self.state = state
     }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(SourceBindingID.self, forKey: .id)
+        let sourceID = try container.decode(SourceID.self, forKey: .sourceID)
+        let principal = try container.decode(ExternalIdentity.self, forKey: .externalPrincipal)
+        let aliases = try container.decode([ExternalIdentity].self, forKey: .aliases)
+        let generation = try container.decode(UInt64.self, forKey: .generation)
+        let state = try container.decode(SourceBindingState.self, forKey: .state)
+        guard let binding = Self(id: id, sourceID: sourceID, externalPrincipal: principal, aliases: aliases, generation: generation, state: state) else {
+            throw DecodingError.dataCorruptedError(forKey: .aliases, in: container, debugDescription: "SourceBinding aliases must share the principal connector kind.")
+        }
+        self = binding
+    }
+
 }

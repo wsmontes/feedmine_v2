@@ -73,16 +73,19 @@ public enum OriginAvailability: String, Hashable, Codable, Sendable {
 /// No SourceID or ProviderID is stored here: membership and revision attribution are separate.
 public struct OriginRecord: Hashable, Codable, Sendable {
     public let id: OriginRecordID
-    public let connectorKind: ConnectorKind
     public let externalObjectIdentity: ExternalIdentity
     public let currentRevisionID: OriginRevisionID?
     public let availability: OriginAvailability
     public let firstObservedAt: Date
     public let lastObservedAt: Date
 
+    /// Derived from externalObjectIdentity; never duplicated as independent stored state.
+    public var connectorKind: ConnectorKind {
+        externalObjectIdentity.connectorKind
+    }
+
     public init(
         id: OriginRecordID,
-        connectorKind: ConnectorKind,
         externalObjectIdentity: ExternalIdentity,
         currentRevisionID: OriginRevisionID?,
         availability: OriginAvailability,
@@ -90,7 +93,6 @@ public struct OriginRecord: Hashable, Codable, Sendable {
         lastObservedAt: Date
     ) {
         self.id = id
-        self.connectorKind = connectorKind
         self.externalObjectIdentity = externalObjectIdentity
         self.currentRevisionID = currentRevisionID
         self.availability = availability
@@ -105,6 +107,9 @@ public struct OriginRecord: Hashable, Codable, Sendable {
 /// observedAt: time FeedMine observed this accepted revision; always FeedMine-controlled.
 /// Missing authorship remains absent; observedAt never substitutes for authoredAt.
 /// headline and primaryLink may be absent. providerID is known canonical revision attribution.
+/// When externalVersionIdentity exists, connector consistency with OriginRecord belongs
+/// to future admission, not this initializer: only originRecordID is available here;
+/// validating the complete record would require lookup/I/O.
 public struct OriginRevision: Hashable, Codable, Sendable {
     public let id: OriginRevisionID
     public let originRecordID: OriginRecordID

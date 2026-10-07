@@ -10,7 +10,11 @@ SourceID, ProviderID, OriginRecordID, OriginRevisionID, SourceBindingID, Content
 
 ## Sources and bindings
 
-Source is a stable editorial entity: id, displayName, optional providerID and isEnabled. Provider is canonical producer/publisher/institutional author attribution: id and displayName. Display names are not validated in this phase. Future many-to-many source/provider relationships are not arrays embedded in these models.
+Source is a stable editorial entity: id, displayName and isEnabled. Provider is canonical producer/publisher/institutional author attribution: id and displayName. Display names are not validated in this phase. Future many-to-many source/provider relationships are not arrays embedded in these models.
+
+Source has no ProviderID. Provider attribution is content/revision-facing and currently belongs to OriginRevision.providerID. A Source may yield content attributed to multiple Providers. A Provider may occur through multiple Sources. No Source↔Provider relationship object is introduced in Phase 1A.
+
+Source answers: "through which editorial unit does content participate in FeedMine?" Provider answers: "who is attributed as producer/editor/author for this content?" No 1:1 or 0:1 Source → Provider relationship is stored in Source.
 
 Source != Provider.
 Source != SourceBinding.
@@ -19,7 +23,9 @@ Source != endpoint.
 
 ConnectorKind is an open string value, not a closed connector enum. Only the syndication constant is supplied. This names a connector without implementing one.
 
-SourceBinding declaratively relates a source to an external system: id, sourceID, connectorKind, externalPrincipal, aliases, generation and state (enabled/revoked). It contains no endpoint, HTTP configuration, generic configuration blob, acquisition target or parser configuration.
+SourceBinding declaratively relates a source to an external system: id, sourceID, externalPrincipal, aliases, generation and state (enabled/revoked). It contains no endpoint, HTTP configuration, generic configuration blob, acquisition target or parser configuration.
+
+SourceBinding.connectorKind is derived from externalPrincipal.connectorKind. It is not duplicated as independent stored state. ExternalIdentity owns the connector namespace of an external identity. The failable binding initializer accepts aliases only when every alias has the same ConnectorKind as the externalPrincipal. Codable decoding applies the same consistency check. Namespace, value, role and generation are not validated.
 
 generation identifies the semantic configuration revision of a SourceBinding. A semantic change to declarative acquisition authorization changes generation. The caller supplies this value; the model neither calculates nor increments it.
 
@@ -27,11 +33,13 @@ generation identifies the semantic configuration revision of a SourceBinding. A 
 
 ExternalIdentity is an opaque connectorKind/namespace/value/role tuple. Its exact roles are principal, object, version, alias and lookup. ExternalIdentity.value is opaque. Domain never parses protocol-specific identity, trims or lowercases it, converts URLs or derives hashes to canonicalize it.
 
-OriginRecord represents the internal identity of a logical external object admitted to canonical supply: id, connectorKind, externalObjectIdentity, optional currentRevisionID, availability, firstObservedAt and lastObservedAt. It contains neither sourceID nor providerID, content text or raw protocol data. Availability is available, updated, removed, revoked or unknown. Removal/revocation does not imply deletion of published history.
+OriginRecord represents the internal identity of a logical external object admitted to canonical supply: id, externalObjectIdentity, optional currentRevisionID, availability, firstObservedAt and lastObservedAt. It contains neither sourceID nor providerID, content text or raw protocol data. Availability is available, updated, removed, revoked or unknown. Removal/revocation does not imply deletion of published history.
+
+OriginRecord.connectorKind is derived from externalObjectIdentity.connectorKind. It is not duplicated as independent stored state.
 
 OriginRecord != OriginRevision.
 
-OriginRevision is an immutable accepted representation of an origin: id, originRecordID, optional externalVersionIdentity, headline, summary, bodyText, authoredAt, modifiedAt, language, primaryLink, searchProjection and providerID, plus required observedAt. Provider attribution belongs to the revision, not OriginRecord. Headline and public HTTP link may legitimately be absent.
+OriginRevision is an immutable accepted representation of an origin: id, originRecordID, optional externalVersionIdentity, headline, summary, bodyText, authoredAt, modifiedAt, language, primaryLink, searchProjection and providerID, plus required observedAt. Provider attribution belongs to the revision, not OriginRecord. When externalVersionIdentity exists, consistency with the origin connector belongs to future admission. OriginRevision carries only originRecordID, so this initializer performs no lookup/I/O or cross-record connector validation. Headline and public HTTP link may legitimately be absent.
 
 authoredAt is external/editorial authorship time when known. modifiedAt is external/editorial modification time when known. observedAt is when FeedMine observed this accepted revision and is always FeedMine-controlled. Missing authoredAt stays missing; observedAt never substitutes for it. OriginRevision is immutable. OriginRecord.currentRevisionID is future-facing state, separate from already-published history.
 
