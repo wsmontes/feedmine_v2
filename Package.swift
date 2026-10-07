@@ -13,10 +13,10 @@
 //   Production behavior or application object composition.
 //
 // Allowed dependencies:
-//   PackageDescription only; no external package dependencies.
+//   PackageDescription only; GRDB 7.11.1 is the only external package dependency; confined to Persistence and its tests.
 //
 // Architectural invariants:
-//   INV-12, INV-15; ten production modules and architecture/domain test targets.
+//   INV-12, INV-15; ten production modules and architecture/domain/persistence test targets.
 //
 // Planned public surface:
 //   The ten FeedMine library modules; no runtime API is declared here.
@@ -29,6 +29,7 @@ import PackageDescription
 
 let package = Package(
     name: "FeedMine",
+    platforms: [.macOS(.v10_15), .iOS(.v13)],
     products: [
         .library(name: "FeedMineDomain", targets: ["FeedMineDomain"]),
         .library(name: "FeedMinePersistence", targets: ["FeedMinePersistence"]),
@@ -41,10 +42,10 @@ let package = Package(
         .library(name: "FeedMineUI", targets: ["FeedMineUI"]),
         .library(name: "FeedMineComposition", targets: ["FeedMineComposition"]),
     ],
-    dependencies: [],
+    dependencies: [.package(url: "https://github.com/groue/GRDB.swift", exact: "7.11.1")],
     targets: [
         .target(name: "FeedMineDomain", dependencies: []),
-        .target(name: "FeedMinePersistence", dependencies: ["FeedMineDomain"]),
+        .target(name: "FeedMinePersistence", dependencies: ["FeedMineDomain", .product(name: "GRDB", package: "GRDB.swift")]),
         .target(name: "FeedMineAcquisition", dependencies: ["FeedMineDomain", "FeedMinePersistence"]),
         .target(name: "FeedMineSyndication", dependencies: ["FeedMineDomain", "FeedMineAcquisition"]),
         .target(name: "FeedMineEditorial", dependencies: ["FeedMineDomain", "FeedMinePersistence"]),
@@ -53,6 +54,7 @@ let package = Package(
         .target(name: "FeedMineRuntime", dependencies: ["FeedMineDomain", "FeedMinePersistence", "FeedMineAcquisition", "FeedMineEditorial", "FeedMineMedia", "FeedMinePublication"]),
         .target(name: "FeedMineUI", dependencies: ["FeedMineDomain", "FeedMineRuntime"]),
         .target(name: "FeedMineComposition", dependencies: ["FeedMineDomain", "FeedMinePersistence", "FeedMineAcquisition", "FeedMineSyndication", "FeedMineEditorial", "FeedMineMedia", "FeedMinePublication", "FeedMineRuntime", "FeedMineUI"]),
+        .testTarget(name: "FeedMinePersistenceTests", dependencies: ["FeedMinePersistence", "FeedMineDomain", .product(name: "GRDB", package: "GRDB.swift")]),
         .testTarget(name: "FeedMineDomainTests", dependencies: ["FeedMineDomain"]),
         .testTarget(
             name: "ArchitectureSmokeTests",

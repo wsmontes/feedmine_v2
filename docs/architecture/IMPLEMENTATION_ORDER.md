@@ -37,4 +37,8 @@ Phase 0 — complete
 
 Phase 1A — complete
 
-Phase 1B — current
+Phase 1B — complete
+
+Persistence Discovery — complete
+
+Phase 2A — runtime persistence lifecycle — current

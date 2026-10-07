@@ -3,30 +3,36 @@
 // Module: FeedMinePersistence
 //
 // Responsibility:
-//   Local único para evolução versionada do schema persistente futuro.
+//   Own sequential schema migration authority for the runtime database.
 //
 // Owns:
-//   Future ownership: Versioned persistent schema evolution.
+//   GRDB migration registration/bookkeeping and explicit non-erasing configuration.
 //
 // Does not own:
-//   Current migrations, database lifecycle or product migration runtime.
+//   Domain tables, duplicate schema counters, recovery, database lifecycle or catalog.
 //
 // Allowed dependencies:
-//   FeedMineDomain. No imports are necessary in this scaffold.
+//   GRDB and FeedMineDomain; migrator details are internal to Persistence.
 //
 // Architectural invariants:
-//   INV-12; Schema evolution has one location.
+//   INV-12; one migration authority. Schema changes never erase runtime semantic state.
 //
 // Planned public surface:
-//   Versioned persistent schema evolution. Documentation only; no API is declared in this phase.
+//   RuntimeMigrations ownership namespace; its GRDB current migrator remains internal.
 //
 // Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
+//   Phase 2A foundation migration only; no domain schema.
 //
 
-// Specification notes:
-// Responsibility:
-//
-// Local único para evolução versionada do schema persistente futuro.
-//
-// Não criar migrations agora.
+import GRDB
+
+public enum RuntimeMigrations {
+    static var current: DatabaseMigrator {
+        var migrator = DatabaseMigrator()
+        migrator.eraseDatabaseOnSchemaChange = false
+        migrator.registerMigration("runtime-foundation-v1") { _ in
+            // Establish authority and bookkeeping without creating domain tables.
+        }
+        return migrator
+    }
+}
