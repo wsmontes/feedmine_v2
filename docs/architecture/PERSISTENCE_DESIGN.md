@@ -20,7 +20,7 @@ Database unavailable is not empty database. Database failure is not first launch
 
 Directory creation failure throws `couldNotCreateDirectory`, including path and message. SQLite open/migration/read/write/checkpoint failures throw `storage`, preserving the SQLite extended result code and message. The primary SQLite category can be recovered from the low byte of the extended code. Other opening/migration failures throw `open`, including database path and message. Non-SQLite errors from internal read/write operation bodies propagate unchanged.
 
-No failure becomes nil, an empty collection, a success flag or a new empty store. There is no in-memory fallback, retry state machine, disk reclaim or recovery implementation. Future Runtime/UI consumers decide degraded, read-only, blocked or recoverable presentation.
+No failure becomes nil, an empty collection, a success flag or a new empty store. There is no in-memory fallback, retry state machine, disk reclaim or recovery implementation. Future Runtime/UI consumers implement the first-release failure presentation specified below; recovery capabilities remain future work.
 
 ## 4. Migration authority
 
@@ -42,7 +42,12 @@ The only external dependency is official GRDB.swift, pinned exactly to 7.11.1. O
 
 DatabasePool is private. Scoped read/write helpers and the GRDB migrator are internal. RuntimeMigrations is a public ownership namespace with no public GRDB-valued surface. No public Persistence API requires Database, DatabasePool or DatabaseMigrator. Tests import GRDB solely to issue/inspect SQLite statements and inject a failing migration; all databases are temporary on-disk databases.
 
-The package declares macOS 10.15 and iOS 13 minimums required by the dependency. The root manifest remains tools 6.0; GRDB 7.11.1 itself requires a Swift 6.1 or newer compiler. Validation uses Swift 6.3.3. These are dependency compatibility floors, not product runtime tuning.
+GRDB may support older operating systems, but FeedMine intentionally declares its own product/development floors:
+
+- iOS 18+ — product baseline; the first-release product target is iPhone.
+- macOS 14+ — development/package-test baseline, not a first-release product surface.
+
+Dependency minimums do not determine FeedMine product minimums. The root manifest remains tools 6.0; GRDB 7.11.1 itself requires a Swift 6.1 or newer compiler. Validation uses Swift 6.3.3.
 
 References: [official release](https://github.com/groue/GRDB.swift/releases/tag/v7.11.1), [versioned package manifest](https://github.com/groue/GRDB.swift/blob/v7.11.1/Package.swift), [DatabasePool configuration and Sendable conformance](https://github.com/groue/GRDB.swift/blob/v7.11.1/GRDB/Core/DatabasePool.swift), [foreign-key connection setup](https://github.com/groue/GRDB.swift/blob/v7.11.1/GRDB/Core/Database.swift).
 
@@ -53,3 +58,107 @@ ContentStore, PublicationStore and SessionStore remain scaffolds. There are no s
 ## 8. Next schema slice
 
 Future slices must explicitly design their domain storage and atomicity boundaries before adding migrations. Local persistence as a whole is not complete. This task ends at the runtime physical lifecycle and failure contract; it does not implement the next user-state, canonical supply, catalog or publication slice.
+
+## 9. Restore-first product contract
+
+The following product decisions are frozen contracts for future slices. Phase 2A closure documents them only; it adds no domain schema or publication/session implementation.
+
+> The first complete persistence-driven FeedMine experience is exact warm/offline restoration of previously published local history.
+
+```text
+previously published FeedEdition
+        ↓
+session/card anchor persisted
+        ↓
+application terminates
+        ↓
+network unavailable
+        ↓
+application launches
+        ↓
+runtime.sqlite opens
+        ↓
+same retained Edition restored
+        ↓
+same publication ordering
+        ↓
+window restored around same PublicationCard
+        ↓
+feed presented without network/catalog/acquisition
+```
+
+While the required Edition is retained, exact restore means:
+
+- Same Edition identity.
+- Same published ordering.
+- Same PublicationCard anchor.
+- Same surrounding published history.
+
+Restore does not mean running Selection again to produce something similar, or finding approximately the same upstream content. Visual geometry may change; editorial history may not.
+
+Warm/offline first presentation does not depend on network, catalog refresh, a connector, acquisition, selection or remote image download. It conceptually depends on:
+
+- ContextKey.
+- FeedEdition identity.
+- Published immutable history.
+- SessionCursor/card anchor.
+- Presentation-ready frozen card data.
+- Local user-state overlays when applicable.
+
+These concepts remain unimplemented in this phase.
+
+## 10. Bookmark contract
+
+> Bookmark is durable user state and must remain semantically presentable after reconstructible canonical content disappears.
+
+A future Bookmark must preserve a snapshot sufficient to represent the saved item, conceptually including:
+
+- Stable subject/origin identity.
+- Headline/title.
+- Presented excerpt/text.
+- Attribution.
+- Target link when known.
+- Authored/published timestamp when known.
+- Media identity/metadata sufficient for media or a deterministic placeholder.
+- savedAt.
+
+Bookmark does not automatically imply full article archival, permanent image-byte retention, retention of the entire FeedEdition or retention of the entire OriginRevision. Bookmark storage is not implemented in Phase 2A.
+
+## 11. Seen / Read / Opened / Consumed contract
+
+- **Seen / Exposure:** evidence of actual viewport visibility.
+- **Read:** durable user-visible state.
+- **Opened:** explicit user interaction opening primary content.
+- **Consumed:** policy projection derived from exposure/open/read facts.
+
+Frozen rules:
+
+- Appearing in the SwiftUI tree does not mean Seen.
+- Prefetched content below the viewport does not mean Seen.
+- Viewport exposure alone does not mean Read.
+- Explicit Mark as Read sets Read.
+- Open sets Read.
+- Mark as Unread does not erase historical exposure/consumption facts.
+- Consumed is not stored as one timeless absolute boolean truth.
+
+Exposure/read storage remains unimplemented in this phase.
+
+## 12. Source identity contract
+
+SourceID is FeedMine-owned. It is not derived from URL, endpoint, connector identity or catalog row position.
+
+Future catalog integration requires a persistent source registry/manifest with IDs stable across catalog generations. This registry is not implemented now.
+
+If a Source created/imported by the user later corresponds to a catalog Source, do not silently replace identity or auto-merge IDs. Preserve both identities and allow future explicit association/equivalence. Association is not implemented now.
+
+## 13. Local content search baseline
+
+The first content search covers current locally available canonical searchable supply via future runtime FTS.
+
+It does not initially include all historical revisions, all old PublishedCards, evicted publication history or remote connector search. Catalog search remains separate. Bookmark search may be a future surface. This contract does not add search/FTS storage or implementation.
+
+## 14. Database failure — first release
+
+If runtime.sqlite cannot open safely, the first release presents an explicit failure state with Retry. It must not present an empty first launch, use a memory fallback or automatically reset the database.
+
+The first release does not require backup restore UI, database repair UI or full database export UI. These capabilities remain future work. Phase 2A closure documents this presentation contract without implementing UI or retry behavior.

@@ -29,7 +29,10 @@ import PackageDescription
 
 let package = Package(
     name: "FeedMine",
-    platforms: [.macOS(.v10_15), .iOS(.v13)],
+    platforms: [
+        .iOS(.v18),
+        .macOS(.v14)
+    ],
     products: [
         .library(name: "FeedMineDomain", targets: ["FeedMineDomain"]),
         .library(name: "FeedMinePersistence", targets: ["FeedMinePersistence"]),
