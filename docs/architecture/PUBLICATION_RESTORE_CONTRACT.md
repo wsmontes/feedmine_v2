@@ -1,8 +1,8 @@
-# Publication identity and exact restore contract — Phase 2B
+# Publication identity and exact restore contract — through Phase 2F
 
 ## 1. Purpose
 
-This contract partially closes the former ADR-001: the minimum identity and in-memory structure needed to restore exactly a retained local published history and a logical position within it. Phase 2B is semantic-before-storage. It implements no SQL, stores or restore execution.
+This contract partially closes the former ADR-001: the minimum identity and in-memory structure needed to restore exactly a retained local published history and a logical position within it. Phase 2B established semantic identity before storage. Phase 2E implemented mechanical publication/session storage; Phase 2F adds the semantic read boundary described below.
 
 The restorable unit is published history, not canonical supply, Selection, pixels or an endpoint.
 
@@ -86,11 +86,11 @@ Changes in Dynamic Type, screen width, render environment, local image availabil
 
 ## 10. Persistence implications
 
-Future mechanical storage must represent Edition metadata; Segment metadata including edition, ordinal, seed and schema version; ordered card occurrence identity; and SessionCursor containing EditionID, PublicationCardID and placement.
+Phase 2E mechanical storage represents Edition metadata; Segment metadata including edition, ordinal, seed and schema version; ordered card occurrence identity; and SessionCursor containing EditionID, PublicationCardID and placement.
 
-No table names, columns, foreign keys or indexes are defined here. Phase 2C closes the baseline semantic PublishedCard payload. After review and merge, publication/session relational schema design may begin. PublicationStore and SessionStore remain scaffolds and runtime migrations remain unchanged.
+The relational design is recorded in PERSISTENCE_PUBLICATION_SCHEMA.md. Phase 2E implements PublicationStore and SessionStore. Phase 2F reads those stores without changing Persistence, schema, migrations or SQL.
 
-Nominal IDs retain their existing Codable convention. Publication semantic aggregates and PublicationSchemaVersion are not Codable blobs; persistence will use an explicit mechanical representation.
+Nominal IDs retain their existing Codable convention. Publication semantic aggregates and PublicationSchemaVersion are not Codable blobs; Phase 2E persistence uses an explicit mechanical representation.
 
 ## 11. Phase 2B handoff and remaining deferred publication semantics
 
@@ -108,7 +108,7 @@ The Phase 2B handoff identified the following payload concepts for Phase 2C:
 
 Phase 2C closes the baseline described below. PublishedInteractionSummary is explicitly deferred because counts are not required by the first restore/read flow; future UI requirements may evolve PublicationSchemaVersion.
 
-FeedWindow remains a scaffold for a finite projection over potentially large published history; window materialization belongs to a future Runtime/session slice even with the card baseline available. Phase 2C implements RenderContract values only. PublicationCoordinator remains unchanged. Append, single-flight, PublicationToken, persistence calls, Runtime session behavior and restore execution remain unimplemented.
+Phase 2F implements FeedWindow and semantic restore through PublicationHistory. Phase 2E owns atomic persisted create/append. PublicationCoordinator, single-flight, PublicationToken and Runtime session behavior remain deferred. Phase 2C implements RenderContract values only.
 
 ## 12. Acceptance invariants
 
@@ -168,6 +168,48 @@ An action URL is a target, not PublicationCard identity. Future URL changes or f
 
 All snapshot fields are let. There are no update/heal/refresh methods, live lookups or retrospective OriginRevision replacement. Edition/Segment IDs, ordinals, EditorialRevision and PublicationSchemaVersion are not duplicated in the card; ordered occurrence relations own those facts. Origin IDs exist only in card.origin.
 
-No Codable blob contract is introduced for card, origin, text, timestamp, media, RenderContract or action. Future persistence will design an explicit relational representation only after review and merge.
+No Codable blob contract is introduced for card, origin, text, timestamp, media, RenderContract or action. Phase 2E stores the baseline through an explicit relational representation and internal mapping.
 
-PublishedInteractionSummary, reply/repost/reaction counts, connector write actions, ActionID, InteractionHandle and generic metadata remain deferred until concrete consumers require them. FeedWindow, PublicationCoordinator, Selection/MediaPreparation execution, AssetStore, SQL, stores and restore execution remain unimplemented.
+PublishedInteractionSummary, reply/repost/reaction counts, connector write actions, ActionID, InteractionHandle and generic metadata remain deferred until concrete consumers require them. Phase 2E implements SQL and stores; Phase 2F implements FeedWindow and semantic restore. PublicationCoordinator, Selection/MediaPreparation execution and AssetStore remain deferred.
+
+
+## 14. Semantic publication history boundary — Phase 2F
+
+```text
+Persistence mechanical records
+        ↓ internal mapping
+PublicationHistory
+        ↓
+RestoredPublication
+        ├── FeedEdition
+        ├── SessionCursor
+        └── FeedWindow
+                ↓
+           PublishedCard[]
+```
+
+PublicationHistory is a concrete Sendable read boundary initialized with RuntimeDatabase. It constructs private PublicationStore and SessionStore values, uses only internal PublicationPersistenceMapping for record conversion, and exposes semantic results. Future Runtime consumers use this semantic side without assembling stores or knowing EditionRecord, SegmentRecord, CardRecord or CheckpointRecord. The mapping remains internal.
+
+`restore(backwardCapacity:forwardCapacity:)` returns nil only when no saved checkpoint exists. Otherwise it reconstructs the cursor, reads and maps its Edition, materializes the window around the exact restored anchor, and validates the combined RestoredPublication. Edition identity, EditorialRevision, anchor occurrence, placement, frozen card payload and published order survive exactly. A missing referenced Edition throws missingEdition; invalidWindow and inconsistentRestore describe failed semantic value invariants. Store, database and mapping failures propagate without a generic storage translation or fallback Edition.
+
+`window(editionID:around:backwardCapacity:forwardCapacity:)` reads already published local history without reading or writing a checkpoint. It forwards capacities directly to PublicationStore, including store-owned rejection of negative values. Both capacities zero return only the anchor. The returned anchor preserves the requested card ID and placement exactly.
+
+### FeedWindow contract
+
+FeedWindow is a bounded immutable semantic projection over retained local published history.
+
+bounded window != bounded feed.
+
+window movement never changes FeedEdition or published order.
+
+The failable initializer accepts only nonempty cards with unique PublicationCardIDs and an anchor occurring exactly once. It preserves supplied order without sorting, deduplication or anchor adjustment. Its only stored values are editionID, cards and anchor: no page size, page number, total history count, absolute offset or mutation API. A new materialization produces a new snapshot; the Edition can continue growing independently.
+
+RestoredPublication is an immutable value with a failable initializer requiring edition.id == cursor.editionID == window.editionID and cursor.anchor == window.anchor. Neither result exposes mechanical Persistence records.
+
+### Current consistency condition and future snapshot gate
+
+Phase 2F deliberately uses existing separate store reads without a combined SQL restore transaction. No retention/delete API or background deletion exists, and restore occurs before active session mutation. Thus checkpoint-referenced retained history cannot legitimately disappear between these reads under the current lifecycle.
+
+Before introducing concurrent retention, history deletion or concurrent persisted session switching during restore, reassess whether checkpoint + Edition + window need one Persistence read snapshot. That mechanism is deferred until such a consumer exists.
+
+PublicationHistory does not publish, select, acquire, change checkpoints, run retention, download media or own session state. Restore requires no Selection, network, catalog, canonical lookup or media bytes. Runtime FeedSession and presentation remain outside Phase 2F.

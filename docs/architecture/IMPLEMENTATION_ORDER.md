@@ -49,4 +49,6 @@ Phase 2C — frozen PublishedCard baseline — complete
 
 Phase 2D — publication/session relational schema design — complete
 
-Phase 2E — exact offline restore storage — current
+Phase 2E — exact offline restore storage — complete
+
+Phase 2F — semantic publication history + FeedWindow — current

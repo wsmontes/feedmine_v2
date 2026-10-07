@@ -1,32 +1,23 @@
-//
 // File: FeedWindow.swift
 // Module: FeedMinePublication
-//
-// Responsibility:
-//   Representar uma janela local bounded sobre história publicada.
-//
-// Owns:
-//   Future ownership: Bounded local window over published history.
-//
-// Does not own:
-//   Acquisition pagination or limits on total feed history.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMinePersistence, FeedMineEditorial, FeedMineMedia. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-01, INV-11; Bounded memory does not mean bounded feed.
-//
-// Planned public surface:
-//   Bounded local window over published history. Documentation only; no API is declared in this phase.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Owns: bounded immutable semantic projection over retained published history.
+// Does not own: pagination, total history counts, mutation or acquisition.
 
-// Specification notes:
-// Responsibility:
-//
-// Representar uma janela local bounded sobre história publicada.
-//
-// Bounded memory não significa bounded feed.
+import FeedMineDomain
+
+/// A finite snapshot; bounded window does not mean bounded feed.
+/// Supplied order is published history and the anchor remains exactly as supplied.
+public struct FeedWindow: Hashable, Sendable {
+    public let editionID: FeedEditionID
+    public let cards: [PublishedCard]
+    public let anchor: FeedWindowAnchor
+
+    public init?(editionID: FeedEditionID, cards: [PublishedCard], anchor: FeedWindowAnchor) {
+        guard !cards.isEmpty,
+            Set(cards.map(\.id)).count == cards.count,
+            cards.contains(where: { $0.id == anchor.cardID }) else { return nil }
+        self.editionID = editionID
+        self.cards = cards
+        self.anchor = anchor
+    }
+}
