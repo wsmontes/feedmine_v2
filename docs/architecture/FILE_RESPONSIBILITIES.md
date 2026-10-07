@@ -2,7 +2,7 @@
 
 | Module | File | Responsibility | Explicitly does not own |
 | --- | --- | --- | --- |
-| FeedMineDomain | FeedIdentifiers.swift | Phase 1A implemented: seven nominal UUID IDs for source, provider, origin record/revision, source binding, content entity and cluster. Phase 1B adds EditorialRevisionID; semantic ContextKey belongs to FeedContext.swift. | Endpoint identity, protocol-specific identity or transport-derived ID generation |
+| FeedMineDomain | FeedIdentifiers.swift | Phase 1A implemented: seven nominal UUID IDs for source, provider, origin record/revision, source binding, content entity and cluster. Phase 1B adds EditorialRevisionID; Phase 2B adds cross-boundary FeedEditionID, FeedSegmentID and PublicationCardID. Domain owns nominal identity only; semantic ContextKey belongs to FeedContext.swift. | Endpoint identity, protocol-specific identity or transport-derived ID generation |
 | FeedMineDomain | FeedContext.swift | Phase 1B implementation: semantic reusable ContextKey/request and original non-whitespace SearchContext. | Acquisition, network, database, UI navigation or connector metadata |
 | FeedMineDomain | FeedIntent.swift | Phase 1B implementation: feed-level changeContext and refresh semantic intentions only. | Intent execution, networking or persistence |
 | FeedMineDomain | FeedPlan.swift | Phase 1B implementation: opaque policy/catalog/schema versions, context-bound EditorialRevision and validated context/revision FeedPlan association. | Policy execution, fetching or UI queries |
@@ -36,8 +36,9 @@
 | FeedMineMedia | ImageMaterializer.swift | Future boundary para transformar media bytes/resources em representação local pronta para uso. | SwiftUI render-time work or publication |
 | FeedMinePublication | PublishedCard.swift | Frozen semantic snapshot of a published card; publication state owned by FeedMinePublication. | UI-facing presentation state, live OriginRecord projections or retrospective upstream changes. |
 | FeedMinePublication | RenderContract.swift | Definir quais recursos um PublishedCard precisa garantir para ser apresentável. | Renderer implementation, acquisition or remote resolution |
-| FeedMinePublication | FeedEdition.swift | Representar uma sequência/versionamento coerente de publicação para determinado contexto/revision. | Silent rewriting of a published edition |
-| FeedMinePublication | FeedSegment.swift | Bloco imutável e ordenado de PublishedCards. | Silent reordering of existing history |
+| FeedMinePublication | FeedEdition.swift | Phase 2B implemented: immutable concrete history metadata, raw PublicationSchemaVersion and ContextKey derived from EditorialRevision. | Mutable segment collections, lifecycle flags, revision duplication or storage representation |
+| FeedMinePublication | FeedSegment.swift | Phase 2B implemented: immutable nonempty ordered PublicationCardIDs, within-segment uniqueness and append metadata. | Cross-segment append validation, history mutation or card payload |
+| FeedMinePublication | SessionCursor.swift | Phase 2B implemented: persistible Edition/card occurrence logical position with top/center FeedWindowAnchor. | Pixels, restore execution, global SessionID or storage mechanics |
 | FeedMinePublication | FeedWindow.swift | Representar uma janela local bounded sobre história publicada. | Acquisition pagination or limits on total feed history |
 | FeedMinePublication | PublicationCoordinator.swift | Converter uma sequência editorial preparada + media-ready em novos FeedSegments imutáveis. | Acquisition, protocol parsing, remote media resolution or direct UI updates |
 | FeedMineRuntime | FeedSession.swift | Owner de uma sessão de consumo. | SQL, HTTP, SwiftUI or ownership of all feed services |

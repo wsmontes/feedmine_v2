@@ -3,32 +3,67 @@
 // Module: FeedMinePublication
 //
 // Responsibility:
-//   Representar uma sequência/versionamento coerente de publicação para determinado contexto/revision.
+//   Represent concrete published history under editorial rules.
 //
 // Owns:
-//   Future ownership: Coherent publication sequence/version for context/revision and successors.
+//   PublicationSchemaVersion and immutable FeedEdition metadata.
 //
 // Does not own:
-//   Silent rewriting of a published edition.
+//   Mutable segments, lifecycle flags, selection execution or persistence mechanics.
 //
 // Allowed dependencies:
-//   FeedMineDomain, FeedMinePersistence, FeedMineEditorial, FeedMineMedia. No imports are necessary in this scaffold.
+//   FeedMineDomain and Foundation value types.
 //
 // Architectural invariants:
-//   INV-08; New editorial reality may create a successor.
+//   INV-07, INV-08, INV-12; immutable published history and logical restore identity.
 //
-// Planned public surface:
-//   Coherent publication sequence/version for context/revision and successors. Documentation only; no API is declared in this phase.
+// Public surface:
+//   Phase 2B semantic values only; no Codable storage representation or execution API.
 //
 // Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
+//   Phase 2B publication identity and exact restore semantics implemented.
 //
 
-// Specification notes:
-// Responsibility:
-//
-// Representar uma sequência/versionamento coerente de publicação para determinado contexto/revision.
-//
-// Nova realidade editorial gera sucessora quando necessário.
-//
-// Não reescrever silenciosamente uma Edition já publicada.
+import Foundation
+import FeedMineDomain
+
+/// Persisted semantic publication format, distinct from selection and database versions.
+public struct PublicationSchemaVersion: Hashable, Sendable, Comparable {
+    public let rawValue: UInt64
+
+    public init(rawValue: UInt64) {
+        self.rawValue = rawValue
+    }
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+/// Concrete history identity; distinct Editions may share the same editorial rules.
+/// History grows through external immutable Segments, never mutation of this metadata.
+public struct FeedEdition: Hashable, Sendable {
+    public let id: FeedEditionID
+    public let editorialRevision: EditorialRevision
+    public let publicationSchemaVersion: PublicationSchemaVersion
+    public let selectionSeed: UInt64
+    public let createdAt: Date
+
+    public var contextKey: ContextKey {
+        editorialRevision.contextKey
+    }
+
+    public init(
+        id: FeedEditionID,
+        editorialRevision: EditorialRevision,
+        publicationSchemaVersion: PublicationSchemaVersion,
+        selectionSeed: UInt64,
+        createdAt: Date
+    ) {
+        self.id = id
+        self.editorialRevision = editorialRevision
+        self.publicationSchemaVersion = publicationSchemaVersion
+        self.selectionSeed = selectionSeed
+        self.createdAt = createdAt
+    }
+}

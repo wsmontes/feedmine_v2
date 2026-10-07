@@ -41,4 +41,6 @@ Phase 1B — complete
 
 Persistence Discovery — complete
 
-Phase 2A — runtime persistence lifecycle — current
+Phase 2A — runtime persistence lifecycle — complete
+
+Phase 2B — publication identity and exact restore semantics — current

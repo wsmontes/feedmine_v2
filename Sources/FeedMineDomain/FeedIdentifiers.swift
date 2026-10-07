@@ -6,7 +6,7 @@
 //   Define nominal FeedMine-owned identities independent of transport.
 //
 // Owns:
-//   SourceID, ProviderID, OriginRecordID, OriginRevisionID, SourceBindingID, ContentEntityID, ContentClusterID, EditorialRevisionID.
+//   SourceID, ProviderID, OriginRecordID, OriginRevisionID, SourceBindingID, ContentEntityID, ContentClusterID, EditorialRevisionID, FeedEditionID, FeedSegmentID, PublicationCardID.
 //
 // Does not own:
 //   External identities, endpoint-derived identity or a generic identity framework.
@@ -19,16 +19,19 @@
 //   INV-13; FeedMine internal identity is not external identity or network location.
 //
 // Planned public surface:
-//   Eight nominal canonical IDs implemented across Phase 1A and Phase 1B; ContextKey belongs to FeedContext.swift.
+//   Eleven nominal IDs implemented across Phase 1A, Phase 1B and Phase 2B; ContextKey belongs to FeedContext.swift.
 //
 // Status:
-//   Phase 1A/1B canonical nominal identifier implementation.
+//   Phase 1A/1B canonical and Phase 2B publication nominal identifier implementation.
+//   Publication IDs cross FeedMinePublication, FeedMineRuntime, future persistence commands,
+//   exposure and presentation identity boundaries. Domain owns only nominal identity;
+//   FeedMinePublication retains Edition/Segment/Card semantics.
 //
 
 import Foundation
 
-// Future IDs remain documentation only: FeedEditionID, FeedSegmentID, SessionID,
-// AssetID, ActionID, PublicationCardID and AcquisitionTargetID. Their concepts are not moved.
+// Future IDs remain documentation only: SessionID, AssetID, ActionID and AcquisitionTargetID.
+// Their concepts are not moved.
 
 public struct SourceID: Hashable, Codable, Sendable, CustomStringConvertible {
     public let rawValue: UUID
@@ -145,6 +148,60 @@ public struct ContentClusterID: Hashable, Codable, Sendable, CustomStringConvert
 
 /// Phase 1B nominal identity; never derived deterministically from request or transport.
 public struct EditorialRevisionID: Hashable, Codable, Sendable, CustomStringConvertible {
+    public let rawValue: UUID
+
+    public init(rawValue: UUID) {
+        self.rawValue = rawValue
+    }
+
+    public init() {
+        self.rawValue = UUID()
+    }
+
+    public var description: String {
+        rawValue.uuidString
+    }
+}
+
+
+/// Concrete published history identity.
+public struct FeedEditionID: Hashable, Codable, Sendable, CustomStringConvertible {
+    public let rawValue: UUID
+
+    public init(rawValue: UUID) {
+        self.rawValue = rawValue
+    }
+
+    public init() {
+        self.rawValue = UUID()
+    }
+
+    public var description: String {
+        rawValue.uuidString
+    }
+}
+
+
+/// Immutable publication append-unit identity.
+public struct FeedSegmentID: Hashable, Codable, Sendable, CustomStringConvertible {
+    public let rawValue: UUID
+
+    public init(rawValue: UUID) {
+        self.rawValue = rawValue
+    }
+
+    public init() {
+        self.rawValue = UUID()
+    }
+
+    public var description: String {
+        rawValue.uuidString
+    }
+}
+
+
+/// Stable published occurrence identity, independent of canonical content identity.
+public struct PublicationCardID: Hashable, Codable, Sendable, CustomStringConvertible {
     public let rawValue: UUID
 
     public init(rawValue: UUID) {

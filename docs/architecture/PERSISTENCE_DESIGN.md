@@ -59,6 +59,8 @@ ContentStore, PublicationStore and SessionStore remain scaffolds. There are no s
 
 Future slices must explicitly design their domain storage and atomicity boundaries before adding migrations. Local persistence as a whole is not complete. This task ends at the runtime physical lifecycle and failure contract; it does not implement the next user-state, canonical supply, catalog or publication slice.
 
+SQL publication/session schema remains blocked until Phase 2C closes the frozen PublishedCard payload. Phase 2B defines publication identity and exact logical restore semantics only; see [Publication restore contract](PUBLICATION_RESTORE_CONTRACT.md).
+
 ## 9. Restore-first product contract
 
 The following product decisions are frozen contracts for future slices. Phase 2A closure documents them only; it adds no domain schema or publication/session implementation.

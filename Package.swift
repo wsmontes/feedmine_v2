@@ -16,7 +16,7 @@
 //   PackageDescription only; GRDB 7.11.1 is the only external package dependency; confined to Persistence and its tests.
 //
 // Architectural invariants:
-//   INV-12, INV-15; ten production modules and architecture/domain/persistence test targets.
+//   INV-12, INV-15; ten production modules and architecture/domain/persistence/publication test targets.
 //
 // Planned public surface:
 //   The ten FeedMine library modules; no runtime API is declared here.
@@ -59,6 +59,7 @@ let package = Package(
         .target(name: "FeedMineComposition", dependencies: ["FeedMineDomain", "FeedMinePersistence", "FeedMineAcquisition", "FeedMineSyndication", "FeedMineEditorial", "FeedMineMedia", "FeedMinePublication", "FeedMineRuntime", "FeedMineUI"]),
         .testTarget(name: "FeedMinePersistenceTests", dependencies: ["FeedMinePersistence", "FeedMineDomain", .product(name: "GRDB", package: "GRDB.swift")]),
         .testTarget(name: "FeedMineDomainTests", dependencies: ["FeedMineDomain"]),
+        .testTarget(name: "FeedMinePublicationTests", dependencies: ["FeedMinePublication", "FeedMineDomain"]),
         .testTarget(
             name: "ArchitectureSmokeTests",
             dependencies: ["FeedMineDomain", "FeedMinePersistence", "FeedMineAcquisition", "FeedMineSyndication", "FeedMineEditorial", "FeedMineMedia", "FeedMinePublication", "FeedMineRuntime", "FeedMineUI", "FeedMineComposition"]
