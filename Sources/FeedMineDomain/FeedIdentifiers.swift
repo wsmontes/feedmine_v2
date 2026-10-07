@@ -141,3 +141,37 @@ public struct ContentClusterID: Hashable, Codable, Sendable, CustomStringConvert
         rawValue.uuidString
     }
 }
+
+/// Phase 1B nominal identity; never derived deterministically from request or transport.
+public struct ContextKey: Hashable, Codable, Sendable, CustomStringConvertible {
+    public let rawValue: UUID
+
+    public init(rawValue: UUID) {
+        self.rawValue = rawValue
+    }
+
+    public init() {
+        self.rawValue = UUID()
+    }
+
+    public var description: String {
+        rawValue.uuidString
+    }
+}
+
+/// Phase 1B nominal identity; never derived deterministically from request or transport.
+public struct EditorialRevisionID: Hashable, Codable, Sendable, CustomStringConvertible {
+    public let rawValue: UUID
+
+    public init(rawValue: UUID) {
+        self.rawValue = rawValue
+    }
+
+    public init() {
+        self.rawValue = UUID()
+    }
+
+    public var description: String {
+        rawValue.uuidString
+    }
+}

@@ -33,3 +33,7 @@ Phase 16 — Hardening and release
 > uma phase não deve adicionar um segundo mecanismo para uma responsabilidade que uma phase anterior já possui.
 
 Esta tarefa termina na Phase 0. Nenhuma API ou comportamento de domínio é implementado. A importação histórica mencionada na Phase 15 não cria runtime paralelo nem compatibilidade arquitetural.
+
+Phase 1A — canonical identity/source/content — complete
+
+Phase 1B — context + editorial revision + FeedPlan — current

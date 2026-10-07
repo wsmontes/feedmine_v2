@@ -1,6 +1,6 @@
 # Canonical domain model — Phase 1A
 
-FeedMineDomain depends only on the Swift standard library and Foundation value types (`UUID`, `Date`, `URL`), never another FeedMine module. Only FeedIdentifiers.swift, Source.swift and Content.swift are implemented. All models are immutable value types conforming to Hashable, Codable and Sendable. IDs and ConnectorKind also provide string descriptions. No I/O or protocol interpretation occurs here.
+FeedMineDomain depends only on the Swift standard library and Foundation value types (`UUID`, `Date`, `URL`), never another FeedMine module. Phase 1A implements FeedIdentifiers.swift, Source.swift and Content.swift. Phase 1B adds context/revision IDs and implements FeedContext.swift, FeedPlan.swift and FeedIntent.swift. All models are immutable value types conforming to Hashable, Codable and Sendable. IDs and ConnectorKind also provide string descriptions. No I/O or protocol interpretation occurs here.
 
 ## Identity
 
@@ -92,4 +92,54 @@ Provider attribution in this conceptual diagram is carried by each OriginRevisio
 
 ## Scope
 
-FeedContext, FeedIntent, FeedPlan, MediaCandidate and InteractionOffer remain scaffolds. Persistence, acquisition, connectors, networking, editorial selection, media preparation, publication, runtime and UI are not implemented in Phase 1A. The Publication/Persistence representation gate remains unresolved.
+MediaCandidate and InteractionOffer remain scaffolds. FeedContext, FeedIntent and FeedPlan are Phase 1B values; no execution behavior is introduced. Persistence, acquisition, connectors, networking, editorial selection, media preparation, publication, runtime and UI are not implemented in Phase 1A. The Publication/Persistence representation gate remains unresolved.
+
+## Context and editorial revision
+
+FeedContext = what the user wants. FeedPlan = the explicit editorial policy configuration resolved for that context. EditorialRevision = identity of the concrete editorial rules that produced published history.
+
+ContextKey and EditorialRevisionID are separate nominal UUID values using the same explicit/raw or independently generated UUID construction as the existing IDs. ContextKey is supplied by the constructor's caller; it is not derived from query, SourceID, URL or a deterministic hash. No context lifecycle, registry or factory exists here.
+
+FeedContext contains exactly key: ContextKey and request: FeedContextRequest. Two FeedContext values may request the same semantic surface while having different ContextKeys. ContextKey is identity. FeedContextRequest is meaning.
+
+FeedContextRequest has exactly main, source(SourceID) and search(SearchContext). It does not describe how content is acquired and carries no endpoint, connector, HTTP configuration, acquisition target, checkpoint or network state.
+
+SearchContext contains the original query. Its failable initializer requires at least one non-whitespace character, checking whitespace/newlines only for validity. For example, "  Swift  " stays "  Swift  ". Codable decoding preserves the same invariant; it never normalizes a valid query.
+
+PolicyVersion, CatalogGeneration and SelectionSchemaVersion are small immutable UInt64 version values. Comparable compares rawValue. A single PolicyVersion type describes all opaque policy versions without defining policy objects. CatalogGeneration is neither SourceBinding generation, an acquisition checkpoint nor a database migration version.
+
+EditorialRevision contains exactly id, catalogGeneration, userSelectionVersion, eligibilityPolicyVersion, scoringPolicyVersion, sequencingPolicyVersion, exposurePolicyVersion, acquisitionPolicyVersion and selectionSchemaVersion. These explicit components identify the resolved concrete editorial rules. Changes to catalog generation, user selection, eligibility/scoring/sequencing/exposure/acquisition policy or selection schema may create a new revision. There is no automatic generation, compatibility comparison or supersession logic.
+
+Connector implementation, network availability, HTTP redirect, acquisition target checkpoint, download retry, image cache state, Dynamic Type, screen size and render rematerialization do not create a new EditorialRevision by themselves.
+
+```text
+EditorialRevision
+    != RenderEnvironmentRevision
+    != connector checkpoint
+    != SourceBinding generation
+    != database migration
+```
+
+RenderEnvironmentRevision is intentionally not part of EditorialRevision. It belongs to a later Runtime/Presentation phase. Editorial history identity is distinct from visual materialization environment. A future FeedEdition belongs to an EditorialRevision; neither that edition nor render environment models are implemented here.
+
+FeedPlan contains exactly context: FeedContext and revision: EditorialRevision, supplied explicitly. It does not select, score, fetch, resolve, publish or load. acquisitionPolicyVersion identifies a policy that may contribute to editorial definition; it does not execute acquisition. FeedPlan has no connector, endpoint, transport request, pagination or strategy object. Future concrete policies belong to Editorial, with no policy protocols introduced in Phase 1B.
+
+FeedIntent has exactly changeContext(FeedContext) and refresh. It describes what the user requested, not how Runtime executes it. A context change reprioritizes future work and does not semantically require destruction of reusable work from the previous context. It does not imply network cancellation, runway destruction, URL fetching or database reload. Refresh does not imply clearing cache, restarting the application or downloading all feeds. Runtime and future policies own those decisions. No effects, interactions or bookmark/read state are implemented.
+
+```text
+User wants something
+        ↓
+FeedContext
+        ↓
+ContextKey + Request
+        ↓
+resolved against current editorial configuration
+        ↓
+EditorialRevision
+        ↓
+FeedPlan
+        ↓
+future Selection
+```
+
+The resolution arrow describes a future Editorial responsibility; no resolver or selection implementation is added here.
