@@ -57,8 +57,10 @@ Phase 2G — complete
 
 Phase 2H — complete
 
-Phase 2I — explicit session milestone checkpoint — current
+Phase 2I — complete
+
+Phase 3A — canonical local supply design gate — current
 
 Viewport movement remains memory-local. An explicit current-position checkpoint operation supplies durability; app lifecycle timing and automatic checkpoint policy remain deferred.
 
-Phase 2G is a vertical restore slice before the remaining macro Runtime/acquisition sequence. The macro phase numbering above remains unchanged.
+Phases 2G–2I close the local publication/session vertical slice. Phase 3A precedes network acquisition because acquisition needs a canonical authority to admit into; its design gate is [CANONICAL_SUPPLY_DESIGN.md](CANONICAL_SUPPLY_DESIGN.md). Phase 3B implementation has not started. The macro phase numbering above remains unchanged.

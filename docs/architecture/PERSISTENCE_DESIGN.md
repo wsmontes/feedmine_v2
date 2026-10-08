@@ -1,4 +1,4 @@
-# Persistence design — Phase 2A lifecycle / Phase 2E restore storage
+# Persistence design — local publication/session complete; canonical supply design gate
 
 ## 1. Frozen physical topology
 
@@ -57,9 +57,9 @@ ContentStore remains a scaffold. PublicationStore and SessionStore implement imm
 
 ## 8. Next schema slice
 
-The first durable semantic vertical slice is implemented: exact publication/session restore without canonical supply, catalog or network. Local persistence as a whole is not complete. User-state, canonical supply, catalog, assets and retention remain future slices requiring explicit storage and atomicity design.
+The local session/publication vertical slice is complete through Phase 2I: exact restore, actor-owned current state, memory-local viewport movement and explicit session checkpoint durability without canonical supply, catalog or network. Local persistence as a whole is not complete. The next persistence slice is canonical local supply. Its design-only implementation gate is [CANONICAL_SUPPLY_DESIGN.md](CANONICAL_SUPPLY_DESIGN.md): four proposed domain tables, immutable revisions, same-origin current-pointer integrity, atomic current-supply projection and bounded examined-work queries. No canonical migration or ContentStore is implemented yet. User-state, catalog, assets and retention remain future slices requiring explicit storage and atomicity design.
 
-Phase 2C closes the baseline semantic PublishedCard payload. Publication/session schema design: [PERSISTENCE_PUBLICATION_SCHEMA.md](PERSISTENCE_PUBLICATION_SCHEMA.md). Phase 2D designed the first domain schema; Phase 2E implements its migration, concrete stores and internal semantic mapping. Phase 2E awaits review and merge. Phase 2B defines publication identity and exact logical restore semantics only; see [Publication restore contract](PUBLICATION_RESTORE_CONTRACT.md).
+Phase 2C closes the baseline semantic PublishedCard payload. Publication/session schema design: [PERSISTENCE_PUBLICATION_SCHEMA.md](PERSISTENCE_PUBLICATION_SCHEMA.md). Phase 2D designed the first domain schema; Phase 2E implements its migration, concrete stores and internal semantic mapping. Phase 2E is complete and incorporated into main. Phase 2B defines publication identity and exact logical restore semantics only; see [Publication restore contract](PUBLICATION_RESTORE_CONTRACT.md).
 
 ## 9. Restore-first product contract
 
@@ -107,7 +107,7 @@ Warm/offline first presentation does not depend on network, catalog refresh, a c
 - Presentation-ready frozen card data.
 - Local user-state overlays when applicable.
 
-Phase 2E persists the frozen history and logical cursor values. Runtime first-presentation execution and local user-state overlays remain deferred.
+Phase 2E persists the frozen history and logical cursor values. Phases 2G–2I implement local Runtime presentation, current session ownership, memory-local viewport movement and an explicit checkpoint operation. Application lifecycle wiring, UI implementation and local user-state overlays remain deferred.
 
 ## 10. Bookmark contract
 
