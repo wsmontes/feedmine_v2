@@ -1,38 +1,67 @@
-//
-// File: SelectionEngine.swift
-// Module: FeedMineEditorial
-//
-// Responsibility:
-//   Transformar candidatos + FeedPlan + exposure history em sequência editorial determinística futura.
-//
-// Owns:
-//   Future ownership: Future deterministic editorial selection over canonical candidates.
-//
-// Does not own:
-//   Connector calls, protocol semantics or fetching on insufficient supply.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMinePersistence. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-12, INV-13; Insufficient supply becomes upstream demand.
-//
-// Planned public surface:
-//   Future deterministic editorial selection over canonical candidates. Documentation only; no API is declared in this phase.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Owns: pure baseline policy execution, total ordering and preserved supply facts.
+// Does not own: retrieval, policy resolution or published history.
 
-// Specification notes:
-// Responsibility:
-//
-// Transformar candidatos + FeedPlan + exposure history em sequência editorial determinística futura.
-//
-// Invariant:
-//
-// Selection não conhece protocolo externo.
-//
-// Selection não busca mais dados remotamente quando faltam candidatos.
-//
-// Se supply é insuficiente, isso vira demanda upstream.
+import Foundation
+import FeedMineDomain
+
+public enum SelectionError: Error, Equatable, Sendable {
+    case policyMismatch
+    case duplicateCandidateIdentity
+}
+
+public struct SelectionSupplyReport: Hashable, Sendable {
+    public let examinedCount: Int
+    public let nextCursor: CandidateSupplyCursor?
+    public let exhausted: Bool
+
+    public init(examinedCount: Int, nextCursor: CandidateSupplyCursor?, exhausted: Bool) {
+        self.examinedCount = examinedCount
+        self.nextCursor = nextCursor
+        self.exhausted = exhausted
+    }
+}
+
+public struct SelectionResult: Hashable, Sendable {
+    public let editorialRevision: EditorialRevision
+    public let orderedCandidates: [Candidate]
+    public let supplyReport: SelectionSupplyReport
+
+    public init(editorialRevision: EditorialRevision, orderedCandidates: [Candidate], supplyReport: SelectionSupplyReport) {
+        self.editorialRevision = editorialRevision
+        self.orderedCandidates = orderedCandidates
+        self.supplyReport = supplyReport
+    }
+}
+
+public struct SelectionEngine: Sendable {
+    public init() {}
+
+    public func select(plan: FeedPlan, policy: ResolvedSelectionPolicy,
+        window: CandidateSupplyWindow) throws -> SelectionResult {
+        guard policy.matches(plan.revision) else { throw SelectionError.policyMismatch }
+        guard Set(window.candidates.map(\.originRecordID)).count == window.candidates.count else {
+            throw SelectionError.duplicateCandidateIdentity
+        }
+        // Baseline no-ops are explicit executable behavior, not inferred versions.
+        switch policy.eligibility { case .structuralOnly: break }
+        switch policy.scoring { case .equal: break }
+        switch policy.exposure { case .none: break }
+        let ordered: [Candidate]
+        switch policy.sequencing {
+        case .recencyDescending:
+            ordered = window.candidates.sorted { left, right in
+                if left.timestamp.value != right.timestamp.value {
+                    return left.timestamp.value > right.timestamp.value
+                }
+                let leftOrigin = left.originRecordID.rawValue.uuidString.lowercased()
+                let rightOrigin = right.originRecordID.rawValue.uuidString.lowercased()
+                if leftOrigin != rightOrigin { return leftOrigin > rightOrigin }
+                return left.originRevisionID.rawValue.uuidString.lowercased()
+                    > right.originRevisionID.rawValue.uuidString.lowercased()
+            }
+        }
+        return SelectionResult(editorialRevision: plan.revision, orderedCandidates: ordered,
+            supplyReport: SelectionSupplyReport(examinedCount: window.examinedCount,
+                nextCursor: window.nextCursor, exhausted: window.exhausted))
+    }
+}

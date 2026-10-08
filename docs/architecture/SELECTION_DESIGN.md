@@ -4,7 +4,7 @@
 
 Phase 3D is a design-only gate for the pure Editorial selection boundary. Phase 3C already provides Main + Source structural canonical candidates through one bounded ContentStore window per CandidateProvider call. Search remains explicitly unavailable pending canonical FTS.
 
-This design authorizes no production Swift, tests, package changes or Selection implementation. It defines the first implementation gate, Phase 3E, without starting it. Selection will execute explicit editorial behavior over supplied Candidate values; Persistence continues to own canonical authority and examined-work bounds.
+Phase 3D completed the design-only gate. Phase 3E implements the approved pure deterministic baseline: one explicit ResolvedSelectionPolicy value, nominal guard, duplicate-origin rejection, total ordering and preserved supply facts. Persistence continues to own canonical authority and examined-work bounds.
 
 ## 2. Verified legacy evidence
 
@@ -202,7 +202,7 @@ Storage/network failures are absent from this boundary because Selection perform
 
 ## 14. Phase 3E implementation gate
 
-Phase 3E may implement only:
+Phase 3E implemented only:
 
 - EditorialPolicy.swift: one ResolvedSelectionPolicy value with nominal identity and explicit baseline strategy/value semantics.
 - SelectionEngine.swift: pure deterministic execution, nominal policy guard, duplicate-input rejection and the explicit total ordering.
@@ -211,4 +211,4 @@ Phase 3E may implement only:
 
 It must not call CandidateProvider, import Persistence in SelectionEngine.swift, implement history/exposure, scoring weights, soft relaxation, quotas, language personalization, clustering, repetition or acquisition. It must not introduce requested count, card limit, pool limit, a seed without exploration semantics or a refill loop.
 
-FeedPlanResolver remains the future owner of resolving both plan identity and executable policy; this gate does not authorize implementing that resolver. Phase 3E has not started. The design is submitted for review before implementation.
+FeedPlanResolver remains the future owner of resolving both plan identity and executable policy; this gate does not authorize implementing that resolver. Phase 3E pure deterministic baseline Selection is complete. SelectionEngineTests construct values directly with @testable import FeedMineEditorial, without SQLite, ContentStore or CandidateProvider. The implementation performs no I/O, no refill, no target-count handling, no history/exposure, no scoring weights and no acquisition. No package or CandidateProvider API change was required.
