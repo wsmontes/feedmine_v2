@@ -11,6 +11,7 @@ public enum PublicationHistoryError: Error, Equatable, Sendable {
     case missingEdition
     case invalidWindow
     case inconsistentRestore
+    case invalidExposureRequest
 }
 
 /// Exact retained history and logical position, with no mechanical records exposed.
@@ -40,6 +41,46 @@ public struct PublicationHistory: Sendable {
     public init(database: RuntimeDatabase) {
         publicationStore = PublicationStore(database: database)
         sessionStore = SessionStore(database: database)
+    }
+
+    /// Committed ready-ahead history, independent of presentation window capacities.
+    public func readyAhead(editionID: FeedEditionID, anchorCardID: PublicationCardID,
+        probeBound: Int) throws -> ReadyAheadFacts {
+        let record = try publicationStore.readyAhead(editionID: editionID,
+            anchorCardID: anchorCardID, probeBound: probeBound)
+        let amount: ReadyAheadAmount
+        switch record.amount {
+        case .exact(let count): amount = .exact(count)
+        case .atLeast(let bound): amount = .atLeast(bound)
+        }
+        return ReadyAheadFacts(editionID: record.editionID, anchorCardID: record.anchorCardID,
+            observedTailCardID: record.observedTailCardID, amount: amount)
+    }
+
+    /// History presence only; Editorial decides what to exclude in a future gate.
+    public func exposure(editionID: FeedEditionID,
+        revisionIDs: [OriginRevisionID]) throws -> PublishedExposureFacts {
+        guard Set(revisionIDs).count == revisionIDs.count else {
+            throw PublicationHistoryError.invalidExposureRequest
+        }
+        let published = try publicationStore.publishedRevisionIDs(editionID: editionID, revisionIDs: revisionIDs)
+        return PublishedExposureFacts(editionID: editionID,
+            requestedRevisionIDs: revisionIDs, publishedRevisionIDs: published)
+    }
+
+    public func forwardAdvance(editionID: FeedEditionID, fromCardID: PublicationCardID,
+        toCardID: PublicationCardID, probeBound: Int) throws -> PublicationAdvanceFacts {
+        let record = try publicationStore.forwardAdvance(editionID: editionID,
+            fromCardID: fromCardID, toCardID: toCardID, probeBound: probeBound)
+        let advance: PublicationAdvance
+        switch record {
+        case .same: advance = .same
+        case .backward: advance = .backward
+        case .forwardExact(let count): advance = .forwardExact(count)
+        case .forwardBeyondProbe(let bound): advance = .forwardBeyondProbe(bound)
+        }
+        return PublicationAdvanceFacts(editionID: editionID, fromCardID: fromCardID,
+            toCardID: toCardID, advance: advance)
     }
 
     /// Nil means no saved session. Storage and mapping failures propagate unchanged.

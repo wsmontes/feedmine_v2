@@ -301,6 +301,177 @@ public struct PublicationStore: Sendable {
         }
     }
 
+    public enum ProbeCountRecord: Hashable, Sendable {
+        case exact(Int)
+        case atLeast(Int)
+    }
+
+    public struct ReadyAheadRecord: Hashable, Sendable {
+        public let editionID: FeedEditionID
+        public let anchorCardID: PublicationCardID
+        public let observedTailCardID: PublicationCardID
+        public let amount: ProbeCountRecord
+    }
+
+    public enum ForwardAdvanceRecord: Hashable, Sendable {
+        case same
+        case backward
+        case forwardExact(Int)
+        case forwardBeyondProbe(Int)
+    }
+
+    public func readyAhead(editionID: FeedEditionID, anchorCardID: PublicationCardID,
+        probeBound: Int) throws -> ReadyAheadRecord {
+        let limit = try Self.probeLimit(probeBound)
+        return try database.read { db in
+            let editionKey = PersistenceValueCoding.uuid(editionID.rawValue)
+            let schema = try Self.historySchema(editionKey, in: db)
+            let anchor = try Self.historyPosition(anchorCardID, editionKey: editionKey, schema: schema, in: db)
+            guard let segment = try Row.fetchOne(db, sql: """
+                SELECT id, ordinal, publication_schema_version FROM feed_segments
+                WHERE edition_id = ? ORDER BY ordinal DESC LIMIT 1
+                """, arguments: [editionKey]) else { throw PublicationStoreError.corruption("empty edition") }
+            let fields = PublicationRecordFields(segment)
+            guard try fields.counter("publication_schema_version") == schema else {
+                throw PublicationStoreError.corruption("tail publication schema")
+            }
+            let segmentKey = try fields.string("id")
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT id, ordinal FROM published_cards
+                WHERE segment_id = ? ORDER BY ordinal DESC LIMIT 1
+                """, arguments: [segmentKey]) else { throw PublicationStoreError.corruption("empty tail segment") }
+            let card = PublicationRecordFields(row)
+            let tail = HistoryPosition(segmentKey: segmentKey, segmentOrdinal: try fields.counter("ordinal"),
+                cardOrdinal: try card.counter("ordinal"), cardID: PublicationCardID(rawValue: try card.uuid("id")))
+            guard !tail.isBefore(anchor) else { throw PublicationStoreError.corruption("tail before anchor") }
+            let positions = try Self.probePositions(after: anchor, through: tail,
+                editionKey: editionKey, limit: limit, in: db)
+            let amount: ProbeCountRecord = positions.count > probeBound ? .atLeast(probeBound) : .exact(positions.count)
+            return ReadyAheadRecord(editionID: editionID, anchorCardID: anchorCardID,
+                observedTailCardID: tail.cardID, amount: amount)
+        }
+    }
+
+    public func publishedRevisionIDs(editionID: FeedEditionID,
+        revisionIDs: [OriginRevisionID]) throws -> Set<OriginRevisionID> {
+        try database.read { db in
+            let editionKey = PersistenceValueCoding.uuid(editionID.rawValue)
+            _ = try Self.historySchema(editionKey, in: db)
+            var published = Set<OriginRevisionID>()
+            for id in Set(revisionIDs) {
+                // Fix the driving side to the supplied revision probe, not the Edition archive.
+                if try Int.fetchOne(db, sql: """
+                    SELECT 1 FROM published_cards c INDEXED BY published_cards_origin_revision_segment
+                    JOIN feed_segments s ON s.id = c.segment_id
+                    WHERE c.origin_revision_id = ? AND s.edition_id = ? LIMIT 1
+                    """, arguments: [PersistenceValueCoding.uuid(id.rawValue), editionKey]) != nil {
+                    published.insert(id)
+                }
+            }
+            return published
+        }
+    }
+
+    public func forwardAdvance(editionID: FeedEditionID, fromCardID: PublicationCardID,
+        toCardID: PublicationCardID, probeBound: Int) throws -> ForwardAdvanceRecord {
+        let limit = try Self.probeLimit(probeBound)
+        return try database.read { db in
+            let editionKey = PersistenceValueCoding.uuid(editionID.rawValue)
+            let schema = try Self.historySchema(editionKey, in: db)
+            let from = try Self.historyPosition(fromCardID, editionKey: editionKey, schema: schema, in: db)
+            let to = try Self.historyPosition(toCardID, editionKey: editionKey, schema: schema, in: db)
+            if fromCardID == toCardID { return .same }
+            if to.isBefore(from) { return .backward }
+            let positions = try Self.probePositions(after: from, through: to,
+                editionKey: editionKey, limit: limit, in: db)
+            return positions.count > probeBound ? .forwardBeyondProbe(probeBound) : .forwardExact(positions.count)
+        }
+    }
+
+    private struct HistoryPosition {
+        let segmentKey: String
+        let segmentOrdinal: UInt64
+        let cardOrdinal: UInt64
+        let cardID: PublicationCardID
+
+        func isBefore(_ other: Self) -> Bool {
+            (segmentOrdinal, cardOrdinal) < (other.segmentOrdinal, other.cardOrdinal)
+        }
+    }
+
+    private static func probeLimit(_ bound: Int) throws -> Int {
+        guard bound > 0, bound < Int.max, Int64(exactly: bound + 1) != nil else {
+            throw PublicationStoreError.invalidCapacity
+        }
+        return bound + 1
+    }
+
+    private static func historySchema(_ editionKey: String, in db: Database) throws -> UInt64 {
+        guard let row = try Row.fetchOne(db, sql: "SELECT publication_schema_version FROM feed_editions WHERE id = ?",
+            arguments: [editionKey]) else { throw PublicationStoreError.missingEdition }
+        return try PublicationRecordFields(row).counter("publication_schema_version")
+    }
+
+    private static func historyPosition(_ cardID: PublicationCardID, editionKey: String,
+        schema: UInt64, in db: Database) throws -> HistoryPosition {
+        guard let row = try Row.fetchOne(db, sql: """
+            SELECT c.id, c.segment_id, c.ordinal, s.ordinal AS segment_ordinal,
+                s.edition_id, s.publication_schema_version
+            FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id WHERE c.id = ?
+            """, arguments: [PersistenceValueCoding.uuid(cardID.rawValue)]) else {
+            throw PublicationStoreError.corruption("occurrence membership")
+        }
+        let fields = PublicationRecordFields(row)
+        guard try fields.string("edition_id") == editionKey,
+            try fields.counter("publication_schema_version") == schema else {
+            throw PublicationStoreError.corruption("occurrence membership/schema")
+        }
+        return HistoryPosition(segmentKey: try fields.string("segment_id"),
+            segmentOrdinal: try fields.counter("segment_ordinal"), cardOrdinal: try fields.counter("ordinal"), cardID: cardID)
+    }
+
+    /// At most limit occurrence positions total. Each later-segment seek is LIMIT 1;
+    /// nonempty immutable segments make the number of seeks bounded by returned positions.
+    private static func probePositions(after from: HistoryPosition, through to: HistoryPosition,
+        editionKey: String, limit: Int, in db: Database) throws -> [PublicationCardID] {
+        var ids: [PublicationCardID] = []
+        var segmentKey = from.segmentKey, segmentOrdinal = from.segmentOrdinal
+        var lower = Int64(from.cardOrdinal)
+        while ids.count < limit {
+            let upper = segmentOrdinal == to.segmentOrdinal ? Int64(to.cardOrdinal) : Int64.max
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT id, ordinal FROM published_cards
+                WHERE segment_id = ? AND ordinal > ? AND ordinal <= ?
+                ORDER BY ordinal ASC LIMIT ?
+                """, arguments: [segmentKey, lower, upper, limit - ids.count])
+            if lower == -1, rows.isEmpty { throw PublicationStoreError.corruption("empty probe segment") }
+            for row in rows {
+                let fields = PublicationRecordFields(row)
+                _ = try fields.counter("ordinal")
+                ids.append(PublicationCardID(rawValue: try fields.uuid("id")))
+            }
+            if ids.count == limit { break }
+            if segmentOrdinal == to.segmentOrdinal {
+                guard from.cardID == to.cardID || ids.last == to.cardID else {
+                    throw PublicationStoreError.corruption("probe destination")
+                }
+                break
+            }
+            guard let segment = try Row.fetchOne(db, sql: """
+                SELECT id, ordinal FROM feed_segments
+                WHERE edition_id = ? AND ordinal > ? AND ordinal <= ?
+                ORDER BY ordinal ASC LIMIT 1
+                """, arguments: [editionKey, Int64(segmentOrdinal), Int64(to.segmentOrdinal)]) else {
+                throw PublicationStoreError.corruption("probe segment membership")
+            }
+            let fields = PublicationRecordFields(segment)
+            segmentKey = try fields.string("id")
+            segmentOrdinal = try fields.counter("ordinal")
+            lower = -1
+        }
+        return ids
+    }
+
     private static func validate(_ segment: SegmentRecord, cards: [CardRecord], version: UInt64) throws {
         guard segment.publicationSchemaVersion == version else { throw PublicationStoreError.publicationSchemaMismatch }
         guard !cards.isEmpty, segment.cardIDs == cards.map(\.id), Set(segment.cardIDs).count == segment.cardIDs.count else {

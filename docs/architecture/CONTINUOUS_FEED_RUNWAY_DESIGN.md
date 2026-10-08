@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-Design only. This gate closes the continuous local-production ownership model; it changes no Swift, tests, package graph or schema. All value names and queries below are proposed future surfaces, not implemented APIs. Base: Phase 3I3, `2778291ef462ca33e56567bbb0322ee4b3c39355`.
+Design only. This gate closes the continuous local-production ownership model; it changes no Swift, tests, package graph or schema. 3J policy/controller/production value names below remain proposed future surfaces. The bounded Publication history facts described in the 3K1 completion record below are now implemented APIs. 3J design base: Phase 3I3, `2778291ef462ca33e56567bbb0322ee4b3c39355`. Phase 3J — complete. Phase 3K1 — bounded exposure + ready-runway history facts — complete. Phase 3K2 — not started. 3K1 implementation base: `31f409528eb16f1ef300716824e7656464d863c5`.
 
 > The reader consumes stable local history while FeedMine continuously and adaptively prepares future local supply.
 
@@ -181,4 +181,14 @@ Actual AcquisitionPlanner/Coordinator, connector execution/network/HTTP, remote 
 3. **3K3 — adaptive RunwayPolicy / minimal RunwayController.** Pure known/unknown coverage arithmetic, explicitly measured rates/latency, hysteresis and resource bounds; sole in-flight local intent owner, coalesced observations, episode/head fairness and separate slice scheduling. Prove r/L adaptation, saturated probe conservatism, reversals, stale completion, pending supply reset, cheap observation and anchor-preserving append. No connector work, timer/refill attempts or remote dispatch. Scope of session notification wiring requires this gate's review.
 4. **3K4 — semantic AcquisitionDemand handoff.** Prove persistent post-settle pressure + completed structural exhaustion + no pending local work/reset/error; define acknowledgement/coalescing value boundary. Tests must reject empty nonexhausted, unknown facts and publication failure; admission reopens local-first consideration. No planner/frontier construction, coordinator, connector or network execution.
 
-These are recommended future review gates, not an authorization to start 3K. Phase 3J ends with documentation and review.
+3K1 is now complete; gates 3K2–3K4 remain recommended future reviews, not authorization to start production behavior.
+
+### 3K1 completion record
+
+PublicationHistory now exposes readyAhead, exposure and forwardAdvance as immutable semantic facts; Persistence alone owns mechanical positions/SQL. ReadyAheadAmount is exact(n) when the tail is reached within the explicit bound, otherwise atLeast(bound) with a bound+1 witness. Anchor is excluded and exact observed tail/anchor/count share one read snapshot. Existing Edition/Segment and Segment/Card ordering indexes serve bounded seeks; only anchor/tail schemas are checked, without full-history audit or payload materialization. Later segments are visited by LIMIT 1 range seeks and cards consume one shared probe+1 budget; empty crossed segments fail instead of allowing an unbounded empty walk.
+
+Exposure is exact OriginRevisionID membership in the explicitly supplied FeedEditionID, for supplied IDs only. PublicationHistory rejects duplicate requests without deduplication; unique empty requests still validate Edition existence. No exposure eligibility policy is executed. The base query plan reached cards through Edition/Segments; publication-exposure-index-v1 therefore adds only published_cards_origin_revision_segment(origin_revision_id, segment_id). The actual query explicitly uses that covering index and stops at the first same-Edition occurrence. No table, column, uniqueness constraint, exposure ledger or generation was added. Repeated explicit occurrences remain allowed and new revisions remain distinct.
+
+PublicationAdvanceFacts returns same, backward, forwardExact(n) or forwardBeyondProbe(bound), counting positions strictly after source through destination inclusively. Positions stay inside Persistence. Beyond-probe is unknown exact distance, never a rate. One read snapshot and ordering-index seeks avoid OFFSET, global sort, full payload and unlimited count. A 10,000-occurrence/100-segment fixture proves planner shape without timing assertions; migration tests preserve existing history/checkpoint and all old schema definitions. Reopen facts for requested N/A/B retain committed A/B and leave N absent, without executing CandidateProvider or Selection and without a durable production cursor.
+
+Publication history can report what is durably published; it does not decide what Editorial should exclude. Ready runway is measured from immutable published occurrence order, never from FeedWindow capacity. Bounded history observation must not become proportional to retained history size. Runtime, Editorial, Selection filtering, Runway, Acquisition and production orchestration remain unchanged; 3K2 has not started.

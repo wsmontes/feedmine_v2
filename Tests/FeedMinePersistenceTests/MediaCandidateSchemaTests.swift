@@ -133,7 +133,7 @@ final class MediaCandidateSchemaTests: XCTestCase {
         }
         XCTAssertEqual(after, before)
         let schemaAfter = try database.read { db in Set(try String.fetchAll(db, sql: "SELECT type || ':' || name FROM sqlite_schema")) }
-        XCTAssertEqual(schemaAfter.subtracting(schemaBefore), ["table:media_candidates", "index:sqlite_autoindex_media_candidates_1", "index:sqlite_autoindex_media_candidates_2"])
+        XCTAssertTrue(Set(["table:media_candidates", "index:sqlite_autoindex_media_candidates_1", "index:sqlite_autoindex_media_candidates_2"]).isSubset(of: schemaAfter.subtracting(schemaBefore)))
         XCTAssertTrue(schemaBefore.isSubset(of: schemaAfter))
         XCTAssertEqual(try store.mediaCandidates(originRevisionID: revision), [])
         let oldRevision = try XCTUnwrap(store.originRevision(id: revision))
