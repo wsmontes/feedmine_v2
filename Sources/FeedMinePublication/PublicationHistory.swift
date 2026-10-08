@@ -1,8 +1,9 @@
 // File: PublicationHistory.swift
 // Module: FeedMinePublication
-// Owns: semantic retained-history restore/window materialization through private stores.
+// Owns: retained semantic history and explicit logical cursor durability boundary.
 // Does not own: publication, retention or Runtime session state.
 
+import Foundation
 import FeedMineDomain
 import FeedMinePersistence
 
@@ -28,7 +29,7 @@ public struct RestoredPublication: Hashable, Sendable {
     }
 }
 
-/// Read-only semantic boundary over retained local publication history.
+/// Semantic boundary over retained local history and explicit session checkpoints.
 /// Local operations are synchronous; no retention/delete API or background
 /// deletion exists. Before concurrent retention, deletion or persisted session switching
 /// during restore, reassess a single Persistence snapshot for checkpoint + Edition + window.
@@ -55,6 +56,11 @@ public struct PublicationHistory: Sendable {
             throw PublicationHistoryError.inconsistentRestore
         }
         return restored
+    }
+
+    /// Persists a logical cursor for an explicit session checkpoint milestone.
+    public func saveCursor(_ cursor: SessionCursor, updatedAt: Date) throws {
+        try sessionStore.saveCheckpoint(PublicationPersistenceMapping.checkpoint(cursor, updatedAt: updatedAt))
     }
 
     /// Materializes another immutable projection without changing the durable checkpoint.

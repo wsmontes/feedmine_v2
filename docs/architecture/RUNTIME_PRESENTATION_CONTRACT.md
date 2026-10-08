@@ -1,4 +1,4 @@
-# Runtime presentation contract — Phase 2H
+# Runtime presentation contract — Phase 2I
 
 ## 1. Purpose
 
@@ -68,4 +68,10 @@ FeedSessionState contains exactly presentation, backwardCapacity and forwardCapa
 
 Viewport movement updates the actor-owned current local session state but does not itself durably checkpoint that state. After moving from a saved P4/center to a current P6/center, reopening restores P4/center because ordinary scroll never writes the SQLite checkpoint. Placement-only changes are also memory-local.
 
-Durable cursor checkpoint policy is deferred until a concrete lifecycle/milestone owner exists. No lifecycle milestones, checkpoint batching or idempotent milestone save are implemented here. UI streams, exposure and Runway remain deferred.
+## 9. Explicit session checkpoint milestone
+
+viewport movement = memory-local. checkpointCurrentPosition(at:) = explicit durability boundary. The operation converts the current presentation Edition and logical top/center anchor into a SessionCursor and saves it through PublicationHistory.saveCursor. It returns false without I/O when no state exists, and true after a successful save. It does not change presentation, capacities or any in-memory state. Persistence validates the supplied date; failures propagate while preserving both current memory state and the previous durable cursor.
+
+Without a milestone, scrolling from durable P4/center to current P6/center and reopening restores P4/center. With an explicit milestone after that scroll, reopening restores P6/center. Top placement remains top. An explicit milestone without movement may write the same logical position again with the supplied metadata time; no extra idempotency optimization is introduced.
+
+FeedSession does not decide when lifecycle milestones occur. App lifecycle wiring, automatic save policy, checkpoint batching, UI streams, exposure and Runway remain deferred.

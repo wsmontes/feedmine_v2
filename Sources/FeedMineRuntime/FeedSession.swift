@@ -1,8 +1,9 @@
 // File: FeedSession.swift
 // Module: FeedMineRuntime
-// Owns: actor-isolated current local consumption state and logical window movement.
+// Owns: current local state, memory-local viewport movement and explicit checkpoints.
 // Does not own: direct storage, publication, acquisition or UI layout.
 
+import Foundation
 import FeedMinePublication
 
 public actor FeedSession {
@@ -34,6 +35,21 @@ public actor FeedSession {
         state = FeedSessionState(presentation: snapshot,
             backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity)
         return snapshot
+    }
+
+    /// Makes the existing logical position durable without changing current presentation.
+    /// The caller decides when a milestone occurs; date validation belongs to Persistence.
+    public func checkpointCurrentPosition(at date: Date) throws -> Bool {
+        guard let current = state else { return false }
+        let placement: AnchorPlacement
+        switch current.presentation.window.anchor.placement {
+        case .top: placement = .top
+        case .center: placement = .center
+        }
+        let anchor = FeedWindowAnchor(cardID: current.presentation.window.anchor.cardID, placement: placement)
+        let cursor = SessionCursor(editionID: current.presentation.editionID, anchor: anchor)
+        try publicationHistory.saveCursor(cursor, updatedAt: date)
+        return true
     }
 
     /// Observes a reading position in the current snapshot, using retained history only.

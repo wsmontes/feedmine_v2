@@ -55,8 +55,10 @@ Phase 2F — semantic publication history + FeedWindow — complete
 
 Phase 2G — complete
 
-Phase 2H — stateful local session + viewport window shift — current
+Phase 2H — complete
 
-Viewport movement is memory-local; durable cursor checkpoint policy remains deferred until a concrete lifecycle/milestone owner exists.
+Phase 2I — explicit session milestone checkpoint — current
+
+Viewport movement remains memory-local. An explicit current-position checkpoint operation supplies durability; app lifecycle timing and automatic checkpoint policy remain deferred.
 
 Phase 2G is a vertical restore slice before the remaining macro Runtime/acquisition sequence. The macro phase numbering above remains unchanged.
