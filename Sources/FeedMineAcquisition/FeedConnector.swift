@@ -1,34 +1,35 @@
-//
-// File: FeedConnector.swift
-// Module: FeedMineAcquisition
-//
-// Responsibility:
-//   Boundary protocol entre FeedMine acquisition e implementações de sistemas externos.
-//
-// Owns:
-//   Future ownership: Boundary between canonical acquisition work and external system implementations; future AcquisitionBatch output.
-//
-// Does not own:
-//   Concrete protocol implementation, selection, publication or universal plugin frameworks.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMinePersistence. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-12, INV-13; External semantics stop at connector/admission.
-//
-// Planned public surface:
-//   Boundary between canonical acquisition work and external system implementations; future AcquisitionBatch output. Documentation only; no API is declared in this phase.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Owns: one bounded pull request and one protocol-free event per call.
+// Does not own: durable writes, planning, publication or transport-specific models.
+import FeedMineDomain
 
-// Specification notes:
-// Responsibility:
-//
-// Boundary protocol entre FeedMine acquisition e implementações de sistemas externos.
-//
-// O connector futuramente recebe acquisition work canônico e produz `AcquisitionBatch`.
-//
-// Não adicionar UniversalPlugin framework.
+public struct FeedConnectorPull: Hashable, Sendable {
+    public let targetID: AcquisitionTargetID
+    public let targetGeneration: UInt64
+    public let checkpointRevision: UInt64
+    public let checkpoint: AcquisitionCheckpoint?
+    public let observationCapacity: Int
+    public let byteCapacity: Int
+
+    public init?(targetID: AcquisitionTargetID, targetGeneration: UInt64, checkpointRevision: UInt64,
+        checkpoint: AcquisitionCheckpoint?, observationCapacity: Int, byteCapacity: Int) {
+        guard targetGeneration > 0, observationCapacity > 0, byteCapacity > 0 else { return nil }
+        self.targetID = targetID
+        self.targetGeneration = targetGeneration
+        self.checkpointRevision = checkpointRevision
+        self.checkpoint = checkpoint
+        self.observationCapacity = observationCapacity
+        self.byteCapacity = byteCapacity
+    }
+}
+
+public enum FeedConnectorEvent: Hashable, Sendable {
+    case batch(AcquisitionBatch, transportByteCount: Int)
+    case finished
+    case upToDate
+    case cancelled
+    case disconnected
+}
+
+public protocol FeedConnector: Sendable {
+    func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent
+}

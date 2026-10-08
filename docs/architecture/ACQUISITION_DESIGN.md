@@ -2,9 +2,9 @@
 
 ## 1. Scope and current state
 
-Phase 3L — complete (design only). Base: Phase 3K4, `b77e8e3324bac7428207bfd9cc7af605c4cbc3b5`. This document chooses future boundaries; Target authority is now implemented by 3M1 as recorded below; Batch and Admission are now implemented by 3M2; Planner is now implemented by 3M3; Connector surfaces remain proposed. No Swift, tests, package graph, schema or migration changes are authorized here. Phase 3M1 is now complete; Phase 3M2 is complete; Phase 3M3 is complete; Phase 3M4–3M5 are not started. See the completion record below for implemented authority.
+Phase 3L — complete (design only). Base: Phase 3K4, `b77e8e3324bac7428207bfd9cc7af605c4cbc3b5`. This document chooses future boundaries; Target authority is now implemented by 3M1 as recorded below; Batch and Admission are now implemented by 3M2; Planner is now implemented by 3M3; The bounded Connector and shared Coordinator surfaces are now implemented by 3M4. No Swift, tests, package graph, schema or migration changes are authorized here. Phase 3M1 is now complete; Phase 3M2 is complete; Phase 3M3 is complete; Phase 3M4 is complete; Phase 3M5 is not started. See the completion record below for implemented authority.
 
-Already implemented: AcquisitionDemand in Acquisition, RunwayAcquisitionIntent in Runtime, canonical ContentStore authority, Domain Source/SourceBinding, OriginRecord/immutable OriginRevision, and canonical MediaCandidate facts. AcquisitionPurpose currently has only readerContinuation. AcquisitionCoordinator, BootstrapPlan, FeedConnector, SyndicationConnector, SyndicationTranslator and SyndicationHTTP are still scaffolds. AcquisitionPlanner now implements the 3M3 pure bounded planning boundary. AdmissionPolicy now implements the 3M2 semantic admission boundary.
+Already implemented: AcquisitionDemand in Acquisition, RunwayAcquisitionIntent in Runtime, canonical ContentStore authority, Domain Source/SourceBinding, OriginRecord/immutable OriginRevision, and canonical MediaCandidate facts. AcquisitionPurpose currently has only readerContinuation. BootstrapPlan, SyndicationConnector, SyndicationTranslator and SyndicationHTTP are still scaffolds. AcquisitionCoordinator and FeedConnector now implement the 3M4 bounded shared execution boundary. AcquisitionPlanner now implements the 3M3 pure bounded planning boundary. AdmissionPolicy now implements the 3M2 semantic admission boundary.
 
 At the 3L design base runtime.sqlite owned publication/session, canonical supply and media candidates, without AcquisitionTarget or checkpoint authority. 3M1 now adds target/checkpoint authority; there is still no batch ledger or source/binding registry. catalog.sqlite is not implemented. The path being designed is demand → pure planning → bounded target work → connector → protocol-free batch → transactional admission → canonical supply → semantic local-supply-changed fact. Acquisition does not choose Selection, prepare media or publish.
 
@@ -189,7 +189,7 @@ These are concrete future review gates, not authorization to start 3M.
 | 3M4 — FeedConnector + fake coordinator | Small single pull boundary; deterministic FakeFiniteConnector/FakeContinuousConnector; one coordinator actor owns per-target execution and routes batch to Admission. | Finite multi-batch/finish, continuous batch/batch/disconnect/cancel, same-target multiple demands share one execution, old result refused after revoke/config change, bounded backpressure, settled checkpoint passed to next pull, no sleeps/polling. No HTTP/retry/timer/backoff or per-Source actors. |
 | 3M5 — fake supply-loop integration | Explicit composition harness: Runway intent → Acquisition ownership acceptance → exact ack → plan/fake execution → committed AdmissionReceipt → scope-aware noteLocalSupplyChanged → later LocalProductionSlice. | Admission changes canonical supply visible to next provider slice, shortage ownership cleared, local-first head/fairness resumes, scope-stale ack/notification refused, no publication inside Acquisition, no receipt on failure. Still no Syndication/network/UI/background timer/production FeedSession wiring. |
 
-Do not combine gates when doing so mixes transaction, pure planning, external execution or presentation ownership. Phase 3M1 — durable target/checkpoint authority — complete. Phase 3M2 — complete; Phase 3M3 — complete; Phase 3M4–3M5 — not started.
+Do not combine gates when doing so mixes transaction, pure planning, external execution or presentation ownership. Phase 3M1 — durable target/checkpoint authority — complete. Phase 3M2 — complete; Phase 3M3 — complete; Phase 3M4 — complete; Phase 3M5 — not started.
 
 
 ## Phase 3M1 completion record
@@ -268,7 +268,7 @@ Phase 3M2 — complete
 
 Phase 3M3 — pure bounded planner — complete
 
-Phase 3M4 — not started
+At the 3M3 completion gate, Phase 3M4 was not started; it is now complete as recorded below.
 
 > Eligibility is an input to the Planner, not something the Planner discovers.
 
@@ -292,4 +292,44 @@ Supplied order remains priority: an earlier startable target stays before a late
 
 The planner returns a finite immutable nonempty plan whenever work exists, including valid partial plans despite skipped targets. Otherwise zero enabled targets yields noEligibleTargets; enabled targets with zero total target capacity yield resourceDenied. After scanning, observed new-work resource denial takes precedence over activeGenerationConflict when work is empty; neither disposition implies permanent external exhaustion. AcquisitionPlan construction is fileprivate and requires nonempty work.
 
-AcquisitionPlannerTests uses value-only inputs without a database and covers all 24 numbered cases: order/capacity/filtering, zero resources and join semantics, generation conflicts, duplicate contracts, exact snapshots/bounds, pressure independence and repeatability. Additional validation tests cover negative/zero values and byte-distinct opaque snapshot facts. Package.swift, Persistence/schema, Batch, Admission, Coordinator, FeedConnector, Runtime and Composition are unchanged. Coordinator behavior, connector protocols/fakes/execution, network and Runtime acknowledgement/wiring remain deferred; 3M4 is not started.
+AcquisitionPlannerTests uses value-only inputs without a database and covers all 24 numbered cases: order/capacity/filtering, zero resources and join semantics, generation conflicts, duplicate contracts, exact snapshots/bounds, pressure independence and repeatability. Additional validation tests cover negative/zero values and byte-distinct opaque snapshot facts. Package.swift, Persistence/schema, Batch, Admission, Coordinator, FeedConnector, Runtime and Composition are unchanged. At the 3M3 completion gate, Coordinator behavior and connector protocols/fakes/execution were deferred. The bounded shared execution boundary is now implemented by the 3M4 record below; network and Runtime acknowledgement/wiring remain deferred.
+
+## Phase 3M4 — bounded connector and shared target coordinator
+
+Phase 3M1 — complete
+
+Phase 3M2 — complete
+
+Phase 3M3 — complete
+
+Phase 3M4 — bounded connector + shared target coordinator — complete
+
+Phase 3M5 — not started
+
+> FeedConnector is pull-driven: one bounded pull produces at most one protocol-free event.
+
+> A connector cannot advance to the next batch through the Coordinator until Admission has settled the previous batch.
+
+> One external execution exists per AcquisitionTargetID at a time.
+
+> Same-target same-generation callers share the existing execution rather than duplicate work.
+
+> Different-generation replacement work does not run concurrently with an older execution.
+
+> Durable target generation and checkpoint CAS remain the late-result correctness authority.
+
+> Cancellation or disconnection ends the current execution opportunity; neither schedules a retry.
+
+> Coordinator owns transient execution sharing, not durable target state, canonical state, planning or publication.
+
+FeedConnector.swift now owns the Sendable pull protocol, immutable validated FeedConnectorPull and exact protocol-free batch/finished/upToDate/cancelled/disconnected events. One async pull returns one event; no AsyncSequence, AsyncStream, subscription, queue, write/publish capability or protocol-specific transport type is added. Requests carry target ID/generation, current durable checkpoint/revision and strictly positive observation/byte capacities. Batch transportByteCount is factual and transient; it is never persisted.
+
+AcquisitionCoordinator.swift now owns one actor and a transient TargetID→generation/shared Task map. Its execute API accepts one AcquisitionPlannedWork, never a whole AcquisitionPlan. A new start resolves the caller-supplied target→connector association, creates exactly one shared Task and reserves its in-flight entry before awaiting. Same-generation starts and joinActive await the original Task without increasing its bounds; only the creator removes ownership after result/error settlement. Missing joins fail explicitly rather than creating work. Different-generation work is refused while the old Task remains, including after durable reconfiguration; replacement may begin in a separate opportunity after settlement and cleanup. activeExecutions exposes one stable fact per target, sorted only for snapshot stability. No production connector registry, ConnectorKind switch, waiter queue, execution queue, planning/frontier state or extra epoch is introduced.
+
+Before every pull the worker rereads AcquisitionTargetAuthority, fencing missing/revoked/stale-generation or byte-distinct connector snapshots. It builds the request from the current durable checkpoint, not the original planned checkpoint. Each returned batch is checked for nonnegative transport bytes, byte and observation capacities and exact issued target/generation/checkpoint-revision stamp before real AdmissionPolicy runs. Admission completes synchronously and durably before the next pull rereads authority; pull 2 therefore observes the checkpoint committed by pull 1. Admission and arbitrary connector errors propagate without another pull. A late old-generation batch passes request validation but is refused by durable target generation/checkpoint CAS in Admission, without a coordinator correctness epoch.
+
+Successful admitted batches, including checkpoint-only batches and accepted exact replays, count against the exact supplied batchCapacity. Receipts remain ordered and bounded by that capacity. At capacityReached no extra pull is made to discover a terminal event. Result selectableSupplyChanged is the aggregate of committed receipts. finished, upToDate, disconnected and cancelled end the execution without Admission or durable target-state mutation; connector CancellationError maps to cancelled while preserving already committed receipts. No automatic retry, reconnect, timer, deadline, backoff or replay heuristic exists.
+
+FakeFiniteConnector and FakeContinuousConnector are test-only actors. The finite fixture owns its script and consumes at most one step per pull, building batches with the exact request stamp. The continuous fixture stores at most one pending step and one waiting pull continuation: offer delivers to a waiter or fills the empty slot, and refuses a second buffered event. Explicit test continuations prove waiting and sharing without polling, sleeps, timers, network or a background producer. Fixtures own target→script mapping, supplied through the coordinator initializer; no registry enters production.
+
+AcquisitionCoordinatorTests uses real temporary RuntimeDatabase, real target authority and real AdmissionPolicy. All 30 numbered proofs cover checkpoint chaining, capacity and terminal/error handling, pre-Admission bounds/stamps, checkpoint-only receipts, concurrent sharing, late-result refusal/replacement, durable fences and continuous one-slot backpressure. Additional tests cover pull value validation and preservation of committed receipts on CancellationError. Planner, Admission, Persistence/schema and Package.swift are unchanged. Phase 3M5 remains the owner of plan traversal and Runtime/Acquisition handoff; no Runtime acknowledgement, Composition loop, noteLocalSupplyChanged wiring, production fake, Syndication or network implementation starts here.
