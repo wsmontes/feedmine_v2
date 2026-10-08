@@ -13,7 +13,7 @@
 //   Production behavior or application object composition.
 //
 // Allowed dependencies:
-//   PackageDescription only; GRDB 7.11.1 is the only external package dependency; confined to Persistence and its tests.
+//   PackageDescription only; GRDB 7.11.1 → Persistence only; FeedKit 10.9.4 → Syndication only (and their tests).
 //
 // Architectural invariants:
 //   INV-12, INV-15; ten production modules and architecture/domain/persistence/publication test targets.
@@ -45,12 +45,15 @@ let package = Package(
         .library(name: "FeedMineUI", targets: ["FeedMineUI"]),
         .library(name: "FeedMineComposition", targets: ["FeedMineComposition"]),
     ],
-    dependencies: [.package(url: "https://github.com/groue/GRDB.swift", exact: "7.11.1")],
+    dependencies: [
+        .package(url: "https://github.com/groue/GRDB.swift", exact: "7.11.1"),
+        .package(url: "https://github.com/nmdias/FeedKit", exact: "10.9.4")
+    ],
     targets: [
         .target(name: "FeedMineDomain", dependencies: []),
         .target(name: "FeedMinePersistence", dependencies: ["FeedMineDomain", .product(name: "GRDB", package: "GRDB.swift")]),
         .target(name: "FeedMineAcquisition", dependencies: ["FeedMineDomain", "FeedMinePersistence"]),
-        .target(name: "FeedMineSyndication", dependencies: ["FeedMineDomain", "FeedMineAcquisition"]),
+        .target(name: "FeedMineSyndication", dependencies: ["FeedMineDomain", "FeedMineAcquisition", .product(name: "FeedKit", package: "FeedKit")]),
         .target(name: "FeedMineEditorial", dependencies: ["FeedMineDomain", "FeedMinePersistence"]),
         .target(name: "FeedMineMedia", dependencies: ["FeedMineDomain", "FeedMinePersistence"]),
         .target(name: "FeedMinePublication", dependencies: ["FeedMineDomain", "FeedMinePersistence", "FeedMineEditorial", "FeedMineMedia"]),
@@ -62,6 +65,7 @@ let package = Package(
             name: "FeedMineAcquisitionTests",
             dependencies: ["FeedMineAcquisition", "FeedMineDomain", "FeedMinePersistence"]
         ),
+        .testTarget(name: "FeedMineSyndicationTests", dependencies: ["FeedMineSyndication", "FeedMineDomain", "FeedMineAcquisition"]),
         .testTarget(name: "FeedMineDomainTests", dependencies: ["FeedMineDomain"]),
         .testTarget(name: "FeedMineMediaTests", dependencies: ["FeedMineMedia"]),
         .testTarget(name: "FeedMineEditorialTests", dependencies: ["FeedMineEditorial", "FeedMineDomain", "FeedMinePersistence"]),
