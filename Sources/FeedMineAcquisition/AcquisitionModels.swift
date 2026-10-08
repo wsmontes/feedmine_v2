@@ -3,11 +3,13 @@ import FeedMineDomain
 
 public enum AcquisitionPurpose: Hashable, Sendable {
     case readerContinuation
+    case initialPublication
 }
 
 public enum AcquisitionPressure: Hashable, Sendable {
     case coverageDeficit(requiredCards: Int)
     case logicalTailPressure
+    case initialPublication
 }
 
 /// Construction asserts that the relevant bounded local structural walk completed.
@@ -28,8 +30,15 @@ public struct AcquisitionDemand: Hashable, Sendable {
 
     public init?(contextKey: ContextKey, editorialRevisionID: EditorialRevisionID,
         purpose: AcquisitionPurpose, pressure: AcquisitionPressure, localSupply: ExhaustedLocalSupply) {
-        if case .coverageDeficit(let required) = pressure {
+        switch (purpose, pressure) {
+        case (.readerContinuation, .coverageDeficit(let required)):
             guard required > 0, required > localSupply.readyCards else { return nil }
+        case (.readerContinuation, .logicalTailPressure):
+            break
+        case (.initialPublication, .initialPublication):
+            guard localSupply.readyCards == 0 else { return nil }
+        default:
+            return nil
         }
         self.contextKey = contextKey
         self.editorialRevisionID = editorialRevisionID

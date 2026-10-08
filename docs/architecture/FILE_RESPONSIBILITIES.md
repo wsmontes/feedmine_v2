@@ -18,7 +18,8 @@
 | FeedMinePersistence | SessionStore.swift | Phase 2E implemented: singleton logical checkpoint, membership validation on save/load and atomic checkpoint replacement. | Context/position duplication, pixels, SessionCursor semantics or Runtime transitions |
 | FeedMineAcquisition | FeedConnector.swift | Boundary protocol entre FeedMine acquisition e implementações de sistemas externos. | Concrete protocol implementation, selection, publication or universal plugin frameworks |
 | FeedMineAcquisition | AcquisitionModels.swift | 3K4 implemented: readerContinuation purpose, coverage/logical pressure, validated ExhaustedLocalSupply and semantic AcquisitionDemand keyed by context/revision. | Edition/card IDs, external fetch command, protocol values, source selection or execution |
-| FeedMineAcquisition | BootstrapPlan.swift | Representar trabalho bounded necessário para produzir supply inicial suficiente quando ainda não há runway utilizável. | Permanent runway strategy or bootstrap UI |
+| FeedMineAcquisition | BootstrapPlan.swift | Initial-publication demand over factual exhausted zero runway plus explicit physical acquisition resources. | Target discovery, execution, scheduling or bootstrap UI |
+| FeedMineComposition | ColdFeedBootstrap.swift | One finite cold-first invocation, injected coordinator, at most two local attempts and exact first-presentation installation. | Coordinator creation, steady-state policy, persistent progress or UI |
 | FeedMineAcquisition | AdmissionPolicy.swift | Definir o gate entre evidence trazida por connector e canonical local supply. | Editorial selection or protocol transport |
 | FeedMineAcquisition | AcquisitionPlanner.swift | Pure finite plans/dispositions from supplied demand, ordered eligible targets, active facts and explicit resource capacities. | Eligibility discovery, persistent frontier, I/O or connector execution |
 | FeedMineAcquisition | AcquisitionCoordinator.swift | Executar/coordenar acquisition planejada usando `FeedConnector`. | Publication, editorial ordering or direct scroll responses |
@@ -634,4 +635,64 @@ PublicationStore.createEdition and createInitialEdition share one mechanical fir
 
 The two new real-database test suites cover four-fact success, relation rejection, final-checkpoint rollback, preserved existing session, normal non-session creation, bounded selection/progress/exhaustion, immediate PublicationHistory.restore, caller first-card anchoring, preparation failure, exposure policy and prior-Edition independence. No separate saveCursor follows initial publication.
 
-Phase 3P2 — bounded cold bootstrap acquisition — is not started. It owns remote supply when the first bounded local attempt cannot publish. 3P1 introduces no network, Acquisition, BootstrapPlan, retries, refill/repeated attempt, loading state or minimum/target publication gate. FeedSession installation orchestration and FeedSessionUI / FeedScreenStore wiring are not started. Persistent catalog / target reconciliation is not started.
+At the 3P1 boundary, bounded remote bootstrap and FeedSession installation were deferred. Phase 3P2 now completes that finite composition path as recorded below. 3P1 itself introduces no Acquisition or network work. FeedSessionUI / FeedScreenStore wiring and persistent catalog / target reconciliation remain not started.
+
+## Phase 3P2 — bounded cold bootstrap acquisition (complete)
+
+Phase 3P1 — complete
+
+Phase 3P2 — bounded cold bootstrap acquisition — complete
+
+Cold initial presentation path — complete through FeedSession installation
+
+FeedSessionUI / FeedScreenStore wiring — not started
+
+Persistent catalog / target reconciliation — not started
+
+| File | Owns | Does not own |
+| --- | --- | --- |
+| AcquisitionModels.swift | Exact purpose/pressure pairing; initialPublication requires factual zero ready runway. | Bootstrap publication targets or scheduling. |
+| BootstrapPlan.swift | Immutable initial-publication demand and explicit AcquisitionPlanningResources. | Target discovery, database/network execution, cursors or publication. |
+| ColdFeedBootstrap.swift | Caller identity/resources, one local-first finite plan traversal and atomic-checkpoint FeedSession restoration. | Coordinator creation, Runway, direct Publication/Session stores or UI. |
+| BootstrapPlanTests.swift | Six exact demand/plan contracts. | Altering existing continuation tests. |
+| ColdFeedBootstrapTests.swift | Real cold-loop, active-generation conflict, ordered finite work, atomic session fences and error durability. | Production test hooks or live network. |
+
+`initialPublication` is a semantic purpose distinct from `readerContinuation`. AcquisitionDemand accepts only continuation with coverageDeficit/logicalTailPressure, or initialPublication with initialPublication pressure and factual readyCards == 0. The zero is absence of published runway, never a publication target. BootstrapPlan carries that exhausted-local demand plus explicit AcquisitionPlanningResources; it discovers no targets and schedules no work.
+
+ColdFeedBootstrap checks that FeedSession has no installed presentation, then invokes one bounded InitialProductionSlice. Existing durable checkpoints remain fenced by the unchanged 3P1 transaction; there is no hidden warm restore. A first local success installs FeedSession from the atomic checkpoint and stops. A first nonexhausted local miss preserves progress as localWorkRemaining and never triggers eligibility or network. Only proven local structural exhaustion permits the initial-publication demand.
+
+Eligible targets come from SyndicationAcquisitionSnapshot. Bootstrap reads the injected coordinator's active executions once, calls the existing AcquisitionPlanner once, and traverses one finite acquisition plan once sequentially. There are no Runway acknowledgement semantics. noEligibleTargets returns unavailable; resourceDenied and activeGenerationConflict return deferred with the original exhausted progress. Underlying eligibility, connector, admission, preparation and publication errors propagate without wrapping or recovery. Earlier committed target Admission survives a later error; errors never start a local publication attempt automatically.
+
+The aggregate selectableSupplyChanged fact gates the second local attempt. If false, the first exhausted progress and exact ordered results are returned without local reassessment. If true, exactly one second InitialProductionSlice receives the same request and first-Edition identity, starting selection at the canonical head. Its no-publication progress is returned whether exhausted or not. Bounds are at most two initial local attempts and at most one Acquisition planning/execution opportunity per explicit call. No target card count, page size, timer/deadline, retry, Bootstrap cursor/state machine, background work or parallel scheduler is introduced.
+
+The external composition creates and owns AcquisitionCoordinator and injects it through init(session:plan:policy:acquisition:coordinator:prepare:). ColdFeedBootstrap never fabricates a coordinator. The composition guarantees that coordinator, snapshot and InitialProductionSlice operate over the same runtimeDatabase; no identity-validation mechanism or additional owner is introduced. InitialProductionSlice is constructed from acquisition.runtimeDatabase. The bootstrap imports Publication only for PublicationSchemaVersion and AnchorPlacement value types; it never calls Publication producers/stores directly.
+
+Caller-supplied Edition/Segment IDs, seeds, schema version, three finite dates and anchor placement survive the acquisition gap unchanged. Preparation owns card IDs. Atomic initial publication remains the sole first-Edition creation path. Success invokes only FeedSession.restoreLocalPresentation to install the exact new Edition and requested finite window capacities, without another checkpoint write. Bootstrap stops after the first visible presentation; FeedRunwayDriver owns steady-state thereafter.
+
+C6 establishes real G1 work in the injected coordinator with a local URLProtocol request suspended on an AsyncStream signal. It advances durable authority to G2, then publishes a coherent G2 registration/snapshot. That snapshot supplies G2 eligibility while the same coordinator still reports G1 active. Both the pure planner proof and ColdFeedBootstrap return activeGenerationConflict, rather than staleConfigurationGeneration. No replacement request executes. Releasing G1 proves the existing Admission generation fence rejects its batch with staleGeneration(expected: 1, actual: 2), leaves canonical supply/checkpoint unchanged and removes the active execution. No sleeps, production hooks or private-state access are used.
+
+BootstrapPlanTests proves all six demand/plan contracts. ColdFeedBootstrapTests covers C1–C22 with real temporary RuntimeDatabase, FeedSession, local slices, target authority, snapshot, planner, coordinator, Syndication/URLSession/local URLProtocol, transactional Admission and durable publication/session history. The full cold-loop test calls only bootstrap.run after configuration. Additional proofs cover all three finite dates, context validation, exact restore identity, a nonexhausted second miss and static finite control flow. UpToDate/checkpoint-only tests introduce independent canonical supply during transport, proving that absence of an acquisition selectable-change receipt prevents a second local attempt even when it could publish.
+
+No schema, migration, package, Persistence, Runtime, Editorial, Media, Publication, Syndication, Runway or UI implementation changes are part of 3P2. Loading/skeleton UI, FeedScreenStore wiring, persistent catalog, target reconciliation, background refresh, media network preparation and successor Edition refresh remain unstarted. The next gate is not started.
+
+### Core invariants
+
+Cold bootstrap is a finite bridge to the first usable Edition, never an alternate permanent feed-production strategy.
+
+Existing canonical local supply is always attempted before external acquisition.
+
+External bootstrap acquisition is legal only after the bounded local structural attempt reports exhaustion.
+
+A bounded local attempt that made no publication but did not prove exhaustion never triggers remote work.
+
+Bootstrap acquisition has an explicit semantic purpose distinct from reader continuation.
+
+Bootstrap has no target card count, page size, timer, deadline or retry loop.
+
+External acquisition changes canonical supply only; InitialProductionSlice remains the only cold-bootstrap path that creates the first Edition.
+
+After acquisition changes selectable supply, bootstrap restarts local selection from the canonical head exactly once.
+
+A bootstrap call never performs a second acquisition round.
+
+The durable first Edition/session transaction remains the publication authority introduced in 3P1.

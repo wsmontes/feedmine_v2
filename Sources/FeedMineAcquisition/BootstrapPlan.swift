@@ -1,36 +1,18 @@
-//
-// File: BootstrapPlan.swift
-// Module: FeedMineAcquisition
-//
-// Responsibility:
-//   Representar trabalho bounded necessário para produzir supply inicial suficiente quando ainda não há runway utilizável.
-//
-// Owns:
-//   Future ownership: Bounded initial supply work when usable runway is absent.
-//
-// Does not own:
-//   Permanent runway strategy or bootstrap UI.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMinePersistence. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-05, INV-06; Bootstrap is finite.
-//
-// Planned public surface:
-//   Bounded initial supply work when usable runway is absent. Documentation only; no API is declared in this phase.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Owns the initial-publication semantic demand and explicit physical resources.
+// Target planning and execution remain downstream responsibilities.
+import FeedMineDomain
 
-// Specification notes:
-// Responsibility:
-//
-// Representar trabalho bounded necessário para produzir supply inicial suficiente quando ainda não há runway utilizável.
-//
-// Invariant:
-//
-// Bootstrap é finito.
-//
-// Bootstrap não é a estratégia permanente do feed.
+public struct BootstrapPlan: Hashable, Sendable {
+    public let demand: AcquisitionDemand
+    public let acquisitionResources: AcquisitionPlanningResources
+
+    public init?(contextKey: ContextKey, editorialRevisionID: EditorialRevisionID,
+        exhaustedLocalSupply: ExhaustedLocalSupply, acquisitionResources: AcquisitionPlanningResources) {
+        guard exhaustedLocalSupply.readyCards == 0,
+            let demand = AcquisitionDemand(contextKey: contextKey, editorialRevisionID: editorialRevisionID,
+                purpose: .initialPublication, pressure: .initialPublication, localSupply: exhaustedLocalSupply)
+        else { return nil }
+        self.demand = demand
+        self.acquisitionResources = acquisitionResources
+    }
+}
