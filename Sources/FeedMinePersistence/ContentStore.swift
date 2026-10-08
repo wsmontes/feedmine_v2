@@ -185,6 +185,39 @@ public struct ContentStore: Sendable {
         }
     }
 
+    // Narrow transaction-scoped admission reads; canonical mutation stays in apply.
+    func admissionRecord(matching identity: ExternalIdentity, in db: Database) throws -> OriginRecord? {
+        try Self.coding {
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT id FROM origin_records WHERE object_connector_kind = ? AND object_namespace = ?
+                    AND object_value = ? AND object_role = ?
+                """, arguments: [identity.connectorKind.rawValue, identity.namespace, identity.value, identity.role.rawValue]) else { return nil }
+            return try Self.record(OriginRecordID(rawValue: ContentFields(row).uuid("id")), in: db)
+        }
+    }
+
+    func admissionRevision(originRecordID: OriginRecordID, matching version: ExternalIdentity, in db: Database) throws -> OriginRevision? {
+        try Self.coding {
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT id FROM origin_revisions WHERE origin_record_id = ? AND version_connector_kind = ?
+                    AND version_namespace = ? AND version_value = ? AND version_role = ?
+                """, arguments: [Self.key(originRecordID.rawValue), version.connectorKind.rawValue,
+                    version.namespace, version.value, version.role.rawValue]) else { return nil }
+            return try Self.revision(OriginRevisionID(rawValue: ContentFields(row).uuid("id")), in: db)
+        }
+    }
+
+    func admissionCurrentRevision(for record: OriginRecord, in db: Database) throws -> OriginRevision? {
+        try Self.coding { try Self.current(record, in: db) }
+    }
+
+    func admissionMediaCandidates(originRevisionID: OriginRevisionID, in db: Database) throws -> [MediaCandidate] {
+        try Self.coding { try Self.mediaCandidates(originRevisionID, in: db) }
+    }
+
+    static func admissionSameRevision(_ a: OriginRevision, _ b: OriginRevision) -> Bool { sameRevision(a, b) }
+    static func admissionSameMediaCandidate(_ a: MediaCandidate, _ b: MediaCandidate) -> Bool { sameMediaCandidate(a, b) }
+
     public func commitCanonicalChange(_ change: CanonicalChange) throws {
         try database.write { try self.apply(change, in: $0) }
     }
