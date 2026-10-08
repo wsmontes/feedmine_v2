@@ -63,7 +63,7 @@
 | FeedMineRuntime | RunwayController.swift | 3K3 implemented: actor owns one memory-local intent, high-water/recent consumption and latency samples, coalesced observations, episode/head fairness and failure/bootstrap gates; emits requests only. | Direct scroll-to-connector fetching or editorial selection |
 | FeedMineRuntime | InteractionCoordinator.swift | Executar semanticamente ações oferecidas por `InteractionOffer`. | Feed production or exposed protocol-specific commands |
 | FeedMineRuntime | BackgroundFeedRefresh.swift | Entrada para oportunidades de execução em background. | Secondary background pipeline or visible history mutation |
-| FeedMineUI | FeedScreenStore.swift | Future @MainActor bridge receiving FeedPresentationSnapshot / PresentationCard through FeedSessionUI and forwarding semantic input. | Publication model translation, direct PublishedCard consumption or business logic. |
+| FeedMineUI | FeedScreenStore.swift | Phase 3Q4 implemented: MainActor observable FeedPresentationState installation and explicit semantic viewport forwarding to an injected external consumer. | Publication model translation, direct PublishedCard consumption, execution ownership or parallel presentation storage. |
 | FeedMineUI | FeedScreen.swift | Root SwiftUI da experiência de feed. | Feed production, database access or network operations |
 | FeedMineUI | FeedCardView.swift | Renderizar um PresentationCard já local e presentation-ready. | Direct PublishedCard consumption, FeedMinePublication imports, remote media resolution, network, database, acquisition or connector access. |
 | FeedMineUI | FeedLoadingView.swift | Superfície futura de cold/first bootstrap. | Fake progress or execution of bootstrap acquisition |
@@ -736,3 +736,17 @@ Phase 3Q2 completes only this state boundary. Screen/store execution wiring and 
 No presentation bridge existed during discovery. A separate stateless file avoids changing the existing production owners or assigning handoff policy to the environment/object-graph scaffolds. UI's unchanged receiving/reporting methods remain the only presentation-state operations. Snapshots are never transformed, copied into parallel arrays or replaced on nil/errors; Edition/context checks remain UI-state authority. Pending/unavailable/deferred/failure are explicit work facts. Acquisition settlement without publication creates no presentation, and finite window edges create no exhaustion state.
 
 External consumers call warm/cold/continuous opportunities explicitly. Viewport delegates exact Runtime observations/activity/resources to the driver; FeedSession keeps logical position/materialization ownership and Runway keeps intent authority. The bridge has no stored properties, constructor, actor, automatic execution or checkpoint write. Shared coordinator lifetime remains external composition responsibility. See [the handoff contract](RUNTIME_PRESENTATION_CONTRACT.md#12-explicit-presentation-handoff-and-viewport-bridge--phase-3q3). Screen/store and SwiftUI wiring remain unstarted.
+
+
+## Phase 3Q4 — minimal MainActor feed screen store (complete)
+
+| File | Owns | Does not own |
+| --- | --- | --- |
+| FeedMineUI / FeedScreenStore.swift | One native Observation-tracked FeedPresentationState on MainActor; installation through the existing receiving/reporting contract; synchronous explicit viewport input forwarding. | Cards/identity/anchor copies, cursor, durable state, resources, execution, async coordination or production dependencies. |
+| ArchitectureSmokeTests / FeedScreenStoreTests.swift | S1–S13 with real temporary published/restored snapshots, native Observation notifications, exact consumer input and durable-state preservation. | Test hooks, Runtime reconstruction, new dependencies or rewriting existing suites. |
+
+The prior store was a documentation-only scaffold. Observation is available from macOS 14/iOS 17, within the package's macOS 14/iOS 18 platforms and Swift 6 language mode. The store imports only Observation and FeedMineRuntime. Composition already depends on UI; UI continues to depend only on Domain and Runtime. ArchitectureSmokeTests already imports both sides, so Package.swift remains unchanged.
+
+External composition creates the store with a MainActor onViewport callback and installs states calculated through FeedPresentationHandoff. install(_) delegates any incoming snapshot to the current state's receiving(_), then applies the received work through reporting(_). Missing snapshots retain existing presentation; rejected identity leaves the entire observable state unchanged. There is no second identity comparison or UI translation of publication. The callback receives ViewportObservation and RunwayActivity once per explicit submitViewport call, without retaining observations or changing state. The external consumer resolves resources, calls the existing handoff/driver and installs its resulting state on MainActor.
+
+FeedScreen, FeedCardView, FeedLoadingView and FeedSessionUI remain scaffolds. Full application composition, lifecycle coordination and SwiftUI rendering are not implemented in this gate. S14 reruns presentation state/handoff, cold bootstrap, continuous driver and all Runtime suites. No other production file, manifest, schema or migration changes.

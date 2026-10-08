@@ -1,43 +1,35 @@
-//
-// File: FeedScreenStore.swift
-// Module: FeedMineUI
-//
-// Responsibility:
-//   Bridge `@MainActor` futura entre `FeedSessionUI` e SwiftUI.
-//
-// Owns:
-//   Future ownership: Future @MainActor bridge: screen presentation state and forwarding intents/viewport observations.
-//
-// Does not own:
-//   Business logic, publication model translation, acquisition, publication or persistence.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMineRuntime. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-02, INV-03; Screen state bridges FeedSessionUI and SwiftUI.
-//
-// Planned public surface:
-//   Future @MainActor bridge: screen presentation state and forwarding intents/viewport observations. Documentation only; no API is declared in this phase.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Observable screen value and explicit semantic input forwarding.
+// External composition supplies state and owns every execution opportunity.
+import Observation
+import FeedMineRuntime
 
-// Specification notes:
-// Responsibility:
-//
-// Bridge `@MainActor` futura entre `FeedSessionUI` e SwiftUI.
-//
-// Owns apenas:
-//
-// - presentation state necessário pela tela;
-// - forwarding de intents;
-// - forwarding de viewport observation.
-//
-// Não conter business logic.
+@MainActor
+@Observable
+public final class FeedScreenStore {
+    public private(set) var state: FeedPresentationState
+    @ObservationIgnored
+    private let onViewport: @MainActor (ViewportObservation, RunwayActivity) -> Void
 
-// FeedScreenStore receives FeedPresentationSnapshot / PresentationCard through FeedSessionUI.
-// It does not translate publication models itself.
-// FeedScreenStore does not consume PublishedCard directly.
-// Projection from published state to presentation state belongs to Runtime.
+    public init(onViewport: @escaping @MainActor (ViewportObservation, RunwayActivity) -> Void) {
+        state = FeedPresentationState(presentation: nil)
+        self.onViewport = onViewport
+    }
+
+    /// Receives the value computed by external composition using the existing handoff.
+    /// Reception delegates identity rules to the state contract; absence retains visible content.
+    /// A rejected snapshot leaves the entire observable value unchanged.
+    public func install(_ received: FeedPresentationState) throws {
+        let presentationState: FeedPresentationState
+        if let snapshot = received.presentation {
+            presentationState = try state.receiving(snapshot)
+        } else {
+            presentationState = state
+        }
+        state = presentationState.reporting(received.work)
+    }
+
+    /// Emits one explicit user observation. The external consumer decides how to execute it.
+    public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity) {
+        onViewport(observation, activity)
+    }
+}
