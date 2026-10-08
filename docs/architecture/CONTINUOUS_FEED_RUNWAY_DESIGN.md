@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-Design only. This gate closes the continuous local-production ownership model; it changes no Swift, tests, package graph or schema. 3J policy/controller/production value names below remain proposed future surfaces. The bounded Publication history facts described in the 3K1 completion record below are now implemented APIs. 3J design base: Phase 3I3, `2778291ef462ca33e56567bbb0322ee4b3c39355`. Phase 3J — complete. Phase 3K1 — bounded exposure + ready-runway history facts — complete. Phase 3K2 — one bounded local production slice — complete. Phase 3K3 — not started. 3K1 implementation base: `31f409528eb16f1ef300716824e7656464d863c5`.
+Design only. This gate closes the continuous local-production ownership model; it changes no Swift, tests, package graph or schema. 3J policy/controller/production value names below remain proposed future surfaces. The bounded Publication history facts described in the 3K1 completion record below are now implemented APIs. 3J design base: Phase 3I3, `2778291ef462ca33e56567bbb0322ee4b3c39355`. Phase 3J — complete. Phase 3K1 — bounded exposure + ready-runway history facts — complete. Phase 3K2 — one bounded local production slice — complete. Phase 3K3 — adaptive policy + minimal controller — complete. 3K1 implementation base: `31f409528eb16f1ef300716824e7656464d863c5`.
 
 > The reader consumes stable local history while FeedMine continuously and adaptively prepares future local supply.
 
@@ -20,7 +20,7 @@ Canonical ContentStore admits immutable OriginRevision and MediaCandidate facts.
 
 MediaPreparation accepts one candidate and explicit local bytes/key/unavailable input, returning actual usable asset facts or semantic unavailable/unsuitable; corruption/storage errors propagate. Pure Runtime PublicationPreparation preserves Selection order, exact text/time and explicit presentation decisions. PublicationCoordinator alone creates or appends immutable history with caller-supplied IDs, seeds and times; its transactional tail validation remains authoritative.
 
-FeedSession restores retained local presentation, owns logical anchor movement and saves only explicit checkpoint milestones. Existing ViewportObservation remains a logical PresentationAnchor only. RunwayPolicy, RunwayController and FeedPlanResolver remain scaffolds. No existing API is silently reinterpreted by this design.
+FeedSession restores retained local presentation, owns logical anchor movement and saves only explicit checkpoint milestones. Existing ViewportObservation remains a logical PresentationAnchor only. RunwayPolicy and RunwayController now implement the 3K3 boundaries below; FeedPlanResolver remains a scaffold. No existing API is silently reinterpreted by this design.
 
 ## 3. Legacy evidence: preserve/reject
 
@@ -172,7 +172,7 @@ Keep these as small facts/results, not a giant tail state machine. Presentation 
 
 ## 17. Explicitly deferred behavior
 
-Actual AcquisitionPlanner/Coordinator, connector execution/network/HTTP, remote media acquisition, MediaResolver/MediaPolicy, retries/cache/deadlines, sophisticated editorial policy, context-switch reuse implementation, background scheduling wiring, UI, first-launch UX and asset retention are deferred. FeedPlanResolver implementation, lifecycle auto-checkpointing, production FeedSession wiring and Runway execution are not started here. No production cursor/generation/exposure table or UI operational placeholder is introduced.
+Actual AcquisitionPlanner/Coordinator, connector execution/network/HTTP, remote media acquisition, MediaResolver/MediaPolicy, retries/cache/deadlines, sophisticated editorial policy, context-switch reuse implementation, background scheduling wiring, UI, first-launch UX and asset retention are deferred. FeedPlanResolver implementation, lifecycle auto-checkpointing, production FeedSession wiring and execution of Runway intents are not started here. No production cursor/generation/exposure table or UI operational placeholder is introduced.
 
 ## 18. 3K implementation gates
 
@@ -181,7 +181,7 @@ Actual AcquisitionPlanner/Coordinator, connector execution/network/HTTP, remote 
 3. **3K3 — adaptive RunwayPolicy / minimal RunwayController.** Pure known/unknown coverage arithmetic, explicitly measured rates/latency, hysteresis and resource bounds; sole in-flight local intent owner, coalesced observations, episode/head fairness and separate slice scheduling. Prove r/L adaptation, saturated probe conservatism, reversals, stale completion, pending supply reset, cheap observation and anchor-preserving append. No connector work, timer/refill attempts or remote dispatch. Scope of session notification wiring requires this gate's review.
 4. **3K4 — semantic AcquisitionDemand handoff.** Prove persistent post-settle pressure + completed structural exhaustion + no pending local work/reset/error; define acknowledgement/coalescing value boundary. Tests must reject empty nonexhausted, unknown facts and publication failure; admission reopens local-first consideration. No planner/frontier construction, coordinator, connector or network execution.
 
-3K1 is now complete; gates 3K3–3K4 remain recommended future reviews, not authorization to start production behavior.
+3K1 is now complete; 3K3 is complete; gate 3K4 remains a recommended future review, not authorization to start production behavior.
 
 ### 3K1 completion record
 
@@ -191,11 +191,11 @@ Exposure is exact OriginRevisionID membership in the explicitly supplied FeedEdi
 
 PublicationAdvanceFacts returns same, backward, forwardExact(n) or forwardBeyondProbe(bound), counting positions strictly after source through destination inclusively. Positions stay inside Persistence. Beyond-probe is unknown exact distance, never a rate. One read snapshot and ordering-index seeks avoid OFFSET, global sort, full payload and unlimited count. A 10,000-occurrence/100-segment fixture proves planner shape without timing assertions; migration tests preserve existing history/checkpoint and all old schema definitions. Reopen facts for requested N/A/B retain committed A/B and leave N absent, without executing CandidateProvider or Selection and without a durable production cursor.
 
-Publication history can report what is durably published; it does not decide what Editorial should exclude. Ready runway is measured from immutable published occurrence order, never from FeedWindow capacity. Bounded history observation must not become proportional to retained history size. 3K1 did not implement Runtime/Editorial behavior. 3K2 now supplies explicit Editorial exposure and one append-only Runtime slice; Runway and Acquisition remain unimplemented.
+Publication history can report what is durably published; it does not decide what Editorial should exclude. Ready runway is measured from immutable published occurrence order, never from FeedWindow capacity. Bounded history observation must not become proportional to retained history size. 3K1 did not implement Runtime/Editorial behavior. 3K2 now supplies explicit Editorial exposure and one append-only Runtime slice; Runway policy and minimal intent ownership are implemented in 3K3; Acquisition remains unimplemented.
 
 ### 3K2 completion record
 
-Phase 3K1 — complete. Phase 3K2 — one bounded local production slice — complete. Phase 3K3 — not started.
+Phase 3K1 — complete. Phase 3K2 — one bounded local production slice — complete. Phase 3K3 — adaptive policy + minimal controller — complete.
 
 Editorial SelectionExposureSnapshot validates a unique ordered request and published subset with a public failable initializer. Explicit excludePublishedRevisions behavior requires exact candidate-revision coverage, filters exact OriginRevisionID before sequencing and preserves the supplied examinedCount/nextCursor/exhausted unchanged. The existing no-exposure call delegates to one implementation; none rejects a supplied snapshot. Nominal policy mismatch and duplicate OriginRecordID remain the first validations. Editorial imports no Publication/history dependency and derives no behavior from PolicyVersion.
 
@@ -215,4 +215,39 @@ LocalPreparedPublication supplies explicit aligned inputs/card IDs; all attribut
 
 > Caller may advance episode progress only from a successfully returned LocalProductionSliceOutcome.
 
-Real-database tests prove bounded single-window output/order/IDs/progress, head restart suppressing old revisions, new revision of an old origin, zero-selected structural progress, same-cursor reconsideration after failure, unavailable image refusal and explicit textOnly success, and deterministic append during preparation rejecting stale work without retry. No schema/package change, Acquisition/network, FeedSession wiring or Runway controller/sampling is implemented. 3K3 is not started.
+Real-database tests prove bounded single-window output/order/IDs/progress, head restart suppressing old revisions, new revision of an old origin, zero-selected structural progress, same-cursor reconsideration after failure, unavailable image refusal and explicit textOnly success, and deterministic append during preparation rejecting stale work without retry. 3K2 introduced no schema/package change, Acquisition/network, FeedSession wiring or Runway controller/sampling. 3K3 adaptive policy and minimal controller are now complete; 3K4 is not started.
+
+
+### 3K3 completion record
+
+Phase 3K1 — complete
+
+Phase 3K2 — complete
+
+Phase 3K3 — adaptive policy + minimal controller — complete
+
+Phase 3K4 — not started
+
+> Runway health is coverage over measured consumption and replenishment latency, not a fixed number of cards.
+
+> RunwayController owns operational intent, not feed history or presentation.
+
+> Observation submission is memory-only.
+
+> One local slice may be in flight for the active scope.
+
+> Completing one slice may authorize another separate slice, but no method loops until runway is full.
+
+> Unknown coverage never becomes healthy merely because a probe ceiling was reached.
+
+> No timer drives replenishment.
+
+RunwayPolicy evaluates explicit measured r/L facts with `ceil(r * L * safetyFactor)` and, while previously pressured, `ceil(r * (L * safetyFactor + releaseMarginSeconds))`. It introduces no fixed card/page target. Exact ready stock is compared directly; saturated stock remains a lower bound. A lower bound insufficient to prove coverage requests a separate larger bounded ready probe before local work. Reaching the resource ceiling preserves unknown coverage. Known zero rate and exact-zero/tail intent retain factual logical pressure without inventing a positive rate.
+
+RunwayController receives caller-supplied monotonic logical RunwayObservation separately from ViewportObservation. It performs no I/O and executes no LocalProductionSlice. The actor reserves one exact local intent before returning it and coalesces concurrent observations to the latest. History requests and slice intents are executed by a future composition owner. High-water prevents reread counting; same/backward contribute zero, exact advance supplies measured rate, and beyond-probe clears consumption to unknown. Recent samples are bounded, use maximum rate, and reset across explicitly reported inactive consumption gaps.
+
+Successful replenishment uses bounded nearest-rank p95 samples. Its end-to-end latency spans intermediate zero-yield slices and scheduling gaps until publication; exhausted zero/failure/cancellation contributes no fake zero latency. Only successful outcomes update the dispatched lane cursor. Supply changes reopen exhaustion or coalesce one head reset. Fresh head and older progress alternate bounded opportunities so repeated signals cannot starve older work; a completed fresh exhausted walk supersedes older progress. No durable cursor, generation counter, task queue or timer exists.
+
+Unknown bootstrap belongs to one unchanged observation opportunity and reopens on new observation or supply change; factual exact-zero pressure can authorize successive separate bounded slices. Failures do not auto-retry. Measurements must match the latest observation and semantic history scope; completions must match the reserved intent and receipt scope before any mutation. Publication invalidates ready facts while preserving observation anchor/high-water; the next ready measurement stays around that same anchor. Pure actor tests require no database.
+
+FeedSession wiring, publishedTailAdvanced, AcquisitionDemand and Acquisition execution remain deferred to 3K4+ review. No Acquisition/network, background scheduling, UI, schema or package change is introduced.
