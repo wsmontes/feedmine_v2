@@ -83,3 +83,29 @@ FeedWindow backwardCapacity / forwardCapacity bound disposable presentation mate
 Normal future replenishment durably appends a new tail segment to the same Edition. A future publishedTailAdvanced notification permits later rematerialization around the unchanged logical anchor/placement and capacities; it does not reorder/remove visible history, force scrolling, replace Edition or implicitly checkpoint. Explicit successor preparation/swap remains separate. Existing Phase 2I restore, memory-local movement and explicit checkpoint semantics are unchanged.
 
 Production pressure, progress, in-flight intent and diagnostics are operational Runtime state outside FeedPresentationSnapshot. No tailState, runwayState, refreshState or generation placeholder is added. Future separate RunwayObservation reports logical consumption measurements without production I/O; ViewportObservation remains anchor-only. Existing retained-history window materialization remains unchanged.
+
+## 11. Feed presentation state boundary — Phase 3Q2
+
+FeedMineUI now exposes one pure immutable FeedPresentationState. It contains only the optional received FeedPresentationSnapshot and a caller-reported Work condition: idle, pending, unavailable, deferred or failed(message:). No UI-facing state contract existed in the four UI scaffolds or FeedSessionUI before this gate. The new value closes that gap; FeedScreenStore, FeedScreen, FeedCardView and FeedLoadingView remain scaffolds. No screen store, subscription, effects, SwiftUI renderer or execution wiring is implemented.
+
+| Received presentation | Work condition | Meaning |
+| --- | --- | --- |
+| nil | idle | No published presentation currently supplied; no claim of global exhaustion. |
+| nil | pending | A real initial preparation opportunity is in progress. |
+| snapshot | idle | Present the local published window immediately. |
+| snapshot | pending | Keep the exact window visible during subsequent work. |
+| nil or snapshot | unavailable | Current factual unavailability; preserve any presentation. |
+| nil or snapshot | deferred | Work was deferred; preserve any presentation. |
+| nil or snapshot | failed(message:) | Caller-supplied failure message; preserve any presentation. |
+
+The caller supplies factual work reports. reporting(_) returns a value with unchanged presentation; loading/failure can never remove cards, Edition, context or anchor. No percentages, minimum loading duration, spinner policy, request budgets or automatic acquisition enter this contract. Receiving a snapshot does not imply all external work has settled: receiving(_) preserves the work condition until the caller explicitly reports another fact.
+
+receiving(_) accepts a first snapshot, or another snapshot with the exact same Edition and context. An implicit identity replacement throws FeedPresentationStateError.presentationIdentityMismatch and leaves the prior value intact. Explicit context/Edition lifecycle and successor refresh remain future gates; this value performs neither. The snapshot remains the sole source of card order, PublicationCardID, context, Edition and PresentationAnchor. There are no separate card arrays, Edition fields, history cache or cursor. A caller can use the received anchor with the existing ViewportObservation contract; this gate introduces no new viewport identity or forwarding execution layer.
+
+A finite window edge is a materialization boundary. It never produces a global exhausted state or reader intent. Runtime may supply another window of the same Edition in its exact published order, including a new logical anchor accepted by FeedSession. Ordinary viewport movement/checkpoint rules remain unchanged.
+
+ColdFeedBootstrap and FeedRunwayDriver outcomes/errors are interpreted by their external composition, not imported into FeedMineUI. A published snapshot is received as-is; unavailable and deferred stay distinct caller reports. Local work remaining or no publication after one finite opportunity remain absence of a supplied presentation rather than definitive empty feed. Pending must be explicitly reported for actual work. Any existing presentation survives subsequent failures. This gate creates no autonomous mapping/execution machinery.
+
+The UI implementation imports only FeedMineRuntime and performs no HTTP, database access, Selection, Publication, Acquisition coordination, Runway execution, timer, retry or background work. FeedSession retains viewport/presentation authority; the finite bootstrap and continuous driver retain their separate production ownership.
+
+FeedPresentationStateTests lives in ArchitectureSmokeTests because Package.swift has no FeedMineUITests target and the existing smoke target already depends on UI and the needed fixture modules. The 12 substantive tests obtain real snapshots through temporary durable publication and FeedSession, then exercise pure state transitions: T1–T9, initial pending-to-presentation arrival, different-Edition rejection and different-context rejection. Cold bootstrap, driver and Runtime regressions cover T10. Package.swift and all non-UI production contracts remain unchanged.

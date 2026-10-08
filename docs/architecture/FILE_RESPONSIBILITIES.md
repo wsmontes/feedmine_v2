@@ -712,3 +712,16 @@ FeedRunwayDriverTests adapts its two existing initializer callsites and adds Q1/
 | FeedRunwayDriver | Requires the same externally supplied coordinator and passes it to its existing acquisition cycle. |
 | RunwayAcquisitionCycle | Continues consuming its injected coordinator and respecting Runway intent authority; unchanged in 3Q1. |
 | SyndicationAcquisitionSnapshot | Keeps makeCoordinator() for explicit creation by external composition; unchanged in 3Q1. |
+
+## Phase 3Q2 — feed presentation state boundary (complete)
+
+| File | Owns | Does not own |
+| --- | --- | --- |
+| FeedMineUI / FeedPresentationState.swift | One immutable optional Runtime snapshot plus caller-reported idle/pending/unavailable/deferred/failure condition; exact same-identity window acceptance. | Independent card history, cursor, identity allocation, viewport execution, acquisition, selection, publication or scheduling. |
+| ArchitectureSmokeTests / FeedPresentationStateTests.swift | T1–T9 and identity/arrival proofs using snapshots obtained from real local publication and FeedSession; existing manifest dependencies suffice. | Changes to Runtime/Publication APIs or a new UI test dependency target. |
+
+Discovery found no equivalent executable UI state in FeedScreenStore, FeedScreen, FeedCardView or FeedLoadingView; all four remain scaffolds. Existing FeedPresentationSnapshot, PresentationCard, PresentationAnchor and ViewportObservation contracts are reused unchanged. FeedSessionUI remains a scaffold and is not implemented here.
+
+The state stores the received snapshot as one disposable projection and never duplicates its Edition, anchor, cards or history. Work reports preserve it. A new projection retains exact Runtime order/anchor and must match current Edition/context; failure to match preserves prior state. Absence, pending, unavailable, deferred and failure remain distinct without terminal-empty or global-exhaustion policy. External composition reports work and owns cold/continuous execution; UI implements no HTTP, stores, Selection, Publication, coordinator, Runway, timers, retry, cache or background work. See [the presentation contract](RUNTIME_PRESENTATION_CONTRACT.md#11-feed-presentation-state-boundary--phase-3q2).
+
+Phase 3Q2 completes only this state boundary. Screen/store execution wiring and SwiftUI rendering remain future work. No schema, package graph or non-UI production changes are introduced.
