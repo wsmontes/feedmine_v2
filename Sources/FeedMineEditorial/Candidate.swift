@@ -1,32 +1,42 @@
-//
-// File: Candidate.swift
-// Module: FeedMineEditorial
-//
-// Responsibility:
-//   Representar uma origin/revision elegível sendo considerada para publicação.
-//
-// Owns:
-//   Future ownership: Eligible origin/revision considered for future publication.
-//
-// Does not own:
-//   PublishedCard snapshots or protocol evidence.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMinePersistence. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-08, INV-13; A candidate is not a PublishedCard.
-//
-// Planned public surface:
-//   Eligible origin/revision considered for future publication. Documentation only; no API is declared in this phase.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Owns: editorial candidate identity, narrow content and explicit timestamp meaning.
+// Does not own: Persistence rows, PublishedCard snapshots, selection or ranking.
 
-// Specification notes:
-// Responsibility:
-//
-// Representar uma origin/revision elegível sendo considerada para publicação.
-//
-// Candidate não é PublishedCard.
+import Foundation
+import FeedMineDomain
+
+public enum CandidateTimestampKind: Hashable, Sendable {
+    case authored
+    case observed
+}
+
+public struct CandidateTimestamp: Hashable, Sendable {
+    public let value: Date
+    public let kind: CandidateTimestampKind
+
+    public init(value: Date, kind: CandidateTimestampKind) {
+        self.value = value
+        self.kind = kind
+    }
+}
+
+public struct Candidate: Hashable, Sendable {
+    public let originRecordID: OriginRecordID
+    public let originRevisionID: OriginRevisionID
+    public let headline: String?
+    public let summary: String?
+    public let timestamp: CandidateTimestamp
+    public let language: String?
+    public let providerID: ProviderID?
+
+    public init(originRecordID: OriginRecordID, originRevisionID: OriginRevisionID,
+        headline: String?, summary: String?, timestamp: CandidateTimestamp,
+        language: String?, providerID: ProviderID?) {
+        self.originRecordID = originRecordID
+        self.originRevisionID = originRevisionID
+        self.headline = headline
+        self.summary = summary
+        self.timestamp = timestamp
+        self.language = language
+        self.providerID = providerID
+    }
+}
