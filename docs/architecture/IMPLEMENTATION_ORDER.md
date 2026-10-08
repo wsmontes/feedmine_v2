@@ -507,7 +507,7 @@ Phase 3N — complete
 
 Phase 3O1 — explicit SourceBinding→Target production bridge — complete
 
-Phase 3O2 — production Runway/FeedSession driver — not started
+Phase 3O2 — production Runway/FeedSession driver — not started at the 3O1 gate; see the amended 3O2 record below.
 
 Persistent catalog/target reconciliation — not started
 
@@ -550,3 +550,68 @@ Configuration changes follow a durable fence: a snapshot stamped N stays current
 Target existence remains a precondition. This bridge never calls register, reconfigure, revoke, enable or compareAndSwapCheckpoint, and introduces no automatic target registration/reconfiguration. It creates no catalog.sqlite, source/source_bindings/target_mapping/connector_config table or cross-store materialization. Persistent catalog and target reconciliation require a separate reviewed transition gate. The next 3O2 gate may wire this snapshot into production Runway/FeedSession orchestration; that driver, UI integration, background refresh, retry/timer and media download are not started here.
 
 SyndicationAcquisitionSnapshotTests covers all 23 numbered proofs, including the preferred old-snapshot Coordinator fence. Real temporary RuntimeDatabase, local deterministic URLSession/URLProtocol, actual Syndication RSS translation, snapshot.makeCoordinator() and real Admission prove direct source membership candidate visibility. Ordered membership claims are checked on the real snapshot-resolved connector. A shared target executes once and makes the same admitted OriginRecord visible under both bound Sources. Repeated stateless connector resolution resumes the durable opaque partial checkpoint without advancing authority merely by resolution/pull. No manual SyndicationTargetConfiguration, live internet, sleep, timers or production test hooks are required.
+
+
+## Phase 3O2 — production Runway / FeedSession driver
+
+Phase 3N — complete
+
+Phase 3O1 — complete
+
+Phase 3O2 — production Runway / FeedSession driver — complete
+
+Cold-start first Edition / bootstrap — not started
+
+FeedSessionUI / FeedScreenStore wiring — not started
+
+Persistent catalog / target reconciliation — not started
+
+> FeedSession owns local presentation state; it does not execute Runway, Selection, Publication or Acquisition.
+>
+> RunwayController remains the sole owner of runway policy and operational progress.
+>
+> FeedRunwayDriver executes RunwayController actions; it does not invent its own scheduling policy.
+>
+> The driver has no timer, retry policy, background cadence or fixed number of cards/actions.
+>
+> One explicit drive opportunity follows causal Runway actions until the controller becomes quiescent or explicitly defers external work.
+>
+> Publication history measurements come from committed PublicationHistory, never from the finite FeedSession presentation window.
+>
+> Local publication appends history first; FeedSession then rematerializes its current local projection without moving its anchor or durable checkpoint.
+>
+> Acquisition changes canonical supply only; LocalProductionSlice remains the only path in this driver that appends feed history.
+>
+> A restored Edition is never replaced merely because its runway needs replenishment.
+>
+> All production identifiers, preparation decisions and resource capacities remain explicit caller inputs.
+>
+> FeedSession presentation-window boundaries never fabricate reader intent. The end of a finite materialized window is not the end of committed publication history.
+>
+> Session restoration is quiescent until semantic consumption input or another explicit caller opportunity gives RunwayController actionable intent.
+
+FeedSessionState retains one new internal editorialRevisionID fact from the exact restored Edition, solely to expose currentRunwayScope without a lookup. Viewport replacement and local rematerialization preserve it. FeedPresentationSnapshot and UI presentation gain no editorial, runway, network, loading or duplicate checkpoint facts. FeedSession still executes no Selection, Publication production or Acquisition work.
+
+FeedSession.refreshCurrentPresentation rematerializes through PublicationHistory.window using exact Edition, memory-local anchor card/placement and original backward/forward capacities. It constructs the new projection before replacing state, so read/mapping failure preserves the old installed presentation and propagates. It does not save a cursor, call SessionStore or create a checkpoint milestone. No-state scope/refresh returns nil. This is local projection refresh after a committed append, not an explicit successor-Edition refresh intent.
+
+SyndicationAcquisitionSnapshot adds only an internal runtimeDatabase getter so Composition constructs PublicationHistory and LocalProductionSlice over the exact same database as Acquisition target authority and Coordinator. No public storage access, SQL or target mutation is exposed. All existing registration/eligibility/connector semantics remain unchanged.
+
+FeedRunwayDriver is a Composition actor over FeedSession, RunwayController, FeedPlan, ResolvedSelectionPolicy, the immutable Syndication snapshot, PublicationHistory, LocalProductionSlice, RunwayAcquisitionCycle and three caller closures: monotonicNow, makeSegmentIdentity and prepare. It stores no second state machine, queue, cursor, generation, pending actions, retry state or coverage policy. FeedRunwaySegmentIdentity has exact caller-supplied segment ID, seed and finite creation date; FeedRunwayDriverResources carries explicit RunwayResourceFacts and AcquisitionPlanningResources with no defaults. Initialization checks policy context only; full policy/revision compatibility remains Selection authority. Current session context and editorial revision must match the plan before effects; underlying owner errors propagate.
+
+restoreAndActivate installs the saved local presentation first, validates scope, activates Runway and submits an initial stationary observation. No checkpoint means nil and Runway deactivation, with no HTTP, local publication or cold Edition creation. activateCurrentPresentation has the same baseline for an already-restored session. Under Amendment B, stationary activation without prior consumption facts legitimately measures and quiesces without work. Restoration never fabricates forward or explicitTailApproach intent from finite window first/last/count/capacities.
+
+submitViewport first lets FeedSession accept or ignore the logical viewport. An unknown/unretained anchor that was not accepted returns the existing projection without observation or drive. An exact same anchor is still valid semantic input: caller-supplied activity and monotonic time become a new RunwayObservation even without presentation movement. One explicit same-anchor explicitTailApproach opportunity can drive the complete causal replenishment path after quiescent local restore. No UI geometry or presentation-window tail inference enters the driver.
+
+Every iteration of the sole causal drive loop starts with RunwayController.reconsider using exact caller resources and injected monotonic time. There is no maximum action/iteration/card count or independent driver pressure calculation. none returns current FeedSession presentation. measure reads committed PublicationHistory.readyAhead and, when requested, forwardAdvance, then accepts the exact measurement into Runway. Presentation capacity and item indices never substitute for committed runway or consumption facts.
+
+For a local intent, the caller supplies one segment identity. The driver passes exact intent Edition, continuation cursor and examined capacity plus plan/policy to the unchanged LocalProductionSlice and caller preparation closure. Successful outcome completes Runway with an injected completion time. Published output then refreshes FeedSession's current projection after the durable append; advancedWithoutPublication does not refresh. Failure handling attempts failLocalSlice with cancelled for CancellationError or failed otherwise, then propagates the original operation error if failure recording succeeds. No local failure starts an Acquisition fallback or automatic second attempt.
+
+For Acquisition, current targets come solely from SyndicationAcquisitionSnapshot.eligibleTargets(for: plan.context), then the unchanged RunwayAcquisitionCycle plans/executes/acknowledges. Committed selectable supply change returns the controller to local-first decisions; Acquisition never publishes feed history. Executed without supply change, acceptedUnavailable or deferred returns current presentation without redemand. A later explicit drive opportunity first reuses the exact outstanding controller-owned deferred intent: reconsider intentionally does not emit the same outstanding intent twice. This resumes resource denial without storing another pending action, creating a new demand or submitting an artificial viewport observation. Eligibility/execution failure propagates with existing pre-ack/accepted ownership semantics and never undoes canonical commits.
+
+markConsumptionInactive delegates only to Runway; deactivate delegates only to Runway deactivation. Both preserve the visible FeedSession projection. No driver task, timer, polling, network client, SQL, card-ID generation, direct wall-clock call or presentation constructor is introduced. Production RunwayController, RunwayPolicy, LocalProductionSlice, RunwayAcquisitionCycle, Syndication, Publication and Package.swift remain unchanged.
+
+FeedSessionRunwayTests proves exact restored scope, revision-preserving viewport movement, same-window append rematerialization/capacities, unchanged durable checkpoint and nil behavior without restore. FeedRunwayDriverTests covers all 24 numbered cases plus finite caller segment-time validation. The amended full-loop proof first restores with zero HTTP, then one same-anchor semantic tail call uses real committed measurements, local exhaustion, SourceBinding/Target bridge, bounded local HTTP fixture, transactional Admission, canonical reset and real LocalProductionSlice append to the same Edition. No manual internal execution occurs in that full-loop call. A suspended response proves saved history stays visible; the local-first test proves local content is committed/projected before releasing remote bytes.
+
+The thin-window proof establishes real replenishment latency and committed forward consumption, then presents only the anchor while committed history still has many ready cards. Same-anchor tail input remains healthy according to measured controller facts and causes no HTTP; window end never becomes a claimed committed history tail. Source-context tests use two real registered targets and prove only the matching binding's connector executes. Search boundary testing seeds exhausted-local controller facts because local CandidateProvider search remains unavailable, then verifies the bridge's searchContextUnavailable and retained pre-ack demand. Failure, cancellation, deferred resumption, context/revision fences, unknown viewport, committed advancement, inactivity and same-Edition quiescence are also covered with local deterministic fixtures, without sleeps/timers or live internet.
+
+Cold first-Edition bootstrap, BootstrapPlan, persistent catalog/target reconciliation, UI reducer/effects/store wiring, background cadence, retry/backoff, media network download and successor-Edition refresh remain separate future gates. The next gate is not started.

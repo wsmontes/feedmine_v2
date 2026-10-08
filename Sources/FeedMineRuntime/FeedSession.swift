@@ -4,6 +4,7 @@
 // Does not own: direct storage, publication, acquisition or UI layout.
 
 import Foundation
+import FeedMineDomain
 import FeedMinePublication
 
 public actor FeedSession {
@@ -20,6 +21,30 @@ public actor FeedSession {
         state?.presentation
     }
 
+    public func currentRunwayScope() -> RunwayScope? {
+        guard let current = state else { return nil }
+        return RunwayScope(editionID: current.presentation.editionID, contextKey: current.presentation.contextKey,
+            editorialRevisionID: current.editorialRevisionID)
+    }
+
+    /// Rematerializes committed history at the same memory-local position; no milestone is written.
+    public func refreshCurrentPresentation() throws -> FeedPresentationSnapshot? {
+        guard let current = state else { return nil }
+        let placement: AnchorPlacement
+        switch current.presentation.window.anchor.placement {
+        case .top: placement = .top
+        case .center: placement = .center
+        }
+        let anchor = FeedWindowAnchor(cardID: current.presentation.window.anchor.cardID, placement: placement)
+        let window = try publicationHistory.window(editionID: current.presentation.editionID, around: anchor,
+            backwardCapacity: current.backwardCapacity, forwardCapacity: current.forwardCapacity)
+        let snapshot = FeedPresentationSnapshot(contextKey: current.presentation.contextKey,
+            editionID: current.presentation.editionID, publishedWindow: window)
+        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
+            backwardCapacity: current.backwardCapacity, forwardCapacity: current.forwardCapacity)
+        return snapshot
+    }
+
     /// Capacities are explicit finite materialization bounds, never a page/feed size.
     /// A failed read preserves existing state; no checkpoint clears local state.
     public func restoreLocalPresentation(
@@ -32,7 +57,7 @@ public actor FeedSession {
             return nil
         }
         let snapshot = FeedPresentationSnapshot(restoredPublication: restored)
-        state = FeedSessionState(presentation: snapshot,
+        state = FeedSessionState(editorialRevisionID: restored.edition.editorialRevision.id, presentation: snapshot,
             backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity)
         return snapshot
     }
@@ -70,7 +95,7 @@ public actor FeedSession {
             forwardCapacity: current.forwardCapacity)
         let snapshot = FeedPresentationSnapshot(contextKey: current.presentation.contextKey,
             editionID: current.presentation.editionID, publishedWindow: window)
-        state = FeedSessionState(presentation: snapshot,
+        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
             backwardCapacity: current.backwardCapacity, forwardCapacity: current.forwardCapacity)
         return snapshot
     }

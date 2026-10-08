@@ -98,6 +98,8 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
             redirectCapacity: redirectCapacity, now: now)
     }
 
+    internal var runtimeDatabase: RuntimeDatabase { database }
+
     public func makeCoordinator() -> AcquisitionCoordinator {
         AcquisitionCoordinator(database: database, connectorForTarget: { target in self.connector(for: target) })
     }
