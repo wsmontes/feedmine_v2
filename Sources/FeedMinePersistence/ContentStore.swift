@@ -6,6 +6,7 @@ import GRDB
 import FeedMineDomain
 
 public enum ContentStoreError: Error, Equatable, Sendable {
+    case invalidCapacity
     case invalidRepresentation(String)
     case corruption(String)
     case originIdentityConflict
@@ -18,6 +19,113 @@ public enum ContentStoreError: Error, Equatable, Sendable {
 public struct ContentStore: Sendable {
     private let database: RuntimeDatabase
     public init(database: RuntimeDatabase) { self.database = database }
+
+    public struct CandidateCursor: Hashable, Sendable {
+        public let sortDate: Date
+        public let originRecordID: OriginRecordID
+
+        public init(sortDate: Date, originRecordID: OriginRecordID) {
+            self.sortDate = sortDate
+            self.originRecordID = originRecordID
+        }
+    }
+
+    public enum SupplySortDateBasis: String, Hashable, Sendable {
+        case authored
+        case observedFallback
+    }
+
+    public struct CandidateRecord: Hashable, Sendable {
+        public let originRecordID: OriginRecordID
+        public let originRevisionID: OriginRevisionID
+        public let sortDate: Date
+        public let sortDateBasis: SupplySortDateBasis
+        public let headline: String?
+        public let summary: String?
+        public let authoredAt: Date?
+        public let observedAt: Date
+        public let language: String?
+        public let providerID: ProviderID?
+    }
+
+    public struct CandidateWindow: Hashable, Sendable {
+        public let records: [CandidateRecord]
+        public let examinedCount: Int
+        public let nextCursor: CandidateCursor?
+        public let exhausted: Bool
+    }
+
+    public func candidateWindow(sourceID: SourceID?, after cursor: CandidateCursor?,
+        examinedCapacity: Int) throws -> CandidateWindow {
+        guard examinedCapacity > 0 else { throw ContentStoreError.invalidCapacity }
+        return try database.read { db in
+            try Self.coding {
+                // Fix examined work before performing any source eligibility lookup.
+                let columns = "SELECT origin_record_id, origin_revision_id, sort_date, sort_date_basis FROM selection_supply"
+                let order = " ORDER BY sort_date DESC, origin_record_id DESC LIMIT ?"
+                let rows: [Row]
+                if let cursor {
+                    let date = try PersistenceValueCoding.date(cursor.sortDate, field: "cursor.sort_date")
+                    rows = try Row.fetchAll(db, sql: columns + " WHERE (sort_date, origin_record_id) < (?, ?)" + order,
+                        arguments: [date, Self.key(cursor.originRecordID.rawValue), examinedCapacity])
+                } else {
+                    rows = try Row.fetchAll(db, sql: columns + order, arguments: [examinedCapacity])
+                }
+                var records: [CandidateRecord] = []
+                var nextCursor: CandidateCursor?
+                for row in rows {
+                    let f = ContentFields(row)
+                    let origin = OriginRecordID(rawValue: try f.uuid("origin_record_id"))
+                    let revision = OriginRevisionID(rawValue: try f.uuid("origin_revision_id"))
+                    let sortDate = try f.date("sort_date")
+                    guard let basis = SupplySortDateBasis(rawValue: try f.string("sort_date_basis")) else {
+                        throw ContentStoreError.corruption("sort_date_basis")
+                    }
+                    nextCursor = CandidateCursor(sortDate: sortDate, originRecordID: origin)
+                    let key = Self.key(origin.rawValue)
+                    guard let originRow = try Row.fetchOne(db,
+                        sql: "SELECT availability, current_revision_id FROM origin_records WHERE id = ?", arguments: [key]) else {
+                        throw ContentStoreError.corruption("supply origin")
+                    }
+                    let originFields = ContentFields(originRow)
+                    let availability = try originFields.string("availability")
+                    guard availability == "available" || availability == "updated",
+                        try originFields.optionalUUID("current_revision_id") == revision.rawValue else {
+                        throw ContentStoreError.corruption("supply currentness/availability")
+                    }
+                    // Every projection must remain structurally backed by membership.
+                    guard try Bool.fetchOne(db,
+                        sql: "SELECT EXISTS(SELECT 1 FROM source_memberships WHERE origin_record_id = ?)", arguments: [key]) == true else {
+                        throw ContentStoreError.corruption("supply membership")
+                    }
+                    if let sourceID, try Bool.fetchOne(db,
+                        sql: "SELECT EXISTS(SELECT 1 FROM source_memberships WHERE origin_record_id = ? AND source_id = ?)",
+                        arguments: [key, Self.key(sourceID.rawValue)]) != true {
+                        continue
+                    }
+                    // No broad revision decode: excluded payloads are never selected.
+                    guard let payload = try Row.fetchOne(db, sql: """
+                        SELECT id, origin_record_id, headline, summary, authored_at, observed_at, language, provider_id
+                        FROM origin_revisions WHERE id = ?
+                        """, arguments: [Self.key(revision.rawValue)]) else {
+                        throw ContentStoreError.corruption("supply revision")
+                    }
+                    let p = ContentFields(payload)
+                    guard try p.uuid("origin_record_id") == origin.rawValue else {
+                        throw ContentStoreError.corruption("supply revision origin")
+                    }
+                    records.append(CandidateRecord(originRecordID: origin,
+                        originRevisionID: OriginRevisionID(rawValue: try p.uuid("id")), sortDate: sortDate, sortDateBasis: basis,
+                        headline: try p.optionalString("headline"), summary: try p.optionalString("summary"),
+                        authoredAt: try p.optionalDate("authored_at"), observedAt: try p.date("observed_at"),
+                        language: try p.optionalString("language"),
+                        providerID: try p.optionalUUID("provider_id").map { ProviderID(rawValue: $0) }))
+                }
+                return CandidateWindow(records: records, examinedCount: rows.count,
+                    nextCursor: nextCursor, exhausted: rows.count < examinedCapacity)
+            }
+        }
+    }
 
     public enum CurrentRevisionExpectation: Equatable, Sendable {
         case none
