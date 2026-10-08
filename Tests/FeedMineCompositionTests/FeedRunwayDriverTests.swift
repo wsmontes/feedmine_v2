@@ -27,6 +27,8 @@ final class FeedRunwayDriverTests: XCTestCase {
         let session: FeedSession
         let runway: RunwayController
         let driver: FeedRunwayDriver
+        let acquisition: SyndicationAcquisitionSnapshot
+        let coordinator: AcquisitionCoordinator
         let http: DriverHTTPFixture
         let otherHTTP: DriverHTTPFixture
     }
@@ -92,11 +94,12 @@ final class FeedRunwayDriverTests: XCTestCase {
         let session = FeedSession(publicationHistory:.init(database:db)),clock = DriverClock()
         let runway = RunwayController(configuration:.init(policyInputs:.init(safetyFactor:1,releaseMarginSeconds:0)!,consumptionSampleLimit:4,replenishmentSampleLimit:4)!)
         let driverPlan = differentRevision ? plan(p.context) : driverContext.map { plan($0) } ?? p
-        let driver = try FeedRunwayDriver(session:session,runway:runway,plan:driverPlan,policy:policy(driverPlan),acquisition:acquisition,
+        let coordinator = acquisition.makeCoordinator()
+        let driver = try FeedRunwayDriver(session:session,runway:runway,plan:driverPlan,policy:policy(driverPlan),acquisition:acquisition,coordinator:coordinator,
             monotonicNow:{ clock.next() },makeSegmentIdentity:{ .init(segmentID:FeedSegmentID(),segmentSeed:2,segmentCreatedAt:Date(timeIntervalSince1970:6))! },prepare:{ selection in
                 if cancelPrepare { throw CancellationError() }; if prepareFailure { throw Failure.preparation }; return Self.prepared(selection)
             })
-        return .init(database:db,plan:p,policy:pol,edition:edition,cards:prepared.cardIDs,source:source,target:target,session:session,runway:runway,driver:driver,http:http,otherHTTP:otherHTTP)
+        return .init(database:db,plan:p,policy:pol,edition:edition,cards:prepared.cardIDs,source:source,target:target,session:session,runway:runway,driver:driver,acquisition:acquisition,coordinator:coordinator,http:http,otherHTTP:otherHTTP)
     }
     private func restore(_ f:Fixture,forward:Int = 4,resources:FeedRunwayDriverResources? = nil) async throws -> FeedPresentationSnapshot {
         let result = try await f.driver.restoreAndActivate(backwardCapacity:1,forwardCapacity:forward,resources:resources ?? self.resources())
@@ -228,7 +231,7 @@ final class FeedRunwayDriverTests: XCTestCase {
         let f = try fixture(),db = f.database,config = URLSessionConfiguration.ephemeral,s = URLSession(configuration:config)
         defer { s.invalidateAndCancel() }
         let acquisition = try SyndicationAcquisitionSnapshot(database:db,registrations:[],session:s,redirectCapacity:0)
-        XCTAssertThrowsError(try FeedRunwayDriver(session:f.session,runway:f.runway,plan:f.plan,policy:policy(plan(.init(request:.source(SourceID())))),acquisition:acquisition,
+        XCTAssertThrowsError(try FeedRunwayDriver(session:f.session,runway:f.runway,plan:f.plan,policy:policy(plan(.init(request:.source(SourceID())))),acquisition:acquisition,coordinator:f.coordinator,
             monotonicNow:{ .init(seconds:0)! },makeSegmentIdentity:{ .init(segmentID:FeedSegmentID(),segmentSeed:0,segmentCreatedAt:Date(timeIntervalSince1970:0))! },prepare:Self.prepared)) {
             XCTAssertEqual($0 as? FeedRunwayDriverError,.policyContextMismatch)
         }
@@ -275,6 +278,116 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(value?.segmentID,id); XCTAssertEqual(value?.segmentSeed,UInt64.max); XCTAssertEqual(value?.segmentCreatedAt,date)
         for invalid in [Double.nan,.infinity,-.infinity] {
             XCTAssertNil(FeedRunwaySegmentIdentity(segmentID:id,segmentSeed:0,segmentCreatedAt:Date(timeIntervalSinceReferenceDate:invalid)))
+        }
+    }
+
+    private func coldIdentity() -> ColdFeedPublicationIdentity {
+        .init(editionID: FeedEditionID(), publicationSchemaVersion: .init(rawValue: 1), selectionSeed: 1,
+            editionCreatedAt: Date(timeIntervalSince1970: 10), segmentID: FeedSegmentID(), segmentSeed: 2,
+            segmentCreatedAt: Date(timeIntervalSince1970: 11), anchorPlacement: .top,
+            checkpointedAt: Date(timeIntervalSince1970: 12))!
+    }
+    private func coldResources() -> ColdFeedBootstrapResources {
+        .init(localExaminedCapacity: 8, acquisition: resources().acquisition)!
+    }
+    func testQ1ColdAndRunwayShareCompositionCoordinatorAndDatabase() async throws {
+        let source = SourceID(), f = try fixture(checkpoint: false, paused: true, context: .init(request: .source(source)))
+        // fixture.driver and bootstrap receive this one composition-owned instance, over f.database.
+        let shared = f.coordinator, id = coldIdentity()
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: shared, prepare: Self.prepared)
+        let bounds = coldResources()
+        let task = Task { try await bootstrap.run(identity: id, resources: bounds, backwardCapacity: 0, forwardCapacity: 2) }
+        defer { f.http.release() }
+        var started = f.http.started.makeAsyncIterator(); _ = await started.next()
+        let active = await shared.activeExecutions()
+        XCTAssertEqual(active, [AcquisitionActiveExecution(targetID: f.target.id, generation: 1)!])
+        XCTAssertNil(try SessionStore(database: f.database).checkpoint())
+        f.http.release()
+        guard case .published(let first) = try await task.value else { return XCTFail("Expected first cold presentation") }
+        XCTAssertEqual(first.editionID, id.editionID); XCTAssertEqual(f.http.calls, 1)
+        XCTAssertEqual(try ContentStore(database: f.database).candidateWindow(sourceID: source, after: nil, examinedCapacity: 8).records.count, 1)
+        let checkpoint = try SessionStore(database: f.database).checkpoint()
+        let restored = try await restore(f)
+        XCTAssertEqual(restored.editionID, first.editionID)
+        let afterTail = try await tail(f, restored)
+        XCTAssertEqual(afterTail?.editionID, id.editionID); XCTAssertEqual(f.http.calls, 2)
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: id.editionID).count, 1)
+        let settled = await shared.activeExecutions(); XCTAssertTrue(settled.isEmpty)
+    }
+    func testQ2DriverObservesSharedActiveGenerationConflictWithoutReplacement() async throws {
+        let source = SourceID(), f = try fixture(paused: true, context: .init(request: .source(source)))
+        let shared = f.coordinator
+        let work = AcquisitionPlannedWork.start(target: f.target,
+            bounds: .init(batchCapacity: 1, observationCapacityPerBatch: 8, byteCapacityPerBatch: 100_000)!)
+        let oldExecution = Task { try await shared.execute(work) }
+        defer { f.http.release() }
+        var started = f.http.started.makeAsyncIterator(); _ = await started.next()
+        let oldActive = await shared.activeExecutions()
+        XCTAssertEqual(oldActive, [AcquisitionActiveExecution(targetID: f.target.id, generation: 1)!])
+        let authority = AcquisitionTargetAuthority(database: f.database)
+        let next = try authority.reconfigure(id: f.target.id, expectedGeneration: 1, connectorKind: .syndication, checkpoint: .preserve)
+        let binding = SourceBinding(id: SourceBindingID(), sourceID: source,
+            externalPrincipal: .init(connectorKind: .syndication, namespace: "p", value: "new-configuration", role: .principal),
+            aliases: [], generation: 2, state: .enabled)!
+        // Publish the G2 configuration only after its durable fence. Its endpoint responds immediately
+        // so a regression that creates a replacement coordinator fails without hanging on paused G1.
+        let registration = SyndicationTargetRegistration(targetID: next.id, targetGeneration: next.generation,
+            endpoint: f.otherHTTP.url, bindings: [binding])!
+        let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [DriverURLProtocol.self]
+        let transport = URLSession(configuration: configuration)
+        addTeardownBlock { transport.invalidateAndCancel() }
+        let acquisition = try SyndicationAcquisitionSnapshot(database: f.database, registrations: [registration],
+            session: transport, redirectCapacity: 0, now: { Date(timeIntervalSince1970: 5) })
+        let eligible = try acquisition.eligibleTargets(for: f.plan.context)
+        XCTAssertEqual(eligible, [next]); XCTAssertEqual(next.generation, 2)
+        let checkpoint = try SessionStore(database: f.database).checkpoint()
+        let id = coldIdentity()
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: acquisition, coordinator: shared, prepare: Self.prepared)
+        guard case .deferred(let progress, .activeGenerationConflict) = try await bootstrap.run(identity: id,
+            resources: coldResources(), backwardCapacity: 0, forwardCapacity: 2) else {
+            return XCTFail("Cold consumer must observe the shared G1 execution")
+        }
+        XCTAssertTrue(progress.exhausted)
+        let clock = DriverClock()
+        let driver = try FeedRunwayDriver(session: f.session, runway: f.runway, plan: f.plan, policy: f.policy,
+            acquisition: acquisition, coordinator: shared, monotonicNow: { clock.next() },
+            makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 2, segmentCreatedAt: Date(timeIntervalSince1970: 6))! },
+            prepare: Self.prepared)
+        let restoredValue = try await driver.restoreAndActivate(backwardCapacity: 0, forwardCapacity: 2, resources: resources())
+        let restored = try XCTUnwrap(restoredValue)
+        let result = try await driver.submitViewport(.init(anchor: restored.window.anchor), activity: .explicitTailApproach, resources: resources())
+        XCTAssertEqual(result, restored)
+        let pending = await f.runway.snapshot()
+        let intent = try XCTUnwrap(pending.outstandingAcquisition)
+        XCTAssertEqual(intent.demand.purpose, .readerContinuation)
+        XCTAssertTrue(pending.localSupplyExhausted)
+        // The existing cycle exposes the precise disposition for the same still-pending intent.
+        let disposition = try await RunwayAcquisitionCycle(runway: f.runway, coordinator: shared).run(intent,
+            eligibleTargets: eligible, resources: resources().acquisition)
+        XCTAssertEqual(disposition, .deferred(.activeGenerationConflict))
+        let unchanged = await f.runway.snapshot(); XCTAssertEqual(unchanged, pending)
+        let stillActive = await shared.activeExecutions(); XCTAssertEqual(stillActive, oldActive)
+        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.otherHTTP.calls, 0)
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.edition).count, 1)
+        XCTAssertNil(try PublicationStore(database: f.database).edition(id: id.editionID))
+        f.http.release()
+        do { _ = try await oldExecution.value; XCTFail("Obsolete G1 Admission must be rejected") }
+        catch { XCTAssertEqual(error as? AcquisitionTargetStoreError, .staleGeneration(expected: 1, actual: 2)) }
+        XCTAssertTrue(try ContentStore(database: f.database).candidateWindow(sourceID: nil, after: nil, examinedCapacity: 8).records.isEmpty)
+        XCTAssertEqual(try authority.target(id: next.id), next)
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
+        let settled = await shared.activeExecutions(); XCTAssertTrue(settled.isEmpty)
+    }
+    func testQ4ConsumersNeverConstructTheirOwnCoordinator() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        for file in ["ColdFeedBootstrap.swift", "FeedRunwayDriver.swift"] {
+            let source = try String(contentsOf: root.appendingPathComponent("Sources/FeedMineComposition/" + file), encoding: .utf8)
+            XCTAssertNil(source.range(of: #"\bmakeCoordinator\s*\("#, options: .regularExpression), file)
+            XCTAssertNil(source.range(of: #"\bAcquisitionCoordinator\s*\("#, options: .regularExpression), file)
         }
     }
 

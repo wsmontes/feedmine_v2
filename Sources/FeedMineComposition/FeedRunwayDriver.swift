@@ -41,14 +41,15 @@ public actor FeedRunwayDriver {
     private let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication
 
     public init(session: FeedSession, runway: RunwayController, plan: FeedPlan, policy: ResolvedSelectionPolicy,
-        acquisition: SyndicationAcquisitionSnapshot, monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime,
+        acquisition: SyndicationAcquisitionSnapshot, coordinator: AcquisitionCoordinator,
+        monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime,
         makeSegmentIdentity: @escaping @Sendable () throws -> FeedRunwaySegmentIdentity,
         prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication) throws {
         guard policy.contextKey == plan.context.key else { throw FeedRunwayDriverError.policyContextMismatch }
         self.session = session; self.runway = runway; self.plan = plan; self.policy = policy; self.acquisition = acquisition
         publicationHistory = PublicationHistory(database: acquisition.runtimeDatabase)
         localProductionSlice = LocalProductionSlice(database: acquisition.runtimeDatabase)
-        acquisitionCycle = RunwayAcquisitionCycle(runway: runway, coordinator: acquisition.makeCoordinator())
+        acquisitionCycle = RunwayAcquisitionCycle(runway: runway, coordinator: coordinator)
         self.monotonicNow = monotonicNow; self.makeSegmentIdentity = makeSegmentIdentity; self.prepare = prepare
     }
 

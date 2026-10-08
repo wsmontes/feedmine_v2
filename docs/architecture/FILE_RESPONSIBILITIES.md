@@ -696,3 +696,19 @@ After acquisition changes selectable supply, bootstrap restarts local selection 
 A bootstrap call never performs a second acquisition round.
 
 The durable first Edition/session transaction remains the publication authority introduced in 3P1.
+
+## Phase 3Q1 — shared AcquisitionCoordinator ownership (complete)
+
+Phase 3Q1 — implemented and verified. External composition creates and owns one AcquisitionCoordinator per shared lifetime and injects that same instance into ColdFeedBootstrap and FeedRunwayDriver. Coordinator, SyndicationAcquisitionSnapshot and local production use the same RuntimeDatabase; that relationship remains a composition responsibility without artificial database-identity checks. FeedRunwayDriver now requires coordinator: AcquisitionCoordinator and passes it unchanged to RunwayAcquisitionCycle. Neither consumer constructs its own coordinator or offers a factory-calling initializer. SyndicationAcquisitionSnapshot.makeCoordinator() remains the explicit external creation point.
+
+Ownership alone changes: restoreAndActivate, activateCurrentPresentation, submitViewport and drive retain their existing behavior. RunwayController remains authority for pending intents, acknowledgements and progression; AcquisitionPlanner retains generation/eligibility/conflict rules, and durable stores retain transactional authority. Cold bootstrap remains finite. No schema, migration, publication/checkpoint semantics, generation policy, UI, catalog, timer, retry, cache, fallback, scheduler or additional ownership mechanism changes.
+
+FeedRunwayDriverTests adapts its two existing initializer callsites and adds Q1/Q2/Q4. Q1 passes the fixture's single real coordinator to both consumers, observes cold work through it and hands the resulting same-database presentation to the driver. Q2 suspends real G1 transport, durably reconfigures to G2, then publishes coherent G2 eligibility. Cold and the driver receive the same still-active coordinator; the driver preserves the pending intent and starts no replacement request. The existing RunwayAcquisitionCycle returns deferred(activeGenerationConflict) for that exact intent with the same coordinator. Releasing G1 proves Admission still rejects staleGeneration(expected: 1, actual: 2). No stale-configuration rejection substitutes for the active conflict, and no sleeps, polling or production hooks are used. Q4 checks that both consumer source files contain no coordinator factory/construction. Existing Runway suites and the unchanged ColdFeedBootstrapTests, including C6, are rerun.
+
+| Component | Ownership after 3Q1 |
+| --- | --- |
+| External composition | Creates one coordinator, owns its lifetime and supplies coherent snapshot/database dependencies. |
+| ColdFeedBootstrap | Consumes the injected coordinator for one finite cold opportunity; unchanged in 3Q1. |
+| FeedRunwayDriver | Requires the same externally supplied coordinator and passes it to its existing acquisition cycle. |
+| RunwayAcquisitionCycle | Continues consuming its injected coordinator and respecting Runway intent authority; unchanged in 3Q1. |
+| SyndicationAcquisitionSnapshot | Keeps makeCoordinator() for explicit creation by external composition; unchanged in 3Q1. |
