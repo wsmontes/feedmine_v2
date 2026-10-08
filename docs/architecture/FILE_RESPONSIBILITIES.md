@@ -725,3 +725,14 @@ Discovery found no equivalent executable UI state in FeedScreenStore, FeedScreen
 The state stores the received snapshot as one disposable projection and never duplicates its Edition, anchor, cards or history. Work reports preserve it. A new projection retains exact Runtime order/anchor and must match current Edition/context; failure to match preserves prior state. Absence, pending, unavailable, deferred and failure remain distinct without terminal-empty or global-exhaustion policy. External composition reports work and owns cold/continuous execution; UI implements no HTTP, stores, Selection, Publication, coordinator, Runway, timers, retry, cache or background work. See [the presentation contract](RUNTIME_PRESENTATION_CONTRACT.md#11-feed-presentation-state-boundary--phase-3q2).
 
 Phase 3Q2 completes only this state boundary. Screen/store execution wiring and SwiftUI rendering remain future work. No schema, package graph or non-UI production changes are introduced.
+
+## Phase 3Q3 — explicit presentation handoff and viewport bridge (complete)
+
+| File | Owns | Does not own |
+| --- | --- | --- |
+| FeedMineComposition / FeedPresentationHandoff.swift | Stateless snapshot/outcome interpretation into the existing FeedPresentationState and one explicit viewport delegation to FeedRunwayDriver. | Current-state storage, alternate presentation authority, history/cards/cursor, coordinator, checkpoint, production or scheduling. |
+| FeedMineCompositionTests / FeedPresentationHandoffTests.swift | H1–H11 plus settlement/nil/static proofs with real database/session/cold/driver/shared-coordinator/local-transport fixtures. | New production hooks, rewriting previous suites or modifying dependency graph. |
+
+No presentation bridge existed during discovery. A separate stateless file avoids changing the existing production owners or assigning handoff policy to the environment/object-graph scaffolds. UI's unchanged receiving/reporting methods remain the only presentation-state operations. Snapshots are never transformed, copied into parallel arrays or replaced on nil/errors; Edition/context checks remain UI-state authority. Pending/unavailable/deferred/failure are explicit work facts. Acquisition settlement without publication creates no presentation, and finite window edges create no exhaustion state.
+
+External consumers call warm/cold/continuous opportunities explicitly. Viewport delegates exact Runtime observations/activity/resources to the driver; FeedSession keeps logical position/materialization ownership and Runway keeps intent authority. The bridge has no stored properties, constructor, actor, automatic execution or checkpoint write. Shared coordinator lifetime remains external composition responsibility. See [the handoff contract](RUNTIME_PRESENTATION_CONTRACT.md#12-explicit-presentation-handoff-and-viewport-bridge--phase-3q3). Screen/store and SwiftUI wiring remain unstarted.

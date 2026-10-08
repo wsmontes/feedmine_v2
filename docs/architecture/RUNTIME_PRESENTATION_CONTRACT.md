@@ -109,3 +109,28 @@ ColdFeedBootstrap and FeedRunwayDriver outcomes/errors are interpreted by their 
 The UI implementation imports only FeedMineRuntime and performs no HTTP, database access, Selection, Publication, Acquisition coordination, Runway execution, timer, retry or background work. FeedSession retains viewport/presentation authority; the finite bootstrap and continuous driver retain their separate production ownership.
 
 FeedPresentationStateTests lives in ArchitectureSmokeTests because Package.swift has no FeedMineUITests target and the existing smoke target already depends on UI and the needed fixture modules. The 12 substantive tests obtain real snapshots through temporary durable publication and FeedSession, then exercise pure state transitions: T1–T9, initial pending-to-presentation arrival, different-Edition rejection and different-context rejection. Cold bootstrap, driver and Runtime regressions cover T10. Package.swift and all non-UI production contracts remain unchanged.
+
+## 12. Explicit presentation handoff and viewport bridge — Phase 3Q3
+
+Discovery found no executable presentation bridge in Composition. FeedSession exposes currentPresentation, restoreLocalPresentation, refreshCurrentPresentation and submitViewport; ColdFeedBootstrap.run returns its finite typed outcome; FeedRunwayDriver exposes restoreAndActivate, activateCurrentPresentation, submitViewport and drive. Their snapshots already satisfy the immutable UI contract. FeedScreenStore/FeedScreen and the environment/object-graph scaffolds remain unimplemented. The gap is typed result interpretation and explicit continuous viewport forwarding, not snapshot projection or a second runtime.
+
+FeedPresentationHandoff is a stateless namespace of composition functions. It stores no dependencies, current UI state, cards, Edition, anchor, cursor, checkpoint, supply or Runway intent. Each caller provides the existing FeedPresentationState; functions return the next value by its unchanged receiving(_) and reporting(_) APIs. No initializer, additional actor, subscription, task or automatic execution exists.
+
+| Explicit input | Handoff |
+| --- | --- |
+| Warm restored or continuous driver snapshot | receive(snapshot:into:) forwards the exact snapshot. |
+| nil snapshot | Returns the exact prior state, including its work condition. |
+| Cold published snapshot | Receives it unchanged, then reports idle for the settled finite opportunity. |
+| Cold localWorkRemaining / noPublicationAfterAcquisition | Reports idle for that completed finite opportunity; retains any visible snapshot, and makes no global-exhaustion claim. |
+| Cold unavailable / deferred | Reports unavailable / deferred distinctly without replacing content. |
+| Acquisition executed | Reports only settled work; neither receipts nor selectable supply changes create visual success. |
+| Acquisition acceptedUnavailable / deferred | Reports unavailable / deferred; retains content. |
+| Caller-reported actual pending/completion/failure | report(_:into:) delegates to reporting(_), preserving presentation. |
+
+The caller explicitly invokes warm restore or cold/continuous work, then hands off the result. Raw snapshots do not settle work automatically: the caller reports completion when appropriate. Work facts refer to the explicit opportunity, not a claim about global feed availability or all concurrent work. Error messages remain an explicit external choice; underlying operation and identity errors propagate. The caller retains its prior value on failure and may report failed(message:) without clearing it. No error recovery, fallback or repeat opportunity is introduced.
+
+submitViewport(_:activity:resources:driver:into:) forwards the exact ViewportObservation, semantic RunwayActivity and physical resources once to the existing FeedRunwayDriver.submitViewport. Only the returned snapshot is handed off. FeedSession still owns the logical movement and retained-window capacities; Runway still owns production intents. The bridge creates no second cursor, scroll algorithm, HTTP operation or window-end inference. PublicationCardID, top/center placement, published order, Edition/context and anchor are all retained from Runtime. receiving(_) still rejects implicit Edition/context replacement.
+
+External composition continues to supply one shared AcquisitionCoordinator to cold and continuous consumers over the same database. The bridge never constructs or stores a coordinator, queries a store, runs Selection/Publication, writes a checkpoint or retains history. Receiving/reporting starts no work. Only the explicit viewport call delegates an opportunity to the existing driver.
+
+FeedPresentationHandoffTests contains 16 focused tests over real temporary RuntimeDatabase, publication history, FeedSession, ColdFeedBootstrap, FeedRunwayDriver, shared coordinator and bounded local URLProtocol transport. H1–H11 prove warm/cold/continuous handoff, suspended-work preservation, factual dispositions, original-error propagation, exact viewport identity, no swap, no inferred exhaustion, shared ownership, no extra checkpoint and no hidden work. Additional tests prove real acquisition success without visual publication, checkpoint-only cold settlement, real nonexhausted local miss, nil driver return preservation and static ownership boundaries. H12 reruns the existing cold/driver/UI-state/Runtime regressions. No previous production contract or UI scaffold changes.
