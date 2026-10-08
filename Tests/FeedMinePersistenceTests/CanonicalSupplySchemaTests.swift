@@ -11,23 +11,45 @@ final class CanonicalSupplySchemaTests: XCTestCase {
         try body(location, RuntimeDatabase(location: location))
     }
 
-    func testCanonicalMigrationAddsExactlyFourTablesAndSurvivesReopen() throws {
+    private func migrationIdentifiers(_ database: RuntimeDatabase) throws -> [String] {
+        try database.read {
+            try String.fetchAll($0, sql: "SELECT identifier FROM grdb_migrations ORDER BY identifier")
+        }
+    }
+
+    /// Asserts the ownership of canonical-supply-v1: its four tables exist and the tables
+    /// explicitly deferred by Phase 3B1 stay absent. It deliberately makes no claim about
+    /// the total set of runtime tables, so later migrations may legitimately add theirs.
+    private func assertCanonicalTableOwnership(_ database: RuntimeDatabase,
+        file: StaticString = #filePath, line: UInt = #line) throws {
+        let tables = try database.read {
+            try String.fetchAll($0, sql: "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'grdb_migrations' ORDER BY name")
+        }
+        for owned in ["origin_records", "origin_revisions", "source_memberships", "selection_supply"] {
+            XCTAssertTrue(tables.contains(owned),
+                "canonical-supply-v1 must own table \(owned), present tables: \(tables)", file: file, line: line)
+        }
+        let deferred = ["content_relations", "content_entities", "content_clusters",
+            "media_candidates", "interaction_offers"]
+        for absent in deferred {
+            XCTAssertFalse(tables.contains(absent),
+                "Deferred table \(absent) must remain absent, present tables: \(tables)", file: file, line: line)
+        }
+    }
+
+    func testCanonicalMigrationCreatesOwnedTablesAndSurvivesReopen() throws {
         try withDatabase { location, database in
-            let expected = ["canonical-supply-v1", "publication-restore-v1", "runtime-foundation-v1"]
-            let history = try database.read {
-                try String.fetchAll($0, sql: "SELECT identifier FROM grdb_migrations ORDER BY identifier")
+            let firstHistory = try migrationIdentifiers(database)
+            for identifier in ["canonical-supply-v1", "publication-restore-v1", "runtime-foundation-v1"] {
+                XCTAssertEqual(firstHistory.filter { $0 == identifier }.count, 1,
+                    "Expected \(identifier) exactly once, got \(firstHistory)")
             }
-            XCTAssertEqual(history, expected)
-            let tables = try database.read {
-                try String.fetchAll($0, sql: "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'grdb_migrations' ORDER BY name")
-            }
-            XCTAssertEqual(tables, ["feed_editions", "feed_segments", "origin_records", "origin_revisions",
-                "published_cards", "selection_supply", "session_checkpoint", "source_memberships"])
+            try assertCanonicalTableOwnership(database)
+
             let reopened = try RuntimeDatabase(location: location)
-            let reopenedHistory = try reopened.read {
-                try String.fetchAll($0, sql: "SELECT identifier FROM grdb_migrations ORDER BY identifier")
-            }
-            XCTAssertEqual(reopenedHistory, expected)
+            let secondHistory = try migrationIdentifiers(reopened)
+            XCTAssertEqual(secondHistory, firstHistory)
+            try assertCanonicalTableOwnership(reopened)
         }
     }
 
