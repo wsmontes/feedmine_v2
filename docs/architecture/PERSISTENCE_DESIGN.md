@@ -1,4 +1,4 @@
-# Persistence design — local publication/session complete; canonical supply design gate
+# Persistence design — local publication/session and canonical supply schema
 
 ## 1. Frozen physical topology
 
@@ -6,7 +6,7 @@
 - `runtime.sqlite`: non-replaceable semantic runtime state, including durable user state.
 - Asset filesystem: media bytes, with durable metadata intended for runtime storage later.
 
-Phase 2A implements runtime lifecycle; Phase 2E adds the first publication/session storage slice. Catalog and asset storage remain unimplemented. No code or schema from the historical project is copied.
+Phase 2A implements runtime lifecycle; Phase 2E adds the first publication/session storage slice; Phase 3B1 adds only the approved four-table canonical supply schema. Catalog and asset storage remain unimplemented. No code or schema from the historical project is copied.
 
 ## 2. Runtime database lifecycle
 
@@ -24,9 +24,9 @@ No failure becomes nil, an empty collection, a success flag or a new empty store
 
 ## 4. Migration authority
 
-RuntimeMigrations is the single schema-evolution owner. Its internal current migrator preserves the empty `runtime-foundation-v1` migration and registers `publication-restore-v1` after it. GRDB's `grdb_migrations` bookkeeping is the authority; there is no separate metadata/schema-version table or user_version counter. Erase-on-schema-change is explicitly disabled both in the current migration configuration and when an internally supplied migrator is opened.
+RuntimeMigrations is the single schema-evolution owner. Its internal current migrator preserves the empty `runtime-foundation-v1` migration, followed by `publication-restore-v1` and then `canonical-supply-v1`. GRDB's `grdb_migrations` bookkeeping is the authority; there is no separate metadata/schema-version table or user_version counter. Erase-on-schema-change is explicitly disabled both in the current migration configuration and when an internally supplied migrator is opened.
 
-Tests verify foundation exists exactly once, full applied history survives reopen unchanged, and a failing test-only migration cannot erase a previously durable sentinel or advance committed migration history. publication-restore-v1 creates exactly feed_editions, feed_segments, published_cards and session_checkpoint.
+Tests verify foundation exists exactly once, full applied history survives reopen unchanged, and a failing test-only migration cannot erase a previously durable sentinel or advance committed migration history. publication-restore-v1 creates exactly feed_editions, feed_segments, published_cards and session_checkpoint. canonical-supply-v1 adds exactly origin_records, origin_revisions, source_memberships and selection_supply with structural identity uniqueness, same-origin composite FKs, enum/version checks and the descending supply ordering index. No currentness trigger, cascade or SET NULL action is added.
 
 ## 5. WAL and concurrency
 
@@ -53,11 +53,11 @@ References: [official release](https://github.com/groue/GRDB.swift/releases/tag/
 
 ## 7. What is intentionally absent
 
-ContentStore remains a scaffold. PublicationStore and SessionStore implement immutable publication history and one logical checkpoint through mechanical records; semantic mapping belongs to FeedMinePublication. There are no source, origin, bookmark, read-state, acquisition, search/FTS or selection-supply tables. Catalog, assets, retention, backup, read-only/degraded modes, repositories, database facades and protocols are unimplemented. Test sentinel/parent/child/checkpoint tables exist only in isolated test databases.
+ContentStore remains a scaffold. PublicationStore and SessionStore implement immutable publication history and one logical checkpoint through mechanical records; semantic mapping belongs to FeedMinePublication. Canonical tables now exist as schema only; accepted-write validation, revision immutability APIs, currentness/projection synchronization and bounded queries await ContentStore. There are no source/provider metadata, bookmark, read-state, acquisition or search/FTS tables. Catalog, assets, retention, backup, read-only/degraded modes, repositories, database facades and protocols are unimplemented. Test sentinel/parent/child/checkpoint tables exist only in isolated test databases.
 
 ## 8. Next schema slice
 
-The local session/publication vertical slice is complete through Phase 2I: exact restore, actor-owned current state, memory-local viewport movement and explicit session checkpoint durability without canonical supply, catalog or network. Local persistence as a whole is not complete. The next persistence slice is canonical local supply. Its design-only implementation gate is [CANONICAL_SUPPLY_DESIGN.md](CANONICAL_SUPPLY_DESIGN.md): four proposed domain tables, immutable revisions, same-origin current-pointer integrity, atomic current-supply projection and bounded examined-work queries. No canonical migration or ContentStore is implemented yet. User-state, catalog, assets and retention remain future slices requiring explicit storage and atomicity design.
+The local session/publication vertical slice is complete through Phase 2I: exact restore, actor-owned current state, memory-local viewport movement and explicit session checkpoint durability without canonical supply, catalog or network. Local persistence as a whole is not complete. The next persistence slice is canonical local supply. Its approved implementation gate is [CANONICAL_SUPPLY_DESIGN.md](CANONICAL_SUPPLY_DESIGN.md): four domain tables, immutable revisions, same-origin current-pointer integrity, atomic current-supply projection and bounded examined-work queries. Phase 3B1 implements the canonical migration and schema integrity tests only. ContentStore is not implemented, and Phase 3B2 has not started. User-state, catalog, assets and retention remain future slices requiring explicit storage and atomicity design.
 
 Phase 2C closes the baseline semantic PublishedCard payload. Publication/session schema design: [PERSISTENCE_PUBLICATION_SCHEMA.md](PERSISTENCE_PUBLICATION_SCHEMA.md). Phase 2D designed the first domain schema; Phase 2E implements its migration, concrete stores and internal semantic mapping. Phase 2E is complete and incorporated into main. Phase 2B defines publication identity and exact logical restore semantics only; see [Publication restore contract](PUBLICATION_RESTORE_CONTRACT.md).
 

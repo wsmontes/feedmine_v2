@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-Design only. This contract closes the first canonical local storage slice for Phase 3B without implementing a migration, ContentStore, CandidateProvider, Selection, AdmissionPolicy or network acquisition. The existing publication/session vertical slice is complete through Phase 2I: retained publication → restore → current actor-owned presentation → memory-local viewport movement → explicit logical checkpoint milestone.
+Phase 3A closed this design contract. Phase 3B1 implements only the approved schema through canonical-supply-v1, registered after publication-restore-v1. ContentStore, CandidateProvider, Selection, AdmissionPolicy and network acquisition remain unimplemented. The existing publication/session vertical slice is complete through Phase 2I: retained publication → restore → current actor-owned presentation → memory-local viewport movement → explicit logical checkpoint milestone.
 
 The next local path is canonical supply → Editorial CandidateProvider → SelectionEngine → PublicationCoordinator → immutable Edition/Segment. This design concerns the first storage boundary only. Its baseline adds exactly four domain tables to runtime.sqlite: origin_records, origin_revisions, source_memberships and selection_supply. The existing publication/session tables and GRDB migration bookkeeping remain unchanged. Indexes and constraints are not additional domain tables. No fifth table is necessary for the invariants below; a demonstrated need for one must be reported as a blocker before implementation.
 
@@ -238,7 +238,7 @@ No content JSON blob, compatibility/import table, connector parsing, network, au
 
 ## 17. Phase 3B implementation gate
 
-This design proposes exactly four domain tables and the stated constraints/access paths. Phase 3A adds documentation only; no migration or tests are implemented here. Phase 3B requires review of this gate and must prove:
+Phase 3B1 implements exactly the four domain tables and the stated schema constraints/access paths. CanonicalSupplySchemaTests verify migration/reopen, exact object uniqueness, complete version identities and per-origin version uniqueness, membership/sort enums, same-origin current/supply foreign keys and current-revision deletion protection. PublicationSchemaTests now protect the four Publication tables without assuming they are the entire runtime schema. No currentness trigger or ContentStore is introduced. Phase 3B2 has not started; future storage implementation must still prove:
 
 1. Create UUID OriginRecord R, immutable V1, membership R → S, make V1 current, close/reopen, and find exactly R/V1 through a bounded local query without catalog/network.
 2. Insert V2 and move current explicitly. Query yields R/V2; exact V1 read remains unchanged. Existing frozen publication referencing V1 remains untouched.
@@ -248,4 +248,4 @@ This design proposes exactly four domain tables and the stated constraints/acces
 6. Prove indexed keyset examined-work bounds with 10k/100k rows, ties and selective Source constraints. Bounded-window accounting must include rejected entries, and the cursor must progress across empty eligible results.
 7. Preserve the existing publication/session vertical slice and Persistence conventions, with no new catalog FK or changes to existing Domain/publication identities.
 
-If any invariant requires a fifth domain table or an unbounded hot query, stop and report the blocker; do not expand the baseline by convenience. ContentStore/CandidateProvider implementation, network admission, FTS, relations, media, retention and user state remain outside this design-only phase.
+If any invariant requires a fifth domain table or an unbounded hot query, stop and report the blocker; do not expand the baseline by convenience. ContentStore/CandidateProvider implementation, network admission, FTS, relations, media, retention and user state remain outside Phase 3B1.

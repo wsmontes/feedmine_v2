@@ -21,7 +21,7 @@
 //   RuntimeMigrations ownership namespace; its GRDB current migrator remains internal.
 //
 // Status:
-//   Phase 2A foundation plus Phase 2E publication-restore-v1 domain schema.
+//   Foundation, publication-restore-v1 and canonical-supply-v1 schema authority.
 //
 
 import GRDB
@@ -149,6 +149,79 @@ public enum RuntimeMigrations {
                     FOREIGN KEY (card_id) REFERENCES published_cards(id) ON DELETE RESTRICT,
                     CHECK (anchor_placement IN ('top', 'center'))
                 );
+                """)
+        }
+        migrator.registerMigration("canonical-supply-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE origin_records (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    object_connector_kind TEXT COLLATE BINARY NOT NULL,
+                    object_namespace TEXT COLLATE BINARY NOT NULL,
+                    object_value TEXT COLLATE BINARY NOT NULL,
+                    object_role TEXT COLLATE BINARY NOT NULL CHECK (object_role = 'object'),
+                    current_revision_id TEXT,
+                    availability TEXT NOT NULL CHECK (availability IN ('available', 'updated', 'removed', 'revoked', 'unknown')),
+                    first_observed_at REAL NOT NULL,
+                    last_observed_at REAL NOT NULL,
+                    UNIQUE (object_connector_kind, object_namespace, object_value, object_role),
+                    FOREIGN KEY (id, current_revision_id) REFERENCES origin_revisions(origin_record_id, id)
+                        ON UPDATE NO ACTION ON DELETE NO ACTION
+                );
+
+                CREATE TABLE origin_revisions (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    origin_record_id TEXT NOT NULL,
+                    version_connector_kind TEXT COLLATE BINARY,
+                    version_namespace TEXT COLLATE BINARY,
+                    version_value TEXT COLLATE BINARY,
+                    version_role TEXT COLLATE BINARY,
+                    headline TEXT,
+                    summary TEXT,
+                    body_text TEXT,
+                    authored_at REAL,
+                    modified_at REAL,
+                    observed_at REAL NOT NULL,
+                    language TEXT,
+                    primary_link TEXT,
+                    search_projection TEXT,
+                    provider_id TEXT,
+                    FOREIGN KEY (origin_record_id) REFERENCES origin_records(id)
+                        ON UPDATE NO ACTION ON DELETE NO ACTION,
+                    UNIQUE (origin_record_id, id),
+                    CHECK (
+                        (version_connector_kind IS NULL AND version_namespace IS NULL
+                            AND version_value IS NULL AND version_role IS NULL)
+                        OR (version_connector_kind IS NOT NULL AND version_namespace IS NOT NULL
+                            AND version_value IS NOT NULL AND version_role IS NOT NULL
+                            AND version_role = 'version')
+                    )
+                );
+
+                CREATE UNIQUE INDEX origin_revisions_version_identity
+                    ON origin_revisions (origin_record_id, version_connector_kind, version_namespace, version_value, version_role)
+                    WHERE version_connector_kind IS NOT NULL;
+
+                CREATE TABLE source_memberships (
+                    origin_record_id TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    membership_kind TEXT NOT NULL CHECK (membership_kind IN ('direct', 'derived')),
+                    first_observed_at REAL NOT NULL,
+                    last_observed_at REAL NOT NULL,
+                    PRIMARY KEY (origin_record_id, source_id),
+                    FOREIGN KEY (origin_record_id) REFERENCES origin_records(id)
+                        ON UPDATE NO ACTION ON DELETE NO ACTION
+                );
+
+                CREATE TABLE selection_supply (
+                    origin_record_id TEXT PRIMARY KEY NOT NULL,
+                    origin_revision_id TEXT NOT NULL,
+                    sort_date REAL NOT NULL,
+                    sort_date_basis TEXT NOT NULL CHECK (sort_date_basis IN ('authored', 'observedFallback')),
+                    FOREIGN KEY (origin_record_id, origin_revision_id) REFERENCES origin_revisions(origin_record_id, id)
+                        ON UPDATE NO ACTION ON DELETE NO ACTION
+                );
+
+                CREATE INDEX selection_supply_order ON selection_supply (sort_date DESC, origin_record_id DESC);
                 """)
         }
         return migrator

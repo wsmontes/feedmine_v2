@@ -42,12 +42,18 @@ final class OfflineRestorePersistenceTests: XCTestCase {
         XCTAssertEqual(restoredCards.map(\.id), originalCards.map(\.id))
         XCTAssertEqual(restoredCards, originalCards)
         XCTAssertEqual(try publication.segments(editionID: edition.id).map(\.cardIDs).flatMap { $0 }, originalCards.map(\.id))
-        for table in ["origin_records", "origin_revisions", "sources", "providers", "catalog", "assets", "asset_versions"] {
+        for table in ["sources", "providers", "catalog", "assets", "asset_versions"] {
             XCTAssertFalse(try reopened.read { try $0.tableExists(table) }, table)
         }
-        // No canonical/catalog/asset tables exist: the schema suite proves the exact
-        // four domain tables on this same RuntimeDatabase migration configuration.
-        // Only Domain/Publication/Persistence participate; no network layer or bytes.
+        // Canonical supply tables now exist by design (Phase 3A design, Phase 3B1 schema).
+        // Offline restore remains independent of canonical content: the tables are present
+        // but hold no rows, so this asserts emptiness rather than absence. Catalog/provider/
+        // asset storage stays absent. Only Domain/Publication/Persistence participate;
+        // no network layer or bytes.
+        for table in ["origin_records", "origin_revisions"] {
+            XCTAssertTrue(try reopened.read { try $0.tableExists(table) }, table)
+            XCTAssertEqual(try reopened.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM \(table)") }, 0, table)
+        }
         let files = try FileManager.default.contentsOfDirectory(atPath: root.path)
         XCTAssertTrue(files.allSatisfy { $0 == "runtime.sqlite" || $0.hasPrefix("runtime.sqlite-") })
     }
