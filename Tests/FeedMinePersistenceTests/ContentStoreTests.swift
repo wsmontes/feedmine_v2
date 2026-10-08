@@ -32,7 +32,7 @@ final class ContentStoreTests: XCTestCase {
         expected: ContentStore.CurrentRevisionExpectation = .none,
         update: ContentStore.CurrentRevisionUpdate = .useSuppliedRevision,
         mutations: [ContentStore.MembershipMutation] = []) -> Change {
-        Change(recordID: revision.originRecordID, externalObjectIdentity: object ?? identity(), revision: revision,
+        Change(recordID: revision.originRecordID, externalObjectIdentity: object ?? identity(), revision: revision, mediaCandidates: [],
             availability: availability, observedAt: observed ?? time, expectedCurrent: expected,
             currentUpdate: update, membershipMutations: mutations)
     }
@@ -210,7 +210,7 @@ final class ContentStoreTests: XCTestCase {
             assertError(.invalidChange("version role/connector")) { try store.commitCanonicalChange(change(wrongVersion)) }
             let wrongRole = revision(origin, version: identity("v1", role: .object))
             assertError(.invalidChange("version role/connector")) { try store.commitCanonicalChange(change(wrongRole)) }
-            let wrongOrigin = Change(recordID: OriginRecordID(), externalObjectIdentity: identity(), revision: v1,
+            let wrongOrigin = Change(recordID: OriginRecordID(), externalObjectIdentity: identity(), revision: v1, mediaCandidates: [],
                 availability: .available, observedAt: time, expectedCurrent: .none, currentUpdate: .useSuppliedRevision, membershipMutations: [])
             assertError(.invalidChange("revision origin")) { try store.commitCanonicalChange(wrongOrigin) }
             assertError(.invalidChange("duplicate membership mutation")) {

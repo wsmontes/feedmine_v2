@@ -21,7 +21,7 @@
 //   RuntimeMigrations ownership namespace; its GRDB current migrator remains internal.
 //
 // Status:
-//   Foundation, publication-restore-v1 and canonical-supply-v1 schema authority.
+//   Foundation, publication, canonical supply and canonical-media-candidates-v1 schema authority.
 //
 
 import GRDB
@@ -222,6 +222,32 @@ public enum RuntimeMigrations {
                 );
 
                 CREATE INDEX selection_supply_order ON selection_supply (sort_date DESC, origin_record_id DESC);
+                """)
+        }
+        migrator.registerMigration("canonical-media-candidates-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE media_candidates (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    origin_revision_id TEXT NOT NULL,
+                    ordinal INTEGER NOT NULL,
+                    role TEXT COLLATE BINARY NOT NULL,
+                    media_class TEXT COLLATE BINARY NOT NULL,
+                    remote_locator TEXT COLLATE BINARY NOT NULL,
+                    declared_mime_type TEXT COLLATE BINARY,
+                    declared_pixel_width INTEGER,
+                    declared_pixel_height INTEGER,
+                    FOREIGN KEY (origin_revision_id) REFERENCES origin_revisions(id)
+                        ON UPDATE NO ACTION ON DELETE NO ACTION,
+                    UNIQUE (origin_revision_id, ordinal),
+                    CHECK (ordinal >= 0),
+                    CHECK (role = 'cardVisual'),
+                    CHECK (media_class = 'image'),
+                    CHECK (
+                        (declared_pixel_width IS NULL AND declared_pixel_height IS NULL)
+                        OR (declared_pixel_width IS NOT NULL AND declared_pixel_height IS NOT NULL
+                            AND declared_pixel_width > 0 AND declared_pixel_height > 0)
+                    )
+                );
                 """)
         }
         return migrator

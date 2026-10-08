@@ -36,7 +36,7 @@ final class CandidateProviderTests: XCTestCase {
             primaryLink: URL(string: "https://example.test/item")!, searchProjection: "not a candidate field", providerID: provider)
         try store.commitCanonicalChange(ContentStore.CanonicalChange(recordID: origin(number),
             externalObjectIdentity: ExternalIdentity(connectorKind: ConnectorKind(rawValue: "test"),
-                namespace: "objects", value: String(number), role: .object), revision: revision,
+                namespace: "objects", value: String(number), role: .object), revision: revision, mediaCandidates: [],
             availability: .available, observedAt: time, expectedCurrent: .none, currentUpdate: .useSuppliedRevision,
             membershipMutations: [.upsert(sourceID: source, kind: .direct, observedAt: time)]))
         return revision

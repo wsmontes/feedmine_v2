@@ -1,4 +1,4 @@
-// Owns: atomic canonical accepted facts, immutable revisions and supply projection.
+// Owns: atomic canonical accepted facts, immutable revisions with complete ordered media facts and supply projection.
 // Does not own: admission, candidate queries, acquisition or published history.
 
 import Foundation
@@ -11,6 +11,8 @@ public enum ContentStoreError: Error, Equatable, Sendable {
     case corruption(String)
     case originIdentityConflict
     case revisionConflict
+    case mediaCandidateConflict(MediaCandidateID)
+    case mediaCandidateCollectionConflict(OriginRevisionID)
     case versionIdentityConflict
     case staleCurrent(expected: OriginRevisionID?, actual: OriginRevisionID?)
     case invalidChange(String)
@@ -160,6 +162,7 @@ public struct ContentStore: Sendable {
         public let recordID: OriginRecordID
         public let externalObjectIdentity: ExternalIdentity
         public let revision: OriginRevision
+        public let mediaCandidates: [MediaCandidate]
         public let availability: OriginAvailability
         public let observedAt: Date
         public let expectedCurrent: CurrentRevisionExpectation
@@ -167,12 +170,13 @@ public struct ContentStore: Sendable {
         public let membershipMutations: [MembershipMutation]
 
         public init(recordID: OriginRecordID, externalObjectIdentity: ExternalIdentity,
-            revision: OriginRevision, availability: OriginAvailability, observedAt: Date,
+            revision: OriginRevision, mediaCandidates: [MediaCandidate], availability: OriginAvailability, observedAt: Date,
             expectedCurrent: CurrentRevisionExpectation, currentUpdate: CurrentRevisionUpdate,
             membershipMutations: [MembershipMutation]) {
             self.recordID = recordID
             self.externalObjectIdentity = externalObjectIdentity
             self.revision = revision
+            self.mediaCandidates = mediaCandidates
             self.availability = availability
             self.observedAt = observedAt
             self.expectedCurrent = expectedCurrent
@@ -219,6 +223,7 @@ public struct ContentStore: Sendable {
             let revision = change.revision
             if let stored = try Self.revision(revision.id, in: db) {
                 guard Self.sameRevision(stored, revision) else { throw ContentStoreError.revisionConflict }
+                try Self.validateMediaReplay(change.mediaCandidates, revisionID: revision.id, in: db)
             } else {
                 if let version = revision.externalVersionIdentity,
                     try Row.fetchOne(db, sql: """
@@ -229,6 +234,12 @@ public struct ContentStore: Sendable {
                     throw ContentStoreError.versionIdentityConflict
                 }
                 try Self.insertRevision(revision, in: db)
+                for (ordinal, candidate) in change.mediaCandidates.enumerated() {
+                    guard try Self.mediaCandidate(candidate.id, in: db) == nil else {
+                        throw ContentStoreError.mediaCandidateConflict(candidate.id)
+                    }
+                    try Self.insertMediaCandidate(candidate, ordinal: ordinal, in: db)
+                }
             }
             for mutation in change.membershipMutations {
                 switch mutation {
@@ -264,6 +275,19 @@ public struct ContentStore: Sendable {
     }
     public func originRevision(id: OriginRevisionID) throws -> OriginRevision? {
         try database.read { db in try Self.coding { try Self.revision(id, in: db) } }
+    }
+    /// Exact immutable historical collection. Missing revision differs from an admitted empty collection.
+    public func mediaCandidates(originRevisionID: OriginRevisionID) throws -> [MediaCandidate]? {
+        try database.read { db in
+            try Self.coding {
+                guard let row = try Row.fetchOne(db, sql: "SELECT id FROM origin_revisions WHERE id = ?",
+                    arguments: [Self.key(originRevisionID.rawValue)]) else { return nil }
+                guard try ContentFields(row).uuid("id") == originRevisionID.rawValue else {
+                    throw ContentStoreError.corruption("media candidate revision")
+                }
+                return try Self.mediaCandidates(originRevisionID, in: db)
+            }
+        }
     }
     public func currentRevision(originRecordID: OriginRecordID) throws -> OriginRevision? {
         try database.read { db in
@@ -310,6 +334,12 @@ public struct ContentStore: Sendable {
                 exact(version.connectorKind.rawValue, change.externalObjectIdentity.connectorKind.rawValue) else {
                 throw ContentStoreError.invalidChange("version role/connector")
             }
+        }
+        guard change.mediaCandidates.allSatisfy({ $0.originRevisionID == revision.id }) else {
+            throw ContentStoreError.invalidChange("media candidate revision")
+        }
+        guard Set(change.mediaCandidates.map(\.id)).count == change.mediaCandidates.count else {
+            throw ContentStoreError.invalidChange("duplicate media candidate id")
         }
         guard Set(change.membershipMutations.map(\.sourceID)).count == change.membershipMutations.count else {
             throw ContentStoreError.invalidChange("duplicate membership mutation")
@@ -397,6 +427,82 @@ public struct ContentStore: Sendable {
             providerID: try f.optionalUUID("provider_id").map { ProviderID(rawValue: $0) })
     }
 
+    private static func sameMediaCandidate(_ a: MediaCandidate, _ b: MediaCandidate) -> Bool {
+        a.id == b.id && a.originRevisionID == b.originRevisionID
+            && a.role == b.role && a.mediaClass == b.mediaClass
+            && exact(a.remoteURL.absoluteString, b.remoteURL.absoluteString)
+            && exact(a.declaredMimeType, b.declaredMimeType)
+            && a.declaredPixelWidth == b.declaredPixelWidth && a.declaredPixelHeight == b.declaredPixelHeight
+    }
+
+    private static func validateMediaReplay(_ supplied: [MediaCandidate], revisionID: OriginRevisionID,
+        in db: Database) throws {
+        // Factual conflicts by ID take precedence over collection shape/order conflicts.
+        for candidate in supplied {
+            if let stored = try mediaCandidate(candidate.id, in: db), !sameMediaCandidate(stored, candidate) {
+                throw ContentStoreError.mediaCandidateConflict(candidate.id)
+            }
+        }
+        let stored = try mediaCandidates(revisionID, in: db)
+        guard stored.count == supplied.count,
+            zip(stored, supplied).allSatisfy({ sameMediaCandidate($0.0, $0.1) }) else {
+            throw ContentStoreError.mediaCandidateCollectionConflict(revisionID)
+        }
+    }
+
+    private static func mediaCandidates(_ revisionID: OriginRevisionID, in db: Database) throws -> [MediaCandidate] {
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT * FROM media_candidates WHERE origin_revision_id = ? ORDER BY ordinal ASC
+            """, arguments: [key(revisionID.rawValue)])
+        return try rows.enumerated().map { ordinal, row in
+            let fields = ContentFields(row)
+            guard try fields.integer("ordinal") == ordinal else {
+                throw ContentStoreError.corruption("media candidate ordinal")
+            }
+            let candidate = try decodeMediaCandidate(row)
+            guard candidate.originRevisionID == revisionID else {
+                throw ContentStoreError.corruption("media candidate revision")
+            }
+            return candidate
+        }
+    }
+
+    private static func mediaCandidate(_ id: MediaCandidateID, in db: Database) throws -> MediaCandidate? {
+        guard let row = try Row.fetchOne(db, sql: "SELECT * FROM media_candidates WHERE id = ?",
+            arguments: [key(id.rawValue)]) else { return nil }
+        return try decodeMediaCandidate(row)
+    }
+
+    private static func decodeMediaCandidate(_ row: Row) throws -> MediaCandidate {
+        let f = ContentFields(row)
+        guard try f.integer("ordinal") >= 0,
+            let role = MediaCandidateRole(rawValue: try f.string("role")),
+            let mediaClass = MediaCandidateClass(rawValue: try f.string("media_class")) else {
+            throw ContentStoreError.corruption("media candidate role/class/ordinal")
+        }
+        let locator = try f.string("remote_locator")
+        guard let url = URL(string: locator), exact(url.absoluteString, locator),
+            let candidate = MediaCandidate(id: MediaCandidateID(rawValue: try f.uuid("id")),
+                originRevisionID: OriginRevisionID(rawValue: try f.uuid("origin_revision_id")),
+                role: role, mediaClass: mediaClass, remoteURL: url,
+                declaredMimeType: try f.optionalString("declared_mime_type"),
+                declaredPixelWidth: try f.optionalInteger("declared_pixel_width"),
+                declaredPixelHeight: try f.optionalInteger("declared_pixel_height")) else {
+            throw ContentStoreError.corruption("media candidate locator/dimensions")
+        }
+        return candidate
+    }
+
+    private static func insertMediaCandidate(_ candidate: MediaCandidate, ordinal: Int, in db: Database) throws {
+        try db.execute(sql: """
+            INSERT INTO media_candidates (id, origin_revision_id, ordinal, role, media_class,
+                remote_locator, declared_mime_type, declared_pixel_width, declared_pixel_height)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, arguments: [key(candidate.id.rawValue), key(candidate.originRevisionID.rawValue), ordinal,
+                candidate.role.rawValue, candidate.mediaClass.rawValue, candidate.remoteURL.absoluteString,
+                candidate.declaredMimeType, candidate.declaredPixelWidth, candidate.declaredPixelHeight])
+    }
+
     private static func current(_ record: OriginRecord, in db: Database) throws -> OriginRevision? {
         guard let id = record.currentRevisionID else { return nil }
         guard let revision = try revision(id, in: db), revision.originRecordID == record.id else {
@@ -457,6 +563,20 @@ private struct ContentFields {
     }
     func uuid(_ field: String) throws -> UUID { try PersistenceValueCoding.uuid(string(field), field: field) }
     func optionalUUID(_ field: String) throws -> UUID? { try optionalString(field).map { try PersistenceValueCoding.uuid($0, field: field) } }
+    func optionalInteger(_ field: String) throws -> Int? {
+        let value: DatabaseValue = row[field]
+        switch value.storage {
+        case .null: return nil
+        case .int64(let number):
+            guard let integer = Int(exactly: number) else { throw ContentStoreError.corruption(field) }
+            return integer
+        default: throw ContentStoreError.corruption(field)
+        }
+    }
+    func integer(_ field: String) throws -> Int {
+        guard let number = try optionalInteger(field) else { throw ContentStoreError.corruption(field) }
+        return number
+    }
     func optionalDate(_ field: String) throws -> Date? {
         let value: DatabaseValue = row[field]
         switch value.storage {

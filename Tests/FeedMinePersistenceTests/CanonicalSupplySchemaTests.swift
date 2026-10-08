@@ -25,12 +25,12 @@ final class CanonicalSupplySchemaTests: XCTestCase {
         let tables = try database.read {
             try String.fetchAll($0, sql: "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'grdb_migrations' ORDER BY name")
         }
-        for owned in ["origin_records", "origin_revisions", "source_memberships", "selection_supply"] {
+        for owned in ["origin_records", "origin_revisions", "source_memberships", "selection_supply", "media_candidates"] {
             XCTAssertTrue(tables.contains(owned),
                 "canonical-supply-v1 must own table \(owned), present tables: \(tables)", file: file, line: line)
         }
         let deferred = ["content_relations", "content_entities", "content_clusters",
-            "media_candidates", "interaction_offers"]
+            "interaction_offers"]
         for absent in deferred {
             XCTAssertFalse(tables.contains(absent),
                 "Deferred table \(absent) must remain absent, present tables: \(tables)", file: file, line: line)

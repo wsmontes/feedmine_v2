@@ -28,7 +28,7 @@ final class ContentStoreCandidateWindowTests: XCTestCase {
         try store.commitCanonicalChange(ContentStore.CanonicalChange(recordID: origin(number),
             externalObjectIdentity: ExternalIdentity(connectorKind: ConnectorKind(rawValue: "test"),
                 namespace: "objects", value: String(number), role: .object),
-            revision: revision, availability: .available, observedAt: time, expectedCurrent: expected,
+            revision: revision, mediaCandidates: [], availability: .available, observedAt: time, expectedCurrent: expected,
             currentUpdate: .useSuppliedRevision,
             membershipMutations: [.upsert(sourceID: source ?? self.source, kind: .direct, observedAt: time)]))
         return revision
