@@ -143,6 +143,7 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
         let media = try XCTUnwrap(f.content.mediaCandidates(originRevisionID: revision.id))
         let receipt = try f.store.admit(f.command([observation(f,time: 20)]))
         XCTAssertFalse(receipt.checkpointAdvanced); XCTAssertFalse(receipt.selectableSupplyChanged)
+        XCTAssertTrue(receipt.rejectedObservations.isEmpty)
         XCTAssertEqual(try f.current(),revision); XCTAssertEqual(try f.record()?.id,record.id)
         XCTAssertEqual(try f.content.mediaCandidates(originRevisionID: revision.id),media)
         XCTAssertEqual(try f.record()?.lastObservedAt,Date(timeIntervalSince1970: 20))
@@ -159,33 +160,42 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
         XCTAssertEqual(try f.count("origin_records"),2); XCTAssertEqual(try f.count("origin_revisions"),3)
         XCTAssertNotEqual(try f.revision("é",object: "é")?.id,try f.revision("e\u{301}",object: "é")?.id)
     }
-    func testKnownVersionPayloadConflictsRollbackAllFields() throws {
+    func testKnownVersionPayloadConflictsRejectOnlyObservationAndAdvanceCheckpoint() throws {
         let f = try fixture()
         _ = try f.store.admit(f.command([observation(f)]))
-        let before = try f.snapshot()
-        for value in [observation(f,headline: "changed"),observation(f,summary: "changed"),observation(f,body: "changed"),
+        let before = try f.snapshot(includeTarget: false)
+        let values = [observation(f,headline: "changed"),observation(f,summary: "changed"),observation(f,body: "changed"),
             observation(f,authored: nil),observation(f,modified: Date(timeIntervalSince1970: 2)),observation(f,language: "pt"),
-            observation(f,link: URL(string: "https://example.test/other")),observation(f,search: "changed"),observation(f,provider: ProviderID())] {
-            XCTAssertThrowsError(try f.store.admit(f.command([value],checkpoint: checkpoint()))) { XCTAssertEqual($0 as? ContentStoreError,.revisionConflict) }
-            XCTAssertEqual(try f.snapshot(),before)
+            observation(f,link: URL(string: "https://example.test/other")),observation(f,search: "changed"),observation(f,provider: ProviderID())]
+        for (index, value) in values.enumerated() {
+            let receipt = try f.store.admit(f.command([value],revision: UInt64(index),checkpoint: checkpoint()))
+            XCTAssertTrue(receipt.checkpointAdvanced)
+            XCTAssertFalse(receipt.selectableSupplyChanged)
+            XCTAssertEqual(receipt.rejectedObservations, [.init(index: 0, reason: .knownVersionPayloadConflict)])
+            XCTAssertEqual(try f.targets.target(id: f.targetID)?.checkpointRevision, UInt64(index + 1))
+            XCTAssertEqual(try f.snapshot(includeTarget: false),before)
         }
     }
-    func testKnownVersionMediaConflictsAndCompleteOrderedCollection() throws {
+    func testKnownVersionMediaConflictsRejectCompleteOrderedCollectionWithoutMutation() throws {
         let f = try fixture()
         _ = try f.store.admit(f.command([observation(f)]))
-        let revision = try XCTUnwrap(f.current()), stored = try XCTUnwrap(f.content.mediaCandidates(originRevisionID: revision.id))
-        let before = try f.snapshot()
-        let candidates: [([Store.MediaCandidateCommand],ContentStoreError)] = [
-            ([media("changed"),media("two")],.mediaCandidateConflict(stored[0].id)),
-            ([media("one",mime: "IMAGE/opaque"),media("two")],.mediaCandidateConflict(stored[0].id)),
-            ([media("one",width: 11,height: 20),media("two")],.mediaCandidateConflict(stored[0].id)),
-            ([media("one"),media("two"),media("three")],.mediaCandidateCollectionConflict(revision.id)),
-            ([media("one")],.mediaCandidateCollectionConflict(revision.id)),
-            ([media("two"),media("one")],.mediaCandidateConflict(stored[0].id))
+        let before = try f.snapshot(includeTarget: false)
+        let collections = [
+            [media("changed"),media("two")],
+            [media("one",mime: "IMAGE/opaque"),media("two")],
+            [media("one",width: 11,height: 20),media("two")],
+            [media("one"),media("two"),media("three")],
+            [media("one")],
+            [media("two"),media("one")],
+            []
         ]
-        for (collection,error) in candidates {
-            XCTAssertThrowsError(try f.store.admit(f.command([observation(f,media: collection)],checkpoint: checkpoint()))) { XCTAssertEqual($0 as? ContentStoreError,error) }
-            XCTAssertEqual(try f.snapshot(),before)
+        for (index, collection) in collections.enumerated() {
+            let receipt = try f.store.admit(f.command([observation(f,media: collection)],revision: UInt64(index),checkpoint: checkpoint()))
+            XCTAssertEqual(receipt.rejectedObservations, [.init(index: 0, reason: .knownVersionMediaConflict)])
+            XCTAssertTrue(receipt.checkpointAdvanced)
+            XCTAssertFalse(receipt.selectableSupplyChanged)
+            XCTAssertEqual(try f.snapshot(includeTarget: false),before)
+            XCTAssertEqual(try f.targets.target(id: f.targetID)?.checkpointRevision, UInt64(index + 1))
         }
     }
     func testNewVersionHistoricalInsertionAndOldReplayNeverRollBackCurrent() throws {
@@ -252,17 +262,81 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
         XCTAssertNotEqual(versioned.id,unversioned.id); XCTAssertNil(unversioned.externalVersionIdentity)
         XCTAssertEqual(try f.content.originRevision(id: versioned.id),versioned)
     }
-    func testLaterConflictRollsBackEarlierObjectMediaMembershipSupplyAndCheckpoint() throws {
+    func testMixedBatchOriginalIndicesReasonsAndValidAdmissionOrder() throws {
         let f = try fixture()
-        _ = try f.store.admit(f.command([observation(f,object: "B")]))
-        let before = try f.snapshot()
-        XCTAssertThrowsError(try f.store.admit(f.command([observation(f,object: "A"),observation(f,object: "B",headline: "conflicting")],checkpoint: checkpoint()))) {
-            XCTAssertEqual($0 as? ContentStoreError,.revisionConflict)
-        }
-        XCTAssertNil(try f.record("A")); XCTAssertEqual(try f.snapshot(),before)
+        _ = try f.store.admit(f.command([observation(f,object: "B"),observation(f,object: "D")]))
+        let b = try XCTUnwrap(f.current("B")), d = try XCTUnwrap(f.current("D"))
+        let receipt = try f.store.admit(f.command([
+            observation(f,object: "A",version: "v1"),
+            observation(f,object: "B",summary: "conflicting",time: 20),
+            observation(f,object: "C"),
+            observation(f,object: "D",time: 20,media: []),
+            observation(f,object: "A",version: "v2",headline: "latest valid",time: 30)
+        ],checkpoint: checkpoint()))
+        XCTAssertEqual(receipt.rejectedObservations, [
+            .init(index: 1, reason: .knownVersionPayloadConflict),
+            .init(index: 3, reason: .knownVersionMediaConflict)
+        ])
+        XCTAssertTrue(receipt.checkpointAdvanced); XCTAssertTrue(receipt.selectableSupplyChanged)
+        XCTAssertNotNil(try f.record("A")); XCTAssertNotNil(try f.record("C"))
+        XCTAssertEqual(try f.current("A")?.externalVersionIdentity, Self.identity("v2",role: .version))
+        XCTAssertEqual(try f.current("A")?.headline, "latest valid")
+        XCTAssertEqual(try f.current("B"), b); XCTAssertEqual(try f.current("D"), d)
+        XCTAssertEqual(try f.count("origin_records"),4)
+        XCTAssertEqual(try f.count("origin_revisions"),5)
+        XCTAssertEqual(try f.targets.target(id: f.targetID)?.checkpointRevision,1)
     }
+
+    func testAllRejectedPreserveEveryCanonicalFieldAndStillAdvanceCheckpoint() throws {
+        let f = try fixture()
+        _ = try f.store.admit(f.command([observation(f)]))
+        let before = try f.snapshot(includeTarget: false)
+        let receipt = try f.store.admit(f.command([
+            observation(f,availability: .removed,summary: "changed",time: 20,
+                memberships: [.init(sourceID: SourceID(),kind: .derived)]),
+            observation(f,availability: .updated,time: 30,memberships: [],media: [])
+        ],checkpoint: checkpoint()))
+        XCTAssertEqual(receipt.rejectedObservations, [
+            .init(index: 0,reason: .knownVersionPayloadConflict),
+            .init(index: 1,reason: .knownVersionMediaConflict)
+        ])
+        XCTAssertFalse(receipt.selectableSupplyChanged); XCTAssertTrue(receipt.checkpointAdvanced)
+        XCTAssertEqual(try f.snapshot(includeTarget: false),before)
+        XCTAssertEqual(try f.targets.target(id: f.targetID)?.checkpointRevision,1)
+        XCTAssertEqual(try f.targets.target(id: f.targetID)?.checkpoint,checkpoint())
+    }
+
+    func testStoredMediaCorruptionIsFatalEvenWithConflictingPayload() throws {
+        let f = try fixture()
+        _ = try f.store.admit(f.command([observation(f)]))
+        try f.database.write { try $0.execute(sql: "UPDATE media_candidates SET ordinal = 9 WHERE ordinal = 0") }
+        let before = try f.snapshot()
+        XCTAssertThrowsError(try f.store.admit(f.command([
+            observation(f,object: "valid"),observation(f,summary: "changed")
+        ],checkpoint: checkpoint()))) {
+            XCTAssertEqual($0 as? ContentStoreError,.corruption("media candidate ordinal"))
+        }
+        XCTAssertEqual(try f.snapshot(),before)
+        XCTAssertNil(try f.record("valid"))
+    }
+
+    func testRejectedObservationDoesNotBypassFatalTargetFences() throws {
+        let f = try fixture()
+        _ = try f.store.admit(f.command([observation(f)]))
+        let before = try f.snapshot()
+        let values = [observation(f,summary: "poison"),observation(f,object: "valid")]
+        targetFailure(.staleGeneration(expected: 2,actual: 1)) {
+            _ = try f.store.admit(f.command(values,generation: 2,checkpoint: checkpoint()))
+        }
+        targetFailure(.staleCheckpoint(expected: 1,actual: 0)) {
+            _ = try f.store.admit(f.command(values,revision: 1,checkpoint: checkpoint()))
+        }
+        XCTAssertEqual(try f.snapshot(),before)
+    }
+
     func testLaterMediaStorageFailureRollsBackEntireBatchWithoutProductionHook() throws {
         let f = try fixture()
+        _ = try f.store.admit(f.command([observation(f,object: "poison")]))
         try f.database.write { db in
             try db.execute(sql: """
                 CREATE TRIGGER reject_later_media BEFORE INSERT ON media_candidates
@@ -271,7 +345,7 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
                 """)
         }
         let before = try f.snapshot()
-        XCTAssertThrowsError(try f.store.admit(f.command([observation(f,object: "A"),observation(f,object: "B",media: [media("abort")])],checkpoint: checkpoint()))) {
+        XCTAssertThrowsError(try f.store.admit(f.command([observation(f,object: "poison",summary: "conflict"),observation(f,object: "A"),observation(f,object: "B",media: [media("abort")])],checkpoint: checkpoint()))) {
             guard case .storage(let code,_) = $0 as? RuntimeDatabaseError else { return XCTFail("Expected storage error, got \($0)") }
             XCTAssertEqual(code & 0xff,19)
         }

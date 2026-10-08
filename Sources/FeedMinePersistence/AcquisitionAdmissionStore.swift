@@ -114,14 +114,31 @@ public struct AcquisitionAdmissionStore: Sendable {
         }
     }
 
+    public enum ObservationRejectionReason: Hashable, Sendable {
+        case knownVersionPayloadConflict
+        case knownVersionMediaConflict
+    }
+
+    public struct ObservationRejection: Hashable, Sendable {
+        public let index: Int
+        public let reason: ObservationRejectionReason
+        public init(index: Int, reason: ObservationRejectionReason) {
+            self.index = index
+            self.reason = reason
+        }
+    }
+
     public struct AdmissionRecord: Hashable, Sendable {
         public let targetID: AcquisitionTargetID
         public let checkpointAdvanced: Bool
         public let selectableSupplyChanged: Bool
-        public init(targetID: AcquisitionTargetID, checkpointAdvanced: Bool, selectableSupplyChanged: Bool) {
+        public let rejectedObservations: [ObservationRejection]
+        public init(targetID: AcquisitionTargetID, checkpointAdvanced: Bool, selectableSupplyChanged: Bool,
+            rejectedObservations: [ObservationRejection] = []) {
             self.targetID = targetID
             self.checkpointAdvanced = checkpointAdvanced
             self.selectableSupplyChanged = selectableSupplyChanged
+            self.rejectedObservations = rejectedObservations
         }
     }
 
@@ -134,6 +151,7 @@ public struct AcquisitionAdmissionStore: Sendable {
                 try Self.validate(observation, index: index, connectorKind: target.connectorKind)
             }
             var before: [OriginRecordID: SupplyFingerprint] = [:]
+            var rejections: [ObservationRejection] = []
             for (index, observation) in command.observations.enumerated() {
                 let record = try contentStore.admissionRecord(matching: observation.objectIdentity, in: db)
                 let recordID = record?.id ?? OriginRecordID()
@@ -149,6 +167,17 @@ public struct AcquisitionAdmissionStore: Sendable {
                     revision = Self.revision(observation, recordID: recordID, id: knownVersion.id, observedAt: knownVersion.observedAt)
                     let stored = try contentStore.admissionMediaCandidates(originRevisionID: knownVersion.id, in: db)
                     media = try Self.media(observation, revisionID: knownVersion.id, reusing: stored, index: index)
+                    // Compare using ContentStore's byte-exact authority before any canonical write.
+                    // Stored media is decoded first so corruption is never classified as a payload conflict.
+                    guard ContentStore.admissionSameRevision(revision, knownVersion) else {
+                        rejections.append(.init(index: index, reason: .knownVersionPayloadConflict))
+                        continue
+                    }
+                    guard media.count == stored.count,
+                        zip(media, stored).allSatisfy({ ContentStore.admissionSameMediaCandidate($0.0, $0.1) }) else {
+                        rejections.append(.init(index: index, reason: .knownVersionMediaConflict))
+                        continue
+                    }
                     // A known historical version cannot supersede a different current revision.
                     update = observation.precedence == .makeCurrent && current == nil ? .useSuppliedRevision : .unchanged
                 } else if observation.versionIdentity == nil, let current, current.externalVersionIdentity == nil {
@@ -186,7 +215,7 @@ public struct AcquisitionAdmissionStore: Sendable {
                 _ = try AcquisitionTargetStore.applyCheckpoint(checkpoint, to: target, in: db)
             }
             return AdmissionRecord(targetID: command.targetID, checkpointAdvanced: command.nextCheckpoint != nil,
-                selectableSupplyChanged: supplyChanged)
+                selectableSupplyChanged: supplyChanged, rejectedObservations: rejections)
         }
     }
 

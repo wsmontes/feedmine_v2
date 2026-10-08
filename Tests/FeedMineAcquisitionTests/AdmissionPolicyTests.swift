@@ -21,12 +21,12 @@ final class AdmissionPolicyTests: XCTestCase {
     }
     private func observation(object: ExternalIdentity? = nil, version: ExternalIdentity? = nil,
         precedence: AcquisitionPrecedence = .makeCurrent, headline: String = " e\u{301} ", time: Double = 10,
-        authored: Date? = nil, modified: Date? = nil, memberships: [AcquisitionMembershipClaim]? = nil) -> AcquisitionObservation? {
+        summary: String = " Summary ", mediaClaims: [AcquisitionMediaCandidateClaim]? = nil, authored: Date? = nil, modified: Date? = nil, memberships: [AcquisitionMembershipClaim]? = nil) -> AcquisitionObservation? {
         AcquisitionObservation(objectIdentity: object ?? identity(),versionIdentity: version,precedence: precedence,
-            availability: .available,headline: headline,summary: " Summary ",bodyText: " Body ",authoredAt: authored,
+            availability: .available,headline: headline,summary: summary,bodyText: " Body ",authoredAt: authored,
             modifiedAt: modified,observedAt: Date(timeIntervalSince1970: time),language: " PT ",
             primaryLink: URL(string: "https://example.test/Article?Case=A"),searchProjection: " Search ",providerID: provider,
-            memberships: memberships ?? [.init(sourceID: source,kind: .direct)],mediaCandidates: [media("B"),media("A")])
+            memberships: memberships ?? [.init(sourceID: source,kind: .direct)],mediaCandidates: mediaClaims ?? [media("B"),media("A")])
     }
     private func batch(_ id: AcquisitionTargetID, _ observations: [AcquisitionObservation], revision: UInt64 = 0,
         checkpoint: AcquisitionCheckpoint? = nil, generation: UInt64 = 1) -> AcquisitionBatch? {
@@ -99,6 +99,7 @@ final class AdmissionPolicyTests: XCTestCase {
             XCTAssertEqual(candidates.map(\.declaredPixelWidth),[10,10]); XCTAssertEqual(candidates.map(\.declaredPixelHeight),[20,20])
             let replay = try policy.admit(batch(id,[observation(version: identity(" V1 ",role: .version),time: 20)!],revision: 1)!)
             XCTAssertFalse(replay.checkpointAdvanced); XCTAssertFalse(replay.selectableSupplyChanged)
+            XCTAssertTrue(replay.rejectedObservations.isEmpty)
             XCTAssertEqual(try content.currentRevision(originRecordID: origin.id),revision)
             XCTAssertEqual(try content.mediaCandidates(originRevisionID: revision.id),candidates)
             XCTAssertEqual(try content.originRecord(id: origin.id)?.lastObservedAt,Date(timeIntervalSince1970: 20))
@@ -129,4 +130,81 @@ final class AdmissionPolicyTests: XCTestCase {
         XCTAssertFalse(try policy.admit(batch(id,[observation(headline: "B",time: 30)!])!).selectableSupplyChanged)
         XCTAssertEqual(try content.currentRevision(originRecordID: origin),b)
     }
+    func testStructuredRejectionsPreserveOriginalBatchIndicesAndMixedReasons() throws {
+        let db = try RuntimeDatabase(location: location()), id = AcquisitionTargetID()
+        _ = try AcquisitionTargetAuthority(database: db).register(id: id,connectorKind: .syndication)
+        let policy = AdmissionPolicy(database: db)
+        let version = identity("v1",role: .version)
+        _ = try policy.admit(batch(id,[
+            observation(object: identity("payload"),version: version)!,
+            observation(object: identity("media"),version: version)!
+        ])!)
+        let checkpoint = AcquisitionCheckpoint(blob: Data([1]),serializationSchema: 1,connectorVersion: "v")!
+        let receipt = try policy.admit(batch(id,[
+            observation(object: identity("valid-A"),version: version)!,
+            observation(object: identity("payload"),version: version,summary: "changed")!,
+            observation(object: identity("valid-C"),version: version)!,
+            observation(object: identity("media"),version: version,mediaClaims: [])!
+        ],checkpoint: checkpoint)!)
+        XCTAssertEqual(receipt.rejectedObservations, [
+            .init(index: 1,reason: .knownVersionPayloadConflict),
+            .init(index: 3,reason: .knownVersionMediaConflict)
+        ])
+        XCTAssertTrue(receipt.checkpointAdvanced); XCTAssertTrue(receipt.selectableSupplyChanged)
+        XCTAssertEqual(try ContentStore(database: db).candidateWindow(sourceID: source,after: nil,examinedCapacity: 10).records.count,4)
+        let rejectedOnly = try policy.admit(batch(id,[
+            observation(object: identity("payload"),version: version,summary: "changed")!,
+            observation(object: identity("media"),version: version,mediaClaims: [])!
+        ],revision: 1,checkpoint: checkpoint)!)
+        XCTAssertEqual(rejectedOnly.rejectedObservations, [
+            .init(index: 0,reason: .knownVersionPayloadConflict),
+            .init(index: 1,reason: .knownVersionMediaConflict)
+        ])
+        XCTAssertFalse(rejectedOnly.selectableSupplyChanged); XCTAssertTrue(rejectedOnly.checkpointAdvanced)
+        XCTAssertEqual(try AcquisitionTargetAuthority(database: db).target(id: id)?.checkpointRevision,2)
+    }
+
+    private actor ScriptedAdmissionConnector: FeedConnector {
+        let batches: [[AcquisitionObservation]]
+        var index = 0
+        init(_ batches: [[AcquisitionObservation]]) { self.batches = batches }
+        func pull(_ request: FeedConnectorPull) throws -> FeedConnectorEvent {
+            guard index < batches.count else { return .finished }
+            let observations = batches[index]
+            index += 1
+            let checkpoint = AcquisitionCheckpoint(blob: Data([UInt8(index)]),serializationSchema: 1,connectorVersion: "test")!
+            return .batch(AcquisitionBatch(targetID: request.targetID,targetGeneration: request.targetGeneration,
+                expectedCheckpointRevision: request.checkpointRevision,observations: observations,nextCheckpoint: checkpoint)!,
+                transportByteCount: 0)
+        }
+    }
+
+    func testExistingCoordinatorTransportsRejectionsAndContinuesThirdAcquisition() async throws {
+        let db = try RuntimeDatabase(location: location()), id = AcquisitionTargetID()
+        let authority = AcquisitionTargetAuthority(database: db)
+        _ = try authority.register(id: id,connectorKind: .syndication)
+        let version = identity("updated-unchanged",role: .version)
+        let original = observation(object: identity("poison"),version: version)!
+        let poison = observation(object: identity("poison"),version: version,summary: "mutated")!
+        let valid = observation(object: identity("valid"),version: version)!
+        let connector = ScriptedAdmissionConnector([[original],[poison,valid],[poison,valid]])
+        let coordinator = AcquisitionCoordinator(database: db,connectorForTarget: { _ in connector })
+        let bounds = AcquisitionWorkBounds(batchCapacity: 1,observationCapacityPerBatch: 2,byteCapacityPerBatch: 1)!
+        for step in 0..<3 {
+            let target = try XCTUnwrap(authority.target(id: id))
+            let result = try await coordinator.execute(.start(target: target,bounds: bounds))
+            XCTAssertEqual(result.stop,.capacityReached)
+            let receipt = try XCTUnwrap(result.receipts.first)
+            XCTAssertEqual(result.receipts.count,1)
+            XCTAssertEqual(receipt.rejectedObservations,step == 0 ? [] : [.init(index: 0,reason: .knownVersionPayloadConflict)])
+            XCTAssertTrue(receipt.checkpointAdvanced)
+            XCTAssertEqual(receipt.selectableSupplyChanged,step < 2)
+            XCTAssertEqual(try authority.target(id: id)?.checkpointRevision,UInt64(step + 1))
+        }
+        let window = try ContentStore(database: db).candidateWindow(sourceID: source,after: nil,examinedCapacity: 10)
+        XCTAssertEqual(window.records.count,2)
+        XCTAssertTrue(window.records.contains { $0.summary == " Summary " })
+        XCTAssertFalse(window.records.contains { $0.summary == "mutated" })
+    }
+
 }

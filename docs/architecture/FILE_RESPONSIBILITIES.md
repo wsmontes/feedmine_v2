@@ -766,3 +766,14 @@ All three views were scaffolds before this gate; no visual implementation existe
 Viewport capture is explicitly deferred. The inspected ID-binding scrollPosition API is available on macOS 14/iOS 17, but alone does not establish factual user-origin movement, semantic placement and activity without additional scroll coordination. ScrollPosition plus phase/geometry APIs require macOS 15/iOS 18, above this package's macOS 14 minimum. This gate introduces no availability-dependent scroll strategy, second cursor or arbitrary onAppear anchor. View construction/rendering emits zero viewport events; the existing store callback contract remains available for a later explicit capture gate.
 
 Native tests host actual production views in an offscreen NSHostingView/NSWindow, synchronously capture their pixels and recognize text with Apple's Vision. They prove visible fields/order/work states, an existing hosted view observing state/window changes without root-view replacement, narrow-width adaptation and no extra durable write or intent. Public ForEach data/type inspection supplements the pixel proof for occurrence IDs. Static checks supplement functional tests for imports and absent effects. The suite is macOS-conditional; iOS device rendering and real user-scroll capture are not claimed. No Package.swift, protected state/store, schema or non-UI module change.
+
+## Phase 3R1 — poison observation isolation
+
+| File | Owns | Does not own |
+| --- | --- | --- |
+| FeedMinePersistence / AcquisitionAdmissionStore.swift | Pre-write classification of known-version payload/media conflicts; original-index structured rejections in AdmissionRecord; the existing atomic content/checkpoint transaction. | Canonical invariant relaxation, generic error recovery, savepoints or rejection persistence. |
+| FeedMineAcquisition / AcquisitionBatch.swift | Public semantic rejection index/reason values and immutable AdmissionReceipt.rejectedObservations, with empty defaults for existing callers. | Detection, persisted logs, execution or Persistence types in the public contract. |
+| FeedMineAcquisition / AdmissionPolicy.swift | Exhaustive lossless mapping of the Persistence rejection result into the semantic receipt. | A second admission, reclassification, retries or notification machinery. |
+| AcquisitionAdmissionStoreTests / AdmissionPolicyTests | Canonical integrity, isolated conflict/checkpoint progress, original batch indices/reasons, fatal rollback and existing coordinator receipt transport. | Production hooks, relaxed ContentStore tests or changed execution ownership. |
+
+ContentStore and its direct conflict/rollback tests remain unchanged. Existing AcquisitionCoordinator, RunwayAcquisitionCycle and ColdFeedBootstrap continue carrying the extended receipts. No manifest, schema, external identity, Publication, Runtime, UI or scheduler changes occur.

@@ -46,6 +46,14 @@ public struct AdmissionPolicy: Sendable {
         let record = try store.admit(.init(targetID: batch.targetID, targetGeneration: batch.targetGeneration,
             expectedCheckpointRevision: batch.expectedCheckpointRevision, observations: observations, nextCheckpoint: checkpoint))
         return AdmissionReceipt(targetID: record.targetID, checkpointAdvanced: record.checkpointAdvanced,
-            selectableSupplyChanged: record.selectableSupplyChanged)
+            selectableSupplyChanged: record.selectableSupplyChanged,
+            rejectedObservations: record.rejectedObservations.map { rejection in
+                let reason: AdmissionObservationRejectionReason
+                switch rejection.reason {
+                case .knownVersionPayloadConflict: reason = .knownVersionPayloadConflict
+                case .knownVersionMediaConflict: reason = .knownVersionMediaConflict
+                }
+                return .init(index: rejection.index, reason: reason)
+            })
     }
 }

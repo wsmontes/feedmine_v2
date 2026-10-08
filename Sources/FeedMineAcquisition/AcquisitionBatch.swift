@@ -106,13 +106,30 @@ public struct AcquisitionBatch: Hashable, Sendable {
     }
 }
 
+public enum AdmissionObservationRejectionReason: Hashable, Sendable {
+    case knownVersionPayloadConflict
+    case knownVersionMediaConflict
+}
+
+public struct AdmissionObservationRejection: Hashable, Sendable {
+    public let index: Int
+    public let reason: AdmissionObservationRejectionReason
+    public init(index: Int, reason: AdmissionObservationRejectionReason) {
+        self.index = index
+        self.reason = reason
+    }
+}
+
 public struct AdmissionReceipt: Hashable, Sendable {
     public let targetID: AcquisitionTargetID
     public let checkpointAdvanced: Bool
     public let selectableSupplyChanged: Bool
-    public init(targetID: AcquisitionTargetID, checkpointAdvanced: Bool, selectableSupplyChanged: Bool) {
+    public let rejectedObservations: [AdmissionObservationRejection]
+    public init(targetID: AcquisitionTargetID, checkpointAdvanced: Bool, selectableSupplyChanged: Bool,
+        rejectedObservations: [AdmissionObservationRejection] = []) {
         self.targetID = targetID
         self.checkpointAdvanced = checkpointAdvanced
         self.selectableSupplyChanged = selectableSupplyChanged
+        self.rejectedObservations = rejectedObservations
     }
 }
