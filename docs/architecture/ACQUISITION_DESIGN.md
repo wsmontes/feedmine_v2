@@ -391,7 +391,7 @@ Phase 3M — complete
 
 Phase 3N1 — Syndication configuration/checkpoint/translation — complete
 
-Phase 3N2 — Syndication HTTP + concrete FeedConnector — not started
+Phase 3N2 — Syndication HTTP + concrete FeedConnector — not started at the 3N1 gate; see the 3N2 record below.
 
 > FeedKit objects exist only inside FeedMineSyndication.
 >
@@ -433,3 +433,56 @@ SyndicationHTTP.swift owns only SyndicationCheckpointState and its codec. Option
 Future 3N2 owns HTTP fetching, conditional validators, status/304 handling and redirect execution. It must match a body's fingerprint before resuming the partial index and restart at zero for a changed body, then submit translation and checkpoint through the existing batch/admission boundary. None of that execution exists in 3N1. No request, network initializer, retry, timer, backoff, catalog, SourceBinding persistence, FeedSession or Runtime/Composition integration is added.
 
 The two new test files cover all 36 numbered cases with local inline bytes only. They prove the four formats, declared-position bounds without refill, exact configuration/identity/version/link mapping, media ordering/dimensions and checkpoint invariants/compatibility. Amendment A replaces JSON identity fallback with document-level missing-id refusal and separately proves primary-link preference/fallback on valid declared-id items. No existing test, schema or downstream production file changes.
+
+
+## Phase 3N2 — bounded Syndication HTTP connector
+
+Phase 3M — complete
+
+Phase 3N1 — complete
+
+Phase 3N2 — Syndication HTTP + concrete FeedConnector — complete
+
+Phase 3N — complete
+
+Post-3N production Runtime/FeedSession/Composition wiring — not started
+
+> SyndicationConnector performs one bounded external opportunity per FeedConnector pull.
+>
+> The exact FeedConnector byte capacity bounds the response body while it is being received, not only after full buffering.
+>
+> Conditional validators are sent only at a document boundary, never while a partial document still needs its body.
+>
+> A partial document resumes only when the newly fetched body fingerprint exactly matches the checkpoint fingerprint; otherwise translation restarts from declared item index zero.
+>
+> Validators never travel across a redirect hop.
+>
+> Validators obtained from a redirected final resource are not persisted because the current checkpoint schema intentionally does not persist validator-origin endpoint identity.
+>
+> A valid 304 requires that the exact request which received it was conditional.
+>
+> SyndicationConnector proposes checkpoints; Admission remains the only durable checkpoint authority.
+>
+> Network, parsing and translation failure never advances the checkpoint.
+>
+> No HTTP status schedules another attempt.
+
+SyndicationConnector.swift now owns the concrete immutable Sendable FeedConnector. SyndicationTargetConfiguration remains unchanged: no generation, checkpoint or mutable cache is added. Public construction takes explicit configuration, caller-owned URLSession, nonnegative redirectCapacity and injected clock. An internal initializer accepts the single narrow SyndicationHTTPTransport seam for deterministic tests; no public transport framework is introduced.
+
+Each pull first fences TargetID, decodes the opaque checkpoint (or uses empty state), and validates a finite injected observedAt before external work. Generation and checkpointRevision remain exactly the Acquisition request stamp. One logical bounded GET returns one batch or upToDate; Syndication does not synthesize finished, disconnected or cancelled events. Network cancellation propagates as CancellationError for the existing Coordinator cancellation handling. No durable target or checkpoint write, Admission call, candidate query or publication occurs here.
+
+SyndicationHTTP.swift preserves the 3N1 checkpoint state/codec/schema exactly and adds the connector-specific HTTP hop, client and real URLSession transport. The transport uses the supplied session's bytes(for:delegate:) stream, never full-body data(for:), data(from:) or remote FeedKit initialization. Its accumulator checks every byte before append, never grows beyond bodyByteCapacity, and cancels the underlying task on overflow. A nonnegative declared Content-Length may refuse early; received-byte enforcement remains authoritative. Non-200 response bodies are not intentionally accumulated. Non-HTTP responses have a typed error; underlying network errors propagate, with only URLError.cancelled normalized to CancellationError. URLSession lifecycle and configuration remain caller-owned; no shared singleton is constructed.
+
+The HTTP client owns finite manual traversal bounded by explicit redirectCapacity. Each request is GET at the exact configured endpoint initially, with reloadIgnoringLocalCacheData, no body, endpoint rewrite or FeedMine credential mechanism. The task delegate refuses automatic redirects. Only 301, 302, 303, 307 and 308 are followed; Location must be nonempty and resolvable against the current URL, and every destination requires HTTP/HTTPS, a host and no user/password. Zero capacity refuses the first redirect without another transport call. Requests rebuilt after every redirect carry no conditional validators, even for relative or same-host hops. The configured endpoint is never mutated or persisted as a redirect destination.
+
+At a document boundary only (nil fingerprint, index zero), exact ETag and Last-Modified checkpoint strings become If-None-Match and If-Modified-Since. Partial continuation is always unconditional because it needs the body. A 304 is upToDate only if that exact hop sent at least one validator; unconditional, partial or redirected 304 throws notModifiedWithoutConditionalRequest. It proposes no checkpoint and performs no CAS. Only 200 is document success; every other status is unexpectedStatus unless it is one of the explicit redirects. No status handling adds retry classification, Retry-After, reconnect, backoff or another scheduled opportunity.
+
+Exact accepted response bytes receive a SHA-256 continuation fingerprint encoded sha256:<64 lowercase hex>. This fingerprint is connector continuation only, never canonical object/version/media/batch identity. An exact fingerprint match resumes the durable declared-item index; a changed body starts at zero without an intermediate reset write. The unchanged SyndicationTranslator receives exact body, caller configuration, injected observedAt and observationCapacity as declared-position itemCapacity. Rejected positions consume capacity and never refill. Body bytes, parsed feeds, translations, redirect endpoints and validator maps are not retained across pulls.
+
+Direct 200 validators become exact candidate checkpoint validators; any redirected final validators are discarded because the frozen checkpoint has no validator-origin endpoint. A partial result proposes the new fingerprint and next declared index; a fully consumed result clears fingerprint/index to nil/zero. State equal to the decoded old state produces no checkpoint proposal. An actual clear of stale validators or an old partial position encodes empty state through Admission, while meaningless initial empty state does not manufacture a batch. Checkpoint schema remains 1 and connectorVersion remains feedmine-syndication/1-feedkit/10.9.4; no endpoint, retry time, status, cookie or body field is added.
+
+Nonempty observations with or without a delta, and checkpoint-only deltas, produce an AcquisitionBatch with the exact request targetID, targetGeneration and expectedCheckpointRevision. Zero observations and zero delta return upToDate. Emitted batch transportByteCount is exact final body.count, excluding redirect bodies and declared lengths. Parser/translation/HTTP failure returns no proposal. JSON empty ID remains materialized then item-level missingStableIdentity rejection; JSON missing ID remains parser-level parseFailed. No URL fallback, JSON preprocessing or Translator modification is added.
+
+SyndicationHTTPTests and SyndicationConnectorTests cover all 40 numbered proofs using scripted narrow I/O and local URLProtocol fixtures only. The real-session tests demonstrate exact byte limit, first excess-byte refusal, incremental open-body cancellation before a remaining chunk, refusal of automatic redirects and cancellation normalization. Connector proofs cover exact clock/stamp/byte count, direct versus redirected validators, SHA-256 reference value, three-slice continuation, changed-body restart, checkpoint clears/delta suppression, parser failures, target/checkpoint fences and JSON identity semantics. No internet, sleep or timers are used. The two existing Syndication test files and all downstream production/tests remain unchanged.
+
+Catalog, SourceBinding persistence/materialization, eligibility discovery, Runtime scheduling, FeedSession/Composition/UI integration, refresh/background work, host scheduling and media downloading remain deferred to later reviewed gates. No schema, migration, Package.swift dependency or Runtime/Composition wiring changes in 3N2. The next production-wiring gate is not started.
