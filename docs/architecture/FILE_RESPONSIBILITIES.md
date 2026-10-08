@@ -603,3 +603,35 @@ FeedSessionRunwayTests proves exact restored scope, revision-preserving viewport
 The thin-window proof establishes real replenishment latency and committed forward consumption, then presents only the anchor while committed history still has many ready cards. Same-anchor tail input remains healthy according to measured controller facts and causes no HTTP; window end never becomes a claimed committed history tail. Source-context tests use two real registered targets and prove only the matching binding's connector executes. Search boundary testing seeds exhausted-local controller facts because local CandidateProvider search remains unavailable, then verifies the bridge's searchContextUnavailable and retained pre-ack demand. Failure, cancellation, deferred resumption, context/revision fences, unknown viewport, committed advancement, inactivity and same-Edition quiescence are also covered with local deterministic fixtures, without sleeps/timers or live internet.
 
 Cold first-Edition bootstrap, BootstrapPlan, persistent catalog/target reconciliation, UI reducer/effects/store wiring, background cadence, retry/backoff, media network download and successor-Edition refresh remain separate future gates. The next gate is not started.
+
+## Phase 3P1 — Atomic first Edition from local supply (complete)
+
+Phase 3O2 is complete. Warm restore remains the preferred path. With no restorable session, InitialProductionSlice owns exactly one caller-requested bounded local attempt over existing canonical supply. It uses the same FeedPlan, resolved Selection policy, caller-supplied preparation and immutable Publication machinery as continuous production. Its candidate cursor starts nil, examined capacity is explicit, and Selection's factual progress is returned unchanged. Empty selection creates no history or checkpoint and never invokes preparation.
+
+The first Edition, Segment 0, its cards and the first durable session checkpoint become visible atomically.
+
+Cold local publication examines one bounded candidate window and never refills internally.
+
+The first Edition uses the same FeedPlan, resolved Selection policy, Publication preparation and immutable Publication machinery as later feed work.
+
+A new Edition begins with an empty Edition-scoped exposure set; exposure from another Edition never suppresses its first Segment.
+
+PublicationCoordinator remains the semantic producer of FeedEdition / FeedSegment / PublishedCard history.
+
+Persistence owns the single mechanical transaction that combines first publication with initial session durability.
+
+Initial publication never creates or executes AcquisitionDemand.
+
+Failure at any point leaves neither the new Edition nor its initial checkpoint.
+
+Existing saved session state is never silently replaced by cold bootstrap.
+
+Automatic excludePublishedRevisions exposure policy is required. The new Edition receives an exact exposure snapshot for the candidate window with no published revisions; no prior Edition exposure is queried. A revision in another Edition remains eligible for the new first Segment. The caller supplies every Edition/Segment/card identity, seed, schema version, date, placement and preparation input; the slice generates no identifiers or clock readings.
+
+PublicationCoordinator.InitialCreateRequest wraps the existing CreateRequest, explicit placement and checkpoint date. Shared semantic preparation freezes the Edition, Segment 0 and cards. The first supplied published card ID becomes the initial SessionCursor anchor; callers cannot nominate an unrelated anchor. Empty semantic publication performs no store write. Existing PublicationPersistenceMapping encodes all publication records and the cursor.
+
+PublicationStore.createEdition and createInitialEdition share one mechanical first-publication transaction body. Normal createEdition remains a single non-session transaction. createInitialEdition validates Segment 0's Edition/ordinal and checkpoint Edition/card relation, then uses one writer transaction for history insertion followed by SessionStore.insertInitialCheckpoint. The internal initial helper validates placement, finite time and actual Edition/card membership, rejects any existing checkpoint with checkpointAlreadyExists, and uses INSERT without upsert. Failure at this final step rolls back Edition, segment and cards, preserving any old checkpoint. Normal saveCheckpoint retains its explicit milestone/upsert semantics. No migration, table, index or column changes.
+
+The two new real-database test suites cover four-fact success, relation rejection, final-checkpoint rollback, preserved existing session, normal non-session creation, bounded selection/progress/exhaustion, immediate PublicationHistory.restore, caller first-card anchoring, preparation failure, exposure policy and prior-Edition independence. No separate saveCursor follows initial publication.
+
+Phase 3P2 — bounded cold bootstrap acquisition — is not started. It owns remote supply when the first bounded local attempt cannot publish. 3P1 introduces no network, Acquisition, BootstrapPlan, retries, refill/repeated attempt, loading state or minimum/target publication gate. FeedSession installation orchestration and FeedSessionUI / FeedScreenStore wiring are not started. Persistent catalog / target reconciliation is not started.

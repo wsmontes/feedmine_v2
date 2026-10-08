@@ -12,6 +12,7 @@ public enum PublicationStoreError: Error, Equatable, Sendable {
     case invalidRepresentation(String)
     case missingEdition
     case editorialRevisionConflict
+    case invalidInitialCheckpoint
     case invalidFirstSegment
     case invalidAppendOrdinal
     case publicationSchemaMismatch
@@ -148,21 +149,39 @@ public struct PublicationStore: Sendable {
 
     public func createEdition(_ edition: EditionRecord, firstSegment: SegmentRecord, cards: [CardRecord]) throws {
         try database.write { db in
-            guard firstSegment.editionID == edition.id, firstSegment.ordinal == 0 else {
-                throw PublicationStoreError.invalidFirstSegment
-            }
-            try Self.validate(firstSegment, cards: cards, version: edition.publicationSchemaVersion)
-            let editionValues = try Self.editionValues(edition)
-            let existing = try Row.fetchAll(db, sql: "SELECT * FROM feed_editions WHERE editorial_revision_id = ?",
-                arguments: [PersistenceValueCoding.uuid(edition.editorialRevision.id.rawValue)])
-            for row in existing {
-                guard try Self.decodeEdition(row).editorialRevision == edition.editorialRevision else {
-                    throw PublicationStoreError.editorialRevisionConflict
-                }
-            }
-            try Self.insert(db, table: "feed_editions", columns: Self.editionColumns, values: editionValues)
-            try Self.insertSegment(firstSegment, cards: cards, db: db)
+            try Self.insertEditionAndFirstSegment(edition, firstSegment: firstSegment, cards: cards, in: db)
         }
+    }
+
+    public func createInitialEdition(_ edition: EditionRecord, firstSegment: SegmentRecord,
+        cards: [CardRecord], initialCheckpoint: SessionStore.CheckpointRecord) throws {
+        try database.write { db in
+            guard firstSegment.editionID == edition.id, firstSegment.ordinal == 0,
+                initialCheckpoint.editionID == edition.id,
+                firstSegment.cardIDs.contains(initialCheckpoint.cardID) else {
+                throw PublicationStoreError.invalidInitialCheckpoint
+            }
+            try Self.insertEditionAndFirstSegment(edition, firstSegment: firstSegment, cards: cards, in: db)
+            try SessionStore.insertInitialCheckpoint(initialCheckpoint, in: db)
+        }
+    }
+
+    private static func insertEditionAndFirstSegment(_ edition: EditionRecord,
+        firstSegment: SegmentRecord, cards: [CardRecord], in db: Database) throws {
+        guard firstSegment.editionID == edition.id, firstSegment.ordinal == 0 else {
+            throw PublicationStoreError.invalidFirstSegment
+        }
+        try Self.validate(firstSegment, cards: cards, version: edition.publicationSchemaVersion)
+        let editionValues = try Self.editionValues(edition)
+        let existing = try Row.fetchAll(db, sql: "SELECT * FROM feed_editions WHERE editorial_revision_id = ?",
+            arguments: [PersistenceValueCoding.uuid(edition.editorialRevision.id.rawValue)])
+        for row in existing {
+            guard try Self.decodeEdition(row).editorialRevision == edition.editorialRevision else {
+                throw PublicationStoreError.editorialRevisionConflict
+            }
+        }
+        try Self.insert(db, table: "feed_editions", columns: Self.editionColumns, values: editionValues)
+        try Self.insertSegment(firstSegment, cards: cards, db: db)
     }
 
     public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord]) throws {

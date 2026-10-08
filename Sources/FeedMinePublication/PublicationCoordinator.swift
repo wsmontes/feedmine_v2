@@ -57,6 +57,18 @@ public struct PublicationCoordinator: Sendable {
         }
     }
 
+    public struct InitialCreateRequest: Sendable {
+        public let publication: CreateRequest
+        public let anchorPlacement: AnchorPlacement
+        public let checkpointedAt: Date
+
+        public init(publication: CreateRequest, anchorPlacement: AnchorPlacement, checkpointedAt: Date) {
+            self.publication = publication
+            self.anchorPlacement = anchorPlacement
+            self.checkpointedAt = checkpointedAt
+        }
+    }
+
     public struct AppendRequest: Sendable {
         public let selection: SelectionResult
         public let drafts: [PublicationCardDraft]
@@ -78,8 +90,30 @@ public struct PublicationCoordinator: Sendable {
     }
 
     public func createEdition(_ request: CreateRequest) throws -> PublicationOutcome {
+        guard let records = try Self.firstPublication(request) else { return .nothingToPublish }
+        try store.createEdition(records.0, firstSegment: records.1, cards: records.2)
+        return .published(Self.initialReceipt(request))
+    }
+
+    public func createInitialEdition(_ request: InitialCreateRequest) throws -> PublicationOutcome {
+        let publication = request.publication
+        guard let records = try Self.firstPublication(publication) else { return .nothingToPublish }
+        let cursor = SessionCursor(editionID: publication.editionID,
+            anchor: FeedWindowAnchor(cardID: publication.cardIDs[0], placement: request.anchorPlacement))
+        try store.createInitialEdition(records.0, firstSegment: records.1, cards: records.2,
+            initialCheckpoint: PublicationPersistenceMapping.checkpoint(cursor, updatedAt: request.checkpointedAt))
+        return .published(Self.initialReceipt(publication))
+    }
+
+    private static func initialReceipt(_ request: CreateRequest) -> PublicationReceipt {
+        PublicationReceipt(editionID: request.editionID, segmentID: request.segmentID,
+            segmentOrdinal: 0, cardIDs: request.cardIDs)
+    }
+
+    private static func firstPublication(_ request: CreateRequest) throws ->
+        (PublicationStore.EditionRecord, PublicationStore.SegmentRecord, [PublicationStore.CardRecord])? {
         let cards = try Self.prepareCards(selection: request.selection, drafts: request.drafts, cardIDs: request.cardIDs)
-        guard !cards.isEmpty else { return .nothingToPublish }
+        guard !cards.isEmpty else { return nil }
         let edition = FeedEdition(id: request.editionID, editorialRevision: request.selection.editorialRevision,
             publicationSchemaVersion: request.publicationSchemaVersion, selectionSeed: request.selectionSeed,
             createdAt: request.editionCreatedAt)
@@ -89,9 +123,7 @@ public struct PublicationCoordinator: Sendable {
             throw PublicationCoordinatorError.inputCountMismatch
         }
         let records = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
-        try store.createEdition(PublicationPersistenceMapping.record(edition), firstSegment: records.0, cards: records.1)
-        return .published(PublicationReceipt(editionID: request.editionID, segmentID: request.segmentID,
-            segmentOrdinal: 0, cardIDs: request.cardIDs))
+        return (try PublicationPersistenceMapping.record(edition), records.0, records.1)
     }
 
     public func append(_ request: AppendRequest) throws -> PublicationOutcome {

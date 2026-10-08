@@ -8,6 +8,7 @@ import GRDB
 import FeedMineDomain
 
 public enum SessionStoreError: Error, Equatable, Sendable {
+    case checkpointAlreadyExists
     case invalidPlacement
     case invalidMembership
     case corruption(String)
@@ -46,6 +47,23 @@ public struct SessionStore: Sendable {
                 """, arguments: [PersistenceValueCoding.uuid(checkpoint.editionID.rawValue),
                     PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time])
         }
+    }
+
+    /// Inserts the first durable position inside the first-publication transaction.
+    static func insertInitialCheckpoint(_ checkpoint: CheckpointRecord, in db: Database) throws {
+        guard ["top", "center"].contains(checkpoint.anchorPlacement) else { throw SessionStoreError.invalidPlacement }
+        guard try member(db, editionID: checkpoint.editionID, cardID: checkpoint.cardID) else { throw SessionStoreError.invalidMembership }
+        let time: Double
+        do { time = try PersistenceValueCoding.date(checkpoint.updatedAt, field: "updated_at") }
+        catch { throw SessionStoreError.invalidRepresentation("updated_at") }
+        guard try Int.fetchOne(db, sql: "SELECT count(*) FROM session_checkpoint") == 0 else {
+            throw SessionStoreError.checkpointAlreadyExists
+        }
+        try db.execute(sql: """
+            INSERT INTO session_checkpoint (singleton_id, edition_id, card_id, anchor_placement, updated_at)
+            VALUES (1, ?, ?, ?, ?)
+            """, arguments: [PersistenceValueCoding.uuid(checkpoint.editionID.rawValue),
+                PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time])
     }
 
     public func checkpoint() throws -> CheckpointRecord? {
