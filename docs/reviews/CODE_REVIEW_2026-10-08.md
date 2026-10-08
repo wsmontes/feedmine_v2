@@ -1,5 +1,66 @@
 # Code review — FeedMine `main` @ `8873e72` (2026-10-08)
 
+## Status update — `main` @ `6116113` (2026-10-08 16:40)
+
+Reviewed statically (no Swift toolchain here; the 670-test result is the agent's own report).
+
+| Item | Status | Commit(s) |
+| --- | --- | --- |
+| H1 poison batch | **Resolved**, follow-ups below | `5666647` (3R1) |
+| H2 failure isolation + fairness | **Partial** | `1f60942` (3R2) |
+| H3 republication by revision | **Open** (no Editorial change since review) | — |
+| H4 redundant downloads | **Resolved** for completed documents and in-execution paging | `3726d90` (3R3), `6116113` (3R4) |
+| M1 cancellation propagation | **Mostly resolved** | `6116113` |
+
+### H1 follow-ups (3R1)
+1. A publisher edit under an unchanged `updated`/`dateModified` is now discarded on every
+   future pull, so the canonical text stays stale. Decide explicitly whether to accept that
+   or treat a payload change as a new revision.
+2. A rejected observation also discards its availability (`removed`/`revoked`) and its
+   membership changes. A removal signal on a conflicting item is lost.
+3. `rejectedObservations` has no consumer: no log, metric or surfaced count, so the
+   condition is invisible.
+4. The end-to-end Atom harness from 3R1 was temporary and is not in the repo. Consider
+   committing it as a test.
+
+### H2 residuals (3R2)
+1. **Errors that still abort the whole cycle.** These are not mapped to
+   `ConnectorOperationalFailure`, so they still throw out of `coordinator.execute` and
+   end the loops in `RunwayAcquisitionCycle` and `ColdFeedBootstrap`:
+   - `SyndicationHTTPError.bodyTooLarge` (permanent for a large feed);
+   - redirect errors: `invalidRedirectTarget`, `redirectCapacityExceeded`, `missingRedirectLocation`;
+   - `notModifiedWithoutConditionalRequest`;
+   - `SyndicationCheckpointError` (corrupt or unsupported checkpoint, permanent);
+   - `URLError` codes outside `isTransportFailure`, e.g. `.badServerResponse`,
+     `.cannotParseResponse`, `.httpTooManyRedirects`, `.resourceUnavailable`,
+     `.cannotDecodeContentData`.
+
+   Any of these that repeats stalls every target again. Consider mapping all remote- or
+   target-specific errors to operational failure and keeping only integrity/fence errors fatal.
+2. **Still sequential.** Cycle latency is still the sum of all targets; there is no bounded parallelism.
+3. **No backoff.** A target that fails repeatedly is retried every rotation and consumes capacity.
+4. **Inconsistent order.** The first planning call with `selectionAfter == nil` uses
+   registration order; later calls use UUID order.
+5. **Placement.** `ConnectorOperationalFailure` lives in `FeedMineDomain`, but the connector
+   boundary belongs to Acquisition (`FeedConnector.swift`). Domain is canonical vocabulary.
+
+### H4 / M1 notes (3R3, 3R4)
+- The cancellation handler cancels the shared execution task whenever its creator is
+  cancelled, so joiners of that execution also receive `.cancelled`. Confirm this is intended.
+- When a retained document is reused, the checkpoint revision is not compared (only
+  target and generation are). If another writer changed the checkpoint mid-execution, the
+  fingerprint comparison falls back to index 0. That is safe but re-translates the document.
+- Parsing still repeats for each bounded page, as the docs acknowledge.
+- `IMPLEMENTATION_ORDER.md` (3R3/3R4) says "delivered for external review without
+  integration into main", but both commits are on `main`. Fix the wording or the process.
+
+### Suggested next order
+H3 → the H2 residual error mapping (item 1) → M2 (driver reentrancy) → M11 (HTML in
+`primaryText`) → M14 (viewport capture) → L1–L4.
+
+---
+
+
 Audience: the implementing agent. Each finding has location, mechanism, effect and an
 acceptance criterion. Line numbers refer to `8873e72`. Review was static (no Swift
 toolchain on the reviewer machine); `swift build` / `swift test` were not run.
