@@ -44,7 +44,12 @@ public struct SyndicationConnector: FeedConnector, Sendable {
     }
 
     public func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
-        do { return try await pullDocument(request) }
+        var context = FeedConnectorExecutionContext()
+        return try await pull(request, context: &context)
+    }
+
+    public func pull(_ request: FeedConnectorPull, context: inout FeedConnectorExecutionContext) async throws -> FeedConnectorEvent {
+        do { return try await pullDocument(request, context: &context) }
         catch let error as URLError where error.code == .cancelled { throw CancellationError() }
         catch let error as URLError where Self.isTransportFailure(error.code) {
             throw ConnectorOperationalFailure.transport
@@ -65,17 +70,42 @@ public struct SyndicationConnector: FeedConnector, Sendable {
         }
     }
 
-    private func pullDocument(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
+    private struct AcquiredDocument: Sendable {
+        let targetID: AcquisitionTargetID
+        let generation: UInt64
+        let document: SyndicationHTTPDocument
+        let fingerprint: String
+    }
+
+    private func pullDocument(_ request: FeedConnectorPull, context: inout FeedConnectorExecutionContext) async throws -> FeedConnectorEvent {
+        try Task.checkCancellation()
         guard request.targetID == configuration.targetID else {
             throw SyndicationConnectorError.targetMismatch(expected: configuration.targetID, actual: request.targetID)
         }
         let oldState = try request.checkpoint.map(SyndicationCheckpointCodec.decode) ?? SyndicationCheckpointCodec.empty
         let observedAt = now()
         guard observedAt.timeIntervalSince1970.isFinite else { throw SyndicationConnectorError.invalidObservedAt }
-        let outcome = try await http.fetch(endpoint: configuration.endpoint, checkpoint: oldState,
-            bodyByteCapacity: request.byteCapacity)
-        guard case .document(let document) = outcome else { return .upToDate }
-        let fingerprint = syndicationBodyFingerprint(document.body)
+        let acquired: AcquiredDocument
+        let transportByteCount: Int
+        if let retained = context.retainedValue as? AcquiredDocument,
+            retained.targetID == request.targetID, retained.generation == request.targetGeneration {
+            acquired = retained
+            transportByteCount = 0
+            guard retained.document.body.count <= request.byteCapacity else {
+                throw SyndicationHTTPError.bodyTooLarge(limit: request.byteCapacity, actualAtLeast: retained.document.body.count)
+            }
+        } else {
+            context.retainedValue = nil
+            let outcome = try await http.fetch(endpoint: configuration.endpoint, checkpoint: oldState,
+                bodyByteCapacity: request.byteCapacity)
+            guard case .document(let document) = outcome else { return .upToDate }
+            acquired = AcquiredDocument(targetID: request.targetID, generation: request.targetGeneration,
+                document: document, fingerprint: syndicationBodyFingerprint(document.body))
+            transportByteCount = document.body.count
+            context.retainedValue = acquired
+        }
+        try Task.checkCancellation()
+        let document = acquired.document, fingerprint = acquired.fingerprint
         let matches = oldState.documentFingerprint.map { $0.utf8.elementsEqual(fingerprint.utf8) } ?? false
         // A matching completed document is settled before parsing or constructing observations.
         if matches && oldState.nextItemIndex == 0 { return .upToDate }
@@ -92,6 +122,6 @@ public struct SyndicationConnector: FeedConnector, Sendable {
         guard let batch = AcquisitionBatch(targetID: request.targetID, targetGeneration: request.targetGeneration,
             expectedCheckpointRevision: request.checkpointRevision, observations: translation.observations,
             nextCheckpoint: delta) else { throw SyndicationConnectorError.invalidBatch }
-        return .batch(batch, transportByteCount: document.body.count)
+        return .batch(batch, transportByteCount: transportByteCount)
     }
 }
