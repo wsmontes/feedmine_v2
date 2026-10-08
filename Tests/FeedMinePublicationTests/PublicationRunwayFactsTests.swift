@@ -55,7 +55,7 @@ final class PublicationRunwayFactsTests: XCTestCase {
             let db = try RuntimeDatabase(location: loc)
             try persist(edition, c, in: db)
             let facts = try PublicationHistory(database: db).exposure(editionID: edition.id, revisionIDs: request)
-            XCTAssertEqual(facts.requestedRevisionIDs, request); XCTAssertEqual(facts.publishedRevisionIDs, [a,b])
+            XCTAssertEqual(facts.observedTailCardID, c[3].id); XCTAssertEqual(facts.requestedRevisionIDs, request); XCTAssertEqual(facts.publishedRevisionIDs, [a,b])
         }
         let history = PublicationHistory(database: try RuntimeDatabase(location: loc))
         let facts = try history.exposure(editionID: edition.id, revisionIDs: request)
@@ -64,7 +64,20 @@ final class PublicationRunwayFactsTests: XCTestCase {
         XCTAssertTrue(facts.publishedRevisionIDs.isSubset(of: Set(facts.requestedRevisionIDs)))
         XCTAssertThrowsError(try history.exposure(editionID: edition.id, revisionIDs: [a,a])) { XCTAssertEqual($0 as? PublicationHistoryError, .invalidExposureRequest) }
         let empty = try history.exposure(editionID: edition.id, revisionIDs: [])
-        XCTAssertEqual(empty.requestedRevisionIDs, []); XCTAssertEqual(empty.publishedRevisionIDs, [])
+        XCTAssertEqual(empty.observedTailCardID, c[3].id); XCTAssertEqual(empty.requestedRevisionIDs, []); XCTAssertEqual(empty.publishedRevisionIDs, [])
         XCTAssertThrowsError(try history.exposure(editionID: FeedEditionID(), revisionIDs: [])) { XCTAssertEqual($0 as? PublicationStoreError, .missingEdition) }
     }
+    func testSemanticExposureTailChangesOnlyInNewSnapshotAfterAppend() throws {
+        let loc = location(), edition = RestoreFixture.edition()
+        let c = try (0..<4).map { try RestoreFixture.card(index: $0) }
+        let db = try RuntimeDatabase(location: loc)
+        try persist(edition,c,in: db)
+        let history = PublicationHistory(database: db), old = try history.exposure(editionID: edition.id,revisionIDs: [])
+        let next = try RestoreFixture.card(index: 0)
+        let records = try PublicationPersistenceMapping.records(segment: RestoreFixture.segment(edition,cards: [next],ordinal: 2),cards: [next])
+        try PublicationStore(database: db).appendSegment(records.0,cards: records.1)
+        XCTAssertEqual(old.observedTailCardID,c[3].id)
+        XCTAssertEqual(try history.exposure(editionID: edition.id,revisionIDs: []).observedTailCardID,next.id)
+    }
+
 }

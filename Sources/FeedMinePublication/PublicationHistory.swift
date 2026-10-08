@@ -63,9 +63,9 @@ public struct PublicationHistory: Sendable {
         guard Set(revisionIDs).count == revisionIDs.count else {
             throw PublicationHistoryError.invalidExposureRequest
         }
-        let published = try publicationStore.publishedRevisionIDs(editionID: editionID, revisionIDs: revisionIDs)
-        return PublishedExposureFacts(editionID: editionID,
-            requestedRevisionIDs: revisionIDs, publishedRevisionIDs: published)
+        let record = try publicationStore.exposure(editionID: editionID, revisionIDs: revisionIDs)
+        return PublishedExposureFacts(editionID: editionID, observedTailCardID: record.observedTailCardID,
+            requestedRevisionIDs: revisionIDs, publishedRevisionIDs: record.publishedRevisionIDs)
     }
 
     public func forwardAdvance(editionID: FeedEditionID, fromCardID: PublicationCardID,

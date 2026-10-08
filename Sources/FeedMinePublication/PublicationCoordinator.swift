@@ -95,6 +95,15 @@ public struct PublicationCoordinator: Sendable {
     }
 
     public func append(_ request: AppendRequest) throws -> PublicationOutcome {
+        try append(request, expectedTail: nil)
+    }
+
+    public func append(_ request: AppendRequest,
+        expectingTailCardID: PublicationCardID) throws -> PublicationOutcome {
+        try append(request, expectedTail: expectingTailCardID)
+    }
+
+    private func append(_ request: AppendRequest, expectedTail: PublicationCardID?) throws -> PublicationOutcome {
         let cards = try Self.prepareCards(selection: request.selection, drafts: request.drafts, cardIDs: request.cardIDs)
         guard !cards.isEmpty else { return .nothingToPublish }
         guard let record = try store.edition(id: request.editionID) else { throw PublicationCoordinatorError.missingEdition }
@@ -110,7 +119,11 @@ public struct PublicationCoordinator: Sendable {
             throw PublicationCoordinatorError.inputCountMismatch
         }
         let records = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
-        try store.appendSegment(records.0, cards: records.1)
+        if let expectedTail {
+            try store.appendSegment(records.0, cards: records.1, expectingTailCardID: expectedTail)
+        } else {
+            try store.appendSegment(records.0, cards: records.1)
+        }
         return .published(PublicationReceipt(editionID: request.editionID, segmentID: request.segmentID,
             segmentOrdinal: ordinal, cardIDs: request.cardIDs))
     }

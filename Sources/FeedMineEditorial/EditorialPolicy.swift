@@ -7,7 +7,7 @@ public struct ResolvedSelectionPolicy: Hashable, Sendable {
     public enum EligibilityBehavior: Hashable, Sendable { case structuralOnly }
     public enum ScoringBehavior: Hashable, Sendable { case equal }
     public enum SequencingBehavior: Hashable, Sendable { case recencyDescending }
-    public enum ExposureBehavior: Hashable, Sendable { case none }
+    public enum ExposureBehavior: Hashable, Sendable { case none, excludePublishedRevisions }
 
     public let contextKey: ContextKey
     public let userSelectionVersion: PolicyVersion

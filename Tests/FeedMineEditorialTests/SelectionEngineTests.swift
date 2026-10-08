@@ -23,7 +23,7 @@ final class SelectionEngineTests: XCTestCase {
             sequencingPolicyVersion: PolicyVersion(rawValue: 4), exposurePolicyVersion: PolicyVersion(rawValue: 5),
             selectionSchemaVersion: SelectionSchemaVersion(rawValue: 6))))
     }
-    private func policy(_ revision: EditorialRevision, mismatch: Int? = nil) -> ResolvedSelectionPolicy {
+    private func policy(_ revision: EditorialRevision, mismatch: Int? = nil, exposure: ResolvedSelectionPolicy.ExposureBehavior = .none) -> ResolvedSelectionPolicy {
         ResolvedSelectionPolicy(contextKey: mismatch == 0 ? ContextKey(request: .source(SourceID(rawValue: uuid(9)))) : revision.contextKey,
             userSelectionVersion: mismatch == 1 ? PolicyVersion(rawValue: 101) : revision.userSelectionVersion,
             eligibilityPolicyVersion: mismatch == 2 ? PolicyVersion(rawValue: 102) : revision.eligibilityPolicyVersion,
@@ -31,7 +31,7 @@ final class SelectionEngineTests: XCTestCase {
             sequencingPolicyVersion: mismatch == 4 ? PolicyVersion(rawValue: 104) : revision.sequencingPolicyVersion,
             exposurePolicyVersion: mismatch == 5 ? PolicyVersion(rawValue: 105) : revision.exposurePolicyVersion,
             selectionSchemaVersion: mismatch == 6 ? SelectionSchemaVersion(rawValue: 106) : revision.selectionSchemaVersion,
-            eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyDescending, exposure: .none)
+            eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyDescending, exposure: exposure)
     }
     private func window(_ candidates: [Candidate], count: Int = 27,
         cursor: CandidateSupplyCursor? = nil, exhausted: Bool = false) -> CandidateSupplyWindow {
@@ -140,4 +140,41 @@ final class SelectionEngineTests: XCTestCase {
         XCTAssertEqual(result.orderedCandidates.count, 2)
         XCTAssertEqual(result.supplyReport, SelectionSupplyReport(examinedCount: 27, nextCursor: cursor, exhausted: false))
     }
+    func testExposureSnapshotRequiresUniqueRequestAndPublishedSubset() throws {
+        let a = candidate(1).originRevisionID, b = candidate(2).originRevisionID
+        XCTAssertNil(SelectionExposureSnapshot(requestedRevisionIDs: [a,a], publishedRevisionIDs: []))
+        XCTAssertNil(SelectionExposureSnapshot(requestedRevisionIDs: [a], publishedRevisionIDs: [b]))
+        XCTAssertNotNil(SelectionExposureSnapshot(requestedRevisionIDs: [], publishedRevisionIDs: []))
+    }
+
+    func testExplicitExposureSuppressesExactRevisionsBeforeSequencingAndPreservesSupply() throws {
+        let plan = try plan(), input = [candidate(1,time: 20),candidate(2,time: 30),candidate(3,time: 10)]
+        let cursor = CandidateSupplyCursor(sortDate: Date(timeIntervalSince1970: 1), originRecordID: input[2].originRecordID)
+        let supplied = window(input, count: 41, cursor: cursor, exhausted: false)
+        let ids = input.map(\.originRevisionID), engine = SelectionEngine()
+        for (published,want) in [(Set([ids[1]]), [input[0],input[2]]), (Set(ids), [])] {
+            let snapshot = try XCTUnwrap(SelectionExposureSnapshot(requestedRevisionIDs: ids, publishedRevisionIDs: published))
+            let result = try engine.select(plan: plan, policy: policy(plan.revision,exposure: .excludePublishedRevisions), window: supplied, exposure: snapshot)
+            XCTAssertEqual(result.orderedCandidates, want)
+            XCTAssertEqual(result.supplyReport, SelectionSupplyReport(examinedCount: 41,nextCursor: cursor,exhausted: false))
+        }
+        let newer = candidate(1,revision: 50)
+        let snapshot = try XCTUnwrap(SelectionExposureSnapshot(requestedRevisionIDs: [newer.originRevisionID],publishedRevisionIDs: []))
+        XCTAssertEqual(try engine.select(plan: plan,policy: policy(plan.revision,exposure: .excludePublishedRevisions),window: window([newer]),exposure: snapshot).orderedCandidates, [newer])
+    }
+
+    func testExposureCoverageAndValidationOrder() throws {
+        let plan = try plan(), candidates = [candidate(1),candidate(2)], ids = candidates.map(\.originRevisionID)
+        let engine = SelectionEngine(), automatic = policy(plan.revision,exposure: .excludePublishedRevisions)
+        XCTAssertThrowsError(try engine.select(plan: plan,policy: automatic,window: window(candidates))) { XCTAssertEqual($0 as? SelectionError,.exposureRequired) }
+        let full = try XCTUnwrap(SelectionExposureSnapshot(requestedRevisionIDs: ids,publishedRevisionIDs: []))
+        XCTAssertThrowsError(try engine.select(plan: plan,policy: policy(plan.revision),window: window(candidates),exposure: full)) { XCTAssertEqual($0 as? SelectionError,.unexpectedExposure) }
+        for request in [[ids[0]], ids + [candidate(3).originRevisionID], Array(ids.reversed())] {
+            let bad = try XCTUnwrap(SelectionExposureSnapshot(requestedRevisionIDs: request,publishedRevisionIDs: []))
+            XCTAssertThrowsError(try engine.select(plan: plan,policy: automatic,window: window(candidates),exposure: bad)) { XCTAssertEqual($0 as? SelectionError,.exposureCoverageMismatch) }
+        }
+        XCTAssertThrowsError(try engine.select(plan: plan,policy: policy(plan.revision,mismatch: 1,exposure: .excludePublishedRevisions),window: window([candidates[0],candidates[0]]),exposure: nil)) { XCTAssertEqual($0 as? SelectionError,.policyMismatch) }
+        XCTAssertThrowsError(try engine.select(plan: plan,policy: automatic,window: window([candidates[0],candidates[0]]),exposure: nil)) { XCTAssertEqual($0 as? SelectionError,.duplicateCandidateIdentity) }
+    }
+
 }

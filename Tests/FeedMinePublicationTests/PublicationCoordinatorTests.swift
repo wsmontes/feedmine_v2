@@ -270,4 +270,21 @@ final class PublicationCoordinatorTests: XCTestCase {
             XCTAssertEqual(try changed.cardIDs.map { try XCTUnwrap(store.card(id: $0)) }, baseline)
         }
     }
+    func testExpectedTailAppendSuccessAndStaleRefusalPropagatesWithoutRetry() throws {
+        try withLocation { location in
+            let db = try RuntimeDatabase(location: location), coordinator = PublicationCoordinator(database: db)
+            let initial = try create([candidate(1)])
+            let first = try receipt(coordinator.createEdition(initial))
+            let b = PublicationCardID(rawValue: uuid(3001)), c = PublicationCardID(rawValue: uuid(3002))
+            let second = try receipt(coordinator.append(append([candidate(2)],target: initial.editionID,segment: 1001,ids: [b]),expectingTailCardID: first.cardIDs[0]))
+            XCTAssertEqual(second.segmentOrdinal,1)
+            let stale = try append([candidate(3)],target: initial.editionID,segment: 1002,ids: [c])
+            XCTAssertThrowsError(try coordinator.append(stale,expectingTailCardID: first.cardIDs[0])) { XCTAssertEqual($0 as? PublicationStoreError,.staleHistoryExpectation) }
+            let store = PublicationStore(database: db)
+            XCTAssertNil(try store.card(id: c)); XCTAssertNotNil(try store.card(id: b))
+            XCTAssertEqual(try store.tail(editionID: initial.editionID).ordinal,1)
+            XCTAssertFalse(try store.segments(editionID: initial.editionID).contains { $0.id == stale.segmentID })
+        }
+    }
+
 }

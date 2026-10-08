@@ -7,6 +7,9 @@ import FeedMineDomain
 public enum SelectionError: Error, Equatable, Sendable {
     case policyMismatch
     case duplicateCandidateIdentity
+    case exposureRequired
+    case unexpectedExposure
+    case exposureCoverageMismatch
 }
 
 public struct SelectionSupplyReport: Hashable, Sendable {
@@ -38,6 +41,11 @@ public struct SelectionEngine: Sendable {
 
     public func select(plan: FeedPlan, policy: ResolvedSelectionPolicy,
         window: CandidateSupplyWindow) throws -> SelectionResult {
+        try select(plan: plan, policy: policy, window: window, exposure: nil)
+    }
+
+    public func select(plan: FeedPlan, policy: ResolvedSelectionPolicy,
+        window: CandidateSupplyWindow, exposure: SelectionExposureSnapshot?) throws -> SelectionResult {
         guard policy.matches(plan.revision) else { throw SelectionError.policyMismatch }
         guard Set(window.candidates.map(\.originRecordID)).count == window.candidates.count else {
             throw SelectionError.duplicateCandidateIdentity
@@ -45,11 +53,22 @@ public struct SelectionEngine: Sendable {
         // Baseline no-ops are explicit executable behavior, not inferred versions.
         switch policy.eligibility { case .structuralOnly: break }
         switch policy.scoring { case .equal: break }
-        switch policy.exposure { case .none: break }
+        let eligible: [Candidate]
+        switch policy.exposure {
+        case .none:
+            guard exposure == nil else { throw SelectionError.unexpectedExposure }
+            eligible = window.candidates
+        case .excludePublishedRevisions:
+            guard let exposure else { throw SelectionError.exposureRequired }
+            guard exposure.requestedRevisionIDs == window.candidates.map(\.originRevisionID) else {
+                throw SelectionError.exposureCoverageMismatch
+            }
+            eligible = window.candidates.filter { !exposure.publishedRevisionIDs.contains($0.originRevisionID) }
+        }
         let ordered: [Candidate]
         switch policy.sequencing {
         case .recencyDescending:
-            ordered = window.candidates.sorted { left, right in
+            ordered = eligible.sorted { left, right in
                 if left.timestamp.value != right.timestamp.value {
                     return left.timestamp.value > right.timestamp.value
                 }

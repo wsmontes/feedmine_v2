@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-Design only. This gate closes the continuous local-production ownership model; it changes no Swift, tests, package graph or schema. 3J policy/controller/production value names below remain proposed future surfaces. The bounded Publication history facts described in the 3K1 completion record below are now implemented APIs. 3J design base: Phase 3I3, `2778291ef462ca33e56567bbb0322ee4b3c39355`. Phase 3J — complete. Phase 3K1 — bounded exposure + ready-runway history facts — complete. Phase 3K2 — not started. 3K1 implementation base: `31f409528eb16f1ef300716824e7656464d863c5`.
+Design only. This gate closes the continuous local-production ownership model; it changes no Swift, tests, package graph or schema. 3J policy/controller/production value names below remain proposed future surfaces. The bounded Publication history facts described in the 3K1 completion record below are now implemented APIs. 3J design base: Phase 3I3, `2778291ef462ca33e56567bbb0322ee4b3c39355`. Phase 3J — complete. Phase 3K1 — bounded exposure + ready-runway history facts — complete. Phase 3K2 — one bounded local production slice — complete. Phase 3K3 — not started. 3K1 implementation base: `31f409528eb16f1ef300716824e7656464d863c5`.
 
 > The reader consumes stable local history while FeedMine continuously and adaptively prepares future local supply.
 
@@ -181,7 +181,7 @@ Actual AcquisitionPlanner/Coordinator, connector execution/network/HTTP, remote 
 3. **3K3 — adaptive RunwayPolicy / minimal RunwayController.** Pure known/unknown coverage arithmetic, explicitly measured rates/latency, hysteresis and resource bounds; sole in-flight local intent owner, coalesced observations, episode/head fairness and separate slice scheduling. Prove r/L adaptation, saturated probe conservatism, reversals, stale completion, pending supply reset, cheap observation and anchor-preserving append. No connector work, timer/refill attempts or remote dispatch. Scope of session notification wiring requires this gate's review.
 4. **3K4 — semantic AcquisitionDemand handoff.** Prove persistent post-settle pressure + completed structural exhaustion + no pending local work/reset/error; define acknowledgement/coalescing value boundary. Tests must reject empty nonexhausted, unknown facts and publication failure; admission reopens local-first consideration. No planner/frontier construction, coordinator, connector or network execution.
 
-3K1 is now complete; gates 3K2–3K4 remain recommended future reviews, not authorization to start production behavior.
+3K1 is now complete; gates 3K3–3K4 remain recommended future reviews, not authorization to start production behavior.
 
 ### 3K1 completion record
 
@@ -191,4 +191,28 @@ Exposure is exact OriginRevisionID membership in the explicitly supplied FeedEdi
 
 PublicationAdvanceFacts returns same, backward, forwardExact(n) or forwardBeyondProbe(bound), counting positions strictly after source through destination inclusively. Positions stay inside Persistence. Beyond-probe is unknown exact distance, never a rate. One read snapshot and ordering-index seeks avoid OFFSET, global sort, full payload and unlimited count. A 10,000-occurrence/100-segment fixture proves planner shape without timing assertions; migration tests preserve existing history/checkpoint and all old schema definitions. Reopen facts for requested N/A/B retain committed A/B and leave N absent, without executing CandidateProvider or Selection and without a durable production cursor.
 
-Publication history can report what is durably published; it does not decide what Editorial should exclude. Ready runway is measured from immutable published occurrence order, never from FeedWindow capacity. Bounded history observation must not become proportional to retained history size. Runtime, Editorial, Selection filtering, Runway, Acquisition and production orchestration remain unchanged; 3K2 has not started.
+Publication history can report what is durably published; it does not decide what Editorial should exclude. Ready runway is measured from immutable published occurrence order, never from FeedWindow capacity. Bounded history observation must not become proportional to retained history size. 3K1 did not implement Runtime/Editorial behavior. 3K2 now supplies explicit Editorial exposure and one append-only Runtime slice; Runway and Acquisition remain unimplemented.
+
+### 3K2 completion record
+
+Phase 3K1 — complete. Phase 3K2 — one bounded local production slice — complete. Phase 3K3 — not started.
+
+Editorial SelectionExposureSnapshot validates a unique ordered request and published subset with a public failable initializer. Explicit excludePublishedRevisions behavior requires exact candidate-revision coverage, filters exact OriginRevisionID before sequencing and preserves the supplied examinedCount/nextCursor/exhausted unchanged. The existing no-exposure call delegates to one implementation; none rejects a supplied snapshot. Nominal policy mismatch and duplicate OriginRecordID remain the first validations. Editorial imports no Publication/history dependency and derives no behavior from PolicyVersion.
+
+PublicationStore now has one mechanical exposure API returning ExposureRecord; the former equivalent publishedRevisionIDs API is replaced, not retained. PublicationHistory exposure maps exact target Edition, observedTailCardID, requested IDs and committed subset. Tail occurrence and membership share one SQLite read snapshot, even for an empty request, using existing tail ordering indexes and the 3K1 revision index without payload/full-history reads. Same target FeedEditionID is the exposure scope source.
+
+Expected-tail append overloads on Store and Coordinator share their respective single private append paths with generic callers. In the serialized writer transaction, expected-tail append reads/validates actual tail schema and last occurrence identity, rejects staleHistoryExpectation before accepting the incoming ordinal/inserts, and commits Segment/cards atomically. TailRecord remains ordinal-only. A Coordinator that has already observed a newer ordinal still cannot publish with stale exposure. Generic append remains unchanged; no token/generation, reselection, renumbering or automatic retry is introduced.
+
+LocalProductionSlice is a concrete synchronous Sendable value over CandidateProvider, SelectionEngine, PublicationHistory and PublicationCoordinator. Caller supplies resolved FeedPlan/matching ResolvedSelectionPolicy, explicit existing Edition, ephemeral cursor/work bound, segment ID/seed/time and one local preparation closure. Automatic production requires excludePublishedRevisions. One provider window → one exposure read → one pure Selection → at most one caller preparation → pure PublicationPreparation → at most one expected-tail append. The slice does not query media facts, choose presentation/media, create Edition, discover active/latest Edition or inspect runway health.
+
+LocalPreparedPublication supplies explicit aligned inputs/card IDs; all attribution/actions/image results come from the caller. Cursor remains caller-owned ephemeral progress. Zero selected, including nonexhausted windows, returns advancedWithoutPublication without preparation/append. Only a successfully returned LocalProductionSliceOutcome permits advancing the episode cursor. Preparation, storage/publication and stale-history errors propagate without successful progress or hidden durable cursor writes; unexpected nothingToPublish after nonempty Selection is inconsistentPublicationOutcome.
+
+> One local production slice does bounded work and returns honest progress. It never tries to “fill the runway” by looping internally.
+
+> Automatic continuous production must not republish an OriginRevision already committed in the target Edition.
+
+> Exposure facts are stale if the Edition tail changed before commit; stale work is rejected, never silently retried.
+
+> Caller may advance episode progress only from a successfully returned LocalProductionSliceOutcome.
+
+Real-database tests prove bounded single-window output/order/IDs/progress, head restart suppressing old revisions, new revision of an old origin, zero-selected structural progress, same-cursor reconsideration after failure, unavailable image refusal and explicit textOnly success, and deterministic append during preparation rejecting stale work without retry. No schema/package change, Acquisition/network, FeedSession wiring or Runway controller/sampling is implemented. 3K3 is not started.

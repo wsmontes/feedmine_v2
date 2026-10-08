@@ -56,7 +56,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
             XCTAssertThrowsError(try store.forwardAdvance(editionID: edition.id, fromCardID: c[0].id, toCardID: id, probeBound: 1))
             XCTAssertThrowsError(try store.forwardAdvance(editionID: edition.id, fromCardID: id, toCardID: c[0].id, probeBound: 1))
         }
-        XCTAssertThrowsError(try store.publishedRevisionIDs(editionID: FeedEditionID(), revisionIDs: [])) { XCTAssertEqual($0 as? PublicationStoreError, .missingEdition) }
+        XCTAssertThrowsError(try store.exposure(editionID: FeedEditionID(), revisionIDs: []).publishedRevisionIDs) { XCTAssertEqual($0 as? PublicationStoreError, .missingEdition) }
         XCTAssertThrowsError(try store.readyAhead(editionID: FeedEditionID(), anchorCardID: c[0].id, probeBound: 1)) { XCTAssertEqual($0 as? PublicationStoreError, .missingEdition) }
     }
 
@@ -70,10 +70,10 @@ final class PublicationRunwayStoreTests: XCTestCase {
             try db.execute(sql: "UPDATE published_cards SET origin_record_id = ? WHERE id = ?", arguments: [c[0].originRecordID.rawValue.uuidString.lowercased(), c[1].id.rawValue.uuidString.lowercased()])
             try db.execute(sql: "UPDATE published_cards SET origin_revision_id = ? WHERE id IN (?, ?)", arguments: [r1.rawValue.uuidString.lowercased(), c[5].id.rawValue.uuidString.lowercased(), card.id.rawValue.uuidString.lowercased()])
         }
-        XCTAssertEqual(try store.publishedRevisionIDs(editionID: edition.id, revisionIDs: [r1,r2,r3,r1]), [r1,r3])
-        XCTAssertEqual(try store.publishedRevisionIDs(editionID: other.id, revisionIDs: [r1,r2,r3]), [r1])
-        XCTAssertEqual(try store.publishedRevisionIDs(editionID: edition.id, revisionIDs: []), [])
-        XCTAssertEqual(try store.publishedRevisionIDs(editionID: edition.id, revisionIDs: [c[0].originRevisionID, c[1].originRevisionID]), [c[0].originRevisionID,c[1].originRevisionID])
+        XCTAssertEqual(try store.exposure(editionID: edition.id, revisionIDs: [r1,r2,r3,r1]).publishedRevisionIDs, [r1,r3])
+        XCTAssertEqual(try store.exposure(editionID: other.id, revisionIDs: [r1,r2,r3]).publishedRevisionIDs, [r1])
+        XCTAssertEqual(try store.exposure(editionID: edition.id, revisionIDs: []).publishedRevisionIDs, [])
+        XCTAssertEqual(try store.exposure(editionID: edition.id, revisionIDs: [c[0].originRevisionID, c[1].originRevisionID]).publishedRevisionIDs, [c[0].originRevisionID,c[1].originRevisionID])
     }
 
     func testUnpublishedNewRevisionOfSameOriginIsNotSuppressedByOldRevision() throws {
@@ -86,8 +86,8 @@ final class PublicationRunwayStoreTests: XCTestCase {
             mediaKey: nil, mediaPixelWidth: nil, mediaPixelHeight: nil, mediaMimeType: nil,
             renderLayout: "textOnly", renderMediaAspectRatio: nil, primaryActionKind: nil, primaryActionReference: nil)
         XCTAssertEqual(new.originRecordID, old.originRecordID)
-        XCTAssertEqual(try store.publishedRevisionIDs(editionID: edition.id,
-            revisionIDs: [old.originRevisionID, new.originRevisionID]), [old.originRevisionID])
+        XCTAssertEqual(try store.exposure(editionID: edition.id,
+            revisionIDs: [old.originRevisionID, new.originRevisionID]).publishedRevisionIDs, [old.originRevisionID])
     }
 
     func testReadyOnlyValidatesAnchorAndTailSchemaRatherThanAuditingOldSegments() throws {
@@ -115,7 +115,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
         XCTAssertEqual(try store.forwardAdvance(editionID: edition.id, fromCardID: all[20].id, toCardID: all[30].id, probeBound: 10), .forwardExact(10))
         XCTAssertEqual(try store.forwardAdvance(editionID: edition.id, fromCardID: all[98].id, toCardID: all[102].id, probeBound: 4), .forwardExact(4))
         XCTAssertEqual(try store.forwardAdvance(editionID: edition.id, fromCardID: all[98].id, toCardID: all[9999].id, probeBound: 3), .forwardBeyondProbe(3))
-        XCTAssertEqual(try store.publishedRevisionIDs(editionID: edition.id, revisionIDs: [all[0].originRevisionID, OriginRevisionID(), all[9999].originRevisionID]), [all[0].originRevisionID,all[9999].originRevisionID])
+        XCTAssertEqual(try store.exposure(editionID: edition.id, revisionIDs: [all[0].originRevisionID, OriginRevisionID(), all[9999].originRevisionID]).publishedRevisionIDs, [all[0].originRevisionID,all[9999].originRevisionID])
         try db.read { db in
             func indexes(_ table: String, _ fields: [String]) throws -> [String] {
                 var names: [String] = []
@@ -189,7 +189,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(store.card(id: card.id)).originRevisionID, card.originRevisionID)
         XCTAssertEqual(try SessionStore(database: migrated).checkpoint()?.cardID, card.id)
         XCTAssertEqual(try store.readyAhead(editionID: edition.id, anchorCardID: card.id, probeBound: 1).amount, .exact(0))
-        XCTAssertEqual(try store.publishedRevisionIDs(editionID: edition.id, revisionIDs: [card.originRevisionID]), [card.originRevisionID])
+        XCTAssertEqual(try store.exposure(editionID: edition.id, revisionIDs: [card.originRevisionID]).publishedRevisionIDs, [card.originRevisionID])
         XCTAssertFalse(RuntimeMigrations.current.eraseDatabaseOnSchemaChange)
         try migrated.read { db in
             let schema = try String.fetchAll(db, sql: "SELECT name || ':' || COALESCE(sql, '') FROM sqlite_master WHERE name != 'published_cards_origin_revision_segment' ORDER BY name")
@@ -197,6 +197,28 @@ final class PublicationRunwayStoreTests: XCTestCase {
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('published_cards_origin_revision_segment') ORDER BY seqno"), ["origin_revision_id","segment_id"])
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1"])
         }
+    }
+
+    func testExposureTailIsObservedEvenForEmptyRequestAndOldFactsStayImmutable() throws {
+        let (_,store,edition,c) = try fixture()
+        let old = try store.exposure(editionID: edition.id,revisionIDs: [])
+        XCTAssertEqual(old.observedTailCardID,c[5].id); XCTAssertEqual(old.publishedRevisionIDs,[])
+        let next = StorageFixture.card()
+        try store.appendSegment(StorageFixture.segment(edition,[next],ordinal: 3),cards: [next],expectingTailCardID: c[5].id)
+        XCTAssertEqual(old.observedTailCardID,c[5].id)
+        XCTAssertEqual(try store.exposure(editionID: edition.id,revisionIDs: []).observedTailCardID,next.id)
+    }
+
+    func testExpectedTailStaleRefusesBeforeOrdinalAcceptanceAndLeavesWinnerIntact() throws {
+        let (_,store,edition,c) = try fixture()
+        let winner = StorageFixture.card(), stale = StorageFixture.card()
+        try store.appendSegment(StorageFixture.segment(edition,[winner],ordinal: 3),cards: [winner])
+        let incoming = StorageFixture.segment(edition,[stale],ordinal: 4)
+        XCTAssertThrowsError(try store.appendSegment(incoming,cards: [stale],expectingTailCardID: c[5].id)) { XCTAssertEqual($0 as? PublicationStoreError,.staleHistoryExpectation) }
+        XCTAssertNil(try store.card(id: stale.id))
+        XCTAssertFalse(try store.segments(editionID: edition.id).contains { $0.id == incoming.id })
+        XCTAssertEqual(try store.card(id: winner.id),winner)
+        XCTAssertEqual(try store.exposure(editionID: edition.id,revisionIDs: []).observedTailCardID,winner.id)
     }
 
 }
