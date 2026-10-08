@@ -256,6 +256,32 @@ public enum RuntimeMigrations {
                 ON published_cards (origin_revision_id, segment_id);
                 """)
         }
+        migrator.registerMigration("acquisition-target-authority-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE acquisition_targets (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    connector_kind TEXT COLLATE BINARY NOT NULL,
+                    generation INTEGER NOT NULL,
+                    state TEXT COLLATE BINARY NOT NULL,
+                    checkpoint_revision INTEGER NOT NULL,
+                    checkpoint_blob BLOB,
+                    checkpoint_schema INTEGER,
+                    checkpoint_connector_version TEXT COLLATE BINARY,
+                    CHECK (length(connector_kind) > 0),
+                    CHECK (generation >= 1),
+                    CHECK (state IN ('enabled', 'revoked')),
+                    CHECK (checkpoint_revision >= 0),
+                    CHECK (
+                        (checkpoint_blob IS NULL AND checkpoint_schema IS NULL
+                            AND checkpoint_connector_version IS NULL)
+                        OR
+                        (checkpoint_blob IS NOT NULL AND checkpoint_schema IS NOT NULL
+                            AND checkpoint_schema > 0 AND checkpoint_connector_version IS NOT NULL
+                            AND length(checkpoint_connector_version) > 0 AND checkpoint_revision > 0)
+                    )
+                );
+                """)
+        }
         return migrator
     }
 }

@@ -189,3 +189,36 @@ Future 3M2 Admission loads the exact enabled target, validates generation and ch
 ContentStore already has internal apply(_:in:) without a nested transaction. A single concrete Persistence admission operation over mechanical commands can reuse it, with internal transactional identity resolution; any extraction replaces that body with one shared internal helper, never a second canonical writer or Repository protocol. Unique external object/version tuples recover stored FeedMine record/revision IDs; exact immutable revision/media replay preserves payload and IDs. Lost-response replay after checkpoint advancement is refused by old CAS, without duplicated effects. No batch ledger is justified by this supported baseline; ambiguous historical unversioned deduplication remains unsupported pending a separate evidence-backed gate.
 
 Future catalog/SourceBinding integration fences runtime targets BEFORE obsolete semantics may commit; Admission does not join catalog.sqlite or require a cross-database transaction. Connector-specific configuration/eligibility is upstream and reconstructible, while target validity/checkpoint survive restart. Fake target snapshots permit 3M without catalog persistence. A committed receipt reports checkpointAdvanced/selectableSupplyChanged, not a global generation; Composition notifies relevant Runtime scopes. No Target store, migration, Batch, Admission, connector or network code is introduced by this design.
+
+
+## Phase 3M1 completion record
+
+Phase 3L — complete
+
+Phase 3M1 — durable target/checkpoint authority — complete
+
+Phase 3M2 — not started
+
+> AcquisitionTarget is durable operational work identity, not Source identity, Binding identity or endpoint identity.
+
+> Target generation fences obsolete work. Checkpoint revision fences obsolete resumption proposals.
+
+> Target validity and connector checkpoint survive restart without depending on catalog.sqlite.
+
+> A checkpoint is opaque to FeedMine core.
+
+> 3M1 creates authority only. It does not acquire or admit content.
+
+Implemented Domain UUID-backed nominal AcquisitionTargetID follows the existing identity conventions; configuration changes preserve ID. AcquisitionTarget.swift owns enabled/revoked semantic state, opaque AcquisitionCheckpoint, exact Target snapshot and concrete AcquisitionTargetAuthority mapping over Persistence. No duplicated error taxonomy, SQL or lookup policy enters Acquisition; factual AcquisitionTargetStore errors propagate.
+
+Persistence adds exactly acquisition-target-authority-v1 after publication-exposure-index-v1, with one acquisition_targets table and no explicit index beyond the primary-key autoindex. Ordered columns: id, connector_kind, generation, state, checkpoint_revision, checkpoint_blob, checkpoint_schema, checkpoint_connector_version. No previous migration, canonical/publication schema, FK, source relation, endpoint/configuration column or separate checkpoint table changes. Non-erasing migration preserves old schema objects and durable sentinel bytes.
+
+Registration starts generation 1, enabled, checkpoint revision 0 and all checkpoint fields absent. Duplicate ID refuses replacement. A present empty Data checkpoint remains distinct from absent after reopen. Envelope schema is positive and version/kind UTF-8 is nonempty without normalization; exact bytes/schema/version survive mapping and persistence. Reads require canonical lowercase UUID, actual SQLite integer counters and actual BLOB checkpoint storage; malformed persisted types report field-specific corruption instead of coercion.
+
+Explicit reconfigure asserts semantic configuration changed and always advances generation once, even for the same connector kind; durable state stays unchanged. Preserve leaves checkpoint/revision unchanged; clear advances revision only when a checkpoint was present; replace advances revision only when envelope bytes/schema/version differ exactly. Revoke/enable advance generation only on actual state transition, preserving checkpoint. Repeated matching-state requests return unchanged; stale expectations refuse before mutation.
+
+Enabled-target checkpoint CAS validates state, generation and revision inside one writer transaction, then installs an explicit envelope and advances checkpoint revision exactly once EVEN if identical. It cannot clear and never changes generation. Both durable counters fit checked Int64 storage; an increment at Int64.max refuses without wraparound. A reconfiguration needing checkpoint-revision overflow also refuses the entire generation/config change atomically. Internal read/stamp/checkpoint primitives take Persistence-owned Database for later reuse; no public GRDB/callback transaction surface or content Admission exists.
+
+Two real temporary on-disk suites cover exact migration/constraints, registration, reopen, state/config fencing, stale/no-write behavior, identical CAS, exact version bytes, representation/corruption and overflow rollback. Package.swift adds only FeedMineAcquisitionTests with Acquisition/Domain/Persistence dependencies; production graph is unchanged. No existing test is modified and no brittle global schema-count/delta equality is introduced.
+
+No AcquisitionBatch, canonical mutation/Admission, planner/frontier/coordinator/connector/fakes, batch ledger, SupplyGeneration, leaseEpoch/bindingRevision stamp, network/catalog/SourceBinding persistence or Runtime wiring is implemented. 3M2 checkpoint + canonical Admission remains a separate reviewed gate; the standalone CAS here is authority only, not a substitute for that future shared content transaction.

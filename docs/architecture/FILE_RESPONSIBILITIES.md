@@ -173,7 +173,7 @@ This phase implements no planner, frontier, target, coordinator, connector or ne
 
 ## Phase 3L — designed Acquisition boundaries
 
-Phase 3L — complete (design only): [ACQUISITION_DESIGN.md](ACQUISITION_DESIGN.md). Phase 3M1–3M5 — not started. Proposed responsibilities below introduce no implementation/API/schema. Exactly ACQUISITION_DESIGN, PERSISTENCE_DESIGN, IMPLEMENTATION_ORDER and this document change.
+Phase 3L — complete (design only): [ACQUISITION_DESIGN.md](ACQUISITION_DESIGN.md). Phase 3M1 — durable target/checkpoint authority — complete. Phase 3M2–3M5 — not started. Proposed responsibilities below introduce no implementation/API/schema. Exactly ACQUISITION_DESIGN, PERSISTENCE_DESIGN, IMPLEMENTATION_ORDER and this document change.
 
 | Owner / file direction | Future responsibility | Explicit exclusion |
 | --- | --- | --- |
@@ -191,3 +191,36 @@ Phase 3L — complete (design only): [ACQUISITION_DESIGN.md](ACQUISITION_DESIGN.
 | FeedMineAcquisition / BootstrapPlan.swift | Remains scaffold; later finite cold-start consumer reuses the same contracts with explicit budgets. | New bootstrap purpose now or permanent runway strategy. |
 
 Target identity/generation/state and checkpoint/CAS are durable runtime authority; future catalog/binding mappings and connector configuration are separate reconstructible integration inputs. No cross catalog/runtime transaction. Cancelled obsolete work is refused by transactional generation/state/CAS validation even if it returns late. No ledger/leaseEpoch/bindingRevision admission stamp/SupplyGeneration is required. Fake finite and continuous contract proofs precede real Syndication; Admission increases canonical supply and never publishes history.
+
+
+## Phase 3M1 completion record
+
+Phase 3L — complete
+
+Phase 3M1 — durable target/checkpoint authority — complete
+
+Phase 3M2 — not started
+
+> AcquisitionTarget is durable operational work identity, not Source identity, Binding identity or endpoint identity.
+
+> Target generation fences obsolete work. Checkpoint revision fences obsolete resumption proposals.
+
+> Target validity and connector checkpoint survive restart without depending on catalog.sqlite.
+
+> A checkpoint is opaque to FeedMine core.
+
+> 3M1 creates authority only. It does not acquire or admit content.
+
+Implemented Domain UUID-backed nominal AcquisitionTargetID follows the existing identity conventions; configuration changes preserve ID. AcquisitionTarget.swift owns enabled/revoked semantic state, opaque AcquisitionCheckpoint, exact Target snapshot and concrete AcquisitionTargetAuthority mapping over Persistence. No duplicated error taxonomy, SQL or lookup policy enters Acquisition; factual AcquisitionTargetStore errors propagate.
+
+Persistence adds exactly acquisition-target-authority-v1 after publication-exposure-index-v1, with one acquisition_targets table and no explicit index beyond the primary-key autoindex. Ordered columns: id, connector_kind, generation, state, checkpoint_revision, checkpoint_blob, checkpoint_schema, checkpoint_connector_version. No previous migration, canonical/publication schema, FK, source relation, endpoint/configuration column or separate checkpoint table changes. Non-erasing migration preserves old schema objects and durable sentinel bytes.
+
+Registration starts generation 1, enabled, checkpoint revision 0 and all checkpoint fields absent. Duplicate ID refuses replacement. A present empty Data checkpoint remains distinct from absent after reopen. Envelope schema is positive and version/kind UTF-8 is nonempty without normalization; exact bytes/schema/version survive mapping and persistence. Reads require canonical lowercase UUID, actual SQLite integer counters and actual BLOB checkpoint storage; malformed persisted types report field-specific corruption instead of coercion.
+
+Explicit reconfigure asserts semantic configuration changed and always advances generation once, even for the same connector kind; durable state stays unchanged. Preserve leaves checkpoint/revision unchanged; clear advances revision only when a checkpoint was present; replace advances revision only when envelope bytes/schema/version differ exactly. Revoke/enable advance generation only on actual state transition, preserving checkpoint. Repeated matching-state requests return unchanged; stale expectations refuse before mutation.
+
+Enabled-target checkpoint CAS validates state, generation and revision inside one writer transaction, then installs an explicit envelope and advances checkpoint revision exactly once EVEN if identical. It cannot clear and never changes generation. Both durable counters fit checked Int64 storage; an increment at Int64.max refuses without wraparound. A reconfiguration needing checkpoint-revision overflow also refuses the entire generation/config change atomically. Internal read/stamp/checkpoint primitives take Persistence-owned Database for later reuse; no public GRDB/callback transaction surface or content Admission exists.
+
+Two real temporary on-disk suites cover exact migration/constraints, registration, reopen, state/config fencing, stale/no-write behavior, identical CAS, exact version bytes, representation/corruption and overflow rollback. Package.swift adds only FeedMineAcquisitionTests with Acquisition/Domain/Persistence dependencies; production graph is unchanged. No existing test is modified and no brittle global schema-count/delta equality is introduced.
+
+No AcquisitionBatch, canonical mutation/Admission, planner/frontier/coordinator/connector/fakes, batch ledger, SupplyGeneration, leaseEpoch/bindingRevision stamp, network/catalog/SourceBinding persistence or Runtime wiring is implemented. 3M2 checkpoint + canonical Admission remains a separate reviewed gate; the standalone CAS here is authority only, not a substitute for that future shared content transaction.

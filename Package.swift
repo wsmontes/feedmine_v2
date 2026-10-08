@@ -58,6 +58,10 @@ let package = Package(
         .target(name: "FeedMineUI", dependencies: ["FeedMineDomain", "FeedMineRuntime"]),
         .target(name: "FeedMineComposition", dependencies: ["FeedMineDomain", "FeedMinePersistence", "FeedMineAcquisition", "FeedMineSyndication", "FeedMineEditorial", "FeedMineMedia", "FeedMinePublication", "FeedMineRuntime", "FeedMineUI"]),
         .testTarget(name: "FeedMinePersistenceTests", dependencies: ["FeedMinePersistence", "FeedMineDomain", .product(name: "GRDB", package: "GRDB.swift")]),
+        .testTarget(
+            name: "FeedMineAcquisitionTests",
+            dependencies: ["FeedMineAcquisition", "FeedMineDomain", "FeedMinePersistence"]
+        ),
         .testTarget(name: "FeedMineDomainTests", dependencies: ["FeedMineDomain"]),
         .testTarget(name: "FeedMineMediaTests", dependencies: ["FeedMineMedia"]),
         .testTarget(name: "FeedMineEditorialTests", dependencies: ["FeedMineEditorial", "FeedMineDomain", "FeedMinePersistence"]),

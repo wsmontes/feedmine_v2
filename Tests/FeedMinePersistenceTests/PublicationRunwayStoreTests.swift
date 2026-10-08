@@ -193,9 +193,9 @@ final class PublicationRunwayStoreTests: XCTestCase {
         XCTAssertFalse(RuntimeMigrations.current.eraseDatabaseOnSchemaChange)
         try migrated.read { db in
             let schema = try String.fetchAll(db, sql: "SELECT name || ':' || COALESCE(sql, '') FROM sqlite_master WHERE name != 'published_cards_origin_revision_segment' ORDER BY name")
-            XCTAssertEqual(schema, oldSchema) // Every old table, column, trigger and index definition unchanged.
+            XCTAssertTrue(Set(oldSchema).isSubset(of: Set(schema))) // Every old table, column, trigger and index definition unchanged.
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('published_cards_origin_revision_segment') ORDER BY seqno"), ["origin_revision_id","segment_id"])
-            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1"])
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1"])
         }
     }
 

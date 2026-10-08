@@ -6,7 +6,7 @@
 //   Define nominal FeedMine-owned identities independent of transport.
 //
 // Owns:
-//   SourceID, ProviderID, OriginRecordID, OriginRevisionID, SourceBindingID, ContentEntityID, ContentClusterID, EditorialRevisionID, FeedEditionID, FeedSegmentID, PublicationCardID, MediaCandidateID.
+//   SourceID, ProviderID, OriginRecordID, OriginRevisionID, SourceBindingID, ContentEntityID, ContentClusterID, EditorialRevisionID, FeedEditionID, FeedSegmentID, PublicationCardID, MediaCandidateID, AcquisitionTargetID.
 //
 // Does not own:
 //   External identities, endpoint-derived identity or a generic identity framework.
@@ -19,7 +19,7 @@
 //   INV-13; FeedMine internal identity is not external identity or network location.
 //
 // Planned public surface:
-//   Twelve nominal IDs implemented through Phase 3I1; ContextKey belongs to FeedContext.swift.
+//   Thirteen nominal IDs implemented through Phase 3M1; ContextKey belongs to FeedContext.swift.
 //
 // Status:
 //   Phase 1A/1B canonical, Phase 2B publication and Phase 3I1 media candidate nominal identities.
@@ -30,7 +30,7 @@
 
 import Foundation
 
-// Future IDs remain documentation only: SessionID, AssetID, ActionID and AcquisitionTargetID.
+// Future IDs remain documentation only: SessionID, AssetID and ActionID.
 // Their concepts are not moved.
 
 public struct SourceID: Hashable, Codable, Sendable, CustomStringConvertible {
@@ -219,6 +219,22 @@ public struct PublicationCardID: Hashable, Codable, Sendable, CustomStringConver
 
 /// Caller-supplied immutable candidate identity; not URL, protocol or prepared asset identity.
 public struct MediaCandidateID: Hashable, Codable, Sendable, CustomStringConvertible {
+    public let rawValue: UUID
+
+    public init(rawValue: UUID) {
+        self.rawValue = rawValue
+    }
+
+    public init() {
+        self.rawValue = UUID()
+    }
+
+    public var description: String {
+        rawValue.uuidString
+    }
+}
+
+public struct AcquisitionTargetID: Hashable, Codable, Sendable, CustomStringConvertible {
     public let rawValue: UUID
 
     public init(rawValue: UUID) {
