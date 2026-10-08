@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-Phase 3F is a design-only architecture gate. Phase 3E pure deterministic Selection is complete; Phase 3G implementation has not started. This document closes the conceptual boundary:
+Phase 3F completed the design-only architecture gate. Phase 3G is complete: 3G1 implemented bounded publication-tail reads/append validation; 3G2 implemented immutable PublicationCardDraft and PublicationCoordinator. Phase 3E pure deterministic Selection is complete. This document closes the conceptual boundary:
 
 ```text
 SelectionResult
@@ -17,7 +17,7 @@ SelectionResult
 
 > PublicationCoordinator freezes already-prepared FeedMine semantic values. It does not perform Selection, canonical enrichment, media resolution or network work.
 
-Only documentation changes are authorized in 3F. No production Swift, tests, package, schema or migration changes are part of this gate.
+3F changed documentation only. The 3G implementation preserves this design with explicit requests and real temporary SQLite integration tests; no package, schema or migration change was needed.
 
 ## 2. Verified legacy evidence: preserve/reject
 
@@ -75,7 +75,7 @@ PublicationCardDraft
 
 It is ready to freeze, not a Persistence store record. It contains no PublicationCardID, FeedSegmentID, FeedEditionID, SQL row, CandidateProvider cursor, network URL as media identity or raw protocol evidence.
 
-The future preparation boundary owns completing this payload. PublicationCoordinator owns validating and freezing it; neither responsibility is implemented in 3F.
+The future preparation boundary owns completing this payload. PublicationCoordinator owns validating and freezing it; 3G2 implements the ready-to-freeze draft and Coordinator; upstream preparation remains deferred.
 
 > Publication freezes prepared semantic values into append-only history. It does not finish preparing them.
 
@@ -191,7 +191,7 @@ PublicationCoordinator does not absorb any of these responsibilities merely beca
 
 ## 14. Phase 3G implementation gate
 
-The minimal future gate may implement in Publication:
+The completed minimal 3G2 implementation includes in Publication:
 
 - PublicationCardDraft.
 - PublicationCoordinator with explicit create and append requests.
@@ -204,4 +204,4 @@ Persistence may add only a narrow mechanical Edition-tail read to PublicationSto
 
 Tests must prove atomic Edition + Segment 0 creation, empty selection with zero writes, exact selection order, rejected draft/candidate mismatch and duplicate card IDs, next-tail append, rejected revision mismatch, stale concurrent tail refusal without renumbering, exact history after reopen, late future drafts unable to mutate earlier PublishedCards and text-only publication without media infrastructure.
 
-Phase 3G has not started. This gate is submitted for review; no code, tests, new schema, retry machinery or lifecycle state machine is implemented here.
+Phase 3F is complete. Phase 3G1 bounded publication tail, Phase 3G2 immutable PublicationCoordinator and Phase 3G are complete. The hot append path uses an indexed tail row instead of scanning all retained Segments; full-history materialization still audits historical gaps. Tests prove exact create/append/reopen, empty and short supply, alignment refusal, late-collision rollback and unchanged earlier occurrences. Coordinator does not prepare media, perform canonical enrichment, retry or discover a global active Edition. Text-only is a valid prepared baseline; Runtime/Session still owns Edition visibility. Preparation, retention, exposure, session swaps, Runway and acquisition remain deferred.
