@@ -446,7 +446,7 @@ Phase 3N2 — Syndication HTTP + concrete FeedConnector — complete
 
 Phase 3N — complete
 
-Post-3N production Runtime/FeedSession/Composition wiring — not started
+Post-3N production Runtime/FeedSession/Composition wiring — not started at the 3N2 gate; the 3O1 bridge below leaves the 3O2 driver deferred.
 
 > SyndicationConnector performs one bounded external opportunity per FeedConnector pull.
 >
@@ -487,3 +487,54 @@ Nonempty observations with or without a delta, and checkpoint-only deltas, produ
 SyndicationHTTPTests and SyndicationConnectorTests cover all 40 numbered proofs using scripted narrow I/O and local URLProtocol fixtures only. The real-session tests demonstrate exact byte limit, first excess-byte refusal, incremental open-body cancellation before a remaining chunk, refusal of automatic redirects and cancellation normalization. Connector proofs cover exact clock/stamp/byte count, direct versus redirected validators, SHA-256 reference value, three-slice continuation, changed-body restart, checkpoint clears/delta suppression, parser failures, target/checkpoint fences and JSON identity semantics. No internet, sleep or timers are used. The two existing Syndication test files and all downstream production/tests remain unchanged.
 
 Catalog, SourceBinding persistence/materialization, eligibility discovery, Runtime scheduling, FeedSession/Composition/UI integration, refresh/background work, host scheduling and media downloading remain deferred to later reviewed gates. No schema, migration, Package.swift dependency or Runtime/Composition wiring changes in 3N2. The next production-wiring gate is not started.
+
+
+## Phase 3O1 — production Syndication target bridge
+
+Phase 3N — complete
+
+Phase 3O1 — explicit SourceBinding→Target production bridge — complete
+
+Phase 3O2 — production Runway/FeedSession driver — not started
+
+Persistent catalog/target reconciliation — not started
+
+> SourceBinding is declarative editorial authorization; AcquisitionTarget is operational work identity.
+>
+> AcquisitionTargetID remains explicit FeedMine-owned identity and is never derived from SourceBindingID, SourceID or endpoint.
+>
+> Multiple SourceBindings may share one AcquisitionTarget.
+>
+> One SourceBinding may participate in multiple AcquisitionTargets.
+>
+> Connector configuration becomes usable only when its explicit generation stamp matches the durable AcquisitionTarget generation.
+>
+> A configuration change must be fenced by durable target reconfiguration before the new snapshot becomes visible.
+>
+> The bridge never mutates durable target authority.
+>
+> Missing or stale durable target state is an error, never silently converted into noEligibleTargets.
+>
+> Revoked durable targets are simply not eligible.
+>
+> Connector resolution is configuration lookup, not eligibility discovery or scheduling.
+>
+> Reconstructing a stateless SyndicationConnector does not lose acquisition state because continuation lives in the durable opaque checkpoint.
+
+SyndicationAcquisitionSnapshot.swift is the single new production owner in Composition. It imports Foundation, Domain, Persistence, Acquisition and Syndication only; it has no Runtime, Publication or Editorial dependency. It bridges a caller-supplied current declarative configuration snapshot to the already-existing durable target authority and real Syndication connector. No existing production file, package graph, schema or migration changes.
+
+SyndicationTargetRegistration is an immutable Hashable/Sendable value with exactly explicit targetID, positive targetGeneration, endpoint and ordered bindings. Target IDs are caller-supplied and never derived from endpoint, SourceBindingID, SourceID, external principal or hash. Current registrations require nonempty enabled Syndication bindings, with unique BindingID and SourceID within each target; invalid duplicates are rejected rather than deduplicated. The same binding may occur in registrations for different targets, and multiple bindings may share one target, preserving many-to-many capability without a global binding uniqueness restriction.
+
+Each binding materializes one AcquisitionMembershipClaim with its SourceID and kind direct, in exact binding order. Binding ID, binding generation, aliases and external principal do not become membership identity. Registration reuses SyndicationTargetConfiguration validation for HTTP/HTTPS, nonempty host and absent embedded credentials. Its generation is a configuration stamp claiming the durable target generation, not an independent authority or automatic increment.
+
+SyndicationAcquisitionSnapshot is an immutable Sendable caller-owned value storing database, ordered registrations, caller-owned URLSession, explicit nonnegative redirect capacity and injected clock. Duplicate TargetID and negative redirect capacity throw typed initialization errors. It is neither a registry singleton nor an actor, mutable catalog owner, cache, service locator or scheduler. Declarative changes require a new snapshot; no add/remove/update/refresh API exists.
+
+eligibleTargets(for:) selects relevant registrations in supplied order, then reads each current target only through AcquisitionTargetAuthority.target(id:). Main considers all registrations; source filters by binding SourceID and preserves relative order. Search throws searchContextUnavailable before authority reads, rather than returning falsely empty eligibility that could acknowledge unserviceable demand. Missing durable target, stale configuration generation or connector-kind mismatch throws; no previously collected partial result is returned. Revoked durable targets with matching configuration are skipped. Enabled targets are returned exactly as read, including current checkpointRevision and opaque checkpoint; the bridge never reconstructs operational target state from declarations. Underlying target-store/database failures propagate unchanged.
+
+connector(for:) performs synchronous configuration lookup without I/O or authority reads. Only known exact TargetID/generation, enabled state and Syndication connector kind resolve to a newly constructed real stateless SyndicationConnector using registration-derived direct memberships, supplied session, redirect capacity and clock. Unknown, stale, revoked or wrong-kind targets resolve nil under the existing Coordinator resolver contract; Coordinator retains missingConnector handling. makeCoordinator() only constructs AcquisitionCoordinator with the supplied database and this exact resolver. It performs no planning, target mutation or Runtime orchestration.
+
+Configuration changes follow a durable fence: a snapshot stamped N stays current while the caller determines a change; the caller explicitly reconfigures AcquisitionTargetAuthority and commits generation N+1; only then does it publish a new endpoint/binding snapshot stamped N+1. Publishing new configuration first and bumping generation later is forbidden. The old snapshot's eligibility throws staleConfigurationGeneration after the durable advance, rather than silently becoming noEligible. Already in-flight work relies on the existing Coordinator durable generation reread and Admission generation CAS; no extra cancellation generation or mechanism is added.
+
+Target existence remains a precondition. This bridge never calls register, reconfigure, revoke, enable or compareAndSwapCheckpoint, and introduces no automatic target registration/reconfiguration. It creates no catalog.sqlite, source/source_bindings/target_mapping/connector_config table or cross-store materialization. Persistent catalog and target reconciliation require a separate reviewed transition gate. The next 3O2 gate may wire this snapshot into production Runway/FeedSession orchestration; that driver, UI integration, background refresh, retry/timer and media download are not started here.
+
+SyndicationAcquisitionSnapshotTests covers all 23 numbered proofs, including the preferred old-snapshot Coordinator fence. Real temporary RuntimeDatabase, local deterministic URLSession/URLProtocol, actual Syndication RSS translation, snapshot.makeCoordinator() and real Admission prove direct source membership candidate visibility. Ordered membership claims are checked on the real snapshot-resolved connector. A shared target executes once and makes the same admitted OriginRecord visible under both bound Sources. Repeated stateless connector resolution resumes the durable opaque partial checkpoint without advancing authority merely by resolution/pull. No manual SyndicationTargetConfiguration, live internet, sleep, timers or production test hooks are required.
