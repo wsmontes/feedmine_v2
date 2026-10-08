@@ -6,7 +6,7 @@ Phase 3F completed the design-only architecture gate. Phase 3G is complete: 3G1 
 
 ```text
 SelectionResult
-→ publication preparation / media preparation
+→ Runtime/orchestration combines prepared media and other presentation facts
 → ready-to-freeze PublicationCardDraft values
 → PublicationCoordinator
 → FeedEdition + immutable FeedSegment + PublishedCard
@@ -55,7 +55,7 @@ Rejected mechanisms require a concrete future invariant or consumer before recon
 
 Candidate contains editorial origin/revision identity, headline, summary, timestamp, language and provider attribution. It does not supply all fields frozen by PublishedCard: Source attribution, display-name snapshots, media, RenderContract, primary action and optional entity/cluster semantics are still missing.
 
-PublicationCoordinator must not implement a direct Candidate → PublishedCard conversion that fills those gaps itself. A future upstream preparation boundary supplies sourceID, sourceDisplayName, providerDisplayName, contentEntityID, contentClusterID, media, RenderContract and primaryAction as appropriate. PublicationCoordinator performs no live ContentStore, catalog, Source, Provider, OriginRevision or media-candidate lookup.
+PublicationCoordinator must not implement a direct Candidate → PublishedCard conversion that fills those gaps itself. Future Runtime/orchestration supplies sourceID, sourceDisplayName, providerDisplayName, contentEntityID, contentClusterID, media, RenderContract and primaryAction from explicit prepared inputs as appropriate; [MEDIA_DESIGN.md](MEDIA_DESIGN.md) closes this ownership boundary. MediaPreparation supplies Media-owned local facts and never returns PublicationCardDraft or RenderContract. PublicationCoordinator performs no live ContentStore, catalog, Source, Provider, OriginRevision or media-candidate lookup.
 
 ## 4. PublicationCardDraft boundary
 
@@ -75,7 +75,7 @@ PublicationCardDraft
 
 It is ready to freeze, not a Persistence store record. It contains no PublicationCardID, FeedSegmentID, FeedEditionID, SQL row, CandidateProvider cursor, network URL as media identity or raw protocol evidence.
 
-The future preparation boundary owns completing this payload. PublicationCoordinator owns validating and freezing it; 3G2 implements the ready-to-freeze draft and Coordinator; upstream preparation remains deferred.
+Future Runtime/orchestration owns directly assembling this Publication-module value from SelectionResult, prepared Media facts and other prepared presentation inputs. SelectionEngine, MediaPreparation and PublicationCoordinator do not assemble it. FeedMinePublication already depends on FeedMineMedia; the reverse dependency is prohibited. No DraftBuilder service, factory hierarchy or cross-module construction protocol is required for the single future consumer. PublicationCoordinator owns validating and freezing it; 3G2 implements the ready-to-freeze draft and Coordinator. Phase 3H closes preparation design in [MEDIA_DESIGN.md](MEDIA_DESIGN.md); implementation remains deferred to 3I.
 
 > Publication freezes prepared semantic values into append-only history. It does not finish preparing them.
 
@@ -101,13 +101,13 @@ The ordered PublicationCardIDs array also has exactly one ID per draft/candidate
 
 ## 6. Text-only baseline and future media
 
-A valid first-implementation draft may already contain `media = .none` and a textOnly RenderContract. This permits publication without real MediaPreparation, AssetStore or remote media bytes. Preparation chooses that representation before publication; PublicationCoordinator only validates and freezes the supplied contract. It does not choose textOnly as a fallback or synthesize a primary action.
+A valid first-implementation draft may already contain `media = .none` and a textOnly RenderContract. This permits publication without real MediaPreparation, AssetStore or remote media bytes. Future Runtime/orchestration chooses that representation before publication; PublicationCoordinator only validates and freezes the supplied contract. It does not choose textOnly as a fallback or synthesize a primary action.
 
 The draft brings primaryAction or nil. PublicationCoordinator does not infer an externalURL action from content or perform action enrichment. It does not call MediaResolver, MediaPreparation, AssetStore or network. PublishedMediaSet and RenderContract are already prepared.
 
 > Later media preparation can affect only future publication.
 
-A published text-only card is never updated when media arrives. Using later media requires a new PublishedCard occurrence in a future publication. Once assets exist, preparation must complete durable materialization before publishing an asset reference; remote URLs are not media identities. Real media preparation and asset storage remain deferred after 3G.
+A published text-only card is never updated when media arrives. Using later media requires a new PublishedCard occurrence in a future publication. Once assets exist, preparation must complete durable materialization before publishing an asset reference; remote URLs are not media identities. Phase 3H specifies local-only preparation from explicit bytes or already-local assets, opaque content-addressed identity and durability before reference. RenderContract stays in Publication; Media returns prepared facts. Real media preparation and asset storage remain unimplemented, with concrete 3I1/3I2/3I3 gates in [MEDIA_DESIGN.md](MEDIA_DESIGN.md).
 
 ## 7. Explicit identity/time/seed inputs
 

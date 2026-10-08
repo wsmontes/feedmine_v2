@@ -1,0 +1,166 @@
+# Media and publication preparation architecture
+
+## 1. Scope
+
+Phase 3H closes the Media/publication preparation architecture gate after completed Phase 3G2. This is design only: no Swift, tests, package graph, schema, migration or asset implementation changes. The first consumer is local visual card preparation, with text-only remaining independently publishable.
+
+```text
+OriginRevision + canonical MediaCandidate[]
+→ MediaPreparation
+→ prepared/local media facts
+→ Runtime/orchestration combines SelectionResult,
+  prepared media and other prepared presentation facts
+→ PublicationCardDraft
+→ PublicationCoordinator
+```
+
+> FeedMineMedia never publishes history.
+
+> FeedMineMedia must not depend on FeedMinePublication.
+
+> PublicationCoordinator never performs media preparation.
+
+> The renderer never resolves remote media.
+
+## 2. Existing module dependency constraint
+
+Package.swift already declares FeedMinePublication → FeedMineMedia. FeedMineMedia currently depends on Domain and Persistence. Adding Media → Publication would create a cycle and is prohibited; the package graph must remain acyclic.
+
+MediaPreparation returns Media-owned availability, suitability and durable local asset facts. It cannot return PublicationCardDraft, RenderContract, PublishedCard or PublicationReceipt. Runtime already depends on both Media and Publication and is the future orchestration owner that can combine their explicit values without adding a reverse dependency. No package change is needed for this design.
+
+## 3. Legacy evidence: preserve/reject
+
+Directed read-only review covered exactly these two files in `wsmontes/feedmine-dev`, branch `fix/release-1.0-final-hardening`, at commit `712a6ba93c6a8ab28c3b3c0e2b2777d1e3341d0c` (local ref matched the remote branch):
+
+- `Packages/FeedRuntimeV2/Sources/FeedMedia/MediaPreparation.swift`.
+- `Packages/FeedRuntimeV2/Tests/FeedMediaTests/MediaPreparationTests.swift`.
+
+No legacy code was copied. Evidence and decisions:
+
+| Evidence in the reviewed files | Preserve or reject |
+| --- | --- |
+| ContentDigest, MediaRecipeVersion and AssetVersionID derive identity from bytes and recipe; prepareCandidate hashes acquired bytes. Tests testCandidatePreparationDerivesIdentityFromDownloadedBytes and testAssetIdentityIsDigestPlusRecipeVersion distinguish byte identity from locator and recipe versions. | Preserve immutable prepared identity; a URL never becomes published asset identity. Do not freeze the legacy textual key format. |
+| materializeLocal takes identity without URL, reads durable bytes and checks their digest. testLocalMaterializationReadsDurableBytesWithoutNetwork proves a fresh preparation instance reads local bytes with zero transport calls. | Preserve local durable bytes as sufficient input; omit cache and transport requirements from the first local slice. |
+| ImageMetadata and ImageIODecoder inspect dimensions/MIME. testTheProductionDecoderReadsHeadersDecodesAndDownsamples and testAcceptedPayloadIsPublishedUnderItsDigestAndDownsampled exercise inspected facts. | Preserve measured asset metadata. Reject the hint-over-measurement behavior separately asserted by testTheMediaTypeHintWinsOverTheDecoderReport: upstream declarations must not masquerade as inspected MIME. |
+| prepare/prepareCandidate call store.publish before returning the result; MediaAssetPublishing documents durable, atomic writes. The filesystem store writes a temporary file, syncs, renames and attempts directory sync; testTheFileSystemStoreIsContentAddressedIdempotentAndReclaimable checks local bytes, idempotence and no leftover temporary file. | Preserve durability-before-reference as a requirement, not a claim that these tests prove crash durability. The legacy directory-sync return value is ignored; future materialization must report required durability failure instead of emitting a usable reference. |
+| MediaAssetDescriptor distinguishes descriptor identity from resident byte count; reclaim removes bytes. MediaAssetIdentity keeps dimensions for placeholders. | Preserve identity independently of byte residency; defer retention policy and do not adopt byteCount = 0 as a new public sentinel. |
+| testNonImageRoleIsRefusedWithoutTouchingTheTransport rejects integral audio; testStalePreparationLeavesOnlyAQuotaBoundDownload asserts preparation pins nothing. The reviewed implementation imports no Publication module and returns PreparedMedia. | Preserve preparation separate from history. These files alone do not prove text-only publication, publication without integral audio/video, or late-media history immutability; those remain normative requirements supported by the current Publication boundary, not claimed legacy test coverage. |
+| MediaPreparation owns HTTPTransport, budget, decoder, durable store, DecodedImageCache, EditorialClock and MediaWorkLimiter, with UnboundedMediaWorkLimiter as default. Deadline, timeout, limiter and cache behavior have dedicated tests. Corrupt local bytes are automatically refetched in testLocallyStoredBytesThatDoNotMatchTheirIdentityAreReplacedInsteadOfServed. | Reject the all-in-one baseline, first-slice HTTP transport, clock/deadline machinery, MediaWorkLimiter/default unbounded limiter, decoded cache, giant error taxonomy and automatic retry/refetch. Preserve refusal of corrupt bytes; future local preparation reports unavailable/corrupt instead of acquiring remotely. |
+| materializeLocal describes a renderer-side recovery path, but deliberately has no URL/network. Neither reviewed file supplies a Publication coupling or general retry scheduler. | Preserve local-only presentation. Reject renderer-side remote recovery, Publication coupling and automatic retry as proposed baseline behaviors; do not attribute absent mechanisms to the reviewed files. |
+
+Legacy evidence does not automatically become architecture. Publication can remain valid without integral audio/video bytes, and late media never rewrites prior publication; these are explicit boundaries here even where the two reviewed files do not establish them independently.
+
+## 4. Canonical MediaCandidate semantics
+
+MediaCandidate is a small immutable Domain semantic value describing an upstream media possibility tied to one exact OriginRevisionID. It is neither downloaded bytes, PublishedMediaRef nor published asset identity. The existing Domain scaffold has no implemented surface; the following decisions are for 3I1.
+
+Identity decision: introduce a nominal MediaCandidateID for stable preparation-fact references independent of locator, and exact immutable replay/conflict checking. The admitting caller supplies the same identity on replay; identity is not generated by MediaPreparation, derived from a URL hash or recreated on every read. An ID identifies one candidate belonging to one revision and cannot be rebound to another revision. Locator/metadata changes under that ID conflict. A later upstream observation with different facts requires a new revision and its own candidate facts.
+
+A tuple of locator/role/class would couple references to mutable remote location and duplicate declared facts in preparation associations. A positional tuple would require every consumer to use collection positions as identities. The nominal ID is chosen for these concrete immutable references, not for symmetry with other models; it adds no asset identity or protocol-specific ID.
+
+| Candidate fact | First consumer and decision |
+| --- | --- |
+| mediaCandidateID | Stable exact reference for replay/conflict and future preparation results. |
+| originRevisionID | Exact canonical ownership; never a live current-revision lookup. |
+| role | Presentation purpose: baseline cardVisual, a possible visual for the card. This does not choose hero versus thumbnail. |
+| mediaClass | Baseline image: what kind of bytes may be supplied. Distinct from presentation purpose; no audio/video capability is claimed. |
+| remote locator | HTTP(S) URL locating possible bytes; future acquisition may use it, local preparation never fetches it. |
+| declared mimeType? | Upstream type hint usable for candidate suitability, never authority over actual inspected MIME. |
+| declared width/height? | Optional paired positive dimensions for preliminary visual suitability; absent means unknown and inspection remains authoritative. |
+| declared duration? | Deferred: the baseline image consumer has no duration use. |
+
+Keep role and class small, with only the visual/image baseline. Add further roles/classes through a consumer-driven gate, not a giant legacy enum or a generic extensibility registry. Canonical translation admits semantic values only: no connector JSON, RSS enclosure, ActivityPub attachment or protocol-specific types. Unsupported media capabilities are not advertised as prepared support.
+
+## 5. Locator versus asset identity
+
+> A remote locator tells FeedMine where bytes may be obtained. It is not the identity of prepared media.
+
+The baseline locator is an HTTP(S) URL. It is not Origin identity and is not PublishedMediaKey. A URL hash cannot name immutable bytes: the same locator may serve different bytes. Candidate identity also does not claim byte identity. Non-HTTP acquisition requires a new architecture gate; no multiprotocol locator framework is proposed. Protocol-specific external representations never enter MediaPreparation.
+
+## 6. Persistence/admission ownership
+
+Canonical media facts belong to runtime.sqlite, the existing canonical authority. The smallest future extension is structured `media_candidates` linked to the exact OriginRevision, with candidate identity and the semantic fields above. Do not create a separate media/cache database, second canonical store, generic metadata blob or large SQLite media blobs.
+
+Future ContentStore canonical changes must admit a revision and the complete translated candidate facts from the same accepted external observation in one transaction: both commit or neither commits. Exact candidate identity, ownership and facts are replayable; identical replay is a no-op, changed facts or a different candidate collection for the same immutable revision are conflicts, not incremental enrichment. An empty candidate collection is legitimate. Exact reads name OriginRevisionID and preserve the admitted facts without following a mutable current pointer.
+
+Do not alter OriginRevision payload to add measured properties. Candidate rows remain immutable upstream declarations. Byte inspection or preparation availability never updates a candidate into an asset. New preparation facts are separate from revision admission. No table, migration or ContentStore API is implemented in 3H.
+
+## 7. Preparation facts
+
+A candidate fact says a remote possibility was declared, with role/class and optional upstream metadata. A preparation fact says explicitly supplied or already-local bytes were inspected, actual MIME/dimensions are known, a durable local representation exists, or this attempt found the candidate unavailable/unsuitable.
+
+A Media-owned preparation result can associate the exact candidate ID with usable local identity and measured facts, or report unavailable/unsuitable without an asset reference. This design does not freeze a result/error hierarchy or add a durable failure/retry ledger. Missing local bytes do not invalidate canonical candidate facts. Declared dimensions and measured dimensions are separate; declared MIME never replaces inspected MIME. Values carried for publication describe the actual representation referenced by its key.
+
+## 8. Local asset identity/durability
+
+PublishedMediaKey remains a local opaque identity outside FeedMineMedia. Publication and downstream values never receive filesystem paths or remote URLs as media identity. Internally Media may derive identity from content digest plus recipe/version, or an equivalent immutable content-addressed scheme; no public textual key format is frozen. Different transformed representations must not silently replace bytes under an old identity.
+
+Assets remain local content-addressed files. runtime.sqlite holds necessary metadata/facts, not large media blobs. Future materialization accepts explicit bytes, inspects/validates them, durably installs the immutable asset and only then reports a usable key. Reopen/local reads must validate the representation actually named. Required write/sync/install failure must not return a falsely usable reference; partial work must not be mistaken for a committed asset. Detailed file/metadata coordination is an implementation gate in 3I2, not code or a schema added here.
+
+> Publication may reference a local media key only after that asset identity is durably materialized enough to satisfy the published presentation contract.
+
+Published identity and byte residency are separate. Future byte eviction does not rewrite PublishedCard or its key/layout metadata. Missing bytes lead to the deterministic local fallback provided by the frozen RenderContract; no renderer-side remote resolution is implied. Retention/eviction policy and alternate published representations are deferred.
+
+## 9. MediaPreparation responsibility
+
+MediaPreparation owns only candidate/local asset facts → availability, suitability and durable local media facts. It may inspect actual dimensions/MIME, determine candidate suitability, identify an immutable prepared asset and report whether a usable local representation exists. The first slice accepts explicitly supplied bytes or already-local assets and needs no network or decoded-image cache.
+
+It does not rank editorial content, reselect another editorial candidate, manage Edition lifecycle, generate PublishedCard identity, change session visibility or respond to runway demand. It does not publish history or construct Publication values. Local representation suitability is distinct from editorial selection and from choosing the card's final layout.
+
+## 10. RenderContract/publication boundary
+
+RenderContract remains a Publication-owned semantic value. Media supplies facts such as a prepared image and measured W×H; future Runtime/orchestration chooses hero, thumbnail or textOnly under presentation policy and constructs PublicationCardDraft directly from explicit prepared inputs.
+
+PublicationCardDraft belongs to Publication. Its assembly belongs to future Runtime/orchestration, combining SelectionResult, prepared media and other prepared presentation facts such as attribution, actions and optional entity/cluster values. Neither SelectionEngine, MediaPreparation nor PublicationCoordinator fills those gaps. No PublicationDraftBuilder service, DraftFactory hierarchy or cross-module construction protocol is proposed for a single future consumer.
+
+PublicationCoordinator validates alignment and freezes already-prepared values through its existing atomic history boundary. It never calls MediaPreparation or resolves media; prepared inputs do not let Runtime construct or persist history directly. Publication identities/times/seeds remain explicit caller inputs to the Coordinator.
+
+## 11. Network ownership
+
+First local MediaPreparation requires network: NO. Explicitly supplied bytes and already-local assets are sufficient for the first implementation; remote locators are inert canonical facts on that path. Missing/corrupt local assets report unavailability instead of automatically downloading or refetching.
+
+> MediaPreparation must not become a parallel AcquisitionPlanner.
+
+Future remote media acquisition shares Runtime supply/resource/network orchestration. No second acquisition engine, media frontier, HTTP transport, retry/redirect policy, per-host limiter, periodic fetching or background media scheduler is proposed here. Cancellation/resource policy belongs with future async orchestration; no deadline Date, timeout, retryAfter or periodic refresh baseline is introduced for local preparation.
+
+The first implementation works without a decoded cache. Any future cache requires measured repeated work, a clear owner and bounded eviction policy.
+
+> Feed scrolling never triggers media network acquisition directly.
+
+## 12. Text-only and failure semantics
+
+When presentation policy permits, media = none and render = text-only is a first-class prepared result. Unavailable, unsuitable or failed media materialization does not automatically make otherwise valid content impossible to publish. Orchestration chooses the valid prepared representation before calling PublicationCoordinator; the Coordinator never invents a fallback.
+
+> Media improves future presentation; it does not own the existence of feed history.
+
+> Media work may improve future cards, but it must never make already-published cards unstable.
+
+> A card that is already locally presentable must not wait on speculative remote media merely to become publishable.
+
+File failure cannot yield a false asset reference; text-only remains an alternative when policy allows it. Publication may remain valid without integral audio/video bytes. Media arriving later can improve only a future PublishedCard occurrence; no prior draft commit, published key, layout, text or history is rewritten. Local fallback after loss of resident bytes follows the existing frozen presentation contract.
+
+## 13. Explicitly deferred behavior
+
+- Remote media acquisition and HTTP implementation.
+- Media retries, redirect policy and per-host budgets.
+- Background media scheduler and media frontier.
+- Decoded image cache.
+- Retention/asset eviction policy.
+- Audio/video download policy and non-image preparation capabilities.
+- Alternate published representations.
+- Sophisticated layout policy.
+- SwiftUI materialization.
+- Adaptive runway integration.
+- Timer/deadline machinery and future async cancellation/resource orchestration.
+
+## 14. Implementation gates 3I1/3I2/3I3
+
+Keep three distinct gates; ownership separation is more valuable than reducing commit count. These are concrete recommendations for subsequent authorized phases, not permission to start 3I in this branch.
+
+**3I1 — canonical MediaCandidate facts.** Implement the minimal Domain value and nominal candidate identity from §4, a structured revision-linked Persistence schema and atomic ContentStore admission with the owning OriginRevision. Provide exact reads by revision. Prove identical replay, changed-fact/collection conflicts, exact historical ownership, empty media collections and transaction rollback of revision + candidates on failure. No assets or network.
+
+**3I2 — local asset identity/materialization.** Implement Media's content-addressed file store with explicit bytes in, actual inspected metadata out and a durable opaque key. Close file/metadata ordering and failure handling before a usable identity is returned. Prove deterministic immutable identity, idempotent same-content materialization, refused corrupt/invalid bytes, required durability failures without false references and reopen/local reads. No HTTP, retries, decoded cache or retention policy.
+
+**3I3 — local MediaPreparation + publication preparation integration.** Implement the Media-owned usable/unavailable/unsuitable local result over explicit candidates and local inputs. Future Runtime/orchestration combines it with SelectionResult and other explicit prepared presentation inputs into directly constructed PublicationCardDraft values. Prove text-only is valid without assets/network, final RenderContract reflects prepared facts, Media has no Publication dependency, no speculative remote wait is needed and later preparation cannot mutate earlier history. PublicationCoordinator keeps sole history authority; no renderer/network acquisition, editorial reselection or runway integration.
+
+Phase 3H completes design only. Phases 3I1, 3I2 and 3I3 remain unstarted.
