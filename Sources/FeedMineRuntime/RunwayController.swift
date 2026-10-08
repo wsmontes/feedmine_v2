@@ -3,6 +3,7 @@ import Foundation
 import FeedMineDomain
 import FeedMineEditorial
 import FeedMinePublication
+import FeedMineAcquisition
 
 public struct RunwayMonotonicTime: Hashable, Sendable, Comparable {
     public let seconds: Double
@@ -21,6 +22,7 @@ public enum RunwayLocalFailure: Hashable, Sendable { case failed, cancelled }
 public enum RunwayControllerError: Error, Equatable, Sendable {
     case noActiveScope, scopeMismatch, nonMonotonicObservation, staleMeasurement
     case invalidMeasurement, staleCompletion, invalidCompletionTime, completionScopeMismatch
+    case staleAcquisitionAcknowledgement
 }
 
 public struct RunwayObservation: Hashable, Sendable {
@@ -99,6 +101,15 @@ public struct RunwayLocalSliceIntent: Hashable, Sendable {
     }
 }
 
+public struct RunwayAcquisitionIntent: Hashable, Sendable {
+    public let scope: RunwayScope
+    public let demand: AcquisitionDemand
+    public init(scope: RunwayScope, demand: AcquisitionDemand) {
+        self.scope = scope
+        self.demand = demand
+    }
+}
+
 public struct RunwayControllerSnapshot: Hashable, Sendable {
     public let scope: RunwayScope?
     public let latestObservation: RunwayObservation?
@@ -110,6 +121,7 @@ public struct RunwayControllerSnapshot: Hashable, Sendable {
     public let pendingSupplyReset: Bool
     public let localSupplyExhausted: Bool
     public let lastLocalFailure: RunwayLocalFailure?
+    public let outstandingAcquisition: RunwayAcquisitionIntent?
 }
 
 public struct RunwayControllerConfiguration: Hashable, Sendable {
@@ -128,6 +140,7 @@ public enum RunwayControllerAction: Hashable, Sendable {
     case none
     case measure(RunwayMeasurementRequest)
     case runLocalSlice(RunwayLocalSliceIntent)
+    case requestAcquisition(RunwayAcquisitionIntent)
 }
 
 /// Serializes observation, measurement, supply signals and completions for one active scope.
@@ -154,6 +167,43 @@ public actor RunwayController {
     private var lastFailure: RunwayLocalFailure?
     private var lastCoverage: RunwayCoverage?
     private var previouslyPressured = false
+    private var outstandingAcquisitionIntent: RunwayAcquisitionIntent?
+    private var lastAcknowledgedAcquisitionIntent: RunwayAcquisitionIntent?
+
+    private func invalidateAcquisitionDemand() {
+        outstandingAcquisitionIntent = nil
+        lastAcknowledgedAcquisitionIntent = nil
+    }
+
+    private var localSupplyExhausted: Bool {
+        episode.exhausted && head == nil && !pendingReset
+    }
+
+    public func acknowledgeAcquisition(_ intent: RunwayAcquisitionIntent) throws {
+        guard intent == outstandingAcquisitionIntent, intent.scope == scope else {
+            throw RunwayControllerError.staleAcquisitionAcknowledgement
+        }
+        outstandingAcquisitionIntent = nil
+        lastAcknowledgedAcquisitionIntent = intent
+    }
+
+    private func acquisitionIntentIfEligible(coverage: RunwayCoverage) -> RunwayAcquisitionIntent? {
+        guard let scope, let observation = latestObservation, let readyAhead,
+            readyAhead.editionID == scope.editionID, readyAhead.anchorCardID == observation.anchorCardID,
+            case .exact(let count) = readyAhead.amount, localSupplyExhausted,
+            inFlight == nil, lastFailure == nil,
+            let localSupply = ExhaustedLocalSupply(readyCards: count) else { return nil }
+        let pressure: AcquisitionPressure
+        switch coverage {
+        case .pressured(let required): pressure = .coverageDeficit(requiredCards: required)
+        case .logicalPressure: pressure = .logicalTailPressure
+        case .healthy, .unknown: return nil
+        }
+        guard let demand = AcquisitionDemand(contextKey: scope.contextKey,
+            editorialRevisionID: scope.editorialRevisionID, purpose: .readerContinuation,
+            pressure: pressure, localSupply: localSupply) else { return nil }
+        return RunwayAcquisitionIntent(scope: scope, demand: demand)
+    }
 
     public init(configuration: RunwayControllerConfiguration) { self.configuration = configuration }
 
@@ -178,6 +228,7 @@ public actor RunwayController {
     }
 
     public func markConsumptionInactive() {
+        invalidateAcquisitionDemand()
         latestObservation = nil
         lastMeasuredObservation = nil
         readyAhead = nil
@@ -192,6 +243,7 @@ public actor RunwayController {
         if let latestObservation, observation.sampledAt <= latestObservation.sampledAt {
             throw RunwayControllerError.nonMonotonicObservation
         }
+        invalidateAcquisitionDemand()
         latestObservation = observation
         readyAhead = nil
         lastFailure = nil
@@ -231,6 +283,17 @@ public actor RunwayController {
         case .healthy: previouslyPressured = false
         case .pressured, .logicalPressure: previouslyPressured = true
         case .unknown: break
+        }
+        if let intent = acquisitionIntentIfEligible(coverage: evaluation.coverage) {
+            guard intent != outstandingAcquisitionIntent, intent != lastAcknowledgedAcquisitionIntent else { return .none }
+            outstandingAcquisitionIntent = intent
+            return .requestAcquisition(intent)
+        }
+        // Logical pressure still needs exact shortage evidence before handoff.
+        if localSupplyExhausted, evaluation.coverage == .logicalPressure,
+            case .atLeast(let bound) = readyAhead.amount {
+            guard bound < resources.readyProbeCeiling else { return .none }
+            return measurementRequest(observation, scope: scope, bound: resources.readyProbeCeiling, advanceBound: nil)
         }
         switch evaluation.action {
         case .hold: return .none
@@ -279,6 +342,9 @@ public actor RunwayController {
                 highWater = observation.anchorCardID
             }
         }
+        if let readyAhead, readyAhead.amount != measurement.readyAhead.amount {
+            invalidateAcquisitionDemand()
+        }
         lastMeasuredObservation = observation
         readyAhead = measurement.readyAhead
     }
@@ -306,6 +372,8 @@ public actor RunwayController {
         }
         let latency = completedAt.seconds - (attemptStartedAt ?? intent.startedAt).seconds
         if published, latency <= 0 { throw RunwayControllerError.invalidCompletionTime }
+        invalidateAcquisitionDemand()
+        if progress.exhausted { readyAhead = nil }
         let updated = Progress(cursor: progress.nextCursor, exhausted: progress.exhausted)
         if intent.lane == .episode { episode = updated }
         else if progress.exhausted { episode = updated; head = nil }
@@ -330,6 +398,7 @@ public actor RunwayController {
     public func noteLocalSupplyChanged(scope: RunwayScope) throws {
         guard let active = self.scope else { throw RunwayControllerError.noActiveScope }
         guard active == scope else { throw RunwayControllerError.scopeMismatch }
+        invalidateAcquisitionDemand()
         lastFailure = nil
         bootstrapObservation = nil
         if inFlight == nil, head == nil, episode.exhausted {
@@ -367,6 +436,7 @@ public actor RunwayController {
         RunwayControllerSnapshot(scope: scope, latestObservation: latestObservation, consumption: consumption,
             replenishment: ReplenishmentFacts(p95Seconds: runwayP95(latencySamples))!, readyAhead: readyAhead,
             lastCoverage: lastCoverage, localSliceInFlight: inFlight != nil, pendingSupplyReset: pendingReset,
-            localSupplyExhausted: episode.exhausted && head == nil && !pendingReset, lastLocalFailure: lastFailure)
+            localSupplyExhausted: localSupplyExhausted, lastLocalFailure: lastFailure,
+            outstandingAcquisition: outstandingAcquisitionIntent)
     }
 }

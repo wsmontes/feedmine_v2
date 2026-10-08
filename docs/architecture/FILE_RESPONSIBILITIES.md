@@ -17,7 +17,7 @@
 | FeedMinePersistence | PersistenceValueCoding.swift | Phase 2E implemented: internal canonical UUID text, checked counters, seed bit-pattern and finite Unix date coding. | Domain behavior or generic persistence framework |
 | FeedMinePersistence | SessionStore.swift | Phase 2E implemented: singleton logical checkpoint, membership validation on save/load and atomic checkpoint replacement. | Context/position duplication, pixels, SessionCursor semantics or Runtime transitions |
 | FeedMineAcquisition | FeedConnector.swift | Boundary protocol entre FeedMine acquisition e implementações de sistemas externos. | Concrete protocol implementation, selection, publication or universal plugin frameworks |
-| FeedMineAcquisition | AcquisitionModels.swift | Concentrar os value types pequenos usados por acquisition. | Source identity, protocol SDK models or published cards |
+| FeedMineAcquisition | AcquisitionModels.swift | 3K4 implemented: readerContinuation purpose, coverage/logical pressure, validated ExhaustedLocalSupply and semantic AcquisitionDemand keyed by context/revision. | Edition/card IDs, external fetch command, protocol values, source selection or execution |
 | FeedMineAcquisition | BootstrapPlan.swift | Representar trabalho bounded necessário para produzir supply inicial suficiente quando ainda não há runway utilizável. | Permanent runway strategy or bootstrap UI |
 | FeedMineAcquisition | AdmissionPolicy.swift | Definir o gate entre evidence trazida por connector e canonical local supply. | Editorial selection or protocol transport |
 | FeedMineAcquisition | AcquisitionPlanner.swift | Converter demanda por supply em trabalho de acquisition priorizado e bounded. | HTTP execution or editorial ordering |
@@ -81,7 +81,7 @@ FeedMineMediaTests now owns AssetStoreTests (known final-byte SHA-256 key, exact
 
 MediaPreparationTests prove explicit local inputs, inert unreachable locator, actual versus declared metadata, unavailable/unsuitable states and propagated corruption/storage errors. PublicationPreparationTests prove text-only without media work, exact positional Selection payload/time, hero/thumbnail contracts from actual prepared facts, typed mismatch/unusable refusal without automatic fallback, and late-media future occurrence preserving earlier history after reopen. PublicationCoordinator remains the sole history producer. No production package dependency changed; Runtime tests compile with existing dependencies.
 
-Phase 3J — complete (design only): [CONTINUOUS_FEED_RUNWAY_DESIGN.md](CONTINUOUS_FEED_RUNWAY_DESIGN.md). Future narrow Persistence reads provide capped ready-ahead positions and window-bounded exact-revision publication presence through Publication semantic boundaries. Runtime supplies exposure facts to pure Editorial Selection; CandidateProvider remains structural. Future LocalProductionSlice performs at most one provider call, one Selection and one publication action from explicit resolved context/preparation inputs. FeedSession retains presentation, anchor and explicit checkpoint; append notifications preserve current Edition/position. Runway observations and in-flight state stay outside presentation snapshots. AcquisitionPlanner owns frontier planning and AcquisitionCoordinator owns external execution downstream; neither enters Runway. 3K1–3K3 are complete; 3K4 remains an unstarted review gate.
+Phase 3J — complete (design only): [CONTINUOUS_FEED_RUNWAY_DESIGN.md](CONTINUOUS_FEED_RUNWAY_DESIGN.md). Future narrow Persistence reads provide capped ready-ahead positions and window-bounded exact-revision publication presence through Publication semantic boundaries. Runtime supplies exposure facts to pure Editorial Selection; CandidateProvider remains structural. Future LocalProductionSlice performs at most one provider call, one Selection and one publication action from explicit resolved context/preparation inputs. FeedSession retains presentation, anchor and explicit checkpoint; append notifications preserve current Edition/position. Runway observations and in-flight state stay outside presentation snapshots. AcquisitionPlanner owns frontier planning and AcquisitionCoordinator owns external execution downstream; neither enters Runway. 3K1–3K3 are complete; 3K4 semantic handoff is complete; Phase 3K is complete.
 
 Phase 3J — complete. Phase 3K1 — bounded exposure + ready-runway history facts — complete. Phase 3K2 — one bounded local production slice — complete. Phase 3K3 — adaptive policy + minimal controller — complete.
 
@@ -109,7 +109,7 @@ Phase 3K2 — complete
 
 Phase 3K3 — adaptive policy + minimal controller — complete
 
-Phase 3K4 — not started
+Phase 3K4 — semantic AcquisitionDemand handoff — complete
 
 > Runway health is coverage over measured consumption and replenishment latency, not a fixed number of cards.
 
@@ -133,4 +133,39 @@ Successful replenishment uses bounded nearest-rank p95 samples. Its end-to-end l
 
 Unknown bootstrap belongs to one unchanged observation opportunity and reopens on new observation or supply change; factual exact-zero pressure can authorize successive separate bounded slices. Failures do not auto-retry. Measurements must match the latest observation and semantic history scope; completions must match the reserved intent and receipt scope before any mutation. Publication invalidates ready facts while preserving observation anchor/high-water; the next ready measurement stays around that same anchor. Pure actor tests require no database.
 
-FeedSession wiring, publishedTailAdvanced, AcquisitionDemand and Acquisition execution remain deferred to 3K4+ review. No Acquisition/network, background scheduling, UI, schema or package change is introduced.
+FeedSession wiring, publishedTailAdvanced and Acquisition execution remain deferred. AcquisitionDemand is now the semantic handoff described below; no external execution/network, background scheduling, UI, schema or package change is introduced.
+
+
+### 3K4 completion record
+
+Phase 3K1 — complete
+
+Phase 3K2 — complete
+
+Phase 3K3 — complete
+
+Phase 3K4 — semantic AcquisitionDemand handoff — complete
+
+Phase 3K — complete
+
+> AcquisitionDemand is semantic pressure for more canonical supply. It is not an external fetch command.
+
+> Remote demand is emitted only after bounded local-first production has genuinely exhausted the current structural walk and pressure remains after settlement.
+
+> Empty nonexhausted local work is progress, not remote shortage.
+
+> Unknown runway coverage never authorizes remote acquisition.
+
+> A local production/storage/preparation failure is not evidence that remote supply is needed.
+
+> Admission of new local supply invalidates remote-shortage evidence and reopens local-first consideration.
+
+> One outstanding semantic demand is coalesced; acknowledgment never creates an automatic re-demand loop.
+
+AcquisitionDemand lives in Acquisition, not Runtime. Its exact fields are ContextKey, EditorialRevisionID, readerContinuation purpose, coverageDeficit(requiredCards) or logicalTailPressure, and ExhaustedLocalSupply with nonnegative exact readyCards. A deficit requires requiredCards > readyCards and > 0; logical pressure introduces no artificial count. The value contains no Edition, occurrence identity, URL, source, protocol command or external work quantity. Runtime wraps it with RunwayScope solely for operational ownership and stale acknowledgement checks.
+
+RunwayController requires completed structural local exhaustion, no in-flight local work, no head lane/pending supply reset, no local failure and known pressure before handoff. Every exhausted completion invalidates ready facts, including zero-yield completion. Reconsider first requests a post-settle measurement around the unchanged anchor. Only exact current ready stock proves shortage; healthy/unknown coverage and saturated stock never escalate. A bounded larger ready probe may obtain exact evidence; logical pressure may probe to the explicit ceiling and remains unproven if still saturated there.
+
+Local-first is mandatory whenever a lane can progress. Successful local progress, new observation, inactive consumption, scope replacement/deactivation, changed accepted ready amount and supply admission invalidate remembered shortage ownership. Admission preserves 3K3 head restart/fairness and reopens local consideration. Failed local execution does not imply remote shortage. One outstanding semantic intent is reserved before returning; repeated reconsiderations coalesce, exact acknowledgement moves it to internal suppression, and unchanged facts cannot immediately re-demand. A stale or superseded acknowledgement is rejected without mutation. No durable demand state, identifier/generation, queue or attempt counter exists.
+
+This phase implements no planner, frontier, target, coordinator, connector or network execution. FeedSession wiring and background/UI work remain separate future gates. No next phase is started.

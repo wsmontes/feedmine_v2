@@ -181,7 +181,7 @@ Actual AcquisitionPlanner/Coordinator, connector execution/network/HTTP, remote 
 3. **3K3 — adaptive RunwayPolicy / minimal RunwayController.** Pure known/unknown coverage arithmetic, explicitly measured rates/latency, hysteresis and resource bounds; sole in-flight local intent owner, coalesced observations, episode/head fairness and separate slice scheduling. Prove r/L adaptation, saturated probe conservatism, reversals, stale completion, pending supply reset, cheap observation and anchor-preserving append. No connector work, timer/refill attempts or remote dispatch. Scope of session notification wiring requires this gate's review.
 4. **3K4 — semantic AcquisitionDemand handoff.** Prove persistent post-settle pressure + completed structural exhaustion + no pending local work/reset/error; define acknowledgement/coalescing value boundary. Tests must reject empty nonexhausted, unknown facts and publication failure; admission reopens local-first consideration. No planner/frontier construction, coordinator, connector or network execution.
 
-3K1 is now complete; 3K3 is complete; gate 3K4 remains a recommended future review, not authorization to start production behavior.
+3K1 is now complete; 3K3 is complete; 3K4 semantic handoff is now complete, without external execution.
 
 ### 3K1 completion record
 
@@ -215,7 +215,7 @@ LocalPreparedPublication supplies explicit aligned inputs/card IDs; all attribut
 
 > Caller may advance episode progress only from a successfully returned LocalProductionSliceOutcome.
 
-Real-database tests prove bounded single-window output/order/IDs/progress, head restart suppressing old revisions, new revision of an old origin, zero-selected structural progress, same-cursor reconsideration after failure, unavailable image refusal and explicit textOnly success, and deterministic append during preparation rejecting stale work without retry. 3K2 introduced no schema/package change, Acquisition/network, FeedSession wiring or Runway controller/sampling. 3K3 adaptive policy and minimal controller are now complete; 3K4 is not started.
+Real-database tests prove bounded single-window output/order/IDs/progress, head restart suppressing old revisions, new revision of an old origin, zero-selected structural progress, same-cursor reconsideration after failure, unavailable image refusal and explicit textOnly success, and deterministic append during preparation rejecting stale work without retry. 3K2 introduced no schema/package change, Acquisition/network, FeedSession wiring or Runway controller/sampling. 3K3 adaptive policy and minimal controller are now complete; 3K4 semantic handoff is now complete; acquisition execution remains deferred.
 
 
 ### 3K3 completion record
@@ -226,7 +226,7 @@ Phase 3K2 — complete
 
 Phase 3K3 — adaptive policy + minimal controller — complete
 
-Phase 3K4 — not started
+Phase 3K4 — semantic AcquisitionDemand handoff — complete
 
 > Runway health is coverage over measured consumption and replenishment latency, not a fixed number of cards.
 
@@ -250,4 +250,39 @@ Successful replenishment uses bounded nearest-rank p95 samples. Its end-to-end l
 
 Unknown bootstrap belongs to one unchanged observation opportunity and reopens on new observation or supply change; factual exact-zero pressure can authorize successive separate bounded slices. Failures do not auto-retry. Measurements must match the latest observation and semantic history scope; completions must match the reserved intent and receipt scope before any mutation. Publication invalidates ready facts while preserving observation anchor/high-water; the next ready measurement stays around that same anchor. Pure actor tests require no database.
 
-FeedSession wiring, publishedTailAdvanced, AcquisitionDemand and Acquisition execution remain deferred to 3K4+ review. No Acquisition/network, background scheduling, UI, schema or package change is introduced.
+FeedSession wiring, publishedTailAdvanced and Acquisition execution remain deferred. AcquisitionDemand is now the semantic handoff described below; no external execution/network, background scheduling, UI, schema or package change is introduced.
+
+
+### 3K4 completion record
+
+Phase 3K1 — complete
+
+Phase 3K2 — complete
+
+Phase 3K3 — complete
+
+Phase 3K4 — semantic AcquisitionDemand handoff — complete
+
+Phase 3K — complete
+
+> AcquisitionDemand is semantic pressure for more canonical supply. It is not an external fetch command.
+
+> Remote demand is emitted only after bounded local-first production has genuinely exhausted the current structural walk and pressure remains after settlement.
+
+> Empty nonexhausted local work is progress, not remote shortage.
+
+> Unknown runway coverage never authorizes remote acquisition.
+
+> A local production/storage/preparation failure is not evidence that remote supply is needed.
+
+> Admission of new local supply invalidates remote-shortage evidence and reopens local-first consideration.
+
+> One outstanding semantic demand is coalesced; acknowledgment never creates an automatic re-demand loop.
+
+AcquisitionDemand lives in Acquisition, not Runtime. Its exact fields are ContextKey, EditorialRevisionID, readerContinuation purpose, coverageDeficit(requiredCards) or logicalTailPressure, and ExhaustedLocalSupply with nonnegative exact readyCards. A deficit requires requiredCards > readyCards and > 0; logical pressure introduces no artificial count. The value contains no Edition, occurrence identity, URL, source, protocol command or external work quantity. Runtime wraps it with RunwayScope solely for operational ownership and stale acknowledgement checks.
+
+RunwayController requires completed structural local exhaustion, no in-flight local work, no head lane/pending supply reset, no local failure and known pressure before handoff. Every exhausted completion invalidates ready facts, including zero-yield completion. Reconsider first requests a post-settle measurement around the unchanged anchor. Only exact current ready stock proves shortage; healthy/unknown coverage and saturated stock never escalate. A bounded larger ready probe may obtain exact evidence; logical pressure may probe to the explicit ceiling and remains unproven if still saturated there.
+
+Local-first is mandatory whenever a lane can progress. Successful local progress, new observation, inactive consumption, scope replacement/deactivation, changed accepted ready amount and supply admission invalidate remembered shortage ownership. Admission preserves 3K3 head restart/fairness and reopens local consideration. Failed local execution does not imply remote shortage. One outstanding semantic intent is reserved before returning; repeated reconsiderations coalesce, exact acknowledgement moves it to internal suppression, and unchanged facts cannot immediately re-demand. A stale or superseded acknowledgement is rejected without mutation. No durable demand state, identifier/generation, queue or attempt counter exists.
+
+This phase implements no planner, frontier, target, coordinator, connector or network execution. FeedSession wiring and background/UI work remain separate future gates. No next phase is started.
