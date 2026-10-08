@@ -789,3 +789,13 @@ ContentStore and its direct conflict/rollback tests remain unchanged. Existing A
 - `Sources/FeedMineComposition/ColdFeedBootstrap.swift`: finite cold-first publication using factual settled supply, with the unchanged visual outcome contract and no operational diagnostic side channel.
 
 FeedPresentationHandoff, FeedRunwayDriver, RunwayController, FeedPresentationState, persistence/admission, publication and the package dependency graph retain their prior responsibilities.
+
+
+## Phase 3R3 responsibility additions
+
+- `Sources/FeedMineSyndication/SyndicationHTTP.swift`: admits completed fingerprint/index-zero checkpoints using existing fields, retains legacy validation/codec compatibility and chooses conditional headers from the completed index boundary.
+- `Sources/FeedMineSyndication/SyndicationConnector.swift`: retains the received fingerprint on completion and settles matching completed HTTP 200 bytes before translation; existing partial continuation and changed-body restart remain authoritative.
+- `Tests/FeedMineSyndicationTests/SyndicationCheckpointTests.swift`, `SyndicationHTTPTests.swift`, `SyndicationConnectorTests.swift`: completed/legacy codec semantics, both HTTP validators/304, bounded translation and unchanged-body settlement.
+- `Tests/FeedMineSyndicationTests/CompletedDocumentFingerprintTests.swift`: local controlled HTTP, real admission/coordinator and RuntimeDatabase lifetime/reopen proof; empty/all-rejected settlement and durable changed-document pagination.
+
+Production ownership remains within the two existing Syndication files. AcquisitionCoordinator, fairness, admission, ContentStore, publication, Composition, UI, schema and package dependencies are unchanged. No document cache or additional persistence owner is introduced.

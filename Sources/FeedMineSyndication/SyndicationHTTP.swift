@@ -12,7 +12,7 @@ public struct SyndicationCheckpointState: Hashable, Codable, Sendable {
     public init?(etag: String?, lastModified: String?, documentFingerprint: String?, nextItemIndex: Int) {
         guard nextItemIndex >= 0,
             [etag, lastModified, documentFingerprint].allSatisfy({ $0.map { !$0.utf8.isEmpty } ?? true }),
-            (documentFingerprint == nil && nextItemIndex == 0) || (documentFingerprint != nil && nextItemIndex > 0)
+            (documentFingerprint != nil || nextItemIndex == 0)
         else { return nil }
         self.etag = etag
         self.lastModified = lastModified
@@ -101,7 +101,7 @@ internal struct SyndicationHTTPClient: Sendable {
     func fetch(endpoint: URL, checkpoint: SyndicationCheckpointState, bodyByteCapacity: Int) async throws -> SyndicationHTTPOutcome {
         var request = URLRequest(url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = "GET"
-        if checkpoint.documentFingerprint == nil && checkpoint.nextItemIndex == 0 {
+        if checkpoint.nextItemIndex == 0 {
             request.setValue(checkpoint.etag, forHTTPHeaderField: "If-None-Match")
             request.setValue(checkpoint.lastModified, forHTTPHeaderField: "If-Modified-Since")
         }

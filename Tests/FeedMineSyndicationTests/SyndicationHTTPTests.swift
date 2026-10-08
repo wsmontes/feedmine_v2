@@ -204,3 +204,20 @@ final class LocalSyndicationURLProtocol: URLProtocol, @unchecked Sendable {
     override func startLoading() { LocalSyndicationHTTPFixture.find(request.url)?.start(self) }
     override func stopLoading() { LocalSyndicationHTTPFixture.find(request.url)?.stop() }
 }
+
+extension SyndicationHTTPTests {
+    func test3R3CompletedFingerprintAllowsEachValidatorAnd304() async throws {
+        for useETag in [true,false] {
+            let state = SyndicationCheckpointState(etag:useETag ? "etag" : nil,lastModified:useETag ? nil : "date",
+                documentFingerprint:"sha256:complete",nextItemIndex:0)!
+            let transport = ScriptedSyndicationTransport([hop(304)])
+            let client = SyndicationHTTPClient(transport:transport,redirectCapacity:0)
+            guard case .notModified = try await client.fetch(endpoint:endpoint,checkpoint:state,bodyByteCapacity:100) else {
+                return XCTFail("Completed fingerprint must not disable conditional requests")
+            }
+            let requests = await transport.journal(); XCTAssertEqual(requests.count,1)
+            XCTAssertEqual(requests[0].value(forHTTPHeaderField:"If-None-Match"),state.etag)
+            XCTAssertEqual(requests[0].value(forHTTPHeaderField:"If-Modified-Since"),state.lastModified)
+        }
+    }
+}

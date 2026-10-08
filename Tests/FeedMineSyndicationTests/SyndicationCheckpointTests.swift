@@ -23,7 +23,7 @@ final class SyndicationCheckpointTests: XCTestCase {
         XCTAssertEqual(value.documentFingerprint," fingerprint "); XCTAssertEqual(value.nextItemIndex,3)
     }
     func test29InvalidPartialPairs() {
-        XCTAssertNil(state(index: 1)); XCTAssertNil(state(fingerprint: "f")); XCTAssertNil(state(index: -1))
+        XCTAssertNil(state(index: 1)); XCTAssertNotNil(state(fingerprint: "f")); XCTAssertNil(state(index: -1))
     }
     func test30EmptyStrings() {
         XCTAssertNil(state(etag: "")); XCTAssertNil(state(modified: "")); XCTAssertNil(state(fingerprint: "",index: 1))
@@ -58,12 +58,34 @@ final class SyndicationCheckpointTests: XCTestCase {
         }
     }
     func test36MalformedBlobAndInvalidDecodedState() {
-        for text in ["not json","{}","{\"nextItemIndex\":-1}","{\"nextItemIndex\":1}","{\"documentFingerprint\":\"f\",\"nextItemIndex\":0}",
+        for text in ["not json","{}","{\"nextItemIndex\":-1}","{\"nextItemIndex\":1}",
             "{\"etag\":\"\",\"nextItemIndex\":0}","{\"lastModified\":\"\",\"nextItemIndex\":0}","{\"documentFingerprint\":\"\",\"nextItemIndex\":1}","{\"nextItemIndex\":\"1\"}"] {
             XCTAssertThrowsError(try SyndicationCheckpointCodec.decode(envelope(Data(text.utf8)))) {
                 XCTAssertEqual($0 as? SyndicationCheckpointError,.malformed)
             }
         }
         XCTAssertThrowsError(try JSONDecoder().decode(SyndicationCheckpointState.self,from: Data("{\"nextItemIndex\":1}".utf8)))
+    }
+}
+
+extension SyndicationCheckpointTests {
+    func test3R3CompletedFingerprintRoundtripWithoutVersionChange() throws {
+        let value = try XCTUnwrap(state(fingerprint: "sha256:completed", index: 0))
+        let encoded = try SyndicationCheckpointCodec.encode(value)
+        XCTAssertEqual(encoded.serializationSchema, 1)
+        XCTAssertEqual(encoded.connectorVersion, SyndicationCheckpointCodec.connectorVersion)
+        XCTAssertEqual(try SyndicationCheckpointCodec.decode(encoded), value)
+    }
+}
+
+extension SyndicationCheckpointTests {
+    func test3R3LegacyCheckpointBlobsRemainDecodable() throws {
+        for text in ["{\"nextItemIndex\":0}",
+            "{\"etag\":\"old\",\"lastModified\":\"date\",\"nextItemIndex\":0}",
+            "{\"documentFingerprint\":\"old\",\"nextItemIndex\":3}"] {
+            let decoded = try SyndicationCheckpointCodec.decode(envelope(Data(text.utf8)))
+            XCTAssertEqual(try SyndicationCheckpointCodec.decode(SyndicationCheckpointCodec.encode(decoded)),decoded)
+        }
+        XCTAssertNil(state(fingerprint:"",index:0)); XCTAssertNil(state(fingerprint:"f",index:-1))
     }
 }

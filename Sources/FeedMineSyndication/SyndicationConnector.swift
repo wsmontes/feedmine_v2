@@ -77,13 +77,15 @@ public struct SyndicationConnector: FeedConnector, Sendable {
         guard case .document(let document) = outcome else { return .upToDate }
         let fingerprint = syndicationBodyFingerprint(document.body)
         let matches = oldState.documentFingerprint.map { $0.utf8.elementsEqual(fingerprint.utf8) } ?? false
+        // A matching completed document is settled before parsing or constructing observations.
+        if matches && oldState.nextItemIndex == 0 { return .upToDate }
         let translation = try SyndicationTranslator().translate(data: document.body, configuration: configuration,
             observedAt: observedAt, startIndex: matches ? oldState.nextItemIndex : 0,
             itemCapacity: request.observationCapacity)
         guard let nextState = SyndicationCheckpointState(
             etag: document.redirectCount == 0 ? document.etag : nil,
             lastModified: document.redirectCount == 0 ? document.lastModified : nil,
-            documentFingerprint: translation.nextItemIndex == nil ? nil : fingerprint,
+            documentFingerprint: fingerprint,
             nextItemIndex: translation.nextItemIndex ?? 0) else { throw SyndicationConnectorError.invalidBatch }
         let delta = nextState == oldState ? nil : try SyndicationCheckpointCodec.encode(nextState)
         guard !translation.observations.isEmpty || delta != nil else { return .upToDate }

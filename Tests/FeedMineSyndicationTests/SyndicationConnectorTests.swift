@@ -41,7 +41,7 @@ final class SyndicationConnectorTests: XCTestCase {
         XCTAssertEqual(b.expectedCheckpointRevision,request.checkpointRevision)
         XCTAssertEqual(b.observations.map(\.objectIdentity.value),["a"])
         XCTAssertEqual(b.observations[0].memberships,configuration.memberships)
-        XCTAssertNil(b.nextCheckpoint)
+        XCTAssertNotNil(b.nextCheckpoint)
     }
     func test18ExactObservedClockAndInvalidClockFence() async throws {
         let body = rss(["a","b"]),t = ScriptedSyndicationTransport([hop(rss(["a","b"]))])
@@ -56,17 +56,17 @@ final class SyndicationConnectorTests: XCTestCase {
         let body = rss(["a"]),t = ScriptedSyndicationTransport([hop(rss(["a"]),etag:"W/\"exact\"",modified:" exact date ")])
         let s = try state(batch(await connector(t).pull(pull()),body:body))
         XCTAssertEqual(s.etag,"W/\"exact\""); XCTAssertEqual(s.lastModified," exact date ")
-        XCTAssertNil(s.documentFingerprint); XCTAssertEqual(s.nextItemIndex,0)
+        XCTAssertEqual(s.documentFingerprint, syndicationBodyFingerprint(body)); XCTAssertEqual(s.nextItemIndex,0)
     }
     func test20RedirectedValidatorsDiscarded() async throws {
         let body = rss(["a"])
         let redirect = SyndicationHTTPHop(statusCode:302,location:"/next",etag:nil,lastModified:nil,body:Data())
         let t = ScriptedSyndicationTransport([redirect,hop(body,etag:"final",modified:"date")])
-        let b = try batch(await connector(t).pull(pull()),body:body); XCTAssertNil(b.nextCheckpoint)
+        let b = try batch(await connector(t).pull(pull()),body:body); XCTAssertNotNil(b.nextCheckpoint)
         let old = try SyndicationCheckpointCodec.encode(.init(etag:"old",lastModified:nil,documentFingerprint:nil,nextItemIndex:0)!)
         let second = ScriptedSyndicationTransport([redirect,hop(body,etag:"final",modified:"date")])
         let s = try state(batch(await connector(second).pull(pull(checkpoint:old)),body:body))
-        XCTAssertEqual(s,SyndicationCheckpointCodec.empty)
+        XCTAssertEqual(s.documentFingerprint, syndicationBodyFingerprint(body)); XCTAssertEqual(s.nextItemIndex, 0); XCTAssertNil(s.etag); XCTAssertNil(s.lastModified)
     }
     private func slices() async throws -> [AcquisitionBatch] {
         let body = rss(["a","b","c"]),t = ScriptedSyndicationTransport(Array(repeating:hop(rss(["a","b","c"]),etag:"e"),count:3))
@@ -91,7 +91,7 @@ final class SyndicationConnectorTests: XCTestCase {
     func test23ThirdSliceFinishes() async throws {
         let values = try await slices(); let s = try state(values[2])
         XCTAssertEqual(values[2].observations.map(\.objectIdentity.value),["c"])
-        XCTAssertNil(s.documentFingerprint); XCTAssertEqual(s.nextItemIndex,0); XCTAssertEqual(s.etag,"e")
+        XCTAssertEqual(s.documentFingerprint, syndicationBodyFingerprint(rss(["a","b","c"]))); XCTAssertEqual(s.nextItemIndex,0); XCTAssertEqual(s.etag,"e")
     }
     func test24ChangedBodyRestartsZero() async throws {
         let bodyA = rss(["a","b"]),bodyB = rss(["new","next"])
@@ -114,29 +114,32 @@ final class SyndicationConnectorTests: XCTestCase {
         let event = try await c.pull(pull(checkpoint:first.nextCheckpoint)); XCTAssertEqual(event,.upToDate)
         let journal = await t.journal(); XCTAssertEqual(journal[1].value(forHTTPHeaderField:"If-None-Match"),"e"); XCTAssertEqual(journal[1].value(forHTTPHeaderField:"If-Modified-Since"),"m")
     }
-    func test27IdenticalCheckpointNoProposal() async throws {
+    func test27LegacyValidatorOnlyCheckpointGainsFingerprint() async throws {
         let body = rss(["a"]),old = try SyndicationCheckpointCodec.encode(.init(etag:"e",lastModified:"m",documentFingerprint:nil,nextItemIndex:0)!)
         let t = ScriptedSyndicationTransport([hop(body,etag:"e",modified:"m")])
-        let b = try batch(await connector(t).pull(pull(checkpoint:old)),body:body); XCTAssertNil(b.nextCheckpoint); XCTAssertEqual(b.observations.count,1)
+        let b = try batch(await connector(t).pull(pull(checkpoint:old)),body:body); XCTAssertNotNil(b.nextCheckpoint); XCTAssertEqual(b.observations.count,1)
     }
     func test28ClearOldValidators() async throws {
         let body = rss([]),old = try SyndicationCheckpointCodec.encode(.init(etag:"old",lastModified:nil,documentFingerprint:nil,nextItemIndex:0)!)
         let t = ScriptedSyndicationTransport([hop(body)])
         let b = try batch(await connector(t).pull(pull(checkpoint:old)),body:body)
-        XCTAssertEqual(try state(b),SyndicationCheckpointCodec.empty)
+        XCTAssertEqual(try state(b).documentFingerprint, syndicationBodyFingerprint(body)); XCTAssertEqual(try state(b).nextItemIndex, 0); XCTAssertNil(try state(b).etag)
     }
     func test29ClearOldPartial() async throws {
         let body = rss([]),old = try SyndicationCheckpointCodec.encode(.init(etag:nil,lastModified:nil,documentFingerprint:"different",nextItemIndex:99)!)
         let t = ScriptedSyndicationTransport([hop(body)])
         let b = try batch(await connector(t).pull(pull(checkpoint:old)),body:body)
-        XCTAssertEqual(try state(b),SyndicationCheckpointCodec.empty)
+        XCTAssertEqual(try state(b).documentFingerprint, syndicationBodyFingerprint(body)); XCTAssertEqual(try state(b).nextItemIndex, 0); XCTAssertNil(try state(b).etag)
     }
     func test30CheckpointOnlyBatch() async throws {
         let body = rss([]),t = ScriptedSyndicationTransport([hop(rss([]),etag:"new")])
         let b = try batch(await connector(t).pull(pull()),body:body); XCTAssertTrue(b.observations.isEmpty); XCTAssertEqual(try state(b).etag,"new")
     }
-    func test31ZeroObservationsZeroDeltaUpToDate() async throws {
-        let t = ScriptedSyndicationTransport([hop(rss([]))]); let event = try await connector(t).pull(pull()); XCTAssertEqual(event,.upToDate)
+    func test31EmptyDocumentCompletesThenIsUpToDate() async throws {
+        let body = rss([]), t = ScriptedSyndicationTransport([hop(body),hop(body)]), c = connector(t)
+        let first = try batch(await c.pull(pull()),body:body)
+        XCTAssertTrue(first.observations.isEmpty)
+        let event = try await c.pull(pull(checkpoint:first.nextCheckpoint)); XCTAssertEqual(event,.upToDate)
     }
     func test32ParseFailure() async {
         let t = ScriptedSyndicationTransport([hop(Data("malformed".utf8))])
@@ -221,5 +224,19 @@ extension SyndicationConnectorTests {
         let limit = ScriptedSyndicationTransport(error: SyndicationHTTPError.bodyTooLarge(limit: 1, actualAtLeast: 2))
         do { _ = try await connector(limit).pull(pull()); XCTFail("Expected fatal byte limit") }
         catch { XCTAssertEqual(error as? SyndicationHTTPError, .bodyTooLarge(limit: 1, actualAtLeast: 2)) }
+    }
+}
+
+extension SyndicationConnectorTests {
+    func test3R3CompletedDocumentWithoutValidatorsIsUpToDateBeforeTranslation() async throws {
+        let body = rss(["a"]), transport = ScriptedSyndicationTransport([hop(body),hop(body)])
+        let first = try batch(await connector(transport).pull(pull()), body: body)
+        let rebuilt = connector(transport)
+        let second = try await rebuilt.pull(pull(checkpoint:first.nextCheckpoint))
+        XCTAssertEqual(second, .upToDate)
+        XCTAssertEqual(try state(first).documentFingerprint, syndicationBodyFingerprint(body))
+        XCTAssertEqual(try state(first).nextItemIndex, 0)
+        let requests = await transport.journal(); XCTAssertEqual(requests.count, 2)
+        XCTAssertNil(requests[1].value(forHTTPHeaderField:"If-None-Match"))
     }
 }

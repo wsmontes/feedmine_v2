@@ -768,3 +768,12 @@ Coverage includes T1–T18 and E1–E11: real local HTTP 500/timeout, ten durabl
 Seven legacy count assertions across six driver tests are adapted only with semantic proof of B's additional eligible supply: test01 segments 2→3 and window 2→3; test02 window 2→3; test04 window 3→4; test08 window 2→3; test23 segments 2→3; test24 segments 2→3. Each test validates pre-pull ready-ahead facts, exact distinct canonical/published revisions, untouched original cards and quiescence, rather than merely accepting a larger count.
 
 Verification completed: swift package describe and swift build; focused 3R2 tests (13); Handoff (16), Driver (28), Coordinator (37), Planner (28), Runway cycle (16), Cold (30), Syndication connector (25), AdmissionPolicy (6); full swift test: **653 tests, zero failures**. git diff --check and exact allowlist comparison passed. Read-only code review found and verified correction of the missing-marker starvation case; final review reported no actionable findings.
+
+
+## Phase 3R3 — completed-document fingerprint and no-validator deduplication
+
+Base: `1f6094222653efca11e22e884460ef151d85966d`; branch: `phase/3r3-completed-document-fingerprint`. Discovery traced discarded terminal fingerprints, the old nil-fingerprint conditional-header predicate, bounded coordinator pulls and transactional checkpoint revisions. Reproduction tests failed on the base before the minimal two-file production correction.
+
+The existing checkpoint fields now distinguish initial, partial and completed documents without a version/schema change. Matching completed HTTP 200 bytes settle before translation; changed documents restart at zero; partial documents continue only when bytes match. Legacy blobs, conditional ETag/Last-Modified and valid/invalid 304 semantics remain covered. Controlled local HTTP and real coordinator/database tests cover D1–D14, including a released first database lifetime and reconstructed owners after reopen. First acquisition is measured separately: two GETs/one batch, followed by one GET/zero batches for an unchanged completed feed without validators.
+
+Full regression verification: **660 tests, zero failures**, including unchanged 3R1/3R2, Composition and Persistence suites. The three existing direct Syndication test files and one focused new file carry seven added tests; no unrelated test adaptation is needed. Partial pagination still performs repeated full-body GETs; further measurement and any 3R4 work require a separate gate. This branch is delivered for external review without integration into main.
