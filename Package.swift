@@ -68,6 +68,18 @@ let package = Package(
         .testTarget(name: "FeedMinePublicationTests", dependencies: ["FeedMinePublication", "FeedMineDomain", "FeedMineMedia", "FeedMinePersistence"]),
         .testTarget(name: "FeedMineRuntimeTests", dependencies: ["FeedMineRuntime", "FeedMineDomain", "FeedMinePublication", "FeedMinePersistence", "FeedMineMedia"]),
         .testTarget(
+            name: "FeedMineCompositionTests",
+            dependencies: [
+                "FeedMineComposition",
+                "FeedMineDomain",
+                "FeedMinePersistence",
+                "FeedMineAcquisition",
+                "FeedMineEditorial",
+                "FeedMinePublication",
+                "FeedMineRuntime"
+            ]
+        ),
+        .testTarget(
             name: "ArchitectureSmokeTests",
             dependencies: ["FeedMineDomain", "FeedMinePersistence", "FeedMineAcquisition", "FeedMineSyndication", "FeedMineEditorial", "FeedMineMedia", "FeedMinePublication", "FeedMineRuntime", "FeedMineUI", "FeedMineComposition"]
         ),

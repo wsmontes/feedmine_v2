@@ -173,7 +173,7 @@ This phase implements no planner, frontier, target, coordinator, connector or ne
 
 ## Phase 3L — designed Acquisition boundaries
 
-Phase 3L — complete (design only): [ACQUISITION_DESIGN.md](ACQUISITION_DESIGN.md). Phase 3M1 — durable target/checkpoint authority — complete. Phase 3M2 — complete; Phase 3M3 — complete; Phase 3M4 — complete; Phase 3M5 — not started. Proposed responsibilities below introduce no implementation/API/schema. Exactly ACQUISITION_DESIGN, PERSISTENCE_DESIGN, IMPLEMENTATION_ORDER and this document change.
+Phase 3L — complete (design only): [ACQUISITION_DESIGN.md](ACQUISITION_DESIGN.md). Phase 3M1 — durable target/checkpoint authority — complete. Phase 3M2 — complete; Phase 3M3 — complete; Phase 3M4 — complete; At the 3M4 completion gate, Phase 3M5 was not started; it is now complete as recorded below.. Proposed responsibilities below introduce no implementation/API/schema. Exactly ACQUISITION_DESIGN, PERSISTENCE_DESIGN, IMPLEMENTATION_ORDER and this document change.
 
 | Owner / file direction | Future responsibility | Explicit exclusion |
 | --- | --- | --- |
@@ -305,7 +305,7 @@ Phase 3M3 — complete
 
 Phase 3M4 — bounded connector + shared target coordinator — complete
 
-Phase 3M5 — not started
+At the 3M4 completion gate, Phase 3M5 was not started; it is now complete as recorded below.
 
 > FeedConnector is pull-driven: one bounded pull produces at most one protocol-free event.
 
@@ -333,4 +333,54 @@ Successful admitted batches, including checkpoint-only batches and accepted exac
 
 FakeFiniteConnector and FakeContinuousConnector are test-only actors. The finite fixture owns its script and consumes at most one step per pull, building batches with the exact request stamp. The continuous fixture stores at most one pending step and one waiting pull continuation: offer delivers to a waiter or fills the empty slot, and refuses a second buffered event. Explicit test continuations prove waiting and sharing without polling, sleeps, timers, network or a background producer. Fixtures own target→script mapping, supplied through the coordinator initializer; no registry enters production.
 
-AcquisitionCoordinatorTests uses real temporary RuntimeDatabase, real target authority and real AdmissionPolicy. All 30 numbered proofs cover checkpoint chaining, capacity and terminal/error handling, pre-Admission bounds/stamps, checkpoint-only receipts, concurrent sharing, late-result refusal/replacement, durable fences and continuous one-slot backpressure. Additional tests cover pull value validation and preservation of committed receipts on CancellationError. Planner, Admission, Persistence/schema and Package.swift are unchanged. Phase 3M5 remains the owner of plan traversal and Runtime/Acquisition handoff; no Runtime acknowledgement, Composition loop, noteLocalSupplyChanged wiring, production fake, Syndication or network implementation starts here.
+AcquisitionCoordinatorTests uses real temporary RuntimeDatabase, real target authority and real AdmissionPolicy. All 30 numbered proofs cover checkpoint chaining, capacity and terminal/error handling, pre-Admission bounds/stamps, checkpoint-only receipts, concurrent sharing, late-result refusal/replacement, durable fences and continuous one-slot backpressure. Additional tests cover pull value validation and preservation of committed receipts on CancellationError. Planner, Admission, Persistence/schema and Package.swift are unchanged. At the 3M4 completion gate, plan traversal and Runtime/Acquisition handoff remained deferred to 3M5. That bounded Composition handoff is now implemented in the 3M5 record below; production fakes, Syndication/network and FeedSession integration remain deferred.
+
+## Phase 3M5 — Runtime/Acquisition supply loop
+
+Phase 3M1 — complete
+
+Phase 3M2 — complete
+
+Phase 3M3 — complete
+
+Phase 3M4 — complete
+
+Phase 3M5 — Runtime/Acquisition fake supply loop — complete
+
+Phase 3M — complete
+
+Phase 3N — not started
+
+> Composition owns the handoff between Runtime intent and Acquisition execution; neither module imports the other to perform that handoff.
+
+> Merely observing RunwayAcquisitionIntent is not acknowledgement.
+
+> A bounded plan is acknowledged before its execution begins because Composition has accepted ownership of that finite work.
+
+> Resource denial or an old-generation execution conflict is not acceptance; the Runtime intent remains outstanding.
+
+> No eligible target is an explicit currently-unserviceable acceptance and may be acknowledged without external execution.
+
+> Successful external work does not itself reset the local walk. Only committed candidate-visible supply change does.
+
+> Every selectable supply change is signalled back to the exact Runway scope that requested it when that scope is still active.
+
+> Admission committed under an obsolete Runtime scope remains valid canonical supply; stale Runtime notification never rolls it back.
+
+> Completion, failure, disconnection or acknowledgement never schedules an automatic retry or another Runway pass.
+
+> The integration owner never calls RunwayController.reconsider on its own.
+
+RunwayAcquisitionCycle.swift is the single new production owner in Composition. It is a concrete Sendable value over RunwayController and AcquisitionCoordinator, with typed executed/acceptedUnavailable/deferred outcomes and only its staleIntent error. Each run first compares the exact outstanding Runtime intent before any planning, takes one active-execution snapshot, calls the pure Planner once with explicit caller eligibility/resources and performs no target/catalog/Source discovery or database access. No existing production file or module dependency changes.
+
+noEligibleTargets is acknowledged as accepted unavailable for these current inputs, without implying permanent exhaustion. resourceDenied and activeGenerationConflict defer without acknowledgement, preserving the exact outstanding intent for a future explicit caller input change. A finite nonempty plan is acknowledged before any execution; a stale acknowledgement propagates and cannot start work. Composition traverses the complete plan sequentially in supplied order, awaiting one coordinator work item at a time. No parallel scheduler, TaskGroup, internal replan or automatic retry is introduced.
+
+After each successful execution result, ordered results are retained and committed selectableSupplyChanged immediately signals noteLocalSupplyChanged with the requesting intent.scope before advancing to later work. False results cause no signal. Multiple changing targets signal separately, permitting Runtime to coalesce a head reset if a caller-owned local slice has started between results. noActiveScope and scopeMismatch notification failures alone are ignored: global canonical Admission remains committed and no arbitrary replacement scope is signalled. Other errors propagate. A later target failure neither undoes prior canonical commits/signals nor recreates/acknowledges demand or schedules another pass.
+
+The owner imports only Acquisition and Runtime. It never calls reconsider, local production, candidate queries or publication, and owns no registry, database/catalog, defaults, clock, Task, timer, polling or background loop. Its sole loop walks the finite Planner work array. FeedSession/UI integration, real Syndication/network, catalog/SourceBinding mapping and concurrent target scheduling remain deferred; 3N is not started.
+
+The exact FeedMineCompositionTests target is added with Composition, Domain, Persistence, Acquisition, Editorial, Publication and Runtime dependencies only. Its one test file uses real temporary runtime storage, target authority, Planner, Coordinator, Admission, RunwayController, PublicationHistory, PublicationCoordinator and LocalProductionSlice, with a local one-slot test connector and explicit event controls. Existing tests remain unchanged.
+
+The full-loop proof creates one Edition/anchor, measures real ready-ahead zero, runs a real exhausted local slice, emits real Runway demand, admits a fake external batch transactionally, and observes a canonical candidate while publication still has one segment. The supply signal reopens local-first; only the test caller then reconsiders and runs the next real LocalProductionSlice, appending a second segment to the same Edition referencing the admitted revision. The original history/Edition remains intact; Acquisition itself publishes nothing.
+
+Tests also prove acknowledgement before first pull, accepted unavailable, resource/conflict deferral, reuse of the same intent after an explicit resource change, stale-gate precedence over invalid Planner inputs, checkpoint-only/exact-replay non-reset, error-after-ack without redemand, prior commits/signals surviving later error, obsolete/deactivated scope notification safety, separate immediate signals and sequential settled plan traversal. Numbered test 7 (the snapshot-to-ack race) is omitted under the contract's explicit exception: no deterministic insertion point exists without a production synchronization hook. No such hook is added; stale-intent proof and existing Runway stale-ack tests remain authority. Numbered test 13 is proven through real Runway state, not a production journal/hook.
