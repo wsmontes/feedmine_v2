@@ -146,8 +146,8 @@ final class PublicationStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.edition(id: edition.id))
     }
 
-    func testAppendRejectsPersistedFractionalTailAndSegmentGapAtomically() throws {
-        for tail in ["0.5", "2"] {
+    func testAppendRejectsPersistedMalformedTailAtomically() throws {
+        for tail in ["0.5", "'malformed'"] {
             let db = try StorageFixture.database(self)
             let store = PublicationStore(database: db)
             let edition = StorageFixture.edition()
@@ -155,7 +155,10 @@ final class PublicationStoreTests: XCTestCase {
             try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [a]), cards: [a])
             try store.appendSegment(StorageFixture.segment(edition, [b], ordinal: 1), cards: [b])
             try db.write { try $0.execute(sql: "UPDATE feed_segments SET ordinal = " + tail + " WHERE ordinal = 1") }
-            let ordinal: UInt64 = tail == "0.5" ? 1 : 3
+            XCTAssertThrowsError(try store.tail(editionID: edition.id)) { error in
+                guard case PublicationStoreError.corruption = error else { return XCTFail("Expected tail corruption: \(error)") }
+            }
+            let ordinal: UInt64 = 1
             XCTAssertThrowsError(try store.appendSegment(StorageFixture.segment(edition, [c], ordinal: ordinal), cards: [c])) { error in
                 guard case PublicationStoreError.corruption = error else { return XCTFail("Expected corruption: \(error)") }
             }
@@ -187,6 +190,118 @@ final class PublicationStoreTests: XCTestCase {
         let card = StorageFixture.card()
         try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [card]), cards: [card])
         XCTAssertEqual(try store.edition(id: edition.id), edition)
+    }
+
+    func testTailProgressionSurvivesCloseAndReopen() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let location = RuntimeDatabaseLocation(directory: root)
+        let edition = StorageFixture.edition()
+        do {
+            let database = try RuntimeDatabase(location: location), store = PublicationStore(database: database)
+            let first = StorageFixture.card()
+            try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [first]), cards: [first])
+            XCTAssertEqual(try store.tail(editionID: edition.id), .init(ordinal: 0))
+            for ordinal in UInt64(1)...2 {
+                let card = StorageFixture.card()
+                try store.appendSegment(StorageFixture.segment(edition, [card], ordinal: ordinal), cards: [card])
+                XCTAssertEqual(try store.tail(editionID: edition.id), .init(ordinal: ordinal))
+            }
+        }
+        let reopened = PublicationStore(database: try RuntimeDatabase(location: location))
+        XCTAssertEqual(try reopened.tail(editionID: edition.id), .init(ordinal: 2))
+    }
+
+    func testStaleTailAppendRefusesWithoutRenumberingOrPersistingCard() throws {
+        let store = PublicationStore(database: try StorageFixture.database(self))
+        let edition = StorageFixture.edition(), first = StorageFixture.card()
+        try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [first]), cards: [first])
+        let observedTail = try store.tail(editionID: edition.id)
+        XCTAssertEqual(observedTail.ordinal, 0)
+        let winner = StorageFixture.card(), stale = StorageFixture.card()
+        let winnerSegment = StorageFixture.segment(edition, [winner], ordinal: observedTail.ordinal + 1)
+        let staleSegment = StorageFixture.segment(edition, [stale], ordinal: observedTail.ordinal + 1)
+        try store.appendSegment(winnerSegment, cards: [winner])
+        XCTAssertThrowsError(try store.appendSegment(staleSegment, cards: [stale])) {
+            XCTAssertEqual($0 as? PublicationStoreError, .invalidAppendOrdinal)
+        }
+        XCTAssertNil(try store.card(id: stale.id))
+        XCTAssertEqual(try store.card(id: winner.id), winner)
+        XCTAssertEqual(try store.segments(editionID: edition.id).last, winnerSegment)
+        XCTAssertEqual(try store.segments(editionID: edition.id).count, 2)
+        XCTAssertEqual(try store.tail(editionID: edition.id).ordinal, 1)
+    }
+
+    func testHistoricalGapIsAuditedBySegmentsRatherThanHotAppend() throws {
+        let database = try StorageFixture.database(self), store = PublicationStore(database: database)
+        let edition = StorageFixture.edition(), a = StorageFixture.card(), b = StorageFixture.card(), c = StorageFixture.card()
+        try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [a]), cards: [a])
+        try store.appendSegment(StorageFixture.segment(edition, [b], ordinal: 1), cards: [b])
+        try database.write { try $0.execute(sql: "UPDATE feed_segments SET ordinal = 2 WHERE ordinal = 1") }
+        XCTAssertEqual(try store.tail(editionID: edition.id).ordinal, 2)
+        // Deliberate invariant: append validates the real tail, not arbitrary past gaps.
+        try store.appendSegment(StorageFixture.segment(edition, [c], ordinal: 3), cards: [c])
+        XCTAssertEqual(try store.card(id: c.id), c)
+        XCTAssertThrowsError(try store.segments(editionID: edition.id)) {
+            guard case PublicationStoreError.corruption = $0 else { return XCTFail("Expected historical corruption: \($0)") }
+        }
+    }
+
+    func testTailAndAppendRejectInvalidTailSchemaEmptyEditionAndOverflow() throws {
+        let database = try StorageFixture.database(self), store = PublicationStore(database: database)
+        XCTAssertThrowsError(try store.tail(editionID: FeedEditionID())) {
+            XCTAssertEqual($0 as? PublicationStoreError, .missingEdition)
+        }
+        let edition = StorageFixture.edition(), first = StorageFixture.card(), next = StorageFixture.card()
+        try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [first]), cards: [first])
+        try database.write { try $0.execute(sql: "UPDATE feed_segments SET publication_schema_version = 2") }
+        for operation in [
+            { _ = try store.tail(editionID: edition.id) },
+            { try store.appendSegment(StorageFixture.segment(edition, [next], ordinal: 1), cards: [next]) }
+        ] {
+            XCTAssertThrowsError(try operation()) {
+                guard case PublicationStoreError.corruption = $0 else { return XCTFail("Expected schema corruption: \($0)") }
+            }
+        }
+        XCTAssertNil(try store.card(id: next.id))
+        try database.write { try $0.execute(sql: "UPDATE feed_segments SET publication_schema_version = 1, ordinal = ?", arguments: [Int64.max]) }
+        XCTAssertEqual(try store.tail(editionID: edition.id).ordinal, UInt64(Int64.max))
+        XCTAssertThrowsError(try store.appendSegment(StorageFixture.segment(edition, [next], ordinal: UInt64(Int64.max) + 1), cards: [next])) {
+            XCTAssertEqual($0 as? PublicationStoreError, .invalidAppendOrdinal)
+        }
+        try database.write { db in
+            try db.execute(sql: "DELETE FROM published_cards")
+            try db.execute(sql: "DELETE FROM feed_segments")
+        }
+        XCTAssertThrowsError(try store.tail(editionID: edition.id)) {
+            XCTAssertEqual($0 as? PublicationStoreError, .corruption("empty edition"))
+        }
+        XCTAssertThrowsError(try store.appendSegment(StorageFixture.segment(edition, [next], ordinal: 0), cards: [next])) {
+            XCTAssertEqual($0 as? PublicationStoreError, .corruption("empty edition"))
+        }
+    }
+
+    func testTailQueryUsesExistingEditionOrdinalIndexWithoutTemporaryOrder() throws {
+        let database = try StorageFixture.database(self), store = PublicationStore(database: database)
+        let edition = StorageFixture.edition(), card = StorageFixture.card()
+        try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [card]), cards: [card])
+        try database.read { db in
+            let indexes = try Row.fetchAll(db, sql: "PRAGMA index_list('feed_segments')")
+            var matchingIndexes: [String] = []
+            for index in indexes where (index["unique"] as Int) == 1 {
+                let name: String = index["name"]
+                let fields = try Row.fetchAll(db, sql: "SELECT name FROM pragma_index_info(?) ORDER BY seqno", arguments: [name])
+                    .map { $0["name"] as String }
+                if fields == ["edition_id", "ordinal"] { matchingIndexes.append(name) }
+            }
+            XCTAssertFalse(matchingIndexes.isEmpty)
+            let details = try Row.fetchAll(db, sql: """
+                EXPLAIN QUERY PLAN SELECT ordinal, publication_schema_version FROM feed_segments
+                WHERE edition_id = ? ORDER BY ordinal DESC LIMIT 1
+                """, arguments: [edition.id.rawValue.uuidString.lowercased()]).map { $0["detail"] as String }
+            XCTAssertTrue(details.contains { detail in matchingIndexes.contains { detail.contains($0) } }, "\(details)")
+            XCTAssertFalse(details.contains { $0.uppercased().contains("TEMP B-TREE") }, "\(details)")
+        }
     }
 
 }

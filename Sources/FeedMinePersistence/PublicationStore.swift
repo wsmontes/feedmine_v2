@@ -170,24 +170,46 @@ public struct PublicationStore: Sendable {
                 arguments: [PersistenceValueCoding.uuid(segment.editionID.rawValue)]) else { throw PublicationStoreError.missingEdition }
             let edition = try Self.decodeEdition(row)
             // Read and validate the actual tail within the serialized writer transaction.
-            let editionKey = PersistenceValueCoding.uuid(segment.editionID.rawValue)
-            let retained = try Row.fetchAll(db, sql: "SELECT ordinal, publication_schema_version FROM feed_segments WHERE edition_id = ? ORDER BY ordinal", arguments: [editionKey])
-            guard !retained.isEmpty else { throw PublicationStoreError.corruption("empty edition") }
-            for (index, row) in retained.enumerated() {
-                let fields = PublicationRecordFields(row)
-                guard try fields.counter("ordinal") == UInt64(index),
-                    try fields.counter("publication_schema_version") == edition.publicationSchemaVersion else {
-                    throw PublicationStoreError.corruption("retained segment ordinal/schema")
-                }
-            }
-            let tailRow = try Row.fetchOne(db, sql: "SELECT MAX(ordinal) AS tail FROM feed_segments WHERE edition_id = ?", arguments: [editionKey])!
-            let tail = try PublicationRecordFields(tailRow).integer("tail")
-            guard tail >= 0, tail < Int64.max, segment.ordinal == UInt64(tail) + 1 else {
+            let tail = try Self.readTail(editionID: segment.editionID,
+                schemaVersion: edition.publicationSchemaVersion, in: db)
+            guard tail.ordinal < UInt64(Int64.max), segment.ordinal == tail.ordinal + 1 else {
                 throw PublicationStoreError.invalidAppendOrdinal
             }
             try Self.validate(segment, cards: cards, version: edition.publicationSchemaVersion)
             try Self.insertSegment(segment, cards: cards, db: db)
         }
+    }
+
+    public struct TailRecord: Hashable, Sendable {
+        public let ordinal: UInt64
+        public init(ordinal: UInt64) { self.ordinal = ordinal }
+    }
+
+    public func tail(editionID: FeedEditionID) throws -> TailRecord {
+        try database.read { db in
+            guard let row = try Row.fetchOne(db,
+                sql: "SELECT publication_schema_version FROM feed_editions WHERE id = ?",
+                arguments: [PersistenceValueCoding.uuid(editionID.rawValue)]) else {
+                throw PublicationStoreError.missingEdition
+            }
+            return try Self.readTail(editionID: editionID,
+                schemaVersion: PublicationRecordFields(row).counter("publication_schema_version"), in: db)
+        }
+    }
+
+    private static func readTail(editionID: FeedEditionID, schemaVersion: UInt64, in db: Database) throws -> TailRecord {
+        guard let row = try Row.fetchOne(db, sql: """
+            SELECT ordinal, publication_schema_version FROM feed_segments
+            WHERE edition_id = ? ORDER BY ordinal DESC LIMIT 1
+            """, arguments: [PersistenceValueCoding.uuid(editionID.rawValue)]) else {
+            throw PublicationStoreError.corruption("empty edition")
+        }
+        let fields = PublicationRecordFields(row)
+        let ordinal = try fields.counter("ordinal")
+        guard try fields.counter("publication_schema_version") == schemaVersion else {
+            throw PublicationStoreError.corruption("tail publication schema")
+        }
+        return TailRecord(ordinal: ordinal)
     }
 
     public func edition(id: FeedEditionID) throws -> EditionRecord? {
