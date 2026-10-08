@@ -1,42 +1,369 @@
-//
-// File: ContentStore.swift
-// Module: FeedMinePersistence
-//
-// Responsibility:
-//   API concreta futura para persistir/consultar canonical local supply.
-//
-// Owns:
-//   Future ownership: Durability and local queries for sources, bindings, records, revisions, memberships, relations and acquisition evidence.
-//
-// Does not own:
-//   Scoring, selection, publication or networking.
-//
-// Allowed dependencies:
-//   FeedMineDomain. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-11, INV-12; Persistence does not make editorial decisions.
-//
-// Planned public surface:
-//   Durability and local queries for sources, bindings, records, revisions, memberships, relations and acquisition evidence. Documentation only; no API is declared in this phase.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Owns: atomic canonical accepted facts, immutable revisions and supply projection.
+// Does not own: admission, candidate queries, acquisition or published history.
 
-// Specification notes:
-// Responsibility:
-//
-// API concreta futura para persistir/consultar canonical local supply.
-//
-// Owns persistence de:
-//
-// - sources;
-// - bindings;
-// - origin records;
-// - revisions;
-// - memberships;
-// - relations;
-// - acquisition evidence necessária.
-//
-// Does not score/select/publish.
+import Foundation
+import GRDB
+import FeedMineDomain
+
+public enum ContentStoreError: Error, Equatable, Sendable {
+    case invalidRepresentation(String)
+    case corruption(String)
+    case originIdentityConflict
+    case revisionConflict
+    case versionIdentityConflict
+    case staleCurrent(expected: OriginRevisionID?, actual: OriginRevisionID?)
+    case invalidChange(String)
+}
+
+public struct ContentStore: Sendable {
+    private let database: RuntimeDatabase
+    public init(database: RuntimeDatabase) { self.database = database }
+
+    public enum CurrentRevisionExpectation: Equatable, Sendable {
+        case none
+        case revision(OriginRevisionID)
+
+        fileprivate var id: OriginRevisionID? {
+            switch self {
+            case .none: return nil
+            case .revision(let id): return id
+            }
+        }
+    }
+
+    public enum CurrentRevisionUpdate: Equatable, Sendable {
+        case unchanged
+        case useSuppliedRevision
+        case clear
+    }
+
+    public enum MembershipMutation: Equatable, Sendable {
+        case upsert(sourceID: SourceID, kind: SourceMembershipKind, observedAt: Date)
+        case remove(sourceID: SourceID)
+
+        fileprivate var sourceID: SourceID {
+            switch self {
+            case .upsert(let id, _, _), .remove(let id): return id
+            }
+        }
+    }
+
+    public struct CanonicalChange: Sendable {
+        public let recordID: OriginRecordID
+        public let externalObjectIdentity: ExternalIdentity
+        public let revision: OriginRevision
+        public let availability: OriginAvailability
+        public let observedAt: Date
+        public let expectedCurrent: CurrentRevisionExpectation
+        public let currentUpdate: CurrentRevisionUpdate
+        public let membershipMutations: [MembershipMutation]
+
+        public init(recordID: OriginRecordID, externalObjectIdentity: ExternalIdentity,
+            revision: OriginRevision, availability: OriginAvailability, observedAt: Date,
+            expectedCurrent: CurrentRevisionExpectation, currentUpdate: CurrentRevisionUpdate,
+            membershipMutations: [MembershipMutation]) {
+            self.recordID = recordID
+            self.externalObjectIdentity = externalObjectIdentity
+            self.revision = revision
+            self.availability = availability
+            self.observedAt = observedAt
+            self.expectedCurrent = expectedCurrent
+            self.currentUpdate = currentUpdate
+            self.membershipMutations = membershipMutations
+        }
+    }
+
+    public func commitCanonicalChange(_ change: CanonicalChange) throws {
+        try database.write { try self.apply(change, in: $0) }
+    }
+
+    // Transaction body also permits a future Persistence-owned shared transaction.
+    // It never opens a nested transaction or exposes GRDB publicly.
+    func apply(_ change: CanonicalChange, in db: Database) throws {
+        try Self.coding {
+            try Self.validate(change)
+            let key = Self.key(change.recordID.rawValue)
+            let object = change.externalObjectIdentity
+            let existing = try Self.record(change.recordID, in: db)
+            if let existing, !Self.sameIdentity(existing.externalObjectIdentity, object) {
+                throw ContentStoreError.originIdentityConflict
+            }
+            if let row = try Row.fetchOne(db, sql: """
+                SELECT id FROM origin_records WHERE object_connector_kind = ? AND object_namespace = ?
+                    AND object_value = ? AND object_role = ?
+                """, arguments: [object.connectorKind.rawValue, object.namespace, object.value, object.role.rawValue]),
+                try ContentFields(row).uuid("id") != change.recordID.rawValue {
+                throw ContentStoreError.originIdentityConflict
+            }
+            let actual = existing?.currentRevisionID
+            guard actual == change.expectedCurrent.id else {
+                throw ContentStoreError.staleCurrent(expected: change.expectedCurrent.id, actual: actual)
+            }
+            let observed = try PersistenceValueCoding.date(change.observedAt, field: "last_observed_at")
+            if existing == nil {
+                try db.execute(sql: """
+                    INSERT INTO origin_records (id, object_connector_kind, object_namespace, object_value,
+                        object_role, current_revision_id, availability, first_observed_at, last_observed_at)
+                    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+                    """, arguments: [key, object.connectorKind.rawValue, object.namespace, object.value,
+                        object.role.rawValue, change.availability.rawValue, observed, observed])
+            }
+            let revision = change.revision
+            if let stored = try Self.revision(revision.id, in: db) {
+                guard Self.sameRevision(stored, revision) else { throw ContentStoreError.revisionConflict }
+            } else {
+                if let version = revision.externalVersionIdentity,
+                    try Row.fetchOne(db, sql: """
+                        SELECT id FROM origin_revisions WHERE origin_record_id = ? AND version_connector_kind = ?
+                            AND version_namespace = ? AND version_value = ? AND version_role = ?
+                        """, arguments: [key, version.connectorKind.rawValue, version.namespace,
+                            version.value, version.role.rawValue]) != nil {
+                    throw ContentStoreError.versionIdentityConflict
+                }
+                try Self.insertRevision(revision, in: db)
+            }
+            for mutation in change.membershipMutations {
+                switch mutation {
+                case .upsert(let source, let kind, let date):
+                    let time = try PersistenceValueCoding.date(date, field: "membership.observed_at")
+                    try db.execute(sql: """
+                        INSERT INTO source_memberships (origin_record_id, source_id, membership_kind,
+                            first_observed_at, last_observed_at) VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(origin_record_id, source_id) DO UPDATE SET
+                            membership_kind = excluded.membership_kind, last_observed_at = excluded.last_observed_at
+                        """, arguments: [key, Self.key(source.rawValue), kind.rawValue, time, time])
+                case .remove(let source):
+                    try db.execute(sql: "DELETE FROM source_memberships WHERE origin_record_id = ? AND source_id = ?",
+                        arguments: [key, Self.key(source.rawValue)])
+                }
+            }
+            let current: OriginRevisionID?
+            switch change.currentUpdate {
+            case .unchanged: current = actual
+            case .useSuppliedRevision: current = revision.id
+            case .clear: current = nil
+            }
+            try db.execute(sql: "UPDATE origin_records SET current_revision_id = ? WHERE id = ?",
+                arguments: [current.map { Self.key($0.rawValue) }, key])
+            try db.execute(sql: "UPDATE origin_records SET availability = ?, last_observed_at = ? WHERE id = ?",
+                arguments: [change.availability.rawValue, observed, key])
+            try Self.refreshSupply(change.recordID, in: db)
+        }
+    }
+
+    public func originRecord(id: OriginRecordID) throws -> OriginRecord? {
+        try database.read { db in try Self.coding { try Self.record(id, in: db) } }
+    }
+    public func originRevision(id: OriginRevisionID) throws -> OriginRevision? {
+        try database.read { db in try Self.coding { try Self.revision(id, in: db) } }
+    }
+    public func currentRevision(originRecordID: OriginRecordID) throws -> OriginRevision? {
+        try database.read { db in
+            try Self.coding {
+                guard let record = try Self.record(originRecordID, in: db) else { return nil }
+                return try Self.current(record, in: db)
+            }
+        }
+    }
+    public func memberships(originRecordID: OriginRecordID) throws -> [SourceMembership] {
+        try database.read { db in
+            try Self.coding {
+                try Row.fetchAll(db, sql: "SELECT * FROM source_memberships WHERE origin_record_id = ? ORDER BY source_id COLLATE BINARY ASC",
+                    arguments: [Self.key(originRecordID.rawValue)]).map { row in
+                    let f = ContentFields(row)
+                    guard let kind = SourceMembershipKind(rawValue: try f.string("membership_kind")) else {
+                        throw ContentStoreError.corruption("membership_kind")
+                    }
+                    return SourceMembership(originRecordID: OriginRecordID(rawValue: try f.uuid("origin_record_id")),
+                        sourceID: SourceID(rawValue: try f.uuid("source_id")), kind: kind,
+                        firstObservedAt: try f.date("first_observed_at"), lastObservedAt: try f.date("last_observed_at"))
+                }
+            }
+        }
+    }
+
+    private static func key(_ id: UUID) -> String { PersistenceValueCoding.uuid(id) }
+    private static func coding<T>(_ body: () throws -> T) throws -> T {
+        do { return try body() }
+        catch let error as PersistenceValueCodingError {
+            switch error {
+            case .invalidRepresentation(let field): throw ContentStoreError.invalidRepresentation(field)
+            case .corruption(let field): throw ContentStoreError.corruption(field)
+            }
+        }
+    }
+
+    private static func validate(_ change: CanonicalChange) throws {
+        guard change.externalObjectIdentity.role == .object else { throw ContentStoreError.invalidChange("object role") }
+        let revision = change.revision
+        guard revision.originRecordID == change.recordID else { throw ContentStoreError.invalidChange("revision origin") }
+        if let version = revision.externalVersionIdentity {
+            guard version.role == .version,
+                exact(version.connectorKind.rawValue, change.externalObjectIdentity.connectorKind.rawValue) else {
+                throw ContentStoreError.invalidChange("version role/connector")
+            }
+        }
+        guard Set(change.membershipMutations.map(\.sourceID)).count == change.membershipMutations.count else {
+            throw ContentStoreError.invalidChange("duplicate membership mutation")
+        }
+        _ = try PersistenceValueCoding.date(change.observedAt, field: "last_observed_at")
+        _ = try PersistenceValueCoding.date(revision.observedAt, field: "observed_at")
+        _ = try revision.authoredAt.map { try PersistenceValueCoding.date($0, field: "authored_at") }
+        _ = try revision.modifiedAt.map { try PersistenceValueCoding.date($0, field: "modified_at") }
+        for mutation in change.membershipMutations {
+            if case .upsert(_, _, let date) = mutation {
+                _ = try PersistenceValueCoding.date(date, field: "membership.observed_at")
+            }
+        }
+        if let link = revision.primaryLink {
+            guard let decoded = URL(string: link.absoluteString), exact(decoded.absoluteString, link.absoluteString) else {
+                throw ContentStoreError.invalidRepresentation("primary_link")
+            }
+        }
+    }
+
+    // Swift String equality folds Unicode canonical equivalents; persisted opaque text
+    // instead follows SQLite BINARY identity and must compare its exact UTF-8 bytes.
+    private static func exact(_ a: String, _ b: String) -> Bool { a.utf8.elementsEqual(b.utf8) }
+    private static func exact(_ a: String?, _ b: String?) -> Bool {
+        switch (a, b) {
+        case (nil, nil): return true
+        case (.some(let a), .some(let b)): return exact(a, b)
+        default: return false
+        }
+    }
+    private static func sameIdentity(_ a: ExternalIdentity, _ b: ExternalIdentity) -> Bool {
+        exact(a.connectorKind.rawValue, b.connectorKind.rawValue) && exact(a.namespace, b.namespace)
+            && exact(a.value, b.value) && a.role == b.role
+    }
+    private static func sameRevision(_ a: OriginRevision, _ b: OriginRevision) -> Bool {
+        let versionEqual: Bool
+        switch (a.externalVersionIdentity, b.externalVersionIdentity) {
+        case (nil, nil): versionEqual = true
+        case (.some(let a), .some(let b)): versionEqual = sameIdentity(a, b)
+        default: versionEqual = false
+        }
+        return a.id == b.id && a.originRecordID == b.originRecordID && versionEqual
+            && exact(a.headline, b.headline) && exact(a.summary, b.summary) && exact(a.bodyText, b.bodyText)
+            && a.authoredAt == b.authoredAt && a.modifiedAt == b.modifiedAt && a.observedAt == b.observedAt
+            && exact(a.language, b.language) && exact(a.primaryLink?.absoluteString, b.primaryLink?.absoluteString)
+            && exact(a.searchProjection, b.searchProjection) && a.providerID == b.providerID
+    }
+
+    private static func record(_ id: OriginRecordID, in db: Database) throws -> OriginRecord? {
+        guard let row = try Row.fetchOne(db, sql: "SELECT * FROM origin_records WHERE id = ?", arguments: [key(id.rawValue)]) else { return nil }
+        let f = ContentFields(row)
+        guard let availability = OriginAvailability(rawValue: try f.string("availability")) else {
+            throw ContentStoreError.corruption("availability")
+        }
+        return OriginRecord(id: OriginRecordID(rawValue: try f.uuid("id")),
+            externalObjectIdentity: try f.identity(prefix: "object", role: .object),
+            currentRevisionID: try f.optionalUUID("current_revision_id").map { OriginRevisionID(rawValue: $0) },
+            availability: availability, firstObservedAt: try f.date("first_observed_at"), lastObservedAt: try f.date("last_observed_at"))
+    }
+
+    private static func revision(_ id: OriginRevisionID, in db: Database) throws -> OriginRevision? {
+        guard let row = try Row.fetchOne(db, sql: "SELECT * FROM origin_revisions WHERE id = ?", arguments: [key(id.rawValue)]) else { return nil }
+        let f = ContentFields(row)
+        let versionFields = try ["connector_kind", "namespace", "value", "role"].map { try f.optionalString("version_" + $0) }
+        let version: ExternalIdentity?
+        if versionFields.allSatisfy({ $0 == nil }) { version = nil }
+        else { version = try f.identity(prefix: "version", role: .version) }
+        let link: URL?
+        if let text = try f.optionalString("primary_link") {
+            guard let url = URL(string: text), exact(url.absoluteString, text) else { throw ContentStoreError.corruption("primary_link") }
+            link = url
+        } else { link = nil }
+        let originID = OriginRecordID(rawValue: try f.uuid("origin_record_id"))
+        if let version {
+            guard let origin = try record(originID, in: db),
+                exact(version.connectorKind.rawValue, origin.connectorKind.rawValue) else {
+                throw ContentStoreError.corruption("version connector/origin")
+            }
+        }
+        return OriginRevision(id: OriginRevisionID(rawValue: try f.uuid("id")), originRecordID: originID,
+            externalVersionIdentity: version, headline: try f.optionalString("headline"), summary: try f.optionalString("summary"),
+            bodyText: try f.optionalString("body_text"), authoredAt: try f.optionalDate("authored_at"),
+            modifiedAt: try f.optionalDate("modified_at"), observedAt: try f.date("observed_at"),
+            language: try f.optionalString("language"), primaryLink: link, searchProjection: try f.optionalString("search_projection"),
+            providerID: try f.optionalUUID("provider_id").map { ProviderID(rawValue: $0) })
+    }
+
+    private static func current(_ record: OriginRecord, in db: Database) throws -> OriginRevision? {
+        guard let id = record.currentRevisionID else { return nil }
+        guard let revision = try revision(id, in: db), revision.originRecordID == record.id else {
+            throw ContentStoreError.corruption("current_revision_id")
+        }
+        return revision
+    }
+
+    private static func insertRevision(_ revision: OriginRevision, in db: Database) throws {
+        let version = revision.externalVersionIdentity
+        try db.execute(sql: """
+            INSERT INTO origin_revisions (id, origin_record_id, version_connector_kind, version_namespace,
+                version_value, version_role, headline, summary, body_text, authored_at, modified_at, observed_at,
+                language, primary_link, search_projection, provider_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, arguments: [key(revision.id.rawValue), key(revision.originRecordID.rawValue),
+                version?.connectorKind.rawValue, version?.namespace, version?.value, version?.role.rawValue,
+                revision.headline, revision.summary, revision.bodyText,
+                try revision.authoredAt.map { try PersistenceValueCoding.date($0, field: "authored_at") },
+                try revision.modifiedAt.map { try PersistenceValueCoding.date($0, field: "modified_at") },
+                try PersistenceValueCoding.date(revision.observedAt, field: "observed_at"), revision.language,
+                revision.primaryLink?.absoluteString, revision.searchProjection, revision.providerID.map { key($0.rawValue) }])
+    }
+
+    private static func refreshSupply(_ id: OriginRecordID, in db: Database) throws {
+        guard let record = try record(id, in: db) else { throw ContentStoreError.corruption("origin_record_id") }
+        let hasMembership = try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM source_memberships WHERE origin_record_id = ?)", arguments: [key(id.rawValue)]) == true
+        guard (record.availability == .available || record.availability == .updated), record.currentRevisionID != nil, hasMembership else {
+            try db.execute(sql: "DELETE FROM selection_supply WHERE origin_record_id = ?", arguments: [key(id.rawValue)])
+            return
+        }
+        guard let revision = try current(record, in: db) else { throw ContentStoreError.corruption("current_revision_id") }
+        let date = revision.authoredAt ?? revision.observedAt
+        try db.execute(sql: """
+            INSERT INTO selection_supply (origin_record_id, origin_revision_id, sort_date, sort_date_basis)
+            VALUES (?, ?, ?, ?) ON CONFLICT(origin_record_id) DO UPDATE SET
+                origin_revision_id = excluded.origin_revision_id, sort_date = excluded.sort_date,
+                sort_date_basis = excluded.sort_date_basis
+            """, arguments: [key(id.rawValue), key(revision.id.rawValue),
+                try PersistenceValueCoding.date(date, field: "sort_date"), revision.authoredAt == nil ? "observedFallback" : "authored"])
+    }
+}
+
+private struct ContentFields {
+    let row: Row
+    init(_ row: Row) { self.row = row }
+    func optionalString(_ field: String) throws -> String? {
+        let value: DatabaseValue = row[field]
+        switch value.storage {
+        case .null: return nil
+        case .string(let text): return text
+        default: throw ContentStoreError.corruption(field)
+        }
+    }
+    func string(_ field: String) throws -> String {
+        guard let text = try optionalString(field) else { throw ContentStoreError.corruption(field) }
+        return text
+    }
+    func uuid(_ field: String) throws -> UUID { try PersistenceValueCoding.uuid(string(field), field: field) }
+    func optionalUUID(_ field: String) throws -> UUID? { try optionalString(field).map { try PersistenceValueCoding.uuid($0, field: field) } }
+    func optionalDate(_ field: String) throws -> Date? {
+        let value: DatabaseValue = row[field]
+        switch value.storage {
+        case .null: return nil
+        case .double(let real): return try PersistenceValueCoding.date(real, field: field)
+        default: throw ContentStoreError.corruption(field)
+        }
+    }
+    func date(_ field: String) throws -> Date {
+        guard let date = try optionalDate(field) else { throw ContentStoreError.corruption(field) }
+        return date
+    }
+    func identity(prefix: String, role: ExternalIdentityRole) throws -> ExternalIdentity {
+        guard try string(prefix + "_role") == role.rawValue else { throw ContentStoreError.corruption(prefix + "_role") }
+        return ExternalIdentity(connectorKind: ConnectorKind(rawValue: try string(prefix + "_connector_kind")),
+            namespace: try string(prefix + "_namespace"), value: try string(prefix + "_value"), role: role)
+    }
+}

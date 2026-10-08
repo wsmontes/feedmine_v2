@@ -343,26 +343,26 @@ public struct PublicationStore: Sendable {
             PersistenceValueCoding.uuid(e.id.rawValue).databaseValue,
             PersistenceValueCoding.uuid(r.id.rawValue).databaseValue,
             kind.databaseValue, source.databaseValue, query.databaseValue,
-            PersistenceValueCoding.counter(r.catalogGeneration.rawValue, field: "catalogGeneration").databaseValue,
-            PersistenceValueCoding.counter(r.userSelectionVersion.rawValue, field: "userSelectionVersion").databaseValue,
-            PersistenceValueCoding.counter(r.eligibilityPolicyVersion.rawValue, field: "eligibilityPolicyVersion").databaseValue,
-            PersistenceValueCoding.counter(r.scoringPolicyVersion.rawValue, field: "scoringPolicyVersion").databaseValue,
-            PersistenceValueCoding.counter(r.sequencingPolicyVersion.rawValue, field: "sequencingPolicyVersion").databaseValue,
-            PersistenceValueCoding.counter(r.exposurePolicyVersion.rawValue, field: "exposurePolicyVersion").databaseValue,
-            PersistenceValueCoding.counter(r.selectionSchemaVersion.rawValue, field: "selectionSchemaVersion").databaseValue,
-            PersistenceValueCoding.counter(e.publicationSchemaVersion, field: "publication_schema_version").databaseValue,
+            PublicationValueCoding.counter(r.catalogGeneration.rawValue, field: "catalogGeneration").databaseValue,
+            PublicationValueCoding.counter(r.userSelectionVersion.rawValue, field: "userSelectionVersion").databaseValue,
+            PublicationValueCoding.counter(r.eligibilityPolicyVersion.rawValue, field: "eligibilityPolicyVersion").databaseValue,
+            PublicationValueCoding.counter(r.scoringPolicyVersion.rawValue, field: "scoringPolicyVersion").databaseValue,
+            PublicationValueCoding.counter(r.sequencingPolicyVersion.rawValue, field: "sequencingPolicyVersion").databaseValue,
+            PublicationValueCoding.counter(r.exposurePolicyVersion.rawValue, field: "exposurePolicyVersion").databaseValue,
+            PublicationValueCoding.counter(r.selectionSchemaVersion.rawValue, field: "selectionSchemaVersion").databaseValue,
+            PublicationValueCoding.counter(e.publicationSchemaVersion, field: "publication_schema_version").databaseValue,
             PersistenceValueCoding.seed(e.selectionSeed).databaseValue,
-            PersistenceValueCoding.date(e.createdAt, field: "created_at").databaseValue
+            PublicationValueCoding.date(e.createdAt, field: "created_at").databaseValue
         ]
     }
 
     private static func segmentValues(_ s: SegmentRecord) throws -> [DatabaseValue] {
         try [PersistenceValueCoding.uuid(s.id.rawValue).databaseValue,
              PersistenceValueCoding.uuid(s.editionID.rawValue).databaseValue,
-             PersistenceValueCoding.counter(s.ordinal, field: "ordinal").databaseValue,
+             PublicationValueCoding.counter(s.ordinal, field: "ordinal").databaseValue,
              PersistenceValueCoding.seed(s.segmentSeed).databaseValue,
-             PersistenceValueCoding.counter(s.publicationSchemaVersion, field: "publication_schema_version").databaseValue,
-             PersistenceValueCoding.date(s.createdAt, field: "created_at").databaseValue]
+             PublicationValueCoding.counter(s.publicationSchemaVersion, field: "publication_schema_version").databaseValue,
+             PublicationValueCoding.date(s.createdAt, field: "created_at").databaseValue]
     }
 
     private static func decodeEdition(_ row: Row) throws -> EditionRecord {
@@ -420,7 +420,7 @@ public struct PublicationStore: Sendable {
             (c.contentClusterID.map { PersistenceValueCoding.uuid($0.rawValue) }).databaseValue,
             (c.title).databaseValue,
             (c.primaryText).databaseValue,
-            (c.timestampValue.map { try PersistenceValueCoding.date($0, field: "timestamp_value") }).databaseValue,
+            (c.timestampValue.map { try PublicationValueCoding.date($0, field: "timestamp_value") }).databaseValue,
             (c.timestampKind).databaseValue,
             (c.mediaKey).databaseValue,
             (c.mediaPixelWidth).databaseValue,
@@ -496,12 +496,40 @@ struct PublicationRecordFields {
     }
     func date(_ field: String) throws -> Date {
         guard let real = try optionalReal(field) else { throw PublicationStoreError.corruption(field) }
-        return try PersistenceValueCoding.date(real, field: field)
+        return try PublicationValueCoding.date(real, field: field)
     }
     func optionalDate(_ field: String) throws -> Date? {
-        try optionalReal(field).map { try PersistenceValueCoding.date($0, field: field) }
+        try optionalReal(field).map { try PublicationValueCoding.date($0, field: field) }
     }
-    func uuid(_ field: String) throws -> UUID { try PersistenceValueCoding.uuid(string(field), field: field) }
-    func optionalUUID(_ field: String) throws -> UUID? { try optionalString(field).map { try PersistenceValueCoding.uuid($0, field: field) } }
-    func counter(_ field: String) throws -> UInt64 { try PersistenceValueCoding.counter(integer(field), field: field) }
+    func uuid(_ field: String) throws -> UUID { try PublicationValueCoding.uuid(string(field), field: field) }
+    func optionalUUID(_ field: String) throws -> UUID? { try optionalString(field).map { try PublicationValueCoding.uuid($0, field: field) } }
+    func counter(_ field: String) throws -> UInt64 { try PublicationValueCoding.counter(integer(field), field: field) }
+}
+
+// Preserve the publication/session boundary while the shared codec stays neutral.
+private enum PublicationValueCoding {
+    private static func translate<T>(_ body: () throws -> T) throws -> T {
+        do { return try body() }
+        catch let error as PersistenceValueCodingError {
+            switch error {
+            case .invalidRepresentation(let field): throw PublicationStoreError.invalidRepresentation(field)
+            case .corruption(let field): throw PublicationStoreError.corruption(field)
+            }
+        }
+    }
+    static func uuid(_ value: String, field: String) throws -> UUID {
+        try translate { try PersistenceValueCoding.uuid(value, field: field) }
+    }
+    static func counter(_ value: UInt64, field: String) throws -> Int64 {
+        try translate { try PersistenceValueCoding.counter(value, field: field) }
+    }
+    static func counter(_ value: Int64, field: String) throws -> UInt64 {
+        try translate { try PersistenceValueCoding.counter(value, field: field) }
+    }
+    static func date(_ value: Date, field: String) throws -> Double {
+        try translate { try PersistenceValueCoding.date(value, field: field) }
+    }
+    static func date(_ value: Double, field: String) throws -> Date {
+        try translate { try PersistenceValueCoding.date(value, field: field) }
+    }
 }

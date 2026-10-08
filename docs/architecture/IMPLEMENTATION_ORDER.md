@@ -61,8 +61,12 @@ Phase 2I — complete
 
 Phase 3A — canonical local supply design gate — complete
 
-Phase 3B1 — canonical supply schema — current
+Phase 3B1 — canonical supply schema — complete
+
+Phase 3B2 — atomic canonical ContentStore — complete
+
+Phase 3B3 — bounded candidate query — deferred
 
 Viewport movement remains memory-local. An explicit current-position checkpoint operation supplies durability; app lifecycle timing and automatic checkpoint policy remain deferred.
 
-Phases 2G–2I close the local publication/session vertical slice. Phase 3A precedes network acquisition because acquisition needs a canonical authority to admit into; its design gate is [CANONICAL_SUPPLY_DESIGN.md](CANONICAL_SUPPLY_DESIGN.md). Phase 3B1 implements schema only; ContentStore and Phase 3B2 have not started. The macro phase numbering above remains unchanged.
+Phases 2G–2I close the local publication/session vertical slice. Phase 3A precedes network acquisition because acquisition needs a canonical authority to admit into; its design gate is [CANONICAL_SUPPLY_DESIGN.md](CANONICAL_SUPPLY_DESIGN.md). Phase 3B1 completed the schema; Phase 3B2 implemented atomic ContentStore changes and exact reads. Phase 3B3 bounded candidate queries remain deferred. The macro phase numbering above remains unchanged.
