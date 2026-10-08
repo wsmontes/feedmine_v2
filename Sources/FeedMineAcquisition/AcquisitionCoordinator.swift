@@ -9,6 +9,7 @@ public enum AcquisitionExecutionStop: Hashable, Sendable {
     case upToDate
     case disconnected
     case cancelled
+    case operationalFailure(ConnectorOperationalFailure)
 }
 
 public struct AcquisitionExecutionResult: Hashable, Sendable {
@@ -51,6 +52,7 @@ public actor AcquisitionCoordinator {
     }
     private let database: RuntimeDatabase
     private let connectorForTarget: @Sendable (AcquisitionTarget) -> (any FeedConnector)?
+    private var selectionAfter: AcquisitionTargetID?
     private var inFlight: [AcquisitionTargetID: InFlight] = [:]
 
     public init(database: RuntimeDatabase,
@@ -62,6 +64,20 @@ public actor AcquisitionCoordinator {
     public func activeExecutions() -> [AcquisitionActiveExecution] {
         inFlight.map { AcquisitionActiveExecution(targetID: $0.key, generation: $0.value.generation)! }
             .sorted { $0.targetID.rawValue.uuidString < $1.targetID.rawValue.uuidString }
+    }
+
+    /// Atomically lends the shared position to a caller's pure planner and consumes its finite selection.
+    /// No eligibility, bounds or generation decisions are made by this owner.
+    public func selectionOpportunity(
+        _ select: @Sendable (AcquisitionTargetID?, [AcquisitionActiveExecution]) throws -> AcquisitionPlanningResult
+    ) rethrows -> AcquisitionPlanningResult {
+        let result = try select(selectionAfter, activeExecutions())
+        if case .planned(let plan) = result, let last = plan.work.last {
+            switch last {
+            case .start(let target, _), .joinActive(let target): selectionAfter = target.id
+            }
+        }
+        return result
     }
 
     public func execute(_ work: AcquisitionPlannedWork) async throws -> AcquisitionExecutionResult {
@@ -120,6 +136,7 @@ public actor AcquisitionCoordinator {
             let event: FeedConnectorEvent
             do { event = try await connector.pull(request) }
             catch is CancellationError { return result(.cancelled) }
+            catch let failure as ConnectorOperationalFailure { return result(.operationalFailure(failure)) }
             switch event {
             case .finished: return result(.finished)
             case .upToDate: return result(.upToDate)

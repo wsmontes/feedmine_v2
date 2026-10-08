@@ -79,12 +79,16 @@ final class FeedRunwayDriverTests: XCTestCase {
                 language:nil,primaryLink:nil,searchProjection:nil,providerID:nil,memberships:[.init(sourceID:source,kind:.direct)],mediaCandidates:[])!
             _ = try AdmissionPolicy(database:db).admit(.init(targetID:target.id,targetGeneration:1,expectedCheckpointRevision:0,observations:[observation],nextCheckpoint:nil)!)
         }
-        let http = DriverHTTPFixture(paused:paused,error:error)
+        let http = DriverHTTPFixture(paused:paused,error:error, readyBeforePull: {
+            try PublicationHistory(database: db).readyAhead(editionID: edition, anchorCardID: prepared.cardIDs[0], probeBound: 64).amount
+        })
         addTeardownBlock { http.remove() }
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [DriverURLProtocol.self]
         let transport = URLSession(configuration:config); addTeardownBlock { transport.invalidateAndCancel() }
         let binding = SourceBinding(id:SourceBindingID(),sourceID:source,externalPrincipal:.init(connectorKind:.syndication,namespace:"p",value:"p",role:.principal),aliases:[],generation:1,state:.enabled)!
-        let otherHTTP = DriverHTTPFixture(paused:false,error:nil)
+        let otherHTTP = DriverHTTPFixture(paused:false,error:nil, readyBeforePull: {
+            try PublicationHistory(database: db).readyAhead(editionID: edition, anchorCardID: prepared.cardIDs[0], probeBound: 64).amount
+        })
         addTeardownBlock { otherHTTP.remove() }
         let otherTarget = try AcquisitionTargetAuthority(database:db).register(id:AcquisitionTargetID(),connectorKind:.syndication)
         let otherBinding = SourceBinding(id:SourceBindingID(),sourceID:SourceID(),externalPrincipal:.init(connectorKind:.syndication,namespace:"p",value:"other",role:.principal),aliases:[],generation:1,state:.enabled)!
@@ -106,7 +110,36 @@ final class FeedRunwayDriverTests: XCTestCase {
         return try XCTUnwrap(result)
     }
     private func tail(_ f:Fixture,_ p:FeedPresentationSnapshot,resources:FeedRunwayDriverResources? = nil) async throws -> FeedPresentationSnapshot? {
-        try await f.driver.submitViewport(.init(anchor:p.window.anchor),activity:.explicitTailApproach,resources:resources ?? self.resources())
+        let result = try await f.driver.submitViewport(.init(anchor:p.window.anchor),activity:.explicitTailApproach,resources:resources ?? self.resources())
+        return result
+    }
+    private func assertLegitimateSecondTarget(_ f: Fixture, seededLocal: Bool,
+        file: StaticString = #filePath, line: UInt = #line) async throws {
+        let initialReady = seededLocal ? 1 : 0
+        XCTAssertEqual(f.http.calls, 2, file:file, line:line)
+        XCTAssertEqual(f.otherHTTP.calls, 1, file:file, line:line)
+        XCTAssertEqual(f.http.readyBefore, [.exact(initialReady), .exact(initialReady + 2)], file:file, line:line)
+        XCTAssertEqual(f.otherHTTP.readyBefore, [.exact(initialReady + 1)], file:file, line:line)
+        let eligible = try f.acquisition.eligibleTargets(for: f.plan.context)
+        XCTAssertEqual(eligible.count, 2, file:file, line:line)
+        XCTAssertEqual(Set(eligible.map(\.id)).count, 2, file:file, line:line)
+        let canonical = try ContentStore(database:f.database).candidateWindow(sourceID:nil, after:nil, examinedCapacity:8).records
+        XCTAssertEqual(canonical.count, initialReady + 2, file:file, line:line)
+        let own = try ContentStore(database:f.database).candidateWindow(sourceID:f.source, after:nil, examinedCapacity:8).records
+        XCTAssertEqual(own.count, initialReady + 1, file:file, line:line)
+        let store = PublicationStore(database:f.database), segments = try store.segments(editionID:f.edition)
+        let appended = try segments.dropFirst().flatMap { segment in
+            try segment.cardIDs.map { try XCTUnwrap(store.card(id:$0), file:file, line:line) }
+        }
+        XCTAssertEqual(appended.count, canonical.count, file:file, line:line)
+        XCTAssertEqual(Set(appended.map(\.originRevisionID)), Set(canonical.map(\.originRevisionID)), file:file, line:line)
+        XCTAssertEqual(Set(appended.map(\.originRevisionID)).count, appended.count, file:file, line:line)
+        XCTAssertEqual(segments[0].cardIDs, f.cards, file:file, line:line)
+        let before = await f.session.currentPresentation()
+        _ = try await f.driver.drive(resources:resources())
+        let after = await f.session.currentPresentation()
+        XCTAssertEqual(after, before, file:file, line:line)
+        XCTAssertEqual(f.http.calls, 2, file:file, line:line); XCTAssertEqual(f.otherHTTP.calls, 1, file:file, line:line)
     }
     func test01SemanticTailFullProductionLoop() async throws {
         let f = try fixture(),store = PublicationStore(database:f.database),before = try store.edition(id:f.edition)
@@ -114,11 +147,12 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(installed,p); XCTAssertEqual(f.http.calls,0)
         let result = try await tail(f,p)
         XCTAssertGreaterThan(f.http.calls,0); XCTAssertEqual(try store.edition(id:f.edition),before)
-        XCTAssertEqual(try store.segments(editionID:f.edition).count,2)
+        XCTAssertEqual(try store.segments(editionID:f.edition).count,3)
         let candidates = try ContentStore(database:f.database).candidateWindow(sourceID:f.source,after:nil,examinedCapacity:8).records
         XCTAssertEqual(candidates.count,1); XCTAssertEqual(result?.editionID,f.edition)
-        XCTAssertEqual(result?.window.anchor,p.window.anchor); XCTAssertEqual(result?.window.items.count,2)
+        XCTAssertEqual(result?.window.anchor,p.window.anchor); XCTAssertEqual(result?.window.items.count,3)
         let current = await f.session.currentPresentation(); XCTAssertEqual(current,result)
+        try await assertLegitimateSecondTarget(f, seededLocal: false)
     }
     func test02LocalPresentationSurvivesSuspendedTailHTTP() async throws {
         let f = try fixture(paused:true),p = try await restore(f); XCTAssertEqual(f.http.calls,0)
@@ -126,7 +160,8 @@ final class FeedRunwayDriverTests: XCTestCase {
         let task = Task { try await driver.submitViewport(.init(anchor:anchor),activity:.explicitTailApproach,resources:resources) }
         var started = f.http.started.makeAsyncIterator(); _ = await started.next()
         let pending = await f.session.currentPresentation(); XCTAssertEqual(pending,p)
-        f.http.release(); let result = try await task.value; XCTAssertEqual(result?.window.items.count,2)
+        f.http.release(); let result = try await task.value; XCTAssertEqual(result?.window.items.count,3)
+        try await assertLegitimateSecondTarget(f, seededLocal: false)
     }
     func test03NoCheckpointNoColdEdition() async throws {
         let f = try fixture(checkpoint:false),before = try PublicationStore(database:f.database).segments(editionID:f.edition)
@@ -144,7 +179,8 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(local?.window.items.count,2)
         XCTAssertEqual(try PublicationStore(database:f.database).segments(editionID:f.edition).count,2)
         f.http.release(); let result = try await task.value
-        XCTAssertEqual(result?.window.items.count,3)
+        XCTAssertEqual(result?.window.items.count,4)
+        try await assertLegitimateSecondTarget(f, seededLocal: true)
     }
     func test05HistoryMeasurementIgnoresTinyWindowTail() async throws {
         let f = try fixture(historyCount:50,seedLocal:true,registrations:false),p = try await restore(f,forward:0)
@@ -174,16 +210,30 @@ final class FeedRunwayDriverTests: XCTestCase {
         _ = try await tail(f,p,resources:resources(targets:0))
         let denied = await f.runway.snapshot(); XCTAssertNotNil(denied.outstandingAcquisition); XCTAssertEqual(f.http.calls,0)
         let result = try await f.driver.drive(resources:resources())
-        XCTAssertGreaterThan(f.http.calls,0); XCTAssertEqual(result?.window.items.count,2)
+        XCTAssertGreaterThan(f.http.calls,0); XCTAssertEqual(result?.window.items.count,3)
+        try await assertLegitimateSecondTarget(f, seededLocal: false)
     }
     func test09NoEligibleQuiesces() async throws {
         let f = try fixture(registrations:false),p = try await restore(f); _ = try await tail(f,p)
         let snap = await f.runway.snapshot(); XCTAssertNil(snap.outstandingAcquisition); XCTAssertEqual(f.http.calls,0)
     }
-    func test10AcquisitionErrorPropagatesOnce() async throws {
-        let f = try fixture(error:URLError(.notConnectedToInternet)),p = try await restore(f)
-        do { _ = try await tail(f,p); XCTFail("Expected HTTP failure") } catch { XCTAssertEqual((error as? URLError)?.code,.notConnectedToInternet) }
-        XCTAssertEqual(f.http.calls,1)
+    func test10OperationalFailureSettlesOnceAndPreservesPresentation() async throws {
+        let direct = try fixture(error: URLError(.notConnectedToInternet))
+        let result = try await direct.coordinator.execute(.start(target: direct.target,
+            bounds: .init(batchCapacity: 1, observationCapacityPerBatch: 8, byteCapacityPerBatch: 100_000)!))
+        XCTAssertEqual(result.stop, .operationalFailure(.transport))
+        XCTAssertEqual(result.targetID, direct.target.id); XCTAssertEqual(result.generation, 1)
+        XCTAssertTrue(result.receipts.isEmpty); XCTAssertFalse(result.selectableSupplyChanged)
+        XCTAssertEqual(direct.http.calls, 1)
+        // Independent real-driver opportunity: settlement remains finite and adds no visual failure.
+        let f = try fixture(error: URLError(.notConnectedToInternet)), p = try await restore(f)
+        let checkpoint = try SessionStore(database: f.database).checkpoint()
+        let after = try await tail(f, p)
+        XCTAssertEqual(after, p); XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.otherHTTP.calls, 0)
+        let again = try await f.driver.drive(resources: resources()); XCTAssertEqual(again, p)
+        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.otherHTTP.calls, 0)
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
+        let snapshot = await f.runway.snapshot(); XCTAssertNil(snapshot.outstandingAcquisition)
     }
     func test11PreparationFailureRecordsFailed() async throws {
         let f = try fixture(seedLocal:true,prepareFailure:true),p = try await restore(f)
@@ -265,12 +315,14 @@ final class FeedRunwayDriverTests: XCTestCase {
     func test23SameEditionOnly() async throws {
         let f = try fixture(),before = try PublicationStore(database:f.database).edition(id:f.edition),p = try await restore(f)
         _ = try await tail(f,p); XCTAssertEqual(try PublicationStore(database:f.database).edition(id:f.edition),before)
-        XCTAssertEqual(try PublicationStore(database:f.database).segments(editionID:f.edition).count,2)
+        XCTAssertEqual(try PublicationStore(database:f.database).segments(editionID:f.edition).count,3)
+        try await assertLegitimateSecondTarget(f, seededLocal: false)
     }
     func test24SingleTailOpportunityReachesQuiescence() async throws {
         let f = try fixture(),p = try await restore(f); _ = try await tail(f,p)
         let snap = await f.runway.snapshot(); XCTAssertFalse(snap.localSliceInFlight); XCTAssertNil(snap.outstandingAcquisition)
-        XCTAssertEqual(try PublicationStore(database:f.database).segments(editionID:f.edition).count,2)
+        XCTAssertEqual(try PublicationStore(database:f.database).segments(editionID:f.edition).count,3)
+        try await assertLegitimateSecondTarget(f, seededLocal: false)
     }
     func test25SegmentIdentityRequiresFiniteCallerTime() {
         let id = FeedSegmentID(),date = Date(timeIntervalSinceReferenceDate:123.125)
@@ -403,16 +455,24 @@ private final class DriverHTTPFixture: @unchecked Sendable {
     private let lock = NSLock()
     private var pending:DriverURLProtocol?
     private var count = 0
+    private var readyCounts: [ReadyAheadAmount] = []
+    private let readyBeforePull: (@Sendable () throws -> ReadyAheadAmount)?
     private var released = false
-    init(paused:Bool,error:URLError?) {
+    init(paused:Bool,error:URLError?, readyBeforePull: (@Sendable () throws -> ReadyAheadAmount)? = nil) {
+        self.readyBeforePull = readyBeforePull
         self.paused = paused; self.error = error; (started,signal) = AsyncStream.makeStream()
         Self.registryLock.withLock { Self.registry[url.host!] = self }
     }
     static func find(_ url:URL?) -> DriverHTTPFixture? { registryLock.withLock { registry[url?.host ?? ""] } }
     func remove() { _ = Self.registryLock.withLock { Self.registry.removeValue(forKey:url.host!) } }
     var calls:Int { lock.withLock { count } }
+    var readyBefore: [ReadyAheadAmount] { lock.withLock { readyCounts } }
     func start(_ loader:DriverURLProtocol) {
         let wait = lock.withLock { count += 1; if paused && !released { pending = loader; return true }; return false }
+        if let readyBeforePull {
+            do { let amount = try readyBeforePull(); lock.withLock { readyCounts.append(amount) } }
+            catch { XCTFail("Ready-before-pull evidence failed: \(error)") }
+        }
         signal.yield(()); if !wait { respond(loader) }
     }
     func release() { let loader = lock.withLock { released = true; let value = pending; pending = nil; return value }; if let loader { respond(loader) } }

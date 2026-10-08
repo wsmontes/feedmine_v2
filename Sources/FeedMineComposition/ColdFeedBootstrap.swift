@@ -102,10 +102,12 @@ public struct ColdFeedBootstrap: Sendable {
         let bootstrapPlan = BootstrapPlan(contextKey: plan.context.key, editorialRevisionID: plan.revision.id,
             exhaustedLocalSupply: ExhaustedLocalSupply(readyCards: 0)!, acquisitionResources: resources.acquisition)!
         let eligibleTargets = try acquisition.eligibleTargets(for: plan.context)
-        let active = await coordinator.activeExecutions()
         let acquisitionPlan: AcquisitionPlan
-        switch try AcquisitionPlanner.plan(demand: bootstrapPlan.demand, eligibleTargets: eligibleTargets,
-            activeExecutions: active, resources: bootstrapPlan.acquisitionResources) {
+        let planning = try await coordinator.selectionOpportunity { position, active in
+            try AcquisitionPlanner.plan(demand: bootstrapPlan.demand, eligibleTargets: eligibleTargets,
+                activeExecutions: active, resources: bootstrapPlan.acquisitionResources, selectionAfter: position)
+        }
+        switch planning {
         case .disposition(.noEligibleTargets):
             return .unavailable(firstProgress)
         case .disposition(.resourceDenied):
@@ -118,8 +120,10 @@ public struct ColdFeedBootstrap: Sendable {
 
         var results: [AcquisitionExecutionResult] = []
         for work in acquisitionPlan.work {
+            try Task.checkCancellation()
             let result = try await coordinator.execute(work)
             results.append(result)
+            if result.stop == .cancelled { break }
         }
         let changed = results.contains { $0.selectableSupplyChanged }
         guard changed else { return .noPublicationAfterAcquisition(firstProgress, results) }

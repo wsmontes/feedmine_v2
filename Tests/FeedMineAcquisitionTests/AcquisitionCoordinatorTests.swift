@@ -299,3 +299,120 @@ final class AcquisitionCoordinatorTests: XCTestCase {
         XCTAssertEqual(pulls[1].checkpointRevision,1)
     }
 }
+
+private actor SettlementConnector: FeedConnector {
+    enum Step: Sendable {
+        case batch([AcquisitionObservation], AcquisitionCheckpoint?)
+        case operational(ConnectorOperationalFailure)
+        case invalidBatch
+    }
+    var steps: [Step]
+    private(set) var pulls: [FeedConnectorPull] = []
+    init(_ steps: [Step]) { self.steps = steps }
+    func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
+        pulls.append(request)
+        switch steps.removeFirst() {
+        case .operational(let reason): throw reason
+        case .invalidBatch:
+            return .batch(.init(targetID: request.targetID, targetGeneration: request.targetGeneration + 1,
+                expectedCheckpointRevision: request.checkpointRevision, observations: [], nextCheckpoint: .init(blob: Data([99]), serializationSchema: 1, connectorVersion: "test"))!, transportByteCount: 0)
+        case .batch(let observations, let checkpoint):
+            return .batch(.init(targetID: request.targetID, targetGeneration: request.targetGeneration,
+                expectedCheckpointRevision: request.checkpointRevision, observations: observations, nextCheckpoint: checkpoint)!, transportByteCount: 1)
+        }
+    }
+}
+private actor FairOpportunityConnector: FeedConnector {
+    let broken: AcquisitionTargetID
+    private(set) var targets: [AcquisitionTargetID] = []
+    init(broken: AcquisitionTargetID) { self.broken = broken }
+    func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
+        targets.append(request.targetID)
+        if request.targetID == broken { throw ConnectorOperationalFailure.remoteResponse }
+        return .upToDate
+    }
+}
+extension AcquisitionCoordinatorTests {
+    func test3R2FirstOperationalPullHasNoInventedReceipts() async throws {
+        let f = try fixture()
+        for reason in [ConnectorOperationalFailure.transport, .remoteResponse, .remoteContent] {
+            let connector = SettlementConnector([.operational(reason)])
+            let result = try await f.coordinator(connector).execute(start(f))
+            XCTAssertEqual(result.stop, .operationalFailure(reason))
+            XCTAssertTrue(result.receipts.isEmpty); XCTAssertFalse(result.selectableSupplyChanged)
+            let pulls = await connector.pulls; XCTAssertEqual(pulls.count, 1)
+        }
+        try assertNoSupply(f)
+    }
+    func test3R2TenItemsSurviveOperationalFailureAfterAdmission() async throws {
+        let f = try fixture()
+        let connector = SettlementConnector([.batch((0..<10).map { observation(f, object: "item-\($0)") }, checkpoint(1)), .operational(.transport)])
+        let result = try await f.coordinator(connector).execute(start(f, bounds: bounds(2, observations: 10)))
+        XCTAssertEqual(result.stop, .operationalFailure(.transport)); XCTAssertEqual(result.receipts.count, 1)
+        XCTAssertTrue(result.receipts[0].checkpointAdvanced); XCTAssertTrue(result.selectableSupplyChanged)
+        XCTAssertEqual(try f.content.candidateWindow(sourceID: f.source, after: nil, examinedCapacity: 20).records.count, 10)
+        XCTAssertEqual(try f.authority.target(id: f.target.id)?.checkpoint, checkpoint(1))
+        let pulls = await connector.pulls; XCTAssertEqual(pulls.map(\.checkpointRevision), [0, 1])
+    }
+    func test3R2MultipleReceiptsRemainOrderedAndNoSupplyIsFactual() async throws {
+        let f = try fixture()
+        let connector = SettlementConnector([.batch([], checkpoint(1)), .batch([observation(f)], checkpoint(2)), .operational(.remoteContent)])
+        let result = try await f.coordinator(connector).execute(start(f))
+        XCTAssertEqual(result.stop, .operationalFailure(.remoteContent))
+        XCTAssertEqual(result.receipts.map(\.selectableSupplyChanged), [false, true])
+        XCTAssertEqual(try f.authority.target(id: f.target.id)?.checkpoint, checkpoint(2))
+        let noSupply = SettlementConnector([.batch([], checkpoint(3)), .operational(.transport)])
+        let current = try XCTUnwrap(f.authority.target(id: f.target.id))
+        let second = try await f.coordinator(noSupply).execute(.start(target: current, bounds: bounds()))
+        XCTAssertEqual(second.receipts.count, 1); XCTAssertFalse(second.selectableSupplyChanged)
+        XCTAssertEqual(try f.authority.target(id: f.target.id)?.checkpoint, checkpoint(3))
+    }
+    func test3R2StructuralFailureAfterAdmissionRemainsThrown() async throws {
+        let f = try fixture(), connector = SettlementConnector([.batch([observation(f)], checkpoint(1)), .invalidBatch])
+        do { _ = try await f.coordinator(connector).execute(start(f)); XCTFail("Expected generation fence") }
+        catch { XCTAssertEqual(error as? AcquisitionCoordinatorError, .batchGenerationMismatch(expected: 1, actual: 2)) }
+        XCTAssertEqual(try f.authority.target(id: f.target.id)?.checkpointRevision, 1)
+        XCTAssertEqual(try f.content.candidateWindow(sourceID: nil, after: nil, examinedCapacity: 10).records.count, 1)
+    }
+    func test3R2SharedFairnessExecutesBrokenAndNoSupplyTargetsWithoutCheckpointProgress() async throws {
+        let f = try fixture()
+        let b = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let c = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let connector = FairOpportunityConnector(broken: f.target.id)
+        let coordinator = AcquisitionCoordinator(database: f.database, connectorForTarget: { _ in connector })
+        let targets = [f.target, b, c]
+        let demand = AcquisitionDemand(contextKey: ContextKey(request: .main), editorialRevisionID: EditorialRevisionID(),
+            purpose: .readerContinuation, pressure: .logicalTailPressure, localSupply: ExhaustedLocalSupply(readyCards: 0)!)!
+        let resources = AcquisitionPlanningResources(targetWorkCapacity: 1, batchCapacityPerNewExecution: 1,
+            observationCapacityPerBatch: 1, byteCapacityPerBatch: 1)!
+        for _ in 0..<6 {
+            let planning = try await coordinator.selectionOpportunity { position, active in
+                try AcquisitionPlanner.plan(demand: demand, eligibleTargets: targets, activeExecutions: active,
+                    resources: resources, selectionAfter: position)
+            }
+            guard case .planned(let plan) = planning else { return XCTFail("Expected finite opportunity") }
+            XCTAssertEqual(plan.work.count, 1)
+            let result = try await coordinator.execute(plan.work[0])
+            XCTAssertFalse(result.selectableSupplyChanged)
+            XCTAssertEqual(result.stop, result.targetID == f.target.id ? .operationalFailure(.remoteResponse) : .upToDate)
+        }
+        let actual = await connector.targets; XCTAssertEqual(Set(actual.prefix(3)), Set(targets.map(\.id)))
+        XCTAssertEqual(Array(actual.prefix(3)), Array(actual.suffix(3)))
+        for target in targets { XCTAssertEqual(try f.authority.target(id: target.id)?.checkpointRevision, 0) }
+        // Remove the marker's target, disable another and add a new target: remaining opportunities still progress.
+        _ = try f.authority.revoke(id: b.id, expectedGeneration: 1)
+        let disabled = try XCTUnwrap(f.authority.target(id: b.id))
+        let d = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let changed = [f.target, disabled, d]
+        for _ in 0..<4 {
+            guard case .planned(let plan) = try await coordinator.selectionOpportunity({ position, active in
+                try AcquisitionPlanner.plan(demand: demand, eligibleTargets: changed, activeExecutions: active,
+                    resources: resources, selectionAfter: position)
+            }) else { return XCTFail("Expected remaining target") }
+            _ = try await coordinator.execute(plan.work[0])
+        }
+        let changedActual = await connector.targets
+        XCTAssertEqual(Set(changedActual.suffix(4)), Set([f.target.id, d.id]))
+        XCTAssertNotEqual(changedActual[6], changedActual[7]); XCTAssertEqual(changedActual[6], changedActual[8])
+    }
+}

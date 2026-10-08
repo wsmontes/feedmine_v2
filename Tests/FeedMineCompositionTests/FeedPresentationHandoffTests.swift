@@ -37,6 +37,7 @@ final class FeedPresentationHandoffTests: XCTestCase {
     }
     private func fixture(history: Int = 4, registered: Bool = true, paused: Bool = false,
         error: URLError? = nil, remoteItems: Int = 2, context: FeedContext = .init(request: .main),
+        structuralConnector: (any FeedConnector)? = nil,
         editionID: FeedEditionID = FeedEditionID()) throws -> Fixture {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
@@ -80,7 +81,10 @@ final class FeedPresentationHandoffTests: XCTestCase {
             endpoint: http.url, bindings: [binding])!
         let acquisition = try SyndicationAcquisitionSnapshot(database: database, registrations: registered ? [registration] : [],
             session: transport, redirectCapacity: 0, now: { Date(timeIntervalSince1970: 5) })
-        let coordinator = acquisition.makeCoordinator()
+        let coordinator: AcquisitionCoordinator
+        if let structuralConnector {
+            coordinator = AcquisitionCoordinator(database: database, connectorForTarget: { _ in structuralConnector })
+        } else { coordinator = acquisition.makeCoordinator() }
         let session = FeedSession(publicationHistory: publicationHistory), clock = HandoffClock()
         let runway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1, releaseMarginSeconds: 0)!,
             consumptionSampleLimit: 4, replenishmentSampleLimit: 4)!)
@@ -170,7 +174,11 @@ final class FeedPresentationHandoffTests: XCTestCase {
         XCTAssertEqual(unavailableFixture.http.calls, 0); XCTAssertEqual(deferredFixture.http.calls, 0)
     }
     func testH5OperationErrorPropagatesAndCanBeReportedWithoutLosingPresentation() async throws {
-        let f = try fixture(history: 1, error: URLError(.cannotConnectToHost)), visible = try await warm(f)
+        let wrongID = AcquisitionTargetID(), connector = HandoffWrongTargetConnector(wrongID: wrongID)
+        let f = try fixture(history: 1, structuralConnector: connector), visible = try await warm(f)
+        let history = PublicationStore(database: f.database)
+        let cardsBefore = try f.cardIDs.map { try history.card(id: $0) }
+        let editionBefore = try history.edition(id: f.editionID)
         let checkpoint = try SessionStore(database: f.database).checkpoint()
         var state = FeedPresentationHandoff.report(.pending, into: visible)
         do {
@@ -178,12 +186,18 @@ final class FeedPresentationHandoffTests: XCTestCase {
                 activity: .explicitTailApproach, resources: resources(), driver: f.driver, into: state)
             XCTFail("Expected unchanged driver error")
         } catch {
-            XCTAssertEqual((error as? URLError)?.code, .cannotConnectToHost)
-            state = FeedPresentationHandoff.report(.failed(message: "Transport unavailable"), into: state)
+            XCTAssertEqual(error as? AcquisitionCoordinatorError, .batchTargetMismatch(expected: f.target.id, actual: wrongID))
+            XCTAssertFalse(error is ConnectorOperationalFailure)
+            state = FeedPresentationHandoff.report(.failed(message: "Invalid acquisition batch"), into: state)
         }
-        XCTAssertEqual(state.presentation, visible.presentation); XCTAssertEqual(state.work, .failed(message: "Transport unavailable"))
-        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
-        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.editionID).count, 1)
+        XCTAssertEqual(state.presentation, visible.presentation); XCTAssertEqual(state.work, .failed(message: "Invalid acquisition batch"))
+        let pulls = await connector.pulls; XCTAssertEqual(pulls, 1); XCTAssertEqual(f.http.calls, 0)
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
+        XCTAssertEqual(try history.segments(editionID: f.editionID).count, 1)
+        XCTAssertEqual(try history.edition(id: f.editionID), editionBefore)
+        XCTAssertEqual(try f.cardIDs.map { try history.card(id: $0) }, cardsBefore)
+        XCTAssertEqual(state.presentation?.window.anchor, visible.presentation?.window.anchor)
+        XCTAssertTrue(try ContentStore(database: f.database).candidateWindow(sourceID: nil, after: nil, examinedCapacity: 8).records.isEmpty)
     }
     func testH6ViewportForwardingUsesDriverSnapshotAndExactIdentity() async throws {
         let f = try fixture(), state = try await warm(f)
@@ -382,4 +396,16 @@ private final class HandoffURLProtocol: URLProtocol, @unchecked Sendable {
         fixture.start(self)
     }
     override func stopLoading() {}
+}
+
+private actor HandoffWrongTargetConnector: FeedConnector {
+    let wrongID: AcquisitionTargetID
+    private(set) var pulls = 0
+    init(wrongID: AcquisitionTargetID) { self.wrongID = wrongID }
+    func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
+        pulls += 1
+        return .batch(.init(targetID: wrongID, targetGeneration: request.targetGeneration,
+            expectedCheckpointRevision: request.checkpointRevision, observations: [],
+            nextCheckpoint: .init(blob: Data([1]), serializationSchema: 1, connectorVersion: "test")!)!, transportByteCount: 1)
+    }
 }

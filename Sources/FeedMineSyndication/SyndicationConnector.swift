@@ -44,6 +44,28 @@ public struct SyndicationConnector: FeedConnector, Sendable {
     }
 
     public func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
+        do { return try await pullDocument(request) }
+        catch let error as URLError where error.code == .cancelled { throw CancellationError() }
+        catch let error as URLError where Self.isTransportFailure(error.code) {
+            throw ConnectorOperationalFailure.transport
+        }
+        catch SyndicationHTTPError.unexpectedStatus { throw ConnectorOperationalFailure.remoteResponse }
+        catch SyndicationHTTPError.nonHTTPResponse { throw ConnectorOperationalFailure.remoteResponse }
+        catch SyndicationTranslationError.parseFailed { throw ConnectorOperationalFailure.remoteContent }
+    }
+
+    private static func isTransportFailure(_ code: URLError.Code) -> Bool {
+        switch code {
+        case .timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost,
+            .dnsLookupFailed, .notConnectedToInternet, .secureConnectionFailed,
+            .serverCertificateHasBadDate, .serverCertificateUntrusted,
+            .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid:
+            return true
+        default: return false
+        }
+    }
+
+    private func pullDocument(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
         guard request.targetID == configuration.targetID else {
             throw SyndicationConnectorError.targetMismatch(expected: configuration.targetID, actual: request.targetID)
         }

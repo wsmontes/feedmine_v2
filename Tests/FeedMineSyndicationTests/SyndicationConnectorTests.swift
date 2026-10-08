@@ -141,7 +141,7 @@ final class SyndicationConnectorTests: XCTestCase {
     func test32ParseFailure() async {
         let t = ScriptedSyndicationTransport([hop(Data("malformed".utf8))])
         do { _ = try await connector(t).pull(pull()); XCTFail("Expected parse failure") }
-        catch { XCTAssertEqual(error as? SyndicationTranslationError,.parseFailed) }
+        catch { XCTAssertEqual(error as? ConnectorOperationalFailure,.remoteContent) }
         let journal = await t.journal(); XCTAssertEqual(journal.count,1)
     }
     func test33IncompatibleCheckpointBeforeHTTP() async {
@@ -177,7 +177,7 @@ final class SyndicationConnectorTests: XCTestCase {
         let body = Data("{\"version\":\"https://jsonfeed.org/version/1.1\",\"items\":[{\"url\":\"https://example.test/item\"}]}".utf8)
         let t = ScriptedSyndicationTransport([hop(body)])
         do { _ = try await connector(t).pull(pull()); XCTFail("Expected parseFailed") }
-        catch { XCTAssertEqual(error as? SyndicationTranslationError,.parseFailed) }
+        catch { XCTAssertEqual(error as? ConnectorOperationalFailure,.remoteContent) }
     }
     func test38TransportByteCountExactFinalBody() async throws {
         let body = rss(["é"]),t = ScriptedSyndicationTransport([.init(statusCode:301,location:"/next",etag:nil,lastModified:nil,body:Data(repeating:0,count:50)),hop(body)])
@@ -186,12 +186,40 @@ final class SyndicationConnectorTests: XCTestCase {
     func test39TransportFailureNoRetry() async {
         let t = ScriptedSyndicationTransport(error:URLError(.notConnectedToInternet))
         do { _ = try await connector(t).pull(pull()); XCTFail("Expected network failure") }
-        catch { XCTAssertEqual((error as? URLError)?.code,.notConnectedToInternet) }
+        catch { XCTAssertEqual(error as? ConnectorOperationalFailure,.transport) }
         let journal = await t.journal(); XCTAssertEqual(journal.count,1)
     }
     func test40CheckpointRevisionPreserved() async throws {
         let body = rss(["a"]),t = ScriptedSyndicationTransport([hop(rss(["a"]),etag:"new")])
         let b = try batch(await connector(t).pull(pull(revision:UInt64.max)),body:body)
         XCTAssertEqual(b.expectedCheckpointRevision,UInt64.max)
+    }
+}
+
+extension SyndicationConnectorTests {
+    func test3R2ExplicitOperationalMappingAndUnknownErrorsRemainFatal() async throws {
+        for code in [500, 503] {
+            let t = ScriptedSyndicationTransport([.init(statusCode: code, location: nil, etag: nil, lastModified: nil, body: Data())])
+            do { _ = try await connector(t).pull(pull()); XCTFail("Expected remote response") }
+            catch { XCTAssertEqual(error as? ConnectorOperationalFailure, .remoteResponse) }
+        }
+        for (error, expected) in [(URLError(.timedOut), ConnectorOperationalFailure.transport)] {
+            let t = ScriptedSyndicationTransport(error: error)
+            do { _ = try await connector(t).pull(pull()); XCTFail("Expected transport") }
+            catch { XCTAssertEqual(error as? ConnectorOperationalFailure, expected) }
+            let calls = await t.journal(); XCTAssertEqual(calls.count, 1)
+        }
+        let nonHTTP = ScriptedSyndicationTransport(error: SyndicationHTTPError.nonHTTPResponse)
+        do { _ = try await connector(nonHTTP).pull(pull()); XCTFail("Expected nonHTTPResponse") }
+        catch { XCTAssertEqual(error as? ConnectorOperationalFailure, .remoteResponse) }
+        let unknown = ScriptedSyndicationTransport(error: URLError(.unsupportedURL))
+        do { _ = try await connector(unknown).pull(pull()); XCTFail("Expected fatal unknown transport code") }
+        catch { XCTAssertEqual((error as? URLError)?.code, .unsupportedURL) }
+        let cancelled = ScriptedSyndicationTransport(error: URLError(.cancelled))
+        do { _ = try await connector(cancelled).pull(pull()); XCTFail("Expected cancellation") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let limit = ScriptedSyndicationTransport(error: SyndicationHTTPError.bodyTooLarge(limit: 1, actualAtLeast: 2))
+        do { _ = try await connector(limit).pull(pull()); XCTFail("Expected fatal byte limit") }
+        catch { XCTAssertEqual(error as? SyndicationHTTPError, .bodyTooLarge(limit: 1, actualAtLeast: 2)) }
     }
 }

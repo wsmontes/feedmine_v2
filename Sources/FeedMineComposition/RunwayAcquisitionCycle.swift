@@ -33,9 +33,10 @@ public struct RunwayAcquisitionCycle: Sendable {
         resources: AcquisitionPlanningResources) async throws -> RunwayAcquisitionCycleOutcome {
         let snapshot = await runway.snapshot()
         guard snapshot.outstandingAcquisition == intent else { throw RunwayAcquisitionCycleError.staleIntent }
-        let activeExecutions = await coordinator.activeExecutions()
-        let planning = try AcquisitionPlanner.plan(demand: intent.demand, eligibleTargets: eligibleTargets,
-            activeExecutions: activeExecutions, resources: resources)
+        let planning = try await coordinator.selectionOpportunity { position, active in
+            try AcquisitionPlanner.plan(demand: intent.demand, eligibleTargets: eligibleTargets,
+                activeExecutions: active, resources: resources, selectionAfter: position)
+        }
         switch planning {
         case .disposition(.noEligibleTargets):
             try await runway.acknowledgeAcquisition(intent)
@@ -47,6 +48,7 @@ public struct RunwayAcquisitionCycle: Sendable {
             try await runway.acknowledgeAcquisition(intent)
             var results: [AcquisitionExecutionResult] = []
             for work in plan.work {
+                try Task.checkCancellation()
                 let result = try await coordinator.execute(work)
                 results.append(result)
                 if result.selectableSupplyChanged {
@@ -54,6 +56,7 @@ public struct RunwayAcquisitionCycle: Sendable {
                     catch RunwayControllerError.noActiveScope {}
                     catch RunwayControllerError.scopeMismatch {}
                 }
+                if result.stop == .cancelled { break }
             }
             return .executed(results)
         }

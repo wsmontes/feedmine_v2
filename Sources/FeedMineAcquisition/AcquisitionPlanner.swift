@@ -77,7 +77,7 @@ public enum AcquisitionPlannerError: Error, Equatable, Sendable {
 
 public enum AcquisitionPlanner {
     public static func plan(demand: AcquisitionDemand, eligibleTargets: [AcquisitionTarget],
-        activeExecutions: [AcquisitionActiveExecution], resources: AcquisitionPlanningResources) throws -> AcquisitionPlanningResult {
+        activeExecutions: [AcquisitionActiveExecution], resources: AcquisitionPlanningResources, selectionAfter: AcquisitionTargetID? = nil) throws -> AcquisitionPlanningResult {
         // Normalize all caller facts before filtering or applying capacity limits.
         var byID: [AcquisitionTargetID: AcquisitionTarget] = [:]
         var orderedTargets: [AcquisitionTarget] = []
@@ -98,7 +98,14 @@ public enum AcquisitionPlanner {
             }
             activeGenerations[execution.targetID] = execution.generation
         }
-        let enabled = orderedTargets.filter { $0.state == .enabled }
+        var enabled = orderedTargets.filter { $0.state == .enabled }
+        if let selectionAfter {
+            // Identity order is a mechanical ring, not an editorial or freshness priority.
+            // A removed/revoked marker still identifies a boundary in that ring.
+            enabled.sort { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
+            let next = enabled.firstIndex { $0.id.rawValue.uuidString > selectionAfter.rawValue.uuidString } ?? 0
+            enabled = Array(enabled[next...]) + Array(enabled[..<next])
+        }
         guard !enabled.isEmpty else { return .disposition(.noEligibleTargets) }
         guard resources.targetWorkCapacity > 0 else { return .disposition(.resourceDenied) }
 

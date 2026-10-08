@@ -200,3 +200,33 @@ final class AcquisitionPlannerTests: XCTestCase {
         }
     }
 }
+
+extension AcquisitionPlannerTests {
+    func test3R2CapacityOneOpportunitiesReachEveryTarget() throws {
+        let targets = [target(), target(), target()]
+        var seen: [AcquisitionTargetID] = []
+        for _ in 0..<3 {
+            let selected = try plan(AcquisitionPlanner.plan(demand: demand(), eligibleTargets: targets,
+                activeExecutions: [], resources: resources(1), selectionAfter: seen.last))
+            if case .start(let target, _) = selected.work[0] { seen.append(target.id) }
+        }
+        XCTAssertEqual(seen.first, targets.first?.id)
+        XCTAssertEqual(Set(seen), Set(targets.map(\.id)))
+    }
+}
+
+extension AcquisitionPlannerTests {
+    func test3R2RepeatedEligibilityChangesDoNotResetFairness() throws {
+        let ids = (1...3).map { AcquisitionTargetID(rawValue: UUID(uuidString: "00000000-0000-0000-0000-00000000000\($0)")!) }
+        let a = target(id: ids[0]), b = target(id: ids[1]), c = target(id: ids[2])
+        var position: AcquisitionTargetID?
+        var seen: [AcquisitionTargetID] = []
+        for targets in [[a,b,c], [a,b,c], [a,c], [a,b,c], [a,b,c], [a,target(id: b.id, state: .revoked),c]] {
+            let selected = try plan(AcquisitionPlanner.plan(demand: demand(), eligibleTargets: targets,
+                activeExecutions: [], resources: resources(1), selectionAfter: position))
+            guard case .start(let target, _) = selected.work[0] else { return XCTFail("Expected start") }
+            position = target.id; seen.append(target.id)
+        }
+        XCTAssertEqual(seen, [a.id,b.id,c.id,a.id,b.id,c.id])
+    }
+}

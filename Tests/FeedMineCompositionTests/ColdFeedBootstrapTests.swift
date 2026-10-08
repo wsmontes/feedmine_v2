@@ -22,6 +22,7 @@ private final class ColdHTTPFixture: @unchecked Sendable {
     let body: Data
     let status: Int
     let error: URLError?
+    let laterError: URLError?
     let paused: Bool
     let journal: ColdJournal
     let label: String
@@ -32,12 +33,12 @@ private final class ColdHTTPFixture: @unchecked Sendable {
     private var pending: ColdURLProtocol?
     private var count = 0
     private var released = false
-    init(items: Int = 1, status: Int = 200, error: URLError? = nil, paused: Bool = false,
+    init(items: Int = 1, status: Int = 200, error: URLError? = nil, laterError: URLError? = nil, paused: Bool = false,
         journal: ColdJournal = ColdJournal(), label: String = "A", onStart: @escaping @Sendable () -> Void = {}) {
         self.body = Data(("<rss version=\"2.0\"><channel><title>Feed</title>" + (0..<items).map {
             "<item><guid>\(label)-\($0)</guid><title>Remote \($0)</title></item>"
         }.joined() + "</channel></rss>").utf8)
-        self.status = status; self.error = error; self.paused = paused
+        self.status = status; self.error = error; self.laterError = laterError; self.paused = paused
         self.journal = journal; self.label = label; self.onStart = onStart
         (started, signal) = AsyncStream.makeStream()
         Self.registryLock.withLock { Self.registry[url.host!] = self }
@@ -56,7 +57,7 @@ private final class ColdHTTPFixture: @unchecked Sendable {
     }
     private func respond(_ loader: ColdURLProtocol) {
         journal.append(label + " response")
-        if let error { loader.client?.urlProtocol(loader, didFailWithError: error); return }
+        if let error = calls > 1 ? (laterError ?? error) : error { loader.client?.urlProtocol(loader, didFailWithError: error); return }
         let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/rss+xml", "ETag": "cold-etag"])!
         loader.client?.urlProtocol(loader, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -110,7 +111,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
             now: { Date(timeIntervalSince1970: 50) })
     }
     private func fixture(sourceContext: Bool = false, search: Bool = false, registrations: Bool = true,
-        items: Int = 1, status: Int = 200, error: URLError? = nil, paused: Bool = false) throws -> Fixture {
+        items: Int = 1, status: Int = 200, error: URLError? = nil, laterError: URLError? = nil, paused: Bool = false) throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let db = try RuntimeDatabase(location: .init(directory: root)), source = SourceID()
@@ -125,7 +126,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
             eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyDescending, exposure: .excludePublishedRevisions)
         let target = try AcquisitionTargetAuthority(database: db).register(id: AcquisitionTargetID(), connectorKind: .syndication)
         let journal = ColdJournal()
-        let http = ColdHTTPFixture(items: items, status: status, error: error, paused: paused, journal: journal)
+        let http = ColdHTTPFixture(items: items, status: status, error: error, laterError: laterError, paused: paused, journal: journal)
         addTeardownBlock { http.release(); http.remove() }
         let acquisition = try snapshot(db, registrations ? [registration(target, source: source, http: http)] : [])
         return .init(database: db, plan: plan, policy: policy, source: source, target: target,
@@ -348,13 +349,16 @@ final class ColdFeedBootstrapTests: XCTestCase {
         try await assertPublished(f, identity: id, snapshot: snapshot)
         XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: id.editionID).first?.cardIDs, cards)
     }
-    func testC11AcquisitionFailurePropagatesOnce() async throws {
+    func testC11AcquisitionFailureSettlesOnce() async throws {
         let failure = URLError(.cannotConnectToHost), f = try fixture(error: failure), id = identity()
-        do { _ = try await run(f, identity: id); XCTFail("Expected transport failure") }
-        catch { XCTAssertEqual((error as? URLError)?.code, failure.code); XCTAssertEqual((error as NSError).domain, NSURLErrorDomain) }
+        guard case .noPublicationAfterAcquisition(_, let results) = try await run(f, identity: id) else {
+            return XCTFail("Expected settled transport failure without publication")
+        }
+        XCTAssertEqual(results.count, 1); XCTAssertEqual(results[0].stop, .operationalFailure(.transport))
+        XCTAssertTrue(results[0].receipts.isEmpty)
         XCTAssertEqual(f.http.calls, 1); XCTAssertTrue(try canonical(f).isEmpty); try assertAbsent(f, identity: id)
     }
-    func testC12EarlierAdmissionSurvivesLaterTargetErrorAndExplicitCallConsumesIt() async throws {
+    func testC12EarlierAdmissionPublishesDespiteLaterTargetFailure() async throws {
         let f = try fixture(), id = identity(), failure = URLError(.cannotFindHost)
         let b = ColdHTTPFixture(error: failure, journal: f.journal, label: "B")
         addTeardownBlock { b.remove() }
@@ -362,11 +366,8 @@ final class ColdFeedBootstrapTests: XCTestCase {
         let acquisition = try snapshot(f.database, [registration(f.target, source: f.source, http: f.http), registration(targetB, source: f.source, http: b)])
         let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
             acquisition: acquisition, coordinator: acquisition.makeCoordinator(), prepare: { Self.prepared($0) })
-        do { _ = try await bootstrap.run(identity: id, resources: resources(targets: 2), backwardCapacity: 0, forwardCapacity: 2); XCTFail("Expected B failure") }
-        catch { XCTAssertEqual((error as? URLError)?.code, failure.code); XCTAssertEqual((error as NSError).domain, NSURLErrorDomain) }
-        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(b.calls, 1); XCTAssertEqual(try canonical(f).count, 1)
-        try assertAbsent(f, identity: id)
         let snapshot = try published(await bootstrap.run(identity: id, resources: resources(targets: 2), backwardCapacity: 0, forwardCapacity: 2))
+        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(b.calls, 1); XCTAssertEqual(try canonical(f).count, 1)
         try await assertPublished(f, identity: id, snapshot: snapshot)
         XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(b.calls, 1)
     }
@@ -508,7 +509,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
         XCTAssertNil(source.range(of: #"\b(while|repeat)\b"#, options: .regularExpression))
         XCTAssertEqual(source.components(separatedBy: "initialProductionSlice.run(").count - 1, 2)
         XCTAssertEqual(source.components(separatedBy: "AcquisitionPlanner.plan(").count - 1, 1)
-        XCTAssertEqual(source.components(separatedBy: "coordinator.activeExecutions()").count - 1, 1)
+        XCTAssertEqual(source.components(separatedBy: "coordinator.selectionOpportunity").count - 1, 1)
         XCTAssertEqual(source.components(separatedBy: "for work in acquisitionPlan.work").count - 1, 1)
         let plan = try String(contentsOf: root.appendingPathComponent("Sources/FeedMineAcquisition/BootstrapPlan.swift"), encoding: .utf8)
         for forbidden in ["RuntimeDatabase", "AcquisitionTargetAuthority", "AcquisitionCoordinator", "FeedConnector", "Date", "Timer", "Task", "sleep", "minimumCards", "targetCards", "page", "deadline", "retry"] {
@@ -544,5 +545,62 @@ final class ColdFeedBootstrapTests: XCTestCase {
         do { _ = try await bootstrap.run(identity: id, resources: resources(), backwardCapacity: 0, forwardCapacity: 2); XCTFail("Expected restore identity fence") }
         catch { XCTAssertEqual(error as? ColdFeedBootstrapError, .inconsistentPublishedRestore) }
         XCTAssertNotNil(try PublicationStore(database: f.database).edition(id: id.editionID)); XCTAssertEqual(f.http.calls, 0)
+    }
+}
+
+extension ColdFeedBootstrapTests {
+    func test3R2ColdHTTPFailureDoesNotBlockHealthyTarget() async throws {
+        let f = try fixture(status: 500)
+        let b = try AcquisitionTargetAuthority(database: f.database).register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let http = ColdHTTPFixture(items: 10, label: "B")
+        addTeardownBlock { http.remove() }
+        let acquisition = try snapshot(f.database, [registration(f.target, source: f.source, http: f.http), registration(b, source: f.source, http: http)])
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: acquisition, coordinator: acquisition.makeCoordinator(), prepare: { Self.prepared($0) })
+        let r = ColdFeedBootstrapResources(localExaminedCapacity: 20, acquisition: .init(targetWorkCapacity: 2,
+            batchCapacityPerNewExecution: 1, observationCapacityPerBatch: 20, byteCapacityPerBatch: 100_000)!)!
+        guard case .published = try await bootstrap.run(identity: identity(), resources: r, backwardCapacity: 0, forwardCapacity: 20) else {
+            return XCTFail("Healthy source must publish despite HTTP 500")
+        }
+        XCTAssertEqual(try canonical(f).count, 10)
+        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(http.calls, 1)
+    }
+}
+
+extension ColdFeedBootstrapTests {
+    func test3R2RealSyndicationTimeoutPreservesTenItemsReceiptAndColdCanPublish() async throws {
+        for directCoordinator in [true, false] {
+            let f = try fixture(items: 10, laterError: URLError(.timedOut))
+            let acquisition = AcquisitionPlanningResources(targetWorkCapacity: 1, batchCapacityPerNewExecution: 2,
+                observationCapacityPerBatch: 10, byteCapacityPerBatch: 100_000)!
+            if directCoordinator {
+                let result = try await f.coordinator.execute(.start(target: f.target,
+                    bounds: .init(batchCapacity: 2, observationCapacityPerBatch: 10, byteCapacityPerBatch: 100_000)!))
+                XCTAssertEqual(result.stop, .operationalFailure(.transport)); XCTAssertEqual(result.receipts.count, 1)
+                XCTAssertTrue(result.selectableSupplyChanged); XCTAssertTrue(result.receipts[0].checkpointAdvanced)
+                XCTAssertEqual(try AcquisitionTargetAuthority(database: f.database).target(id:f.target.id)?.checkpointRevision, 1)
+            } else {
+                let outcome = try await owner(f).run(identity: identity(),
+                    resources: .init(localExaminedCapacity: 20, acquisition: acquisition)!, backwardCapacity: 0, forwardCapacity: 20)
+                let snapshot = try published(outcome); XCTAssertEqual(snapshot.window.items.count, 10)
+            }
+            XCTAssertEqual(try canonical(f).count, 10); XCTAssertEqual(f.http.calls, 2)
+        }
+    }
+    func test3R2ColdAllOperationalFailuresRetainsOrderedResultsWithoutPublication() async throws {
+        let f = try fixture(status: 500)
+        let b = try AcquisitionTargetAuthority(database: f.database).register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let http = ColdHTTPFixture(error: URLError(.timedOut), label: "B")
+        addTeardownBlock { http.remove() }
+        let acquisition = try snapshot(f.database, [registration(f.target, source:f.source, http:f.http),registration(b, source:f.source, http:http)])
+        let bootstrap = try ColdFeedBootstrap(session:f.session, plan:f.plan, policy:f.policy,
+            acquisition:acquisition, coordinator:acquisition.makeCoordinator(), prepare: { Self.prepared($0) })
+        let id = identity()
+        guard case .noPublicationAfterAcquisition(_, let results) = try await bootstrap.run(identity:id,
+            resources:resources(targets:2), backwardCapacity:0, forwardCapacity:2) else { return XCTFail("No invented presentation") }
+        XCTAssertEqual(results.map(\.targetID),[f.target.id,b.id])
+        XCTAssertEqual(results.map(\.stop),[.operationalFailure(.remoteResponse),.operationalFailure(.transport)])
+        XCTAssertTrue(results.allSatisfy { $0.receipts.isEmpty && !$0.selectableSupplyChanged })
+        XCTAssertEqual(f.http.calls,1); XCTAssertEqual(http.calls,1); try assertAbsent(f, identity:id)
     }
 }

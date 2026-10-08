@@ -777,3 +777,15 @@ Native tests host actual production views in an offscreen NSHostingView/NSWindow
 | AcquisitionAdmissionStoreTests / AdmissionPolicyTests | Canonical integrity, isolated conflict/checkpoint progress, original batch indices/reasons, fatal rollback and existing coordinator receipt transport. | Production hooks, relaxed ContentStore tests or changed execution ownership. |
 
 ContentStore and its direct conflict/rollback tests remain unchanged. Existing AcquisitionCoordinator, RunwayAcquisitionCycle and ColdFeedBootstrap continue carrying the extended receipts. No manifest, schema, external identity, Publication, Runtime, UI or scheduler changes occur.
+
+
+## Phase 3R2 responsibility additions
+
+- `Sources/FeedMineDomain/ConnectorOperationalFailure.swift`: the closed external operational failure vocabulary, without transport detail or recovery policy.
+- `Sources/FeedMineSyndication/SyndicationConnector.swift`: maps only explicit known external operational errors at its public pull boundary; internal HTTP/translator implementations and fatal checkpoint/validation semantics remain unchanged.
+- `Sources/FeedMineAcquisition/AcquisitionCoordinator.swift`: preserves confirmed receipt prefixes on typed operational settlement; owns one ephemeral shared last-selected identity and atomically lends/advances it around caller-supplied pure planning. No new execution owner or planning rules.
+- `Sources/FeedMineAcquisition/AcquisitionPlanner.swift`: deterministic mechanical identity-ring selection from explicit position, alongside existing finite eligibility/generation/physical bounds.
+- `Sources/FeedMineComposition/RunwayAcquisitionCycle.swift`: sequential finite results and confirmed supply notifications, with operational failure isolation and cancellation stopping later work.
+- `Sources/FeedMineComposition/ColdFeedBootstrap.swift`: finite cold-first publication using factual settled supply, with the unchanged visual outcome contract and no operational diagnostic side channel.
+
+FeedPresentationHandoff, FeedRunwayDriver, RunwayController, FeedPresentationState, persistence/admission, publication and the package dependency graph retain their prior responsibilities.
