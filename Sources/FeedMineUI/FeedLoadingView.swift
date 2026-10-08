@@ -1,39 +1,30 @@
-//
-// File: FeedLoadingView.swift
-// Module: FeedMineUI
-//
-// Responsibility:
-//   Superfície futura de cold/first bootstrap.
-//
-// Owns:
-//   Future ownership: Future cold/first bootstrap surface for real progress, sources, previews and arriving content.
-//
-// Does not own:
-//   Fake progress or execution of bootstrap acquisition.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMineRuntime. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-06; Preparation evidence must be real.
-//
-// Planned public surface:
-//   Future cold/first bootstrap surface for real progress, sources, previews and arriving content. Documentation only; no API is declared in this phase.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// Factual absence/work presentation; execution remains external.
+import SwiftUI
 
-// Specification notes:
-// Responsibility:
-//
-// Superfície futura de cold/first bootstrap.
-//
-// Deve conseguir futuramente representar preparação real:
-//
-// - progresso;
-// - sources sendo consultadas;
-// - previews quando disponíveis;
-// - conteúdo chegando.
-//
-// Não inventar progresso falso.
+@MainActor
+public struct FeedLoadingView: View {
+    private let work: FeedPresentationState.Work
+
+    public init(work: FeedPresentationState.Work) {
+        self.work = work
+    }
+
+    public var body: some View {
+        VStack {
+            switch work {
+            case .idle:
+                Text("Nenhuma apresentação local recebida")
+            case .pending:
+                Text("Preparando apresentação local")
+            case .unavailable:
+                Text("Apresentação indisponível no momento")
+            case .deferred:
+                Text("Preparação adiada")
+            case .failed(let message):
+                Text(verbatim: message)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}

@@ -1,32 +1,27 @@
-//
-// File: FeedScreen.swift
-// Module: FeedMineUI
-//
-// Responsibility:
-//   Root SwiftUI da experiência de feed.
-//
-// Owns:
-//   Future ownership: Root SwiftUI feed experience consuming only FeedScreenStore.
-//
-// Does not own:
-//   Feed production, database access or network operations.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMineRuntime. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-01, INV-02; The screen presents local state.
-//
-// Planned public surface:
-//   Root SwiftUI feed experience consuming only FeedScreenStore. Documentation only; no API is declared in this phase.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+// SwiftUI reads the sole observable store and presents its finite local window.
+// Factual automatic reading-position capture is deferred; view creation emits no observations.
+import SwiftUI
 
-// Specification notes:
-// Responsibility:
-//
-// Root SwiftUI da experiência de feed.
-//
-// Consome somente `FeedScreenStore`.
+@MainActor
+public struct FeedScreen: View {
+    private let store: FeedScreenStore
+
+    public init(store: FeedScreenStore) {
+        self.store = store
+    }
+
+    public var body: some View {
+        if let presentation = store.state.presentation {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    ForEach(presentation.window.items) { card in
+                        FeedCardView(card: card)
+                    }
+                }
+                .padding()
+            }
+        } else {
+            FeedLoadingView(work: store.state.work)
+        }
+    }
+}
