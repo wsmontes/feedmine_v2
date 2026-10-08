@@ -77,7 +77,7 @@ final class CompletedDocumentFingerprintTests: XCTestCase {
             let result = try await coordinator.execute(.start(target:target, bounds:bounds))
             XCTAssertEqual(result.stop,.upToDate); XCTAssertEqual(result.receipts.count,1)
             XCTAssertTrue(result.selectableSupplyChanged); XCTAssertTrue(result.receipts[0].checkpointAdvanced)
-            XCTAssertEqual(server.received.count,2) // First acquisition + terminal verification; only one batch.
+            XCTAssertEqual(server.received.count,1) // One acquisition; terminal verification reuses the same execution document.
             let settled = try XCTUnwrap(authority.target(id:id)), checkpoint = try XCTUnwrap(settled.checkpoint)
             let state = try SyndicationCheckpointCodec.decode(checkpoint)
             XCTAssertEqual(state.documentFingerprint,syndicationBodyFingerprint(body)); XCTAssertEqual(state.nextItemIndex,0)

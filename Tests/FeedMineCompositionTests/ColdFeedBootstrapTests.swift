@@ -568,23 +568,26 @@ extension ColdFeedBootstrapTests {
 }
 
 extension ColdFeedBootstrapTests {
-    func test3R2RealSyndicationTimeoutPreservesTenItemsReceiptAndColdCanPublish() async throws {
+    func test3R4RealSyndicationAdmitsTenItemsAndColdPublishesWithOneGET() async throws {
         for directCoordinator in [true, false] {
-            let f = try fixture(items: 10, laterError: URLError(.timedOut))
+            let f = try fixture(items: 10)
             let acquisition = AcquisitionPlanningResources(targetWorkCapacity: 1, batchCapacityPerNewExecution: 2,
                 observationCapacityPerBatch: 10, byteCapacityPerBatch: 100_000)!
             if directCoordinator {
                 let result = try await f.coordinator.execute(.start(target: f.target,
                     bounds: .init(batchCapacity: 2, observationCapacityPerBatch: 10, byteCapacityPerBatch: 100_000)!))
-                XCTAssertEqual(result.stop, .operationalFailure(.transport)); XCTAssertEqual(result.receipts.count, 1)
+                XCTAssertEqual(result.stop, .upToDate); XCTAssertEqual(result.receipts.count, 1)
                 XCTAssertTrue(result.selectableSupplyChanged); XCTAssertTrue(result.receipts[0].checkpointAdvanced)
                 XCTAssertEqual(try AcquisitionTargetAuthority(database: f.database).target(id:f.target.id)?.checkpointRevision, 1)
             } else {
                 let outcome = try await owner(f).run(identity: identity(),
                     resources: .init(localExaminedCapacity: 20, acquisition: acquisition)!, backwardCapacity: 0, forwardCapacity: 20)
                 let snapshot = try published(outcome); XCTAssertEqual(snapshot.window.items.count, 10)
+                XCTAssertEqual(Set(snapshot.window.items.compactMap(\.title)), Set((0..<10).map { "Remote \($0)" }))
+                let target = try XCTUnwrap(AcquisitionTargetAuthority(database: f.database).target(id: f.target.id))
+                XCTAssertEqual(target.checkpointRevision, 1); XCTAssertNotNil(target.checkpoint)
             }
-            XCTAssertEqual(try canonical(f).count, 10); XCTAssertEqual(f.http.calls, 2)
+            XCTAssertEqual(try canonical(f).count, 10); XCTAssertEqual(f.http.calls, 1)
         }
     }
     func test3R2ColdAllOperationalFailuresRetainsOrderedResultsWithoutPublication() async throws {

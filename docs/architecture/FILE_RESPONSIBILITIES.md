@@ -799,3 +799,16 @@ FeedPresentationHandoff, FeedRunwayDriver, RunwayController, FeedPresentationSta
 - `Tests/FeedMineSyndicationTests/CompletedDocumentFingerprintTests.swift`: local controlled HTTP, real admission/coordinator and RuntimeDatabase lifetime/reopen proof; empty/all-rejected settlement and durable changed-document pagination.
 
 Production ownership remains within the two existing Syndication files. AcquisitionCoordinator, fairness, admission, ContentStore, publication, Composition, UI, schema and package dependencies are unchanged. No document cache or additional persistence owner is introduced.
+
+
+## Phase 3R4 responsibility additions
+
+- `Sources/FeedMineAcquisition/FeedConnector.swift`: one opaque Sendable execution context and a contextual pull overload with backward-compatible default delegation; no transport model or durable authority.
+- `Sources/FeedMineAcquisition/AcquisitionCoordinator.swift`: stack-scoped context in the existing shared finite worker; creator-only cancellation propagation and checks, with unchanged sequential admission, target fences and selectionAfter.
+- `Sources/FeedMineSyndication/SyndicationConnector.swift`: one private bounded acquired-document value in the borrowed context, with fingerprint and target/generation stamp; confirmed checkpoint remains the sole continuation position.
+- `Tests/FeedMineSyndicationTests/ExecutionDocumentReuseTests.swift`: real coordinator/admission plus controlled transport, exact page/count/stamp proofs, lifetime witnesses, failure/cancel/join/fence/capacity cleanup and database reopen.
+- `Tests/FeedMineSyndicationTests/CompletedDocumentFingerprintTests.swift`: adjusts only the first execution's legitimate 2-to-1 GET reduction, preserving the independent reopen GET and durable assertions.
+- `Tests/FeedMineAcquisitionTests/AcquisitionCoordinatorTests.swift`: strengthens the existing ten-item receipt-prefix proof with an observed controlled timeout in the same execution after admission.
+- `Tests/FeedMineCompositionTests/ColdFeedBootstrapTests.swift`: adapts only the authorized former second-GET timeout test, now proving ten-item durable acquisition and exact publication with one GET.
+
+HTTP, Translator, Planner/fairness, AdmissionPolicy, Persistence, publication, Runtime, UI and Composition production retain their prior responsibilities. No production file, actor, Task, persistent storage or background owner is added.

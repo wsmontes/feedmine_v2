@@ -304,15 +304,24 @@ private actor SettlementConnector: FeedConnector {
     enum Step: Sendable {
         case batch([AcquisitionObservation], AcquisitionCheckpoint?)
         case operational(ConnectorOperationalFailure)
+        case timeout
         case invalidBatch
     }
     var steps: [Step]
     private(set) var pulls: [FeedConnectorPull] = []
+    private(set) var observedTimeout = false
     init(_ steps: [Step]) { self.steps = steps }
     func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
         pulls.append(request)
         switch steps.removeFirst() {
         case .operational(let reason): throw reason
+        case .timeout:
+            // The controlled connector encounters a timeout in this same finite execution.
+            do { throw URLError(.timedOut) }
+            catch let error as URLError where error.code == .timedOut {
+                observedTimeout = true
+                throw ConnectorOperationalFailure.transport
+            }
         case .invalidBatch:
             return .batch(.init(targetID: request.targetID, targetGeneration: request.targetGeneration + 1,
                 expectedCheckpointRevision: request.checkpointRevision, observations: [], nextCheckpoint: .init(blob: Data([99]), serializationSchema: 1, connectorVersion: "test"))!, transportByteCount: 0)
@@ -346,13 +355,15 @@ extension AcquisitionCoordinatorTests {
     }
     func test3R2TenItemsSurviveOperationalFailureAfterAdmission() async throws {
         let f = try fixture()
-        let connector = SettlementConnector([.batch((0..<10).map { observation(f, object: "item-\($0)") }, checkpoint(1)), .operational(.transport)])
+        let connector = SettlementConnector([.batch((0..<10).map { observation(f, object: "item-\($0)") }, checkpoint(1)), .timeout])
         let result = try await f.coordinator(connector).execute(start(f, bounds: bounds(2, observations: 10)))
         XCTAssertEqual(result.stop, .operationalFailure(.transport)); XCTAssertEqual(result.receipts.count, 1)
         XCTAssertTrue(result.receipts[0].checkpointAdvanced); XCTAssertTrue(result.selectableSupplyChanged)
         XCTAssertEqual(try f.content.candidateWindow(sourceID: f.source, after: nil, examinedCapacity: 20).records.count, 10)
         XCTAssertEqual(try f.authority.target(id: f.target.id)?.checkpoint, checkpoint(1))
         let pulls = await connector.pulls; XCTAssertEqual(pulls.map(\.checkpointRevision), [0, 1])
+        let observedTimeout = await connector.observedTimeout; XCTAssertTrue(observedTimeout)
+        XCTAssertEqual(try f.authority.target(id: f.target.id)?.checkpointRevision, 1)
     }
     func test3R2MultipleReceiptsRemainOrderedAndNoSupplyIsFactual() async throws {
         let f = try fixture()

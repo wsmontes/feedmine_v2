@@ -30,6 +30,20 @@ public enum FeedConnectorEvent: Hashable, Sendable {
     case disconnected
 }
 
+/// Opaque connector state lent exclusively to sequential pulls of one coordinator execution.
+/// It has no durable authority and is released with that execution's stack.
+public struct FeedConnectorExecutionContext: Sendable {
+    public var retainedValue: (any Sendable)?
+    public init() { retainedValue = nil }
+}
+
 public protocol FeedConnector: Sendable {
     func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent
+    func pull(_ request: FeedConnectorPull, context: inout FeedConnectorExecutionContext) async throws -> FeedConnectorEvent
+}
+
+public extension FeedConnector {
+    func pull(_ request: FeedConnectorPull, context: inout FeedConnectorExecutionContext) async throws -> FeedConnectorEvent {
+        try await pull(request)
+    }
 }

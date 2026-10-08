@@ -106,7 +106,9 @@ public actor AcquisitionCoordinator {
         inFlight[target.id] = InFlight(generation: target.generation, task: task)
         // Only this creator removes the entry, on either result or error settlement.
         defer { inFlight.removeValue(forKey: target.id) }
-        return try await task.value
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: { task.cancel() }
     }
 
     private static func run(target: AcquisitionTarget, bounds: AcquisitionWorkBounds,
@@ -114,10 +116,12 @@ public actor AcquisitionCoordinator {
         let authority = AcquisitionTargetAuthority(database: database)
         let admission = AdmissionPolicy(database: database)
         var receipts: [AdmissionReceipt] = []
+        var context = FeedConnectorExecutionContext()
         func result(_ stop: AcquisitionExecutionStop) -> AcquisitionExecutionResult {
             AcquisitionExecutionResult(targetID: target.id, generation: target.generation, stop: stop, receipts: receipts)
         }
         while receipts.count < bounds.batchCapacity {
+            if Task.isCancelled { return result(.cancelled) }
             guard let current = try authority.target(id: target.id) else {
                 throw AcquisitionCoordinatorError.targetMissing(target.id)
             }
@@ -134,9 +138,10 @@ public actor AcquisitionCoordinator {
                 checkpointRevision: current.checkpointRevision, checkpoint: current.checkpoint,
                 observationCapacity: bounds.observationCapacityPerBatch, byteCapacity: bounds.byteCapacityPerBatch)!
             let event: FeedConnectorEvent
-            do { event = try await connector.pull(request) }
+            do { event = try await connector.pull(request, context: &context) }
             catch is CancellationError { return result(.cancelled) }
             catch let failure as ConnectorOperationalFailure { return result(.operationalFailure(failure)) }
+            if Task.isCancelled { return result(.cancelled) }
             switch event {
             case .finished: return result(.finished)
             case .upToDate: return result(.upToDate)
