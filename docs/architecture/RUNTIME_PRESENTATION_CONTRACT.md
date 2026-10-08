@@ -75,3 +75,11 @@ viewport movement = memory-local. checkpointCurrentPosition(at:) = explicit dura
 Without a milestone, scrolling from durable P4/center to current P6/center and reopening restores P4/center. With an explicit milestone after that scroll, reopening restores P6/center. Top placement remains top. An explicit milestone without movement may write the same logical position again with the supplied metadata time; no extra idempotency optimization is introduced.
 
 FeedSession does not decide when lifecycle milestones occur. App lifecycle wiring, automatic save policy, checkpoint batching, UI streams, exposure and Runway remain deferred.
+
+## 10. Continuous-production boundary — Phase 3J design only
+
+FeedWindow backwardCapacity / forwardCapacity bound disposable presentation materialization. They are not desired ready-ahead runway, refill/page sizes or acquisition targets. Published-ready runway measures already-published local presentation-ready occurrences ahead of the logical anchor in the visible Edition, independently of the current window. The future narrow measurement boundary is specified in [CONTINUOUS_FEED_RUNWAY_DESIGN.md](CONTINUOUS_FEED_RUNWAY_DESIGN.md); no query or session behavior is implemented here.
+
+Normal future replenishment durably appends a new tail segment to the same Edition. A future publishedTailAdvanced notification permits later rematerialization around the unchanged logical anchor/placement and capacities; it does not reorder/remove visible history, force scrolling, replace Edition or implicitly checkpoint. Explicit successor preparation/swap remains separate. Existing Phase 2I restore, memory-local movement and explicit checkpoint semantics are unchanged.
+
+Production pressure, progress, in-flight intent and diagnostics are operational Runtime state outside FeedPresentationSnapshot. No tailState, runwayState, refreshState or generation placeholder is added. Future separate RunwayObservation reports logical consumption measurements without production I/O; ViewportObservation remains anchor-only. Existing retained-history window materialization remains unchanged.
