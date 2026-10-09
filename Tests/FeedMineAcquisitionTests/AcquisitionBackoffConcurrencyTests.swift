@@ -17,13 +17,18 @@ final class AcquisitionBackoffConcurrencyTests: XCTestCase {
     private actor Gate: FeedConnector {
         private var started = 0, peak = 0, running = 0
         private var waiters: [CheckedContinuation<Void, Never>] = []
+        private let onStarted: @Sendable (Int) -> Void
+        private var opened = false
+        init(onStarted: @escaping @Sendable (Int) -> Void) { self.onStarted = onStarted }
         func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
             started += 1; running += 1; peak = max(peak, running)
-            await withCheckedContinuation { waiters.append($0) }
+            onStarted(started)
+            if !opened { await withCheckedContinuation { waiters.append($0) } }
             running -= 1
             return .finished
         }
-        func release() { let all = waiters; waiters = []; all.forEach { $0.resume() } }
+        func releaseOne() { if !waiters.isEmpty { waiters.removeFirst().resume() } }
+        func open() { opened = true; let all = waiters; waiters = []; all.forEach { $0.resume() } }
         func counts() -> (started: Int, peak: Int) { (started, peak) }
     }
 
@@ -38,7 +43,7 @@ final class AcquisitionBackoffConcurrencyTests: XCTestCase {
                 authorizedSources: [SourceID()])
         }
     }
-    private func start(_ target: AcquisitionTarget) -> AcquisitionPlannedWork {
+    private static func start(_ target: AcquisitionTarget) -> AcquisitionPlannedWork {
         .start(target: target, bounds: .init(batchCapacity: 1, observationCapacityPerBatch: 1, byteCapacityPerBatch: 10)!)
     }
 
@@ -60,26 +65,26 @@ final class AcquisitionBackoffConcurrencyTests: XCTestCase {
         let coordinator = AcquisitionCoordinator(database: db, connectorForTarget: { _ in
             mode.fail ? FailingConnector() as any FeedConnector : FinishedConnector() },
             backoff: AcquisitionBackoffPolicy(baseSeconds: 10, ceilingSeconds: 100), monotonicSeconds: { time.now })
-        let first = try await coordinator.execute(start(target))
+        let first = try await coordinator.execute(Self.start(target))
         XCTAssertEqual(first.stop, .operationalFailure(.transport))
         var cooling = await coordinator.coolingTargetIDs(); XCTAssertEqual(cooling, [target.id])
         time.now = 10; cooling = await coordinator.coolingTargetIDs(); XCTAssertTrue(cooling.isEmpty)
-        _ = try await coordinator.execute(start(target))           // second consecutive failure at t=10
+        _ = try await coordinator.execute(Self.start(target))           // second consecutive failure at t=10
         time.now = 29; cooling = await coordinator.coolingTargetIDs(); XCTAssertEqual(cooling, [target.id])
         time.now = 30; cooling = await coordinator.coolingTargetIDs(); XCTAssertTrue(cooling.isEmpty)
         mode.fail = false
-        _ = try await coordinator.execute(start(target))
+        _ = try await coordinator.execute(Self.start(target))
         mode.fail = true
-        _ = try await coordinator.execute(start(target))           // history cleared: back to base delay
+        _ = try await coordinator.execute(Self.start(target))           // history cleared: back to base delay
         time.now = 39; cooling = await coordinator.coolingTargetIDs(); XCTAssertEqual(cooling, [target.id])
         time.now = 40; cooling = await coordinator.coolingTargetIDs(); XCTAssertTrue(cooling.isEmpty)
     }
 
     func testPlanningSkipsCoolingTargetsAtomically() async throws {
         let db = try database(), all = try targets(2, in: db), time = Time()
-        let coordinator = AcquisitionCoordinator(database: db, connectorForTarget: { $0.id == all[0].id ? FailingConnector() : FinishedConnector() },
+        let coordinator = AcquisitionCoordinator(database: db, connectorForTarget: { $0.id == all[0].id ? FailingConnector() as any FeedConnector : FinishedConnector() },
             backoff: AcquisitionBackoffPolicy(baseSeconds: 60, ceilingSeconds: 60), monotonicSeconds: { time.now })
-        _ = try await coordinator.execute(start(all[0]))
+        _ = try await coordinator.execute(Self.start(all[0]))
         let demand = try XCTUnwrap(AcquisitionDemand(contextKey: .init(request: .main), editorialRevisionID: EditorialRevisionID(),
             purpose: .initialPublication, pressure: .initialPublication, localSupply: XCTUnwrap(ExhaustedLocalSupply(readyCards: 0))))
         let resources = try XCTUnwrap(AcquisitionPlanningResources(targetWorkCapacity: 2, batchCapacityPerNewExecution: 1,
@@ -95,25 +100,38 @@ final class AcquisitionBackoffConcurrencyTests: XCTestCase {
     }
 
     func testSlidingWindowNeverExceedsLimitAndReturnsPlanOrder() async throws {
-        let db = try database(), all = try targets(5, in: db), gate = Gate()
-        let coordinator = AcquisitionCoordinator(database: db, connectorForTarget: { _ in gate }, concurrentTargetLimit: 2)
-        let execution = Task { try await coordinator.executeConcurrently(all.map(start)) { _ in } }
-        for _ in 0..<50 {
-            if await gate.counts().started == 2 { break }
-            await Task.yield()
+        let waves = (2...5).map { XCTestExpectation(description: "Started \($0) requests") }
+        let gate = Gate { started in
+            if (2...5).contains(started) { waves[started - 2].fulfill() }
         }
-        var counts = await gate.counts(); XCTAssertEqual(counts.started, 2)
-        for _ in 0..<10 { await gate.release(); for _ in 0..<20 { await Task.yield() } }
+        let db = try database(), all = try targets(5, in: db)
+        let coordinator = AcquisitionCoordinator(database: db, connectorForTarget: { _ in gate }, concurrentTargetLimit: 2)
+        let work = all.map(Self.start)
+        let execution = Task { try await coordinator.executeConcurrently(work) { _ in } }
+        for wave in waves {
+            let result = await XCTWaiter.fulfillment(of: [wave], timeout: 5)
+            guard result == .completed else {
+                await gate.open()
+                _ = try await execution.value
+                return XCTFail("Sliding window did not refill after a completion")
+            }
+            let counts = await gate.counts()
+            XCTAssertLessThanOrEqual(counts.peak, 2)
+            await gate.releaseOne()
+        }
+        await gate.open()
         let results = try await execution.value
         XCTAssertEqual(results.map(\.targetID), all.map(\.id))
-        counts = await gate.counts(); XCTAssertEqual(counts.started, 5); XCTAssertLessThanOrEqual(counts.peak, 2)
+        let counts = await gate.counts()
+        XCTAssertEqual(counts.started, 5)
+        XCTAssertEqual(counts.peak, 2)
     }
 
     func testDefaultLimitIsSequential() async throws {
         let db = try database()
         let coordinator = AcquisitionCoordinator(database: db, connectorForTarget: { _ in FinishedConnector() })
         XCTAssertEqual(coordinator.concurrentTargetLimit, 1)
-        let results = try await coordinator.executeConcurrently(try targets(3, in: db).map(start)) { _ in }
+        let results = try await coordinator.executeConcurrently(try targets(3, in: db).map(Self.start)) { _ in }
         XCTAssertEqual(results.count, 3); XCTAssertTrue(results.allSatisfy { $0.stop == .finished })
     }
 }

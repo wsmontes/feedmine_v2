@@ -440,7 +440,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
             do {
                 let records = try ContentStore(database: db).candidateWindow(sourceID: nil, after: nil, examinedCapacity: 8).records
                 let edition = try PublicationStore(database: db).edition(id: id.editionID)
-                XCTAssertEqual(records.count, 1); XCTAssertNil(edition)
+                XCTAssertEqual(records.count, 1); XCTAssertNotNil(edition, "Fast supply publishes before the next target starts")
             } catch { XCTFail("Sequential settlement check failed: \(error)") }
         })
         addTeardownBlock { b.remove() }
@@ -453,8 +453,10 @@ final class ColdFeedBootstrapTests: XCTestCase {
                 journal.append("prepare"); return Self.prepared($0)
             })
         let snapshot = try published(await bootstrap.run(identity: id, resources: resources(targets: 2), backwardCapacity: 0, forwardCapacity: 8))
-        XCTAssertEqual(journal.values, ["A start", "A response", "B start", "B response", "prepare"])
-        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(b.calls, 1); XCTAssertEqual(snapshot.window.items.count, 2)
+        XCTAssertEqual(journal.values, ["A start", "A response", "prepare", "B start", "B response"])
+        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(b.calls, 1); XCTAssertEqual(snapshot.window.items.count, 1)
+        XCTAssertEqual(try ContentStore(database: db).candidateWindow(sourceID: nil, after: nil, examinedCapacity: 8).records.count, 2,
+            "The slower target still contributes supply after first publication")
         XCTAssertEqual(try authority.target(id: f.target.id)?.checkpointRevision, 1)
         XCTAssertEqual(try authority.target(id: targetB.id)?.checkpointRevision, 1)
         try await assertPublished(f, identity: id, snapshot: snapshot)

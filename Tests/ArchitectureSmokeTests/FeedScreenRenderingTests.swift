@@ -313,7 +313,7 @@ final class FeedScreenRenderingTests: XCTestCase {
     // Inspect the real declarative ForEach (not a parallel rendering model).
     private func publishedSequence(in value: Any, depth: Int = 0) -> (any PublishedCardSequence)? {
         if let sequence = value as? any PublishedCardSequence { return sequence }
-        guard depth < 12 else { return nil }
+        guard depth < 24 else { return nil }
         for child in Mirror(reflecting: value).children {
             if let sequence = publishedSequence(in: child.value, depth: depth + 1) { return sequence }
         }

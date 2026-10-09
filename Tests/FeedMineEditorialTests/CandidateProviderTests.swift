@@ -76,9 +76,9 @@ final class CandidateProviderTests: XCTestCase {
             let result = try provider.candidates(for: plan(.main), after: nil, examinedCapacity: 3)
             XCTAssertEqual(result.candidates, [
                 Candidate(originRecordID: origin(1), originRevisionID: v1.id, headline: nil, summary: "summary é",
-                    timestamp: CandidateTimestamp(value: authored, kind: .authored), language: "pt-BR", providerID: attribution, sourceIDs: [a]),
+                    timestamp: CandidateTimestamp(value: authored, kind: .authored), language: "pt-BR", providerID: attribution, sourceIDs: [a], primaryLink: URL(string: "https://example.test/item")!),
                 Candidate(originRecordID: origin(2), originRevisionID: v2.id, headline: "", summary: "",
-                    timestamp: CandidateTimestamp(value: time, kind: .observed), language: nil, providerID: nil, sourceIDs: [b])])
+                    timestamp: CandidateTimestamp(value: time, kind: .observed), language: nil, providerID: nil, sourceIDs: [b], primaryLink: URL(string: "https://example.test/item")!)])
             XCTAssertEqual(result.examinedCount, 2)
             XCTAssertEqual(result.nextCursor, CandidateSupplyCursor(sortDate: time, originRecordID: origin(2)))
             XCTAssertTrue(result.exhausted)

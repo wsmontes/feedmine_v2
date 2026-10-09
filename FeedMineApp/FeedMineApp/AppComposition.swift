@@ -31,7 +31,7 @@ final class AppComposition {
             FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).directory
         self.feeds = feeds
         let config = transportConfiguration ?? .ephemeral
-        config.timeoutIntervalForRequest = 20
+        if transportConfiguration == nil { config.timeoutIntervalForRequest = 20 }
         #if DEBUG
         // Real transport fault configuration for a network-blocked relaunch; no mock connector.
         if ProcessInfo.processInfo.environment["FEEDMINE_BLOCK_RSS_NETWORK"] == "1" {

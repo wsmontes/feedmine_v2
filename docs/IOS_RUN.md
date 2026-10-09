@@ -144,3 +144,7 @@ COMMIT 1 verificado: a64a34057cf596ff85b77d2376c865c27dcaf740 — fix: deliver n
 | A21–A24 | Sem backend próprio/pipeline duplicado; 766 regressões verdes; projeto compartilhado sem paths absolutos/DerivedData/segredos versionados. .build/ e Package.resolved raiz já estavam untracked e não são incluídos. |
 
 Os contadores da pequena sobreposição visual e os logs de captura existem somente em DEBUG. Não são mecanismo de ordenação ou navegação. Release não contém esses contadores.
+
+## Rodada de validação 2026-10-09 — OMP/Codex
+
+Os resultados históricos acima pertencem ao gate 3R10. O código atual inclui mídia, preparação incremental e retomada automática por cooldown; não reutilize a descrição antiga de foreground como contrato atual. Consulte `docs/reviews/OMP_VALIDATION_2026-10-09.md` para os resultados executados da base fe91c0f e seus incrementos.

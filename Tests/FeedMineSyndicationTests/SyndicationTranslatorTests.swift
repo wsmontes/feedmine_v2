@@ -7,7 +7,7 @@ import FeedMineSyndication
 final class SyndicationTranslatorTests: XCTestCase {
     private let target = AcquisitionTargetID(rawValue: UUID(uuidString: "123E4567-E89B-12D3-A456-426614174000")!)
     private let source = SourceID()
-    private let observed = Date(timeIntervalSince1970: 12345.125)
+    private let observed = Date(timeIntervalSince1970: 1_700_000_000.125)
     private func config(target: AcquisitionTargetID? = nil, memberships: [AcquisitionMembershipClaim]? = nil) -> SyndicationTargetConfiguration {
         .init(targetID: target ?? self.target,endpoint: URL(string: "http://Example.test/Feed?Case=A")!,
             memberships: memberships ?? [.init(sourceID: source,kind: .derived)])!
@@ -53,7 +53,7 @@ final class SyndicationTranslatorTests: XCTestCase {
         let variants = ["https://www.example.test/news/a?id=7&utm_source=rss&utm_medium=feed",
             "http://example.test/news/a/?id=7#comments", "https://EXAMPLE.test:443/news/a?fbclid=x&id=7&gclid=y",
             "https://example.test/news/a?id=7&ref=homepage&mc_cid=1"]
-        let values = try variants.map { try item(rss("<item><link>\($0)</link></item>")).objectIdentity.value }
+        let values = try variants.map { try item(rss("<item><link>\($0.replacingOccurrences(of: "&", with: "&amp;"))</link></item>")).objectIdentity.value }
         XCTAssertEqual(Set(values),["https://example.test/news/a?id=7"])
         // Meaningful parameters still distinguish articles.
         let other = try item(rss("<item><link>https://example.test/news/a?id=8</link></item>")).objectIdentity.value

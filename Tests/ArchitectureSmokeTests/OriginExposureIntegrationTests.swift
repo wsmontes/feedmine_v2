@@ -38,7 +38,7 @@ final class OriginExposureIntegrationTests: XCTestCase {
             let xml = """
                 <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>Feed</title><item>
                 <guid isPermaLink="false">stable-guid</guid><title>\(title)</title><description>\(description)</description>
-                \(media ? "<media:thumbnail url=\"https://example.invalid/image.png\" width=\"20\" height=\"30\"/>" : "")
+                \(media ? "<media:thumbnail url=\"https://example.invalid/image.png\" width=\"600\" height=\"400\"/>" : "")
                 </item></channel></rss>
                 """
             let translated = try SyndicationTranslator().translate(data: Data(xml.utf8),configuration: configuration,

@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 import FeedMineDomain
 import FeedMinePersistence
-import FeedMineEditorial
+@testable import FeedMineEditorial
 import FeedMinePublication
 import FeedMineRuntime
 

@@ -240,7 +240,7 @@ final class FeedScreenStoreTests: XCTestCase {
             XCTAssertFalse(field.value is PresentationAnchor)
             XCTAssertFalse(field.value is PublicationCardID)
         }
-        XCTAssertEqual(Set(fields.compactMap(\.label)), ["_state", "onViewport", "_$observationRegistrar"])
+        XCTAssertEqual(Set(fields.compactMap(\.label)), ["_state", "onViewport", "onOpen", "_$observationRegistrar"])
     }
 
     func testS12ModuleBoundaryAndNoExecutionMechanisms() throws {

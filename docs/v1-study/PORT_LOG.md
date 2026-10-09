@@ -3,8 +3,8 @@
 Changes that bring v1 lessons (`docs/v1-study/`) and product decisions
 (`docs/product/PRODUCT_DECISIONS_2026-10-09.md`) into v2 code.
 
-**Status: written without a compiler.** These changes have not been built or tested; there is no
-Swift toolchain on the machine where they were written. Before building on any of this, run
+**Historical status of rounds 1–3: written without a compiler.** These changes have not been built or tested; there is no
+Swift toolchain on the machine where they were written. Local compilation/validation has now begun; see `docs/reviews/OMP_VALIDATION_2026-10-09.md`. Before building on any of this, run
 `swift build && swift test` and fix whatever fails.
 
 | Commit | Change | Lesson / decision | Tests added |

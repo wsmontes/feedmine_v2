@@ -135,4 +135,16 @@ extension MediaPrefetcherTests {
         XCTAssertEqual(calls.all.filter { $0.lastPathComponent == "gone.png" }.count, 1)
         XCTAssertEqual(prefetcher.readiness.presentation(for: other), .textOnly)
     }
+    func testExplicitEditorialRevisionsIgnoreGlobalHeadAndDeduplicate() async throws {
+        let (db, assets) = try setup(), calls = Calls(), png = self.png
+        let unrelated = try admit(db, urls: ["https://example.test/unrelated.png"])
+        let next = try admit(db, urls: ["https://example.test/next.png"])
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            fetch: { url, _ in calls.add(url); return png }, conditions: { _ in Self.policy() })
+        await prefetcher.prefetch([next, next])
+        XCTAssertEqual(calls.all.map(\.lastPathComponent), ["next.png"])
+        XCTAssertNotNil(prefetcher.readiness.prepared(next))
+        XCTAssertNil(prefetcher.readiness.prepared(unrelated))
+    }
+
 }

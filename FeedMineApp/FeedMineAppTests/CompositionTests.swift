@@ -10,6 +10,19 @@ import FeedMineComposition
 // Controlled transport exists only in this test target; all admission and publication are real.
 final class FixtureTransport: URLProtocol, @unchecked Sendable {
     static let rejecting = Mutex(false)
+    static let holdingScience = Mutex(false)
+    private final class HeldLoaders: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [FixtureTransport] = []
+        func append(_ loader: FixtureTransport) { lock.lock(); defer { lock.unlock() }; values.append(loader) }
+        func take() -> [FixtureTransport] { lock.lock(); defer { lock.unlock() }; let all = values; values = []; return all }
+    }
+    private static let held = HeldLoaders()
+    static func releaseScience() {
+        holdingScience.withLock { $0 = false }
+        let loaders = held.take()
+        loaders.forEach { $0.respond() }
+    }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -17,6 +30,13 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
             return
         }
+        if Self.holdingScience.withLock({ $0 }), request.url?.path.contains("science") == true {
+            Self.held.append(self)
+            return
+        }
+        respond()
+    }
+    private func respond() {
         let items = (1...24).map { "<item><guid>fixture-\($0)</guid><title>Published fixture \($0)</title><description>Readable local story \($0)</description></item>" }.joined()
         let data = Data("<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Trusted fixture</title><link>https://fixture.invalid/</link><description>Integration</description>\(items)</channel></rss>".utf8)
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/rss+xml"])!, cacheStoragePolicy: .notAllowed)
@@ -28,11 +48,12 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
 
 @MainActor
 final class CompositionTests: XCTestCase {
-    private func root() -> AppComposition {
+    private func root(requestTimeout: TimeInterval = 60) -> AppComposition {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = requestTimeout
         return AppComposition(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
-            feeds: [TrustedFeed.development[0]], transportConfiguration: configuration)
+            feeds: TrustedFeed.development, transportConfiguration: configuration)
     }
 
     private func launched() async throws -> (AppComposition, FeedAssociation) {
@@ -61,18 +82,79 @@ final class CompositionTests: XCTestCase {
         }
     }
 
-    func testEmptyLaunchRecoversAtExplicitForegroundWithoutReplacingAssociation() async throws {
+    func testEmptyLaunchRecoversAtForegroundAfterCooldownWithoutReplacingAssociation() async throws {
         FixtureTransport.rejecting.withLock { $0 = true }
-        let root = root()
+        defer { FixtureTransport.rejecting.withLock { $0 = false } }
+        let root = root(requestTimeout: 0.05)
         await root.launch()
         FixtureTransport.rejecting.withLock { $0 = false }
         let association = try XCTUnwrap(root.association)
         let store = association.store
         XCTAssertNil(store.state.presentation)
+        // A foreground opportunity respects the same acquisition cooldown as autonomous retry.
+        try await Task.sleep(for: .milliseconds(75))
         await root.foreground()
+        // A scheduled cold retry may already own launch; wait for its real publication.
+        for _ in 0..<200 where store.state.presentation == nil { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNotNil(store.state.presentation)
         XCTAssertTrue(root.association === association)
         XCTAssertTrue(association.store === store)
+        await association.close()
+    }
+
+    func testColdStartRecoversAutonomouslyWithoutGesture() async throws {
+        FixtureTransport.rejecting.withLock { $0 = true }
+        defer { FixtureTransport.rejecting.withLock { $0 = false } }
+        let root = root(requestTimeout: 0.05)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        XCTAssertNil(association.store.state.presentation)
+        FixtureTransport.rejecting.withLock { $0 = false }
+        for _ in 0..<200 where association.store.state.presentation == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNotNil(association.store.state.presentation)
+        XCTAssertTrue(root.association === association)
+        await association.close()
+    }
+
+    func testBackgroundCancelsColdRetryUntilForeground() async throws {
+        FixtureTransport.rejecting.withLock { $0 = true }
+        defer { FixtureTransport.rejecting.withLock { $0 = false } }
+        let root = root(requestTimeout: 0.05)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        await root.background()
+        FixtureTransport.rejecting.withLock { $0 = false }
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertNil(association.store.state.presentation)
+        await root.foreground()
+        for _ in 0..<200 where association.store.state.presentation == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNotNil(association.store.state.presentation)
+        await association.close()
+    }
+
+    func testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates() async throws {
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        defer { FixtureTransport.releaseScience() }
+        let root = root()
+        let launch = Task { await root.launch() }
+        for _ in 0..<200 where root.association?.store.state.presentation == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let first = root.association?.store.state.presentation
+        XCTAssertEqual(first?.window.items.count, 1, "One PD-4-valid fast card is visible while the other feed is suspended")
+        XCTAssertEqual(first?.window.items.first?.sourceDisplayName, "BBC World")
+        FixtureTransport.releaseScience()
+        await launch.value
+        let association = try XCTUnwrap(root.association)
+        let cards = try XCTUnwrap(association.store.state.presentation).window.items
+        XCTAssertEqual(cards.count, 17, "Anchor plus a sixteen-card idle reserve")
+        for (left, right) in zip(cards, cards.dropFirst()) {
+            XCTAssertNotEqual(left.sourceDisplayName, right.sourceDisplayName)
+        }
         await association.close()
     }
 
@@ -133,7 +215,7 @@ final class CompositionTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
-        let root = AppComposition(directory: directory, feeds: [TrustedFeed.development[0]], transportConfiguration: configuration)
+        let root = AppComposition(directory: directory, feeds: TrustedFeed.development, transportConfiguration: configuration)
         await root.launch()
         let old = try XCTUnwrap(root.association)
         let snapshot = try XCTUnwrap(old.store.state.presentation)
@@ -141,7 +223,7 @@ final class CompositionTests: XCTestCase {
         await old.close()
         FixtureTransport.rejecting.withLock { $0 = true }
         defer { FixtureTransport.rejecting.withLock { $0 = false } }
-        let reopened = AppComposition(directory: directory, feeds: [TrustedFeed.development[0]], transportConfiguration: configuration)
+        let reopened = AppComposition(directory: directory, feeds: TrustedFeed.development, transportConfiguration: configuration)
         await reopened.launch()
         XCTAssertNil(reopened.startupFailure)
         let next = try XCTUnwrap(reopened.association)
