@@ -511,7 +511,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
         XCTAssertEqual(source.components(separatedBy: "initialProductionSlice.run(").count - 1, 2)
         XCTAssertEqual(source.components(separatedBy: "AcquisitionPlanner.plan(").count - 1, 1)
         XCTAssertEqual(source.components(separatedBy: "coordinator.selectionOpportunity").count - 1, 1)
-        XCTAssertEqual(source.components(separatedBy: "for work in acquisitionPlan.work").count - 1, 1)
+        XCTAssertEqual(source.components(separatedBy: "coordinator.executeConcurrently(acquisitionPlan.work)").count - 1, 1)
         let plan = try String(contentsOf: root.appendingPathComponent("Sources/FeedMineAcquisition/BootstrapPlan.swift"), encoding: .utf8)
         for forbidden in ["RuntimeDatabase", "AcquisitionTargetAuthority", "AcquisitionCoordinator", "FeedConnector", "Date", "Timer", "Task", "sleep", "minimumCards", "targetCards", "page", "deadline", "retry"] {
             XCTAssertFalse(plan.contains(forbidden), forbidden)

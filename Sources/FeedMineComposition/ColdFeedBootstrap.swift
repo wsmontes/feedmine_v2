@@ -103,8 +103,9 @@ public struct ColdFeedBootstrap: Sendable {
             exhaustedLocalSupply: ExhaustedLocalSupply(readyCards: 0)!, acquisitionResources: resources.acquisition)!
         let eligibleTargets = try acquisition.eligibleTargets(for: plan.context)
         let acquisitionPlan: AcquisitionPlan
-        let planning = try await coordinator.selectionOpportunity { position, active in
-            try AcquisitionPlanner.plan(demand: bootstrapPlan.demand, eligibleTargets: eligibleTargets,
+        let planning = try await coordinator.selectionOpportunity { position, active, cooling in
+            try AcquisitionPlanner.plan(demand: bootstrapPlan.demand,
+                eligibleTargets: eligibleTargets.filter { !cooling.contains($0.id) },
                 activeExecutions: active, resources: bootstrapPlan.acquisitionResources, selectionAfter: position)
         }
         switch planning {
@@ -118,13 +119,9 @@ public struct ColdFeedBootstrap: Sendable {
             acquisitionPlan = planned
         }
 
-        var results: [AcquisitionExecutionResult] = []
-        for work in acquisitionPlan.work {
-            try Task.checkCancellation()
-            let result = try await coordinator.execute(work)
-            results.append(result)
-            if result.stop == .cancelled { break }
-        }
+        try Task.checkCancellation()
+        // First launch contacts every planned feed at once; the slowest no longer gates the rest.
+        let results = try await coordinator.executeConcurrently(acquisitionPlan.work) { _ in }
         let changed = results.contains { $0.selectableSupplyChanged }
         guard changed else { return .noPublicationAfterAcquisition(firstProgress, results) }
 

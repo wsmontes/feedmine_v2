@@ -122,7 +122,8 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
 
     internal var runtimeDatabase: RuntimeDatabase { database }
 
-    public func makeCoordinator() -> AcquisitionCoordinator {
-        AcquisitionCoordinator(database: database, connectorForTarget: { target in self.connector(for: target) })
+    public func makeCoordinator(backoff: AcquisitionBackoffPolicy? = nil, concurrentTargetLimit: Int = 1) -> AcquisitionCoordinator {
+        AcquisitionCoordinator(database: database, connectorForTarget: { target in self.connector(for: target) },
+            backoff: backoff, concurrentTargetLimit: concurrentTargetLimit)
     }
 }

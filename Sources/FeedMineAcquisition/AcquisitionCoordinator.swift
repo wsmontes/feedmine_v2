@@ -1,5 +1,6 @@
 // Owns: transient per-target execution sharing and bounded pull/admission settlement.
 // Does not own: durable authority, planning, publication or Runtime handoff.
+import Foundation
 import FeedMineDomain
 import FeedMinePersistence
 
@@ -52,13 +53,81 @@ public actor AcquisitionCoordinator {
     }
     private let database: RuntimeDatabase
     private let connectorForTarget: @Sendable (AcquisitionTarget) -> (any FeedConnector)?
+    private let backoff: AcquisitionBackoffPolicy?
+    private let monotonicSeconds: @Sendable () -> Double
+    /// Operational bound on simultaneous target executions in `executeConcurrently` (≥ 1).
+    public nonisolated let concurrentTargetLimit: Int
     private var selectionAfter: AcquisitionTargetID?
     private var inFlight: [AcquisitionTargetID: InFlight] = [:]
+    private var failures: [AcquisitionTargetID: (consecutive: Int, at: Double)] = [:]
 
     public init(database: RuntimeDatabase,
-        connectorForTarget: @escaping @Sendable (AcquisitionTarget) -> (any FeedConnector)?) {
+        connectorForTarget: @escaping @Sendable (AcquisitionTarget) -> (any FeedConnector)?,
+        backoff: AcquisitionBackoffPolicy? = nil, concurrentTargetLimit: Int = 1,
+        monotonicSeconds: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime }) {
         self.database = database
         self.connectorForTarget = connectorForTarget
+        self.backoff = backoff
+        self.concurrentTargetLimit = max(1, concurrentTargetLimit)
+        self.monotonicSeconds = monotonicSeconds
+    }
+
+    /// Targets whose recent consecutive operational failures put them in a cooling window.
+    /// A cooling target is skipped by planning so a broken feed stops consuming capacity (H2).
+    public func coolingTargetIDs() -> Set<AcquisitionTargetID> {
+        guard let backoff else { return [] }
+        let now = monotonicSeconds()
+        return Set(failures.compactMap { id, failure in
+            now < failure.at + backoff.delay(afterConsecutiveFailures: failure.consecutive) ? id : nil
+        })
+    }
+
+    /// Like `selectionOpportunity`, also lending the cooling set atomically with the position.
+    public func selectionOpportunity(
+        _ select: @Sendable (AcquisitionTargetID?, [AcquisitionActiveExecution], Set<AcquisitionTargetID>) throws -> AcquisitionPlanningResult
+    ) rethrows -> AcquisitionPlanningResult {
+        let cooling = coolingTargetIDs()
+        return try selectionOpportunity { position, active in try select(position, active, cooling) }
+    }
+
+    /// Runs a finite plan through a sliding window of at most `concurrentTargetLimit` executions
+    /// (v1 lesson, commit 814b0a5e: refill per completion, never per chunk). Results are returned
+    /// in plan order; `onResult` sees each as it settles. A cancelled result stops starting new
+    /// work; fatal errors propagate. A limit of 1 is exactly sequential.
+    public nonisolated func executeConcurrently(_ work: [AcquisitionPlannedWork],
+        onResult: @escaping @Sendable (AcquisitionExecutionResult) async throws -> Void) async throws -> [AcquisitionExecutionResult] {
+        let limit = concurrentTargetLimit
+        return try await withThrowingTaskGroup(of: (Int, AcquisitionExecutionResult).self) { group in
+            var next = 0, running = 0, stopped = false
+            var settled: [Int: AcquisitionExecutionResult] = [:]
+            func startMore() {
+                while !stopped, running < limit, next < work.count {
+                    let index = next, item = work[index]
+                    group.addTask { (index, try await self.execute(item)) }
+                    next += 1; running += 1
+                }
+            }
+            startMore()
+            while let pair = try await group.next() {
+                let (index, result) = pair
+                running -= 1
+                settled[index] = result
+                try await onResult(result)
+                if result.stop == .cancelled { stopped = true }
+                if !stopped { try Task.checkCancellation() }
+                startMore()
+            }
+            return work.indices.compactMap { settled[$0] }
+        }
+    }
+
+    private func record(_ result: AcquisitionExecutionResult) {
+        if case .operationalFailure = result.stop {
+            let previous = failures[result.targetID]?.consecutive ?? 0
+            failures[result.targetID] = (previous + 1, monotonicSeconds())
+        } else if result.stop != .cancelled {
+            failures.removeValue(forKey: result.targetID)
+        }
     }
 
     public func activeExecutions() -> [AcquisitionActiveExecution] {
@@ -106,9 +175,11 @@ public actor AcquisitionCoordinator {
         inFlight[target.id] = InFlight(generation: target.generation, task: task)
         // Only this creator removes the entry, on either result or error settlement.
         defer { inFlight.removeValue(forKey: target.id) }
-        return try await withTaskCancellationHandler {
+        let result = try await withTaskCancellationHandler {
             try await task.value
         } onCancel: { task.cancel() }
+        record(result)
+        return result
     }
 
     private static func run(target: AcquisitionTarget, bounds: AcquisitionWorkBounds,

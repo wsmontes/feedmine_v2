@@ -33,8 +33,9 @@ public struct RunwayAcquisitionCycle: Sendable {
         resources: AcquisitionPlanningResources) async throws -> RunwayAcquisitionCycleOutcome {
         let snapshot = await runway.snapshot()
         guard snapshot.outstandingAcquisition == intent else { throw RunwayAcquisitionCycleError.staleIntent }
-        let planning = try await coordinator.selectionOpportunity { position, active in
-            try AcquisitionPlanner.plan(demand: intent.demand, eligibleTargets: eligibleTargets,
+        let planning = try await coordinator.selectionOpportunity { position, active, cooling in
+            try AcquisitionPlanner.plan(demand: intent.demand,
+                eligibleTargets: eligibleTargets.filter { !cooling.contains($0.id) },
                 activeExecutions: active, resources: resources, selectionAfter: position)
         }
         switch planning {
@@ -46,17 +47,14 @@ public struct RunwayAcquisitionCycle: Sendable {
         case .planned(let plan):
             // Ownership of the finite plan must be accepted before any external work begins.
             try await runway.acknowledgeAcquisition(intent)
-            var results: [AcquisitionExecutionResult] = []
-            for work in plan.work {
-                try Task.checkCancellation()
-                let result = try await coordinator.execute(work)
-                results.append(result)
-                if result.selectableSupplyChanged {
-                    do { try await runway.noteLocalSupplyChanged(scope: intent.scope) }
-                    catch RunwayControllerError.noActiveScope {}
-                    catch RunwayControllerError.scopeMismatch {}
-                }
-                if result.stop == .cancelled { break }
+            try Task.checkCancellation()
+            let runway = self.runway, scope = intent.scope
+            // Targets run concurrently (bounded by the plan) so one slow feed never delays the rest.
+            let results = try await coordinator.executeConcurrently(plan.work) { result in
+                guard result.selectableSupplyChanged else { return }
+                do { try await runway.noteLocalSupplyChanged(scope: scope) }
+                catch RunwayControllerError.noActiveScope {}
+                catch RunwayControllerError.scopeMismatch {}
             }
             return .executed(results)
         }

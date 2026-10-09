@@ -154,7 +154,13 @@ final class FeedAssociation {
         let acquisition = try SyndicationAcquisitionSnapshot(database: db, registrations: registrations,
             session: transport, redirectCapacity: 4)
         self.acquisition = acquisition
-        let coordinator = acquisition.makeCoordinator()
+        // H2: a feed that keeps failing cools down for a doubling window that starts at what one
+        // failed attempt may already cost (the request timeout) and is capped by the resource
+        // timeout. Targets run through a sliding window sized by this device's cores.
+        let backoff = AcquisitionBackoffPolicy(baseSeconds: configuration.timeoutIntervalForRequest,
+            ceilingSeconds: max(configuration.timeoutIntervalForRequest, configuration.timeoutIntervalForResource))
+        let coordinator = acquisition.makeCoordinator(backoff: backoff,
+            concurrentTargetLimit: max(2, ProcessInfo.processInfo.activeProcessorCount))
         self.coordinator = coordinator
         let session = FeedSession(publicationHistory: history)
         self.session = session
