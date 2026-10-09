@@ -272,9 +272,20 @@ final class FeedScreenRenderingTests: XCTestCase {
             for forbidden in ["URLSession", "AsyncImage", "ContentStore", "RuntimeDatabase", "AcquisitionCoordinator", "SelectionEngine",
                 "PublicationCoordinator", "PublicationStore", "Task", ".task", ".onAppear", ".onDisappear", "Timer", "sleep",
                 "retry", "backoff", "scheduler", "cache", "generation", "checkpoint", "UUID(", "PublicationCardID(", "exhausted", "@State", "@Observable", "GeometryReader", "NavigationStack"] {
+                if file == "FeedScreen.swift" && forbidden == "@State" { continue }
                 XCTAssertFalse(source.contains(forbidden), file + ": " + forbidden)
             }
         }
+        let screen = try String(contentsOf: ui.appendingPathComponent("FeedScreen.swift"), encoding: .utf8)
+        let states = screen.split(separator: "\n").filter { $0.contains("@State") }
+        XCTAssertEqual(states.count, 1)
+        XCTAssertEqual(states.first?.trimmingCharacters(in: .whitespaces), "@State private var capture = FeedVisualCapture()")
+        XCTAssertTrue(screen.contains("#available(iOS 18, macOS 15, *)"))
+        XCTAssertTrue(screen.contains("onScrollGeometryChange"))
+        XCTAssertTrue(screen.contains("onScrollPhaseChange"))
+        XCTAssertTrue(screen.contains("store.submitViewport(event.observation, activity: event.activity)"))
+        FeedViewportCaptureTests.assertVisualBoundary()
+
     }
 
     func testNativeHostingObservesStoreWithoutReplacingView() async throws {
