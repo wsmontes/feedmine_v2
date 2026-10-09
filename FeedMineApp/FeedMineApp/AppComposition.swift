@@ -198,8 +198,15 @@ final class FeedAssociation {
         let prepare: @Sendable (SelectionResult) -> LocalPreparedPublication = { Self.prepare($0, readiness: readiness, names: names) }
         // Bounded wait for media of the supply head: what the runway can afford (one request timeout).
         let mediaWait = configuration.timeoutIntervalForRequest / 4
+        let headProvider = CandidateProvider(contentStore: ContentStore(database: db))
+        // Runway: the driver supplies the next editorial candidates for the active context (F05).
+        let prepareRunwayMedia: @Sendable ([OriginRevisionID]) async -> Void = { revisions in
+            await media.prefetch(revisions, deadline: ProcessInfo.processInfo.systemUptime + mediaWait)
+        }
+        // First Edition: nothing is published yet, so the context head is exactly what the slice selects.
         let prepareMedia: @Sendable () async -> Void = {
-            await media.prefetchSupplyHead(limit: 32, deadline: ProcessInfo.processInfo.systemUptime + mediaWait)
+            let head = (try? headProvider.candidates(for: plan, after: nil, examinedCapacity: 32))?.candidates.map(\.originRevisionID) ?? []
+            await media.prefetch(head, deadline: ProcessInfo.processInfo.systemUptime + mediaWait)
         }
         let runway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1.2,
             releaseMarginSeconds: 2)!, consumptionSampleLimit: 8, replenishmentSampleLimit: 8,
@@ -209,7 +216,7 @@ final class FeedAssociation {
             acquisition: acquisition, coordinator: coordinator,
             monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
             makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date())! },
-            prepare: prepare, prepareMedia: prepareMedia)
+            prepare: prepare, prepareMedia: prepareRunwayMedia)
         let relay = EvidenceRelay()
         self.relay = relay
         cold = try ColdFeedBootstrap(session: session, plan: plan, policy: policy,

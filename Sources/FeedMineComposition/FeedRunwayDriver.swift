@@ -2,6 +2,7 @@
 import Foundation
 import FeedMineDomain
 import FeedMineAcquisition
+import FeedMinePersistence
 import FeedMineEditorial
 import FeedMinePublication
 import FeedMineRuntime
@@ -46,16 +47,20 @@ public actor FeedRunwayDriver {
     private let monotonicNow: @Sendable () -> RunwayMonotonicTime
     private let makeSegmentIdentity: @Sendable () throws -> FeedRunwaySegmentIdentity
     private let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication
-    private let prepareMedia: (@Sendable () async -> Void)?
+    /// Receives the next editorial candidates (priority order) so media is prepared for exactly
+    /// what the coming slice can publish (review F05).
+    private let prepareMedia: (@Sendable ([OriginRevisionID]) async -> Void)?
+    private let candidateProvider: CandidateProvider
 
     public init(session: FeedSession, runway: RunwayController, plan: FeedPlan, policy: ResolvedSelectionPolicy,
         acquisition: SyndicationAcquisitionSnapshot, coordinator: AcquisitionCoordinator,
         monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime,
         makeSegmentIdentity: @escaping @Sendable () throws -> FeedRunwaySegmentIdentity,
         prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication,
-        prepareMedia: (@Sendable () async -> Void)? = nil) throws {
+        prepareMedia: (@Sendable ([OriginRevisionID]) async -> Void)? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw FeedRunwayDriverError.policyContextMismatch }
         self.prepareMedia = prepareMedia
+        candidateProvider = CandidateProvider(contentStore: ContentStore(database: acquisition.runtimeDatabase))
         self.session = session; self.runway = runway; self.plan = plan; self.policy = policy; self.acquisition = acquisition
         publicationHistory = PublicationHistory(database: acquisition.runtimeDatabase)
         localProductionSlice = LocalProductionSlice(database: acquisition.runtimeDatabase)
@@ -176,7 +181,10 @@ public actor FeedRunwayDriver {
                 do {
                     try Task.checkCancellation()
                     // Bounded media preparation for the supply head before it is selected (PD-5).
-                    await prepareMedia?()
+                    if let prepareMedia {
+                        await prepareMedia(try await nextEditorialRevisions(after: intent.after,
+                            capacity: intent.examinedCapacity, editionID: intent.scope.editionID))
+                    }
                     guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
                         try? await runway.failLocalSlice(intent, failure: .cancelled, at: monotonicNow())
                         return await session.currentPresentation()
@@ -209,6 +217,21 @@ public actor FeedRunwayDriver {
                 }
             }
         }
+    }
+
+    /// The same window the coming slice examines, minus origins this Edition already published
+    /// (unless edited articles may recur) and origins still waiting ahead of the reader.
+    private func nextEditorialRevisions(after cursor: CandidateSupplyCursor?, capacity: Int,
+        editionID: FeedEditionID) async throws -> [OriginRevisionID] {
+        let window = try candidateProvider.candidates(for: plan, after: cursor, examinedCapacity: capacity)
+        let anchor = await session.currentPresentation()?.window.anchor.cardID
+        let facts = try publicationHistory.exposure(editionID: editionID,
+            originIDs: window.candidates.map(\.originRecordID), readerAnchorCardID: anchor)
+        let recurring = policy.exposure == .excludePublishedMaterial
+        return window.candidates.filter { candidate in
+            guard facts.publishedOriginIDs.contains(candidate.originRecordID) else { return true }
+            return recurring && !facts.unseenOriginIDs.contains(candidate.originRecordID)
+        }.map(\.originRevisionID)
     }
 
     public func markConsumptionInactive() async { await runway.markConsumptionInactive() }
