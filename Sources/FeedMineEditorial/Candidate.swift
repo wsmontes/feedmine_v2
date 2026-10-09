@@ -27,10 +27,12 @@ public struct Candidate: Hashable, Sendable {
     public let timestamp: CandidateTimestamp
     public let language: String?
     public let providerID: ProviderID?
+    /// Sources this origin belongs to. Empty means unknown; it never constrains adjacency (PD-4).
+    public let sourceIDs: Set<SourceID>
 
     public init(originRecordID: OriginRecordID, originRevisionID: OriginRevisionID,
         headline: String?, summary: String?, timestamp: CandidateTimestamp,
-        language: String?, providerID: ProviderID?) {
+        language: String?, providerID: ProviderID?, sourceIDs: Set<SourceID> = []) {
         self.originRecordID = originRecordID
         self.originRevisionID = originRevisionID
         self.headline = headline
@@ -38,5 +40,6 @@ public struct Candidate: Hashable, Sendable {
         self.timestamp = timestamp
         self.language = language
         self.providerID = providerID
+        self.sourceIDs = sourceIDs
     }
 }

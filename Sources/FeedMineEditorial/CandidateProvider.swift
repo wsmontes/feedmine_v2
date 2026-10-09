@@ -52,7 +52,7 @@ public struct CandidateProvider: Sendable {
             return Candidate(originRecordID: record.originRecordID, originRevisionID: record.originRevisionID,
                 headline: record.headline.map(ReadablePublicationText.convert), summary: record.summary.map(ReadablePublicationText.convert),
                 timestamp: CandidateTimestamp(value: record.sortDate, kind: kind),
-                language: record.language, providerID: record.providerID)
+                language: record.language, providerID: record.providerID, sourceIDs: Set(record.sourceIDs))
         }
         return CandidateSupplyWindow(candidates: candidates, examinedCount: window.examinedCount,
             nextCursor: window.nextCursor.map { CandidateSupplyCursor(sortDate: $0.sortDate, originRecordID: $0.originRecordID) },

@@ -119,19 +119,24 @@ final class FeedAssociation {
         let context = FeedContext(request: .main)
         let saved = try history.restore(backwardCapacity: 8, forwardCapacity: 16)
         let v = PolicyVersion(rawValue: 1)
+        // Sequencing v2 = PD-4 source alternation. A behavior change is a new EditorialRevision;
+        // an Edition restored under sequencing v1 keeps its original behavior.
+        let alternating = PolicyVersion(rawValue: 2)
         let revision = saved?.edition.editorialRevision ?? EditorialRevision(
-            id: .init(rawValue: UUID(uuidString: "70000000-0000-4000-8000-000000000001")!),
+            id: .init(rawValue: UUID(uuidString: "70000000-0000-4000-8000-000000000002")!),
             contextKey: context.key, catalogGeneration: .init(rawValue: 1), userSelectionVersion: v,
-            eligibilityPolicyVersion: v, scoringPolicyVersion: v, sequencingPolicyVersion: v,
+            eligibilityPolicyVersion: v, scoringPolicyVersion: v, sequencingPolicyVersion: alternating,
             exposurePolicyVersion: v, selectionSchemaVersion: .init(rawValue: 1))
         guard let plan = FeedPlan(context: context, revision: revision) else {
             throw FeedRunwayDriverError.policyContextMismatch
         }
+        let sequencing: ResolvedSelectionPolicy.SequencingBehavior =
+            revision.sequencingPolicyVersion >= alternating ? .recencyAlternatingSources : .recencyDescending
         let policy = ResolvedSelectionPolicy(contextKey: revision.contextKey,
             userSelectionVersion: revision.userSelectionVersion, eligibilityPolicyVersion: revision.eligibilityPolicyVersion,
             scoringPolicyVersion: revision.scoringPolicyVersion, sequencingPolicyVersion: revision.sequencingPolicyVersion,
             exposurePolicyVersion: revision.exposurePolicyVersion, selectionSchemaVersion: revision.selectionSchemaVersion,
-            eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyDescending, exposure: .excludePublishedRevisions)
+            eligibility: .structuralOnly, scoring: .equal, sequencing: sequencing, exposure: .excludePublishedRevisions)
         let authority = AcquisitionTargetAuthority(database: db)
         let registrations = try feeds.map { feed in
             let existing = try authority.target(id: feed.targetID)

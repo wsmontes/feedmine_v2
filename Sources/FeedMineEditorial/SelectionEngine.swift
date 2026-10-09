@@ -46,6 +46,14 @@ public struct SelectionEngine: Sendable {
 
     public func select(plan: FeedPlan, policy: ResolvedSelectionPolicy,
         window: CandidateSupplyWindow, exposure: SelectionExposureSnapshot?) throws -> SelectionResult {
+        try select(plan: plan, policy: policy, window: window, exposure: exposure, after: nil)
+    }
+
+    /// `after` is the card that will precede this selection in history (the Edition tail), so
+    /// PD-4 alternation also holds across segment boundaries.
+    public func select(plan: FeedPlan, policy: ResolvedSelectionPolicy,
+        window: CandidateSupplyWindow, exposure: SelectionExposureSnapshot?,
+        after neighbor: SelectionNeighbor?) throws -> SelectionResult {
         guard policy.matches(plan.revision) else { throw SelectionError.policyMismatch }
         guard Set(window.candidates.map(\.originRecordID)).count == window.candidates.count else {
             throw SelectionError.duplicateCandidateIdentity
@@ -67,7 +75,7 @@ public struct SelectionEngine: Sendable {
         }
         let ordered: [Candidate]
         switch policy.sequencing {
-        case .recencyDescending:
+        case .recencyDescending, .recencyAlternatingSources:
             ordered = eligible.sorted { left, right in
                 if left.timestamp.value != right.timestamp.value {
                     return left.timestamp.value > right.timestamp.value
@@ -79,8 +87,37 @@ public struct SelectionEngine: Sendable {
                     > right.originRevisionID.rawValue.uuidString.lowercased()
             }
         }
-        return SelectionResult(editorialRevision: plan.revision, orderedCandidates: ordered,
-            supplyReport: SelectionSupplyReport(examinedCount: window.examinedCount,
-                nextCursor: window.nextCursor, exhausted: window.exhausted))
+        // PD-4: a single-source context is exempt by definition; other contexts alternate when the
+        // resolved sequencing behavior says so (a behavior change is a new EditorialRevision).
+        let alternated: (placed: [Candidate], held: [Candidate])
+        if policy.sequencing == .recencyAlternatingSources, !Self.isSingleSource(plan.context.request) {
+            alternated = SourceAlternation.apply(ordered, after: neighbor)
+        } else {
+            alternated = (ordered, [])
+        }
+        return SelectionResult(editorialRevision: plan.revision, orderedCandidates: alternated.placed,
+            supplyReport: Self.report(window: window, held: alternated.held, placedAny: !alternated.placed.isEmpty))
+    }
+
+    private static func isSingleSource(_ request: FeedContextRequest) -> Bool {
+        if case .source = request { return true }
+        return false
+    }
+
+    /// Held candidates must stay reachable. When something was placed, progress is guaranteed (the
+    /// placed origins become published and excluded), so the cursor rewinds to just before the
+    /// earliest held candidate and the next slice reconsiders it. When nothing could be placed, the
+    /// cursor advances normally so supply of other sources is examined (or acquisition is demanded
+    /// on exhaustion) instead of looping on the same window.
+    private static func report(window: CandidateSupplyWindow, held: [Candidate], placedAny: Bool) -> SelectionSupplyReport {
+        let unchanged = SelectionSupplyReport(examinedCount: window.examinedCount, nextCursor: window.nextCursor,
+            exhausted: window.exhausted)
+        guard placedAny, !held.isEmpty else { return unchanged }
+        let heldIDs = Set(held.map(\.originRecordID))
+        guard let earliest = window.candidates.firstIndex(where: { heldIDs.contains($0.originRecordID) }) else { return unchanged }
+        let rewound = earliest == 0 ? nil : window.candidates[earliest - 1]
+        return SelectionSupplyReport(examinedCount: window.examinedCount,
+            nextCursor: rewound.map { CandidateSupplyCursor(sortDate: $0.timestamp.value, originRecordID: $0.originRecordID) },
+            exhausted: false)
     }
 }

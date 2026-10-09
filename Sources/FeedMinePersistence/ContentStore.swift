@@ -48,6 +48,8 @@ public struct ContentStore: Sendable {
         public let observedAt: Date
         public let language: String?
         public let providerID: ProviderID?
+        /// Every Source this origin belongs to, in stable ID order (PD-4 adjacency facts).
+        public let sourceIDs: [SourceID]
     }
 
     public struct CandidateWindow: Hashable, Sendable {
@@ -121,7 +123,9 @@ public struct ContentStore: Sendable {
                         headline: try p.optionalString("headline"), summary: try p.optionalString("summary"),
                         authoredAt: try p.optionalDate("authored_at"), observedAt: try p.date("observed_at"),
                         language: try p.optionalString("language"),
-                        providerID: try p.optionalUUID("provider_id").map { ProviderID(rawValue: $0) }))
+                        providerID: try p.optionalUUID("provider_id").map { ProviderID(rawValue: $0) },
+                        sourceIDs: try String.fetchAll(db, sql: "SELECT source_id FROM source_memberships WHERE origin_record_id = ? ORDER BY source_id COLLATE BINARY ASC",
+                            arguments: [key]).map { SourceID(rawValue: try PersistenceValueCoding.uuid($0, field: "source_memberships.source_id")) }))
                 }
                 return CandidateWindow(records: records, examinedCount: rows.count,
                     nextCursor: nextCursor, exhausted: rows.count < examinedCapacity)

@@ -6,7 +6,11 @@ import FeedMineDomain
 public struct ResolvedSelectionPolicy: Hashable, Sendable {
     public enum EligibilityBehavior: Hashable, Sendable { case structuralOnly }
     public enum ScoringBehavior: Hashable, Sendable { case equal }
-    public enum SequencingBehavior: Hashable, Sendable { case recencyDescending }
+    public enum SequencingBehavior: Hashable, Sendable {
+        case recencyDescending
+        /// Recency order with PD-4 source alternation: never two adjacent cards sharing a source.
+        case recencyAlternatingSources
+    }
     public enum ExposureBehavior: Hashable, Sendable { case none, excludePublishedRevisions }
 
     public let contextKey: ContextKey

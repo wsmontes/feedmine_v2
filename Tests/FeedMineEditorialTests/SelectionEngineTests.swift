@@ -180,4 +180,68 @@ final class SelectionEngineTests: XCTestCase {
         XCTAssertThrowsError(try engine.select(plan: plan,policy: automatic,window: window([candidates[0],candidates[0]]),exposure: nil)) { XCTAssertEqual($0 as? SelectionError,.duplicateCandidateIdentity) }
     }
 
+    // MARK: - PD-4 source alternation
+
+    private func sourced(_ origin: Int, time: Double, _ sources: Int...) -> Candidate {
+        let base = candidate(origin, time: time)
+        return Candidate(originRecordID: base.originRecordID, originRevisionID: base.originRevisionID, headline: base.headline,
+            summary: base.summary, timestamp: base.timestamp, language: base.language, providerID: base.providerID,
+            sourceIDs: Set(sources.map { SourceID(rawValue: uuid(1000 + $0)) }))
+    }
+    private func alternating(_ revision: EditorialRevision) -> ResolvedSelectionPolicy {
+        let p = policy(revision)
+        return ResolvedSelectionPolicy(contextKey: p.contextKey, userSelectionVersion: p.userSelectionVersion,
+            eligibilityPolicyVersion: p.eligibilityPolicyVersion, scoringPolicyVersion: p.scoringPolicyVersion,
+            sequencingPolicyVersion: p.sequencingPolicyVersion, exposurePolicyVersion: p.exposurePolicyVersion,
+            selectionSchemaVersion: p.selectionSchemaVersion, eligibility: .structuralOnly, scoring: .equal,
+            sequencing: .recencyAlternatingSources, exposure: .none)
+    }
+    private func origins(_ result: SelectionResult) -> [OriginRecordID] { result.orderedCandidates.map(\.originRecordID) }
+
+    func testPD4NoTwoAdjacentCardsShareASourceWhileAlternativesExist() throws {
+        let plan = try plan()
+        // Recency order: A1 A2 A3 B4 C5 — speed of one source must not produce a run.
+        let input = [sourced(1, time: 10, 1), sourced(2, time: 9, 1), sourced(3, time: 8, 1), sourced(4, time: 7, 2), sourced(5, time: 6, 3)]
+        let result = try SelectionEngine().select(plan: plan, policy: alternating(plan.revision), window: window(input), exposure: nil, after: nil)
+        XCTAssertEqual(origins(result), [0, 3, 1, 4, 2].map { input[$0].originRecordID })
+        let sequence = result.orderedCandidates
+        for (a, b) in zip(sequence, sequence.dropFirst()) { XCTAssertTrue(a.sourceIDs.isDisjoint(with: b.sourceIDs)) }
+    }
+    func testPD4ViolatingCardsAreHeldNotPublishedAndCursorRewindsToThem() throws {
+        let plan = try plan()
+        let input = [sourced(1, time: 10, 1), sourced(2, time: 9, 2), sourced(3, time: 8, 2), sourced(4, time: 7, 2)]
+        let result = try SelectionEngine().select(plan: plan, policy: alternating(plan.revision),
+            window: window(input, cursor: CandidateSupplyCursor(sortDate: Date(timeIntervalSince1970: 7), originRecordID: input[3].originRecordID),
+                exhausted: true), exposure: nil, after: nil)
+        XCTAssertEqual(origins(result), [input[0].originRecordID, input[1].originRecordID])
+        // Held 3 and 4 stay reachable: cursor rewinds to just after candidate 2, supply not exhausted.
+        XCTAssertEqual(result.supplyReport.nextCursor, CandidateSupplyCursor(sortDate: input[1].timestamp.value, originRecordID: input[1].originRecordID))
+        XCTAssertFalse(result.supplyReport.exhausted)
+    }
+    func testPD4AlternationHoldsAcrossTheSegmentBoundary() throws {
+        let plan = try plan()
+        let input = [sourced(1, time: 10, 1), sourced(2, time: 9, 2)]
+        let tail = SelectionNeighbor(sourceIDs: [SourceID(rawValue: uuid(1001))], providerID: nil)
+        let result = try SelectionEngine().select(plan: plan, policy: alternating(plan.revision), window: window(input), exposure: nil, after: tail)
+        XCTAssertEqual(origins(result), [input[1].originRecordID, input[0].originRecordID])
+    }
+    func testPD4NothingPlaceableAdvancesInsteadOfLooping() throws {
+        let plan = try plan()
+        let input = [sourced(1, time: 10, 1), sourced(2, time: 9, 1)]
+        let cursor = CandidateSupplyCursor(sortDate: Date(timeIntervalSince1970: 9), originRecordID: input[1].originRecordID)
+        let tail = SelectionNeighbor(sourceIDs: [SourceID(rawValue: uuid(1001))], providerID: nil)
+        let result = try SelectionEngine().select(plan: plan, policy: alternating(plan.revision),
+            window: window(input, cursor: cursor, exhausted: true), exposure: nil, after: tail)
+        XCTAssertTrue(result.orderedCandidates.isEmpty)
+        XCTAssertEqual(result.supplyReport.nextCursor, cursor); XCTAssertTrue(result.supplyReport.exhausted)
+    }
+    func testPD4UnknownSourcesAndRecencyBehaviorAreUnconstrained() throws {
+        let plan = try plan()
+        let unknown = [candidate(1, time: 10), candidate(2, time: 9)]
+        XCTAssertEqual(origins(try SelectionEngine().select(plan: plan, policy: alternating(plan.revision), window: window(unknown),
+            exposure: nil, after: nil)), unknown.map(\.originRecordID))
+        let same = [sourced(1, time: 10, 1), sourced(2, time: 9, 1)]
+        XCTAssertEqual(origins(try SelectionEngine().select(plan: plan, policy: policy(plan.revision), window: window(same))),
+            same.map(\.originRecordID))
+    }
 }

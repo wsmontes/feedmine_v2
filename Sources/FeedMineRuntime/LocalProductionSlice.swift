@@ -35,13 +35,15 @@ public enum LocalProductionSliceError: Error, Equatable, Sendable {
 }
 
 public struct LocalProductionSlice: Sendable {
+    private let contentStore: ContentStore
     private let candidateProvider: CandidateProvider
     private let selectionEngine: SelectionEngine
     private let publicationHistory: PublicationHistory
     private let coordinator: PublicationCoordinator
 
     public init(database: RuntimeDatabase) {
-        candidateProvider = CandidateProvider(contentStore: ContentStore(database: database))
+        contentStore = ContentStore(database: database)
+        candidateProvider = CandidateProvider(contentStore: contentStore)
         selectionEngine = SelectionEngine()
         publicationHistory = PublicationHistory(database: database)
         coordinator = PublicationCoordinator(database: database)
@@ -86,8 +88,10 @@ public struct LocalProductionSlice: Sendable {
                 publishedOriginIDs: facts.publishedOriginIDs) else {
             throw LocalProductionSliceError.invalidExposureFacts
         }
+        // PD-4: the Edition tail precedes this segment, so alternation holds across segments.
         let selection = try selectionEngine.select(plan: request.plan, policy: request.policy,
-            window: window, exposure: exposure)
+            window: window, exposure: exposure,
+            after: try neighbor(editionID: request.editionID, tail: facts.observedTailCardID))
         let report = selection.supplyReport
         let progress = LocalProductionProgress(examinedCount: report.examinedCount,
             nextCursor: report.nextCursor, exhausted: report.exhausted)
@@ -101,5 +105,17 @@ public struct LocalProductionSlice: Sendable {
         case .published(let receipt): return .published(progress, receipt)
         case .nothingToPublish: throw LocalProductionSliceError.inconsistentPublicationOutcome
         }
+    }
+
+    /// Attribution of the published tail: its frozen source plus the origin's current memberships.
+    private func neighbor(editionID: FeedEditionID, tail: PublicationCardID) throws -> SelectionNeighbor {
+        let window = try publicationHistory.window(editionID: editionID,
+            around: FeedWindowAnchor(cardID: tail, placement: .top), backwardCapacity: 0, forwardCapacity: 0)
+        guard let card = window.cards.first(where: { $0.id == tail }) else {
+            throw LocalProductionSliceError.invalidExposureFacts
+        }
+        var sources = Set(try contentStore.memberships(originRecordID: card.origin.originRecordID).map(\.sourceID))
+        if let frozen = card.origin.sourceID { sources.insert(frozen) }
+        return SelectionNeighbor(sourceIDs: sources, providerID: card.origin.providerID)
     }
 }
