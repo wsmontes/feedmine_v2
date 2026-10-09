@@ -110,6 +110,22 @@ public struct LegacyCatalogReader: Sendable {
         } }
     }
 
+    /// Bounded literal name/key lookup; values never become SQL syntax.
+    public func matchingSources(query: String, limit: Int) throws -> [LegacyCatalogSourceRecord] {
+        guard limit > 0 else { return [] }
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return try sources(after: nil, limit: min(limit, 100), onlyDefaultEnabled: true, mediaKinds: ["text"]) }
+        let escaped = text.replacingOccurrences(of: "!", with: "!!").replacingOccurrences(of: "%", with: "!%")
+            .replacingOccurrences(of: "_", with: "!_")
+        let keys = try Self.wrap { try queue.read { db in
+            try String.fetchAll(db, sql: """
+                SELECT key FROM catalog_source WHERE media_kind = 'text'
+                    AND (title LIKE ? ESCAPE '!' OR key LIKE ? ESCAPE '!') ORDER BY key LIMIT ?
+                """, arguments: ["%" + escaped + "%", "%" + escaped + "%", min(limit, 100)])
+        } }
+        return try keys.compactMap { try source(key: $0) }
+    }
+
     private static func wrap<T>(_ body: () throws -> T) throws -> T {
         do { return try body() }
         catch let error as LegacyCatalogError { throw error }

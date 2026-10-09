@@ -83,9 +83,25 @@ public enum ColdFeedBootstrapError: Error, Equatable, Sendable {
     case policyContextMismatch
     case sessionAlreadyInstalled
     case inconsistentPublishedRestore
+    case closed
+}
+
+/// Revocation and synchronous publication share one lock; close cannot race the commit boundary.
+private final class ColdPublicationAuthority: @unchecked Sendable {
+    private let lock = NSLock()
+    private var active = true
+    func cancel() { lock.lock(); active = false; lock.unlock() }
+    func perform<T>(_ operation: () throws -> T) throws -> T {
+        lock.lock(); defer { lock.unlock() }
+        guard active else { throw ColdFeedBootstrapError.closed }
+        try Task.checkCancellation()
+        return try operation()
+    }
 }
 
 public struct ColdFeedBootstrap: Sendable {
+    private let authority = ColdPublicationAuthority()
+    public func cancel() { authority.cancel() }
     private let session: FeedSession
     private let plan: FeedPlan
     private let policy: ResolvedSelectionPolicy
@@ -119,7 +135,7 @@ public struct ColdFeedBootstrap: Sendable {
         guard await session.currentPresentation() == nil else { throw ColdFeedBootstrapError.sessionAlreadyInstalled }
         let request = makeRequest(identity: identity, resources: resources)
         let firstProgress: LocalProductionProgress
-        switch try initialProductionSlice.run(request, prepare: prepare) {
+        switch try authority.perform({ try initialProductionSlice.run(request, prepare: prepare) }) {
         case .published:
             return try await installedPublication(identity: identity, backwardCapacity: backwardCapacity,
                 forwardCapacity: forwardCapacity)
@@ -187,7 +203,7 @@ public struct ColdFeedBootstrap: Sendable {
         // screen; whatever is not ready is published as a designed text-only card.
         if prepareMedia != nil { await evidence?(.preparingMedia) }
         await prepareMedia?()
-        switch try initialProductionSlice.run(request, prepare: prepare) {
+        switch try authority.perform({ try initialProductionSlice.run(request, prepare: prepare) }) {
         case .published:
             guard case .published(let snapshot) = try await installedPublication(identity: identity,
                 backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity) else {
@@ -215,7 +231,7 @@ public struct ColdFeedBootstrap: Sendable {
     private func installedPublication(identity: ColdFeedPublicationIdentity,
         backwardCapacity: Int, forwardCapacity: Int) async throws -> ColdFeedBootstrapOutcome {
         guard let snapshot = try await session.restoreLocalPresentation(backwardCapacity: backwardCapacity,
-            forwardCapacity: forwardCapacity), snapshot.editionID == identity.editionID else {
+            forwardCapacity: forwardCapacity, contextKey: plan.context.key), snapshot.editionID == identity.editionID else {
             throw ColdFeedBootstrapError.inconsistentPublishedRestore
         }
         return .published(snapshot)

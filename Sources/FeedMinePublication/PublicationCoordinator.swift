@@ -102,6 +102,18 @@ public struct PublicationCoordinator: Sendable {
         }
     }
 
+    public func succeedTail(_ request: AppendRequest, lease: PublicationStore.HiddenTailLease) throws -> PublicationStore.TailSuccessionResult {
+        guard request.editionID == lease.editionID, let edition = try store.edition(id: request.editionID),
+            edition.editorialRevision == request.selection.editorialRevision else { throw PublicationCoordinatorError.editorialRevisionMismatch }
+        let cards = try Self.prepareCards(selection: request.selection, drafts: request.drafts, cardIDs: request.cardIDs)
+        guard let segment = FeedSegment(id: request.segmentID, editionID: request.editionID, ordinal: 0,
+            segmentSeed: request.segmentSeed, publicationSchemaVersion: .init(rawValue: edition.publicationSchemaVersion),
+            createdAt: request.segmentCreatedAt, cardIDs: request.cardIDs) else { throw PublicationCoordinatorError.inputCountMismatch }
+        let records = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
+        return try store.succeedTail(lease: lease, segmentID: request.segmentID, cards: records.1, createdAt: request.segmentCreatedAt,
+            requiredMemberships: Dictionary(uniqueKeysWithValues: request.selection.orderedCandidates.map { ($0.originRecordID, $0.sourceIDs) }))
+    }
+
     public func createEdition(_ request: CreateRequest) throws -> PublicationOutcome {
         guard let records = try Self.firstPublication(request) else { return .nothingToPublish }
         try store.createEdition(records.0, firstSegment: records.1, cards: records.2)

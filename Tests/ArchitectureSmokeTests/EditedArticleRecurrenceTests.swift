@@ -74,6 +74,82 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         guard case .advancedWithoutPublication = try slice() else { return XCTFail("Replay must not republish") }
     }
 
+    func testHiddenTailUsesLatestEditAndRestoresSeenPrefix() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try RuntimeDatabase(location: .init(directory: root))
+        let content = ContentStore(database: database), source = SourceID(), anchorOrigin = OriginRecordID(), editedOrigin = OriginRecordID()
+        func admit(_ origin: OriginRecordID, text: String, previous: OriginRevisionID?) throws -> OriginRevisionID {
+            let date = Date(timeIntervalSince1970: origin == anchorOrigin ? 2000 : 1000)
+            let revision = OriginRevision(id: OriginRevisionID(), originRecordID: origin, externalVersionIdentity: nil,
+                headline: "H", summary: text, bodyText: nil, authoredAt: date, modifiedAt: nil, observedAt: date,
+                language: nil, primaryLink: nil, searchProjection: nil, providerID: nil)
+            try content.commitCanonicalChange(.init(recordID: origin, externalObjectIdentity: .init(connectorKind: .syndication,
+                namespace: "hidden-tail", value: origin.rawValue.uuidString, role: .object), revision: revision, mediaCandidates: [],
+                availability: .available, observedAt: date, expectedCurrent: previous.map { .revision($0) } ?? .none,
+                currentUpdate: .useSuppliedRevision, membershipMutations: [.upsert(sourceID: source, kind: .direct, observedAt: date)]))
+            return revision.id
+        }
+        _ = try admit(anchorOrigin, text: "seen", previous: nil)
+        let e1 = try admit(editedOrigin, text: "E1", previous: nil)
+        let context = FeedContext(request: .source(source)), v = PolicyVersion(rawValue: 1)
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key, catalogGeneration: .init(rawValue: 1),
+            userSelectionVersion: v, eligibilityPolicyVersion: v, scoringPolicyVersion: v, sequencingPolicyVersion: v,
+            exposurePolicyVersion: v, selectionSchemaVersion: .init(rawValue: 1))
+        let plan = try XCTUnwrap(FeedPlan(context: context, revision: revision))
+        let policy = ResolvedSelectionPolicy(contextKey: context.key, userSelectionVersion: v, eligibilityPolicyVersion: v,
+            scoringPolicyVersion: v, sequencingPolicyVersion: v, exposurePolicyVersion: v, selectionSchemaVersion: .init(rawValue: 1),
+            eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyDescending, exposure: .excludePublishedMaterial)
+        let window = try CandidateProvider(contentStore: content).candidates(for: plan, after: nil, examinedCapacity: 10)
+        let exposure = try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: window.candidates.map(\.originRecordID), publishedOriginIDs: []))
+        let selected = try SelectionEngine().select(plan: plan, policy: policy, window: window, exposure: exposure)
+        let prepared = Self.prepare(selected), edition = FeedEditionID()
+        _ = try PublicationCoordinator(database: database).createInitialEdition(.init(publication: .init(selection: selected,
+            drafts: PublicationPreparation.drafts(selection: selected, inputs: prepared.inputs), editionID: edition,
+            publicationSchemaVersion: .init(rawValue: 1), selectionSeed: 1, editionCreatedAt: Date(), segmentID: FeedSegmentID(),
+            segmentSeed: 1, segmentCreatedAt: Date(), cardIDs: prepared.cardIDs), anchorPlacement: .center, checkpointedAt: Date(timeIntervalSince1970: 1234)))
+        let before = try PublicationStore(database: database).card(id: prepared.cardIDs[0])
+        let e2 = try admit(editedOrigin, text: "E2", previous: e1)
+        let e3 = try admit(editedOrigin, text: "E3", previous: e2)
+        let store = PublicationStore(database: database), lease = try XCTUnwrap(store.hiddenTail(editionID: edition))
+        let result = try await HiddenTailMaintenance(database: database).run(plan: plan, policy: policy, lease: lease,
+            examinedCapacity: 10, prefetch: { _ in }, prepare: Self.prepare)
+        XCTAssertEqual(result, .applied)
+        let reopened = try RuntimeDatabase(location: .init(directory: root))
+        let restored = try XCTUnwrap(PublicationHistory(database: reopened).restore(backwardCapacity: 2, forwardCapacity: 10))
+        XCTAssertEqual(restored.window.cards.map(\.text.primaryText), ["seen", "E3"])
+        XCTAssertEqual(restored.window.cards.last?.origin.originRevisionID, e3)
+        XCTAssertEqual(restored.cursor.anchor.cardID, prepared.cardIDs[0])
+        XCTAssertEqual(try store.card(id: prepared.cardIDs[0]), before)
+        XCTAssertEqual(try store.card(id: prepared.cardIDs[1])?.primaryText, "E1")
+        let e4 = try admit(editedOrigin, text: "E4", previous: e3)
+        let immutable = try XCTUnwrap(content.originRevision(id: e4))
+        let unavailableLease = try XCTUnwrap(store.hiddenTail(editionID: edition))
+        let unavailable = try await HiddenTailMaintenance(database: database).run(plan: plan, policy: policy, lease: unavailableLease,
+            examinedCapacity: 10, prefetch: { _ in
+                try? content.commitCanonicalChange(.init(recordID: editedOrigin, externalObjectIdentity: .init(connectorKind: .syndication,
+                    namespace: "hidden-tail", value: editedOrigin.rawValue.uuidString, role: .object), revision: immutable, mediaCandidates: [],
+                    availability: .removed, observedAt: Date(timeIntervalSince1970: 3000), expectedCurrent: .revision(e4),
+                    currentUpdate: .unchanged, membershipMutations: []))
+            }, prepare: Self.prepare)
+        XCTAssertEqual(unavailable, .stale)
+        XCTAssertEqual(try store.cards(editionID: edition, around: prepared.cardIDs[0], backwardCapacity: 0, forwardCapacity: 10).last?.primaryText, "E3")
+        try content.commitCanonicalChange(.init(recordID: editedOrigin, externalObjectIdentity: .init(connectorKind: .syndication,
+            namespace: "hidden-tail", value: editedOrigin.rawValue.uuidString, role: .object), revision: immutable, mediaCandidates: [],
+            availability: .available, observedAt: Date(timeIntervalSince1970: 4000), expectedCurrent: .revision(e4),
+            currentUpdate: .unchanged, membershipMutations: []))
+        let membershipLease = try XCTUnwrap(store.hiddenTail(editionID: edition))
+        let membership = try await HiddenTailMaintenance(database: database).run(plan: plan, policy: policy, lease: membershipLease,
+            examinedCapacity: 10, prefetch: { _ in
+                try? content.commitCanonicalChange(.init(recordID: editedOrigin, externalObjectIdentity: .init(connectorKind: .syndication,
+                    namespace: "hidden-tail", value: editedOrigin.rawValue.uuidString, role: .object), revision: immutable, mediaCandidates: [],
+                    availability: .available, observedAt: Date(timeIntervalSince1970: 5000), expectedCurrent: .revision(e4),
+                    currentUpdate: .unchanged, membershipMutations: [.remove(sourceID: source)]))
+            }, prepare: Self.prepare)
+        XCTAssertEqual(membership, .stale)
+        XCTAssertEqual(try store.cards(editionID: edition, around: prepared.cardIDs[0], backwardCapacity: 0, forwardCapacity: 10).last?.primaryText, "E3")
+    }
+
     func testRecurrenceForbiddenPolicyKeepsPhase3R5Uniqueness() throws {
         let snapshot = try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: [OriginRecordID()], publishedOriginIDs: []))
         XCTAssertTrue(snapshot.publishedMaterialKeys.isEmpty)

@@ -253,6 +253,170 @@ public struct PublicationStore: Sendable {
         }
     }
 
+    public struct HiddenTailLease: Hashable, Sendable {
+        public let editionID: FeedEditionID
+        public let generation: Int64
+        public let highWaterCardID: PublicationCardID
+        public let expectedTailCardID: PublicationCardID
+    }
+    public enum TailSuccessionResult: Hashable, Sendable { case applied; case stale; case ineligible }
+
+    public func markSeen(editionID: FeedEditionID, cardID: PublicationCardID, at date: Date = Date()) throws {
+        try database.write { try Self.markSeen(editionID: editionID, cardID: cardID, at: date, in: $0) }
+    }
+    static func markSeen(editionID: FeedEditionID, cardID: PublicationCardID, at date: Date = Date(), in db: Database) throws {
+        let key = PersistenceValueCoding.uuid(editionID.rawValue)
+        let schema = try historySchema(key, in: db)
+        let position = try historyPosition(cardID, editionKey: key, schema: schema, in: db)
+        let time = try PersistenceValueCoding.date(date, field: "last_seen_at")
+        try db.execute(sql: """
+            INSERT INTO publication_card_usage VALUES (?, ?)
+            ON CONFLICT(card_id) DO UPDATE SET last_seen_at = excluded.last_seen_at
+            """, arguments: [PersistenceValueCoding.uuid(cardID.rawValue), time])
+        if let row = try Row.fetchOne(db, sql: "SELECT * FROM edition_reading_state WHERE edition_id = ?", arguments: [key]) {
+            let old = PublicationCardID(rawValue: try PublicationValueCoding.uuid(row["high_water_card_id"], field: "high_water_card_id"))
+            let prior = try historyPosition(old, editionKey: key, schema: schema, in: db)
+            guard prior.isBefore(position) else { return }
+            try db.execute(sql: """
+                INSERT INTO publication_card_usage SELECT c.id, ? FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+                WHERE s.edition_id = ? AND (s.ordinal,c.ordinal) > (?,?) AND (s.ordinal,c.ordinal) <= (?,?)
+                ON CONFLICT(card_id) DO UPDATE SET last_seen_at = excluded.last_seen_at
+                """, arguments: [time, key, Int64(prior.segmentOrdinal), Int64(prior.cardOrdinal), Int64(position.segmentOrdinal), Int64(position.cardOrdinal)])
+            try db.execute(sql: "UPDATE edition_reading_state SET high_water_card_id = ?, generation = generation + 1 WHERE edition_id = ?",
+                arguments: [PersistenceValueCoding.uuid(cardID.rawValue), key])
+        } else {
+            try db.execute(sql: """
+                INSERT INTO publication_card_usage SELECT c.id, ? FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+                WHERE s.edition_id = ? AND (s.ordinal,c.ordinal) <= (?,?)
+                ON CONFLICT(card_id) DO UPDATE SET last_seen_at = excluded.last_seen_at
+                """, arguments: [time, key, Int64(position.segmentOrdinal), Int64(position.cardOrdinal)])
+            try db.execute(sql: "INSERT INTO edition_reading_state VALUES (?, ?, 1, 1)", arguments: [key, PersistenceValueCoding.uuid(cardID.rawValue)])
+        }
+    }
+    public func setVisibility(editionID: FeedEditionID, visible: Bool) throws {
+        try database.write { db in
+            try db.execute(sql: "UPDATE edition_reading_state SET visible = ?, generation = generation + 1 WHERE edition_id = ?",
+                arguments: [visible ? 1 : 0, PersistenceValueCoding.uuid(editionID.rawValue)])
+        }
+    }
+    public func hiddenTail(editionID: FeedEditionID) throws -> HiddenTailLease? {
+        try database.write { db in
+            let key = PersistenceValueCoding.uuid(editionID.rawValue)
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM edition_reading_state WHERE edition_id = ?", arguments: [key]) else { return nil }
+            let card = PublicationCardID(rawValue: try PublicationValueCoding.uuid(row["high_water_card_id"], field: "high_water_card_id"))
+            let generation: Int64 = row["generation"]
+            let tail = try Self.historyTail(editionKey: key, schema: Self.historySchema(key, in: db), in: db)
+            try db.execute(sql: "UPDATE edition_reading_state SET visible = 0, generation = generation + 1 WHERE edition_id = ?", arguments: [key])
+            return HiddenTailLease(editionID: editionID, generation: generation + 1, highWaterCardID: card, expectedTailCardID: tail.cardID)
+        }
+    }
+    /// Archives only a non-visible, unseen suffix. Every fence is checked inside the writer.
+    public func succeedTail(lease: HiddenTailLease, segmentID: FeedSegmentID, cards: [CardRecord], createdAt: Date, requiredMemberships: [OriginRecordID: Set<SourceID>] = [:]) throws -> TailSuccessionResult {
+        try database.write { db in
+            let key = PersistenceValueCoding.uuid(lease.editionID.rawValue)
+            guard let state = try Row.fetchOne(db, sql: "SELECT * FROM edition_reading_state WHERE edition_id = ?", arguments: [key]),
+                (state["visible"] as Int) == 0, (state["generation"] as Int64) == lease.generation,
+                (state["high_water_card_id"] as String) == PersistenceValueCoding.uuid(lease.highWaterCardID.rawValue) else { return .stale }
+            let schema = try Self.historySchema(key, in: db)
+            let tail = try Self.historyTail(editionKey: key, schema: schema, in: db)
+            guard tail.cardID == lease.expectedTailCardID else { return .stale }
+            let high = try Self.historyPosition(lease.highWaterCardID, editionKey: key, schema: schema, in: db)
+            guard high.isBefore(tail), !cards.isEmpty else { return .ineligible }
+            let segment = SegmentRecord(id: segmentID, editionID: lease.editionID, ordinal: high.segmentOrdinal + 1,
+                segmentSeed: 1, publicationSchemaVersion: schema, createdAt: createdAt, cardIDs: cards.map(\.id))
+            try Self.validate(segment, cards: cards, version: schema)
+            for card in cards {
+                let originKey = PersistenceValueCoding.uuid(card.originRecordID.rawValue)
+                if let origin = try Row.fetchOne(db, sql: "SELECT current_revision_id, availability FROM origin_records WHERE id = ?", arguments: [originKey]) {
+                    guard (origin["current_revision_id"] as String?) == PersistenceValueCoding.uuid(card.originRevisionID.rawValue),
+                        ["available", "updated"].contains(origin["availability"] as String) else { return .stale }
+                    if let required = requiredMemberships[card.originRecordID] {
+                        let memberships = Set(try String.fetchAll(db, sql: "SELECT source_id FROM source_memberships WHERE origin_record_id = ?", arguments: [originKey]))
+                        guard memberships == Set(required.map { PersistenceValueCoding.uuid($0.rawValue) }) else { return .stale }
+                    }
+                } else if requiredMemberships[card.originRecordID] != nil { return .stale }
+            }
+            let suffixSQL = "SELECT c.id FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id WHERE s.edition_id = ? AND (s.ordinal, c.ordinal) > (?, ?)"
+            let args: StatementArguments = [key, Int64(high.segmentOrdinal), Int64(high.cardOrdinal)]
+            guard try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM publication_bookmarks WHERE card_id IN (" + suffixSQL + ")", arguments: args) == 0,
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM publication_card_usage WHERE card_id IN (" + suffixSQL + ")", arguments: args) == 0 else { return .ineligible }
+            // Archival happens before deletion and shares its transaction. Duplicate identities abort.
+            try db.execute(sql: "INSERT INTO retired_published_cards SELECT * FROM published_cards WHERE id IN (" + suffixSQL + ")", arguments: args)
+            try db.execute(sql: "INSERT INTO retired_feed_segments SELECT * FROM feed_segments WHERE edition_id = ? AND ordinal > ?", arguments: [key, Int64(high.segmentOrdinal)])
+            try db.execute(sql: "DELETE FROM published_cards WHERE id IN (" + suffixSQL + ")", arguments: args)
+            try db.execute(sql: "DELETE FROM feed_segments WHERE edition_id = ? AND ordinal > ?", arguments: [key, Int64(high.segmentOrdinal)])
+            try Self.insertSegment(segment, cards: cards, db: db)
+            try db.execute(sql: "UPDATE edition_reading_state SET generation = generation + 1 WHERE edition_id = ?", arguments: [key])
+            return .applied
+        }
+    }
+
+    public func seenMaterial(lease: HiddenTailLease, originIDs: [OriginRecordID]) throws -> [OriginRecordID: Set<String>] {
+        try database.read { db in
+            let key = PersistenceValueCoding.uuid(lease.editionID.rawValue)
+            let high = try Self.historyPosition(lease.highWaterCardID, editionKey: key, schema: Self.historySchema(key, in: db), in: db)
+            let keys = Array(Set(originIDs)).map { PersistenceValueCoding.uuid($0.rawValue) }
+            guard !keys.isEmpty else { return [:] }
+            let capacity = db.maximumStatementArgumentCount - 3
+            var result: [OriginRecordID: Set<String>] = [:]
+            for start in stride(from: 0, to: keys.count, by: capacity) {
+                let group = Array(keys[start..<min(start + capacity, keys.count)])
+                let parameters = Array(repeating: "?", count: group.count).joined(separator: ",")
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT c.origin_record_id, c.title, c.primary_text, m.remote_locator AS primary_media
+                    FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+                    LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0
+                    WHERE s.edition_id = ? AND (s.ordinal, c.ordinal) <= (?, ?) AND c.origin_record_id IN (\(parameters))
+                    """, arguments: StatementArguments([key as DatabaseValueConvertible, Int64(high.segmentOrdinal), Int64(high.cardOrdinal)] + group.map { $0 as DatabaseValueConvertible }))
+                for row in rows {
+                    let fields = PublicationRecordFields(row)
+                    let origin = OriginRecordID(rawValue: try fields.uuid("origin_record_id"))
+                    result[origin, default: []].insert(Self.materialKey(title: try fields.optionalString("title"),
+                        primaryText: try fields.optionalString("primary_text"), primaryMedia: try fields.optionalString("primary_media")))
+                }
+            }
+            return result
+        }
+    }
+
+    public struct MediaUsage: Hashable, Sendable {
+        public let lastSeenAt: Date?
+        public let bookmarked: Bool
+    }
+    public func bookmarkedCardIDs() throws -> Set<PublicationCardID> {
+        try database.read { db in
+            Set(try String.fetchAll(db, sql: "SELECT card_id FROM publication_bookmarks").map {
+                PublicationCardID(rawValue: try PublicationValueCoding.uuid($0, field: "card_id"))
+            })
+        }
+    }
+    public func toggleBookmark(cardID: PublicationCardID, at date: Date) throws {
+        let time = try PersistenceValueCoding.date(date, field: "bookmarked_at")
+        try database.write { db in
+            let key = PersistenceValueCoding.uuid(cardID.rawValue)
+            guard try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM published_cards WHERE id = ?)", arguments: [key]) == true else {
+                throw PublicationStoreError.cardIdentityMismatch
+            }
+            if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM publication_bookmarks WHERE card_id = ?)", arguments: [key]) == true {
+                try db.execute(sql: "DELETE FROM publication_bookmarks WHERE card_id = ?", arguments: [key])
+            } else { try db.execute(sql: "INSERT INTO publication_bookmarks VALUES (?, ?)", arguments: [key, time]) }
+        }
+    }
+    public func mediaUsage() throws -> [String: MediaUsage] {
+        try database.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT c.media_key, MAX(u.last_seen_at) AS seen_at, MAX(b.card_id IS NOT NULL) AS bookmarked
+                FROM published_cards c LEFT JOIN publication_card_usage u ON u.card_id = c.id
+                LEFT JOIN publication_bookmarks b ON b.card_id = c.id
+                WHERE c.media_key IS NOT NULL GROUP BY c.media_key
+                """)
+            return Dictionary(uniqueKeysWithValues: rows.map { row in
+                let time: Double? = row["seen_at"]
+                return (row["media_key"] as String, MediaUsage(lastSeenAt: time.map(Date.init(timeIntervalSince1970:)), bookmarked: (row["bookmarked"] as Int) != 0))
+            })
+        }
+    }
+
     public struct TailRecord: Hashable, Sendable {
         public let ordinal: UInt64
         public init(ordinal: UInt64) { self.ordinal = ordinal }
@@ -294,8 +458,10 @@ public struct PublicationStore: Sendable {
 
     public func card(id: PublicationCardID) throws -> CardRecord? {
         try database.read { db in
-            try Row.fetchOne(db, sql: "SELECT * FROM published_cards WHERE id = ?", arguments: [PersistenceValueCoding.uuid(id.rawValue)])
-                .map(Self.decodeCard)
+            let key = PersistenceValueCoding.uuid(id.rawValue)
+            let active = try Row.fetchOne(db, sql: "SELECT * FROM published_cards WHERE id = ?", arguments: [key])
+            if let active { return try Self.decodeCard(active) }
+            return try Row.fetchOne(db, sql: "SELECT * FROM retired_published_cards WHERE id = ?", arguments: [key]).map(Self.decodeCard)
         }
     }
 
@@ -428,7 +594,11 @@ public struct PublicationStore: Sendable {
             let material = try Self.publishedMaterial(originIDs, editionID: editionID, in: db)
             var unseen = Set<OriginRecordID>()
             if let readerAnchorCardID, !material.isEmpty {
-                let anchor = try Self.historyPosition(readerAnchorCardID, editionKey: editionKey, schema: schema, in: db)
+                var anchor = try Self.historyPosition(readerAnchorCardID, editionKey: editionKey, schema: schema, in: db)
+                if let water = try String.fetchOne(db, sql: "SELECT high_water_card_id FROM edition_reading_state WHERE edition_id = ?", arguments: [editionKey]) {
+                    let high = try Self.historyPosition(PublicationCardID(rawValue: PublicationValueCoding.uuid(water, field: "high_water_card_id")), editionKey: editionKey, schema: schema, in: db)
+                    if anchor.isBefore(high) { anchor = high }
+                }
                 let keys = material.keys.map { PersistenceValueCoding.uuid($0.rawValue) }
                 let capacity = db.maximumStatementArgumentCount - 3
                 guard capacity > 0 else { throw PublicationStoreError.invalidCapacity }

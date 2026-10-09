@@ -4,6 +4,21 @@ import FeedMineMedia
 
 /// PD-5/PD-6: housekeeping lists only content-addressed assets and deletes exactly what it is told.
 final class MediaHousekeepingTests: XCTestCase {
+    func testFailedRemovalDoesNotReportReclaimedBytesOrSuccess() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let materializer = ImageMaterializer(assetDirectory: root)
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAEElEQVR4nGP4z8AARAwoFABE0AX7pM/egAAAAABJRU5ErkJggg==")!
+        let asset = try materializer.materialize(png)
+        let directory = root.appendingPathComponent("sha256")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        let report = MediaHousekeeping(assetDirectory: root).evictReporting([asset.key])
+        XCTAssertTrue(report.removedKeys.isEmpty)
+        XCTAssertEqual(report.reclaimedBytes, 0)
+        XCTAssertNotNil(try materializer.localAsset(for: asset.key))
+    }
+
     func testInventoryAndEvictionTouchOnlyValidAssets() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }

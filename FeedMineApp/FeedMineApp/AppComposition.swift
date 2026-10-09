@@ -22,13 +22,25 @@ final class AppComposition {
     private(set) var startupFailure: String?
     private var replacingSession = false
     private let directory: URL
-    private let feeds: [TrustedFeed]
+    private(set) var feeds: [TrustedFeed]
+    @ObservationIgnored private var preferences: ReaderPreferencesStore?
+    private(set) var currentContext: FeedContextRequest = .main
+    private var selectionVersion: UInt64 = 2
+    private(set) var sourceOptions: [FeedSourceOption] = []
+    @ObservationIgnored private var sourceSearchID = UUID()
+    @ObservationIgnored private var sourceChoices: [SourceID: TrustedFeed] = [:]
     private let transportConfiguration: URLSessionConfiguration
 
     init(directory: URL? = nil, feeds: [TrustedFeed] = TrustedFeed.catalogOrDevelopment(limit: 64),
         transportConfiguration: URLSessionConfiguration? = nil) {
-        self.directory = directory ?? RuntimeDatabaseLocation.applicationSupport(
+        let support = RuntimeDatabaseLocation.applicationSupport(
             FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).directory
+        #if DEBUG
+        let namespace = ProcessInfo.processInfo.environment["FEEDMINE_RUNTIME_NAMESPACE"].flatMap(UUID.init(uuidString:))
+        self.directory = directory ?? namespace.map { support.appendingPathComponent($0.uuidString) } ?? support
+        #else
+        self.directory = directory ?? support
+        #endif
         self.feeds = feeds
         let config = transportConfiguration ?? .ephemeral
         if transportConfiguration == nil { config.timeoutIntervalForRequest = 20 }
@@ -40,13 +52,24 @@ final class AppComposition {
         #endif
         self.transportConfiguration = config
         if feeds.isEmpty { startupFailure = "Não foi possível carregar o catálogo local de fontes." }
+        else {
+            do {
+                let database = try RuntimeDatabase(location: .init(directory: self.directory))
+                let preferences = ReaderPreferencesStore(database: database)
+                let saved = try preferences.initialize(sourceKeys: feeds.map(\.principal))
+                self.feeds = try TrustedFeed.resolve(keys: saved.sourceKeys, fallback: feeds)
+                self.preferences = preferences
+                currentContext = saved.activeContext
+                selectionVersion = saved.selectionVersion
+            } catch { startupFailure = "Não foi possível carregar a seleção de fontes: \(error)" }
+        }
     }
 
     func launch() async {
         guard !replacingSession, association == nil, startupFailure == nil else { return }
         let current: FeedAssociation
         do {
-            current = try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration)
+            current = try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration, contextRequest: currentContext, selectionVersion: selectionVersion)
         } catch {
             startupFailure = "Não foi possível abrir o feed local: \(String(describing: error))"
             return
@@ -72,6 +95,77 @@ final class AppComposition {
         await association.background()
     }
 
+    func searchSources(_ query: String) async throws {
+        let searchID = UUID()
+        sourceSearchID = searchID
+        var choices = feeds
+        if let url = Bundle.main.url(forResource: "catalog", withExtension: "sqlite") {
+            let records = try await Task.detached {
+                try LegacyCatalogReader(catalogURL: url).matchingSources(query: query, limit: 50)
+            }.value
+            choices += records.compactMap { record in
+                guard let entry = LegacyCatalogImport.entry(record) else { return nil }
+                return TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id, bindingID: entry.bindingID,
+                    principal: entry.principal, endpoint: entry.endpoint, displayName: entry.source.displayName)
+            }
+        }
+        guard searchID == sourceSearchID else { return }
+        sourceChoices = Dictionary(choices.map { ($0.sourceID, $0) }, uniquingKeysWith: { first, _ in first })
+        let selected = Set(feeds.map(\.sourceID))
+        sourceOptions = sourceChoices.values.map { .init(id: $0.sourceID, name: $0.displayName, selected: selected.contains($0.sourceID)) }
+            .sorted { left, right in left.selected != right.selected ? left.selected : left.name.localizedStandardCompare(right.name) == .orderedAscending }
+    }
+
+    func toggleSource(_ sourceID: SourceID) async throws {
+        guard !replacingSession else { return }
+        replacingSession = true
+        defer { replacingSession = false }
+        guard let choice = sourceChoices[sourceID], let preferences else { throw ReaderPreferencesError.invalidSelection }
+        var next = feeds
+        if let index = next.firstIndex(where: { $0.sourceID == sourceID }) { next.remove(at: index) }
+        else { next.append(choice) }
+        guard !next.isEmpty else { throw ReaderPreferencesError.invalidSelection }
+        if let retired = association {
+            _ = try await retired.session.checkpointCurrentPosition(at: Date())
+            await retired.close()
+        }
+        association = nil
+        let saved = try preferences.updateSources(next.map(\.principal))
+        feeds = next
+        selectionVersion = saved.selectionVersion
+        let request: FeedContextRequest = next.count == 1 ? .source(next[0].sourceID) : .main
+        _ = try preferences.setContext(request)
+        currentContext = request
+        let nextAssociation = try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration,
+            contextRequest: request, selectionVersion: selectionVersion)
+        association = nextAssociation
+        startupFailure = nil
+        try await nextAssociation.launch()
+        try await searchSources("")
+    }
+
+    func selectContext(_ request: FeedContextRequest) async throws {
+        if case .source(let sourceID) = request, !feeds.contains(where: { $0.sourceID == sourceID }) {
+            throw ReaderPreferencesError.invalidSelection
+        }
+        guard !replacingSession else { return }
+        if request == currentContext, association != nil { return }
+        replacingSession = true
+        defer { replacingSession = false }
+        if let retired = association {
+            _ = try await retired.session.checkpointCurrentPosition(at: Date())
+            await retired.close()
+        }
+        association = nil
+        _ = try preferences?.setContext(request)
+        currentContext = request
+        let next = try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration,
+            contextRequest: request, selectionVersion: selectionVersion)
+        association = next
+        startupFailure = nil
+        try await next.launch()
+    }
+
     /// Explicit session replacement; no replacement occurs during normal feed opportunities.
     func replaceSession() async throws {
         guard !replacingSession else { return }
@@ -79,8 +173,11 @@ final class AppComposition {
         defer { replacingSession = false }
         let retired = association
         association = nil
-        if let retired { await retired.close() }
-        let next = try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration)
+        if let retired {
+            _ = try await retired.session.checkpointCurrentPosition(at: Date())
+            await retired.close()
+        }
+        let next = try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration, contextRequest: currentContext, selectionVersion: selectionVersion)
         association = next
         startupFailure = nil
         try await next.launch()
@@ -98,6 +195,7 @@ final class FeedAssociation {
     @ObservationIgnored private let tidy: MediaTidy
     @ObservationIgnored private let tidyWaitSeconds: Double
     let acquisition: SyndicationAcquisitionSnapshot
+    @ObservationIgnored private let maintainTail: @Sendable (PublicationStore.HiddenTailLease) async throws -> PublicationStore.TailSuccessionResult
     private let cold: ColdFeedBootstrap
     @ObservationIgnored private let relay: EvidenceRelay
     @ObservationIgnored private var preparation: PreparationProgress?
@@ -107,16 +205,24 @@ final class FeedAssociation {
     private(set) var active = true
     private var launching = false
     @ObservationIgnored
-    lazy var store = FeedScreenStore(onViewport: { [weak self] observation, activity in
+    lazy var store: FeedScreenStore = FeedScreenStore(onViewport: { [weak self] observation, activity in
         guard let self else { return }
         Task { await self.viewport(observation, activity: activity) }
     }, onOpen: { [weak self] cardID in
         self?.open(cardID)
+    }, onBookmark: { [weak self] cardID in
+        guard let self, self.active else { return }
+        do {
+            let publication = PublicationStore(database: self.database)
+            try publication.toggleBookmark(cardID: cardID, at: Date())
+            self.store.installBookmarks(try publication.bookmarkedCardIDs())
+        } catch { self.reportFailure(error) }
     })
 
     /// Review F10: resolve the frozen action target from published history and open it.
     /// The URL never crosses the UI boundary; only the card identity does.
     private func open(_ cardID: PublicationCardID) {
+        guard active, visible, store.state.presentation?.window.items.contains(where: { $0.id == cardID }) == true else { return }
         guard let card = try? PublicationStore(database: database).card(id: cardID),
             card.primaryActionKind == "externalURL", let reference = card.primaryActionReference,
             let url = URL(string: reference) else { return }
@@ -141,20 +247,32 @@ final class FeedAssociation {
                 observationCapacityPerBatch: 32, byteCapacityPerBatch: 1_000_000)!)
     }
 
-    init(directory: URL, feeds: [TrustedFeed], configuration: URLSessionConfiguration) throws {
+    init(directory: URL, feeds: [TrustedFeed], configuration: URLSessionConfiguration,
+        contextRequest: FeedContextRequest = .main, selectionVersion: UInt64 = 2) throws {
         let db = try RuntimeDatabase(location: .init(directory: directory))
         database = db
         let history = PublicationHistory(database: db)
-        let context = FeedContext(request: .main)
-        let saved = try history.restore(backwardCapacity: 8, forwardCapacity: 16)
+        let context = FeedContext(request: contextRequest)
+        let checkpoints = SessionStore(database: db)
+        try checkpoints.activateContext(contextRequest)
+        if let active = try checkpoints.checkpoint() {
+            try PublicationStore(database: db).setVisibility(editionID: active.editionID, visible: true)
+        }
+        var saved = try history.restore(backwardCapacity: 8, forwardCapacity: 16, contextKey: context.key)
+        if let restored = saved, restored.edition.editorialRevision.userSelectionVersion != PolicyVersion(rawValue: selectionVersion)
+            || restored.edition.editorialRevision.eligibilityPolicyVersion != PolicyVersion(rawValue: 2) {
+            try checkpoints.clearActiveCheckpoint()
+            saved = nil
+        }
         let v = PolicyVersion(rawValue: 1)
         // Sequencing v2 = PD-4 source alternation; exposure v2 = PD-1 edited articles reappear.
         // A behavior change is a new EditorialRevision; a restored Edition keeps its own behavior.
         let alternating = PolicyVersion(rawValue: 2)
-        let revision = saved?.edition.editorialRevision ?? EditorialRevision(
-            id: .init(rawValue: UUID(uuidString: "70000000-0000-4000-8000-000000000003")!),
-            contextKey: context.key, catalogGeneration: .init(rawValue: 1), userSelectionVersion: v,
-            eligibilityPolicyVersion: v, scoringPolicyVersion: v, sequencingPolicyVersion: alternating,
+        let revision = try saved?.edition.editorialRevision ?? EditorialRevision(
+            id: .init(rawValue: LegacyCatalogImport.stableUUID(namespace: "feedmine.editorial.context",
+                key: try JSONEncoder().encode(contextRequest).base64EncodedString() + "|" + String(selectionVersion))),
+            contextKey: context.key, catalogGeneration: .init(rawValue: 1), userSelectionVersion: PolicyVersion(rawValue: selectionVersion),
+            eligibilityPolicyVersion: alternating, scoringPolicyVersion: v, sequencingPolicyVersion: alternating,
             exposurePolicyVersion: alternating, selectionSchemaVersion: .init(rawValue: 1))
         guard let plan = FeedPlan(context: context, revision: revision) else {
             throw FeedRunwayDriverError.policyContextMismatch
@@ -165,7 +283,7 @@ final class FeedAssociation {
             userSelectionVersion: revision.userSelectionVersion, eligibilityPolicyVersion: revision.eligibilityPolicyVersion,
             scoringPolicyVersion: revision.scoringPolicyVersion, sequencingPolicyVersion: revision.sequencingPolicyVersion,
             exposurePolicyVersion: revision.exposurePolicyVersion, selectionSchemaVersion: revision.selectionSchemaVersion,
-            eligibility: .structuralOnly, scoring: .equal, sequencing: sequencing,
+            eligibility: .selectedSources(Set(feeds.map(\.sourceID))), scoring: .equal, sequencing: sequencing,
             exposure: revision.exposurePolicyVersion >= alternating ? .excludePublishedMaterial : .excludePublishedRevisions)
         let authority = AcquisitionTargetAuthority(database: db)
         let registrations = try feeds.map { feed in
@@ -206,7 +324,7 @@ final class FeedAssociation {
         tidy = MediaTidy(assetDirectory: assetDirectory, prefetcher: media, freeStorageBytes: {
             try? FileManager.default.temporaryDirectory
                 .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
-        })
+        }, usage: { try PublicationStore(database: db).mediaUsage() })
         tidyWaitSeconds = configuration.timeoutIntervalForRequest / 4
         coldRetryFallbackSeconds = configuration.timeoutIntervalForRequest
         let session = FeedSession(publicationHistory: history, imageDecoder: PresentationImageDecoder(
@@ -216,6 +334,11 @@ final class FeedAssociation {
         let prepare: @Sendable (SelectionResult) -> LocalPreparedPublication = { Self.prepare($0, readiness: readiness, names: names) }
         // Bounded wait for media of the supply head: what the runway can afford (one request timeout).
         let mediaWait = configuration.timeoutIntervalForRequest / 4
+        maintainTail = { lease in
+            try await HiddenTailMaintenance(database: db).run(plan: plan, policy: policy, lease: lease, examinedCapacity: 256,
+                prefetch: { revisions in await media.prefetch(revisions, deadline: ProcessInfo.processInfo.systemUptime + mediaWait) },
+                prepare: prepare)
+        }
         let headProvider = CandidateProvider(contentStore: ContentStore(database: db))
         // Runway: the driver supplies the next editorial candidates for the active context (F05).
         let prepareRunwayMedia: @Sendable ([OriginRevisionID]) async -> Void = { revisions in
@@ -265,6 +388,7 @@ final class FeedAssociation {
     func install(_ received: FeedPresentationState) throws {
         guard active else { throw FeedPresentationStateError.projectionSequenceMismatch }
         try store.install(received)
+        store.installBookmarks(try PublicationStore(database: database).bookmarkedCardIDs())
         if let snapshot = store.state.presentation {
             Self.log("installed cards=\(snapshot.window.items.count) edition=\(snapshot.editionID.rawValue) sequence=\(snapshot.provenance.sequenceID) order=\(snapshot.provenance.position)")
         }
@@ -358,6 +482,7 @@ final class FeedAssociation {
         case .preparingMedia:
             break
         case .published(let snapshot):
+            progress = progress.applying(.prepared(cards: snapshot.window.items.count), at: now)
             // F06: show the first Edition now; slower feeds keep answering behind the badge.
             do { try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state)) }
             catch { Self.log("early publication rejected") }
@@ -389,7 +514,13 @@ final class FeedAssociation {
     func foreground() async {
         visible = true
         do {
+            if let edition = store.state.presentation?.editionID {
+                try PublicationStore(database: database).setVisibility(editionID: edition, visible: true)
+            }
             guard active, !launching else { return }
+            if let refreshed = try await session.refreshCurrentPresentation() {
+                try install(FeedPresentationHandoff.receive(snapshot: refreshed, into: store.state))
+            }
             if await session.currentPresentation() == nil {
                 try await launch() // A new explicit foreground opportunity, without replacing the session/store.
                 return
@@ -409,6 +540,7 @@ final class FeedAssociation {
             _ = try await session.checkpointCurrentPosition(at: Date())
             await driver.markConsumptionInactive()
             Self.log("lifecycle checkpoint")
+            let lease = try store.state.presentation.map { try PublicationStore(database: database).hiddenTail(editionID: $0.editionID) } ?? nil
             // PD-5: the screen is not visible now, so the house can be tidied: complete media for
             // the next cards and bring local media under the device-derived budget. Seen and visible
             // cards are never changed.
@@ -416,10 +548,18 @@ final class FeedAssociation {
             let report = await tidy.run(visibleKeys: visible, supplyHeadLimit: 32,
                 deadline: ProcessInfo.processInfo.systemUptime + tidyWaitSeconds)
             Self.log("tidy evicted=\(report.evictedAssets) reclaimed=\(report.reclaimedBytes) budget=\(report.budgetBytes)")
+            if active, !self.visible, let lease {
+                let result = try await maintainTail(lease)
+                Self.log("hidden tail \(result)")
+            }
         } catch { reportFailure(error) }
     }
 
     func close() async {
+        cold.cancel()
+        if let edition = store.state.presentation?.editionID {
+            try? PublicationStore(database: database).setVisibility(editionID: edition, visible: true)
+        }
         active = false
         visible = false
         retryTask?.cancel()

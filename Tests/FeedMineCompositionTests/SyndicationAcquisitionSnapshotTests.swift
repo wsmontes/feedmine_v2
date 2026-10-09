@@ -148,13 +148,11 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
             XCTAssertEqual($0 as? SyndicationAcquisitionSnapshotError,.connectorKindMismatch(targetID:t.id))
         }
     }
-    func test17SearchUnavailableNotEmpty() throws {
+    func test17LocalSearchHasNoAcquisitionTargets() throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db)
         let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [defaultSource])
         let s = try snapshot(db,[registration(id:t.id)])
-        XCTAssertThrowsError(try s.eligibleTargets(for:.init(request:.search(SearchContext(query:"feed")!)))) {
-            XCTAssertEqual($0 as? SyndicationAcquisitionSnapshotError,.searchContextUnavailable)
-        }
+        XCTAssertTrue(try s.eligibleTargets(for: .init(request: .search(SearchContext(query: "feed")!))).isEmpty)
         XCTAssertEqual(try authority.target(id:t.id),t)
     }
     func test18RealBindingTargetConnectorAdmissionAndMembershipOrder() async throws {

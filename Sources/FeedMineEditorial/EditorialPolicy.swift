@@ -4,7 +4,7 @@
 import FeedMineDomain
 
 public struct ResolvedSelectionPolicy: Hashable, Sendable {
-    public enum EligibilityBehavior: Hashable, Sendable { case structuralOnly }
+    public enum EligibilityBehavior: Hashable, Sendable { case structuralOnly; case selectedSources(Set<SourceID>) }
     public enum ScoringBehavior: Hashable, Sendable { case equal }
     public enum SequencingBehavior: Hashable, Sendable {
         case recencyDescending

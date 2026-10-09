@@ -91,7 +91,7 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
         switch context.request {
         case .main: sourceID = nil
         case .source(let source): sourceID = source
-        case .search: throw SyndicationAcquisitionSnapshotError.searchContextUnavailable
+        case .search: return [] // Local search never starts remote acquisition.
         }
         let authority = AcquisitionTargetAuthority(database: database)
         var targets: [AcquisitionTarget] = []

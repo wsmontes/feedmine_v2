@@ -253,7 +253,7 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertGreaterThan(f.http.calls,0); XCTAssertEqual(f.otherHTTP.calls,0)
         XCTAssertEqual(try ContentStore(database:f.database).candidateWindow(sourceID:source,after:nil,examinedCapacity:8).records.count,1)
     }
-    func test14SearchErrorPreservesPreAckIntent() async throws {
+    func test14LocalSearchSettlesWithoutHTTP() async throws {
         let f = try fixture(context:.init(request:.search(SearchContext(query:"q")!))),p = try await restore(f)
         // Seed the controller's documented exhausted-local fact to exercise the Acquisition boundary only.
         let scope = await f.session.currentRunwayScope()
@@ -263,9 +263,8 @@ final class FeedRunwayDriverTests: XCTestCase {
         try await f.runway.acceptMeasurement(.init(observation:observation,readyAhead:PublicationHistory(database:f.database).readyAhead(editionID:f.edition,anchorCardID:p.window.anchor.cardID,probeBound:8),advanceFromHighWater:nil))
         guard case .runLocalSlice(let intent) = try await f.runway.reconsider(resources:resources().runway,at:.init(seconds:2)!) else { return XCTFail("Expected local intent") }
         try await f.runway.completeLocalSlice(intent,outcome:.advancedWithoutPublication(.init(examinedCount:0,nextCursor:nil,exhausted:true)),at:.init(seconds:3)!)
-        do { _ = try await f.driver.drive(resources:resources()); XCTFail("Expected unavailable search") }
-        catch { XCTAssertEqual(error as? SyndicationAcquisitionSnapshotError,.searchContextUnavailable) }
-        let snap = await f.runway.snapshot(); XCTAssertNotNil(snap.outstandingAcquisition); XCTAssertEqual(f.http.calls,0)
+        _ = try await f.driver.drive(resources:resources())
+        let snap = await f.runway.snapshot(); XCTAssertNil(snap.outstandingAcquisition); XCTAssertEqual(f.http.calls,0)
     }
     func test15SessionContextMismatch() async throws {
         let f = try fixture(driverContext:.init(request:.source(SourceID())))

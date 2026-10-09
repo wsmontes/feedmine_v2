@@ -144,17 +144,22 @@ final class CandidateProviderTests: XCTestCase {
         }
     }
 
-    func testSearchFailsExplicitlyBeforeContentStoreWindow() throws {
-        try withProvider { _, provider in
-            let search = try plan(.search(XCTUnwrap(SearchContext(query: "test"))))
-            for capacity in [1, 0] {
-                // A storage window would reject this cursor (or capacity). Search
-                // must reject its context first, without canonical rows or fallback.
-                let cursor = CandidateSupplyCursor(sortDate: Date(timeIntervalSince1970: .infinity), originRecordID: origin(1))
-                XCTAssertThrowsError(try provider.candidates(for: search, after: cursor, examinedCapacity: capacity)) {
-                    XCTAssertEqual($0 as? CandidateProviderError, .searchContextUnavailable)
-                }
-            }
+    func testLocalSearchReadsReadableTextAndPreservesBoundedCursor() throws {
+        try withProvider { store, provider in
+            let source = SourceID()
+            try insert(1, source: source, into: store, headline: "<b>Café</b>")
+            try insert(2, source: source, into: store, headline: "other")
+            let search = try plan(.search(XCTUnwrap(SearchContext(query: " CAFE "))))
+            let first = try provider.candidates(for: search, after: nil, examinedCapacity: 1)
+            XCTAssertTrue(first.candidates.isEmpty)
+            XCTAssertEqual(first.examinedCount, 1)
+            XCTAssertFalse(first.exhausted)
+            let second = try provider.candidates(for: search, after: first.nextCursor, examinedCapacity: 1)
+            XCTAssertEqual(second.candidates.map(\.originRecordID), [origin(1)])
+            let end = try provider.candidates(for: search, after: second.nextCursor, examinedCapacity: 1)
+            XCTAssertTrue(end.exhausted)
+            XCTAssertTrue(end.candidates.isEmpty)
+            XCTAssertEqual(search.context.request, .search(SearchContext(query: " CAFE ")!))
         }
     }
 

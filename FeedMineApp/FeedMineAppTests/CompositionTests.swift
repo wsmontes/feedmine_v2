@@ -50,11 +50,11 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
 
 @MainActor
 final class CompositionTests: XCTestCase {
-    private func root(requestTimeout: TimeInterval = 60) -> AppComposition {
+    private func root(requestTimeout: TimeInterval = 60, directory: URL? = nil) -> AppComposition {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
         configuration.timeoutIntervalForRequest = requestTimeout
-        return AppComposition(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+        return AppComposition(directory: directory ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
             feeds: TrustedFeed.development, transportConfiguration: configuration)
     }
 
@@ -177,12 +177,74 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(defaults.map(\.sourceID), try TrustedFeed.catalog(limit: 64, resourceURL: url).map(\.sourceID))
     }
 
+    func testCatalogNameSearchIsLiteralBoundedAndMeasured() throws {
+        let reader = try LegacyCatalogReader(catalogURL: XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite")))
+        var samples: [Double] = []
+        for _ in 0..<20 {
+            let started = ProcessInfo.processInfo.systemUptime
+            let rows = try reader.matchingSources(query: "BBC", limit: 5)
+            samples.append((ProcessInfo.processInfo.systemUptime - started) * 1000)
+            XCTAssertFalse(rows.isEmpty)
+            XCTAssertLessThanOrEqual(rows.count, 5)
+        }
+        XCTAssertTrue(try reader.matchingSources(query: "%' OR 1=1 --", limit: 5).isEmpty)
+        samples.sort()
+        print("T7 catalog 77443 sources, BBC limit5 p50ms=\(samples[9]) p95ms=\(samples[18])")
+    }
+
     func testCatalogMissingOrCorruptIsAnExplicitFailure() throws {
         XCTAssertThrowsError(try TrustedFeed.catalog(limit: 64, resourceURL: nil))
         let invalid = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data("corrupt catalog".utf8).write(to: invalid)
         defer { try? FileManager.default.removeItem(at: invalid) }
         XCTAssertThrowsError(try TrustedFeed.catalog(limit: 64, resourceURL: invalid))
+    }
+
+    func testSourceSelectionSurvivesRelaunchAndFiltersCanonicalSupply() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let first = root(directory: directory)
+        await first.launch()
+        try await first.searchSources("")
+        try await first.toggleSource(TrustedFeed.development[0].sourceID)
+        XCTAssertEqual(first.feeds.map(\.sourceID), [TrustedFeed.development[1].sourceID])
+        XCTAssertEqual(first.currentContext, .source(TrustedFeed.development[1].sourceID))
+        XCTAssertTrue(try XCTUnwrap(first.association?.store.state.presentation).window.items.allSatisfy { $0.sourceDisplayName == "BBC Science" })
+        await first.association?.background()
+        await first.association?.close()
+        let reopened = root(directory: directory)
+        XCTAssertEqual(reopened.feeds.map(\.sourceID), first.feeds.map(\.sourceID))
+        await reopened.launch()
+        XCTAssertEqual(reopened.currentContext, first.currentContext)
+        XCTAssertEqual(reopened.association?.store.state.presentation?.editionID, first.association?.store.state.presentation?.editionID)
+        try await reopened.searchSources("")
+        do { try await reopened.toggleSource(TrustedFeed.development[1].sourceID); XCTFail("Empty selection") }
+        catch { XCTAssertEqual(reopened.feeds.count, 1) }
+        await reopened.association?.close()
+    }
+
+    func testMainSourceMainRestoresPositionOfflineAndRejectsOldAssociation() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = root(directory: directory)
+        await root.launch()
+        let old = try XCTUnwrap(root.association)
+        let initial = try XCTUnwrap(old.store.state.presentation)
+        let card = try XCTUnwrap(initial.window.items.dropFirst().first)
+        await old.viewport(.init(anchor: .init(cardID: card.id, placement: .top)), activity: .forward)
+        let saved = try XCTUnwrap(old.store.state.presentation)
+        try await root.selectContext(.source(TrustedFeed.development[1].sourceID))
+        let other = try XCTUnwrap(root.association)
+        XCTAssertFalse(old.active)
+        XCTAssertNotEqual(other.store.state.presentation?.editionID, saved.editionID)
+        XCTAssertTrue(other.store.state.presentation?.window.items.allSatisfy { $0.sourceDisplayName == "BBC Science" } == true)
+        FixtureTransport.rejecting.withLock { $0 = true }
+        defer { FixtureTransport.rejecting.withLock { $0 = false } }
+        try await root.selectContext(.main)
+        let restored = try XCTUnwrap(root.association?.store.state.presentation)
+        XCTAssertEqual(restored.editionID, saved.editionID)
+        XCTAssertEqual(restored.window.anchor, saved.window.anchor)
+        XCTAssertThrowsError(try old.install(.init(presentation: initial)))
+        XCTAssertEqual(root.association?.store.state.presentation, restored)
+        await root.association?.close()
     }
 
     func testS1SameSessionStoreAcrossViewportRefreshAndLifecycle() async throws {

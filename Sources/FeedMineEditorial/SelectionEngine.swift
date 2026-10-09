@@ -59,25 +59,30 @@ public struct SelectionEngine: Sendable {
             throw SelectionError.duplicateCandidateIdentity
         }
         // Baseline no-ops are explicit executable behavior, not inferred versions.
-        switch policy.eligibility { case .structuralOnly: break }
+        let sourceEligible: [Candidate]
+        switch policy.eligibility {
+        case .structuralOnly: sourceEligible = window.candidates
+        case .selectedSources(let selected):
+            sourceEligible = window.candidates.filter { !Set($0.sourceIDs).isDisjoint(with: selected) }
+        }
         switch policy.scoring { case .equal: break }
         let eligible: [Candidate]
         switch policy.exposure {
         case .none:
             guard exposure == nil else { throw SelectionError.unexpectedExposure }
-            eligible = window.candidates
+            eligible = sourceEligible
         case .excludePublishedRevisions:
             guard let exposure else { throw SelectionError.exposureRequired }
             guard exposure.requestedOriginIDs == window.candidates.map(\.originRecordID) else {
                 throw SelectionError.exposureCoverageMismatch
             }
-            eligible = window.candidates.filter { !exposure.publishedOriginIDs.contains($0.originRecordID) }
+            eligible = sourceEligible.filter { !exposure.publishedOriginIDs.contains($0.originRecordID) }
         case .excludePublishedMaterial:
             guard let exposure else { throw SelectionError.exposureRequired }
             guard exposure.requestedOriginIDs == window.candidates.map(\.originRecordID) else {
                 throw SelectionError.exposureCoverageMismatch
             }
-            eligible = window.candidates.filter { !exposure.alreadyPublished($0) }
+            eligible = sourceEligible.filter { !exposure.alreadyPublished($0) }
         }
         let ordered: [Candidate]
         switch policy.sequencing {

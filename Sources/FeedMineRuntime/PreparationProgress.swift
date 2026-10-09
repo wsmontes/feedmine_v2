@@ -47,7 +47,7 @@ public struct PreparationProgress: Hashable, Sendable {
     /// Remaining seconds extrapolated from the measured average settle time; nil until one settled.
     public var estimatedRemainingSeconds: Double? {
         let settled = settledSources, pending = sources.count - settled
-        guard settled > 0 else { return nil }
+        guard settled > 0, contributingSources > 0, preparedCards > 0 else { return nil }
         guard pending > 0 else { return 0 }
         let perSource = (lastUpdateAt - startedAt) / Double(settled)
         return perSource * Double(pending)

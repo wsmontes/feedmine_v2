@@ -310,6 +310,47 @@ public enum RuntimeMigrations {
                 );
                 """)
         }
+        migrator.registerMigration("reader-contexts-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE reader_preferences (
+                    singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+                    source_keys BLOB NOT NULL, selection_version INTEGER NOT NULL CHECK(selection_version >= 2),
+                    active_context BLOB NOT NULL);
+                CREATE TABLE context_checkpoints (
+                    context_key TEXT PRIMARY KEY NOT NULL,
+                    edition_id TEXT NOT NULL REFERENCES feed_editions(id),
+                    card_id TEXT NOT NULL REFERENCES published_cards(id),
+                    anchor_placement TEXT NOT NULL CHECK(anchor_placement IN ('top', 'center')),
+                    updated_at REAL NOT NULL);
+                INSERT INTO context_checkpoints SELECT
+                    CASE e.context_kind WHEN 'main' THEN 'main'
+                        WHEN 'source' THEN 'source:' || e.context_source_id
+                        WHEN 'search' THEN 'search:' || e.context_search_query END,
+                    c.edition_id, c.card_id, c.anchor_placement, c.updated_at
+                    FROM session_checkpoint c JOIN feed_editions e ON e.id = c.edition_id;
+                """)
+        }
+        migrator.registerMigration("publication-reading-state-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE edition_reading_state (
+                    edition_id TEXT PRIMARY KEY REFERENCES feed_editions(id),
+                    high_water_card_id TEXT NOT NULL REFERENCES published_cards(id),
+                    visible INTEGER NOT NULL CHECK(visible IN (0,1)),
+                    generation INTEGER NOT NULL CHECK(generation >= 1));
+                INSERT INTO edition_reading_state SELECT edition_id, card_id, 1, 1 FROM context_checkpoints;
+                CREATE TABLE retired_published_cards AS SELECT * FROM published_cards WHERE 0;
+                CREATE UNIQUE INDEX retired_published_cards_id ON retired_published_cards(id);
+                CREATE TABLE retired_feed_segments AS SELECT * FROM feed_segments WHERE 0;
+                CREATE UNIQUE INDEX retired_feed_segments_id ON retired_feed_segments(id);
+                """)
+        }
+        migrator.registerMigration("publication-media-use-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE publication_card_usage (card_id TEXT PRIMARY KEY REFERENCES published_cards(id), last_seen_at REAL NOT NULL);
+                CREATE TABLE publication_bookmarks (card_id TEXT PRIMARY KEY REFERENCES published_cards(id), bookmarked_at REAL NOT NULL);
+                INSERT INTO publication_card_usage SELECT card_id, updated_at FROM context_checkpoints;
+                """)
+        }
         return migrator
     }
 }

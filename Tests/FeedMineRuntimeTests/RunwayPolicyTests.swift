@@ -11,6 +11,17 @@ final class RunwayPolicyTests: XCTestCase {
             localSliceInFlight: flight,unknownBootstrapAvailable: bootstrap),inputs: try XCTUnwrap(RunwayPolicyInputs(safetyFactor: 1,releaseMarginSeconds: margin)),
             resources: try XCTUnwrap(RunwayResourceFacts(localWorkAllowed: allowed,examinedCandidateCapacity: 4,readyProbeBound: 1,readyProbeCeiling: ceiling,forwardAdvanceProbeBound: 8)))
     }
+    func testReserveSixteenDoesNotCapMeasuredFastScrollDemand() throws {
+        let facts = RunwayFacts(consumption: try XCTUnwrap(ConsumptionFacts(cardsPerSecond: 8, forwardIntent: true, explicitTailApproach: false)),
+            replenishment: try XCTUnwrap(ReplenishmentFacts(p95Seconds: 5)), readyAmount: .exact(16), previouslyPressured: false,
+            localSliceInFlight: false, unknownBootstrapAvailable: true)
+        let resources = try XCTUnwrap(RunwayResourceFacts(localWorkAllowed: true, examinedCandidateCapacity: 32,
+            readyProbeBound: 32, readyProbeCeiling: 256, forwardAdvanceProbeBound: 256, reserveCards: 16))
+        let result = RunwayPolicy.evaluate(facts: facts, inputs: try XCTUnwrap(RunwayPolicyInputs(safetyFactor: 1.2, releaseMarginSeconds: 2)), resources: resources)
+        XCTAssertEqual(result.coverage, .pressured(requiredCards: 48))
+        XCTAssertEqual(result.action, .requestLocalSlice)
+        print("T7 reserve floor=16, measured scroll=8 cards/s, replenishment p95=5s, target=48")
+    }
     func testMeasuredRateAndLatencyChangeCoverageRatherThanUsingFixedCount() throws {
         XCTAssertEqual(try evaluate(ready: .exact(6)).coverage,.healthy)
         XCTAssertEqual(try evaluate().coverage,.pressured(requiredCards: 6))

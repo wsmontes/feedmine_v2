@@ -154,6 +154,17 @@ final class ContentStoreCandidateWindowScaleTests: XCTestCase {
             assertWindow(fullTail, capacity: capacity, examined: tailIndices, eligible: tailIndices)
             assertWindow(try store.candidateWindow(sourceID: nil, after: fullTail.nextCursor, examinedCapacity: capacity),
                 capacity: capacity, examined: [], eligible: [])
+            for source in [nil, requested] {
+                var milliseconds: [Double] = []
+                for _ in 0..<50 {
+                    let start = ProcessInfo.processInfo.systemUptime
+                    let sample = try store.candidateWindow(sourceID: source, after: middle, examinedCapacity: capacity)
+                    milliseconds.append((ProcessInfo.processInfo.systemUptime - start) * 1000)
+                    XCTAssertLessThanOrEqual(sample.examinedCount, capacity)
+                }
+                milliseconds.sort()
+                print("T7 candidateWindow 100k source=\(source == nil ? "main" : "sparse") capacity=\(capacity) p50ms=\(milliseconds[24]) p95ms=\(milliseconds[47])")
+            }
             try assertQueryPlans(database, capacity: capacity, middle: middle)
         }
     }

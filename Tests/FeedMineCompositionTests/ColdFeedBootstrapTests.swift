@@ -140,6 +140,26 @@ final class ColdFeedBootstrapTests: XCTestCase {
     private func work(_ target: AcquisitionTarget) -> AcquisitionPlannedWork {
         .start(target: target, bounds: .init(batchCapacity: 1, observationCapacityPerBatch: 8, byteCapacityPerBatch: 100_000)!)
     }
+    func testClosedBootstrapCannotPublishAfterSuspendedPreparation() async throws {
+        let f = try fixture(), id = identity(), bounds = resources()
+        let preparing = expectation(description: "Media preparation suspended")
+        let (release, signal) = AsyncStream<Void>.makeStream()
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) },
+            prepareMedia: { preparing.fulfill(); for await _ in release { break } })
+        let task = Task { try await bootstrap.run(identity: id, resources: bounds, backwardCapacity: 0, forwardCapacity: 2) }
+        let waited = await XCTWaiter.fulfillment(of: [preparing], timeout: 5)
+        XCTAssertEqual(waited, .completed)
+        bootstrap.cancel()
+        signal.yield(()); signal.finish()
+        do { _ = try await task.value; XCTFail("Closed bootstrap published") }
+        catch { XCTAssertEqual(error as? ColdFeedBootstrapError, .closed) }
+        XCTAssertNil(try SessionStore(database: f.database).checkpoint())
+        XCTAssertNil(try PublicationStore(database: f.database).edition(id: id.editionID))
+        XCTAssertFalse(try ContentStore(database: f.database).candidateWindow(sourceID: f.source, after: nil, examinedCapacity: 8).records.isEmpty,
+            "Closing a session retains legitimately acquired canonical supply")
+    }
+
     func testC6RealActiveGenerationConflictAndAdmissionFence() async throws {
         let f = try fixture(paused: true), coordinator = f.coordinator, oldWork = work(f.target), id = identity()
         let execution = Task { try await coordinator.execute(oldWork) }
@@ -428,10 +448,9 @@ final class ColdFeedBootstrapTests: XCTestCase {
         XCTAssertEqual(try SessionStore(database: f.database).checkpoint()?.cardID, segment.cardIDs[0])
         XCTAssertEqual(try SessionStore(database: f.database).checkpoint()?.updatedAt, id.checkpointedAt)
     }
-    func testC18SearchCapabilityErrorDoesNotBecomeExhaustion() async throws {
+    func testC18LocalSearchDoesNotAcquire() async throws {
         let f = try fixture(search: true), id = identity()
-        do { _ = try await run(f, identity: id); XCTFail("Expected unavailable search capability") }
-        catch { XCTAssertEqual(error as? CandidateProviderError, .searchContextUnavailable) }
+        _ = try await run(f, identity: id)
         XCTAssertEqual(f.http.calls, 0); try assertAbsent(f, identity: id)
     }
     private func finitePlanProof() async throws {

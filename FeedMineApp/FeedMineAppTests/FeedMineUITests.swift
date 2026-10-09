@@ -3,8 +3,33 @@ import XCTest
 final class FeedMineUITests: XCTestCase {
     // N1/N2: the test never constructs ViewportObservation or calls submitViewport.
     @MainActor
+    func testContextNavigationAndSourcePickerOffline() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
+        app.terminate()
+        app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 15))
+        app.buttons["reader-contexts"].tap()
+        app.buttons["BBC Science"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 15))
+        app.buttons["reader-contexts"].tap()
+        app.buttons["Principal"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 15))
+        app.buttons["reader-sources"].tap()
+        XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'source-choice-'")).firstMatch.waitForExistence(timeout: 10))
+        app.buttons["Concluir"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testNativeSwipeReachesRealRunwayAndReverseNavigation() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
@@ -27,6 +52,7 @@ final class FeedMineUITests: XCTestCase {
     @MainActor
     func testRealRSSNavigationLifecycleAndNetworkBlockedRelaunch() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
         app.launch()
         let scroll = app.scrollViews.firstMatch

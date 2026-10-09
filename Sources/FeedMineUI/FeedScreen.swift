@@ -22,6 +22,10 @@ public struct FeedScreen: View {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(presentation.window.items) { card in
                             FeedCardView(card: card, onOpen: { store.open(card) })
+                                .contextMenu {
+                                    Button(store.bookmarkedIDs.contains(card.id) ? "Remover dos salvos" : "Salvar artigo",
+                                        systemImage: store.bookmarkedIDs.contains(card.id) ? "bookmark.fill" : "bookmark") { store.bookmark(card) }
+                                }
                                 .onGeometryChange(for: FeedVisualCardGeometry?.self, of: { proxy in
                                     guard let bounds = proxy.bounds(of: .scrollView(axis: .vertical)) else { return nil }
                                     let frame = proxy.frame(in: .scrollView(axis: .vertical))
@@ -53,6 +57,10 @@ public struct FeedScreen: View {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(presentation.window.items) { card in
                             FeedCardView(card: card, onOpen: { store.open(card) })
+                                .contextMenu {
+                                    Button(store.bookmarkedIDs.contains(card.id) ? "Remover dos salvos" : "Salvar artigo",
+                                        systemImage: store.bookmarkedIDs.contains(card.id) ? "bookmark.fill" : "bookmark") { store.bookmark(card) }
+                                }
                         }
                     }
                     .padding()

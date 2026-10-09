@@ -52,10 +52,10 @@ public enum MediaRetention {
 
     /// Keys to delete so the total fits `budgetBytes`, in eviction order. Bookmarked assets are
     /// never returned, even if the budget cannot be met without them.
-    public static func evictions(_ assets: [RetainedMediaAsset], budgetBytes: Int64) -> [PublishedMediaKey] {
+    public static func evictions(_ assets: [RetainedMediaAsset], budgetBytes: Int64, protectedKeys: Set<PublishedMediaKey> = []) -> [PublishedMediaKey] {
         var total = assets.reduce(Int64(0)) { $0 + $1.byteCount }
         guard total > budgetBytes else { return [] }
-        let order = assets.filter { $0.retention != .bookmarked }.sorted { a, b in
+        let order = assets.filter { $0.retention != .bookmarked && !protectedKeys.contains($0.key) }.sorted { a, b in
             if a.retention != b.retention { return a.retention < b.retention }
             if a.lastRelevantAt != b.lastRelevantAt { return a.lastRelevantAt < b.lastRelevantAt }
             return a.key.rawValue < b.key.rawValue

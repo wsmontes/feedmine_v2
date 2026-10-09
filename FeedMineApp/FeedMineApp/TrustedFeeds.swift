@@ -44,6 +44,22 @@ extension TrustedFeed {
         }
     }
 
+    static func resolve(keys: [String], fallback: [TrustedFeed]) throws -> [TrustedFeed] {
+        var reader: LegacyCatalogReader?
+        return try keys.map { key in
+            if let supplied = fallback.first(where: { $0.principal == key }) { return supplied }
+            if reader == nil {
+                guard let url = Bundle.main.url(forResource: "catalog", withExtension: "sqlite") else { throw TrustedCatalogError.missingResource }
+                reader = try LegacyCatalogReader(catalogURL: url)
+            }
+            guard let record = try reader?.source(key: key), let entry = LegacyCatalogImport.entry(record) else {
+                throw TrustedCatalogError.missingDefaultSource(key)
+            }
+            return TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id, bindingID: entry.bindingID,
+                principal: entry.principal, endpoint: entry.endpoint, displayName: entry.source.displayName)
+        }
+    }
+
     static func catalogOrDevelopment(limit: Int) -> [TrustedFeed] {
         #if DEBUG
         if ProcessInfo.processInfo.environment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] == "1" { return development }

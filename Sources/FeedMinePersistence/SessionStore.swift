@@ -46,6 +46,8 @@ public struct SessionStore: Sendable {
                     card_id = excluded.card_id, anchor_placement = excluded.anchor_placement, updated_at = excluded.updated_at
                 """, arguments: [PersistenceValueCoding.uuid(checkpoint.editionID.rawValue),
                     PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time])
+            try Self.persistContext(checkpoint, in: db)
+            try PublicationStore.markSeen(editionID: checkpoint.editionID, cardID: checkpoint.cardID, in: db)
         }
     }
 
@@ -64,6 +66,8 @@ public struct SessionStore: Sendable {
             VALUES (1, ?, ?, ?, ?)
             """, arguments: [PersistenceValueCoding.uuid(checkpoint.editionID.rawValue),
                 PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time])
+        try persistContext(checkpoint, in: db)
+        try PublicationStore.markSeen(editionID: checkpoint.editionID, cardID: checkpoint.cardID, in: db)
     }
 
     public func checkpoint() throws -> CheckpointRecord? {
@@ -82,6 +86,70 @@ public struct SessionStore: Sendable {
                 throw SessionStoreError.corruption("checkpoint representation: \(error)")
             }
         }
+    }
+
+    /// Selects the saved position for a logical context; old history/checkpoints remain retained.
+    public func activateContext(_ request: FeedContextRequest) throws {
+        try database.write { db in
+            if let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1") {
+                try Self.persistContext(Self.decode(row, in: db), in: db)
+            }
+            try db.execute(sql: "DELETE FROM session_checkpoint WHERE singleton_id = 1")
+            if let row = try Row.fetchOne(db, sql: "SELECT * FROM context_checkpoints WHERE context_key = ?",
+                arguments: [Self.contextIdentifier(request)]) {
+                let saved = try Self.decode(row, in: db)
+                try db.execute(sql: "INSERT INTO session_checkpoint VALUES (1, ?, ?, ?, ?)", arguments: [
+                    PersistenceValueCoding.uuid(saved.editionID.rawValue), PersistenceValueCoding.uuid(saved.cardID.rawValue),
+                    saved.anchorPlacement, saved.updatedAt.timeIntervalSince1970])
+            }
+        }
+    }
+
+    public func clearActiveCheckpoint() throws {
+        try database.write { db in
+            if let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1") {
+                try Self.persistContext(Self.decode(row, in: db), in: db)
+            }
+            try db.execute(sql: "DELETE FROM session_checkpoint WHERE singleton_id = 1")
+        }
+    }
+
+    public func checkpoint(for request: FeedContextRequest) throws -> CheckpointRecord? {
+        try database.read { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM context_checkpoints WHERE context_key = ?",
+                arguments: [Self.contextIdentifier(request)]) else { return nil }
+            return try Self.decode(row, in: db)
+        }
+    }
+
+    private static func contextIdentifier(_ request: FeedContextRequest) -> String {
+        switch request {
+        case .main: "main"
+        case .source(let source): "source:" + PersistenceValueCoding.uuid(source.rawValue)
+        case .search(let search): "search:" + search.query
+        }
+    }
+
+    private static func persistContext(_ checkpoint: CheckpointRecord, in db: Database) throws {
+        try db.execute(sql: """
+            INSERT INTO context_checkpoints(context_key, edition_id, card_id, anchor_placement, updated_at)
+            SELECT CASE context_kind WHEN 'main' THEN 'main' WHEN 'source' THEN 'source:' || context_source_id
+                WHEN 'search' THEN 'search:' || context_search_query END, id, ?, ?, ? FROM feed_editions WHERE id = ?
+            ON CONFLICT(context_key) DO UPDATE SET edition_id = excluded.edition_id, card_id = excluded.card_id,
+                anchor_placement = excluded.anchor_placement, updated_at = excluded.updated_at
+            """, arguments: [PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement,
+                checkpoint.updatedAt.timeIntervalSince1970, PersistenceValueCoding.uuid(checkpoint.editionID.rawValue)])
+    }
+
+    private static func decode(_ row: Row, in db: Database) throws -> CheckpointRecord {
+        let fields = PublicationRecordFields(row)
+        let edition = FeedEditionID(rawValue: try fields.uuid("edition_id"))
+        let card = PublicationCardID(rawValue: try fields.uuid("card_id"))
+        let placement = try fields.string("anchor_placement")
+        guard ["top", "center"].contains(placement), try member(db, editionID: edition, cardID: card) else {
+            throw SessionStoreError.corruption("context checkpoint membership/placement")
+        }
+        return CheckpointRecord(editionID: edition, cardID: card, anchorPlacement: placement, updatedAt: try fields.date("updated_at"))
     }
 
     private static func member(_ db: Database, editionID: FeedEditionID, cardID: PublicationCardID) throws -> Bool {

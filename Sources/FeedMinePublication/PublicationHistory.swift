@@ -43,6 +43,10 @@ public struct PublicationHistory: Sendable {
         sessionStore = SessionStore(database: database)
     }
 
+    public func markSeen(editionID: FeedEditionID, cardID: PublicationCardID) throws {
+        try publicationStore.markSeen(editionID: editionID, cardID: cardID)
+    }
+
     /// Committed ready-ahead history, independent of presentation window capacities.
     public func readyAhead(editionID: FeedEditionID, anchorCardID: PublicationCardID,
         probeBound: Int) throws -> ReadyAheadFacts {
@@ -86,8 +90,9 @@ public struct PublicationHistory: Sendable {
     }
 
     /// Nil means no saved session. Storage and mapping failures propagate unchanged.
-    public func restore(backwardCapacity: Int, forwardCapacity: Int) throws -> RestoredPublication? {
-        guard let checkpoint = try sessionStore.checkpoint() else { return nil }
+    public func restore(backwardCapacity: Int, forwardCapacity: Int, contextKey: ContextKey? = nil) throws -> RestoredPublication? {
+        let saved = try contextKey.map { try sessionStore.checkpoint(for: $0.request) } ?? sessionStore.checkpoint()
+        guard let checkpoint = saved else { return nil }
         let cursor = try PublicationPersistenceMapping.cursor(checkpoint)
         guard let record = try publicationStore.edition(id: cursor.editionID) else {
             throw PublicationHistoryError.missingEdition

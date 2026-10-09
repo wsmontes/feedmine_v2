@@ -59,8 +59,9 @@ public struct FeedWindowSnapshot: Hashable, Sendable {
 
     /// FeedWindow already guarantees nonempty unique cards and anchor membership.
     /// The one-to-one projection preserves those invariants and supplied order.
-    init(publishedWindow: FeedWindow, decoder: PresentationImageDecoder? = nil) {
-        items = publishedWindow.cards.map { PresentationCard(publishedCard: $0, decoder: decoder) }
+    init(publishedWindow: FeedWindow, decoder: PresentationImageDecoder? = nil,
+        reusable: [PublicationCardID: PresentationCard] = [:]) {
+        items = publishedWindow.cards.map { reusable[$0.id] ?? PresentationCard(publishedCard: $0, decoder: decoder) }
         let placement: PresentationAnchorPlacement
         switch publishedWindow.anchor.placement {
         case .top: placement = .top

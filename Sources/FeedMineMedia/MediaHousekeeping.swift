@@ -35,18 +35,26 @@ public struct MediaHousekeeping: Sendable {
         }
     }
 
-    /// Removes the given assets; returns the bytes reclaimed. Temporaries are left to their writer.
-    @discardableResult
-    public func evict(_ keys: [PublishedMediaKey]) -> Int64 {
+    public struct EvictionReport: Hashable, Sendable {
+        public let removedKeys: Set<PublishedMediaKey>
+        public let reclaimedBytes: Int64
+    }
+
+    /// Removes only inventoried regular assets and reports successful deletions precisely.
+    public func evictReporting(_ keys: [PublishedMediaKey]) -> EvictionReport {
         var reclaimed: Int64 = 0
+        var removed: Set<PublishedMediaKey> = []
         let sizes = Dictionary(inventory().map { ($0.key, $0.byteCount) }, uniquingKeysWith: { a, _ in a })
-        for key in keys where key.rawValue.hasPrefix("sha256:") {
+        for key in keys where sizes[key] != nil && !removed.contains(key) {
             let digest = String(key.rawValue.dropFirst(7))
-            guard digest.count == 64 else { continue }
             if (try? FileManager.default.removeItem(at: directory.appendingPathComponent(digest))) != nil {
                 reclaimed += sizes[key] ?? 0
+                removed.insert(key)
             }
         }
-        return reclaimed
+        return EvictionReport(removedKeys: removed, reclaimedBytes: reclaimed)
     }
+
+    @discardableResult
+    public func evict(_ keys: [PublishedMediaKey]) -> Int64 { evictReporting(keys).reclaimedBytes }
 }

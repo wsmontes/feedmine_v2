@@ -38,12 +38,12 @@ public struct CandidateProvider: Sendable {
         switch plan.context.request {
         case .main: sourceID = nil
         case .source(let id): sourceID = id
-        case .search: throw CandidateProviderError.searchContextUnavailable
+        case .search: sourceID = nil
         }
         let window = try contentStore.candidateWindow(sourceID: sourceID,
             after: cursor.map { ContentStore.CandidateCursor(sortDate: $0.sortDate, originRecordID: $0.originRecordID) },
             examinedCapacity: examinedCapacity)
-        let candidates = window.records.map { record in
+        var candidates = window.records.map { record in
             let kind: CandidateTimestampKind
             switch record.sortDateBasis {
             case .authored: kind = .authored
@@ -54,6 +54,14 @@ public struct CandidateProvider: Sendable {
                 timestamp: CandidateTimestamp(value: record.sortDate, kind: kind),
                 language: record.language, providerID: record.providerID, sourceIDs: Set(record.sourceIDs),
                 primaryMediaLocator: record.primaryMediaLocator, primaryLink: record.primaryLink)
+        }
+        if case .search(let search) = plan.context.request {
+            let query = search.query.trimmingCharacters(in: .whitespacesAndNewlines)
+            candidates = candidates.filter { candidate in
+                [candidate.headline, candidate.summary].compactMap { $0 }.contains {
+                    $0.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX")) != nil
+                }
+            }
         }
         return CandidateSupplyWindow(candidates: candidates, examinedCount: window.examinedCount,
             nextCursor: window.nextCursor.map { CandidateSupplyCursor(sortDate: $0.sortDate, originRecordID: $0.originRecordID) },

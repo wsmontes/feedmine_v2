@@ -10,16 +10,26 @@ public final class FeedScreenStore {
     public private(set) var state: FeedPresentationState
     @ObservationIgnored
     private let onViewport: @MainActor (ViewportObservation, RunwayActivity) -> Void
+    public private(set) var bookmarkedIDs: Set<PublicationCardID> = []
+    @ObservationIgnored private let onBookmark: @MainActor (PublicationCardID) -> Void
     @ObservationIgnored
     private let onOpen: @MainActor (PublicationCardID) -> Void
 
     /// `onOpen` receives a semantic open intent (review F10). The action target itself never
     /// crosses into UI; external composition resolves it from published history.
     public init(onViewport: @escaping @MainActor (ViewportObservation, RunwayActivity) -> Void,
-        onOpen: @escaping @MainActor (PublicationCardID) -> Void = { _ in }) {
+        onOpen: @escaping @MainActor (PublicationCardID) -> Void = { _ in },
+        onBookmark: @escaping @MainActor (PublicationCardID) -> Void = { _ in }) {
         state = FeedPresentationState(presentation: nil)
         self.onViewport = onViewport
         self.onOpen = onOpen
+        self.onBookmark = onBookmark
+    }
+
+    public func installBookmarks(_ ids: Set<PublicationCardID>) { bookmarkedIDs = ids }
+    public func bookmark(_ card: PresentationCard) {
+        guard state.presentation?.window.items.contains(where: { $0.id == card.id }) == true else { return }
+        onBookmark(card.id)
     }
 
     /// Receives the value computed by external composition using the existing handoff.
@@ -42,7 +52,7 @@ public final class FeedScreenStore {
 
     /// The reader asked to open a card that offers a primary action.
     public func open(_ card: PresentationCard) {
-        guard card.primaryActionKind != nil else { return }
+        guard card.primaryActionKind != nil, state.presentation?.window.items.contains(where: { $0.id == card.id }) == true else { return }
         onOpen(card.id)
     }
 }

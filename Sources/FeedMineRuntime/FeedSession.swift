@@ -54,13 +54,15 @@ public actor FeedSession {
     /// A failed read preserves existing state; no checkpoint clears local state.
     public func restoreLocalPresentation(
         backwardCapacity: Int,
-        forwardCapacity: Int
+        forwardCapacity: Int,
+        contextKey: ContextKey? = nil
     ) throws -> FeedPresentationSnapshot? {
         guard let restored = try publicationHistory.restore(
-            backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity) else {
+            backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity, contextKey: contextKey) else {
             state = nil
             return nil
         }
+        try publicationHistory.markSeen(editionID: restored.edition.id, cardID: restored.cursor.anchor.cardID)
         let snapshot = try project(contextKey: restored.edition.contextKey, editionID: restored.edition.id, publishedWindow: restored.window)
         state = FeedSessionState(editorialRevisionID: restored.edition.editorialRevision.id, presentation: snapshot,
             backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity)
@@ -71,7 +73,12 @@ public actor FeedSession {
     /// An unchanged effective projection retains its exact provenance, even after another read.
     private func project(contextKey: ContextKey, editionID: FeedEditionID,
         publishedWindow: FeedWindow) throws -> FeedPresentationSnapshot {
-        let window = FeedWindowSnapshot(publishedWindow: publishedWindow, decoder: imageDecoder)
+        let current = state?.presentation
+        let reusable = current.flatMap { snapshot in
+            snapshot.contextKey == contextKey && snapshot.editionID == editionID
+                ? Dictionary(uniqueKeysWithValues: snapshot.window.items.map { ($0.id, $0) }) : nil
+        } ?? [:]
+        let window = FeedWindowSnapshot(publishedWindow: publishedWindow, decoder: imageDecoder, reusable: reusable)
         if let current = state?.presentation, current.contextKey == contextKey,
             current.editionID == editionID, current.window == window { return current }
         let next = try FeedProjectionProvenance.nextPosition(after: projectionPosition)
@@ -100,10 +107,9 @@ public actor FeedSession {
     /// Observes a reading position in the current snapshot, using retained history only.
     public func submitViewport(_ observation: ViewportObservation) throws -> FeedPresentationSnapshot? {
         guard let current = state else { return nil }
-        guard current.presentation.window.items.contains(where: { $0.id == observation.anchor.cardID }),
-            observation.anchor != current.presentation.window.anchor else {
-            return current.presentation
-        }
+        guard current.presentation.window.items.contains(where: { $0.id == observation.anchor.cardID }) else { return current.presentation }
+        try publicationHistory.markSeen(editionID: current.presentation.editionID, cardID: observation.anchor.cardID)
+        guard observation.anchor != current.presentation.window.anchor else { return current.presentation }
         let placement: AnchorPlacement
         switch observation.anchor.placement {
         case .top: placement = .top

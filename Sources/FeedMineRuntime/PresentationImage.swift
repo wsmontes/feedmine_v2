@@ -32,12 +32,14 @@ public struct PresentationImage: Hashable, @unchecked Sendable {
 /// Decodes local assets for a projected window. Pixel targets come from the device's measured
 /// slot sizes (PD-6), supplied by composition.
 public struct PresentationImageDecoder: Sendable {
+    private let onDecode: @Sendable () -> Void
     private let materializer: ImageMaterializer
     public let heroMaxPixel: Int
     public let thumbnailMaxPixel: Int
 
-    public init?(assetDirectory: URL, heroMaxPixel: Int, thumbnailMaxPixel: Int) {
+    public init?(assetDirectory: URL, heroMaxPixel: Int, thumbnailMaxPixel: Int, onDecode: @escaping @Sendable () -> Void = {}) {
         guard heroMaxPixel > 0, thumbnailMaxPixel > 0 else { return nil }
+        self.onDecode = onDecode
         materializer = ImageMaterializer(assetDirectory: assetDirectory)
         self.heroMaxPixel = heroMaxPixel
         self.thumbnailMaxPixel = thumbnailMaxPixel
@@ -51,6 +53,7 @@ public struct PresentationImageDecoder: Sendable {
         case .thumbnail: maxPixel = thumbnailMaxPixel
         case .textOnly: return nil
         }
+        onDecode()
         guard let bytes = try? materializer.localBytes(for: key),
             let source = CGImageSourceCreateWithData(bytes as CFData, nil) else { return nil }
         let options: [CFString: Any] = [

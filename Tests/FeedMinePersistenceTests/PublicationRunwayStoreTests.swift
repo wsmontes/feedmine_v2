@@ -194,7 +194,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
             let schema = try String.fetchAll(db, sql: "SELECT name || ':' || COALESCE(sql, '') FROM sqlite_master WHERE name != 'published_cards_origin_revision_segment' ORDER BY name")
             XCTAssertTrue(Set(oldSchema).isSubset(of: try Self.schemaBeforeAvailability(schema, in: db))) // Only the explicitly checked additive column changes an old definition.
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('published_cards_origin_revision_segment') ORDER BY seqno"), ["origin_revision_id","segment_id"])
-            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1"])
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1"])
         }
     }
 
@@ -262,7 +262,11 @@ extension PublicationRunwayStoreTests {
         }
         let editionBefore = try store.edition(id: edition.id)
         let segmentsBefore = try store.segments(editionID: edition.id)
-        try SessionStore(database: database).saveCheckpoint(.init(editionID: edition.id,cardID: cardsBefore[5000].id,anchorPlacement: "center",updatedAt: Date(timeIntervalSince1970: 1234)))
+        // Historical schema fixture: the modern SessionStore also writes context_checkpoints.
+        try database.write { db in
+            try db.execute(sql: "INSERT INTO session_checkpoint VALUES (1, ?, ?, 'center', 1234)",
+                arguments: [editionKey, cardsBefore[5000].id.rawValue.uuidString.lowercased()])
+        }
         let checkpointBefore = try XCTUnwrap(SessionStore(database: database).checkpoint())
         let schemaBefore = try database.read { try String.fetchAll($0,sql: "SELECT name || ':' || COALESCE(sql,'') FROM sqlite_master ORDER BY name") }
         let upgraded = try RuntimeDatabase(location: location)
@@ -293,8 +297,14 @@ extension PublicationRunwayStoreTests {
             let authorityIndex = "sqlite_autoindex_acquisition_target_sources_1:"
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('acquisition_target_sources') ORDER BY cid"),["target_id","source_id","generation"])
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('sqlite_autoindex_acquisition_target_sources_1') ORDER BY seqno"),["target_id","source_id"])
-            XCTAssertEqual(priorDefinitions.subtracting(schemaBefore), Set([originIndex, authorityTable, authorityIndex]))
-            XCTAssertEqual(Set(schemaAfter).subtracting(schemaBefore), Set([originIndex, originDefinition, authorityTable, authorityIndex]))
+            let addedNames = Set(["reader_preferences", "context_checkpoints", "sqlite_autoindex_context_checkpoints_1",
+                "edition_reading_state", "sqlite_autoindex_edition_reading_state_1", "retired_published_cards", "retired_published_cards_id",
+                "retired_feed_segments", "retired_feed_segments_id", "publication_card_usage", "sqlite_autoindex_publication_card_usage_1",
+                "publication_bookmarks", "sqlite_autoindex_publication_bookmarks_1"])
+            let contextual = Set(schemaAfter.filter { addedNames.contains(String($0.split(separator: ":", maxSplits: 1)[0])) })
+            XCTAssertEqual(contextual.count, addedNames.count)
+            XCTAssertEqual(priorDefinitions.subtracting(schemaBefore), Set([originIndex, authorityTable, authorityIndex]).union(contextual))
+            XCTAssertEqual(Set(schemaAfter).subtracting(schemaBefore), Set([originIndex, originDefinition, authorityTable, authorityIndex]).union(contextual))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }
