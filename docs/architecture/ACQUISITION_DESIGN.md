@@ -745,3 +745,30 @@ Measured on base 3726d90f6d0b116b5f2fa3885926c88dc5c2a2a5 with five stable items
 A new independent opportunity always performs its own HTTP check, including one GET and zero receipts for an unchanged completed document without validators. ETag/Last-Modified and valid/invalid 304 semantics remain unchanged. A changed remote document during local processing cannot replace bytes already acquired; the next opportunity observes remote changes. New GETs after capacity settlement, cancellation, relaunch or another opportunity are legitimate. There is no cross-execution freshness promise, persistent buffer, eviction policy, fairness change or new automatic work.
 
 The binding test amendment separates publication from a timeout on a removed redundant GET. Cold's renamed test proves ten durable items, confirmed checkpoint/supply, exact ten published titles and one GET; it returns the unchanged .published(snapshot). AcquisitionCoordinatorTests.test3R2TenItemsSurviveOperationalFailureAfterAdmission independently encounters a controlled URLError.timedOut on the next pull of the same execution, returns operationalFailure(.transport) and preserves the ten items, one receipt and checkpoint. Cold's existing broken-A/healthy-B proof remains unchanged. No later independent timeout is attributed to the earlier Cold publication.
+
+
+## Phase 3R6 — residual target-local operational classification
+
+SyndicationConnector alone classifies the remaining external failures. The closed Domain ConnectorOperationalFailure enum is unchanged, and AcquisitionCoordinator still settles only that type. No generic catch or error conversion is introduced.
+
+| Concrete boundary error | Operational category |
+| --- | --- |
+| SyndicationHTTPError.bodyTooLarge | remoteContent |
+| invalidRedirectTarget, redirectCapacityExceeded, missingRedirectLocation, notModifiedWithoutConditionalRequest | remoteResponse |
+| unexpectedStatus, nonHTTPResponse (existing) | remoteResponse |
+| URLError.badServerResponse, cannotParseResponse, httpTooManyRedirects | remoteResponse |
+| URLError.resourceUnavailable | transport |
+| URLError.cannotDecodeContentData | remoteContent |
+| Existing enumerated network/TLS URLError codes | transport |
+| SyndicationTranslationError.parseFailed (existing) | remoteContent |
+
+URLError.cancelled remains CancellationError. Unlisted URL errors, including local unsupportedURL, propagate unchanged. At this HTTP boundary resourceUnavailable identifies an unavailable requested remote resource; decode failures classify remote content, while invalid server response/parsing/redirect traversal classify remote response. SDK verification confirmed the exact five URLError.Code names and raw values (-1011, -1017, -1007, -1008, -1016).
+
+SyndicationCheckpointError.unsupportedSchema, unsupportedConnectorVersion and malformed remain fatal because they describe incompatible/corrupt durable connector state. The checkpoint is neither erased nor restarted. Target mismatch, invalidObservedAt, invalidBatch, coordinator/planner/admission/storage/generation/checkpoint fences also remain fatal.
+
+The physical body limit remains unchanged: URLSession transport cancels at the first excess byte, before accumulating the rest of the document. Operational settlement preserves target/generation, the ordered confirmed receipt prefix, committed checkpoints and selectableSupplyChanged. Cold retains its existing outcomes; Runway signals only confirmed supply and continues planned targets. There is no capacity growth, retry, concurrency, scheduler or fairness change. Registration-order versus later UUID-order consistency remains a separate residual.
+
+
+The binding 3R6 test amendment realigns test3R4OversizedDocumentIsFatalAndReleased to test3R6OversizedDocumentSettlesOperationallyAndIsReleased. It now asserts operationalFailure(remoteContent), empty receipts, unchanged supply/checkpoint, exact target/generation, zero admitted batches and weak lifetime cleanup. A second independent opportunity uses the same body and byte bound, performs its own GET and again releases its execution; each opportunity makes exactly one GET, with no retry. The classification implementation remains unchanged.
+
+Residual: a source permanently exceeding byteCapacity can consume new opportunities in later fairness cycles. No deferral, backoff, retry policy, quarantine, persistent suspension, cooldown or scheduler is introduced. A future decision must use measured resource consumption and continuity of healthy sources.

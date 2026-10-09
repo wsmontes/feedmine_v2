@@ -54,15 +54,25 @@ public struct SyndicationConnector: FeedConnector, Sendable {
         catch let error as URLError where Self.isTransportFailure(error.code) {
             throw ConnectorOperationalFailure.transport
         }
-        catch SyndicationHTTPError.unexpectedStatus { throw ConnectorOperationalFailure.remoteResponse }
-        catch SyndicationHTTPError.nonHTTPResponse { throw ConnectorOperationalFailure.remoteResponse }
+        catch let error as URLError where error.code == .badServerResponse || error.code == .cannotParseResponse || error.code == .httpTooManyRedirects {
+            throw ConnectorOperationalFailure.remoteResponse
+        }
+        catch let error as URLError where error.code == .cannotDecodeContentData {
+            throw ConnectorOperationalFailure.remoteContent
+        }
+        catch SyndicationHTTPError.unexpectedStatus, SyndicationHTTPError.nonHTTPResponse,
+            SyndicationHTTPError.invalidRedirectTarget, SyndicationHTTPError.redirectCapacityExceeded,
+            SyndicationHTTPError.missingRedirectLocation, SyndicationHTTPError.notModifiedWithoutConditionalRequest {
+            throw ConnectorOperationalFailure.remoteResponse
+        }
+        catch SyndicationHTTPError.bodyTooLarge { throw ConnectorOperationalFailure.remoteContent }
         catch SyndicationTranslationError.parseFailed { throw ConnectorOperationalFailure.remoteContent }
     }
 
     private static func isTransportFailure(_ code: URLError.Code) -> Bool {
         switch code {
         case .timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost,
-            .dnsLookupFailed, .notConnectedToInternet, .secureConnectionFailed,
+            .dnsLookupFailed, .notConnectedToInternet, .resourceUnavailable, .secureConnectionFailed,
             .serverCertificateHasBadDate, .serverCertificateUntrusted,
             .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid:
             return true

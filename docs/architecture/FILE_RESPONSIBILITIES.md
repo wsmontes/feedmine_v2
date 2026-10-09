@@ -827,3 +827,17 @@ PublicationStore is the transaction authority for uniqueness: initial publicatio
 Tests preserve P15 as the delayed concurrent caller reproduction; cover first-segment rejection, both append paths, whole-segment rollback, stale-tail precedence, checkpoint/reopen integrity and cross-Edition eligibility. The migration measurement uses 10,000 published cards and three candidates, compares EXPLAIN before/after on the same populated previous-version database, and verifies exact published records, segments, Edition and checkpoint after upgrade. Late-media and enrichment tests publish the future occurrence in another Edition while preserving prior history.
 
 The sole new H3 integration file, ArchitectureSmokeTests/OriginExposureIntegrationTests.swift, uses the existing integration target dependencies. It translates actual stable-GUID RSS, admits title/description and media-only changes through AdmissionPolicy, proves origin identity preservation, and prevents repetition through real slices before and after reopening. A new revision admitted after reopening remains excluded in the original Edition and selectable in another Edition; no Package.swift change is needed.
+
+
+## Phase 3R6 — residual Syndication boundary failures
+
+SyndicationConnector.swift is the sole production change: explicit concrete HTTP/URL catches classify target-local failures into the existing closed Domain operational enum. SyndicationHTTP owns the unchanged physical read limit and redirect budget. Durable checkpoint errors and other structural fences remain throwing errors; no coordinator or orchestration catch is added.
+
+ResidualOperationalFailureTests.swift is the sole focused new test file. It covers E1–E10 with actual HTTP-client orchestration over local controlled transport, five individually named URL-code cases, three durable checkpoint failures, cancellation/unmapped local error, three-target continuation and exact GET counts. Its URLProtocol stream proof stops after five bytes against a four-byte bound and refuses the remaining 100,000 bytes before another target admits valid supply.
+
+ColdFeedBootstrapTests adds real local URLSession proofs for oversize body, unsolicited 304 and decode-content failure followed by healthy publication. RunwayAcquisitionCycleTests adds all-category three-target continuation, confirmed supply and one pull each. Existing AcquisitionCoordinatorTests retain fatal batch-generation propagation after admission (E11), ten-item receipt-prefix/checkpoint preservation and ordered receipts after operational settlement (E12), cancellation and failure-independent fairness. No previous test is removed or weakened.
+
+
+The binding 3R6 test amendment realigns test3R4OversizedDocumentIsFatalAndReleased to test3R6OversizedDocumentSettlesOperationallyAndIsReleased. It now asserts operationalFailure(remoteContent), empty receipts, unchanged supply/checkpoint, exact target/generation, zero admitted batches and weak lifetime cleanup. A second independent opportunity uses the same body and byte bound, performs its own GET and again releases its execution; each opportunity makes exactly one GET, with no retry. The classification implementation remains unchanged.
+
+Residual: a source permanently exceeding byteCapacity can consume new opportunities in later fairness cycles. No deferral, backoff, retry policy, quarantine, persistent suspension, cooldown or scheduler is introduced. A future decision must use measured resource consumption and continuity of healthy sources.

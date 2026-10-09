@@ -607,3 +607,28 @@ extension ColdFeedBootstrapTests {
         XCTAssertEqual(f.http.calls,1); XCTAssertEqual(http.calls,1); try assertAbsent(f, identity:id)
     }
 }
+
+
+extension ColdFeedBootstrapTests {
+    func test3R6ColdPublishesHealthyTargetAfterResidualRemoteFailuresWithoutRetry() async throws {
+        for kind in 0..<3 {
+            let f = try fixture(items: kind == 0 ? 100 : 1,status: kind == 1 ? 304 : 200,
+                error: kind == 2 ? URLError(.cannotDecodeContentData) : nil)
+            let b = try AcquisitionTargetAuthority(database: f.database).register(id: AcquisitionTargetID(),connectorKind: .syndication)
+            let http = ColdHTTPFixture(items: 1,label: "B")
+            addTeardownBlock { http.remove() }
+            let acquisition = try snapshot(f.database,[registration(f.target,source: f.source,http: f.http),registration(b,source: f.source,http: http)])
+            let bootstrap = try ColdFeedBootstrap(session: f.session,plan: f.plan,policy: f.policy,
+                acquisition: acquisition,coordinator: acquisition.makeCoordinator(),prepare: { Self.prepared($0) })
+            let resources = ColdFeedBootstrapResources(localExaminedCapacity: 10,acquisition: .init(targetWorkCapacity: 2,
+                batchCapacityPerNewExecution: 1,observationCapacityPerBatch: 10,byteCapacityPerBatch: 512)!)!
+            let snapshot = try published(await bootstrap.run(identity: identity(),resources: resources,backwardCapacity: 0,forwardCapacity: 10))
+            XCTAssertEqual(snapshot.window.items.count,1)
+            XCTAssertEqual(try canonical(f).count,1)
+            XCTAssertEqual(f.http.calls,1); XCTAssertEqual(http.calls,1)
+            XCTAssertEqual(try AcquisitionTargetAuthority(database: f.database).target(id: f.target.id)?.checkpointRevision,0)
+            XCTAssertNil(try AcquisitionTargetAuthority(database: f.database).target(id: f.target.id)?.checkpoint)
+            XCTAssertEqual(try AcquisitionTargetAuthority(database: f.database).target(id: b.id)?.checkpointRevision,1)
+        }
+    }
+}

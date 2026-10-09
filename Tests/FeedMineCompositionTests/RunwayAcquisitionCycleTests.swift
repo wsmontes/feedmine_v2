@@ -382,3 +382,27 @@ extension RunwayAcquisitionCycleTests {
         let pulls = await bConnector.pulls; XCTAssertTrue(pulls.isEmpty)
     }
 }
+
+
+extension RunwayAcquisitionCycleTests {
+    func test3R6AllOperationalCategoriesContinueThreeTargetsAndSignalConfirmedSupply() async throws {
+        for category in [ConnectorOperationalFailure.remoteContent,.remoteResponse,.transport] {
+            let f = try fixture(), intent = try await intent(f)
+            let b = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication)
+            let c = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication)
+            let aConnector = CycleConnector(.operational(category))
+            let bConnector = CycleConnector(.batch([Self.observation(source: f.source)],checkpoint()))
+            let cConnector = CycleConnector(.finished)
+            let cycle = RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: aConnector,b.id: bConnector,c.id: cConnector]))
+            let outcome = try await cycle.run(intent,eligibleTargets: [f.target,b,c],resources: resources(3))
+            let results = try executed(outcome)
+            XCTAssertEqual(results.map(\.targetID),[f.target.id,b.id,c.id])
+            XCTAssertEqual(results[0].stop,.operationalFailure(category))
+            XCTAssertEqual(results.map { $0.receipts.count },[0,1,0])
+            XCTAssertTrue(outcome.selectableSupplyChanged); XCTAssertEqual(try f.candidates().count,1)
+            let snapshot = await f.runway.snapshot()
+            XCTAssertFalse(snapshot.localSupplyExhausted); XCTAssertNil(snapshot.outstandingAcquisition)
+            for connector in [aConnector,bConnector,cConnector] { let pulls = await connector.pulls; XCTAssertEqual(pulls.count,1) }
+        }
+    }
+}

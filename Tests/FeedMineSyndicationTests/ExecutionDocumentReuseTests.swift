@@ -200,15 +200,33 @@ extension ExecutionDocumentReuseTests {
         XCTAssertEqual(Set(try f.records.compactMap(\.headline)), ["a","b","c","d","e"])
         XCTAssertEqual(try f.authority.target(id:f.target.id)?.checkpointRevision,3)
     }
-    func test3R4OversizedDocumentIsFatalAndReleased() async throws {
+    func test3R6OversizedDocumentSettlesOperationallyAndIsReleased() async throws {
         let f = try fixture()
-        do {
-            _ = try await f.coordinator.execute(.start(target:f.target,bounds:bounds(5,2,f.body.count-1)))
-            XCTFail("Expected unchanged physical byte bound")
-        } catch { XCTAssertEqual(error as? SyndicationHTTPError, .bodyTooLarge(limit:f.body.count-1,actualAtLeast:f.body.count)) }
-        XCTAssertTrue(try f.records.isEmpty); XCTAssertEqual(try f.authority.target(id:f.target.id)?.checkpointRevision,0)
-        XCTAssertFalse(f.lifetime.live)
-        let requests = await f.transport.journal(); XCTAssertEqual(requests.count,1)
+        let capacity = f.body.count - 1
+        XCTAssertGreaterThan(f.body.count,capacity)
+        let workBounds = bounds(5,2,capacity)
+        let result = try await f.coordinator.execute(.start(target:f.target,bounds:workBounds))
+        XCTAssertEqual(result.stop,.operationalFailure(.remoteContent))
+        XCTAssertEqual(result.targetID,f.target.id); XCTAssertEqual(result.generation,f.target.generation)
+        XCTAssertTrue(result.receipts.isEmpty); XCTAssertFalse(result.selectableSupplyChanged)
+        XCTAssertTrue(try f.records.isEmpty)
+        let target = try XCTUnwrap(f.authority.target(id:f.target.id))
+        XCTAssertEqual(target.checkpointRevision,0); XCTAssertNil(target.checkpoint)
+        XCTAssertFalse(f.lifetime.live); XCTAssertEqual(f.lifetime.created,1)
+        let active = await f.coordinator.activeExecutions(); XCTAssertTrue(active.isEmpty)
+        let firstRequests = await f.transport.journal(); XCTAssertEqual(firstRequests.count,1)
+        // A new caller opportunity must perform its own GET with the same unchanged bound.
+        let next = try await f.coordinator.execute(.start(target:target,bounds:workBounds))
+        XCTAssertEqual(next.stop,.operationalFailure(.remoteContent))
+        XCTAssertEqual(next.targetID,target.id); XCTAssertEqual(next.generation,target.generation)
+        XCTAssertTrue(next.receipts.isEmpty); XCTAssertFalse(next.selectableSupplyChanged)
+        XCTAssertEqual(try f.authority.target(id:target.id),target); XCTAssertTrue(try f.records.isEmpty)
+        XCTAssertFalse(f.lifetime.live); XCTAssertEqual(f.lifetime.created,2)
+        let nextActive = await f.coordinator.activeExecutions(); XCTAssertTrue(nextActive.isEmpty)
+        let requests = await f.transport.journal(); XCTAssertEqual(requests.count,2)
+        let (pulls,batches,_) = await f.probe.journal()
+        XCTAssertEqual(pulls.map(\.byteCapacity),[capacity,capacity]); XCTAssertTrue(batches.isEmpty)
+        XCTAssertTrue(requests.allSatisfy { $0.httpMethod == "GET" })
     }
     func test3R4AdmissionFailureAfterFirstPageIsFatalAndReleasesDocument() async throws {
         let f = try fixture(rejected:true)

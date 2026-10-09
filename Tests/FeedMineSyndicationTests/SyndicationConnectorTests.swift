@@ -222,8 +222,9 @@ extension SyndicationConnectorTests {
         do { _ = try await connector(cancelled).pull(pull()); XCTFail("Expected cancellation") }
         catch { XCTAssertTrue(error is CancellationError) }
         let limit = ScriptedSyndicationTransport(error: SyndicationHTTPError.bodyTooLarge(limit: 1, actualAtLeast: 2))
-        do { _ = try await connector(limit).pull(pull()); XCTFail("Expected fatal byte limit") }
-        catch { XCTAssertEqual(error as? SyndicationHTTPError, .bodyTooLarge(limit: 1, actualAtLeast: 2)) }
+        do { _ = try await connector(limit).pull(pull()); XCTFail("Expected target-local byte limit failure") }
+        catch { XCTAssertEqual(error as? ConnectorOperationalFailure, .remoteContent) }
+        let limitRequests = await limit.journal(); XCTAssertEqual(limitRequests.count,1)
     }
 }
 

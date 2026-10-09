@@ -795,3 +795,19 @@ Verification: swift package describe/build; ExecutionDocumentReuse (10), Cold (3
 The historical 3J/3K1/3K2 descriptions of exact-revision repetition suppression are superseded by this gate. Decision: one OriginRecordID occurrence per FeedEdition, without media/enrichment exceptions; another Edition remains independently eligible. Selection uses candidate-scoped durable origin exposure. PublicationStore guards initial publication and both append paths in the write transaction. The measured forward-only publication-origin-exposure-index-v1 migration adds only (origin_record_id, segment_id), preserving existing history/checkpoints. P15 remains the concurrency reproduction; late-media future publication occurs in another Edition.
 
 This gate is on phase/3r5-origin-exposure-deduplication for external review; it is not integrated into main. No automatic Edition creation, history rewrite, retry, cache or acquisition change is introduced.
+
+
+## Phase 3R6 — H2 residual, implemented for external review
+
+Base: 77bd9155385bb7065795572f94a914f9f375b5e2; branch: phase/3r6-residual-target-failure-classification. Only SyndicationConnector production changes: the remaining five HTTP failures and five explicit SDK URL codes receive existing operational categories. Durable checkpoint incompatibility/corruption, structural fences, unmapped local URL errors and cancellation retain their previous semantics.
+
+Proofs E1–E10 use the focused ResidualOperationalFailureTests, including finite redirects, physical read interruption and healthy B/C admission. E11/E12 retain the existing real durable coordinator proofs. E13–E16 cover planned continuation, Cold publication, Runway supply notification, exact request counts and no retry. E17 is the full regression suite. Acquisition flow, fairness, enum, package graph, schema, publication, UI and prior gates are unchanged.
+
+This gate is submitted on its work branch for independent review, without integration into main. Registration/UUID ordering consistency, 3R6B, M2, M11 and M14 remain separate work and are not started here.
+
+The authorized existing SyndicationConnector mapping test now expects bodyTooLarge to settle as remoteContent instead of throwing SyndicationHTTPError. Its failure/no-retry proof remains, and the focused physical-stream test preserves the exact byte-limit semantics. No test was removed.
+
+
+The binding 3R6 test amendment realigns test3R4OversizedDocumentIsFatalAndReleased to test3R6OversizedDocumentSettlesOperationallyAndIsReleased. It now asserts operationalFailure(remoteContent), empty receipts, unchanged supply/checkpoint, exact target/generation, zero admitted batches and weak lifetime cleanup. A second independent opportunity uses the same body and byte bound, performs its own GET and again releases its execution; each opportunity makes exactly one GET, with no retry. The classification implementation remains unchanged.
+
+Residual: a source permanently exceeding byteCapacity can consume new opportunities in later fairness cycles. No deferral, backoff, retry policy, quarantine, persistent suspension, cooldown or scheduler is introduced. A future decision must use measured resource consumption and continuity of healthy sources.
