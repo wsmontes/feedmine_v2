@@ -1,5 +1,8 @@
 // Real visual inputs terminate at the store callback; executable composition is external.
 import SwiftUI
+#if DEBUG
+import OSLog
+#endif
 import FeedMineDomain
 import FeedMineRuntime
 
@@ -97,51 +100,55 @@ struct FeedVisualCapture {
     private(set) var lastEmission: FeedVisualEvent?
     private var visibleProof: FeedVisualCardGeometry?
     private(set) var priorProof: FeedVisualCardGeometry?
-    private var geometryFrom: CGFloat?
-    private var geometryTo: CGFloat?
-    private var cardFrom: CGFloat?
-    private var cardTo: CGFloat?
+    // Each stream contributes its own latest direction; endpoints are not synchronized.
+    private var geometryMotion: RunwayActivity?
+    private var cardMotion: RunwayActivity?
     private var confirmedOffset: CGFloat?
     private var tailOffset: CGFloat?
     private var settled = false
     private var tailReported = false
-    // The native vector orientation remains unverified; nonzero vectors are ambiguous.
+    // Diagnostic only: an unverified vector is never a direction authority or a global veto.
     private(set) var velocityUnverified = false
+    #if DEBUG
+    private var geometryLogged = false
+    private var cardLogged = false
+    #endif
 
     mutating func phase(active: Bool, velocity: CGVector?) {
         if active && !reading {
-            geometryFrom = nil
-            geometryTo = nil
-            cardFrom = nil
-            cardTo = nil
+            geometryMotion = nil
+            cardMotion = nil
         }
         reading = active
         velocityUnverified = velocity.map { $0.dx != 0 || $0.dy != 0 } ?? false
-        if velocityUnverified {
-            geometryFrom = nil
-            geometryTo = nil
-            cardFrom = nil
-            cardTo = nil
-            confirmedOffset = nil
-        }
-        if !active { geometryFrom = nil; geometryTo = nil }
+        #if DEBUG
+        Self.trace("native phase active=\(active) velocityUnverified=\(velocityUnverified) vector=\(String(describing: velocity))")
+        #endif
     }
 
     mutating func invalidateLayout() {
         geometry = nil
         visibleProof = nil
         priorProof = nil
-        geometryFrom = nil
-        geometryTo = nil
-        cardFrom = nil
-        cardTo = nil
+        geometryMotion = nil
+        cardMotion = nil
         confirmedOffset = nil
         tailOffset = nil
         settled = false
         tailReported = false
+        #if DEBUG
+        geometryLogged = false
+        cardLogged = false
+        #endif
     }
 
     mutating func observe(_ next: FeedVisualGeometry) -> FeedVisualEvent? {
+        #if DEBUG
+        if !geometryLogged {
+            Self.trace("native geometry offset=\(next.offset) extent=\(next.extent) height=\(next.height)")
+            geometryLogged = true
+        }
+        #endif
         let previous = geometry
         geometry = next
         guard let previous else { return nil }
@@ -150,55 +157,45 @@ struct FeedVisualCapture {
             geometry = next
             return nil
         }
-        if !reading, next.offset != previous.offset {
+        if next.offset != previous.offset {
             confirmedOffset = nil
-            geometryFrom = nil
-            geometryTo = nil
-            cardFrom = nil
-            cardTo = nil
-        }
-        if reading, !velocityUnverified, next.offset != previous.offset {
-            if let from = geometryFrom,
-                (previous.offset - from) * (next.offset - previous.offset) < 0 {
-                geometryFrom = previous.offset
-                cardFrom = nil
-                cardTo = nil
+            if reading {
+                geometryMotion = next.offset > previous.offset ? .forward : .backward
+            } else {
+                geometryMotion = nil
+                cardMotion = nil
             }
-            geometryFrom = geometryFrom ?? previous.offset
-            geometryTo = next.offset
-            confirmedOffset = nil
         }
         return reconsider()
     }
 
     mutating func observeCard(_ proof: FeedVisualCardGeometry, isLast: Bool = false) -> FeedVisualEvent? {
+        #if DEBUG
+        if !cardLogged {
+            Self.trace("native card observed frameY=\(proof.frame.minY) offset=\(proof.offset) height=\(proof.height)")
+            cardLogged = true
+        }
+        #endif
         let intersects = proof.frame.height > 0 && proof.frame.maxY > 0 && proof.frame.minY < proof.height
         if isLast { tailOffset = intersects ? proof.offset : nil }
-        if let old = priorProof, old.cardID == proof.cardID,
-            (old.frame.size != proof.frame.size || old.height != proof.height ||
-                abs((old.frame.minY + old.offset) - (proof.frame.minY + proof.offset)) > 0.5) {
-            confirmedOffset = nil
-            geometryFrom = nil
-            geometryTo = nil
-            cardFrom = nil
-            cardTo = nil
-        }
-        if !velocityUnverified, let old = priorProof, old.cardID == proof.cardID,
-            old.frame.size == proof.frame.size, old.height == proof.height,
-            old.offset != proof.offset,
-            abs((old.frame.minY + old.offset) - (proof.frame.minY + proof.offset)) <= 0.5 {
-            if let from = cardFrom,
-                (old.offset - from) * (proof.offset - old.offset) < 0 {
-                cardFrom = old.offset
+        if let old = priorProof, old.cardID == proof.cardID {
+            let stable = old.frame.size == proof.frame.size && old.height == proof.height &&
+                abs((old.frame.minY + old.offset) - (proof.frame.minY + proof.offset)) <= 0.5
+            if !stable {
+                confirmedOffset = nil
+                geometryMotion = nil
+                cardMotion = nil
+            } else if old.frame.minY != proof.frame.minY, reading || geometryMotion != nil {
+                cardMotion = proof.frame.minY < old.frame.minY ? .forward : .backward
             }
-            cardFrom = cardFrom ?? old.offset
-            cardTo = proof.offset
         }
-        // Retain only the reference card, including its last offscreen displacement.
+        // Only one actual reference card; its invariant content coordinate distinguishes layout.
         let reference = min(proof.height / 2, max(0, (geometry?.extent ?? proof.height) - proof.offset - 16.5))
         if intersects, proof.frame.minY - 8 <= reference, proof.frame.maxY + 8 > reference {
             priorProof = proof
             visibleProof = proof
+        } else if visibleProof?.cardID == proof.cardID {
+            visibleProof = nil
         }
         return reconsider()
     }
@@ -207,39 +204,32 @@ struct FeedVisualCapture {
         guard !reading, !settled, let old = lastEmission, old.activity != .stationary,
             let geometry, confirmedOffset == geometry.offset,
             let proof = visibleProof, proof.cardID == old.observation.anchor.cardID,
-            abs(proof.offset - geometry.offset) <= 0.5, proof.height == geometry.height else { return nil }
+            proof.height == geometry.height else { return nil }
         let event = FeedVisualEvent(observation: old.observation, activity: .stationary)
         lastEmission = event
         settled = true
+        #if DEBUG
+        Self.trace("semantic viewport emitted activity=stationary anchor=\(proof.cardID)")
+        #endif
         return event
     }
 
     mutating func reconsider() -> FeedVisualEvent? {
-        guard !velocityUnverified, let geometry else { return nil }
-        if geometryTo == cardTo, geometryTo != nil, geometryFrom != cardFrom {
-            // The streams did not observe the same directional interval.
-            geometryFrom = nil
-            geometryTo = nil
-            cardFrom = nil
-            cardTo = nil
-            return nil
-        }
-        if let from = geometryFrom, let to = geometryTo, from != to,
-            cardFrom == from, cardTo == to, to == geometry.offset {
-            direction = to > from ? .forward : .backward
-            confirmedOffset = to
+        guard let geometry else { return nil }
+        if let global = geometryMotion, let visual = cardMotion, global == visual {
+            direction = global
+            confirmedOffset = geometry.offset
             settled = false
             tailReported = false
-            geometryFrom = nil
-            geometryTo = nil
-            cardFrom = nil
-            cardTo = nil
+            geometryMotion = nil
+            cardMotion = nil
         }
         guard let direction, confirmedOffset == geometry.offset,
-            let proof = visibleProof, abs(proof.offset - geometry.offset) <= 0.5,
-            proof.height == geometry.height else { return nil }
+            let proof = visibleProof, proof.height == geometry.height else { return nil }
+        // A late tail may upgrade the same anchor. An older tail cannot upgrade a newer anchor.
+        let tailVisible = tailOffset.map { $0 >= proof.offset } ?? false
         let activity: RunwayActivity = direction == .forward &&
-            (tailOffset == geometry.offset || geometry.offset + geometry.height >= geometry.extent)
+            (tailVisible || geometry.offset + geometry.height >= geometry.extent)
             ? .explicitTailApproach : direction
         if settled {
             guard activity == .explicitTailApproach, !tailReported,
@@ -249,14 +239,32 @@ struct FeedVisualCapture {
         let event = FeedVisualEvent(observation: .init(anchor: .init(cardID: proof.cardID, placement: .center)), activity: activity)
         guard event != lastEmission else { return nil }
         lastEmission = event
+        #if DEBUG
+        Self.trace("semantic viewport emitted activity=\(activity) anchor=\(proof.cardID)")
+        #endif
         return event
     }
+
+    #if DEBUG
+    private static func trace(_ value: String) {
+        Logger(subsystem: "com.feedmine.development", category: "native-capture").info("\(value, privacy: .public)")
+    }
+    #endif
+
 }
 
 @available(iOS 18, macOS 15, *)
 private struct NativeFeedViewport: ViewModifier {
     @Binding var capture: FeedVisualCapture
     let store: FeedScreenStore
+
+    // Card bounds use the container viewport; visibleRect may also include safe-area insets.
+    private func visualGeometry(_ geometry: ScrollGeometry) -> FeedVisualGeometry {
+        .init(offset: geometry.contentOffset.y + geometry.contentInsets.top,
+            extent: geometry.contentSize.height,
+            height: geometry.containerSize.height,
+            width: geometry.containerSize.width)
+    }
 
     func body(content: Content) -> some View {
         let presented = store.state.presentation
@@ -269,6 +277,9 @@ private struct NativeFeedViewport: ViewModifier {
             }))
             .onScrollPhaseChange { oldPhase, phase, context in
                 guard store.state.presentation == presented else { return }
+                #if DEBUG
+                Logger(subsystem: "com.feedmine.development", category: "native-capture").info("native SwiftUI phase=\(String(describing: oldPhase), privacy: .public)->\(String(describing: phase), privacy: .public)")
+                #endif
                 let wasReading = oldPhase == .interacting || oldPhase == .decelerating
                 let isReading = phase == .interacting || phase == .decelerating
                 if (!wasReading && isReading) || phase == .animating || phase == .tracking {
@@ -276,9 +287,7 @@ private struct NativeFeedViewport: ViewModifier {
                 }
                 capture.phase(active: (wasReading || isReading) && phase != .animating && phase != .tracking, velocity: context.velocity)
                 let geometry = context.geometry
-                if let event = capture.observe(.init(offset: geometry.visibleRect.minY,
-                    extent: geometry.contentSize.height, height: geometry.visibleRect.height,
-                    width: geometry.containerSize.width)) {
+                if let event = capture.observe(visualGeometry(geometry)) {
                     store.submitViewport(event.observation, activity: event.activity)
                 }
                 capture.reading = isReading
@@ -288,8 +297,7 @@ private struct NativeFeedViewport: ViewModifier {
                 }
             }
             .onScrollGeometryChange(for: FeedVisualGeometry.self, of: { geometry in
-                .init(offset: geometry.visibleRect.minY, extent: geometry.contentSize.height,
-                    height: geometry.visibleRect.height, width: geometry.containerSize.width)
+                visualGeometry(geometry)
             }) { _, geometry in
                 guard store.state.presentation == presented else { return }
                 if let event = capture.observe(geometry) {

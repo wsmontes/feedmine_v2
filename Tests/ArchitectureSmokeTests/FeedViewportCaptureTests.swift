@@ -11,6 +11,40 @@ import AppKit
 
 @MainActor
 final class FeedViewportCaptureTests: XCTestCase {
+    func testN3OffscreenReferenceNeverBecomesVisibleAnchor() {
+        var capture = FeedVisualCapture()
+        let id = PublicationCardID()
+        capture.phase(active: true, velocity: nil)
+        _ = capture.observe(.init(offset: 0, extent: 1000, height: 200))
+        _ = capture.observeCard(.init(cardID: id, frame: .init(x: 0, y: 0, width: 300, height: 200), offset: 0, height: 200))
+        XCTAssertNil(capture.observe(.init(offset: 400, extent: 1000, height: 200)))
+        XCTAssertNil(capture.observeCard(.init(cardID: id, frame: .init(x: 0, y: -400, width: 300, height: 200), offset: 400, height: 200)))
+        XCTAssertNil(capture.lastEmission)
+    }
+
+    // N3–N6: independent streams have different endpoints and sampling intervals.
+    func testN3IndependentIntervalsInBothDeliveryOrders() {
+        for cardFirst in [false, true] {
+            var capture = FeedVisualCapture()
+            let id = PublicationCardID()
+            capture.phase(active: true, velocity: nil)
+            _ = capture.observe(.init(offset: 0, extent: 1000, height: 200))
+            _ = capture.observeCard(.init(cardID: id, frame: .init(x: 0, y: 100, width: 300, height: 200), offset: 0, height: 200))
+            let proof = FeedVisualCardGeometry(cardID: id, frame: .init(x: 0, y: 75, width: 300, height: 200), offset: 25, height: 200)
+            let event: FeedVisualEvent?
+            if cardFirst {
+                XCTAssertNil(capture.observeCard(proof))
+                event = capture.observe(.init(offset: 40, extent: 1000, height: 200))
+            } else {
+                XCTAssertNil(capture.observe(.init(offset: 40, extent: 1000, height: 200)))
+                event = capture.observeCard(proof)
+            }
+            XCTAssertEqual(event?.activity, .forward)
+            XCTAssertEqual(event?.observation.anchor.cardID, id)
+            XCTAssertNil(capture.reconsider(), "Equivalent evidence is deduplicated")
+        }
+    }
+
     func testRealMovementAndInertiaRetainLatestAnchorWithoutDuplicates() {
         let a = PublicationCardID(), b = PublicationCardID(), c = PublicationCardID()
         var capture = FeedVisualCapture()
@@ -282,9 +316,14 @@ final class FeedViewportCaptureTests: XCTestCase {
             let id = PublicationCardID()
             _ = capture.observe(.init(offset: 0, extent: 1000, height: 200))
             capture.phase(active: true, velocity: .init(dx: 0, dy: dy))
-            XCTAssertNil(Self.move(&capture, id: id, offset: 30))
+            XCTAssertEqual(Self.move(&capture, id: id, offset: 30)?.activity, .forward,
+                "N9 direction comes from stable visual displacement, never the unverified vector")
             XCTAssertTrue(capture.velocityUnverified)
-            XCTAssertNil(capture.lastEmission)
+            XCTAssertEqual(Self.move(&capture, id: id, offset: 10)?.activity, .backward)
+            capture.invalidateLayout()
+            _ = capture.observe(.init(offset: 10, extent: 1000, height: 200))
+            XCTAssertNil(capture.observe(.init(offset: 60, extent: 1000, height: 200)),
+                "The vector alone does not authorize direction")
         }
     }
 
