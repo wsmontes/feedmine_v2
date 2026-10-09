@@ -43,7 +43,24 @@ final class SyndicationTranslatorTests: XCTestCase {
     }
     func test02RSSLinkFallback() throws {
         let o = try item(rss("<item><guid></guid><link>https://Example.test/A?Case=B</link></item>"))
-        XCTAssertEqual(o.objectIdentity.namespace,prefix+":rss-link"); XCTAssertEqual(o.objectIdentity.value,"https://Example.test/A?Case=B")
+        // Host case is normalized; path and query case are significant and preserved.
+        XCTAssertEqual(o.objectIdentity.namespace,prefix+":rss-link"); XCTAssertEqual(o.objectIdentity.value,"https://example.test/A?Case=B")
+        // The primary link keeps the publisher's exact URL for opening.
+        XCTAssertEqual(o.primaryLink?.absoluteString,"https://Example.test/A?Case=B")
+    }
+    /// v1 lesson IN-3: link churn (tracking params, scheme, www, slash, fragment, port) is the same article.
+    func test02bLinkIdentityIgnoresTrackingChurn() throws {
+        let variants = ["https://www.example.test/news/a?id=7&utm_source=rss&utm_medium=feed",
+            "http://example.test/news/a/?id=7#comments", "https://EXAMPLE.test:443/news/a?fbclid=x&id=7&gclid=y",
+            "https://example.test/news/a?id=7&ref=homepage&mc_cid=1"]
+        let values = try variants.map { try item(rss("<item><link>\($0)</link></item>")).objectIdentity.value }
+        XCTAssertEqual(Set(values),["https://example.test/news/a?id=7"])
+        // Meaningful parameters still distinguish articles.
+        let other = try item(rss("<item><link>https://example.test/news/a?id=8</link></item>")).objectIdentity.value
+        XCTAssertNotEqual(other,values[0])
+        // Opaque guid identity is never rewritten.
+        let guid = try item(rss("<item><guid>https://www.Example.test/a?utm_source=x</guid></item>")).objectIdentity.value
+        XCTAssertEqual(guid,"https://www.Example.test/a?utm_source=x")
     }
     func test03RSSMissingIdentityRejection() throws {
         let value = try translate(rss("<item><title>Only title</title></item>"))

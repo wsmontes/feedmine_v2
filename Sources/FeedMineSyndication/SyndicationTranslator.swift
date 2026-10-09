@@ -57,7 +57,7 @@ public struct SyndicationTranslator: Sendable {
         }
         func rss(_ item: RSSFeedItem, kind: String, language: String?) -> Result<AcquisitionObservation, ItemFailure> {
             let object = Self.nonempty(item.guid?.text).map { identity(kind + "-guid", $0) }
-                ?? Self.nonempty(item.link).map { identity(kind + "-link", $0) }
+                ?? Self.nonempty(item.link).map { identity(kind + "-link", SyndicationItemIdentity.linkIdentity($0)) }
             let base = Self.webURL(item.link)
             var media: [AcquisitionMediaCandidateClaim] = []
             if let image = Self.media(item.iTunes?.image?.attributes?.href, base: base) { media.append(image) }
@@ -87,7 +87,7 @@ public struct SyndicationTranslator: Sendable {
                         && Self.nonempty(link.attributes?.href) != nil
                 }?.attributes?.href
                 let object = Self.nonempty(item.id).map { identity("atom-id", $0) }
-                    ?? link.map { identity("atom-link", $0) }
+                    ?? link.map { identity("atom-link", SyndicationItemIdentity.linkIdentity($0)) }
                 let version = item.updated.map { identity("atom-updated", String($0.timeIntervalSinceReferenceDate.bitPattern, radix: 16), .version) }
                 let base = Self.webURL(link)
                 var media = Self.thumbnails(item.media?.thumbnails, base: base) + Self.contents(item.media?.contents, base: base)
