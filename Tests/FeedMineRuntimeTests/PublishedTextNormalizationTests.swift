@@ -56,6 +56,20 @@ final class PublishedTextNormalizationTests: XCTestCase {
         try check("&amp;lt;p&amp;gt;literal&amp;lt;/p&amp;gt;", "&lt;p&gt;literal&lt;/p&gt;")
         try check("&lt;b&gt;literal&lt;/b&gt;", "<b>literal</b>")
     }
+    /// v1 lesson IN-6: every entity missing from a curated subset became a user-visible bug.
+    func testH5bCompleteHTML4NamedEntities() throws {
+        try check("&eacute;t&eacute; &Ccedil;a &atilde;o &uuml;ber &szlig; &ntilde;", "\u{E9}t\u{E9} \u{C7}a \u{E3}o \u{FC}ber \u{DF} \u{F1}")
+        try check("&euro;5 &pound;3 &yen; &cent; &deg;C &frac12; &times; &divide; &plusmn;",
+            "\u{20AC}5 \u{A3}3 \u{A5} \u{A2} \u{B0}C \u{BD} \u{D7} \u{F7} \u{B1}")
+        try check("&laquo;cita&raquo; &sbquo;a&lsquo; &bdquo;b&ldquo; &lsaquo;c&rsaquo;",
+            "\u{AB}cita\u{BB} \u{201A}a\u{2018} \u{201E}b\u{201C} \u{2039}c\u{203A}")
+        try check("&Alpha;&Omega;&alpha;&sigmaf;&omega; &rarr;&hArr; &ne;&le;&infin;&sum; &hearts;&diams;",
+            "\u{391}\u{3A9}\u{3B1}\u{3C2}\u{3C9} \u{2192}\u{21D4} \u{2260}\u{2264}\u{221E}\u{2211} \u{2665}\u{2666}")
+        try check("&OElig;uvre &Scaron; &Yuml; &yuml; &fnof; &dagger;&Dagger; &permil;",
+            "\u{152}uvre \u{160} \u{178} \u{FF} \u{192} \u{2020}\u{2021} \u{2030}")
+        // Names are case-sensitive; an unknown case variant stays literal.
+        try check("&EACUTE; &Eacute;", "&EACUTE; \u{C9}")
+    }
     func testH6H7H8UnicodeLinksAndInlineMarkup() throws {
         try check("<span>Olá <strong>世界 <em>😀</em></strong></span>", "Olá 世界 😀")
         try check("<a href='https://readable.test/?a=1>0' onclick='bad()'>Read more</a>", "Read more")

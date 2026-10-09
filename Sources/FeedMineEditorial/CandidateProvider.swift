@@ -74,9 +74,8 @@ private enum ReadablePublicationText {
     private static let blocks: Set<String> = ["p", "div", "section", "article", "header", "footer", "blockquote",
         "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "pre"]
     private static let hidden: Set<String> = ["script", "style", "iframe", "object", "embed"]
-    private static let entities: [String: String] = ["amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'",
-        "nbsp": " ", "copy": "©", "reg": "®", "trade": "™", "hellip": "…", "mdash": "—", "ndash": "–",
-        "lsquo": "‘", "rsquo": "’", "ldquo": "“", "rdquo": "”", "bull": "•"]
+    // Complete HTML 4.01 table (HTMLNamedEntities.swift); unknown names remain literal.
+    private static var entities: [String: String] { HTMLNamedEntities.table }
 
     static func convert(_ text: String) -> String {
         let source = Array(text.unicodeScalars)
