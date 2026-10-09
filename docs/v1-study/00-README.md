@@ -70,6 +70,23 @@ v2's invariants (INV-01/02/03/07/08/09/12/14) block most of this by rule. The de
 
 Ordered by risk to the user-visible feed. "Lesson" names the v1 study item that informs the action.
 
+> **Status vs `main` @ `a259e96`:** ten commits landed while this study ran (2026-10-08 18:51 →
+> 2026-10-09 05:23). They have **not been reviewed** here; the matches below come from commit
+> subjects and the files each one changed.
+> - Action 1: `77bd915` (prevent duplicate origin publication within an edition)
+> - Action 2: `24845f2` (readable candidate text)
+> - Action 4, error mapping only: `db1c2b6`
+> - Action 5: `7650163`, `a64a340` (viewport capture)
+> - Action 6: `065d7b7` (serialize runway driver)
+> - H1 follow-up 2 (availability on rejected items): `5f36be6`
+>
+> Not yet addressed: action 7 (no `.github/` and no `.gitignore`), backoff and parallelism in
+> action 4, and actions 3 and 8–12.
+>
+> New: `FeedMineApp/FeedMineApp.xcodeproj` was added. v1's hand-edited `pbxproj` caused about
+> 200-line diffs per new file and fragile merges (06 §3 D). Consider generating the project
+> (XcodeGen/Tuist) or keeping it to a thin shell over the SwiftPM package.
+
 | # | Action | v2 location | Lesson | Review ID | When |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Decide the edit policy, then exclude by origin (or record "edit = new occurrence" in PRODUCT_INVARIANTS). Normalize guid/link; give RSS a content-fingerprint version. | `SelectionEngine`, `SyndicationTranslator` | IN L1, CE Lesson E | H3, H1 follow-up 1 | Now |
