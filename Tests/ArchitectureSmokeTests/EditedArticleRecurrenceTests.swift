@@ -81,3 +81,36 @@ final class EditedArticleRecurrenceTests: XCTestCase {
             PublicationStore.materialKey(title: "A b", primaryText: "c d"))
     }
 }
+
+extension EditedArticleRecurrenceTests {
+    /// Review F07: a new primary image is a material change, and an origin with an occurrence still
+    /// ahead of the reader is never queued again (PD-1 rule 2).
+    func testPrimaryMediaIsMaterialAndUnseenOccurrenceBlocksAnother() throws {
+        let origin = OriginRecordID()
+        func candidate(media: String?) -> Candidate {
+            Candidate(originRecordID: origin, originRevisionID: OriginRevisionID(), headline: "H", summary: "S",
+                timestamp: .init(value: Date(timeIntervalSince1970: 1), kind: .authored), language: nil, providerID: nil,
+                primaryMediaLocator: media)
+        }
+        let publishedKey = PublicationStore.materialKey(title: "H", primaryText: "S", primaryMedia: "https://example.test/a.jpg")
+        XCTAssertEqual(publishedKey, SelectionExposureSnapshot.materialKey(headline: "H", summary: "S",
+            primaryMedia: "https://example.test/a.jpg"))
+        let v = PolicyVersion(rawValue: 1), context = FeedContext(request: .main)
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key, catalogGeneration: .init(rawValue: 1),
+            userSelectionVersion: v, eligibilityPolicyVersion: v, scoringPolicyVersion: v, sequencingPolicyVersion: v,
+            exposurePolicyVersion: v, selectionSchemaVersion: .init(rawValue: 1))
+        let plan = try XCTUnwrap(FeedPlan(context: context, revision: revision))
+        let policy = ResolvedSelectionPolicy(contextKey: context.key, userSelectionVersion: v, eligibilityPolicyVersion: v,
+            scoringPolicyVersion: v, sequencingPolicyVersion: v, exposurePolicyVersion: v, selectionSchemaVersion: .init(rawValue: 1),
+            eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyDescending, exposure: .excludePublishedMaterial)
+        func select(_ c: Candidate, unseen: Bool) throws -> Int {
+            let exposure = try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: [origin], publishedOriginIDs: [origin],
+                publishedMaterialKeys: [origin: [publishedKey]], unseenOriginIDs: unseen ? [origin] : []))
+            return try SelectionEngine().select(plan: plan, policy: policy,
+                window: .init(candidates: [c], examinedCount: 1, nextCursor: nil, exhausted: true), exposure: exposure).orderedCandidates.count
+        }
+        XCTAssertEqual(try select(candidate(media: "https://example.test/a.jpg"), unseen: false), 0, "same text and image")
+        XCTAssertEqual(try select(candidate(media: "https://example.test/b.jpg"), unseen: false), 1, "new primary image")
+        XCTAssertEqual(try select(candidate(media: "https://example.test/b.jpg"), unseen: true), 0, "earlier occurrence still unseen")
+    }
+}

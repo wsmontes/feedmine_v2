@@ -29,10 +29,12 @@ public struct Candidate: Hashable, Sendable {
     public let providerID: ProviderID?
     /// Sources this origin belongs to. Empty means unknown; it never constrains adjacency (PD-4).
     public let sourceIDs: Set<SourceID>
+    /// Ordinal-0 canonical media locator; part of PD-1 material identity.
+    public let primaryMediaLocator: String?
 
     public init(originRecordID: OriginRecordID, originRevisionID: OriginRevisionID,
         headline: String?, summary: String?, timestamp: CandidateTimestamp,
-        language: String?, providerID: ProviderID?, sourceIDs: Set<SourceID> = []) {
+        language: String?, providerID: ProviderID?, sourceIDs: Set<SourceID> = [], primaryMediaLocator: String? = nil) {
         self.originRecordID = originRecordID
         self.originRevisionID = originRevisionID
         self.headline = headline
@@ -41,5 +43,6 @@ public struct Candidate: Hashable, Sendable {
         self.language = language
         self.providerID = providerID
         self.sourceIDs = sourceIDs
+        self.primaryMediaLocator = primaryMediaLocator
     }
 }

@@ -202,11 +202,18 @@ public struct PublicationStore: Sendable {
         case whenMaterialChanged
     }
 
-    /// Material identity of an occurrence: whitespace-collapsed title and primary text.
-    /// Editorial computes the identical key from candidate text (`SelectionExposureSnapshot`).
-    public static func materialKey(title: String?, primaryText: String?) -> String {
+    /// Material identity of an occurrence: whitespace-collapsed title and primary text, plus the
+    /// revision's primary media locator (review F07 / PD-1: a new primary image is material).
+    /// Editorial computes the identical key from candidate facts (`SelectionExposureSnapshot`).
+    public static func materialKey(title: String?, primaryText: String?, primaryMedia: String? = nil) -> String {
         func collapse(_ text: String?) -> String { (text ?? "").split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") }
-        return collapse(title) + "\u{1F}" + collapse(primaryText)
+        return collapse(title) + "\u{1F}" + collapse(primaryText) + "\u{1F}" + (primaryMedia ?? "")
+    }
+
+    /// Ordinal-0 canonical media locator of a revision; immutable, so both sides agree.
+    static func primaryMediaLocator(_ revision: OriginRevisionID, in db: Database) throws -> String? {
+        try String.fetchOne(db, sql: "SELECT remote_locator FROM media_candidates WHERE origin_revision_id = ? AND ordinal = 0",
+            arguments: [PersistenceValueCoding.uuid(revision.rawValue)])
     }
 
     private func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
@@ -238,7 +245,8 @@ public struct PublicationStore: Sendable {
             case .whenMaterialChanged:
                 let published = try Self.publishedMaterial(cards.map(\.originRecordID), editionID: segment.editionID, in: db)
                 for card in cards where published[card.originRecordID]?
-                    .contains(Self.materialKey(title: card.title, primaryText: card.primaryText)) == true {
+                    .contains(Self.materialKey(title: card.title, primaryText: card.primaryText,
+                        primaryMedia: try Self.primaryMediaLocator(card.originRevisionID, in: db))) == true {
                     throw PublicationStoreError.duplicateOriginInEdition
                 }
             }
@@ -408,17 +416,37 @@ public struct PublicationStore: Sendable {
         public let publishedOriginIDs: Set<OriginRecordID>
         /// Material keys (`materialKey`) of every occurrence of each requested published origin.
         public let publishedMaterialKeys: [OriginRecordID: Set<String>]
+        /// Requested origins with an occurrence positioned after the reader anchor (PD-1 rule 2).
+        public let unseenOriginIDs: Set<OriginRecordID>
     }
 
-    public func exposure(editionID: FeedEditionID,
-        originIDs: [OriginRecordID]) throws -> ExposureRecord {
+    public func exposure(editionID: FeedEditionID, originIDs: [OriginRecordID],
+        readerAnchorCardID: PublicationCardID? = nil) throws -> ExposureRecord {
         try database.read { db in
             let editionKey = PersistenceValueCoding.uuid(editionID.rawValue)
             let schema = try Self.historySchema(editionKey, in: db)
             let tail = try Self.historyTail(editionKey: editionKey, schema: schema, in: db)
             let material = try Self.publishedMaterial(originIDs, editionID: editionID, in: db)
+            var unseen = Set<OriginRecordID>()
+            if let readerAnchorCardID, !material.isEmpty {
+                let anchor = try Self.historyPosition(readerAnchorCardID, editionKey: editionKey, schema: schema, in: db)
+                let keys = material.keys.map { PersistenceValueCoding.uuid($0.rawValue) }
+                let capacity = db.maximumStatementArgumentCount - 3
+                guard capacity > 0 else { throw PublicationStoreError.invalidCapacity }
+                for start in stride(from: 0, to: keys.count, by: capacity) {
+                    let group = Array(keys[start..<min(start + capacity, keys.count)])
+                    let placeholders = Array(repeating: "?", count: group.count).joined(separator: ",")
+                    let values = try String.fetchAll(db, sql: """
+                        SELECT DISTINCT c.origin_record_id FROM published_cards c
+                        JOIN feed_segments s ON s.id = c.segment_id
+                        WHERE c.origin_record_id IN (\(placeholders)) AND s.edition_id = ? AND (s.ordinal, c.ordinal) > (?, ?)
+                        """, arguments: StatementArguments(group.map { $0 as DatabaseValueConvertible }
+                            + [editionKey, Int64(anchor.segmentOrdinal), Int64(anchor.cardOrdinal)]))
+                    for value in values { unseen.insert(OriginRecordID(rawValue: try PublicationValueCoding.uuid(value, field: "origin_record_id"))) }
+                }
+            }
             return ExposureRecord(observedTailCardID: tail.cardID,
-                publishedOriginIDs: Set(material.keys), publishedMaterialKeys: material)
+                publishedOriginIDs: Set(material.keys), publishedMaterialKeys: material, unseenOriginIDs: unseen)
         }
     }
 
@@ -432,15 +460,16 @@ public struct PublicationStore: Sendable {
             let group = Array(keys[start..<min(start + capacity, keys.count)])
             let placeholders = Array(repeating: "?", count: group.count).joined(separator: ",")
             let rows = try Row.fetchAll(db, sql: """
-                SELECT c.origin_record_id, c.title, c.primary_text FROM published_cards c
+                SELECT c.origin_record_id, c.title, c.primary_text, m.remote_locator AS primary_media FROM published_cards c
                 JOIN feed_segments s ON s.id = c.segment_id
+                LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0
                 WHERE c.origin_record_id IN (\(placeholders)) AND s.edition_id = ?
                 """, arguments: StatementArguments(group + [PersistenceValueCoding.uuid(editionID.rawValue)]))
             for row in rows {
                 let fields = PublicationRecordFields(row)
                 let origin = OriginRecordID(rawValue: try fields.uuid("origin_record_id"))
                 found[origin, default: []].insert(materialKey(title: try fields.optionalString("title"),
-                    primaryText: try fields.optionalString("primary_text")))
+                    primaryText: try fields.optionalString("primary_text"), primaryMedia: try fields.optionalString("primary_media")))
             }
         }
         return found

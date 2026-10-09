@@ -22,6 +22,8 @@ public struct PublishedExposureFacts: Hashable, Sendable {
     public let publishedOriginIDs: Set<OriginRecordID>
     /// Material keys of every published occurrence of each requested origin (PD-1).
     public let publishedMaterialKeys: [OriginRecordID: Set<String>]
+    /// Requested origins with an occurrence after the supplied reader anchor (PD-1 rule 2).
+    public let unseenOriginIDs: Set<OriginRecordID>
 }
 
 public enum PublicationAdvance: Hashable, Sendable {

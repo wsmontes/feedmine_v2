@@ -58,10 +58,13 @@ public struct LocalProductionSlice: Sendable {
         public let segmentID: FeedSegmentID
         public let segmentSeed: UInt64
         public let segmentCreatedAt: Date
+        /// Reader position; an origin with an occurrence after it is not published again (PD-1 rule 2).
+        public let readerAnchorCardID: PublicationCardID?
 
         public init(plan: FeedPlan, policy: ResolvedSelectionPolicy, editionID: FeedEditionID,
             after: CandidateSupplyCursor?, examinedCapacity: Int, segmentID: FeedSegmentID,
-            segmentSeed: UInt64, segmentCreatedAt: Date) {
+            segmentSeed: UInt64, segmentCreatedAt: Date, readerAnchorCardID: PublicationCardID? = nil) {
+            self.readerAnchorCardID = readerAnchorCardID
             self.plan = plan
             self.policy = policy
             self.editionID = editionID
@@ -82,10 +85,11 @@ public struct LocalProductionSlice: Sendable {
         let window = try candidateProvider.candidates(for: request.plan,
             after: request.after, examinedCapacity: request.examinedCapacity)
         let facts = try publicationHistory.exposure(editionID: request.editionID,
-            originIDs: window.candidates.map(\.originRecordID))
+            originIDs: window.candidates.map(\.originRecordID), readerAnchorCardID: request.readerAnchorCardID)
         guard facts.editionID == request.editionID,
             let exposure = SelectionExposureSnapshot(requestedOriginIDs: facts.requestedOriginIDs,
-                publishedOriginIDs: facts.publishedOriginIDs, publishedMaterialKeys: facts.publishedMaterialKeys) else {
+                publishedOriginIDs: facts.publishedOriginIDs, publishedMaterialKeys: facts.publishedMaterialKeys,
+                unseenOriginIDs: facts.unseenOriginIDs) else {
             throw LocalProductionSliceError.invalidExposureFacts
         }
         // PD-4: the Edition tail precedes this segment, so alternation holds across segments.

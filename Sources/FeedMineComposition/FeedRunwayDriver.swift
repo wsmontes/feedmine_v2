@@ -184,7 +184,8 @@ public actor FeedRunwayDriver {
                     let identity = try makeSegmentIdentity()
                     let request = LocalProductionSlice.Request(plan: plan, policy: policy, editionID: intent.scope.editionID,
                         after: intent.after, examinedCapacity: intent.examinedCapacity, segmentID: identity.segmentID,
-                        segmentSeed: identity.segmentSeed, segmentCreatedAt: identity.segmentCreatedAt)
+                        segmentSeed: identity.segmentSeed, segmentCreatedAt: identity.segmentCreatedAt,
+                        readerAnchorCardID: await session.currentPresentation()?.window.anchor.cardID)
                     let outcome = try localProductionSlice.run(request, prepare: prepare)
                     try await runway.completeLocalSlice(intent, outcome: outcome, at: monotonicNow())
                     if case .published = outcome, await session.currentRunwayScope() == scope {
