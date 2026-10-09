@@ -60,6 +60,23 @@ public enum ColdFeedEvidence: Hashable, Sendable {
     case contacting([AcquisitionTargetID])
     case settled(AcquisitionTargetID, stop: AcquisitionExecutionStop, supplyChanged: Bool)
     case preparingMedia
+    /// Review F06: the first Edition is installed; slower feeds are still answering.
+    case published(FeedPresentationSnapshot)
+}
+
+/// First-publication result shared by the per-target callbacks (serialized by the coordinator).
+private final class FirstPublication: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: FeedPresentationSnapshot?
+    var snapshot: FeedPresentationSnapshot? {
+        get { lock.lock(); defer { lock.unlock() }; return value }
+        set { lock.lock(); value = newValue; lock.unlock() }
+    }
+}
+
+private enum PublicationAttempt {
+    case published(FeedPresentationSnapshot)
+    case notYet(LocalProductionProgress)
 }
 
 public enum ColdFeedBootstrapError: Error, Equatable, Sendable {
@@ -140,23 +157,45 @@ public struct ColdFeedBootstrap: Sendable {
         // First launch contacts every planned feed at once; the slowest no longer gates the rest.
         let evidence = self.evidence
         await evidence?(.contacting(acquisitionPlan.work.map(Self.targetID)))
+        // Review F06: the first feed that brings supply gets a publication attempt immediately;
+        // slower feeds keep admitting supply for the following cards instead of holding the screen.
+        let first = FirstPublication()
         let results = try await coordinator.executeConcurrently(acquisitionPlan.work) { result in
             await evidence?(.settled(result.targetID, stop: result.stop, supplyChanged: result.selectableSupplyChanged))
+            guard result.selectableSupplyChanged, first.snapshot == nil else { return }
+            if case .published(let snapshot) = try await self.attemptFirstPublication(request, identity: identity,
+                backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity) {
+                first.snapshot = snapshot
+                await evidence?(.published(snapshot))
+            }
         }
+        if let snapshot = first.snapshot { return .published(snapshot) }
         let changed = results.contains { $0.selectableSupplyChanged }
         guard changed else { return .noPublicationAfterAcquisition(firstProgress, results) }
+        switch try await attemptFirstPublication(request, identity: identity,
+            backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity) {
+        case .published(let snapshot): return .published(snapshot)
+        case .notYet(let progress): return .noPublicationAfterAcquisition(progress, results)
+        }
+    }
+
+    /// One initial-slice attempt over current supply. Reuses the exact request: each initial slice
+    /// starts selection at the canonical head, and the durable first Edition is created at most once.
+    private func attemptFirstPublication(_ request: InitialProductionSlice.Request, identity: ColdFeedPublicationIdentity,
+        backwardCapacity: Int, forwardCapacity: Int) async throws -> PublicationAttempt {
         // PD-5/PD-6: give fresh supply a bounded chance to arrive with real images before the first
         // screen; whatever is not ready is published as a designed text-only card.
         if prepareMedia != nil { await evidence?(.preparingMedia) }
         await prepareMedia?()
-
-        // Reuse the exact request; each initial slice starts selection at the canonical head.
         switch try initialProductionSlice.run(request, prepare: prepare) {
         case .published:
-            return try await installedPublication(identity: identity, backwardCapacity: backwardCapacity,
-                forwardCapacity: forwardCapacity)
+            guard case .published(let snapshot) = try await installedPublication(identity: identity,
+                backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity) else {
+                throw ColdFeedBootstrapError.inconsistentPublishedRestore
+            }
+            return .published(snapshot)
         case .advancedWithoutPublication(let progress):
-            return .noPublicationAfterAcquisition(progress, results)
+            return .notYet(progress)
         }
     }
 

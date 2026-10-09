@@ -193,6 +193,7 @@ final class FeedAssociation {
                 .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
         })
         tidyWaitSeconds = configuration.timeoutIntervalForRequest / 4
+        coldRetryFallbackSeconds = configuration.timeoutIntervalForRequest
         let session = FeedSession(publicationHistory: history, imageDecoder: PresentationImageDecoder(
             assetDirectory: assetDirectory, heroMaxPixel: device.heroPixelWidth, thumbnailMaxPixel: device.thumbnailPixelWidth))
         self.session = session
@@ -276,6 +277,15 @@ final class FeedAssociation {
                 backwardCapacity: 8, forwardCapacity: 16)
             try install(FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state))
             Self.log("cold bootstrap settled")
+            if case .published = outcome {} else {
+                // Review F16: no first Edition yet. Recover without a gesture at the earliest fact-based
+                // time: a cooling feed's expiry, else one request timeout (what one attempt may cost).
+                coldRetryAt = await coordinator.nextCoolingExpiry()
+                    ?? ProcessInfo.processInfo.systemUptime + coldRetryFallbackSeconds
+                await scheduleLocalRetryIfNeeded()
+                return
+            }
+            coldRetryAt = nil
         }
         let snapshot = try await driver.activateCurrentPresentation(resources: Self.resources)
         try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
@@ -287,13 +297,17 @@ final class FeedAssociation {
     @ObservationIgnored private var retryTask: Task<Void, Never>?
     /// Review F09: only a visible association may drive the feed. Background and close revoke it.
     @ObservationIgnored private var visible = true
+    /// F16: when the next cold attempt may run if no first Edition exists yet.
+    @ObservationIgnored private var coldRetryAt: Double?
+    @ObservationIgnored private var coldRetryFallbackSeconds: Double = 20
     private func scheduleLocalRetryIfNeeded() async {
         retryTask?.cancel()
         retryTask = nil
         let local = await driver.localRetryEligibleAt()?.seconds
         let acquisition = await driver.acquisitionResumeAt()?.seconds
+        let cold = await session.currentPresentation() == nil ? coldRetryAt : nil
         // One opportunity at the earliest fact-derived time: a local retry or a feed leaving cooldown.
-        guard active, visible, let at = [local, acquisition].compactMap({ $0 }).min() else { return }
+        guard active, visible, let at = [local, acquisition, cold].compactMap({ $0 }).min() else { return }
         let eligible = RunwayMonotonicTime(seconds: at) ?? RunwayMonotonicTime(seconds: 0)!
         let wait = max(0, eligible.seconds - ProcessInfo.processInfo.systemUptime)
         retryTask = Task { [weak self] in
@@ -326,6 +340,10 @@ final class FeedAssociation {
             if changed { progress = progress.applying(.admitted(headlines: admittedHeadlines()), at: now) }
         case .preparingMedia:
             break
+        case .published(let snapshot):
+            // F06: show the first Edition now; slower feeds keep answering behind the badge.
+            do { try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state)) }
+            catch { Self.log("early publication rejected") }
         }
         preparation = progress
         do { try install(store.state.reporting(.preparing(progress))) } catch { Self.log("preparation update rejected") }
