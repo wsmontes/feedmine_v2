@@ -91,6 +91,15 @@ final class PublicationPreparationTests: XCTestCase {
         }
     }
 
+    func testDirectCandidateIsCopiedExactlyWithoutSecondNormalization() throws {
+        let c = Candidate(originRecordID: OriginRecordID(), originRevisionID: OriginRevisionID(),
+            headline: "<em>Explicit raw title</em>", summary: "&lt;b&gt;already decoded once &amp; literal",
+            timestamp: .init(value: Date(timeIntervalSince1970: 1), kind: .observed), language: nil, providerID: nil)
+        let draft = try XCTUnwrap(PublicationPreparation.drafts(selection: selection([c]), inputs: [input(c)]).first)
+        XCTAssertEqual(draft.text.title?.utf8.map { $0 }, c.headline?.utf8.map { $0 })
+        XCTAssertEqual(draft.text.primaryText?.utf8.map { $0 }, c.summary?.utf8.map { $0 })
+    }
+
     func testEmptyCountMismatchAndPositionalOriginAlignment() throws {
         XCTAssertEqual(try PublicationPreparation.drafts(selection: selection([]), inputs: []), [])
         let a = candidate(1), b = candidate(2)

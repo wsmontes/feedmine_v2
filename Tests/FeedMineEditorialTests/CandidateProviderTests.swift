@@ -42,6 +42,30 @@ final class CandidateProviderTests: XCTestCase {
         return revision
     }
 
+    func testReadableProjectionPreservesCanonicalBytesIdentityMetadataAndWindow() throws {
+        try withProvider { store, provider in
+            let source = SourceID(), other = SourceID(), attribution = ProviderID()
+            let raw = try insert(1, source: source, into: store, authored: time.addingTimeInterval(10),
+                headline: "<em>Headline &amp; news</em>", summary: "<p>One</p><p>Two &amp; three</p>", language: "pt", provider: attribution)
+            _ = try insert(2, source: other, into: store, headline: "plain  title", summary: "2 < 3\n next")
+            let original = try store.candidateWindow(sourceID: nil, after: nil, examinedCapacity: 1)
+            let projected = try provider.candidates(for: plan(.main), after: nil, examinedCapacity: 1)
+            let candidate = try XCTUnwrap(projected.candidates.first)
+            XCTAssertEqual(candidate.headline, "Headline & news"); XCTAssertEqual(candidate.summary, "One\n\nTwo & three")
+            XCTAssertEqual(candidate.originRecordID, raw.originRecordID); XCTAssertEqual(candidate.originRevisionID, raw.id)
+            XCTAssertEqual(candidate.timestamp, .init(value: time.addingTimeInterval(10), kind: .authored))
+            XCTAssertEqual(candidate.language, "pt"); XCTAssertEqual(candidate.providerID, attribution)
+            XCTAssertEqual(projected.examinedCount, original.examinedCount); XCTAssertEqual(projected.exhausted, original.exhausted)
+            XCTAssertEqual(projected.nextCursor, original.nextCursor.map { .init(sortDate: $0.sortDate, originRecordID: $0.originRecordID) })
+            XCTAssertEqual(try store.originRevision(id: raw.id), raw)
+            let rest = try provider.candidates(for: plan(.main), after: projected.nextCursor, examinedCapacity: 2)
+            XCTAssertEqual(rest.candidates.map(\.originRecordID), [origin(2)])
+            XCTAssertEqual(rest.candidates.first?.headline, "plain  title"); XCTAssertEqual(rest.candidates.first?.summary, "2 < 3\n next")
+            let filtered = try provider.candidates(for: plan(.source(source)), after: nil, examinedCapacity: 3)
+            XCTAssertEqual(filtered.candidates.map(\.originRecordID), [raw.originRecordID])
+        }
+    }
+
     func testMainMapsIDsOptionalPayloadTimestampsAndWindowMetadata() throws {
         try withProvider { store, provider in
             let a = SourceID(), b = SourceID(), attribution = ProviderID()
