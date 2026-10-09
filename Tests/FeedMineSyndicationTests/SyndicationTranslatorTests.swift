@@ -86,7 +86,7 @@ final class SyndicationTranslatorTests: XCTestCase {
         let o = try item(atom("<entry><id>urn:Opaque:ID</id><title>Atom</title><summary type=\"text\">Summary</summary><published>2020-01-01T00:00:00Z</published><updated>2020-01-02T00:00:00Z</updated><link rel=\"self\" href=\"https://example.test/self\"/><link rel=\"ALTERNATE\" href=\"https://example.test/article\"/><content>Not copied</content></entry>"))
         XCTAssertEqual(o.objectIdentity.namespace,prefix+":atom-id"); XCTAssertEqual(o.objectIdentity.value,"urn:Opaque:ID")
         XCTAssertEqual(o.versionIdentity?.namespace,prefix+":atom-updated"); XCTAssertEqual(o.versionIdentity?.role,.version)
-        XCTAssertEqual(o.versionIdentity?.value,String(date("2020-01-02T00:00:00Z").timeIntervalSinceReferenceDate.bitPattern,radix: 16))
+        XCTAssertEqual(o.versionIdentity?.value.hasPrefix(String(date("2020-01-02T00:00:00Z").timeIntervalSinceReferenceDate.bitPattern,radix: 16)+":"),true)
         XCTAssertEqual(o.authoredAt,date("2020-01-01T00:00:00Z")); XCTAssertEqual(o.modifiedAt,date("2020-01-02T00:00:00Z"))
         XCTAssertEqual(o.primaryLink?.absoluteString,"https://example.test/article"); XCTAssertEqual(o.summary,"Summary"); XCTAssertNil(o.bodyText)
     }
@@ -102,7 +102,7 @@ final class SyndicationTranslatorTests: XCTestCase {
         let o = try XCTUnwrap(value.observations.first)
         XCTAssertEqual(o.objectIdentity.namespace,prefix+":json-id"); XCTAssertEqual(o.objectIdentity.value,"item-1")
         XCTAssertEqual(o.versionIdentity?.namespace,prefix+":json-modified"); XCTAssertEqual(o.versionIdentity?.role,.version)
-        XCTAssertEqual(o.versionIdentity?.value,String(date("2020-01-02T00:00:00Z").timeIntervalSinceReferenceDate.bitPattern,radix: 16))
+        XCTAssertEqual(o.versionIdentity?.value.hasPrefix(String(date("2020-01-02T00:00:00Z").timeIntervalSinceReferenceDate.bitPattern,radix: 16)+":"),true)
         XCTAssertEqual(o.bodyText," text "); XCTAssertEqual(o.summary," summary "); XCTAssertEqual(o.language,"PT")
         XCTAssertEqual(o.authoredAt,date("2020-01-01T00:00:00Z")); XCTAssertEqual(o.modifiedAt,date("2020-01-02T00:00:00Z"))
         XCTAssertEqual(o.primaryLink?.absoluteString,"https://example.com/permalink")
@@ -225,7 +225,7 @@ final class SyndicationTranslatorTests: XCTestCase {
         let atomItem = try item(atom("<entry><id>a</id><published>2100-01-01T00:00:00Z</published><updated>2100-01-02T00:00:00Z</updated></entry>"))
         XCTAssertEqual(atomItem.authoredAt,observed); XCTAssertEqual(atomItem.modifiedAt,observed)
         // Version identity still reflects the publisher's claimed value, so replay recognition is unaffected.
-        XCTAssertEqual(atomItem.versionIdentity?.value,String(future.timeIntervalSinceReferenceDate.bitPattern,radix: 16))
+        XCTAssertEqual(atomItem.versionIdentity?.value.hasPrefix(String(future.timeIntervalSinceReferenceDate.bitPattern,radix: 16)+":"),true)
         let jsonItem = try item(json("{\"id\":\"j\",\"date_published\":\"2100-01-01T00:00:00Z\",\"date_modified\":\"2100-01-02T00:00:00Z\"}"))
         XCTAssertEqual(jsonItem.authoredAt,observed); XCTAssertEqual(jsonItem.modifiedAt,observed)
         // Past dates are untouched.
@@ -277,5 +277,21 @@ final class SyndicationTranslatorTests: XCTestCase {
         let j = try item(json("{\"id\":\"j\",\"url\":\"https://site.example/j\",\"attachments\":[{\"url\":\"https://example.test/att.webp\",\"mime_type\":\"image/webp\"},"
             + "{\"url\":\"https://example.test/ep.mp3\",\"mime_type\":\"audio/mpeg\"}],\"content_html\":\"<img src='/inline.jpg'>\"}"))
         XCTAssertEqual(j.mediaCandidates.map(\.remoteURL.absoluteString), ["https://example.test/att.webp","https://site.example/inline.jpg"])
+    }
+/// PD-1: an edit under an unchanged `updated` date is a new version; identical replay and
+    /// whitespace churn are the same version.
+    func test32MaterialEditUnderUnchangedDateIsANewVersion() throws {
+        func entry(_ summary: String) throws -> AcquisitionObservation {
+            try item(atom("<entry><id>a</id><updated>2020-01-02T00:00:00Z</updated><summary type=\"text\">\(summary)</summary></entry>"))
+        }
+        let original = try entry("Original text"), replay = try entry("Original text"), spaced = try entry("Original   text ")
+        let edited = try entry("Corrected text")
+        XCTAssertEqual(original.versionIdentity, replay.versionIdentity)
+        XCTAssertEqual(original.versionIdentity, spaced.versionIdentity)
+        XCTAssertNotEqual(original.versionIdentity, edited.versionIdentity)
+        XCTAssertEqual(original.objectIdentity, edited.objectIdentity)
+        let json1 = try item(json("{\"id\":\"j\",\"date_modified\":\"2020-01-02T00:00:00Z\",\"title\":\"A\"}"))
+        let json2 = try item(json("{\"id\":\"j\",\"date_modified\":\"2020-01-02T00:00:00Z\",\"title\":\"B\"}"))
+        XCTAssertNotEqual(json1.versionIdentity, json2.versionIdentity)
     }
 }

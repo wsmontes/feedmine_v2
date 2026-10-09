@@ -1,5 +1,6 @@
 // FeedKit values remain inside this module; output is protocol-free acquisition facts.
 import Foundation
+import CryptoKit
 import FeedKit
 import FeedMineDomain
 import FeedMineAcquisition
@@ -48,7 +49,16 @@ public struct SyndicationTranslator: Sendable {
             // v1 lesson IN-4 / review M12: a future-dated item would pin itself to the top of a
             // recency order forever. Clamp claimed times to the observation; identity is unchanged.
             func clamped(_ date: Date?) -> Date? { date.map { min($0, observedAt) } }
-            guard let value = AcquisitionObservation(objectIdentity: object, versionIdentity: version, precedence: .makeCurrent,
+            // PD-1 / review H1 follow-up 1: publishers edit articles without touching `updated` /
+            // `date_modified`. The version identity is the claimed date plus a fingerprint of the
+            // material content, so a real edit is a genuinely new version and identical replay is
+            // still recognized. Whitespace churn is not material.
+            let materialVersion = version.map { claimed in
+                ExternalIdentity(connectorKind: claimed.connectorKind, namespace: claimed.namespace,
+                    value: claimed.value + ":" + Self.materialFingerprint(title: title, summary: summary, body: body,
+                        link: link, media: media), role: claimed.role)
+            }
+            guard let value = AcquisitionObservation(objectIdentity: object, versionIdentity: materialVersion, precedence: .makeCurrent,
                 availability: .available, headline: title, summary: summary, bodyText: body, authoredAt: clamped(authored),
                 modifiedAt: clamped(modified), observedAt: observedAt, language: language, primaryLink: Self.webURL(link),
                 searchProjection: nil, providerID: nil, memberships: configuration.memberships, mediaCandidates: media)
@@ -138,6 +148,17 @@ public struct SyndicationTranslator: Sendable {
             declaredItemCount: items.count, examinedItemCount: examined, nextItemIndex: end < items.count ? end : nil)
     }
     private static func nonempty(_ value: String?) -> String? { value.flatMap { $0.utf8.isEmpty ? nil : $0 } }
+    /// First 16 hex digits of SHA-256 over whitespace-collapsed material fields.
+    static func materialFingerprint(title: String?, summary: String?, body: String?, link: String?,
+        media: [AcquisitionMediaCandidateClaim]) -> String {
+        func collapse(_ text: String?) -> String {
+            (text ?? "").split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        }
+        let material = [collapse(title), collapse(summary), collapse(body), collapse(link)]
+            + media.map(\.remoteURL.absoluteString)
+        let digest = SHA256.hash(data: Data(material.joined(separator: "\u{1F}").utf8))
+        return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
     private static func webURL(_ text: String?) -> URL? {
         guard let text, let url = URL(string: text), let scheme = url.scheme?.lowercased(),
             scheme == "http" || scheme == "https", let host = url.host, !host.isEmpty else { return nil }
