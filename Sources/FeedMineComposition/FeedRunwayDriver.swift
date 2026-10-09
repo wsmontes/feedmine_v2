@@ -46,13 +46,16 @@ public actor FeedRunwayDriver {
     private let monotonicNow: @Sendable () -> RunwayMonotonicTime
     private let makeSegmentIdentity: @Sendable () throws -> FeedRunwaySegmentIdentity
     private let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication
+    private let prepareMedia: (@Sendable () async -> Void)?
 
     public init(session: FeedSession, runway: RunwayController, plan: FeedPlan, policy: ResolvedSelectionPolicy,
         acquisition: SyndicationAcquisitionSnapshot, coordinator: AcquisitionCoordinator,
         monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime,
         makeSegmentIdentity: @escaping @Sendable () throws -> FeedRunwaySegmentIdentity,
-        prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication) throws {
+        prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication,
+        prepareMedia: (@Sendable () async -> Void)? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw FeedRunwayDriverError.policyContextMismatch }
+        self.prepareMedia = prepareMedia
         self.session = session; self.runway = runway; self.plan = plan; self.policy = policy; self.acquisition = acquisition
         publicationHistory = PublicationHistory(database: acquisition.runtimeDatabase)
         localProductionSlice = LocalProductionSlice(database: acquisition.runtimeDatabase)
@@ -172,6 +175,12 @@ public actor FeedRunwayDriver {
                     await runway.snapshot().scope == scope else { return await session.currentPresentation() }
                 do {
                     try Task.checkCancellation()
+                    // Bounded media preparation for the supply head before it is selected (PD-5).
+                    await prepareMedia?()
+                    guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
+                        try? await runway.failLocalSlice(intent, failure: .cancelled, at: monotonicNow())
+                        return await session.currentPresentation()
+                    }
                     let identity = try makeSegmentIdentity()
                     let request = LocalProductionSlice.Request(plan: plan, policy: policy, editionID: intent.scope.editionID,
                         after: intent.after, examinedCapacity: intent.examinedCapacity, segmentID: identity.segmentID,

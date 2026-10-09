@@ -9,14 +9,17 @@ import FeedMinePublication
 
 public actor FeedSession {
     private let publicationHistory: PublicationHistory
+    private let imageDecoder: PresentationImageDecoder?
     private var state: FeedSessionState?
     private let projectionSequenceID = UUID()
     private var projectionPosition: UInt64 = 0
 
     /// Composition-only exception: accepts the semantic Publication boundary.
     /// UI consumes Runtime presentation results without importing Publication.
-    public init(publicationHistory: PublicationHistory) {
+    /// With a decoder, projected cards carry slot-sized local images; without one they render placeholders.
+    public init(publicationHistory: PublicationHistory, imageDecoder: PresentationImageDecoder? = nil) {
         self.publicationHistory = publicationHistory
+        self.imageDecoder = imageDecoder
     }
 
     public func currentPresentation() -> FeedPresentationSnapshot? {
@@ -68,12 +71,12 @@ public actor FeedSession {
     /// An unchanged effective projection retains its exact provenance, even after another read.
     private func project(contextKey: ContextKey, editionID: FeedEditionID,
         publishedWindow: FeedWindow) throws -> FeedPresentationSnapshot {
-        let window = FeedWindowSnapshot(publishedWindow: publishedWindow)
+        let window = FeedWindowSnapshot(publishedWindow: publishedWindow, decoder: imageDecoder)
         if let current = state?.presentation, current.contextKey == contextKey,
             current.editionID == editionID, current.window == window { return current }
         let next = try FeedProjectionProvenance.nextPosition(after: projectionPosition)
         let snapshot = FeedPresentationSnapshot(contextKey: contextKey, editionID: editionID,
-            publishedWindow: publishedWindow,
+            window: window,
             provenance: .init(sequenceID: projectionSequenceID, position: next))
         projectionPosition = next
         return snapshot

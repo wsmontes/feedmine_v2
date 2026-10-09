@@ -26,8 +26,12 @@ public struct ImageMaterializer: Sendable {
             pixelHeight: metadata.height, mimeType: metadata.mimeType)
     }
 
-    public func localAsset(for key: PublishedMediaKey) throws -> LocalImageAsset? {
-        guard let bytes = try store.bytes(for: key) else { return nil }
+    /// Exact authenticated local bytes for presentation decoding; nil when evicted or never stored.
+    public func localBytes(for key: PublishedMediaKey) throws -> Data? {
+        try store.bytes(for: key)
+    }
+
+    public func localAsset(for key: PublishedMediaKey) throws -> LocalImageAsset? {        guard let bytes = try store.bytes(for: key) else { return nil }
         let metadata: (width: Int, height: Int, mimeType: String?)
         do {
             metadata = try Self.inspect(bytes)

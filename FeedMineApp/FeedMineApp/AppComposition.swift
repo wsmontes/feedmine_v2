@@ -1,6 +1,11 @@
 import Foundation
 import Observation
 import OSLog
+import Network
+import FeedMineMedia
+#if canImport(UIKit)
+import UIKit
+#endif
 import FeedMineDomain
 import FeedMinePersistence
 import FeedMineAcquisition
@@ -88,6 +93,7 @@ final class FeedAssociation {
     let session: FeedSession
     let driver: FeedRunwayDriver
     let coordinator: AcquisitionCoordinator
+    let media: MediaPrefetcher
     let acquisition: SyndicationAcquisitionSnapshot
     private let cold: ColdFeedBootstrap
     private let transport: URLSession
@@ -162,8 +168,27 @@ final class FeedAssociation {
         let coordinator = acquisition.makeCoordinator(backoff: backoff,
             concurrentTargetLimit: max(2, ProcessInfo.processInfo.activeProcessorCount))
         self.coordinator = coordinator
-        let session = FeedSession(publicationHistory: history)
+        // PD-5/PD-6 media pipeline: one download owner, device-measured policy, slot-sized decoding.
+        let assetDirectory = directory.appendingPathComponent("Media", isDirectory: true)
+        let device = DeviceMediaConditions.current()
+        let readiness = MediaReadiness()
+        let fetcher = MediaHTTPFetcher(session: transport)
+        let media = MediaPrefetcher(database: db, assetDirectory: assetDirectory, readiness: readiness,
+            concurrentDownloadLimit: max(2, ProcessInfo.processInfo.activeProcessorCount / 2),
+            fetch: { try await fetcher.fetch($0, byteCeiling: $1) },
+            conditions: { rate in DeviceMediaConditions.policy(device: device, measuredBytesPerSecond: rate,
+                assetDirectory: assetDirectory) })
+        self.media = media
+        let session = FeedSession(publicationHistory: history, imageDecoder: PresentationImageDecoder(
+            assetDirectory: assetDirectory, heroMaxPixel: device.heroPixelWidth, thumbnailMaxPixel: device.thumbnailPixelWidth))
         self.session = session
+        let names = Dictionary(uniqueKeysWithValues: feeds.map { ($0.sourceID, $0.displayName) })
+        let prepare: @Sendable (SelectionResult) -> LocalPreparedPublication = { Self.prepare($0, readiness: readiness, names: names) }
+        // Bounded wait for media of the supply head: what the runway can afford (one request timeout).
+        let mediaWait = configuration.timeoutIntervalForRequest / 4
+        let prepareMedia: @Sendable () async -> Void = {
+            await media.prefetchSupplyHead(limit: 32, deadline: ProcessInfo.processInfo.systemUptime + mediaWait)
+        }
         let runway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1.2,
             releaseMarginSeconds: 2)!, consumptionSampleLimit: 8, replenishmentSampleLimit: 8,
             // M7: first retry after a failed local slice one second later, doubling per failure.
@@ -172,16 +197,23 @@ final class FeedAssociation {
             acquisition: acquisition, coordinator: coordinator,
             monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
             makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date())! },
-            prepare: { Self.prepare($0) })
+            prepare: prepare, prepareMedia: prepareMedia)
         cold = try ColdFeedBootstrap(session: session, plan: plan, policy: policy,
-            acquisition: acquisition, coordinator: coordinator, prepare: { Self.prepare($0) })
+            acquisition: acquisition, coordinator: coordinator, prepare: prepare, prepareMedia: prepareMedia)
     }
 
-    nonisolated private static func prepare(_ selection: SelectionResult) -> LocalPreparedPublication {
-        .init(inputs: selection.orderedCandidates.map {
-            .init(origin: .init(originRecordID: $0.originRecordID, originRevisionID: $0.originRevisionID,
-                sourceID: nil, providerID: $0.providerID, sourceDisplayName: nil, providerDisplayName: nil),
-                contentEntityID: nil, contentClusterID: nil, primaryAction: nil, presentation: .textOnly)
+    /// PD-5: each card is drawn with a prepared image or designed text-only — never "missing" one.
+    /// Attribution (source id/name) is frozen into the card, which also feeds PD-4 adjacency.
+    nonisolated private static func prepare(_ selection: SelectionResult, readiness: MediaReadiness,
+        names: [SourceID: String]) -> LocalPreparedPublication {
+        .init(inputs: selection.orderedCandidates.map { candidate in
+            let source = candidate.sourceIDs.sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }.first { names[$0] != nil }
+                ?? candidate.sourceIDs.first
+            return .init(origin: .init(originRecordID: candidate.originRecordID, originRevisionID: candidate.originRevisionID,
+                sourceID: source, providerID: candidate.providerID, sourceDisplayName: source.flatMap { names[$0] },
+                providerDisplayName: nil),
+                contentEntityID: nil, contentClusterID: nil, primaryAction: nil,
+                presentation: readiness.presentation(for: candidate.originRevisionID))
         }, cardIDs: selection.orderedCandidates.map { _ in PublicationCardID() })
     }
 
@@ -296,5 +328,79 @@ final class FeedAssociation {
         #if DEBUG
         Logger(subsystem: "com.feedmine.development", category: "composition").info("\(value, privacy: .public)")
         #endif
+    }
+}
+
+/// PD-6: media conditions measured on this device. Slot widths follow the feed layout
+/// (FeedCardView: full-width hero, 88 pt thumbnail) on the actual screen; network path, Low Power
+/// Mode, thermal state and free space are sampled whenever a policy is requested.
+struct DeviceMediaConditions: Sendable {
+    let heroPointWidth: Double
+    let thumbnailPointWidth: Double
+    let scale: Double
+    var heroPixelWidth: Int { Int((heroPointWidth * scale).rounded(.up)) }
+    var thumbnailPixelWidth: Int { Int((thumbnailPointWidth * scale).rounded(.up)) }
+
+    @MainActor static func currentOnMain() -> DeviceMediaConditions {
+        #if canImport(UIKit)
+        let screen = UIScreen.main
+        // Feed cards are inset by 16 pt outer padding and 16 pt card padding on each side.
+        return .init(heroPointWidth: max(1, screen.bounds.width - 64), thumbnailPointWidth: 88, scale: screen.scale)
+        #else
+        return .init(heroPointWidth: 600, thumbnailPointWidth: 88, scale: 2)
+        #endif
+    }
+
+    static func current() -> DeviceMediaConditions {
+        if Thread.isMainThread { return MainActor.assumeIsolated { currentOnMain() } }
+        return DispatchQueue.main.sync { MainActor.assumeIsolated { currentOnMain() } }
+    }
+
+    static func policy(device: DeviceMediaConditions, measuredBytesPerSecond: Double?, assetDirectory: URL) -> MediaPolicy? {
+        let info = ProcessInfo.processInfo
+        let thermal: MediaThermalPressure
+        switch info.thermalState {
+        case .nominal: thermal = .nominal
+        case .fair: thermal = .fair
+        case .serious: thermal = .serious
+        case .critical: thermal = .critical
+        @unknown default: thermal = .serious
+        }
+        let free = try? FileManager.default.temporaryDirectory
+            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
+        guard let conditions = MediaDeviceConditions(heroSlotPointWidth: device.heroPointWidth,
+            thumbnailSlotPointWidth: device.thumbnailPointWidth, screenScale: device.scale,
+            network: NetworkPathObserver.shared.current, measuredBytesPerSecond: measuredBytesPerSecond,
+            // The wait budget for one image is what the runway already tolerates for one feed request.
+            waitBudgetSeconds: 5, freeStorageBytes: free, lowPowerMode: info.isLowPowerModeEnabled, thermal: thermal),
+            // Decode-bomb and stream safety ceilings (v1 hardened: 12 MB, 12k px side, 50 MP).
+            let ceilings = MediaSafetyCeilings(maximumDownloadBytes: 12_000_000, maximumPixelSide: 12_000,
+                maximumPixelCount: 50_000_000) else { return nil }
+        return MediaPolicy(conditions: conditions, ceilings: ceilings)
+    }
+}
+
+/// Current network path for media decisions (constrained / expensive / unavailable).
+final class NetworkPathObserver: @unchecked Sendable {
+    static let shared = NetworkPathObserver()
+    private let monitor = NWPathMonitor()
+    private let lock = NSLock()
+    private var path: MediaNetworkPath = .unconstrained
+
+    private init() {
+        monitor.pathUpdateHandler = { [weak self] update in
+            let value: MediaNetworkPath
+            if update.status != .satisfied { value = .unavailable }
+            else if update.isConstrained { value = .constrained }
+            else if update.isExpensive { value = .expensive }
+            else { value = .unconstrained }
+            self?.lock.lock(); self?.path = value; self?.lock.unlock()
+        }
+        monitor.start(queue: DispatchQueue(label: "feedmine.network-path"))
+    }
+
+    var current: MediaNetworkPath {
+        lock.lock(); defer { lock.unlock() }
+        return path
     }
 }

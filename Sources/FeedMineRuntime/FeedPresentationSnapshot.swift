@@ -59,8 +59,8 @@ public struct FeedWindowSnapshot: Hashable, Sendable {
 
     /// FeedWindow already guarantees nonempty unique cards and anchor membership.
     /// The one-to-one projection preserves those invariants and supplied order.
-    init(publishedWindow: FeedWindow) {
-        items = publishedWindow.cards.map(PresentationCard.init(publishedCard:))
+    init(publishedWindow: FeedWindow, decoder: PresentationImageDecoder? = nil) {
+        items = publishedWindow.cards.map { PresentationCard(publishedCard: $0, decoder: decoder) }
         let placement: PresentationAnchorPlacement
         switch publishedWindow.anchor.placement {
         case .top: placement = .top
@@ -84,9 +84,14 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
     }
 
     init(contextKey: ContextKey, editionID: FeedEditionID, publishedWindow: FeedWindow, provenance: FeedProjectionProvenance) {
+        self.init(contextKey: contextKey, editionID: editionID, window: FeedWindowSnapshot(publishedWindow: publishedWindow),
+            provenance: provenance)
+    }
+
+    init(contextKey: ContextKey, editionID: FeedEditionID, window: FeedWindowSnapshot, provenance: FeedProjectionProvenance) {
         self.contextKey = contextKey
         self.editionID = editionID
-        window = FeedWindowSnapshot(publishedWindow: publishedWindow)
+        self.window = window
         self.provenance = provenance
     }
 }

@@ -69,12 +69,15 @@ public struct ColdFeedBootstrap: Sendable {
     private let initialProductionSlice: InitialProductionSlice
     private let coordinator: AcquisitionCoordinator
     private let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication
+    private let prepareMedia: (@Sendable () async -> Void)?
 
     /// The external composition supplies a coordinator over the snapshot's same runtime database.
     public init(session: FeedSession, plan: FeedPlan, policy: ResolvedSelectionPolicy,
         acquisition: SyndicationAcquisitionSnapshot, coordinator: AcquisitionCoordinator,
-        prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication) throws {
+        prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication,
+        prepareMedia: (@Sendable () async -> Void)? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw ColdFeedBootstrapError.policyContextMismatch }
+        self.prepareMedia = prepareMedia
         self.session = session
         self.plan = plan
         self.policy = policy
@@ -124,6 +127,9 @@ public struct ColdFeedBootstrap: Sendable {
         let results = try await coordinator.executeConcurrently(acquisitionPlan.work) { _ in }
         let changed = results.contains { $0.selectableSupplyChanged }
         guard changed else { return .noPublicationAfterAcquisition(firstProgress, results) }
+        // PD-5/PD-6: give fresh supply a bounded chance to arrive with real images before the first
+        // screen; whatever is not ready is published as a designed text-only card.
+        await prepareMedia?()
 
         // Reuse the exact request; each initial slice starts selection at the canonical head.
         switch try initialProductionSlice.run(request, prepare: prepare) {

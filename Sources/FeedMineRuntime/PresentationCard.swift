@@ -6,6 +6,7 @@
 import Foundation
 import FeedMineDomain
 import FeedMinePublication
+import FeedMineMedia
 
 public enum PresentationCardLayout: String, Hashable, Sendable {
     case hero
@@ -42,8 +43,10 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     public let layout: PresentationCardLayout
     public let mediaAspectRatio: Double?
     public let primaryActionKind: PresentationPrimaryActionKind?
+    /// Slot-sized local image ready to draw; nil renders the layout's frozen placeholder.
+    public let image: PresentationImage?
 
-    init(publishedCard: PublishedCard) {
+    init(publishedCard: PublishedCard, decoder: PresentationImageDecoder? = nil) {
         id = publishedCard.id
         title = publishedCard.text.title
         primaryText = publishedCard.text.primaryText
@@ -70,5 +73,7 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
         case .mediaPlayback: primaryActionKind = .mediaPlayback
         case .localContentDetail: primaryActionKind = .localContentDetail
         }
+        let projectedLayout = layout
+        image = publishedCard.media.primary.flatMap { decoder?.image(key: $0.key, layout: projectedLayout) }
     }
 }

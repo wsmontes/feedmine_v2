@@ -1,4 +1,7 @@
-// Pure rendering of the supplied local occurrence; no asset or action target is exposed here.
+// Pure rendering of the supplied local occurrence; no asset loading or action target here.
+// Images arrive already decoded at slot size inside PresentationCard (Runtime owns decoding).
+// The visual slot is sized by the frozen aspect ratio, so a missing image renders a placeholder
+// of the same size and the card never changes height (v1 lesson MD-2 / PD-5).
 import SwiftUI
 import FeedMineRuntime
 
@@ -11,6 +14,28 @@ public struct FeedCardView: View {
     }
 
     public var body: some View {
+        switch card.layout {
+        case .hero:
+            VStack(alignment: .leading, spacing: 10) {
+                visual(aspectRatio: card.mediaAspectRatio ?? 16.0 / 9.0)
+                    .frame(maxWidth: .infinity)
+                text
+            }
+            .modifier(CardChrome(id: card.id.rawValue.uuidString))
+        case .thumbnail:
+            HStack(alignment: .top, spacing: 12) {
+                text
+                Spacer(minLength: 0)
+                visual(aspectRatio: 1)
+                    .frame(width: 88, height: 88)
+            }
+            .modifier(CardChrome(id: card.id.rawValue.uuidString))
+        case .textOnly:
+            text.modifier(CardChrome(id: card.id.rawValue.uuidString))
+        }
+    }
+
+    private var text: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let title = card.title {
                 Text(verbatim: title)
@@ -18,6 +43,7 @@ public struct FeedCardView: View {
             }
             if let text = card.primaryText {
                 Text(verbatim: text)
+                    .lineLimit(card.layout == .textOnly ? 8 : 4)
             }
             if let source = card.sourceDisplayName {
                 Text(verbatim: source)
@@ -43,9 +69,32 @@ public struct FeedCardView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(card.id.rawValue.uuidString)
+    }
+
+    private func visual(aspectRatio: Double) -> some View {
+        Rectangle()
+            .fill(.quaternary)
+            .aspectRatio(aspectRatio, contentMode: .fit)
+            .overlay {
+                if let image = card.image {
+                    Image(decorative: image.cgImage, scale: 1)
+                        .resizable()
+                        .scaledToFill()
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .accessibilityHidden(true)
+    }
+}
+
+private struct CardChrome: ViewModifier {
+    let id: String
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(id)
     }
 }
