@@ -117,7 +117,7 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let database = try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root)), source = SourceID()
-        let target = try AcquisitionTargetAuthority(database: database).register(id: AcquisitionTargetID(),connectorKind: .syndication)
+        let target = try AcquisitionTargetAuthority(database: database).register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [source])
         let context = FeedContext(request: .main), version = PolicyVersion(rawValue: 1)
         let revision = EditorialRevision(id: EditorialRevisionID(),contextKey: context.key,catalogGeneration: CatalogGeneration(rawValue: 1),
             userSelectionVersion: version,eligibilityPolicyVersion: version,scoringPolicyVersion: version,sequencingPolicyVersion: version,
@@ -241,7 +241,7 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
         let bounds = AcquisitionWorkBounds(batchCapacity: 1,observationCapacityPerBatch: 8,byteCapacityPerBatch: 100)!
         let old = Task { try await coordinator.execute(.start(target: f.target,bounds: bounds)) }
         await fake.waitForPull()
-        let current = try f.authority.reconfigure(id: f.target.id,expectedGeneration: 1,connectorKind: .syndication,checkpoint: .preserve)
+        let current = try f.authority.reconfigure(id: f.target.id,expectedGeneration: 1,connectorKind: .syndication,checkpoint: .preserve, authorizedSources: [f.source])
         let intent = try await intent(f)
         let outcome = try await RunwayAcquisitionCycle(runway: f.runway,coordinator: coordinator).run(intent,eligibleTargets: [current],resources: resources())
         XCTAssertEqual(outcome,.deferred(.activeGenerationConflict)); XCTAssertFalse(outcome.selectableSupplyChanged)
@@ -288,7 +288,7 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
     }
     func test11PriorCommittedSupplyAndSignalSurviveLaterError() async throws {
         let f = try fixture(), intent = try await intent(f)
-        let second = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication)
+        let second = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [f.source])
         let a = CycleConnector(.batch([Self.observation(source: f.source)],checkpoint())), b = CycleConnector(.failure)
         do { _ = try await RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: a,second.id: b])).run(intent,eligibleTargets: [f.target,second],resources: resources(2)); XCTFail("Expected second error") }
         catch { XCTAssertEqual(error as? CycleConnector.Failure,.expected) }
@@ -311,7 +311,7 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
     }
     func test13MultipleSupplyResultsSignalBeforeLaterWorkAndSeparately() async throws {
         let f = try fixture(), intent = try await intent(f)
-        let second = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication)
+        let second = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [f.source])
         let a = CycleConnector(.batch([Self.observation(source: f.source,object: "A")],checkpoint()))
         let b = CycleConnector(.batch([Self.observation(source: f.source,object: "B")],checkpoint()),onPull: { _ in
             let before = await f.runway.snapshot(); XCTAssertFalse(before.localSupplyExhausted); XCTAssertFalse(before.pendingSupplyReset)
@@ -326,7 +326,7 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
     }
     func test14PlanOrderTraversedSequentially() async throws {
         let f = try fixture(), intent = try await intent(f), journal = CycleJournal()
-        let second = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication)
+        let second = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [f.source])
         let a = CycleConnector(.batch([Self.observation(source: f.source,object: "A")],checkpoint()),onPull: { _ in await journal.record("A pull") })
         let b = CycleConnector(.batch([Self.observation(source: f.source,object: "B")],checkpoint()),onPull: { _ in
             XCTAssertEqual(try f.authority.target(id: f.target.id)?.checkpointRevision,1)
@@ -355,8 +355,8 @@ extension RunwayAcquisitionCycleTests {
     func test3R2OperationalFailuresDoNotBlockSupplyAndAllResultsRemainVisible() async throws {
         for healthyFirst in [false, true] {
             let f = try fixture(), intent = try await intent(f)
-            let b = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication)
-            let c = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication)
+            let b = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])
+            let c = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])
             let aConnector = CycleConnector(healthyFirst ? .batch([Self.observation(source: f.source)], checkpoint()) : .operational(.remoteResponse))
             let bConnector = CycleConnector(.operational(.transport))
             let cConnector = CycleConnector(healthyFirst ? .operational(.remoteContent) : .batch([Self.observation(source: f.source)], checkpoint()))
@@ -374,7 +374,7 @@ extension RunwayAcquisitionCycleTests {
     }
     func test3R2EffectiveCancellationStopsRemainingTargets() async throws {
         let f = try fixture(), intent = try await intent(f)
-        let b = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let b = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])
         let aConnector = CycleConnector(.cancelled), bConnector = CycleConnector(.failure)
         let results = try executed(await RunwayAcquisitionCycle(runway: f.runway,
             coordinator: f.coordinator([f.target.id:aConnector,b.id:bConnector])).run(intent, eligibleTargets:[f.target,b], resources:resources(2)))
@@ -388,8 +388,8 @@ extension RunwayAcquisitionCycleTests {
     func test3R6AllOperationalCategoriesContinueThreeTargetsAndSignalConfirmedSupply() async throws {
         for category in [ConnectorOperationalFailure.remoteContent,.remoteResponse,.transport] {
             let f = try fixture(), intent = try await intent(f)
-            let b = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication)
-            let c = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication)
+            let b = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [f.source])
+            let c = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [f.source])
             let aConnector = CycleConnector(.operational(category))
             let bConnector = CycleConnector(.batch([Self.observation(source: f.source)],checkpoint()))
             let cConnector = CycleConnector(.finished)

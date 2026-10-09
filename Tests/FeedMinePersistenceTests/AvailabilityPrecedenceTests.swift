@@ -16,7 +16,7 @@ final class AvailabilityPrecedenceTests: XCTestCase {
         var targets: AcquisitionTargetStore { .init(database: database) }
         init(location: RuntimeDatabaseLocation) throws {
             self.location = location; database = try RuntimeDatabase(location: location)
-            _ = try targets.register(id: targetID,connectorKind: .syndication)
+            _ = try targets.register(id: targetID,connectorKind: .syndication, authorizedSources: [sourceID])
         }
         func observation(_ availability: OriginAvailability = .available,at: Double = 100,
             headline: String = "Original",mediaURL: String = "https://example.invalid/old",source: SourceID? = nil) -> Store.ObservationCommand {
@@ -71,7 +71,7 @@ final class AvailabilityPrecedenceTests: XCTestCase {
             try database.read { db in
                 XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT COUNT(*) FROM origin_records"),5)
                 XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT COUNT(*) FROM origin_records WHERE availability_observed_at IS NULL OR availability_observed_at != last_observed_at"),0)
-                XCTAssertEqual(try String.fetchOne(db,sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1"),"origin-availability-precedence-v1")
+                XCTAssertEqual(try String.fetchOne(db,sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1"),"acquisition-target-sources-v1")
             }
         }
         let reopened = try RuntimeDatabase(location: location)
@@ -115,8 +115,12 @@ final class AvailabilityPrecedenceTests: XCTestCase {
             let original = try f.record(), revision = try XCTUnwrap(f.content.currentRevision(originRecordID: original.id))
             let media = try f.content.mediaCandidates(originRevisionID: revision.id)
             let memberships = try f.content.memberships(originRecordID: original.id)
+            let expectedMemberships = memberships.map {
+                SourceMembership(originRecordID: $0.originRecordID,sourceID: $0.sourceID,kind: $0.kind,
+                    firstObservedAt: $0.firstObservedAt,lastObservedAt: Date(timeIntervalSince1970: 200))
+            }
             let rejected = f.observation(.removed,at: 200,headline: mediaConflict ? "Original" : "Conflict",
-                mediaURL: mediaConflict ? "https://example.invalid/new" : "https://example.invalid/old",source: SourceID())
+                mediaURL: mediaConflict ? "https://example.invalid/new" : "https://example.invalid/old",source: f.sourceID)
             let receipt = try f.admit([rejected],checkpoint: true)
             XCTAssertEqual(receipt.rejectedObservations,[.init(index: 0,reason: mediaConflict ? .knownVersionMediaConflict : .knownVersionPayloadConflict)])
             XCTAssertTrue(receipt.checkpointAdvanced); XCTAssertTrue(receipt.selectableSupplyChanged)
@@ -125,21 +129,23 @@ final class AvailabilityPrecedenceTests: XCTestCase {
             XCTAssertEqual(try f.record().lastObservedAt,original.lastObservedAt)
             XCTAssertEqual(try f.content.currentRevision(originRecordID: original.id),revision)
             XCTAssertEqual(try f.content.mediaCandidates(originRevisionID: revision.id),media)
-            XCTAssertEqual(try f.content.memberships(originRecordID: original.id),memberships)
+            XCTAssertEqual(try f.content.memberships(originRecordID: original.id),expectedMemberships)
             XCTAssertEqual(try f.database.read { try Int.fetchOne($0,sql: "SELECT COUNT(*) FROM origin_revisions") },1)
             let replay = try f.admit([rejected],checkpoint: true)
             XCTAssertFalse(replay.selectableSupplyChanged)
             let reopened = ContentStore(database: try RuntimeDatabase(location: f.location))
             XCTAssertEqual(try reopened.originRecord(id: original.id)?.availability,.removed)
             XCTAssertEqual(try reopened.currentRevision(originRecordID: original.id),revision)
-            XCTAssertEqual(try reopened.memberships(originRecordID: original.id),memberships)
+            XCTAssertEqual(try reopened.memberships(originRecordID: original.id),expectedMemberships)
         }
     }
     func testA14A15AvailabilityAndCheckpointRollbackOnStructuralFailure() throws {
         let f = try Fixture(location: location()); _ = try f.admit([f.observation()])
         let before = try f.record()
+        let beforeMemberships = try f.content.memberships(originRecordID: before.id)
         try f.database.write { try $0.execute(sql: "CREATE TRIGGER refuse_checkpoint BEFORE UPDATE OF checkpoint_revision ON acquisition_targets BEGIN SELECT RAISE(ABORT,'test structural failure'); END") }
         XCTAssertThrowsError(try f.admit([f.observation(.revoked,at: 200,headline: "Conflict")],checkpoint: true))
+        XCTAssertEqual(try f.content.memberships(originRecordID: before.id),beforeMemberships)
         XCTAssertEqual(try f.record(),before); XCTAssertEqual(try f.availabilityTime(),100)
         XCTAssertEqual(try f.targets.target(id: f.targetID)?.checkpointRevision,0)
         XCTAssertEqual(try f.content.candidateWindow(sourceID: nil,after: nil,examinedCapacity: 10).records.count,1)

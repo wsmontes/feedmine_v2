@@ -5,6 +5,7 @@ import FeedMineDomain
 @testable import FeedMinePersistence
 
 final class AcquisitionTargetStoreTests: XCTestCase {
+    private let authorizedSource = SourceID()
     private func location() -> RuntimeDatabaseLocation {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
@@ -59,12 +60,12 @@ final class AcquisitionTargetStoreTests: XCTestCase {
         let initial: AcquisitionTargetStore.TargetRecord
         do {
             let store = AcquisitionTargetStore(database: try RuntimeDatabase(location: location))
-            initial = try store.register(id: id,connectorKind: ConnectorKind(rawValue: " exact "))
+            initial = try store.register(id: id,connectorKind: ConnectorKind(rawValue: " exact "), authorizedSources: [authorizedSource])
             XCTAssertEqual(initial.id,id); XCTAssertEqual(initial.connectorKind.rawValue," exact ")
             XCTAssertEqual(initial.generation,1); XCTAssertEqual(initial.state,"enabled")
             XCTAssertEqual(initial.checkpointRevision,0); XCTAssertNil(initial.checkpoint)
-            failure(.targetAlreadyExists(id)) { _ = try store.register(id: id,connectorKind: .syndication) }
-            failure(.invalidRepresentation("connector_kind")) { _ = try store.register(id: AcquisitionTargetID(),connectorKind: ConnectorKind(rawValue: "")) }
+            failure(.targetAlreadyExists(id)) { _ = try store.register(id: id,connectorKind: .syndication, authorizedSources: [authorizedSource]) }
+            failure(.invalidRepresentation("connector_kind")) { _ = try store.register(id: AcquisitionTargetID(),connectorKind: ConnectorKind(rawValue: ""), authorizedSources: [authorizedSource]) }
             let missing = AcquisitionTargetID()
             XCTAssertNil(try store.target(id: missing))
             failure(.missingTarget(missing)) { _ = try store.revoke(id: missing,expectedGeneration: 1) }
@@ -78,19 +79,19 @@ final class AcquisitionTargetStoreTests: XCTestCase {
         let final: AcquisitionTargetStore.TargetRecord
         do {
             let store = AcquisitionTargetStore(database: try RuntimeDatabase(location: location))
-            _ = try store.register(id: id,connectorKind: .syndication)
-            var record = try store.reconfigure(id: id,expectedGeneration: 1,connectorKind: .syndication,checkpoint: .clear)
+            _ = try store.register(id: id,connectorKind: .syndication, authorizedSources: [authorizedSource])
+            var record = try store.reconfigure(id: id,expectedGeneration: 1,connectorKind: .syndication,checkpoint: .clear, authorizedSources: [authorizedSource])
             XCTAssertEqual(record.generation,2); XCTAssertEqual(record.checkpointRevision,0)
             record = try store.compareAndSwapCheckpoint(id: id,expectedGeneration: 2,expectedCheckpointRevision: 0,next: checkpoint())
-            let preserved = try store.reconfigure(id: id,expectedGeneration: 2,connectorKind: .syndication,checkpoint: .preserve)
+            let preserved = try store.reconfigure(id: id,expectedGeneration: 2,connectorKind: .syndication,checkpoint: .preserve, authorizedSources: [authorizedSource])
             XCTAssertEqual(preserved.generation,3); XCTAssertEqual(preserved.checkpoint,record.checkpoint); XCTAssertEqual(preserved.checkpointRevision,1)
-            record = try store.reconfigure(id: id,expectedGeneration: 3,connectorKind: ConnectorKind(rawValue: " new "),checkpoint: .replace(checkpoint(1)))
+            record = try store.reconfigure(id: id,expectedGeneration: 3,connectorKind: ConnectorKind(rawValue: " new "),checkpoint: .replace(checkpoint(1)), authorizedSources: [authorizedSource])
             XCTAssertEqual(record.id,id); XCTAssertEqual(record.connectorKind.rawValue," new "); XCTAssertEqual(record.generation,4); XCTAssertEqual(record.checkpointRevision,2)
-            let identical = try store.reconfigure(id: id,expectedGeneration: 4,connectorKind: record.connectorKind,checkpoint: .replace(checkpoint(1)))
+            let identical = try store.reconfigure(id: id,expectedGeneration: 4,connectorKind: record.connectorKind,checkpoint: .replace(checkpoint(1)), authorizedSources: [authorizedSource])
             XCTAssertEqual(identical.generation,5); XCTAssertEqual(identical.checkpointRevision,2)
-            failure(.staleGeneration(expected: 4,actual: 5)) { _ = try store.reconfigure(id: id,expectedGeneration: 4,connectorKind: .syndication,checkpoint: .clear) }
+            failure(.staleGeneration(expected: 4,actual: 5)) { _ = try store.reconfigure(id: id,expectedGeneration: 4,connectorKind: .syndication,checkpoint: .clear, authorizedSources: [authorizedSource]) }
             XCTAssertEqual(try store.target(id: id),identical)
-            final = try store.reconfigure(id: id,expectedGeneration: 5,connectorKind: .syndication,checkpoint: .clear)
+            final = try store.reconfigure(id: id,expectedGeneration: 5,connectorKind: .syndication,checkpoint: .clear, authorizedSources: [authorizedSource])
             XCTAssertNil(final.checkpoint); XCTAssertEqual(final.checkpointRevision,3); XCTAssertEqual(final.generation,6)
         }
         XCTAssertEqual(try AcquisitionTargetStore(database: RuntimeDatabase(location: location)).target(id: id),final)
@@ -98,13 +99,13 @@ final class AcquisitionTargetStoreTests: XCTestCase {
 
     func testStateTransitionsPreserveCheckpointAndFenceOldGenerations() throws {
         let store = AcquisitionTargetStore(database: try RuntimeDatabase(location: location())), id = AcquisitionTargetID()
-        _ = try store.register(id: id,connectorKind: .syndication)
+        _ = try store.register(id: id,connectorKind: .syndication, authorizedSources: [authorizedSource])
         _ = try store.compareAndSwapCheckpoint(id: id,expectedGeneration: 1,expectedCheckpointRevision: 0,next: checkpoint())
         let revoked = try store.revoke(id: id,expectedGeneration: 1)
         XCTAssertEqual(revoked.generation,2); XCTAssertEqual(revoked.state,"revoked"); XCTAssertEqual(revoked.checkpoint,checkpoint())
         XCTAssertEqual(try store.revoke(id: id,expectedGeneration: 2),revoked)
         failure(.targetRevoked(id)) { _ = try store.compareAndSwapCheckpoint(id: id,expectedGeneration: 1,expectedCheckpointRevision: 0,next: checkpoint(1)) }
-        let configured = try store.reconfigure(id: id,expectedGeneration: 2,connectorKind: .syndication,checkpoint: .preserve)
+        let configured = try store.reconfigure(id: id,expectedGeneration: 2,connectorKind: .syndication,checkpoint: .preserve, authorizedSources: [authorizedSource])
         XCTAssertEqual(configured.state,"revoked"); XCTAssertEqual(configured.generation,3)
         let enabled = try store.enable(id: id,expectedGeneration: 3)
         XCTAssertEqual(enabled.generation,4); XCTAssertEqual(enabled.state,"enabled"); XCTAssertEqual(enabled.checkpoint,checkpoint())
@@ -118,7 +119,7 @@ final class AcquisitionTargetStoreTests: XCTestCase {
     func testCheckpointCASAlwaysAdvancesEvenIdenticalAndStaleProposalWritesNothing() throws {
         let location = location(), id = AcquisitionTargetID()
         let store = AcquisitionTargetStore(database: try RuntimeDatabase(location: location))
-        _ = try store.register(id: id,connectorKind: .syndication)
+        _ = try store.register(id: id,connectorKind: .syndication, authorizedSources: [authorizedSource])
         let first = try store.compareAndSwapCheckpoint(id: id,expectedGeneration: 1,expectedCheckpointRevision: 0,next: checkpoint())
         XCTAssertEqual(first.generation,1); XCTAssertEqual(first.checkpointRevision,1); XCTAssertEqual(first.checkpoint,checkpoint())
         let second = try store.compareAndSwapCheckpoint(id: id,expectedGeneration: 1,expectedCheckpointRevision: 1,next: checkpoint())
@@ -130,22 +131,28 @@ final class AcquisitionTargetStoreTests: XCTestCase {
 
     func testCounterOverflowAndCheckpointOverflowReconfigurationAreAtomic() throws {
         let db = try RuntimeDatabase(location: location()), store = AcquisitionTargetStore(database: db), id = AcquisitionTargetID()
-        _ = try store.register(id: id,connectorKind: .syndication)
-        try db.write { try $0.execute(sql: "UPDATE acquisition_targets SET generation = ?",arguments: [Int64.max]) }
+        _ = try store.register(id: id,connectorKind: .syndication, authorizedSources: [authorizedSource])
+        try db.write { db in
+            try db.execute(sql: "UPDATE acquisition_targets SET generation = ?",arguments: [Int64.max])
+            try db.execute(sql: "UPDATE acquisition_target_sources SET generation = ?",arguments: [Int64.max])
+        }
         let before = try store.target(id: id)
         failure(.generationExhausted(id)) { _ = try store.revoke(id: id,expectedGeneration: UInt64(Int64.max)) }
-        failure(.generationExhausted(id)) { _ = try store.reconfigure(id: id,expectedGeneration: UInt64(Int64.max),connectorKind: .syndication,checkpoint: .preserve) }
+        failure(.generationExhausted(id)) { _ = try store.reconfigure(id: id,expectedGeneration: UInt64(Int64.max),connectorKind: .syndication,checkpoint: .preserve, authorizedSources: [authorizedSource]) }
         XCTAssertEqual(try store.target(id: id),before)
-        try db.write { try $0.execute(sql: "UPDATE acquisition_targets SET generation=1, checkpoint_revision=?",arguments: [Int64.max]) }
+        try db.write { db in
+            try db.execute(sql: "UPDATE acquisition_targets SET generation=1, checkpoint_revision=?",arguments: [Int64.max])
+            try db.execute(sql: "UPDATE acquisition_target_sources SET generation=1")
+        }
         let checkpointBefore = try store.target(id: id)
         failure(.checkpointRevisionExhausted(id)) { _ = try store.compareAndSwapCheckpoint(id: id,expectedGeneration: 1,expectedCheckpointRevision: UInt64(Int64.max),next: checkpoint()) }
-        failure(.checkpointRevisionExhausted(id)) { _ = try store.reconfigure(id: id,expectedGeneration: 1,connectorKind: ConnectorKind(rawValue: "changed"),checkpoint: .replace(checkpoint())) }
+        failure(.checkpointRevisionExhausted(id)) { _ = try store.reconfigure(id: id,expectedGeneration: 1,connectorKind: ConnectorKind(rawValue: "changed"),checkpoint: .replace(checkpoint()), authorizedSources: [authorizedSource]) }
         XCTAssertEqual(try store.target(id: id),checkpointBefore)
     }
 
     func testPersistedTypeCorruptionDoesNotNormalizeAndInputCounterIsChecked() throws {
         let db = try RuntimeDatabase(location: location()), store = AcquisitionTargetStore(database: db), id = AcquisitionTargetID()
-        _ = try store.register(id: id,connectorKind: .syndication)
+        _ = try store.register(id: id,connectorKind: .syndication, authorizedSources: [authorizedSource])
         // SQLite affinity/CHECK permits these representations; production decoding remains strict.
         try db.write { try $0.execute(sql: "UPDATE acquisition_targets SET generation=1.5") }
         failure(.corruption("generation")) { _ = try store.target(id: id) }
@@ -177,16 +184,19 @@ final class AcquisitionTargetStoreTests: XCTestCase {
     }
     func testExactEnvelopeVersionBytesAndStateTransitionOverflow() throws {
         let db = try RuntimeDatabase(location: location()), store = AcquisitionTargetStore(database: db), id = AcquisitionTargetID()
-        _ = try store.register(id: id,connectorKind: .syndication)
+        _ = try store.register(id: id,connectorKind: .syndication, authorizedSources: [authorizedSource])
         let composed = AcquisitionTargetStore.CheckpointRecord(blob: Data(),serializationSchema: 1,connectorVersion: "\u{00e9}")!
         let decomposed = AcquisitionTargetStore.CheckpointRecord(blob: Data(),serializationSchema: 1,connectorVersion: "e\u{0301}")!
         _ = try store.compareAndSwapCheckpoint(id: id,expectedGeneration: 1,expectedCheckpointRevision: 0,next: composed)
-        let changed = try store.reconfigure(id: id,expectedGeneration: 1,connectorKind: .syndication,checkpoint: .replace(decomposed))
+        let changed = try store.reconfigure(id: id,expectedGeneration: 1,connectorKind: .syndication,checkpoint: .replace(decomposed), authorizedSources: [authorizedSource])
         XCTAssertEqual(changed.checkpointRevision,2)
         XCTAssertEqual(Array(changed.checkpoint!.connectorVersion.utf8),Array(decomposed.connectorVersion.utf8))
         let revoked = try store.revoke(id: id,expectedGeneration: 2)
         XCTAssertEqual(revoked.generation,3)
-        try db.write { try $0.execute(sql: "UPDATE acquisition_targets SET generation=?",arguments: [Int64.max]) }
+        try db.write { db in
+            try db.execute(sql: "UPDATE acquisition_targets SET generation=?",arguments: [Int64.max])
+            try db.execute(sql: "UPDATE acquisition_target_sources SET generation=?",arguments: [Int64.max])
+        }
         let before = try store.target(id: id)
         failure(.generationExhausted(id)) { _ = try store.enable(id: id,expectedGeneration: UInt64(Int64.max)) }
         XCTAssertEqual(try store.target(id: id),before)

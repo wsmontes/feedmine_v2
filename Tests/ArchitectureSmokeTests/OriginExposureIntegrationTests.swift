@@ -65,7 +65,7 @@ final class OriginExposureIntegrationTests: XCTestCase {
         let oldRevision: OriginRevision
         do {
             let database = try RuntimeDatabase(location: location)
-            _ = try AcquisitionTargetAuthority(database: database).register(id: target,connectorKind: .syndication)
+            _ = try AcquisitionTargetAuthority(database: database).register(id: target,connectorKind: .syndication, authorizedSources: [source])
             oldRevision = try admit(database,title: "First",description: "Original")
             let initial = try InitialProductionSlice(database: database).run(.init(plan: plan,policy: policy,examinedCapacity: 1,
                 editionID: edition,publicationSchemaVersion: .init(rawValue: 1),selectionSeed: 1,

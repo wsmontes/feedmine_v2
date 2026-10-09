@@ -12,8 +12,8 @@ final class ExecutionDocumentReuseTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let database = try RuntimeDatabase(location: .init(directory: directory))
         let authority = AcquisitionTargetAuthority(database: database)
-        let target = try authority.register(id: AcquisitionTargetID(), connectorKind: .syndication)
         let source = SourceID()
+        let target = try authority.register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [source])
         let body = Data(("<rss version=\"2.0\"><channel><title>Feed</title>" + (0..<5).map {
             "<item><guid>item-\($0)</guid><title>Title \($0)</title></item>"
         }.joined() + "</channel></rss>").utf8)
@@ -146,8 +146,8 @@ extension ExecutionDocumentReuseTests {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let database = try RuntimeDatabase(location: .init(directory: directory))
-        let target = try AcquisitionTargetAuthority(database: database).register(id: AcquisitionTargetID(), connectorKind: .syndication)
         let source = SourceID(), body = body(["a", "b", "c", "d", "e"])
+        let target = try AcquisitionTargetAuthority(database: database).register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [source])
         let transport = failure.map { ScriptedSyndicationTransport(error: $0) } ?? ScriptedSyndicationTransport(Array(repeating:
             .init(statusCode: 200, location: nil, etag: nil, lastModified: nil, body: body), count: 10))
         let probe = PaginationProbe(pausedRevision: pause), lifetime = DocumentLifetimeJournal()
@@ -251,7 +251,7 @@ extension ExecutionDocumentReuseTests {
             let task = Task { try await f.coordinator.execute(.start(target:f.target,bounds:bounds())) }
             await f.probe.waitForPage(); try assertPrefix(f)
             if revoked { _ = try f.authority.revoke(id:f.target.id,expectedGeneration:1) }
-            else { _ = try f.authority.reconfigure(id:f.target.id,expectedGeneration:1,connectorKind:.syndication,checkpoint:.preserve) }
+            else { _ = try f.authority.reconfigure(id:f.target.id,expectedGeneration:1,connectorKind:.syndication,checkpoint:.preserve, authorizedSources: [f.source]) }
             await f.probe.release()
             do { _ = try await task.value; XCTFail("Late reused page must not be admitted") }
             catch {
@@ -283,7 +283,7 @@ extension ExecutionDocumentReuseTests {
             weak var oldDatabase: RuntimeDatabase?
             func firstExecution() async throws {
                 let database = try RuntimeDatabase(location:.init(directory:directory)); oldDatabase = database
-                let target = try AcquisitionTargetAuthority(database:database).register(id:id,connectorKind:.syndication)
+                let target = try AcquisitionTargetAuthority(database:database).register(id:id,connectorKind:.syndication, authorizedSources: [source])
                 let transport = ScriptedSyndicationTransport([.init(statusCode:200,location:nil,etag:nil,lastModified:nil,body:original)])
                 let connector = self.connector(id,source,transport)
                 let coordinator = AcquisitionCoordinator(database:database,connectorForTarget:{ _ in connector })

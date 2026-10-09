@@ -296,6 +296,20 @@ public enum RuntimeMigrations {
                 SET availability_observed_at = last_observed_at;
                 """)
         }
+        migrator.registerMigration("acquisition-target-sources-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE acquisition_target_sources (
+                    target_id TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    generation INTEGER NOT NULL,
+                    PRIMARY KEY (target_id, source_id),
+                    FOREIGN KEY (target_id)
+                        REFERENCES acquisition_targets(id)
+                        ON DELETE CASCADE,
+                    CHECK (generation >= 1)
+                );
+                """)
+        }
         return migrator
     }
 }

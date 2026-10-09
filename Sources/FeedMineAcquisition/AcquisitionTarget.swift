@@ -43,15 +43,23 @@ public struct AcquisitionTargetAuthority: Sendable {
     private let store: AcquisitionTargetStore
     public init(database: RuntimeDatabase) { store = AcquisitionTargetStore(database: database) }
 
-    public func register(id: AcquisitionTargetID, connectorKind: ConnectorKind) throws -> AcquisitionTarget {
-        try Self.map(store.register(id: id,connectorKind: connectorKind))
+    public func register(id: AcquisitionTargetID, connectorKind: ConnectorKind, authorizedSources: Set<SourceID>) throws -> AcquisitionTarget {
+        try Self.map(store.register(id: id,connectorKind: connectorKind,authorizedSources: authorizedSources))
     }
     public func target(id: AcquisitionTargetID) throws -> AcquisitionTarget? {
         try store.target(id: id).map(Self.map)
     }
     public func reconfigure(id: AcquisitionTargetID, expectedGeneration: UInt64, connectorKind: ConnectorKind,
-        checkpoint: AcquisitionTargetStore.ReconfigurationCheckpoint) throws -> AcquisitionTarget {
-        try Self.map(store.reconfigure(id: id,expectedGeneration: expectedGeneration,connectorKind: connectorKind,checkpoint: checkpoint))
+        checkpoint: AcquisitionTargetStore.ReconfigurationCheckpoint, authorizedSources: Set<SourceID>) throws -> AcquisitionTarget {
+        try Self.map(store.reconfigure(id: id,expectedGeneration: expectedGeneration,connectorKind: connectorKind,checkpoint: checkpoint,authorizedSources: authorizedSources))
+    }
+    public func authorizedSources(id: AcquisitionTargetID) throws -> Set<SourceID>? {
+        try store.authorizedSources(id: id)
+    }
+    public func materializeSources(id: AcquisitionTargetID, expectedGeneration: UInt64,
+        connectorKind: ConnectorKind, authorizedSources: Set<SourceID>) throws -> AcquisitionTarget {
+        try Self.map(store.materializeSources(id: id, expectedGeneration: expectedGeneration,
+            connectorKind: connectorKind, authorizedSources: authorizedSources))
     }
     public func revoke(id: AcquisitionTargetID, expectedGeneration: UInt64) throws -> AcquisitionTarget {
         try Self.map(store.revoke(id: id,expectedGeneration: expectedGeneration))

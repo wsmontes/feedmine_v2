@@ -5,6 +5,7 @@ import FeedMinePersistence
 import FeedMineAcquisition
 
 final class AcquisitionTargetTests: XCTestCase {
+    private let authorizedSource = SourceID()
     private func location() -> RuntimeDatabaseLocation {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
@@ -17,7 +18,7 @@ final class AcquisitionTargetTests: XCTestCase {
         let final: AcquisitionTarget
         do {
             let authority = AcquisitionTargetAuthority(database: try RuntimeDatabase(location: location))
-            let initial = try authority.register(id: id,connectorKind: ConnectorKind(rawValue: " fake "))
+            let initial = try authority.register(id: id,connectorKind: ConnectorKind(rawValue: " fake "), authorizedSources: [authorizedSource])
             XCTAssertEqual(initial.id,id); XCTAssertEqual(initial.connectorKind.rawValue," fake ")
             XCTAssertEqual(initial.state,.enabled); XCTAssertEqual(initial.generation,1)
             XCTAssertEqual(initial.checkpointRevision,0); XCTAssertNil(initial.checkpoint)
@@ -25,15 +26,15 @@ final class AcquisitionTargetTests: XCTestCase {
             XCTAssertEqual(installed.checkpoint,checkpoint); XCTAssertEqual(installed.checkpointRevision,1)
             let revoked = try authority.revoke(id: id,expectedGeneration: 1)
             XCTAssertEqual(revoked.state,.revoked); XCTAssertEqual(revoked.generation,2)
-            let configured = try authority.reconfigure(id: id,expectedGeneration: 2,connectorKind: ConnectorKind(rawValue: "other"),checkpoint: .preserve)
+            let configured = try authority.reconfigure(id: id,expectedGeneration: 2,connectorKind: ConnectorKind(rawValue: "other"),checkpoint: .preserve, authorizedSources: [authorizedSource])
             XCTAssertEqual(configured.id,id); XCTAssertEqual(configured.generation,3); XCTAssertEqual(configured.state,.revoked)
             XCTAssertEqual(configured.checkpoint,checkpoint)
             let enabled = try authority.enable(id: id,expectedGeneration: 3)
             XCTAssertEqual(enabled.state,.enabled); XCTAssertEqual(enabled.generation,4)
             let record = AcquisitionTargetStore.CheckpointRecord(blob: Data([1]),serializationSchema: 3,connectorVersion: "next")!
-            let replaced = try authority.reconfigure(id: id,expectedGeneration: 4,connectorKind: .syndication,checkpoint: .replace(record))
+            let replaced = try authority.reconfigure(id: id,expectedGeneration: 4,connectorKind: .syndication,checkpoint: .replace(record), authorizedSources: [authorizedSource])
             XCTAssertEqual(replaced.checkpoint?.blob,Data([1])); XCTAssertEqual(replaced.checkpointRevision,2)
-            final = try authority.reconfigure(id: id,expectedGeneration: 5,connectorKind: .syndication,checkpoint: .clear)
+            final = try authority.reconfigure(id: id,expectedGeneration: 5,connectorKind: .syndication,checkpoint: .clear, authorizedSources: [authorizedSource])
             XCTAssertNil(final.checkpoint); XCTAssertEqual(final.checkpointRevision,3)
         }
         let reopened = AcquisitionTargetAuthority(database: try RuntimeDatabase(location: location))
@@ -45,7 +46,7 @@ final class AcquisitionTargetTests: XCTestCase {
         let location = location(), id = AcquisitionTargetID()
         do {
             let authority = AcquisitionTargetAuthority(database: try RuntimeDatabase(location: location))
-            _ = try authority.register(id: id,connectorKind: .syndication)
+            _ = try authority.register(id: id,connectorKind: .syndication, authorizedSources: [authorizedSource])
             _ = try authority.compareAndSwapCheckpoint(id: id,expectedGeneration: 1,expectedCheckpointRevision: 0,
                 next: AcquisitionCheckpoint(blob: Data(),serializationSchema: 1,connectorVersion: "fake")!)
         }
@@ -63,8 +64,8 @@ final class AcquisitionTargetTests: XCTestCase {
         }
         XCTAssertNil(value("",1)); XCTAssertNil(value("fake",0)); XCTAssertNotNil(value(" ",1))
         let authority = AcquisitionTargetAuthority(database: try RuntimeDatabase(location: location()))
-        let id = AcquisitionTargetID(); _ = try authority.register(id: id,connectorKind: .syndication)
-        XCTAssertThrowsError(try authority.register(id: id,connectorKind: .syndication)) {
+        let id = AcquisitionTargetID(); _ = try authority.register(id: id,connectorKind: .syndication, authorizedSources: [authorizedSource])
+        XCTAssertThrowsError(try authority.register(id: id,connectorKind: .syndication, authorizedSources: [authorizedSource])) {
             XCTAssertEqual($0 as? AcquisitionTargetStoreError,.targetAlreadyExists(id))
         }
     }
@@ -73,7 +74,7 @@ final class AcquisitionTargetTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(AcquisitionTargetID.self,from: JSONEncoder().encode(id)),id)
         XCTAssertEqual(id.description,id.rawValue.uuidString)
         let authority = AcquisitionTargetAuthority(database: try RuntimeDatabase(location: location()))
-        _ = try authority.register(id: id,connectorKind: .syndication)
+        _ = try authority.register(id: id,connectorKind: .syndication, authorizedSources: [authorizedSource])
         let revoked = try authority.revoke(id: id,expectedGeneration: 1)
         XCTAssertEqual(revoked.generation,2)
         let enabled = try authority.enable(id: id,expectedGeneration: 2)

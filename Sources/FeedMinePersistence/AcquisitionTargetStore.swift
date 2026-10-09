@@ -4,6 +4,8 @@ import GRDB
 import FeedMineDomain
 
 public enum AcquisitionTargetStoreError: Error, Equatable, Sendable {
+    case sourceConfigurationConflict(AcquisitionTargetID)
+    case connectorKindMismatch(AcquisitionTargetID)
     case invalidRepresentation(String)
     case corruption(String)
     case targetAlreadyExists(AcquisitionTargetID)
@@ -46,14 +48,16 @@ public struct AcquisitionTargetStore: Sendable {
     private let database: RuntimeDatabase
     public init(database: RuntimeDatabase) { self.database = database }
 
-    public func register(id: AcquisitionTargetID, connectorKind: ConnectorKind) throws -> TargetRecord {
+    public func register(id: AcquisitionTargetID, connectorKind: ConnectorKind, authorizedSources: Set<SourceID>) throws -> TargetRecord {
         guard !connectorKind.rawValue.utf8.isEmpty else { throw AcquisitionTargetStoreError.invalidRepresentation("connector_kind") }
+        try Self.validateSources(authorizedSources)
         return try database.write { db in
             guard try Self.readTarget(id: id,in: db) == nil else { throw AcquisitionTargetStoreError.targetAlreadyExists(id) }
             try db.execute(sql: """
                 INSERT INTO acquisition_targets (id, connector_kind, generation, state, checkpoint_revision)
                 VALUES (?, ?, 1, 'enabled', 0)
                 """,arguments: [PersistenceValueCoding.uuid(id.rawValue),connectorKind.rawValue])
+            try Self.replaceSources(authorizedSources, id: id, generation: 1, in: db)
             return try Self.requireTarget(id: id,in: db)
         }
     }
@@ -63,11 +67,13 @@ public struct AcquisitionTargetStore: Sendable {
     }
 
     public func reconfigure(id: AcquisitionTargetID, expectedGeneration: UInt64,
-        connectorKind: ConnectorKind, checkpoint: ReconfigurationCheckpoint) throws -> TargetRecord {
+        connectorKind: ConnectorKind, checkpoint: ReconfigurationCheckpoint, authorizedSources: Set<SourceID>) throws -> TargetRecord {
         guard !connectorKind.rawValue.utf8.isEmpty else { throw AcquisitionTargetStoreError.invalidRepresentation("connector_kind") }
+        try Self.validateSources(authorizedSources)
         return try database.write { db in
             let old = try Self.requireTarget(id: id,in: db)
             try Self.validateGeneration(old,expected: expectedGeneration)
+            _ = try Self.readSources(old, in: db)
             let generation = try Self.nextGeneration(old)
             let next: CheckpointRecord?
             switch checkpoint {
@@ -79,6 +85,7 @@ public struct AcquisitionTargetStore: Sendable {
             let updated = TargetRecord(id: id,connectorKind: connectorKind,generation: generation,
                 state: old.state,checkpointRevision: revision,checkpoint: next)
             try Self.update(updated,in: db)
+            try Self.replaceSources(authorizedSources, id: id, generation: generation, in: db)
             return updated
         }
     }
@@ -95,10 +102,12 @@ public struct AcquisitionTargetStore: Sendable {
         try database.write { db in
             let old = try Self.requireTarget(id: id,in: db)
             try Self.validateGeneration(old,expected: expectedGeneration)
+            let sources = try Self.readSources(old, in: db)
             guard old.state != state else { return old }
             let updated = TargetRecord(id: id,connectorKind: old.connectorKind,generation: try Self.nextGeneration(old),
                 state: state,checkpointRevision: old.checkpointRevision,checkpoint: old.checkpoint)
             try Self.update(updated,in: db)
+            if let sources { try Self.replaceSources(sources, id: id, generation: updated.generation, in: db) }
             return updated
         }
     }
@@ -110,6 +119,60 @@ public struct AcquisitionTargetStore: Sendable {
             try Self.validateEnabledStamp(old,expectedGeneration: expectedGeneration,
                 expectedCheckpointRevision: expectedCheckpointRevision)
             return try Self.applyCheckpoint(next,to: old,in: db)
+        }
+    }
+
+    /// Nil denotes an unreconciled legacy target. New registration and reconfiguration require nonempty grants.
+    public func authorizedSources(id: AcquisitionTargetID) throws -> Set<SourceID>? {
+        try database.read { db in try Self.readSources(Self.requireTarget(id: id, in: db), in: db) }
+    }
+
+    public func materializeSources(id: AcquisitionTargetID, expectedGeneration: UInt64,
+        connectorKind: ConnectorKind, authorizedSources: Set<SourceID>) throws -> TargetRecord {
+        try Self.validateSources(authorizedSources)
+        return try database.write { db in
+            let target = try Self.requireTarget(id: id, in: db)
+            try Self.validateGeneration(target, expected: expectedGeneration)
+            guard target.connectorKind.rawValue.utf8.elementsEqual(connectorKind.rawValue.utf8) else {
+                throw AcquisitionTargetStoreError.connectorKindMismatch(id)
+            }
+            if let current = try Self.readSources(target, in: db) {
+                guard current == authorizedSources else { throw AcquisitionTargetStoreError.sourceConfigurationConflict(id) }
+            } else {
+                guard target.state == "enabled" else { throw AcquisitionTargetStoreError.targetRevoked(id) }
+                try Self.replaceSources(authorizedSources, id: id, generation: target.generation, in: db)
+            }
+            return target
+        }
+    }
+
+    private static func validateSources(_ sources: Set<SourceID>) throws {
+        guard !sources.isEmpty else { throw AcquisitionTargetStoreError.invalidRepresentation("authorizedSources") }
+    }
+
+    static func readSources(_ target: TargetRecord, in db: Database) throws -> Set<SourceID>? {
+        let rows = try Row.fetchAll(db, sql: "SELECT source_id, generation FROM acquisition_target_sources WHERE target_id = ?",
+            arguments: [PersistenceValueCoding.uuid(target.id.rawValue)])
+        if rows.isEmpty { return nil }
+        var sources = Set<SourceID>()
+        for row in rows {
+            let generation: DatabaseValue = row["generation"]
+            let source: DatabaseValue = row["source_id"]
+            guard case .int64(let number) = generation.storage, number > 0, UInt64(number) == target.generation,
+                case .string(let text) = source.storage, let uuid = UUID(uuidString: text),
+                PersistenceValueCoding.uuid(uuid) == text else { throw AcquisitionTargetStoreError.corruption("target source authority") }
+            sources.insert(SourceID(rawValue: uuid))
+        }
+        return sources
+    }
+
+    private static func replaceSources(_ sources: Set<SourceID>, id: AcquisitionTargetID,
+        generation: UInt64, in db: Database) throws {
+        let key = PersistenceValueCoding.uuid(id.rawValue)
+        try db.execute(sql: "DELETE FROM acquisition_target_sources WHERE target_id = ?", arguments: [key])
+        for source in sources {
+            try db.execute(sql: "INSERT INTO acquisition_target_sources (target_id, source_id, generation) VALUES (?, ?, ?)",
+                arguments: [key, PersistenceValueCoding.uuid(source.rawValue), try encoded(generation, field: "generation")])
         }
     }
 

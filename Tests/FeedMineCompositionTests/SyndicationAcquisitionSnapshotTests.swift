@@ -7,6 +7,7 @@ import FeedMineComposition
 
 @MainActor
 final class SyndicationAcquisitionSnapshotTests: XCTestCase {
+    private let defaultSource = SourceID()
     private let endpoint = URL(string:"https://example.test/feed?Case=A")!
     private let clock = Date(timeIntervalSince1970:12345.125)
     private func binding(id:SourceBindingID = SourceBindingID(),source:SourceID = SourceID(),
@@ -16,7 +17,7 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
     }
     private func registration(id:AcquisitionTargetID = AcquisitionTargetID(),generation:UInt64 = 1,
         endpoint:URL? = nil,bindings:[SourceBinding]? = nil) -> SyndicationTargetRegistration {
-        .init(targetID:id,targetGeneration:generation,endpoint:endpoint ?? self.endpoint,bindings:bindings ?? [binding()])!
+        .init(targetID:id,targetGeneration:generation,endpoint:endpoint ?? self.endpoint,bindings:bindings ?? [binding(source: defaultSource)])!
     }
     private func database() throws -> RuntimeDatabase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -73,8 +74,8 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
     }
     func test07SameBindingMayMapToTwoTargets() throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db),b = binding()
-        let a = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
-        let c = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
+        let a = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [b.sourceID])
+        let c = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [b.sourceID])
         let s = try snapshot(db,[registration(id:a.id,bindings:[b]),registration(id:c.id,bindings:[b])])
         XCTAssertEqual(try s.eligibleTargets(for:.init(request:.main)),[a,c])
     }
@@ -96,9 +97,9 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
     }
     func test11MainEligibilityOrderAndExactDurableCheckpoint() throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db)
-        let a = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
-        let b = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
-        let c = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
+        let a = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [defaultSource])
+        let b = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [defaultSource])
+        let c = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [defaultSource])
         let changed = try authority.compareAndSwapCheckpoint(id:b.id,expectedGeneration:1,expectedCheckpointRevision:0,
             next:AcquisitionCheckpoint(blob:Data([1,2,3]),serializationSchema:3,connectorVersion:"opaque")!)
         let s = try snapshot(db,[registration(id:b.id),registration(id:a.id),registration(id:c.id)])
@@ -106,49 +107,50 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
     }
     func test12SourceEligibilityOrderAndIrrelevantMissingTarget() throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db),one = binding(),two = binding()
-        let a = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
-        let b = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
-        let c = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
+        let a = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [one.sourceID])
+        let b = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [two.sourceID])
+        let c = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [one.sourceID,two.sourceID])
         let s = try snapshot(db,[registration(id:a.id,bindings:[one]),registration(id:b.id,bindings:[two]),
-            registration(id:c.id,bindings:[one,two]),registration(bindings:[two])])
+            registration(id:c.id,bindings:[one,two])])
+        let missing = registration(bindings: [two])
+        XCTAssertThrowsError(try snapshot(db,[registration(id:a.id,bindings:[one]),missing])) {
+            XCTAssertEqual($0 as? SyndicationAcquisitionSnapshotError,.missingDurableTarget(missing.targetID))
+        }
         XCTAssertEqual(try s.eligibleTargets(for:.init(request:.source(one.sourceID))),[a,c])
     }
     func test13RevokedDurableTargetSkipped() throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db)
-        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
+        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [defaultSource])
         let revoked = try authority.revoke(id:t.id,expectedGeneration:1)
         let s = try snapshot(db,[registration(id:t.id,generation:revoked.generation)])
         XCTAssertEqual(try s.eligibleTargets(for:.init(request:.main)),[])
     }
     func test14MissingDurableTargetErrorsWithoutPartialResult() throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db)
-        let good = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication),missing = AcquisitionTargetID()
-        let s = try snapshot(db,[registration(id:good.id),registration(id:missing)])
-        XCTAssertThrowsError(try s.eligibleTargets(for:.init(request:.main))) {
+        let good = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [defaultSource]),missing = AcquisitionTargetID()
+        XCTAssertThrowsError(try snapshot(db,[registration(id:good.id),registration(id:missing)])) {
             XCTAssertEqual($0 as? SyndicationAcquisitionSnapshotError,.missingDurableTarget(missing))
         }
         XCTAssertNil(try authority.target(id:missing)); XCTAssertEqual(try authority.target(id:good.id),good)
     }
     func test15StaleGenerationErrors() throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db)
-        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
-        _ = try authority.reconfigure(id:t.id,expectedGeneration:1,connectorKind:.syndication,checkpoint:.preserve)
-        let s = try snapshot(db,[registration(id:t.id)])
-        XCTAssertThrowsError(try s.eligibleTargets(for:.init(request:.main))) {
+        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [defaultSource])
+        _ = try authority.reconfigure(id:t.id,expectedGeneration:1,connectorKind:.syndication,checkpoint:.preserve, authorizedSources: [defaultSource])
+        XCTAssertThrowsError(try snapshot(db,[registration(id:t.id)])) {
             XCTAssertEqual($0 as? SyndicationAcquisitionSnapshotError,.staleConfigurationGeneration(targetID:t.id,configured:1,durable:2))
         }
     }
     func test16ConnectorKindMismatch() throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db)
-        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:ConnectorKind(rawValue:"other"))
-        let s = try snapshot(db,[registration(id:t.id)])
-        XCTAssertThrowsError(try s.eligibleTargets(for:.init(request:.main))) {
+        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:ConnectorKind(rawValue:"other"), authorizedSources: [defaultSource])
+        XCTAssertThrowsError(try snapshot(db,[registration(id:t.id)])) {
             XCTAssertEqual($0 as? SyndicationAcquisitionSnapshotError,.connectorKindMismatch(targetID:t.id))
         }
     }
     func test17SearchUnavailableNotEmpty() throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db)
-        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
+        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [defaultSource])
         let s = try snapshot(db,[registration(id:t.id)])
         XCTAssertThrowsError(try s.eligibleTargets(for:.init(request:.search(SearchContext(query:"feed")!)))) {
             XCTAssertEqual($0 as? SyndicationAcquisitionSnapshotError,.searchContextUnavailable)
@@ -157,7 +159,7 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
     }
     func test18RealBindingTargetConnectorAdmissionAndMembershipOrder() async throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db),bindings = [binding(),binding()],http = response()
-        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
+        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: Set(bindings.map(\.sourceID)))
         let s = try snapshot(db,[registration(id:t.id,endpoint:http.url,bindings:bindings)])
         let eligible = try s.eligibleTargets(for:.init(request:.source(bindings[0].sourceID)))
         XCTAssertEqual(eligible,[t])
@@ -177,7 +179,7 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
     }
     func test19SharedTargetOneExecutionVisibleForBothSources() async throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db),a = binding(),b = binding(),http = response()
-        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
+        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [a.sourceID,b.sourceID])
         let s = try snapshot(db,[registration(id:t.id,endpoint:http.url,bindings:[a,b])])
         let targets = try s.eligibleTargets(for:.init(request:.main))
         let result = try await s.makeCoordinator().execute(work(targets[0]))
@@ -190,7 +192,7 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
     }
     func test20ResolutionRequiresExactEnabledSyndicationTargetGeneration() throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db),http = response()
-        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
+        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [defaultSource])
         let s = try snapshot(db,[registration(id:t.id,endpoint:http.url)])
         XCTAssertNotNil(s.connector(for:t))
         for value in [AcquisitionTarget(id:t.id,connectorKind:.syndication,generation:2,state:.enabled,checkpointRevision:0,checkpoint:nil)!,
@@ -203,10 +205,10 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
     }
     func test21ReconfigureInvalidatesOldSnapshotNewSnapshotWorks() throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db),b = binding()
-        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
+        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [b.sourceID])
         let old = try snapshot(db,[registration(id:t.id,bindings:[b])])
         XCTAssertEqual(try old.eligibleTargets(for:.init(request:.main)),[t])
-        let next = try authority.reconfigure(id:t.id,expectedGeneration:1,connectorKind:.syndication,checkpoint:.preserve)
+        let next = try authority.reconfigure(id:t.id,expectedGeneration:1,connectorKind:.syndication,checkpoint:.preserve, authorizedSources: [b.sourceID])
         XCTAssertThrowsError(try old.eligibleTargets(for:.init(request:.main))) {
             XCTAssertEqual($0 as? SyndicationAcquisitionSnapshotError,.staleConfigurationGeneration(targetID:t.id,configured:1,durable:2))
         }
@@ -215,16 +217,16 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
     }
     func test22OldSnapshotCannotBypassCoordinatorFence() async throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db),http = response()
-        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
+        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [defaultSource])
         let old = try snapshot(db,[registration(id:t.id,endpoint:http.url)]),coordinator = old.makeCoordinator()
-        _ = try authority.reconfigure(id:t.id,expectedGeneration:1,connectorKind:.syndication,checkpoint:.preserve)
+        _ = try authority.reconfigure(id:t.id,expectedGeneration:1,connectorKind:.syndication,checkpoint:.preserve, authorizedSources: [defaultSource])
         do { _ = try await coordinator.execute(work(t)); XCTFail("Expected durable generation fence") }
         catch { XCTAssertEqual(error as? AcquisitionCoordinatorError,.stalePlannedGeneration(targetID:t.id,planned:1,actual:2)) }
         XCTAssertEqual(http.calls,0)
     }
     func test23ConnectorReconstructionUsesDurableContinuation() async throws {
         let db = try database(),authority = AcquisitionTargetAuthority(database:db),http = response(items:2)
-        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication)
+        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [defaultSource])
         let s = try snapshot(db,[registration(id:t.id,endpoint:http.url)])
         _ = try await s.makeCoordinator().execute(work(t,capacity:1))
         let current = try XCTUnwrap(authority.target(id:t.id)); XCTAssertNotNil(current.checkpoint); XCTAssertEqual(current.checkpointRevision,1)

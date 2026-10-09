@@ -5,6 +5,7 @@ import GRDB
 import FeedMineDomain
 
 public enum AcquisitionAdmissionStoreError: Error, Equatable, Sendable {
+    case unauthorizedSource(index: Int, targetID: AcquisitionTargetID, sourceID: SourceID)
     case invalidObservation(index: Int, field: String)
     case connectorMismatch(index: Int)
     case unsupportedUnversionedHistorical(index: Int)
@@ -147,8 +148,12 @@ public struct AcquisitionAdmissionStore: Sendable {
             let target = try AcquisitionTargetStore.requireTarget(id: command.targetID, in: db)
             try AcquisitionTargetStore.validateEnabledStamp(target, expectedGeneration: command.targetGeneration,
                 expectedCheckpointRevision: command.expectedCheckpointRevision)
+            let authorized = try AcquisitionTargetStore.readSources(target, in: db) ?? []
             for (index, observation) in command.observations.enumerated() {
                 try Self.validate(observation, index: index, connectorKind: target.connectorKind)
+                for membership in observation.memberships where !authorized.contains(membership.sourceID) {
+                    throw AcquisitionAdmissionStoreError.unauthorizedSource(index: index, targetID: target.id, sourceID: membership.sourceID)
+                }
             }
             var before: [OriginRecordID: SupplyFingerprint] = [:]
             var rejections: [ObservationRejection] = []
@@ -173,6 +178,9 @@ public struct AcquisitionAdmissionStore: Sendable {
                         rejections.append(.init(index: index, reason: .knownVersionPayloadConflict))
                         try contentStore.applyAvailability(observation.availability, observedAt: observation.observedAt,
                             recordID: recordID, in: db)
+                        try contentStore.applyMemberships(observation.memberships.map {
+                            .upsert(sourceID: $0.sourceID, kind: $0.kind, observedAt: observation.observedAt)
+                        }, recordID: recordID, in: db)
                         continue
                     }
                     guard media.count == stored.count,
@@ -180,6 +188,9 @@ public struct AcquisitionAdmissionStore: Sendable {
                         rejections.append(.init(index: index, reason: .knownVersionMediaConflict))
                         try contentStore.applyAvailability(observation.availability, observedAt: observation.observedAt,
                             recordID: recordID, in: db)
+                        try contentStore.applyMemberships(observation.memberships.map {
+                            .upsert(sourceID: $0.sourceID, kind: $0.kind, observedAt: observation.observedAt)
+                        }, recordID: recordID, in: db)
                         continue
                     }
                     // A known historical version cannot supersede a different current revision.

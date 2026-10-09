@@ -8,6 +8,7 @@ import FeedMineAcquisition
 
 @MainActor
 final class ResidualOperationalFailureTests: XCTestCase {
+    private let source = SourceID()
     private func database() throws -> RuntimeDatabase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
@@ -19,13 +20,13 @@ final class ResidualOperationalFailureTests: XCTestCase {
     private var validBody: Data { Data("<rss version=\"2.0\"><channel><title>Feed</title><item><guid>valid</guid><title>Healthy</title></item></channel></rss>".utf8) }
     private func connector(_ target: AcquisitionTarget,transport: any SyndicationHTTPTransport,redirects: Int = 1) -> SyndicationConnector {
         .init(configuration: .init(targetID: target.id,endpoint: URL(string: "https://residual.test/feed")!,
-            memberships: [.init(sourceID: SourceID(),kind: .direct)])!,redirectCapacity: redirects,
+            memberships: [.init(sourceID: source,kind: .direct)])!,redirectCapacity: redirects,
             now: { Date(timeIntervalSince1970: 100) },transport: transport)!
     }
     private func assertIsolated(_ transport: ScriptedSyndicationTransport,category: ConnectorOperationalFailure,
         redirects: Int = 1,gets: Int = 1) async throws {
         let database = try database(), authority = AcquisitionTargetAuthority(database: database)
-        let targets = try (0..<3).map { _ in try authority.register(id: AcquisitionTargetID(),connectorKind: .syndication) }
+        let targets = try (0..<3).map { _ in try authority.register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [source]) }
         let b = ScriptedSyndicationTransport([hop(body: validBody)]), c = ScriptedSyndicationTransport([hop(body: validBody)])
         let mapping = [targets[0].id: connector(targets[0],transport: transport,redirects: redirects),
             targets[1].id: connector(targets[1],transport: b),targets[2].id: connector(targets[2],transport: c)]
@@ -51,13 +52,13 @@ final class ResidualOperationalFailureTests: XCTestCase {
     }
     func testE1PhysicalStreamStopsAtBoundBeforeRemainingDocumentAndHealthyTargetContinues() async throws {
         let database = try database(), authority = AcquisitionTargetAuthority(database: database)
-        let a = try authority.register(id: AcquisitionTargetID(),connectorKind: .syndication)
-        let b = try authority.register(id: AcquisitionTargetID(),connectorKind: .syndication)
+        let a = try authority.register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [source])
+        let b = try authority.register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [source])
         let fixture = LocalSyndicationHTTPFixture(body: Data([1,2]),incremental: true)
         let session = fixture.session()
         defer { session.invalidateAndCancel(); fixture.remove() }
         let aConnector = SyndicationConnector(configuration: .init(targetID: a.id,endpoint: fixture.url,
-            memberships: [.init(sourceID: SourceID(),kind: .direct)])!,session: session,redirectCapacity: 0,
+            memberships: [.init(sourceID: source,kind: .direct)])!,session: session,redirectCapacity: 0,
             now: { Date(timeIntervalSince1970: 100) })!
         let transport = ScriptedSyndicationTransport([hop(body: validBody)])
         let bConnector = connector(b,transport: transport)
@@ -97,7 +98,7 @@ final class ResidualOperationalFailureTests: XCTestCase {
 
     private func checkpointFailure(_ checkpoint: AcquisitionCheckpoint,expected: SyndicationCheckpointError) async throws {
         let database = try database(), authority = AcquisitionTargetAuthority(database: database)
-        let registered = try authority.register(id: AcquisitionTargetID(),connectorKind: .syndication)
+        let registered = try authority.register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [source])
         let target = try authority.compareAndSwapCheckpoint(id: registered.id,expectedGeneration: 1,expectedCheckpointRevision: 0,next: checkpoint)
         let transport = ScriptedSyndicationTransport([]), connector = connector(target,transport: transport)
         let coordinator = AcquisitionCoordinator(database: database,connectorForTarget: { _ in connector })
@@ -118,7 +119,7 @@ final class ResidualOperationalFailureTests: XCTestCase {
         try await checkpointFailure(.init(blob: Data(),serializationSchema: 2,connectorVersion: SyndicationCheckpointCodec.connectorVersion)!,expected: .unsupportedSchema(2))
     }
     func testE7CancelledStaysCancellationAndUnmappedLocalURLCodePropagates() async throws {
-        let database = try database(), target = try AcquisitionTargetAuthority(database: database).register(id: AcquisitionTargetID(),connectorKind: .syndication)
+        let database = try database(), target = try AcquisitionTargetAuthority(database: database).register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [source])
         for code in [URLError.Code.cancelled,.unsupportedURL] {
             let transport = ScriptedSyndicationTransport(error: URLError(code)), connector = connector(target,transport: transport)
             let request = FeedConnectorPull(targetID: target.id,targetGeneration: target.generation,checkpointRevision: 0,checkpoint: nil,observationCapacity: 1,byteCapacity: 512)!

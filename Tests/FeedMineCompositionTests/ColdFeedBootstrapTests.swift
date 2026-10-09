@@ -124,7 +124,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
         let policy = ResolvedSelectionPolicy(contextKey: r.contextKey, userSelectionVersion: v, eligibilityPolicyVersion: v,
             scoringPolicyVersion: v, sequencingPolicyVersion: v, exposurePolicyVersion: v, selectionSchemaVersion: r.selectionSchemaVersion,
             eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyDescending, exposure: .excludePublishedRevisions)
-        let target = try AcquisitionTargetAuthority(database: db).register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let target = try AcquisitionTargetAuthority(database: db).register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [source])
         let journal = ColdJournal()
         let http = ColdHTTPFixture(items: items, status: status, error: error, laterError: laterError, paused: paused, journal: journal)
         addTeardownBlock { http.release(); http.remove() }
@@ -147,7 +147,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
         let active = await coordinator.activeExecutions()
         XCTAssertEqual(active, [AcquisitionActiveExecution(targetID: f.target.id, generation: 1)!])
         let next = try AcquisitionTargetAuthority(database: f.database).reconfigure(id: f.target.id,
-            expectedGeneration: 1, connectorKind: .syndication, checkpoint: .preserve)
+            expectedGeneration: 1, connectorKind: .syndication, checkpoint: .preserve, authorizedSources: [f.source])
         let current = try snapshot(f.database, [registration(next, source: f.source, http: f.http)])
         let eligible = try current.eligibleTargets(for: f.plan.context)
         XCTAssertEqual(eligible, [next]); XCTAssertEqual(next.generation, 2)
@@ -277,10 +277,11 @@ final class ColdFeedBootstrapTests: XCTestCase {
     func testC3NonexhaustedLocalMissForbidsHTTPAndEligibility() async throws {
         let f = try fixture(sourceContext: true), id = identity()
         try Self.seed(f.database, source: SourceID(), count: 3)
-        // An invalid registration would throw if eligibility were reached.
-        let missing = AcquisitionTarget(id: AcquisitionTargetID(), connectorKind: .syndication,
-            generation: 1, state: .enabled, checkpointRevision: 0, checkpoint: nil)!
-        let invalid = try snapshot(f.database, [registration(missing, source: f.source, http: f.http)])
+        // Materialize valid configuration, then explicitly advance authority so lookup would throw.
+        let invalid = f.acquisition
+        _ = try AcquisitionTargetAuthority(database: f.database).reconfigure(id: f.target.id,
+            expectedGeneration: 1,connectorKind: .syndication,checkpoint: .preserve,authorizedSources: [f.source])
+        XCTAssertThrowsError(try invalid.eligibleTargets(for: f.plan.context))
         let outcome = try await owner(f, acquisition: invalid).run(identity: id, resources: resources(local: 1),
             backwardCapacity: 0, forwardCapacity: 1)
         guard case .localWorkRemaining(let progress) = outcome else { return XCTFail("Expected bounded local work remaining") }
@@ -362,7 +363,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
         let f = try fixture(), id = identity(), failure = URLError(.cannotFindHost)
         let b = ColdHTTPFixture(error: failure, journal: f.journal, label: "B")
         addTeardownBlock { b.remove() }
-        let targetB = try AcquisitionTargetAuthority(database: f.database).register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let targetB = try AcquisitionTargetAuthority(database: f.database).register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])
         let acquisition = try snapshot(f.database, [registration(f.target, source: f.source, http: f.http), registration(targetB, source: f.source, http: b)])
         let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
             acquisition: acquisition, coordinator: acquisition.makeCoordinator(), prepare: { Self.prepared($0) })
@@ -444,7 +445,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
         })
         addTeardownBlock { b.remove() }
         let authority = AcquisitionTargetAuthority(database: db)
-        let targetB = try authority.register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let targetB = try authority.register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])
         let acquisition = try snapshot(db, [registration(f.target, source: f.source, http: f.http), registration(targetB, source: f.source, http: b)])
         let journal = f.journal
         let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
@@ -551,7 +552,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
 extension ColdFeedBootstrapTests {
     func test3R2ColdHTTPFailureDoesNotBlockHealthyTarget() async throws {
         let f = try fixture(status: 500)
-        let b = try AcquisitionTargetAuthority(database: f.database).register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let b = try AcquisitionTargetAuthority(database: f.database).register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])
         let http = ColdHTTPFixture(items: 10, label: "B")
         addTeardownBlock { http.remove() }
         let acquisition = try snapshot(f.database, [registration(f.target, source: f.source, http: f.http), registration(b, source: f.source, http: http)])
@@ -592,7 +593,7 @@ extension ColdFeedBootstrapTests {
     }
     func test3R2ColdAllOperationalFailuresRetainsOrderedResultsWithoutPublication() async throws {
         let f = try fixture(status: 500)
-        let b = try AcquisitionTargetAuthority(database: f.database).register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let b = try AcquisitionTargetAuthority(database: f.database).register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])
         let http = ColdHTTPFixture(error: URLError(.timedOut), label: "B")
         addTeardownBlock { http.remove() }
         let acquisition = try snapshot(f.database, [registration(f.target, source:f.source, http:f.http),registration(b, source:f.source, http:http)])
@@ -614,7 +615,7 @@ extension ColdFeedBootstrapTests {
         for kind in 0..<3 {
             let f = try fixture(items: kind == 0 ? 100 : 1,status: kind == 1 ? 304 : 200,
                 error: kind == 2 ? URLError(.cannotDecodeContentData) : nil)
-            let b = try AcquisitionTargetAuthority(database: f.database).register(id: AcquisitionTargetID(),connectorKind: .syndication)
+            let b = try AcquisitionTargetAuthority(database: f.database).register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [f.source])
             let http = ColdHTTPFixture(items: 1,label: "B")
             addTeardownBlock { http.remove() }
             let acquisition = try snapshot(f.database,[registration(f.target,source: f.source,http: f.http),registration(b,source: f.source,http: http)])

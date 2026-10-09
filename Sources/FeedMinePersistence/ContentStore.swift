@@ -275,7 +275,33 @@ public struct ContentStore: Sendable {
                     try Self.insertMediaCandidate(candidate, ordinal: ordinal, in: db)
                 }
             }
-            for mutation in change.membershipMutations {
+            try Self.writeMemberships(change.membershipMutations, recordID: change.recordID, in: db)
+            let current: OriginRevisionID?
+            switch change.currentUpdate {
+            case .unchanged: current = actual
+            case .useSuppliedRevision: current = revision.id
+            case .clear: current = nil
+            }
+            try db.execute(sql: "UPDATE origin_records SET current_revision_id = ? WHERE id = ?",
+                arguments: [current.map { Self.key($0.rawValue) }, key])
+            try Self.updateAvailability(change.availability, observedAt: change.observedAt, recordID: change.recordID, in: db)
+            try db.execute(sql: "UPDATE origin_records SET last_observed_at = ? WHERE id = ?",
+                arguments: [observed, key])
+            try Self.refreshSupply(change.recordID, in: db)
+        }
+    }
+
+    /// Admission calls this only after durable target/Source validation, in its existing transaction.
+    func applyMemberships(_ mutations: [MembershipMutation], recordID: OriginRecordID, in db: Database) throws {
+        try Self.coding {
+            try Self.writeMemberships(mutations, recordID: recordID, in: db)
+            try Self.refreshSupply(recordID, in: db)
+        }
+    }
+
+    private static func writeMemberships(_ mutations: [MembershipMutation], recordID: OriginRecordID, in db: Database) throws {
+        let key = Self.key(recordID.rawValue)
+            for mutation in mutations {
                 switch mutation {
                 case .upsert(let source, let kind, let date):
                     let time = try PersistenceValueCoding.date(date, field: "membership.observed_at")
@@ -290,19 +316,6 @@ public struct ContentStore: Sendable {
                         arguments: [key, Self.key(source.rawValue)])
                 }
             }
-            let current: OriginRevisionID?
-            switch change.currentUpdate {
-            case .unchanged: current = actual
-            case .useSuppliedRevision: current = revision.id
-            case .clear: current = nil
-            }
-            try db.execute(sql: "UPDATE origin_records SET current_revision_id = ? WHERE id = ?",
-                arguments: [current.map { Self.key($0.rawValue) }, key])
-            try Self.updateAvailability(change.availability, observedAt: change.observedAt, recordID: change.recordID, in: db)
-            try db.execute(sql: "UPDATE origin_records SET last_observed_at = ? WHERE id = ?",
-                arguments: [observed, key])
-            try Self.refreshSupply(change.recordID, in: db)
-        }
     }
 
     /// Admission may reject an immutable revision while retaining its independent availability signal.

@@ -71,7 +71,7 @@ final class CompletedDocumentFingerprintTests: XCTestCase {
         func firstOpportunity() async throws -> AcquisitionTarget {
             let database = try RuntimeDatabase(location:.init(directory:directory)); originalDatabase = database
             let authority = AcquisitionTargetAuthority(database:database)
-            let target = try authority.register(id:id, connectorKind:.syndication)
+            let target = try authority.register(id:id, connectorKind:.syndication, authorizedSources: [source])
             let connector = self.connector(server, target:id, source:source)
             let coordinator = AcquisitionCoordinator(database:database, connectorForTarget: { _ in connector })
             let result = try await coordinator.execute(.start(target:target, bounds:bounds))
@@ -104,7 +104,7 @@ final class CompletedDocumentFingerprintTests: XCTestCase {
         for body in [rss(""),rss("<item><title>No stable identity</title></item>")] {
             let database = try RuntimeDatabase(location:.init(directory:root()))
             let authority = AcquisitionTargetAuthority(database:database), id = AcquisitionTargetID(), source = SourceID()
-            let target = try authority.register(id:id,connectorKind:.syndication), server = CompletedHTTPFixture(body:body)
+            let target = try authority.register(id:id,connectorKind:.syndication, authorizedSources: [source]), server = CompletedHTTPFixture(body:body)
             addTeardownBlock { server.remove() }
             let connector = self.connector(server,target:id,source:source)
             let coordinator = AcquisitionCoordinator(database:database,connectorForTarget: { _ in connector })
@@ -134,7 +134,7 @@ extension CompletedDocumentFingerprintTests {
         })
         let database = try RuntimeDatabase(location:.init(directory:root()))
         let authority = AcquisitionTargetAuthority(database:database), id = AcquisitionTargetID(), source = SourceID()
-        _ = try authority.register(id:id,connectorKind:.syndication)
+        _ = try authority.register(id:id,connectorKind:.syndication, authorizedSources: [source])
         let connector = SyndicationConnector(configuration:.init(targetID:id,endpoint:URL(string:"https://example.test/feed")!,
             memberships:[.init(sourceID:source,kind:.direct)])!,redirectCapacity:0,now:{ Date(timeIntervalSince1970:100) },transport:transport)!
         let coordinator = AcquisitionCoordinator(database:database,connectorForTarget: { _ in connector })

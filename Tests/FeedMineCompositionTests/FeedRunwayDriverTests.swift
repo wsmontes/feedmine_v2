@@ -72,7 +72,7 @@ final class FeedRunwayDriverTests: XCTestCase {
             editionID:edition,publicationSchemaVersion:.init(rawValue:1),selectionSeed:1,editionCreatedAt:Date(timeIntervalSince1970:1),segmentID:FeedSegmentID(),
             segmentSeed:1,segmentCreatedAt:Date(timeIntervalSince1970:2),cardIDs:prepared.cardIDs))
         if checkpoint { try PublicationHistory(database:db).saveCursor(.init(editionID:edition,anchor:.init(cardID:prepared.cardIDs[0],placement:.top)),updatedAt:Date(timeIntervalSince1970:3)) }
-        let target = try AcquisitionTargetAuthority(database:db).register(id:AcquisitionTargetID(),connectorKind:.syndication)
+        let target = try AcquisitionTargetAuthority(database:db).register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [source])
         if seedLocal {
             let observation = AcquisitionObservation(objectIdentity:.init(connectorKind:.syndication,namespace:"seed",value:"local",role:.object),versionIdentity:nil,
                 precedence:.makeCurrent,availability:.available,headline:"local",summary:nil,bodyText:nil,authoredAt:nil,modifiedAt:nil,observedAt:Date(timeIntervalSince1970:4),
@@ -90,8 +90,9 @@ final class FeedRunwayDriverTests: XCTestCase {
             try PublicationHistory(database: db).readyAhead(editionID: edition, anchorCardID: prepared.cardIDs[0], probeBound: 64).amount
         })
         addTeardownBlock { otherHTTP.remove() }
-        let otherTarget = try AcquisitionTargetAuthority(database:db).register(id:AcquisitionTargetID(),connectorKind:.syndication)
-        let otherBinding = SourceBinding(id:SourceBindingID(),sourceID:SourceID(),externalPrincipal:.init(connectorKind:.syndication,namespace:"p",value:"other",role:.principal),aliases:[],generation:1,state:.enabled)!
+        let otherSource = SourceID()
+        let otherTarget = try AcquisitionTargetAuthority(database:db).register(id:AcquisitionTargetID(),connectorKind:.syndication, authorizedSources: [otherSource])
+        let otherBinding = SourceBinding(id:SourceBindingID(),sourceID:otherSource,externalPrincipal:.init(connectorKind:.syndication,namespace:"p",value:"other",role:.principal),aliases:[],generation:1,state:.enabled)!
         let regs = registrations ? [SyndicationTargetRegistration(targetID:target.id,targetGeneration:1,endpoint:http.url,bindings:[binding])!,
             SyndicationTargetRegistration(targetID:otherTarget.id,targetGeneration:1,endpoint:otherHTTP.url,bindings:[otherBinding])!] : []
         let acquisition = try SyndicationAcquisitionSnapshot(database:db,registrations:regs,session:transport,redirectCapacity:0,now:{ Date(timeIntervalSince1970:5) })
@@ -379,7 +380,7 @@ final class FeedRunwayDriverTests: XCTestCase {
         let oldActive = await shared.activeExecutions()
         XCTAssertEqual(oldActive, [AcquisitionActiveExecution(targetID: f.target.id, generation: 1)!])
         let authority = AcquisitionTargetAuthority(database: f.database)
-        let next = try authority.reconfigure(id: f.target.id, expectedGeneration: 1, connectorKind: .syndication, checkpoint: .preserve)
+        let next = try authority.reconfigure(id: f.target.id, expectedGeneration: 1, connectorKind: .syndication, checkpoint: .preserve, authorizedSources: [f.source])
         let binding = SourceBinding(id: SourceBindingID(), sourceID: source,
             externalPrincipal: .init(connectorKind: .syndication, namespace: "p", value: "new-configuration", role: .principal),
             aliases: [], generation: 2, state: .enabled)!

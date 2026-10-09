@@ -66,14 +66,14 @@ final class FeedPresentationHandoffTests: XCTestCase {
             try publicationHistory.saveCursor(.init(editionID: editionID, anchor: .init(cardID: prepared.cardIDs[0], placement: .top)),
                 updatedAt: Date(timeIntervalSince1970: 3))
         }
-        let target = try AcquisitionTargetAuthority(database: database).register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let source: SourceID
+        if case .source(let id) = context.request { source = id } else { source = SourceID() }
+        let target = try AcquisitionTargetAuthority(database: database).register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [source])
         let http = HandoffHTTPFixture(paused: paused, error: error, items: remoteItems)
         addTeardownBlock { http.release(); http.remove() }
         let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [HandoffURLProtocol.self]
         let transport = URLSession(configuration: configuration)
         addTeardownBlock { transport.invalidateAndCancel() }
-        let source: SourceID
-        if case .source(let id) = context.request { source = id } else { source = SourceID() }
         let binding = SourceBinding(id: SourceBindingID(), sourceID: source,
             externalPrincipal: .init(connectorKind: .syndication, namespace: "p", value: "source", role: .principal),
             aliases: [], generation: 1, state: .enabled)!
@@ -307,13 +307,15 @@ final class FeedPresentationHandoffTests: XCTestCase {
         let f = try fixture(), state = try await warm(f)
         let coldFixture = try fixture(history: 0, context: .init(request: .source(SourceID())))
         let unrelatedSource = SourceID()
+        let unrelatedTarget = try AcquisitionTargetAuthority(database: coldFixture.database).register(
+            id: AcquisitionTargetID(),connectorKind: .syndication,authorizedSources: [unrelatedSource])
         let observations = (0..<3).map { index in
             AcquisitionObservation(objectIdentity: .init(connectorKind: .syndication, namespace: "local", value: "unrelated-\(index)", role: .object),
                 versionIdentity: nil, precedence: .makeCurrent, availability: .available, headline: "Unrelated", summary: nil,
                 bodyText: nil, authoredAt: nil, modifiedAt: nil, observedAt: Date(timeIntervalSince1970: Double(index)), language: nil,
                 primaryLink: nil, searchProjection: nil, providerID: nil, memberships: [.init(sourceID: unrelatedSource, kind: .direct)], mediaCandidates: [])!
         }
-        _ = try AdmissionPolicy(database: coldFixture.database).admit(.init(targetID: coldFixture.target.id, targetGeneration: 1,
+        _ = try AdmissionPolicy(database: coldFixture.database).admit(.init(targetID: unrelatedTarget.id, targetGeneration: 1,
             expectedCheckpointRevision: 0, observations: observations, nextCheckpoint: nil)!)
         let outcome = try await cold(coldFixture, local: 1)
         guard case .localWorkRemaining(let progress) = outcome else { return XCTFail("Expected actual bounded local miss") }

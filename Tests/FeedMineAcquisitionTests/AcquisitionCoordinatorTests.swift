@@ -29,8 +29,9 @@ final class AcquisitionCoordinatorTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let db = try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))
-        let target = try AcquisitionTargetAuthority(database: db).register(id: AcquisitionTargetID(),connectorKind: .syndication)
-        return Fixture(database: db,target: target,source: SourceID())
+        let source = SourceID()
+        let target = try AcquisitionTargetAuthority(database: db).register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [source])
+        return Fixture(database: db,target: target,source: source)
     }
     private func checkpoint(_ byte: UInt8) -> AcquisitionCheckpoint {
         .init(blob: Data([byte]),serializationSchema: 1,connectorVersion: " test ")!
@@ -186,7 +187,7 @@ final class AcquisitionCoordinatorTests: XCTestCase {
     private func lateWork(replacement: Bool) async throws {
         let f = try fixture(), fake = FakeContinuousConnector(), coordinator = f.coordinator(fake)
         let old = await enter(coordinator,start(f)); await fake.waitForWaitingPull()
-        let current = try f.authority.reconfigure(id: f.target.id,expectedGeneration: 1,connectorKind: .syndication,checkpoint: .preserve)
+        let current = try f.authority.reconfigure(id: f.target.id,expectedGeneration: 1,connectorKind: .syndication,checkpoint: .preserve, authorizedSources: [f.source])
         for work in [AcquisitionPlannedWork.start(target: current,bounds: bounds()),.joinActive(target: current)] {
             do { _ = try await coordinator.execute(work); XCTFail("Expected conflict") }
             catch { XCTAssertEqual(error as? AcquisitionCoordinatorError,.activeGenerationConflict(targetID: current.id,activeGeneration: 1,requestedGeneration: 2)) }
@@ -206,7 +207,7 @@ final class AcquisitionCoordinatorTests: XCTestCase {
     }
     func test21StalePlanBeforeFirstPull() async throws {
         let f = try fixture(), fake = FakeFiniteConnector([.failure])
-        _ = try f.authority.reconfigure(id: f.target.id,expectedGeneration: 1,connectorKind: .syndication,checkpoint: .preserve)
+        _ = try f.authority.reconfigure(id: f.target.id,expectedGeneration: 1,connectorKind: .syndication,checkpoint: .preserve, authorizedSources: [f.source])
         try await beforePull(f,fake: fake,work: start(f),expected: .stalePlannedGeneration(targetID: f.target.id,planned: 1,actual: 2))
     }
     func test22RevokedBeforePull() async throws {
@@ -387,8 +388,8 @@ extension AcquisitionCoordinatorTests {
     }
     func test3R2SharedFairnessExecutesBrokenAndNoSupplyTargetsWithoutCheckpointProgress() async throws {
         let f = try fixture()
-        let b = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication)
-        let c = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let b = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])
+        let c = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])
         let connector = FairOpportunityConnector(broken: f.target.id)
         let coordinator = AcquisitionCoordinator(database: f.database, connectorForTarget: { _ in connector })
         let targets = [f.target, b, c]
@@ -413,7 +414,7 @@ extension AcquisitionCoordinatorTests {
         // Remove the marker's target, disable another and add a new target: remaining opportunities still progress.
         _ = try f.authority.revoke(id: b.id, expectedGeneration: 1)
         let disabled = try XCTUnwrap(f.authority.target(id: b.id))
-        let d = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication)
+        let d = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])
         let changed = [f.target, disabled, d]
         for _ in 0..<4 {
             guard case .planned(let plan) = try await coordinator.selectionOpportunity({ position, active in

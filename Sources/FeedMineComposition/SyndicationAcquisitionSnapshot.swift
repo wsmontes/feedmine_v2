@@ -1,5 +1,6 @@
-// Owns the immutable caller-supplied Binding/Target configuration bridge.
-// Durable operational authority remains in Acquisition; this value performs no writes.
+// Owns explicit materialization of trusted caller-supplied target/source registrations before
+// constructing an immutable acquisition snapshot. Durable authority belongs to Acquisition/Persistence.
+// Does not own admission, canonical membership mutations or implicit writes during target lookup.
 import Foundation
 import FeedMineDomain
 import FeedMinePersistence
@@ -56,6 +57,27 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
             guard seen.insert(registration.targetID).inserted else {
                 throw SyndicationAcquisitionSnapshotError.duplicateTargetID(registration.targetID)
             }
+        }
+        let authority = AcquisitionTargetAuthority(database: database)
+        // Preflight every registration before materializing; each write rechecks its durable fence.
+        for registration in registrations {
+            guard let target = try authority.target(id: registration.targetID) else {
+                throw SyndicationAcquisitionSnapshotError.missingDurableTarget(registration.targetID)
+            }
+            guard target.generation == registration.targetGeneration else {
+                throw SyndicationAcquisitionSnapshotError.staleConfigurationGeneration(targetID: target.id,
+                    configured: registration.targetGeneration, durable: target.generation)
+            }
+            guard target.connectorKind == .syndication else {
+                throw SyndicationAcquisitionSnapshotError.connectorKindMismatch(targetID: target.id)
+            }
+            if let sources = try authority.authorizedSources(id: target.id), sources != Set(registration.bindings.map(\.sourceID)) {
+                throw AcquisitionTargetStoreError.sourceConfigurationConflict(target.id)
+            }
+        }
+        for registration in registrations {
+            _ = try authority.materializeSources(id: registration.targetID, expectedGeneration: registration.targetGeneration,
+                connectorKind: .syndication, authorizedSources: Set(registration.bindings.map(\.sourceID)))
         }
         self.database = database
         self.registrations = registrations

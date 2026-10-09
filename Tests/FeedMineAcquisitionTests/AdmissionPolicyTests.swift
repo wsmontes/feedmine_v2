@@ -62,7 +62,7 @@ final class AdmissionPolicyTests: XCTestCase {
     func testBatchValidationAndHistoricalRefusalWithoutMutation() throws {
         let db = try RuntimeDatabase(location: location()), id = AcquisitionTargetID()
         let authority = AcquisitionTargetAuthority(database: db)
-        let before = try authority.register(id: id,connectorKind: .syndication)
+        let before = try authority.register(id: id,connectorKind: .syndication, authorizedSources: [source])
         let checkpoint = AcquisitionCheckpoint(blob: Data(),serializationSchema: 1,connectorVersion: "v")!
         XCTAssertNil(batch(id,[],generation: 0)); XCTAssertNil(batch(id,[]))
         XCTAssertNotNil(batch(id,[],checkpoint: checkpoint)); XCTAssertNotNil(batch(id,[observation()!]))
@@ -80,7 +80,7 @@ final class AdmissionPolicyTests: XCTestCase {
         let checkpoint = AcquisitionCheckpoint(blob: Data([0,255]),serializationSchema: 2,connectorVersion: " V ")!
         do {
             let db = try RuntimeDatabase(location: location), authority = AcquisitionTargetAuthority(database: db)
-            _ = try authority.register(id: id,connectorKind: .syndication)
+            _ = try authority.register(id: id,connectorKind: .syndication, authorizedSources: [source])
             let policy = AdmissionPolicy(database: db), content = ContentStore(database: db)
             let first = try policy.admit(batch(id,[observation(version: identity(" V1 ",role: .version))!],checkpoint: checkpoint)!)
             XCTAssertEqual(first.targetID,id); XCTAssertTrue(first.checkpointAdvanced); XCTAssertTrue(first.selectableSupplyChanged)
@@ -116,7 +116,7 @@ final class AdmissionPolicyTests: XCTestCase {
     }
     func testUnversionedChangeAndExactCurrentReplay() throws {
         let db = try RuntimeDatabase(location: location()), id = AcquisitionTargetID()
-        _ = try AcquisitionTargetAuthority(database: db).register(id: id,connectorKind: .syndication)
+        _ = try AcquisitionTargetAuthority(database: db).register(id: id,connectorKind: .syndication, authorizedSources: [source])
         let policy = AdmissionPolicy(database: db), content = ContentStore(database: db)
         _ = try policy.admit(batch(id,[observation(headline: "A")!])!)
         let origin = try content.candidateWindow(sourceID: nil,after: nil,examinedCapacity: 10).records[0].originRecordID
@@ -132,7 +132,7 @@ final class AdmissionPolicyTests: XCTestCase {
     }
     func testStructuredRejectionsPreserveOriginalBatchIndicesAndMixedReasons() throws {
         let db = try RuntimeDatabase(location: location()), id = AcquisitionTargetID()
-        _ = try AcquisitionTargetAuthority(database: db).register(id: id,connectorKind: .syndication)
+        _ = try AcquisitionTargetAuthority(database: db).register(id: id,connectorKind: .syndication, authorizedSources: [source])
         let policy = AdmissionPolicy(database: db)
         let version = identity("v1",role: .version)
         _ = try policy.admit(batch(id,[
@@ -182,7 +182,7 @@ final class AdmissionPolicyTests: XCTestCase {
     func testExistingCoordinatorTransportsRejectionsAndContinuesThirdAcquisition() async throws {
         let db = try RuntimeDatabase(location: location()), id = AcquisitionTargetID()
         let authority = AcquisitionTargetAuthority(database: db)
-        _ = try authority.register(id: id,connectorKind: .syndication)
+        _ = try authority.register(id: id,connectorKind: .syndication, authorizedSources: [source])
         let version = identity("updated-unchanged",role: .version)
         let original = observation(object: identity("poison"),version: version)!
         let poison = observation(object: identity("poison"),version: version,summary: "mutated")!

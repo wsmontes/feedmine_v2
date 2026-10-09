@@ -194,7 +194,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
             let schema = try String.fetchAll(db, sql: "SELECT name || ':' || COALESCE(sql, '') FROM sqlite_master WHERE name != 'published_cards_origin_revision_segment' ORDER BY name")
             XCTAssertTrue(Set(oldSchema).isSubset(of: try Self.schemaBeforeAvailability(schema, in: db))) // Only the explicitly checked additive column changes an old definition.
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('published_cards_origin_revision_segment') ORDER BY seqno"), ["origin_revision_id","segment_id"])
-            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1"])
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1"])
         }
     }
 
@@ -278,8 +278,23 @@ extension PublicationRunwayStoreTests {
             // One new object (3R5 index), plus one altered existing definition (3R6B column).
             let originDefinition = try XCTUnwrap(schemaAfter.first { $0.hasPrefix("origin_records:") })
             let originIndex = "published_cards_origin_record_segment:CREATE INDEX published_cards_origin_record_segment\nON published_cards (origin_record_id, segment_id)"
-            XCTAssertEqual(priorDefinitions.subtracting(schemaBefore), Set([originIndex]))
-            XCTAssertEqual(Set(schemaAfter).subtracting(schemaBefore), Set([originIndex, originDefinition]))
+            let authorityTable = """
+                acquisition_target_sources:CREATE TABLE acquisition_target_sources (
+                    target_id TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    generation INTEGER NOT NULL,
+                    PRIMARY KEY (target_id, source_id),
+                    FOREIGN KEY (target_id)
+                        REFERENCES acquisition_targets(id)
+                        ON DELETE CASCADE,
+                    CHECK (generation >= 1)
+                )
+                """
+            let authorityIndex = "sqlite_autoindex_acquisition_target_sources_1:"
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('acquisition_target_sources') ORDER BY cid"),["target_id","source_id","generation"])
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('sqlite_autoindex_acquisition_target_sources_1') ORDER BY seqno"),["target_id","source_id"])
+            XCTAssertEqual(priorDefinitions.subtracting(schemaBefore), Set([originIndex, authorityTable, authorityIndex]))
+            XCTAssertEqual(Set(schemaAfter).subtracting(schemaBefore), Set([originIndex, originDefinition, authorityTable, authorityIndex]))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }

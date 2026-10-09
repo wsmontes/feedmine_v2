@@ -18,11 +18,12 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
             .init(targetID: targetID,targetGeneration: generation,expectedCheckpointRevision: revision,
                 observations: observations,nextCheckpoint: checkpoint)
         }
-        func snapshot(includeTarget: Bool = true, includeOrigin: Bool = true) throws -> [String] {
+        func snapshot(includeTarget: Bool = true, includeOrigin: Bool = true, includeMembership: Bool = true) throws -> [String] {
             try database.read { db in
                 var result: [String] = []
                 for table in ["origin_records","origin_revisions","source_memberships","selection_supply","media_candidates"] + (includeTarget ? ["acquisition_targets"] : []) {
                     if table == "origin_records" && !includeOrigin { continue }
+                    if table == "source_memberships" && !includeMembership { continue }
                     result.append(table)
                     result += try Row.fetchAll(db,sql: "SELECT * FROM \(table) ORDER BY 1,2").map { String(describing: $0) }
                 }
@@ -51,9 +52,9 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return RuntimeDatabaseLocation(directory: root)
     }
-    private func fixture(at location: RuntimeDatabaseLocation? = nil, connector: String = "syndication") throws -> Fixture {
+    private func fixture(at location: RuntimeDatabaseLocation? = nil, connector: String = "syndication", additionalSources: Set<SourceID> = []) throws -> Fixture {
         let result = Fixture(database: try RuntimeDatabase(location: location ?? self.location()),targetID: AcquisitionTargetID(),sourceID: SourceID())
-        _ = try result.targets.register(id: result.targetID,connectorKind: ConnectorKind(rawValue: connector))
+        _ = try result.targets.register(id: result.targetID,connectorKind: ConnectorKind(rawValue: connector), authorizedSources: Set([result.sourceID]).union(additionalSources))
         return result
     }
     private static func identity(_ value: String, role: ExternalIdentityRole = .object, connector: String = "syndication") -> ExternalIdentity {
@@ -289,21 +290,25 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
     }
 
     func testAllRejectedPreserveRevisionAndMembershipApplyAvailabilityAndAdvanceCheckpoint() throws {
-        let f = try fixture()
+        let addedSource = SourceID(), f = try fixture(additionalSources: [addedSource])
         _ = try f.store.admit(f.command([observation(f)]))
-        let before = try f.snapshot(includeTarget: false,includeOrigin: false)
+        let before = try f.snapshot(includeTarget: false,includeOrigin: false,includeMembership: false)
         let origin = try XCTUnwrap(f.record())
         let receipt = try f.store.admit(f.command([
             observation(f,availability: .removed,summary: "changed",time: 20,
-                memberships: [.init(sourceID: SourceID(),kind: .derived)]),
+                memberships: [.init(sourceID: addedSource,kind: .derived)]),
             observation(f,availability: .updated,time: 30,memberships: [],media: [])
         ],checkpoint: checkpoint()))
         XCTAssertEqual(receipt.rejectedObservations, [
             .init(index: 0,reason: .knownVersionPayloadConflict),
             .init(index: 1,reason: .knownVersionMediaConflict)
         ])
-        XCTAssertFalse(receipt.selectableSupplyChanged); XCTAssertTrue(receipt.checkpointAdvanced)
-        XCTAssertEqual(try f.snapshot(includeTarget: false,includeOrigin: false),before)
+        XCTAssertTrue(receipt.selectableSupplyChanged); XCTAssertTrue(receipt.checkpointAdvanced)
+        XCTAssertEqual(try f.snapshot(includeTarget: false,includeOrigin: false,includeMembership: false),before)
+        XCTAssertEqual(Set(try f.content.memberships(originRecordID: origin.id)),Set([
+            SourceMembership(originRecordID: origin.id,sourceID: f.sourceID,kind: .direct,firstObservedAt: Date(timeIntervalSince1970: 10),lastObservedAt: Date(timeIntervalSince1970: 10)),
+            SourceMembership(originRecordID: origin.id,sourceID: addedSource,kind: .derived,firstObservedAt: Date(timeIntervalSince1970: 20),lastObservedAt: Date(timeIntervalSince1970: 20))
+        ]))
         XCTAssertEqual(try f.record(),OriginRecord(id: origin.id,externalObjectIdentity: origin.externalObjectIdentity,
             currentRevisionID: origin.currentRevisionID,availability: .updated,
             firstObservedAt: origin.firstObservedAt,lastObservedAt: origin.lastObservedAt))
@@ -395,7 +400,7 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
         XCTAssertEqual(try f.snapshot(),before); XCTAssertNil(try f.record())
     }
     func testSelectableReceiptTracksSourceSetNotObservationOrMembershipKind() throws {
-        let f = try fixture(), secondSource = SourceID()
+        let secondSource = SourceID(), f = try fixture(additionalSources: [secondSource])
         _ = try f.store.admit(f.command([observation(f)]))
         XCTAssertFalse(try f.store.admit(f.command([observation(f,time: 20)])).selectableSupplyChanged)
         XCTAssertFalse(try f.store.admit(f.command([observation(f,time: 30,memberships: [.init(sourceID: f.sourceID,kind: .derived)])])).selectableSupplyChanged)
@@ -407,12 +412,12 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
         XCTAssertFalse(try f.store.admit(f.command([observation(f,version: "historical",precedence: .historicalOnly,time: 50)])).selectableSupplyChanged)
     }
     func testAvailabilityRemovalAndNonSelectableMembershipChanges() throws {
-        let f = try fixture()
+        let addedSource = SourceID(), f = try fixture(additionalSources: [addedSource])
         _ = try f.store.admit(f.command([observation(f)]))
         let revision = try XCTUnwrap(f.current())
         XCTAssertTrue(try f.store.admit(f.command([observation(f,availability: .removed,time: 20)])).selectableSupplyChanged)
         XCTAssertEqual(try f.count("selection_supply"),0); XCTAssertEqual(try f.current(),revision)
-        XCTAssertFalse(try f.store.admit(f.command([observation(f,availability: .removed,time: 30,memberships: [.init(sourceID: SourceID(),kind: .direct)])])).selectableSupplyChanged)
+        XCTAssertFalse(try f.store.admit(f.command([observation(f,availability: .removed,time: 30,memberships: [.init(sourceID: addedSource,kind: .direct)])])).selectableSupplyChanged)
         XCTAssertEqual(try f.count("origin_revisions"),1)
     }
     func testFingerprintCapturedOnceAndComparedAfterAllObservations() throws {
