@@ -1,5 +1,28 @@
 # Code review — FeedMine `main` @ `8873e72` (2026-10-08)
 
+## Status update 2 — `main` @ `251e1da` (2026-10-09)
+
+The changes since `6116113` were written without a compiler; see `docs/v1-study/PORT_LOG.md` for the device checklist.
+
+| Item | Status |
+| --- | --- |
+| H1 follow-up 1 (edits lost) | Addressed: version identity now includes a material fingerprint (`fdafa3a`) |
+| H1 follow-up 2 (availability) | Addressed by the agent (`5f36be6`) |
+| H2 residual 1 (unmapped errors) | Addressed by the agent (`db1c2b6`) |
+| H2 residuals 2–3 (sequential, no backoff) | Addressed: sliding window and per-target cooling (`e7d94b6`) |
+| H3 | Addressed by the agent (`77bd915`); amended for PD-1 (`4996497`) |
+| M2, M5 | Addressed by the agent (single-owner causal execution) |
+| M6, M7 | Addressed (`b9eaca2`) |
+| M11 | Addressed by the agent (`24845f2`); entity table completed (`5d90da4`) |
+| M12, M13 | Addressed (`796fddf`, `292fea0`) |
+| M14 | Addressed by the agent (`7650163`, `a64a340`) |
+| M15 | Addressed: media pipeline (`d36d25e`) |
+| M17 | Addressed: in-feed work badge (`71f3440`) |
+| L2 | Addressed (`.gitignore`, `5d11c8e`) |
+| L4 | Won't do (no hosted CI, by product decision PD-7) |
+| Still open | M8/M9 (query cost at scale), M10 partially (media eviction done; DB retention open), M16 (tap actions), M18 (search), M19–M22, L1, L3 |
+
+---
 ## Status update — `main` @ `6116113` (2026-10-08 16:40)
 
 Reviewed statically (no Swift toolchain here; the 670-test result is the agent's own report).

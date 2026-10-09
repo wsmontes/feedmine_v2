@@ -41,14 +41,64 @@ Swift toolchain on the machine where they were written. Before building on any o
 - Single-source contexts are exempt.
 - The app uses sequencing policy v2 for new Editions.
 
-## Not done yet (next candidates)
+## Round 2 — 2026-10-09 (all fronts, still uncompiled)
 
-- **PD-1:** amend the 3R5 one-occurrence-per-origin rule. Turn a material edit under an unchanged
-  Atom/JSON version into a new revision instead of rejecting it (3R1).
-- **PD-3:** a preparation-evidence surface (sources contacted, headlines admitted, cards prepared)
-  for an entertaining first launch.
-- **PD-5 / PD-6 wiring:** call `MediaResolver` from the composition `prepare` closure. Add one
-  Runtime download owner with a streaming byte ceiling, a media handle on `PresentationCard`, and
-  re-preparation of unseen cards while the app is not visible.
-- **PD-2:** v1 catalog import with a stable v1-key → UUID mapping.
-- **Review H2 residuals:** per-target backoff and bounded parallelism.
+| Commit | Change | Lesson / decision | Tests added |
+| --- | --- | --- | --- |
+| `fdafa3a` | The translator's version identity is the claimed date plus a SHA-256 fingerprint of the material content. An edit under an unchanged `updated`/`date_modified` is a new version and is no longer rejected forever. | PD-1, H1 follow-up 1 | `SyndicationTranslatorTests.test32` |
+| `4996497` | New exposure behavior `.excludePublishedMaterial`: an edited article (collapsed title or text differs) reappears as a new card. `PublicationStore` enforces this in the append transaction. 3R5 behavior is unchanged under `.excludePublishedRevisions`. The app uses exposure policy v2. | PD-1 (amends 3R5) | `EditedArticleRecurrenceTests` |
+| `e7d94b6` | Per-target backoff: delay doubles from the request timeout and is capped; one success clears it; cooling targets are skipped during planning. `executeConcurrently` runs a sliding window that refills on each completion (cores-sized in the app, 1 by default). | H2 residuals 2–3, IN-8 | `AcquisitionBackoffConcurrencyTests` |
+| `b9eaca2` | M6: `forwardBeyondProbe` records a lower-bound rate instead of wiping samples. M7: a failed local slice becomes retryable after a doubling delay, and the app schedules that opportunity. M2/M5 were already solved by the driver's single-owner causal execution. | M6, M7 | `RunwayControllerTests` (M6 assertion and a new retry test) |
+| `d36d25e` | End-to-end card images. See "Card images" below. | PD-5, PD-6, M15, MD-1/2/5/6 | `MediaPrefetcherTests` |
+| `71f3440` | First-launch preparation built from real evidence. See "First-launch preparation" below. | PD-3, M17, INV-06 | `PreparationProgressTests` |
+| `55481ec` | Tidying while the app is not visible: `MediaHousekeeping` plus `MediaTidy`. It completes media for the next cards and evicts down to the free-space-derived budget, keeping the visible window last. Published cards are never rewritten. | PD-5, PD-6 rule 3 | `MediaHousekeepingTests` |
+| `251e1da` | v1 catalog import. See "v1 catalog import" below. | PD-2, CE-1 | `LegacyCatalogReaderTests`, `LegacyCatalogImportTests` |
+
+**Card images (`d36d25e`).**
+- `MediaPrefetcher` is the single media owner. It resolves the supply head with `MediaResolver`, downloads with a byte ceiling, materializes, and picks hero or thumbnail from the measured pixels.
+- `MediaReadiness` feeds the `prepare` closure, so every card is either a real image or designed text-only.
+- `FeedSession` decodes local assets at slot size. `FeedCardView` keeps a fixed slot height using the frozen aspect ratio.
+- `MediaHTTPFetcher` handles transport. The app supplies device-measured conditions.
+
+**First-launch preparation (`71f3440`).**
+- `PreparationProgress` holds the sources, admitted headlines and a measured time estimate; `ColdFeedBootstrap` emits the evidence.
+- `FeedPreparationView` shows a headline deck and source chips, with Reduce Motion support.
+- `FeedWorkBadge` shows pending or failed work while cards stay visible.
+
+**v1 catalog import (`251e1da`).**
+- `LegacyCatalogReader` reads `catalog.sqlite` read-only.
+- `LegacyCatalogImport` derives deterministic v8 UUIDs from the v1 canonical key.
+- The app follows the bundled catalog's defaults when the file is present.
+
+A static audit of all round-2 commits found no compile or test-consistency defects. That audit is not a build.
+
+### Known gaps (by design or pending)
+- **PD-5, unseen published cards.** Already-published but unseen cards are not re-prepared with late media. That requires a Publication successor-tail mechanism; until then, late media improves only future cards.
+- **PD-1 rule 2** (at most one unseen future occurrence per origin) is not enforced.
+- **PD-2 catalog file.** The 118 MB `catalog.sqlite` is not in this repo. Bundle it (LFS) or download it, then add it to the app's Copy Bundle Resources.
+- **PD-2 onboarding.** Source choice and onboarding are not built. The app registers at most 64 default catalog sources.
+
+## Device test checklist (needs a Mac and an iPhone)
+
+Run `swift build && swift test` first. Then on device:
+
+1. **Cold first launch.** The preparation screen shows real source names and headlines arriving and is not a progress bar. The first screen has no two adjacent cards from the same source (PD-4).
+2. **Images.**
+   - Cards are hero, thumbnail or designed text-only. None show an empty image.
+   - Scroll for a while: card heights never jump.
+   - Slow network: more text-only cards, no stalls.
+3. **Late image.** Put the app in the background and reopen it. Visible cards are unchanged (PD-5) and later cards gain images.
+4. **Edited article.** Edit an item in a test feed (same guid/date, new text) and refresh. The article appears again as a new card further down (PD-1).
+5. **Broken feed.** Add an unreachable feed. Other feeds still arrive and the broken one stops being retried every cycle (H2 backoff).
+6. **Fast scroll.** The runway keeps up (M6). Airplane mode mid-scroll, then back: work resumes without a new gesture (M7 retry).
+7. **Low Power Mode, Low Data Mode, little free space.** Smaller images; media disk use shrinks after backgrounding (PD-6 tidy).
+8. **Reduce Motion.** The preparation screen stops its drift. VoiceOver reads one summary.
+9. **Catalog bundled.** Feeds come from the catalog defaults; relaunch keeps the same sources (stable UUIDs).
+10. **Logs.** Check `tidy evicted=… reclaimed=… budget=…` on backgrounding.
+
+## Next candidates
+
+- Publication successor-tail mechanism, to re-prepare unseen published cards while the app is not visible (PD-5).
+- PD-1 rule 2 (one unseen future occurrence per origin).
+- Onboarding / source choice over the v1 catalog (PD-2), and taxonomy/search over catalog nodes.
+- Diversity beyond source alternation (provider spacing, editorial quality from catalog `quality_score`).
