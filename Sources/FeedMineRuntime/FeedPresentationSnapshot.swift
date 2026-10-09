@@ -3,8 +3,32 @@
 // Owns: immutable ready local presentation, finite window and logical anchor.
 // Does not own: publication authority, pagination, pixels or mutable session state.
 
+import Foundation
 import FeedMineDomain
 import FeedMinePublication
+
+/// Memory-local causal provenance, comparable only within its producing FeedSession.
+/// The identifier is equality-only; neither it nor card positions define order.
+public struct FeedProjectionProvenance: Hashable, Sendable {
+    public let sequenceID: UUID
+    public let position: UInt64
+
+    init(sequenceID: UUID, position: UInt64) {
+        precondition(position > 0)
+        self.sequenceID = sequenceID
+        self.position = position
+    }
+
+    static func nextPosition(after position: UInt64) throws -> UInt64 {
+        let (next, overflow) = position.addingReportingOverflow(1)
+        guard !overflow else { throw FeedSessionError.projectionOrderExhausted }
+        return next
+    }
+}
+
+public enum FeedSessionError: Error, Equatable, Sendable {
+    case projectionOrderExhausted
+}
 
 public enum PresentationAnchorPlacement: String, Hashable, Sendable {
     case top
@@ -52,15 +76,17 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
     public let contextKey: ContextKey
     public let editionID: FeedEditionID
     public let window: FeedWindowSnapshot
+    public let provenance: FeedProjectionProvenance
 
-    init(restoredPublication: RestoredPublication) {
+    init(restoredPublication: RestoredPublication, provenance: FeedProjectionProvenance) {
         self.init(contextKey: restoredPublication.edition.contextKey,
-            editionID: restoredPublication.edition.id, publishedWindow: restoredPublication.window)
+            editionID: restoredPublication.edition.id, publishedWindow: restoredPublication.window, provenance: provenance)
     }
 
-    init(contextKey: ContextKey, editionID: FeedEditionID, publishedWindow: FeedWindow) {
+    init(contextKey: ContextKey, editionID: FeedEditionID, publishedWindow: FeedWindow, provenance: FeedProjectionProvenance) {
         self.contextKey = contextKey
         self.editionID = editionID
         window = FeedWindowSnapshot(publishedWindow: publishedWindow)
+        self.provenance = provenance
     }
 }

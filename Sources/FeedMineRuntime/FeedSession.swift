@@ -10,6 +10,8 @@ import FeedMinePublication
 public actor FeedSession {
     private let publicationHistory: PublicationHistory
     private var state: FeedSessionState?
+    private let projectionSequenceID = UUID()
+    private var projectionPosition: UInt64 = 0
 
     /// Composition-only exception: accepts the semantic Publication boundary.
     /// UI consumes Runtime presentation results without importing Publication.
@@ -38,7 +40,7 @@ public actor FeedSession {
         let anchor = FeedWindowAnchor(cardID: current.presentation.window.anchor.cardID, placement: placement)
         let window = try publicationHistory.window(editionID: current.presentation.editionID, around: anchor,
             backwardCapacity: current.backwardCapacity, forwardCapacity: current.forwardCapacity)
-        let snapshot = FeedPresentationSnapshot(contextKey: current.presentation.contextKey,
+        let snapshot = try project(contextKey: current.presentation.contextKey,
             editionID: current.presentation.editionID, publishedWindow: window)
         state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
             backwardCapacity: current.backwardCapacity, forwardCapacity: current.forwardCapacity)
@@ -56,9 +58,24 @@ public actor FeedSession {
             state = nil
             return nil
         }
-        let snapshot = FeedPresentationSnapshot(restoredPublication: restored)
+        let snapshot = try project(contextKey: restored.edition.contextKey, editionID: restored.edition.id, publishedWindow: restored.window)
         state = FeedSessionState(editorialRevisionID: restored.edition.editorialRevision.id, presentation: snapshot,
             backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity)
+        return snapshot
+    }
+
+    /// Allocate only after a successful read, alongside the actor's synchronous state transition.
+    /// An unchanged effective projection retains its exact provenance, even after another read.
+    private func project(contextKey: ContextKey, editionID: FeedEditionID,
+        publishedWindow: FeedWindow) throws -> FeedPresentationSnapshot {
+        let window = FeedWindowSnapshot(publishedWindow: publishedWindow)
+        if let current = state?.presentation, current.contextKey == contextKey,
+            current.editionID == editionID, current.window == window { return current }
+        let next = try FeedProjectionProvenance.nextPosition(after: projectionPosition)
+        let snapshot = FeedPresentationSnapshot(contextKey: contextKey, editionID: editionID,
+            publishedWindow: publishedWindow,
+            provenance: .init(sequenceID: projectionSequenceID, position: next))
+        projectionPosition = next
         return snapshot
     }
 
@@ -93,7 +110,7 @@ public actor FeedSession {
         let window = try publicationHistory.window(editionID: current.presentation.editionID,
             around: anchor, backwardCapacity: current.backwardCapacity,
             forwardCapacity: current.forwardCapacity)
-        let snapshot = FeedPresentationSnapshot(contextKey: current.presentation.contextKey,
+        let snapshot = try project(contextKey: current.presentation.contextKey,
             editionID: current.presentation.editionID, publishedWindow: window)
         state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
             backwardCapacity: current.backwardCapacity, forwardCapacity: current.forwardCapacity)

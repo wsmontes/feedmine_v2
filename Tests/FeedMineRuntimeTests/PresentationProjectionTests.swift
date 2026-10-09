@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import FeedMineDomain
+import FeedMinePersistence
 import FeedMineMedia
 @testable import FeedMinePublication
 @testable import FeedMineRuntime
@@ -106,7 +107,7 @@ final class PresentationProjectionTests: XCTestCase {
         XCTAssertNil(projected.providerDisplayName)
     }
 
-    func testSnapshotProjectionPreservesContextOrderAndBothPlacements() throws {
+    func testSnapshotProjectionPreservesContextOrderAndBothPlacements() async throws {
         let edition = WarmPresentationFixture.edition()
         let cards = try (0..<3).map { _ in try WarmPresentationFixture.card() }
         for placement in [AnchorPlacement.top, .center] {
@@ -114,7 +115,19 @@ final class PresentationProjectionTests: XCTestCase {
             let window = try XCTUnwrap(FeedWindow(editionID: edition.id, cards: cards, anchor: anchor))
             let restored = try XCTUnwrap(RestoredPublication(edition: edition,
                 cursor: SessionCursor(editionID: edition.id, anchor: anchor), window: window))
-            let snapshot = FeedPresentationSnapshot(restoredPublication: restored)
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let db = try RuntimeDatabase(location: .init(directory: directory))
+            let segment = try XCTUnwrap(FeedSegment(id: FeedSegmentID(), editionID: edition.id, ordinal: 0,
+                segmentSeed: 1, publicationSchemaVersion: edition.publicationSchemaVersion,
+                createdAt: edition.createdAt, cardIDs: cards.map(\.id)))
+            let records = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
+            try PublicationStore(database: db).createEdition(PublicationPersistenceMapping.record(edition), firstSegment: records.0, cards: records.1)
+            let history = PublicationHistory(database: db)
+            try history.saveCursor(restored.cursor, updatedAt: edition.createdAt)
+            let session = FeedSession(publicationHistory: history)
+            let projected = try await session.restoreLocalPresentation(backwardCapacity: 1, forwardCapacity: 1)
+            let snapshot = try XCTUnwrap(projected)
             XCTAssertEqual(snapshot.contextKey, edition.contextKey)
             XCTAssertEqual(snapshot.editionID, edition.id)
             XCTAssertEqual(snapshot.window.items.map(\.id), cards.map(\.id))

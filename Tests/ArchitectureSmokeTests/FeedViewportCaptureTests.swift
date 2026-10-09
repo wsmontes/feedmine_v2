@@ -2,7 +2,8 @@ import XCTest
 import SwiftUI
 import FeedMineDomain
 @testable import FeedMineRuntime
-import FeedMinePublication
+@testable import FeedMinePublication
+import FeedMinePersistence
 #if os(macOS)
 import AppKit
 #endif
@@ -447,8 +448,31 @@ final class FeedViewportCaptureTests: XCTestCase {
                 timestamp: nil, media: .none,
                 renderContract: XCTUnwrap(RenderContract(layout: .textOnly, mediaAspectRatio: nil)), primaryAction: nil))
         }
-        let window = try XCTUnwrap(FeedWindow(editionID: edition, cards: Array(cards.prefix(10)), anchor: .init(cardID: ids[4], placement: .top)))
-        let snapshot = FeedPresentationSnapshot(contextKey: FeedContext(request: .main).key, editionID: edition, publishedWindow: window)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let history = PublicationHistory(database: database)
+        let session = FeedSession(publicationHistory: history)
+        func persist(_ editionID: FeedEditionID, _ published: [PublishedCard]) throws {
+            let context = FeedContext(request: .main)
+            let v = PolicyVersion(rawValue: 1)
+            let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key,
+                catalogGeneration: .init(rawValue: 1), userSelectionVersion: v, eligibilityPolicyVersion: v,
+                scoringPolicyVersion: v, sequencingPolicyVersion: v, exposurePolicyVersion: v,
+                selectionSchemaVersion: .init(rawValue: 1))
+            let value = FeedEdition(id: editionID, editorialRevision: revision,
+                publicationSchemaVersion: .init(rawValue: 1), selectionSeed: 1, createdAt: Date())
+            let segment = try XCTUnwrap(FeedSegment(id: FeedSegmentID(), editionID: editionID, ordinal: 0,
+                segmentSeed: 1, publicationSchemaVersion: value.publicationSchemaVersion,
+                createdAt: Date(), cardIDs: published.map(\.id)))
+            let records = try PublicationPersistenceMapping.records(segment: segment, cards: published)
+            try PublicationStore(database: database).createEdition(PublicationPersistenceMapping.record(value),
+                firstSegment: records.0, cards: records.1)
+            try history.saveCursor(.init(editionID: editionID, anchor: .init(cardID: published[4].id, placement: .top)), updatedAt: Date())
+        }
+        try persist(edition, cards)
+        let restored = try await session.restoreLocalPresentation(backwardCapacity: 4, forwardCapacity: 5)
+        let snapshot = try XCTUnwrap(restored)
         var events: [(ViewportObservation, RunwayActivity)] = []
         let store = FeedScreenStore { events.append(($0, $1)) }
         try store.install(.init(presentation: snapshot))
@@ -464,15 +488,16 @@ final class FeedViewportCaptureTests: XCTestCase {
         XCTAssertTrue(events.isEmpty)
         let scroll = try XCTUnwrap(scrollView(hosting))
         let before = scroll.contentView.bounds.origin.y
-        let extended = try XCTUnwrap(FeedWindow(editionID: edition, cards: cards, anchor: .init(cardID: ids[4], placement: .top)))
-        try store.install(.init(presentation: FeedPresentationSnapshot(contextKey: snapshot.contextKey, editionID: edition, publishedWindow: extended)))
+        let extended = try await session.restoreLocalPresentation(backwardCapacity: 4, forwardCapacity: 7)
+        try store.install(.init(presentation: try XCTUnwrap(extended)))
         for _ in 0..<40 { hosting.layoutSubtreeIfNeeded(); await Task.yield() }
         XCTAssertEqual(scroll.contentView.bounds.origin.y, before, accuracy: 1, "Tail extension must preserve position")
         let oldHeight = try XCTUnwrap(scroll.documentView).frame.height
         XCTAssertGreaterThan(before, 0, "Restore the provided interior publication anchor")
         XCTAssertTrue(events.isEmpty, "Programmatic layout is not user input")
-        let recentered = try XCTUnwrap(FeedWindow(editionID: edition, cards: Array(cards.dropFirst(2)), anchor: .init(cardID: ids[4], placement: .center)))
-        try store.install(.init(presentation: FeedPresentationSnapshot(contextKey: snapshot.contextKey, editionID: edition, publishedWindow: recentered)))
+        _ = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 7)
+        let recentered = try await session.submitViewport(.init(anchor: .init(cardID: ids[4], placement: .center)))
+        try store.install(.init(presentation: try XCTUnwrap(recentered)))
         for _ in 0..<40 { hosting.layoutSubtreeIfNeeded(); await Task.yield() }
         let newHeight = try XCTUnwrap(scroll.documentView).frame.height
         XCTAssertEqual(scroll.contentView.bounds.origin.y, before - (oldHeight - newHeight), accuracy: 1,
@@ -485,12 +510,12 @@ final class FeedViewportCaptureTests: XCTestCase {
                 text: card.text, timestamp: card.timestamp, media: card.media,
                 renderContract: card.renderContract, primaryAction: card.primaryAction))
         }
-        let nextWindow = try XCTUnwrap(FeedWindow(editionID: newEdition, cards: replacement,
-            anchor: .init(cardID: replacement[4].id, placement: .top)))
+        try persist(newEdition, replacement)
+        let nextSession = FeedSession(publicationHistory: history)
+        let nextSnapshot = try await nextSession.restoreLocalPresentation(backwardCapacity: 4, forwardCapacity: 7)
         var replacementCalls = 0
         let nextStore = FeedScreenStore { _, _ in replacementCalls += 1 }
-        try nextStore.install(.init(presentation: FeedPresentationSnapshot(contextKey: snapshot.contextKey,
-            editionID: newEdition, publishedWindow: nextWindow)))
+        try nextStore.install(.init(presentation: try XCTUnwrap(nextSnapshot)))
         hosting.rootView = FeedScreen(store: nextStore).frame(width: 400, height: 300)
         for _ in 0..<40 { hosting.layoutSubtreeIfNeeded(); await Task.yield() }
         XCTAssertEqual(replacementCalls, 0)
