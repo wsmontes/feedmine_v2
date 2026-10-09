@@ -56,9 +56,16 @@ final class AppComposition {
             do {
                 let database = try RuntimeDatabase(location: .init(directory: self.directory))
                 let preferences = ReaderPreferencesStore(database: database)
-                let saved = try preferences.initialize(sourceKeys: feeds.map(\.principal))
-                self.feeds = try TrustedFeed.resolve(keys: saved.sourceKeys, fallback: feeds)
+                // OMP C1: the repair path (toggleSource) needs preferences even if resolution fails.
                 self.preferences = preferences
+                var saved = try preferences.initialize(sourceKeys: feeds.map(\.principal))
+                var resolved = try TrustedFeed.resolveAvailable(keys: saved.sourceKeys, fallback: feeds)
+                if resolved.isEmpty { resolved = feeds }
+                if resolved.map(\.principal) != saved.sourceKeys { saved = try preferences.updateSources(resolved.map(\.principal)) }
+                if case .source(let id) = saved.activeContext, !resolved.contains(where: { $0.sourceID == id }) {
+                    saved = try preferences.setContext(.main)
+                }
+                self.feeds = resolved
                 currentContext = saved.activeContext
                 selectionVersion = saved.selectionVersion
             } catch { startupFailure = "Não foi possível carregar a seleção de fontes: \(error)" }

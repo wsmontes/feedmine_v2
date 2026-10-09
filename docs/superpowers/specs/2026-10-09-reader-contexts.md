@@ -22,4 +22,4 @@ Preferências persistem no reopen; mesma escolha é idempotente; vazio é recusa
 
 ## Decisões
 
-Implementação local e sequencial autorizada pela execução do plano; não acrescentar ranking/recomendação. Busca bounded scan usa owner/cursor existentes; medir sua escala em T7. Catálogo de recursos permanece read-only; source_keys são preferências do usuário em runtime.sqlite.
+Implementação local e sequencial autorizada pela execução do plano; não acrescentar ranking/recomendação de feed. Exceção registrada (rodada 4/5): a ordem dos *resultados da busca de fontes* usa a sort key do catálogo V1 (prefixo do título, default_enabled, quality_score desc, título; `04-catalog-editorial.md`); não afeta seleção editorial. Busca bounded scan usa owner/cursor existentes; medir sua escala em T7. Catálogo de recursos permanece read-only; source_keys são preferências do usuário em runtime.sqlite.

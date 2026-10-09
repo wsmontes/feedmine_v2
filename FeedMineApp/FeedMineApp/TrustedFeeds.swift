@@ -44,17 +44,18 @@ extension TrustedFeed {
         }
     }
 
-    static func resolve(keys: [String], fallback: [TrustedFeed]) throws -> [TrustedFeed] {
+    /// Review OMP C1: saved keys are reader preferences, not bundled configuration. A key the
+    /// current catalog no longer contains (catalog update, development key) is dropped instead of
+    /// failing startup; a missing or unreadable catalog still throws.
+    static func resolveAvailable(keys: [String], fallback: [TrustedFeed]) throws -> [TrustedFeed] {
         var reader: LegacyCatalogReader?
-        return try keys.map { key in
+        return try keys.compactMap { key in
             if let supplied = fallback.first(where: { $0.principal == key }) { return supplied }
             if reader == nil {
                 guard let url = Bundle.main.url(forResource: "catalog", withExtension: "sqlite") else { throw TrustedCatalogError.missingResource }
                 reader = try LegacyCatalogReader(catalogURL: url)
             }
-            guard let record = try reader?.source(key: key), let entry = LegacyCatalogImport.entry(record) else {
-                throw TrustedCatalogError.missingDefaultSource(key)
-            }
+            guard let record = try reader?.source(key: key), let entry = LegacyCatalogImport.entry(record) else { return nil }
             return TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id, bindingID: entry.bindingID,
                 principal: entry.principal, endpoint: entry.endpoint, displayName: entry.source.displayName)
         }

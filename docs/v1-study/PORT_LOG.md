@@ -108,7 +108,7 @@ Run `swift build && swift test` first. Then on device:
 9. **Catalog bundled.** Feeds come from the catalog defaults; relaunch keeps the same sources (stable UUIDs).
 10. **Logs.** Check `tidy evicted=… reclaimed=… budget=…` on backgrounding.
 
-## Next candidates (round-2 list; first three done, see below)
+## Next candidates (round-2 list; successor tail, PD-1 rule 2 and source choice/search are done; taxonomy browsing and diversity beyond PD-4 are not started)
 
 - Publication successor-tail mechanism, to re-prepare unseen published cards while the app is not visible (PD-5).
 - PD-1 rule 2 (one unseen future occurrence per origin).
@@ -118,7 +118,7 @@ Run `swift build && swift test` first. Then on device:
 
 ## Fechamento Codex — 2026-10-09
 
-Branch `codex/omp-plan-execution`, código `f8eb67e`: fontes/contextos/busca local persistidos, cauda não vista transacional e bookmarks/uso de mídia integrados. Pacote final: 827 testes, zero falhas. Release no simulador compilou; resultados iOS e limitações estão em [relatório OMP/Codex](../reviews/OMP_VALIDATION_2026-10-09.md). O catálogo real está em LFS, mas o upload remoto foi recusado por cota excedida: clone remoto ainda precisa receber esse objeto. iPhone 14 Plus/15 indisponíveis; checklist físico e energia/térmica permanecem pendentes.
+Branch `codex/omp-plan-execution`, código `f8eb67e`: fontes/contextos/busca local persistidos, cauda não vista transacional e bookmarks/uso de mídia integrados. Pacote final: 827 testes, zero falhas. Release no simulador compilou; resultados iOS e limitações estão em [relatório OMP/Codex](../reviews/OMP_VALIDATION_2026-10-09.md). (Histórico: o catálogo estava em LFS com upload recusado. Desde `8c31b83` é o asset da release `catalog-v1`, instalado por `scripts/fetch-catalog.sh`; clone limpo verificado pelo OMP na rodada 4.) iPhone 14 Plus/15 indisponíveis; checklist físico e energia/térmica permanecem pendentes.
 
 ## Round 4 — 2026-10-09 (integration after Codex, uncompiled)
 
@@ -127,3 +127,16 @@ Branch `codex/omp-plan-execution`, código `f8eb67e`: fontes/contextos/busca loc
 - `e78786e` catalog search ranks by title prefix, then `quality_score`, then key (test added, not run).
 - Still open, needs a product decision: diversity beyond PD-4 (provider spacing, `quality_score` in editorial selection) and taxonomy browsing over catalog nodes. Not started, so no ranking is invented without a defined meaning.
 - Still open, needs hardware: the physical checklist above, plus energy, thermal and memory measurements.
+
+## Round 5 — 2026-10-09 (OMP round-4 findings, uncompiled)
+
+Answers `docs/reviews/OMP_ROUND4_VERIFICATION_2026-10-09.md`:
+- **C1 (major).** Saved keys missing from the catalog are dropped. If none survive, the app falls back to the starter set, and a source context for a dropped source resets to main. `preferences` is assigned before anything can throw. New test `testSavedKeysMissingFromCatalogAreRepairedNotFatal`.
+- **C4.** The same set of sources in another order is the same selection, so the version is not bumped (test added).
+- **K4/K6.** Search order is v1's catalog sort key: title prefix, `default_enabled`, `quality_score` descending, then title. The test now discriminates DESC from ASC. The reader-contexts spec records this as search order, not feed ranking.
+- **K7.** `fetch-catalog.sh` checks for `shasum`/`sha256sum` and `curl` before downloading.
+- **K2/K3.** The doc drift is fixed.
+- **Not done here:**
+  - D1 (first screen 100% BBC, NPR/Guardian never fetched while idle) needs the repro the report describes. It is also a product question.
+  - C2, C3, C5–C9 are Codex-slice items.
+  - FTS5 search is optional; the measured gain is in the report.

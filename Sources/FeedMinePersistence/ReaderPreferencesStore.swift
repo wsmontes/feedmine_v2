@@ -27,7 +27,9 @@ public struct ReaderPreferencesStore: Sendable {
         try Self.validate(keys)
         return try database.write { db in
             guard let current = try Self.read(db) else { throw ReaderPreferencesError.missingPreferences }
-            if keys == current.sourceKeys { return current }
+            // OMP C4: a selection is a set; reordering the same sources is not a new selection and
+            // must not bump the version that fences restore (the reader would lose the position).
+            if Set(keys) == Set(current.sourceKeys) { return current }
             guard current.selectionVersion < UInt64(Int64.max) else { throw ReaderPreferencesError.versionOverflow }
             let updated = Record(sourceKeys: keys, selectionVersion: current.selectionVersion + 1, activeContext: current.activeContext)
             try Self.save(updated, in: db)

@@ -110,8 +110,9 @@ public struct LegacyCatalogReader: Sendable {
         } }
     }
 
-    /// Bounded literal name/key lookup; values never become SQL syntax. Ranking uses catalog facts only:
-    /// a title starting with the query first, then v1 `quality_score` (unscored last), then key for stability.
+    /// Bounded literal name/key lookup; values never become SQL syntax. Result order is v1's catalog
+    /// sort key (`04-catalog-editorial.md`: default_enabled, 100 - quality, title) after titles that
+    /// start with the query; key breaks ties. It orders search results only; it is not feed ranking.
     public func matchingSources(query: String, limit: Int) throws -> [LegacyCatalogSourceRecord] {
         guard limit > 0 else { return [] }
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -122,7 +123,7 @@ public struct LegacyCatalogReader: Sendable {
             try String.fetchAll(db, sql: """
                 SELECT key FROM catalog_source WHERE media_kind = 'text'
                     AND (title LIKE ? ESCAPE '!' OR key LIKE ? ESCAPE '!')
-                    ORDER BY (title LIKE ? ESCAPE '!') DESC, quality_score IS NULL, quality_score DESC, key LIMIT ?
+                    ORDER BY (title LIKE ? ESCAPE '!') DESC, default_enabled DESC, quality_score IS NULL, quality_score DESC, title, key LIMIT ?
                 """, arguments: ["%" + escaped + "%", "%" + escaped + "%", escaped + "%", min(limit, 100)])
         } }
         return try keys.compactMap { try source(key: $0) }
