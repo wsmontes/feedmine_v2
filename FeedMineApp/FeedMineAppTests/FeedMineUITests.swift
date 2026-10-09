@@ -5,6 +5,7 @@ final class FeedMineUITests: XCTestCase {
     @MainActor
     func testNativeSwipeReachesRealRunwayAndReverseNavigation() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
         let proof = app.staticTexts["native-viewport-delivery"]
@@ -26,6 +27,7 @@ final class FeedMineUITests: XCTestCase {
     @MainActor
     func testRealRSSNavigationLifecycleAndNetworkBlockedRelaunch() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
         app.launch()
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 45))

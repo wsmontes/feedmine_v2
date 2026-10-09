@@ -38,7 +38,7 @@ per-card view state; a new occurrence keeps INV-08 intact and needs no mutation.
 
 ## PD-2 — v2 reuses the v1 catalog
 
-**Decision.** v2 uses v1's catalog (about 88k sources, `catalog.sqlite` plus Python tooling).
+**Decision.** v2 uses v1's catalog (`catalog.sqlite` plus Python tooling; 77,443 sources in the bundled snapshot).
 
 **Consequences.**
 - Catalog / SourceBinding materialization is now required work (`04-catalog-editorial.md`

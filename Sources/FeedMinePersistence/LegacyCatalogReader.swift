@@ -3,7 +3,7 @@
 // Owns: read-only mechanical access to the v1 `catalog.sqlite` (PD-2: v2 reuses the v1 catalog).
 // Does not own: identity mapping, selection of sources, target registration or Domain values.
 //
-// The v1 catalog is a separate, replaceable, shipped database (88k sources). It is opened read-only
+// The v1 catalog is a separate, replaceable, shipped database (77,443 sources in the bundled snapshot). It is opened read-only
 // and never migrated or written; runtime.sqlite remains the only semantic store (INV-11/INV-12).
 // v1 schema (feedmine/FeedEngine/SQLiteCatalogStore.swift): catalog_source(key = canonical URL
 // identity, request_url = fetch URL), catalog_node (taxonomy), catalog_placement (source ↔ node).
@@ -93,6 +93,21 @@ public struct LegacyCatalogReader: Sendable {
                 }
             }
         }
+    }
+
+    /// Exact canonical identity lookup; fetching still uses the separate requestURL.
+    public func source(key: String) throws -> LegacyCatalogSourceRecord? {
+        try Self.wrap { try queue.read { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM catalog_source WHERE key = ?", arguments: [key]) else { return nil }
+            let id: Int64 = row["id"]
+            let nodes = try String.fetchAll(db, sql: """
+                SELECT DISTINCT n.key FROM catalog_placement p JOIN catalog_node n ON n.id = p.node_id
+                WHERE p.source_id = ? ORDER BY n.key
+                """, arguments: [id])
+            return LegacyCatalogSourceRecord(key: row["key"], title: row["title"], requestURL: row["request_url"],
+                siteURL: row["site_url"], language: row["language"], mediaKind: row["media_kind"],
+                qualityScore: row["quality_score"], defaultEnabled: (row["default_enabled"] as Int64? ?? 0) != 0, nodeKeys: nodes)
+        } }
     }
 
     private static func wrap<T>(_ body: () throws -> T) throws -> T {

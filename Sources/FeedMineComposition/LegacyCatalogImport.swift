@@ -55,7 +55,7 @@ public enum LegacyCatalogImport {
     }
 
     /// Reads entries page by page in stable key order. Pages are bounded; the caller decides how many
-    /// sources become active acquisition targets (88k registrations at launch would be wrong).
+    /// sources become active acquisition targets (registering the entire catalog at launch would be wrong).
     public static func entries(from reader: LegacyCatalogReader, limit: Int, onlyDefaultEnabled: Bool = true,
         mediaKinds: Set<String> = ["text"], pageSize: Int = 500) throws -> [LegacyCatalogEntry] {
         var result: [LegacyCatalogEntry] = []

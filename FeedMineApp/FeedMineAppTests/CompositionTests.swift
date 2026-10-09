@@ -1,6 +1,8 @@
 import XCTest
 import Foundation
 import Synchronization
+import CryptoKit
+import FeedMinePersistence
 import FeedMineDomain
 import FeedMineRuntime
 import FeedMineUI
@@ -156,6 +158,31 @@ final class CompositionTests: XCTestCase {
             XCTAssertNotEqual(left.sourceDisplayName, right.sourceDisplayName)
         }
         await association.close()
+    }
+
+    func testBundledCatalogHasRealBytesAndStableBoundedDefaults() throws {
+        let url = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let reader = try LegacyCatalogReader(catalogURL: url)
+        XCTAssertEqual(try reader.sourceCount(), 77_443)
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hash = SHA256()
+        while let bytes = try handle.read(upToCount: 1_048_576), !bytes.isEmpty { hash.update(data: bytes) }
+        XCTAssertEqual(hash.finalize().map { String(format: "%02x", $0) }.joined(),
+            "c2ae483a7525fd2b6797855149eb6fb312abbed788549a90a7754121eb5c8629")
+        let defaults = try TrustedFeed.catalog(limit: 64, resourceURL: url)
+        XCTAssertEqual(defaults.count, 4)
+        XCTAssertEqual(Set(defaults.map(\.sourceID)).count, 4)
+        XCTAssertEqual(try TrustedFeed.catalog(limit: 2, resourceURL: url).count, 2)
+        XCTAssertEqual(defaults.map(\.sourceID), try TrustedFeed.catalog(limit: 64, resourceURL: url).map(\.sourceID))
+    }
+
+    func testCatalogMissingOrCorruptIsAnExplicitFailure() throws {
+        XCTAssertThrowsError(try TrustedFeed.catalog(limit: 64, resourceURL: nil))
+        let invalid = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data("corrupt catalog".utf8).write(to: invalid)
+        defer { try? FileManager.default.removeItem(at: invalid) }
+        XCTAssertThrowsError(try TrustedFeed.catalog(limit: 64, resourceURL: invalid))
     }
 
     func testS1SameSessionStoreAcrossViewportRefreshAndLifecycle() async throws {

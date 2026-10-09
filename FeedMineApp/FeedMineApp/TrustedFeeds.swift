@@ -24,22 +24,42 @@ struct TrustedFeed: Sendable {
     ]
 }
 
+enum TrustedCatalogError: Error { case missingResource, invalidLimit, missingDefaultSource(String) }
+
 extension TrustedFeed {
-    /// PD-2: when the v1 catalog is bundled (`catalog.sqlite`), the app follows its curated default
-    /// sources instead of the two development feeds. Registration is bounded by `limit`; choosing
-    /// which sources a reader follows belongs to a later onboarding gate.
-    static func catalogOrDevelopment(limit: Int) -> [TrustedFeed] {
-        guard let url = Bundle.main.url(forResource: "catalog", withExtension: "sqlite"),
-            let reader = try? LegacyCatalogReader(catalogURL: url),
-            let entries = try? LegacyCatalogImport.entries(from: reader, limit: limit), !entries.isEmpty else {
-            return development
-        }
-        return entries.map { entry in
-            TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id, bindingID: entry.bindingID,
+    /// A small, explicit news/science starter set from the actual catalog. The complete catalog
+    /// remains available to source selection; startup never registers every default-enabled row.
+    static func catalog(limit: Int, resourceURL: URL?) throws -> [TrustedFeed] {
+        guard limit > 0 else { throw TrustedCatalogError.invalidLimit }
+        guard let resourceURL else { throw TrustedCatalogError.missingResource }
+        let reader = try LegacyCatalogReader(catalogURL: resourceURL)
+        let keys = ["https://feeds.bbci.co.uk/news/rss.xml", "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+            "https://feeds.npr.org/1001/rss.xml", "https://theguardian.com/world/rss"]
+        return try keys.prefix(limit).map { key in
+            guard let record = try reader.source(key: key), let entry = LegacyCatalogImport.entry(record) else {
+                throw TrustedCatalogError.missingDefaultSource(key)
+            }
+            return TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id, bindingID: entry.bindingID,
                 principal: entry.principal, endpoint: entry.endpoint, displayName: entry.source.displayName)
         }
     }
+
+    static func catalogOrDevelopment(limit: Int) -> [TrustedFeed] {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] == "1" { return development }
+        #endif
+        do { return try catalog(limit: limit, resourceURL: Bundle.main.url(forResource: "catalog", withExtension: "sqlite")) }
+        catch {
+            #if DEBUG
+            return development
+            #else
+            // AppComposition presents an explicit startup failure for an absent/invalid release catalog.
+            return []
+            #endif
+        }
+    }
 }
+
 #if DEBUG
 // A real closed proxy used only for the development network-blocked relaunch proof.
 enum DevelopmentNetworkBlock {

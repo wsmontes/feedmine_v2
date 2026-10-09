@@ -56,4 +56,12 @@ final class LegacyCatalogReaderTests: XCTestCase {
         try DatabaseQueue(path: url.path).write { try $0.execute(sql: "CREATE TABLE other (id INTEGER)") }
         XCTAssertThrowsError(try LegacyCatalogReader(catalogURL: url)) { XCTAssertEqual($0 as? LegacyCatalogError, .unsupportedSchema) }
     }
+    func testExactIdentityLookupPreservesRequestURLAndRejectsMissingKey() throws {
+        let reader = try LegacyCatalogReader(catalogURL: try catalog())
+        let found = try XCTUnwrap(reader.source(key: "https://b.example/feed"))
+        XCTAssertEqual(found.requestURL, "https://b.example/feed?sig=1")
+        XCTAssertEqual(found.nodeKeys, ["news/world", "science"])
+        XCTAssertNil(try reader.source(key: "missing' OR 1=1 --"))
+    }
+
 }

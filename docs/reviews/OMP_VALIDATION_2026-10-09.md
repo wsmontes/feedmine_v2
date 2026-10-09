@@ -26,3 +26,9 @@ Logs completos: `~/Documents/feedmine-evidence/2026-10-09/t1/` (OMP) e `~/Docume
 Não houve push nem integração em main.
 
 T2 residual corrigido com RED→GREEN: tracking churn na URL principal não republica; query significativa continua material. Domain agora possui ContentLocatorIdentity e MaterialContentIdentity usados por Editorial/Publication; Syndication mantém a mesma normalização anterior via adapter. Não há mudança nas URLs de transporte nem nos IDs de guid opacos. Suíte após a correção: 815 testes / 0 falhas (inclui uma prova T3 de lookup exato); testes iOS atuais 12 / 0 falhas. T2 concluído no simulador; dispositivo físico continua pendente do fechamento T8.
+
+## T3 — Catálogo integrado
+
+SQLite real empacotado em Copy Bundle Resources e armazenado via LFS. O pointer local contém checksum/tamanho esperados; teste no bundle comprova os bytes reais (SHA-256 por streaming), 77.443 fontes e quatro defaults com IDs estáveis. Lookup exato com parâmetros preserva request_url e não interpreta key como SQL. Recurso ausente/corrompido gera erro explícito no loader; Release não usa fallback BBC silencioso.
+
+Provas: package 815/0; app integração 12/0 (`t3-app-green.txt`). Os dois novos testes cobrem recurso/checksum e falhas de distribuição. Release simulator build PASS (`t3-release-build.txt`). T3 concluído.

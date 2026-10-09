@@ -39,6 +39,7 @@ final class AppComposition {
         }
         #endif
         self.transportConfiguration = config
+        if feeds.isEmpty { startupFailure = "Não foi possível carregar o catálogo local de fontes." }
     }
 
     func launch() async {
