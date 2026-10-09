@@ -45,9 +45,12 @@ public struct SyndicationTranslator: Sendable {
             body: String? = nil, authored: Date?, modified: Date? = nil, language: String? = nil, link: String?,
             media: [AcquisitionMediaCandidateClaim]) -> Result<AcquisitionObservation, ItemFailure> {
             guard let object else { return .failure(.missingStableIdentity) }
+            // v1 lesson IN-4 / review M12: a future-dated item would pin itself to the top of a
+            // recency order forever. Clamp claimed times to the observation; identity is unchanged.
+            func clamped(_ date: Date?) -> Date? { date.map { min($0, observedAt) } }
             guard let value = AcquisitionObservation(objectIdentity: object, versionIdentity: version, precedence: .makeCurrent,
-                availability: .available, headline: title, summary: summary, bodyText: body, authoredAt: authored,
-                modifiedAt: modified, observedAt: observedAt, language: language, primaryLink: Self.webURL(link),
+                availability: .available, headline: title, summary: summary, bodyText: body, authoredAt: clamped(authored),
+                modifiedAt: clamped(modified), observedAt: observedAt, language: language, primaryLink: Self.webURL(link),
                 searchProjection: nil, providerID: nil, memberships: configuration.memberships, mediaCandidates: media)
             else { return .failure(.invalidCanonicalObservation) }
             return .success(value)

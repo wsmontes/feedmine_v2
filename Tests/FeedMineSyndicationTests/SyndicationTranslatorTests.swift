@@ -200,4 +200,19 @@ final class SyndicationTranslatorTests: XCTestCase {
         let value = try translate(rss("<item><guid>g</guid><itunes:image href=\"file:///art\"/><media:thumbnail url=\"relative\"/></item>"))
         XCTAssertEqual(value.observations.count,1); XCTAssertTrue(value.rejections.isEmpty); XCTAssertTrue(value.observations[0].mediaCandidates.isEmpty)
     }
+    /// v1 lesson IN-4 / review M12: future claimed dates are clamped to the observation time.
+    func test26FutureDatesClampToObservedAtWithoutChangingVersionIdentity() throws {
+        let rssItem = try item(rss("<item><guid>g</guid><pubDate>Fri, 01 Jan 2100 00:00:00 GMT</pubDate></item>"))
+        XCTAssertEqual(rssItem.authoredAt,observed)
+        let future = date("2100-01-02T00:00:00Z")
+        let atomItem = try item(atom("<entry><id>a</id><published>2100-01-01T00:00:00Z</published><updated>2100-01-02T00:00:00Z</updated></entry>"))
+        XCTAssertEqual(atomItem.authoredAt,observed); XCTAssertEqual(atomItem.modifiedAt,observed)
+        // Version identity still reflects the publisher's claimed value, so replay recognition is unaffected.
+        XCTAssertEqual(atomItem.versionIdentity?.value,String(future.timeIntervalSinceReferenceDate.bitPattern,radix: 16))
+        let jsonItem = try item(json("{\"id\":\"j\",\"date_published\":\"2100-01-01T00:00:00Z\",\"date_modified\":\"2100-01-02T00:00:00Z\"}"))
+        XCTAssertEqual(jsonItem.authoredAt,observed); XCTAssertEqual(jsonItem.modifiedAt,observed)
+        // Past dates are untouched.
+        XCTAssertEqual(try item(rss("<item><guid>p</guid><pubDate>Tue, 03 Jun 2003 09:39:21 GMT</pubDate></item>")).authoredAt,
+            date("2003-06-03T09:39:21Z"))
+    }
 }
