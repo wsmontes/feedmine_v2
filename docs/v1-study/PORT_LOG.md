@@ -114,3 +114,8 @@ Run `swift build && swift test` first. Then on device:
 - PD-1 rule 2 (one unseen future occurrence per origin).
 - Onboarding / source choice over the v1 catalog (PD-2), and taxonomy/search over catalog nodes.
 - Diversity beyond source alternation (provider spacing, editorial quality from catalog `quality_score`).
+
+
+## Fechamento Codex — 2026-10-09
+
+Branch `codex/omp-plan-execution`, código `f8eb67e`: fontes/contextos/busca local persistidos, cauda não vista transacional e bookmarks/uso de mídia integrados. Pacote final: 827 testes, zero falhas. Release no simulador compilou; resultados iOS e limitações estão em [relatório OMP/Codex](../reviews/OMP_VALIDATION_2026-10-09.md). O catálogo real está em LFS, mas o upload remoto foi recusado por cota excedida: clone remoto ainda precisa receber esse objeto. iPhone 14 Plus/15 indisponíveis; checklist físico e energia/térmica permanecem pendentes.

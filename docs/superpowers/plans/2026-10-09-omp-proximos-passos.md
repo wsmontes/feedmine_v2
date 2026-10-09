@@ -174,3 +174,8 @@ xcodebuild -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine -destinat
 ## Instrução curta para iniciar o OMP
 
 Leia este plano e as decisões PD-1..PD-7. Execute primeiro T1/T2 sobre fe91c0f ou descendente identificado; preserve os arquivos não rastreados sem incorporar automaticamente a implementação antiga de MediaAcquisition. Confirme por build/test as correções já integradas antes de novas features. Prossiga na ordem do plano, com commits pequenos, docs e evidência por entrega. Para T4/T5, escreva primeiro o subplano das interfaces e migrações. Não refaça o plano antigo, não crie pipelines paralelas e não declare PASS sem execução. Relate bloqueios específicos e continue trabalho independente autorizado.
+
+
+## Estado executado por Codex — 2026-10-09
+
+T1–T6: entregas de software implementadas e verificadas; T7: medidas host/simulador registradas, medições no aparelho pendentes. T8: pacote final 827/0, Release simulator compilado, repetição iOS no código f8eb67e. Checklist físico não concluído por aparelhos indisponíveis. Detalhamento e resultados finais: docs/reviews/OMP_VALIDATION_2026-10-09.md. Commits enviados à codex/omp-plan-execution sem merge; upload do catálogo LFS bloqueado por cota do GitHub. As caixas históricas acima são passos do plano original; este registro distingue entregas comprovadas de pendências.

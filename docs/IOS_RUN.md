@@ -148,3 +148,8 @@ Os contadores da pequena sobreposição visual e os logs de captura existem some
 ## Rodada de validação 2026-10-09 — OMP/Codex
 
 Os resultados históricos acima pertencem ao gate 3R10. O código atual inclui mídia, preparação incremental e retomada automática por cooldown; não reutilize a descrição antiga de foreground como contrato atual. Consulte `docs/reviews/OMP_VALIDATION_2026-10-09.md` para os resultados executados da base fe91c0f e seus incrementos.
+
+
+## Fechamento Codex — 2026-10-09
+
+Branch `codex/omp-plan-execution`, código `f8eb67e`: fontes/contextos/busca local persistidos, cauda não vista transacional e bookmarks/uso de mídia integrados. Pacote final: 827 testes, zero falhas. Release no simulador compilou; resultados iOS e limitações estão em [relatório OMP/Codex](reviews/OMP_VALIDATION_2026-10-09.md). O catálogo real está em LFS, mas o upload remoto foi recusado por cota excedida: clone remoto ainda precisa receber esse objeto. iPhone 14 Plus/15 indisponíveis; checklist físico e energia/térmica permanecem pendentes.

@@ -218,3 +218,19 @@ Corrigido sem compilador (ver [PORT_LOG](../v1-study/PORT_LOG.md), rodada 3). Os
 | F11–F14 | Medir | — | Depende de medição no dispositivo. |
 | F15 | Pendente | — | Contextos e filtros na UI. |
 | F16 | Corrigido | `17f3300` | Cold start sem Edition reagenda `launch()` sozinho (expiração do cooldown ou um timeout de request). |
+
+## Evidência executada — branch codex/omp-plan-execution
+
+Esta atualização sucede o estado histórico acima. Referência: [relatório completo](OMP_VALIDATION_2026-10-09.md).
+
+| Achados | Estado atual | Evidência/limite |
+| --- | --- | --- |
+| F01, F06, F08, F09, F16 | Verificados no simulador | Reserva parada, publicação parcial, retry autônomo e cancelamento em background. |
+| F02 | Bundle local verificado; distribuição remota pendente | Catálogo real: 77.443 fontes, 117.940.224 bytes, checksum testado no bundle. Upload LFS bloqueado pela cota do GitHub. |
+| F03–F05 | Regressões verificadas | Deadline suspenso, retry/permanência text-only e prefetch de candidatos explícitos. |
+| F07 | Regressões verificadas | Tracking churn não republica; revisão material substitui futuro não visto com validação transacional. |
+| F10 | Handler e identidade de abertura cobertos | Não equivale a prova de abertura externa no Safari em aparelho físico. |
+| F11–F14 | Medidos no host/simulador; hardware pendente | Reuso de decode, consultas limitadas, progresso por supply e reserva calculada; energia/térmica do iPhone não medidas. |
+| F15 | Implementado e verificado | Fontes persistidas, busca local e checkpoints A→B→A offline; bookmarks protegidos na retenção. |
+
+PD-1/PD-3/PD-4/PD-5/PD-6 possuem regressões executadas; PD-2 funciona com catálogo local, mas depende de resolver distribuição LFS. PD-7: execução prosseguiu com commits/push; indisponibilidade dos aparelhos foi registrada sem declarar release pronta.
