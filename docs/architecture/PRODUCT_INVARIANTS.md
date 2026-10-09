@@ -192,3 +192,10 @@ what publication means.
 Uma FeedEdition admite no máximo uma ocorrência publicada para cada OriginRecordID. Nova revisão, enriquecimento ou chegada tardia de mídia não constitui uma nova ocorrência na mesma Edition. O histórico permanece imutável. Outra Edition possui elegibilidade independente.
 
 Selection reduces redundant publication attempts using durable origin exposure scoped to the Edition and bounded candidate set. PublicationStore enforces uniqueness transactionally for initial creation and both append paths; concurrent callers cannot duplicate an origin and a mixed invalid segment is never partially published. Late media does not create an Edition automatically.
+
+
+### Phase 3R6B — independent durable availability
+
+A rejected immutable revision does not discard an authoritative removal/revocation signal. ContentStore applies availability independently within admission's existing transaction, preserving revision/media/currentness and all memberships. One durable `availability_observed_at` supplies precedence: strictly newer signals replace state and timestamp; older signals and identical ties do not; conflicting ties retain the established state without enum priority. Explicit available must be strictly newer to reactivate removed/revoked content. Absence in RSS is not a removal and no canonical history is erased.
+
+The additive migration uniformly backfills from last_observed_at and every legitimate new origin initializes the logical non-null timestamp. lastObservedAt retains its prior processed-observation meaning; it is neither made monotonic nor used for availability precedence. Rejected revisions update only availability and its supply projection, leaving lastObservedAt unchanged. Membership authority is deferred to 3R6C.

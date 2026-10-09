@@ -5,6 +5,20 @@ import FeedMineDomain
 @testable import FeedMinePersistence
 
 final class PublicationRunwayStoreTests: XCTestCase {
+    /// Remove only the authorized additive column when comparing prior SQL definitions.
+    /// Every other byte of each existing schema object's definition remains checked.
+    private static func schemaBeforeAvailability(_ schema: [String], in db: Database) throws -> Set<String> {
+        let addition = ", availability_observed_at REAL"
+        let origin = try XCTUnwrap(schema.first { $0.hasPrefix("origin_records:") })
+        XCTAssertEqual(origin.components(separatedBy: addition).count, 2)
+        let column = try XCTUnwrap(Row.fetchOne(db, sql: "SELECT type, \"notnull\", dflt_value, pk FROM pragma_table_info('origin_records') WHERE name = 'availability_observed_at'"))
+        XCTAssertEqual(column["type"] as String, "REAL")
+        XCTAssertEqual(column["notnull"] as Int, 0)
+        XCTAssertNil(column["dflt_value"] as String?)
+        XCTAssertEqual(column["pk"] as Int, 0)
+        return Set(schema.map { $0 == origin ? $0.replacingOccurrences(of: addition, with: "") : $0 })
+    }
+
     private func fixture() throws -> (RuntimeDatabase, PublicationStore, PublicationStore.EditionRecord, [PublicationStore.CardRecord]) {
         let db = try StorageFixture.database(self), store = PublicationStore(database: db)
         let edition = StorageFixture.edition(), cards = (0..<6).map { _ in StorageFixture.card() }
@@ -178,9 +192,9 @@ final class PublicationRunwayStoreTests: XCTestCase {
         XCTAssertFalse(RuntimeMigrations.current.eraseDatabaseOnSchemaChange)
         try migrated.read { db in
             let schema = try String.fetchAll(db, sql: "SELECT name || ':' || COALESCE(sql, '') FROM sqlite_master WHERE name != 'published_cards_origin_revision_segment' ORDER BY name")
-            XCTAssertTrue(Set(oldSchema).isSubset(of: Set(schema))) // Every old table, column, trigger and index definition unchanged.
+            XCTAssertTrue(Set(oldSchema).isSubset(of: try Self.schemaBeforeAvailability(schema, in: db))) // Only the explicitly checked additive column changes an old definition.
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('published_cards_origin_revision_segment') ORDER BY seqno"), ["origin_revision_id","segment_id"])
-            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1"])
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1"])
         }
     }
 
@@ -259,8 +273,13 @@ extension PublicationRunwayStoreTests {
         XCTAssertEqual(try SessionStore(database: upgraded).checkpoint(),checkpointBefore)
         try upgraded.read { db in
             let schemaAfter = try String.fetchAll(db,sql: "SELECT name || ':' || COALESCE(sql,'') FROM sqlite_master ORDER BY name")
-            XCTAssertTrue(Set(schemaBefore).isSubset(of: Set(schemaAfter)))
-            XCTAssertEqual(Set(schemaAfter).subtracting(schemaBefore).count,1)
+            let priorDefinitions = try Self.schemaBeforeAvailability(schemaAfter, in: db)
+            XCTAssertTrue(Set(schemaBefore).isSubset(of: priorDefinitions))
+            // One new object (3R5 index), plus one altered existing definition (3R6B column).
+            let originDefinition = try XCTUnwrap(schemaAfter.first { $0.hasPrefix("origin_records:") })
+            let originIndex = "published_cards_origin_record_segment:CREATE INDEX published_cards_origin_record_segment\nON published_cards (origin_record_id, segment_id)"
+            XCTAssertEqual(priorDefinitions.subtracting(schemaBefore), Set([originIndex]))
+            XCTAssertEqual(Set(schemaAfter).subtracting(schemaBefore), Set([originIndex, originDefinition]))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }

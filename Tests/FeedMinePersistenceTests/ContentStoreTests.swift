@@ -130,8 +130,8 @@ final class ContentStoreTests: XCTestCase {
             let database = try RuntimeDatabase(location: location), store = ContentStore(database: database)
             let origin = OriginRecordID(), source = SourceID(), v1 = revision(origin)
             try store.commitCanonicalChange(change(v1, mutations: [.upsert(sourceID: source, kind: .direct, observedAt: time)]))
-            for availability in [OriginAvailability.updated, .removed, .revoked, .unknown, .available] {
-                try store.commitCanonicalChange(change(v1, availability: availability, expected: .revision(v1.id), update: .unchanged))
+            for (index, availability) in [OriginAvailability.updated, .removed, .revoked, .unknown, .available].enumerated() {
+                try store.commitCanonicalChange(change(v1, availability: availability, observed: time.addingTimeInterval(Double(index + 1)), expected: .revision(v1.id), update: .unchanged))
                 XCTAssertEqual(try store.originRecord(id: origin)?.availability, availability)
                 try assertProjection(origin, database)
             }

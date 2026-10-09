@@ -18,10 +18,11 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
             .init(targetID: targetID,targetGeneration: generation,expectedCheckpointRevision: revision,
                 observations: observations,nextCheckpoint: checkpoint)
         }
-        func snapshot(includeTarget: Bool = true) throws -> [String] {
+        func snapshot(includeTarget: Bool = true, includeOrigin: Bool = true) throws -> [String] {
             try database.read { db in
                 var result: [String] = []
                 for table in ["origin_records","origin_revisions","source_memberships","selection_supply","media_candidates"] + (includeTarget ? ["acquisition_targets"] : []) {
+                    if table == "origin_records" && !includeOrigin { continue }
                     result.append(table)
                     result += try Row.fetchAll(db,sql: "SELECT * FROM \(table) ORDER BY 1,2").map { String(describing: $0) }
                 }
@@ -287,10 +288,11 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
         XCTAssertEqual(try f.targets.target(id: f.targetID)?.checkpointRevision,1)
     }
 
-    func testAllRejectedPreserveEveryCanonicalFieldAndStillAdvanceCheckpoint() throws {
+    func testAllRejectedPreserveRevisionAndMembershipApplyAvailabilityAndAdvanceCheckpoint() throws {
         let f = try fixture()
         _ = try f.store.admit(f.command([observation(f)]))
-        let before = try f.snapshot(includeTarget: false)
+        let before = try f.snapshot(includeTarget: false,includeOrigin: false)
+        let origin = try XCTUnwrap(f.record())
         let receipt = try f.store.admit(f.command([
             observation(f,availability: .removed,summary: "changed",time: 20,
                 memberships: [.init(sourceID: SourceID(),kind: .derived)]),
@@ -301,7 +303,11 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
             .init(index: 1,reason: .knownVersionMediaConflict)
         ])
         XCTAssertFalse(receipt.selectableSupplyChanged); XCTAssertTrue(receipt.checkpointAdvanced)
-        XCTAssertEqual(try f.snapshot(includeTarget: false),before)
+        XCTAssertEqual(try f.snapshot(includeTarget: false,includeOrigin: false),before)
+        XCTAssertEqual(try f.record(),OriginRecord(id: origin.id,externalObjectIdentity: origin.externalObjectIdentity,
+            currentRevisionID: origin.currentRevisionID,availability: .updated,
+            firstObservedAt: origin.firstObservedAt,lastObservedAt: origin.lastObservedAt))
+        XCTAssertEqual(try f.database.read { try Double.fetchOne($0,sql: "SELECT availability_observed_at FROM origin_records") },30)
         XCTAssertEqual(try f.targets.target(id: f.targetID)?.checkpointRevision,1)
         XCTAssertEqual(try f.targets.target(id: f.targetID)?.checkpoint,checkpoint())
     }

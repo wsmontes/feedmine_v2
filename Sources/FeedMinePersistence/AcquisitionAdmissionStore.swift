@@ -171,11 +171,15 @@ public struct AcquisitionAdmissionStore: Sendable {
                     // Stored media is decoded first so corruption is never classified as a payload conflict.
                     guard ContentStore.admissionSameRevision(revision, knownVersion) else {
                         rejections.append(.init(index: index, reason: .knownVersionPayloadConflict))
+                        try contentStore.applyAvailability(observation.availability, observedAt: observation.observedAt,
+                            recordID: recordID, in: db)
                         continue
                     }
                     guard media.count == stored.count,
                         zip(media, stored).allSatisfy({ ContentStore.admissionSameMediaCandidate($0.0, $0.1) }) else {
                         rejections.append(.init(index: index, reason: .knownVersionMediaConflict))
+                        try contentStore.applyAvailability(observation.availability, observedAt: observation.observedAt,
+                            recordID: recordID, in: db)
                         continue
                     }
                     // A known historical version cannot supersede a different current revision.

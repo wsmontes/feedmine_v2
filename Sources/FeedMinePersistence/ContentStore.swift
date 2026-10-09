@@ -248,10 +248,11 @@ public struct ContentStore: Sendable {
             if existing == nil {
                 try db.execute(sql: """
                     INSERT INTO origin_records (id, object_connector_kind, object_namespace, object_value,
-                        object_role, current_revision_id, availability, first_observed_at, last_observed_at)
-                    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+                        object_role, current_revision_id, availability, first_observed_at, last_observed_at,
+                        availability_observed_at)
+                    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
                     """, arguments: [key, object.connectorKind.rawValue, object.namespace, object.value,
-                        object.role.rawValue, change.availability.rawValue, observed, observed])
+                        object.role.rawValue, change.availability.rawValue, observed, observed, observed])
             }
             let revision = change.revision
             if let stored = try Self.revision(revision.id, in: db) {
@@ -297,10 +298,38 @@ public struct ContentStore: Sendable {
             }
             try db.execute(sql: "UPDATE origin_records SET current_revision_id = ? WHERE id = ?",
                 arguments: [current.map { Self.key($0.rawValue) }, key])
-            try db.execute(sql: "UPDATE origin_records SET availability = ?, last_observed_at = ? WHERE id = ?",
-                arguments: [change.availability.rawValue, observed, key])
+            try Self.updateAvailability(change.availability, observedAt: change.observedAt, recordID: change.recordID, in: db)
+            try db.execute(sql: "UPDATE origin_records SET last_observed_at = ? WHERE id = ?",
+                arguments: [observed, key])
             try Self.refreshSupply(change.recordID, in: db)
         }
+    }
+
+    /// Admission may reject an immutable revision while retaining its independent availability signal.
+    /// The caller owns the admission transaction; membership and lastObservedAt are untouched here.
+    func applyAvailability(_ availability: OriginAvailability, observedAt: Date,
+        recordID: OriginRecordID, in db: Database) throws {
+        try Self.coding {
+            try Self.updateAvailability(availability, observedAt: observedAt, recordID: recordID, in: db)
+            try Self.refreshSupply(recordID, in: db)
+        }
+    }
+
+    private static func updateAvailability(_ availability: OriginAvailability, observedAt: Date,
+        recordID: OriginRecordID, in db: Database) throws {
+        let observed = try PersistenceValueCoding.date(observedAt, field: "availability_observed_at")
+        guard let row = try Row.fetchOne(db, sql: "SELECT availability, availability_observed_at FROM origin_records WHERE id = ?",
+            arguments: [key(recordID.rawValue)]) else { throw ContentStoreError.corruption("availability origin") }
+        let fields = ContentFields(row)
+        guard OriginAvailability(rawValue: try fields.string("availability")) != nil else {
+            throw ContentStoreError.corruption("availability")
+        }
+        let previous = try fields.date("availability_observed_at")
+        // Older signals and both kinds of ties preserve the established durable state.
+        // Admission's existing rejection reasons describe revision conflicts, not availability ties.
+        guard observedAt > previous else { return }
+        try db.execute(sql: "UPDATE origin_records SET availability = ?, availability_observed_at = ? WHERE id = ?",
+            arguments: [availability.rawValue, observed, key(recordID.rawValue)])
     }
 
     public func originRecord(id: OriginRecordID) throws -> OriginRecord? {

@@ -129,9 +129,12 @@ final class MediaCandidateSchemaTests: XCTestCase {
         }
         let database = try RuntimeDatabase(location: location), store = ContentStore(database: database)
         let after = try database.read { db in
-            try tables.map { table in try Row.fetchAll(db, sql: "SELECT * FROM \(table) ORDER BY 1").map { $0.map { $0.1 } } }
+            try tables.map { table in try Row.fetchAll(db, sql: "SELECT * FROM \(table) ORDER BY 1").map { row in
+                row.filter { table != "origin_records" || $0.0 != "availability_observed_at" }.map { $0.1 }
+            } }
         }
-        XCTAssertEqual(after, before)
+        XCTAssertEqual(after, before) // Every preexisting value remains exact; the additive column is checked separately.
+        XCTAssertEqual(try database.read { try Double.fetchOne($0,sql: "SELECT availability_observed_at FROM origin_records") },1)
         let schemaAfter = try database.read { db in Set(try String.fetchAll(db, sql: "SELECT type || ':' || name FROM sqlite_schema")) }
         XCTAssertTrue(Set(["table:media_candidates", "index:sqlite_autoindex_media_candidates_1", "index:sqlite_autoindex_media_candidates_2"]).isSubset(of: schemaAfter.subtracting(schemaBefore)))
         XCTAssertTrue(schemaBefore.isSubset(of: schemaAfter))

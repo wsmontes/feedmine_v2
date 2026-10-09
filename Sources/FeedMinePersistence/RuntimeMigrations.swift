@@ -288,6 +288,14 @@ public enum RuntimeMigrations {
                 ON published_cards (origin_record_id, segment_id);
                 """)
         }
+        migrator.registerMigration("origin-availability-precedence-v1") { db in
+            try db.execute(sql: """
+                ALTER TABLE origin_records
+                ADD COLUMN availability_observed_at REAL;
+                UPDATE origin_records
+                SET availability_observed_at = last_observed_at;
+                """)
+        }
         return migrator
     }
 }
