@@ -76,6 +76,18 @@ final class SyndicationHTTPTests: XCTestCase {
             await failure(.init([hop(301,location:url)]),expected:.invalidRedirectTarget)
         }
     }
+    /// v1 lesson IN-2 / review M13: an https request never follows a redirect to http.
+    func test07bHTTPSDowngradeRefused() async throws {
+        for url in ["http://example.test/feed","HTTP://other.example/feed"] {
+            let t = ScriptedSyndicationTransport([hop(301,location:url),hop()])
+            await failure(t,expected:.invalidRedirectTarget)
+            let journal = await t.journal(); XCTAssertEqual(journal.count,1)
+        }
+        // Upgrade and same-scheme redirects remain allowed.
+        let t = ScriptedSyndicationTransport([hop(302,location:"https://secure.example/feed"),hop()])
+        _ = try await fetch(t)
+        let journal = await t.journal(); XCTAssertEqual(journal.count,2)
+    }
     func test08MissingLocation() async {
         for location in [nil,""] as [String?] { await failure(.init([hop(308,location:location)]),expected:.missingRedirectLocation(308)) }
     }

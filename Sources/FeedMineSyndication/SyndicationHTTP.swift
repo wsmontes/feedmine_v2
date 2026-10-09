@@ -134,6 +134,10 @@ internal struct SyndicationHTTPClient: Sendable {
                     let host = destination.host, !host.isEmpty, destination.user == nil, destination.password == nil else {
                     throw SyndicationHTTPError.invalidRedirectTarget
                 }
+                // v1 lesson IN-2 / review M13: never follow a redirect from https down to http.
+                if request.url?.scheme?.lowercased() == "https", scheme == "http" {
+                    throw SyndicationHTTPError.invalidRedirectTarget
+                }
                 request = URLRequest(url: destination, cachePolicy: .reloadIgnoringLocalCacheData)
                 request.httpMethod = "GET"
                 redirects += 1
