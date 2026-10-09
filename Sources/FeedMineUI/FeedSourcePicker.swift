@@ -24,11 +24,18 @@ public struct FeedSourcePicker: View {
     public var body: some View {
         List(options) { source in
             Button { onToggle(source.id) } label: {
-                HStack {
-                    Text(source.name)
+                HStack(spacing: 12) {
+                    // Same stable source color as the card accent bar, so choices read as the feed does.
+                    Circle().fill(FeedDesign.sourceColor(source.name)).frame(width: 10, height: 10)
+                        .accessibilityHidden(true)
+                    Text(verbatim: source.name).foregroundStyle(.primary)
                     Spacer()
-                    if source.selected { Image(systemName: "checkmark") }
+                    if source.selected {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(FeedDesign.accent)
+                            .accessibilityLabel(Text("Selecionada"))
+                    }
                 }
+                .contentShape(Rectangle())
             }.accessibilityIdentifier("source-choice-" + source.id.rawValue.uuidString)
         }
         .searchable(text: $query, prompt: "Buscar fontes no catálogo")

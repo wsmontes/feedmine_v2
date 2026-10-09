@@ -32,7 +32,13 @@ struct FeedMineApp: App {
                 }
             }
             .navigationTitle("FeedMine")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // v1 wordmark (light/dark variants in the asset catalog); the title stays for VoiceOver.
+                ToolbarItem(placement: .principal) {
+                    Image("Wordmark").resizable().scaledToFit().frame(height: 22)
+                        .accessibilityLabel(Text("FeedMine"))
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Menu("Feed") {
                         Button("Principal") { switchContext(.main) }
