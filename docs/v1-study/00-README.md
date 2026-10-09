@@ -104,6 +104,8 @@ Ordered by risk to the user-visible feed. "Lesson" names the v1 study item that 
 
 ## Consolidated questions for the product owner
 
+**Answered 2026-10-09** → see [`docs/product/PRODUCT_DECISIONS_2026-10-09.md`](../product/PRODUCT_DECISIONS_2026-10-09.md) (PD-1..PD-7).
+
 1. **Edited article:** is a publisher's edit a new card or a silent update of the existing one?
    This blocks items 1 and H3, and v1 never decided it either.
 2. **Supply source:** does v2 reuse v1's 118 MB catalog (88k sources) plus its Python tooling,

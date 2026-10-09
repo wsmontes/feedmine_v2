@@ -264,3 +264,7 @@ Explicit session replacement first closes the prior association, then creates a 
 Independent SwiftUI observation streams need coherent visual evidence, not identical numeric intervals. A compatible reading phase, actual global displacement, a stable content coordinate/size for an actual visible reference card, and agreeing observed directions authorize emission. Ambiguous reversal or changed layout does not. Global movement consumes corresponding reference evidence so layout cannot reuse old motion. An observed offscreen card cannot remain the visible anchor. Native safe-area coordinates are normalized, without forcing native scrolling or fabricating publication identities.
 
 Unverified velocity is logged, never interpreted as a direction and never a global capture veto. Nil/zero/nonzero vectors require the same sufficient visual evidence. Late tail can upgrade the same forward anchor once, including after idle. No frame history, polling, temporal synchronization, new store or Runtime projection counter is introduced. DEBUG counters are observation diagnostics only and are absent from Release.
+
+## Product decisions 2026-10-09
+
+Binding product rules PD-1..PD-7 are in [docs/product/PRODUCT_DECISIONS_2026-10-09.md](../product/PRODUCT_DECISIONS_2026-10-09.md). PD-1 amends Phase 3R5 occurrence uniqueness; PD-5 amends INV-08/INV-09 for unseen runway while the app is not visible. Resolve both in the next gates.
