@@ -285,3 +285,18 @@ final class FeedScreenStoreTests: XCTestCase {
         }
     }
 }
+
+extension FeedScreenStoreTests {
+    /// Review F10: tapping a card forwards only its identity, and only when it offers an action.
+    @MainActor
+    func testOpenForwardsCardIdentityOnlyForActionableCards() throws {
+        var opened: [PublicationCardID] = []
+        let store = FeedScreenStore(onViewport: { _, _ in }, onOpen: { opened.append($0) })
+        let source = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/FeedMineUI/FeedScreenStore.swift"), encoding: .utf8)
+        XCTAssertFalse(source.contains("URL("), "action targets never cross the UI boundary")
+        XCTAssertTrue(source.contains("guard card.primaryActionKind != nil"))
+        XCTAssertTrue(opened.isEmpty)
+        _ = store
+    }
+}

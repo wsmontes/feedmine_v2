@@ -52,6 +52,8 @@ public struct ContentStore: Sendable {
         public let sourceIDs: [SourceID]
         /// Ordinal-0 canonical media locator (PD-1 material identity, review F07).
         public let primaryMediaLocator: String?
+        /// Article URL to open (review F10); nil when the revision has none.
+        public let primaryLink: URL?
     }
 
     public struct CandidateWindow: Hashable, Sendable {
@@ -111,7 +113,7 @@ public struct ContentStore: Sendable {
                     }
                     // No broad revision decode: excluded payloads are never selected.
                     guard let payload = try Row.fetchOne(db, sql: """
-                        SELECT id, origin_record_id, headline, summary, authored_at, observed_at, language, provider_id
+                        SELECT id, origin_record_id, headline, summary, authored_at, observed_at, language, provider_id, primary_link
                         FROM origin_revisions WHERE id = ?
                         """, arguments: [Self.key(revision.rawValue)]) else {
                         throw ContentStoreError.corruption("supply revision")
@@ -129,7 +131,8 @@ public struct ContentStore: Sendable {
                         sourceIDs: try String.fetchAll(db, sql: "SELECT source_id FROM source_memberships WHERE origin_record_id = ? ORDER BY source_id COLLATE BINARY ASC",
                             arguments: [key]).map { SourceID(rawValue: try PersistenceValueCoding.uuid($0, field: "source_memberships.source_id")) },
                         primaryMediaLocator: try String.fetchOne(db, sql: "SELECT remote_locator FROM media_candidates WHERE origin_revision_id = ? AND ordinal = 0",
-                            arguments: [Self.key(revision.rawValue)])))
+                            arguments: [Self.key(revision.rawValue)]),
+                        primaryLink: try p.optionalString("primary_link").flatMap { URL(string: $0) }))
                 }
                 return CandidateWindow(records: records, examinedCount: rows.count,
                     nextCursor: nextCursor, exhausted: rows.count < examinedCapacity)

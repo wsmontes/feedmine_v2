@@ -8,12 +8,25 @@ import FeedMineRuntime
 @MainActor
 public struct FeedCardView: View {
     private let card: PresentationCard
+    private let onOpen: (@MainActor () -> Void)?
 
-    public init(card: PresentationCard) {
+    public init(card: PresentationCard, onOpen: (@MainActor () -> Void)? = nil) {
         self.card = card
+        self.onOpen = onOpen
     }
 
     public var body: some View {
+        if let onOpen, card.primaryActionKind != nil {
+            Button(action: onOpen) { content }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(.isLink)
+                .accessibilityHint(Text("Abre o artigo"))
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder private var content: some View {
         switch card.layout {
         case .hero:
             VStack(alignment: .leading, spacing: 10) {

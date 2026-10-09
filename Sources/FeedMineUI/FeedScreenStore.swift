@@ -1,6 +1,7 @@
 // Observable screen value and explicit semantic input forwarding.
 // External composition supplies state and owns every execution opportunity.
 import Observation
+import FeedMineDomain
 import FeedMineRuntime
 
 @MainActor
@@ -9,10 +10,16 @@ public final class FeedScreenStore {
     public private(set) var state: FeedPresentationState
     @ObservationIgnored
     private let onViewport: @MainActor (ViewportObservation, RunwayActivity) -> Void
+    @ObservationIgnored
+    private let onOpen: @MainActor (PublicationCardID) -> Void
 
-    public init(onViewport: @escaping @MainActor (ViewportObservation, RunwayActivity) -> Void) {
+    /// `onOpen` receives a semantic open intent (review F10). The action target itself never
+    /// crosses into UI; external composition resolves it from published history.
+    public init(onViewport: @escaping @MainActor (ViewportObservation, RunwayActivity) -> Void,
+        onOpen: @escaping @MainActor (PublicationCardID) -> Void = { _ in }) {
         state = FeedPresentationState(presentation: nil)
         self.onViewport = onViewport
+        self.onOpen = onOpen
     }
 
     /// Receives the value computed by external composition using the existing handoff.
@@ -31,5 +38,11 @@ public final class FeedScreenStore {
     /// Emits one explicit user observation. The external consumer decides how to execute it.
     public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity) {
         onViewport(observation, activity)
+    }
+
+    /// The reader asked to open a card that offers a primary action.
+    public func open(_ card: PresentationCard) {
+        guard card.primaryActionKind != nil else { return }
+        onOpen(card.id)
     }
 }

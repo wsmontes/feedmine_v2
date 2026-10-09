@@ -21,7 +21,7 @@ public struct FeedScreen: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(presentation.window.items) { card in
-                            FeedCardView(card: card)
+                            FeedCardView(card: card, onOpen: { store.open(card) })
                                 .onGeometryChange(for: FeedVisualCardGeometry?.self, of: { proxy in
                                     guard let bounds = proxy.bounds(of: .scrollView(axis: .vertical)) else { return nil }
                                     let frame = proxy.frame(in: .scrollView(axis: .vertical))
@@ -52,7 +52,7 @@ public struct FeedScreen: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(presentation.window.items) { card in
-                            FeedCardView(card: card)
+                            FeedCardView(card: card, onOpen: { store.open(card) })
                         }
                     }
                     .padding()

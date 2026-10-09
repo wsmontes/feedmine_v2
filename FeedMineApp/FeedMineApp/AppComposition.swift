@@ -106,9 +106,23 @@ final class FeedAssociation {
     private(set) var active = true
     private var launching = false
     @ObservationIgnored
-    lazy var store = FeedScreenStore { [weak self] observation, activity in
+    lazy var store = FeedScreenStore(onViewport: { [weak self] observation, activity in
         guard let self else { return }
         Task { await self.viewport(observation, activity: activity) }
+    }, onOpen: { [weak self] cardID in
+        self?.open(cardID)
+    })
+
+    /// Review F10: resolve the frozen action target from published history and open it.
+    /// The URL never crosses the UI boundary; only the card identity does.
+    private func open(_ cardID: PublicationCardID) {
+        guard let card = try? PublicationStore(database: database).card(id: cardID),
+            card.primaryActionKind == "externalURL", let reference = card.primaryActionReference,
+            let url = URL(string: reference) else { return }
+        #if canImport(UIKit)
+        UIApplication.shared.open(url)
+        #endif
+        Self.log("opened card=\(cardID.rawValue)")
     }
 
     #if DEBUG
@@ -240,7 +254,9 @@ final class FeedAssociation {
             return .init(origin: .init(originRecordID: candidate.originRecordID, originRevisionID: candidate.originRevisionID,
                 sourceID: source, providerID: candidate.providerID, sourceDisplayName: source.flatMap { names[$0] },
                 providerDisplayName: nil),
-                contentEntityID: nil, contentClusterID: nil, primaryAction: nil,
+                contentEntityID: nil, contentClusterID: nil,
+                // F10: the card opens its article.
+                primaryAction: candidate.primaryLink.map { .externalURL($0) },
                 presentation: readiness.presentation(for: candidate.originRevisionID))
         }, cardIDs: selection.orderedCandidates.map { _ in PublicationCardID() })
     }
