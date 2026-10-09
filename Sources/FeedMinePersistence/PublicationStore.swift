@@ -186,16 +186,31 @@ public struct PublicationStore: Sendable {
     }
 
     public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord]) throws {
-        try appendSegment(segment, cards: cards, expectedTail: nil)
+        try appendSegment(segment, cards: cards, expectedTail: nil, recurrence: .forbidden)
     }
 
     public func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
-        expectingTailCardID: PublicationCardID) throws {
-        try appendSegment(segment, cards: cards, expectedTail: expectingTailCardID)
+        expectingTailCardID: PublicationCardID, recurrence: OriginRecurrenceRecord = .forbidden) throws {
+        try appendSegment(segment, cards: cards, expectedTail: expectingTailCardID, recurrence: recurrence)
+    }
+
+    /// Whether an origin already published in the Edition may occur again (PD-1).
+    public enum OriginRecurrenceRecord: Hashable, Sendable {
+        /// Phase 3R5: at most one occurrence per origin in an Edition.
+        case forbidden
+        /// PD-1: an origin may occur again only with materially different text.
+        case whenMaterialChanged
+    }
+
+    /// Material identity of an occurrence: whitespace-collapsed title and primary text.
+    /// Editorial computes the identical key from candidate text (`SelectionExposureSnapshot`).
+    public static func materialKey(title: String?, primaryText: String?) -> String {
+        func collapse(_ text: String?) -> String { (text ?? "").split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") }
+        return collapse(title) + "\u{1F}" + collapse(primaryText)
     }
 
     private func appendSegment(_ segment: SegmentRecord, cards: [CardRecord],
-        expectedTail: PublicationCardID?) throws {
+        expectedTail: PublicationCardID?, recurrence: OriginRecurrenceRecord) throws {
         try database.write { db in
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?",
                 arguments: [PersistenceValueCoding.uuid(segment.editionID.rawValue)]) else { throw PublicationStoreError.missingEdition }
@@ -215,8 +230,17 @@ public struct PublicationStore: Sendable {
                 throw PublicationStoreError.invalidAppendOrdinal
             }
             try Self.validate(segment, cards: cards, version: edition.publicationSchemaVersion)
-            guard try Self.publishedOrigins(cards.map(\.originRecordID), editionID: segment.editionID, in: db).isEmpty else {
-                throw PublicationStoreError.duplicateOriginInEdition
+            switch recurrence {
+            case .forbidden:
+                guard try Self.publishedOrigins(cards.map(\.originRecordID), editionID: segment.editionID, in: db).isEmpty else {
+                    throw PublicationStoreError.duplicateOriginInEdition
+                }
+            case .whenMaterialChanged:
+                let published = try Self.publishedMaterial(cards.map(\.originRecordID), editionID: segment.editionID, in: db)
+                for card in cards where published[card.originRecordID]?
+                    .contains(Self.materialKey(title: card.title, primaryText: card.primaryText)) == true {
+                    throw PublicationStoreError.duplicateOriginInEdition
+                }
             }
             try Self.insertSegment(segment, cards: cards, db: db)
         }
@@ -382,6 +406,8 @@ public struct PublicationStore: Sendable {
     public struct ExposureRecord: Hashable, Sendable {
         public let observedTailCardID: PublicationCardID
         public let publishedOriginIDs: Set<OriginRecordID>
+        /// Material keys (`materialKey`) of every occurrence of each requested published origin.
+        public let publishedMaterialKeys: [OriginRecordID: Set<String>]
     }
 
     public func exposure(editionID: FeedEditionID,
@@ -390,9 +416,34 @@ public struct PublicationStore: Sendable {
             let editionKey = PersistenceValueCoding.uuid(editionID.rawValue)
             let schema = try Self.historySchema(editionKey, in: db)
             let tail = try Self.historyTail(editionKey: editionKey, schema: schema, in: db)
+            let material = try Self.publishedMaterial(originIDs, editionID: editionID, in: db)
             return ExposureRecord(observedTailCardID: tail.cardID,
-                publishedOriginIDs: try Self.publishedOrigins(originIDs, editionID: editionID, in: db))
+                publishedOriginIDs: Set(material.keys), publishedMaterialKeys: material)
         }
+    }
+
+    private static func publishedMaterial(_ ids: [OriginRecordID], editionID: FeedEditionID,
+        in db: Database) throws -> [OriginRecordID: Set<String>] {
+        let keys = Array(Set(ids)).map { PersistenceValueCoding.uuid($0.rawValue) }
+        let capacity = db.maximumStatementArgumentCount - 1
+        guard capacity > 0 else { throw PublicationStoreError.invalidCapacity }
+        var found: [OriginRecordID: Set<String>] = [:]
+        for start in stride(from: 0, to: keys.count, by: capacity) {
+            let group = Array(keys[start..<min(start + capacity, keys.count)])
+            let placeholders = Array(repeating: "?", count: group.count).joined(separator: ",")
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT c.origin_record_id, c.title, c.primary_text FROM published_cards c
+                JOIN feed_segments s ON s.id = c.segment_id
+                WHERE c.origin_record_id IN (\(placeholders)) AND s.edition_id = ?
+                """, arguments: StatementArguments(group + [PersistenceValueCoding.uuid(editionID.rawValue)]))
+            for row in rows {
+                let fields = PublicationRecordFields(row)
+                let origin = OriginRecordID(rawValue: try fields.uuid("origin_record_id"))
+                found[origin, default: []].insert(materialKey(title: try fields.optionalString("title"),
+                    primaryText: try fields.optionalString("primary_text")))
+            }
+        }
+        return found
     }
 
     // Shared by the bounded exposure read and the serialized pre-insert guard.

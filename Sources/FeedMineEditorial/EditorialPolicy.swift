@@ -11,7 +11,13 @@ public struct ResolvedSelectionPolicy: Hashable, Sendable {
         /// Recency order with PD-4 source alternation: never two adjacent cards sharing a source.
         case recencyAlternatingSources
     }
-    public enum ExposureBehavior: Hashable, Sendable { case none, excludePublishedRevisions }
+    public enum ExposureBehavior: Hashable, Sendable {
+        case none
+        /// Phase 3R5: an origin published in the Edition never occurs again.
+        case excludePublishedRevisions
+        /// PD-1: an origin occurs again when its title or text changed materially (edited article).
+        case excludePublishedMaterial
+    }
 
     public let contextKey: ContextKey
     public let userSelectionVersion: PolicyVersion

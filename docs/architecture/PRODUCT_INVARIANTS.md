@@ -268,3 +268,7 @@ Unverified velocity is logged, never interpreted as a direction and never a glob
 ## Product decisions 2026-10-09
 
 Binding product rules PD-1..PD-7 are in [docs/product/PRODUCT_DECISIONS_2026-10-09.md](../product/PRODUCT_DECISIONS_2026-10-09.md). PD-1 amends Phase 3R5 occurrence uniqueness; PD-5 amends INV-08/INV-09 for unseen runway while the app is not visible. Resolve both in the next gates.
+
+## PD-1 — edited articles reappear (amends Phase 3R5)
+
+Under exposure policy `.excludePublishedMaterial` (exposure policy version 2), an origin already published in an Edition may occur again only when its whitespace-collapsed title or primary text differs from every earlier occurrence of that origin in the Edition. Identical replay and whitespace churn never recur. PublicationStore enforces this in the append transaction (`OriginRecurrenceRecord.whenMaterialChanged`); Editions under `.excludePublishedRevisions` keep the 3R5 rule of one occurrence per origin. Seen history stays immutable; the earlier card is never rewritten.

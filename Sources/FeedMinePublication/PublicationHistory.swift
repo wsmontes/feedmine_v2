@@ -65,7 +65,8 @@ public struct PublicationHistory: Sendable {
         }
         let record = try publicationStore.exposure(editionID: editionID, originIDs: originIDs)
         return PublishedExposureFacts(editionID: editionID, observedTailCardID: record.observedTailCardID,
-            requestedOriginIDs: originIDs, publishedOriginIDs: record.publishedOriginIDs)
+            requestedOriginIDs: originIDs, publishedOriginIDs: record.publishedOriginIDs,
+            publishedMaterialKeys: record.publishedMaterialKeys)
     }
 
     public func forwardAdvance(editionID: FeedEditionID, fromCardID: PublicationCardID,

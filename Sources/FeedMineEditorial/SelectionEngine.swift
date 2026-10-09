@@ -72,6 +72,12 @@ public struct SelectionEngine: Sendable {
                 throw SelectionError.exposureCoverageMismatch
             }
             eligible = window.candidates.filter { !exposure.publishedOriginIDs.contains($0.originRecordID) }
+        case .excludePublishedMaterial:
+            guard let exposure else { throw SelectionError.exposureRequired }
+            guard exposure.requestedOriginIDs == window.candidates.map(\.originRecordID) else {
+                throw SelectionError.exposureCoverageMismatch
+            }
+            eligible = window.candidates.filter { !exposure.alreadyPublished($0) }
         }
         let ordered: [Candidate]
         switch policy.sequencing {

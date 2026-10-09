@@ -20,6 +20,8 @@ public struct PublishedExposureFacts: Hashable, Sendable {
     public let observedTailCardID: PublicationCardID
     public let requestedOriginIDs: [OriginRecordID]
     public let publishedOriginIDs: Set<OriginRecordID>
+    /// Material keys of every published occurrence of each requested origin (PD-1).
+    public let publishedMaterialKeys: [OriginRecordID: Set<String>]
 }
 
 public enum PublicationAdvance: Hashable, Sendable {

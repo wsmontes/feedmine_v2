@@ -62,7 +62,7 @@ public struct InitialProductionSlice: Sendable {
     /// Only a successful outcome authorizes the caller to advance episode progress.
     public func run(_ request: Request,
         prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication) throws -> InitialProductionSliceOutcome {
-        guard request.policy.exposure == .excludePublishedRevisions else {
+        guard request.policy.exposure == .excludePublishedRevisions || request.policy.exposure == .excludePublishedMaterial else {
             throw InitialProductionSliceError.automaticExposurePolicyRequired
         }
         let window = try candidateProvider.candidates(for: request.plan,

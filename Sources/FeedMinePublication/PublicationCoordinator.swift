@@ -13,6 +13,15 @@ public enum PublicationCoordinatorError: Error, Equatable, Sendable {
     case missingEdition
     case editorialRevisionMismatch
     case invalidPreparedCard(index: Int)
+    case recurrenceRequiresTailExpectation
+}
+
+/// PD-1: occurrence policy for origins already published in the Edition.
+public enum PublicationOriginRecurrence: Hashable, Sendable {
+    /// Phase 3R5: one occurrence per origin per Edition.
+    case forbidden
+    /// An edited article (materially different title or text) is published again as a new card.
+    case whenMaterialChanged
 }
 
 public struct PublicationReceipt: Hashable, Sendable {
@@ -77,8 +86,11 @@ public struct PublicationCoordinator: Sendable {
         public let segmentSeed: UInt64
         public let segmentCreatedAt: Date
         public let cardIDs: [PublicationCardID]
+        /// PD-1: whether an already-published origin may occur again with materially new text.
+        public let originRecurrence: PublicationOriginRecurrence
 
-        public init(selection: SelectionResult, drafts: [PublicationCardDraft], editionID: FeedEditionID, segmentID: FeedSegmentID, segmentSeed: UInt64, segmentCreatedAt: Date, cardIDs: [PublicationCardID]) {
+        public init(selection: SelectionResult, drafts: [PublicationCardDraft], editionID: FeedEditionID, segmentID: FeedSegmentID, segmentSeed: UInt64, segmentCreatedAt: Date, cardIDs: [PublicationCardID],
+            originRecurrence: PublicationOriginRecurrence = .forbidden) {
             self.selection = selection
             self.drafts = drafts
             self.editionID = editionID
@@ -86,6 +98,7 @@ public struct PublicationCoordinator: Sendable {
             self.segmentSeed = segmentSeed
             self.segmentCreatedAt = segmentCreatedAt
             self.cardIDs = cardIDs
+            self.originRecurrence = originRecurrence
         }
     }
 
@@ -151,9 +164,15 @@ public struct PublicationCoordinator: Sendable {
             throw PublicationCoordinatorError.inputCountMismatch
         }
         let records = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
+        let recurrence: PublicationStore.OriginRecurrenceRecord
+        switch request.originRecurrence {
+        case .forbidden: recurrence = .forbidden
+        case .whenMaterialChanged: recurrence = .whenMaterialChanged
+        }
         if let expectedTail {
-            try store.appendSegment(records.0, cards: records.1, expectingTailCardID: expectedTail)
+            try store.appendSegment(records.0, cards: records.1, expectingTailCardID: expectedTail, recurrence: recurrence)
         } else {
+            guard recurrence == .forbidden else { throw PublicationCoordinatorError.recurrenceRequiresTailExpectation }
             try store.appendSegment(records.0, cards: records.1)
         }
         return .published(PublicationReceipt(editionID: request.editionID, segmentID: request.segmentID,

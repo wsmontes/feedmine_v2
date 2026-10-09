@@ -76,7 +76,7 @@ public struct LocalProductionSlice: Sendable {
     /// Only a successful outcome authorizes the caller to advance episode progress.
     public func run(_ request: Request,
         prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication) throws -> LocalProductionSliceOutcome {
-        guard request.policy.exposure == .excludePublishedRevisions else {
+        guard request.policy.exposure == .excludePublishedRevisions || request.policy.exposure == .excludePublishedMaterial else {
             throw LocalProductionSliceError.automaticExposurePolicyRequired
         }
         let window = try candidateProvider.candidates(for: request.plan,
@@ -85,7 +85,7 @@ public struct LocalProductionSlice: Sendable {
             originIDs: window.candidates.map(\.originRecordID))
         guard facts.editionID == request.editionID,
             let exposure = SelectionExposureSnapshot(requestedOriginIDs: facts.requestedOriginIDs,
-                publishedOriginIDs: facts.publishedOriginIDs) else {
+                publishedOriginIDs: facts.publishedOriginIDs, publishedMaterialKeys: facts.publishedMaterialKeys) else {
             throw LocalProductionSliceError.invalidExposureFacts
         }
         // PD-4: the Edition tail precedes this segment, so alternation holds across segments.
@@ -100,7 +100,8 @@ public struct LocalProductionSlice: Sendable {
         let drafts = try PublicationPreparation.drafts(selection: selection, inputs: prepared.inputs)
         let append = PublicationCoordinator.AppendRequest(selection: selection, drafts: drafts,
             editionID: request.editionID, segmentID: request.segmentID, segmentSeed: request.segmentSeed,
-            segmentCreatedAt: request.segmentCreatedAt, cardIDs: prepared.cardIDs)
+            segmentCreatedAt: request.segmentCreatedAt, cardIDs: prepared.cardIDs,
+            originRecurrence: request.policy.exposure == .excludePublishedMaterial ? .whenMaterialChanged : .forbidden)
         switch try coordinator.append(append, expectingTailCardID: facts.observedTailCardID) {
         case .published(let receipt): return .published(progress, receipt)
         case .nothingToPublish: throw LocalProductionSliceError.inconsistentPublicationOutcome
