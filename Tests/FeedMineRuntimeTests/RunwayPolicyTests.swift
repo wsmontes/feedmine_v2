@@ -69,3 +69,24 @@ final class RunwayPolicyTests: XCTestCase {
         XCTAssertEqual(try evaluate(rate: Double.greatestFiniteMagnitude,latency: 3,ready: .atLeast(Int.max),bootstrap: false).coverage,.unknown)
     }
 }
+
+extension RunwayPolicyTests {
+    /// Review F01: a stationary or unmeasured reader still gets the presented window backed.
+    func testReserveFloorDrivesProactiveFillWithoutConsumptionSamples() {
+        let inputs = RunwayPolicyInputs(safetyFactor: 1, releaseMarginSeconds: 0)!
+        let resources = RunwayResourceFacts(localWorkAllowed: true, examinedCandidateCapacity: 8, readyProbeBound: 4,
+            readyProbeCeiling: 64, forwardAdvanceProbeBound: 8, reserveCards: 6)!
+        func evaluate(rate: Double?, ready: ReadyAheadAmount) -> RunwayPolicyEvaluation {
+            RunwayPolicy.evaluate(facts: RunwayFacts(consumption: ConsumptionFacts(cardsPerSecond: rate, forwardIntent: false,
+                explicitTailApproach: false)!, replenishment: ReplenishmentFacts(p95Seconds: nil)!, readyAmount: ready,
+                previouslyPressured: false, localSliceInFlight: false, unknownBootstrapAvailable: false),
+                inputs: inputs, resources: resources)
+        }
+        XCTAssertEqual(evaluate(rate: 0, ready: .exact(2)), .init(coverage: .pressured(requiredCards: 6), action: .requestLocalSlice))
+        XCTAssertEqual(evaluate(rate: nil, ready: .exact(2)), .init(coverage: .pressured(requiredCards: 6), action: .requestLocalSlice))
+        XCTAssertEqual(evaluate(rate: 0, ready: .exact(6)).action, .hold)
+        XCTAssertEqual(evaluate(rate: nil, ready: .atLeast(4)), .init(coverage: .unknown, action: .requestReadyProbe(6)))
+        XCTAssertNil(RunwayResourceFacts(localWorkAllowed: true, examinedCandidateCapacity: 8, readyProbeBound: 4,
+            readyProbeCeiling: 5, forwardAdvanceProbeBound: 8, reserveCards: 6))
+    }
+}

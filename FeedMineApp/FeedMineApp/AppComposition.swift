@@ -119,7 +119,9 @@ final class FeedAssociation {
 
     static var resources: FeedRunwayDriverResources {
         .init(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 32,
-            readyProbeBound: 32, readyProbeCeiling: 256, forwardAdvanceProbeBound: 256)!,
+            readyProbeBound: 32, readyProbeCeiling: 256, forwardAdvanceProbeBound: 256,
+            // F01: the session materializes 16 cards ahead; keep at least that much published.
+            reserveCards: 16)!,
             acquisition: .init(targetWorkCapacity: 2, batchCapacityPerNewExecution: 1,
                 observationCapacityPerBatch: 32, byteCapacityPerBatch: 1_000_000)!)
     }

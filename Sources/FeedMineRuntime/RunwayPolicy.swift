@@ -40,11 +40,17 @@ public struct RunwayResourceFacts: Hashable, Sendable {
     public let readyProbeBound: Int
     public let readyProbeCeiling: Int
     public let forwardAdvanceProbeBound: Int
+    /// Review F01: cards the reader can reach without scrolling past the presented window (the
+    /// session's forward materialization capacity). Coverage below it is pressure even for a
+    /// stationary or not-yet-measured reader, so the runway fills proactively. nil disables it.
+    public let reserveCards: Int?
 
     public init?(localWorkAllowed: Bool, examinedCandidateCapacity: Int, readyProbeBound: Int,
-        readyProbeCeiling: Int, forwardAdvanceProbeBound: Int) {
+        readyProbeCeiling: Int, forwardAdvanceProbeBound: Int, reserveCards: Int? = nil) {
         guard examinedCandidateCapacity > 0, readyProbeBound > 0,
-            readyProbeCeiling >= readyProbeBound, forwardAdvanceProbeBound > 0 else { return nil }
+            readyProbeCeiling >= readyProbeBound, forwardAdvanceProbeBound > 0,
+            reserveCards.map({ $0 > 0 && $0 <= readyProbeCeiling }) ?? true else { return nil }
+        self.reserveCards = reserveCards
         self.localWorkAllowed = localWorkAllowed
         self.examinedCandidateCapacity = examinedCandidateCapacity
         self.readyProbeBound = readyProbeBound
@@ -123,8 +129,23 @@ public enum RunwayPolicy {
             coverage = facts.readyAmount == .exact(0) && (consumption.forwardIntent || consumption.explicitTailApproach)
                 ? .logicalPressure : .unknown
         }
+        // Review F01: the measured threshold modulates urgency; the reserve floor guarantees the
+        // presented window ahead is always backed by published cards, even with no samples.
+        var floored = coverage
+        if let reserve = resources.reserveCards {
+            switch facts.readyAmount {
+            case .exact(let count) where count < reserve:
+                if case .pressured(let required) = floored { floored = .pressured(requiredCards: max(required, reserve)) }
+                else if floored != .logicalPressure { floored = .pressured(requiredCards: reserve) }
+            case .atLeast(let bound) where bound < reserve:
+                if floored == .healthy || floored == .unknown {
+                    return RunwayPolicyEvaluation(coverage: .unknown, action: .requestReadyProbe(reserve))
+                }
+            default: break
+            }
+        }
         let action: RunwayPolicyAction
-        switch coverage {
+        switch floored {
         case .healthy: action = .hold
         case .pressured, .logicalPressure:
             action = resources.localWorkAllowed && !facts.localSliceInFlight ? .requestLocalSlice : .hold
@@ -132,7 +153,7 @@ public enum RunwayPolicy {
             action = facts.unknownBootstrapAvailable && resources.localWorkAllowed && !facts.localSliceInFlight
                 && (consumption.forwardIntent || consumption.explicitTailApproach) ? .requestLocalSlice : .hold
         }
-        return RunwayPolicyEvaluation(coverage: coverage, action: action)
+        return RunwayPolicyEvaluation(coverage: floored, action: action)
     }
 }
 
