@@ -97,15 +97,9 @@ public struct FeedCardView: View, Equatable {
                             .lineLimit(1)
                     }
                     if let timestamp = card.timestamp {
-                        HStack(spacing: 4) {
-                            switch timestamp.kind {
-                            case .authored: Text("Autoria")
-                            case .modified: Text("Modificado")
-                            case .observed: Text("Observado")
-                            }
-                            Text(timestamp.value, format: .dateTime.day().month(.abbreviated).year().hour().minute())
-                        }
-                        .lineLimit(1)
+                        // One text run: the meaning label and the date read (and wrap) as a unit.
+                        Text("\(Self.label(timestamp.kind)) \(timestamp.value, format: .dateTime.day().month(.abbreviated).year().hour().minute())")
+                            .lineLimit(1)
                     }
                 }
                 .font(FeedDesign.meta)
@@ -114,6 +108,14 @@ public struct FeedCardView: View, Equatable {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private static func label(_ kind: PresentationTimestampKind) -> Text {
+        switch kind {
+        case .authored: return Text("Autoria")
+        case .modified: return Text("Modificado")
+        case .observed: return Text("Observado")
+        }
     }
 
     private func visual(aspectRatio: Double) -> some View {
