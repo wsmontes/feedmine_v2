@@ -196,3 +196,25 @@ Não reescrever o RunwayController, não substituir a Persistence e não criar p
 **Houve avanço significativo e aproveitável nos 21 commits.** A V2 passou a ter imagens, aquisição concorrente, identidade do catálogo e mais regras editoriais. **Ainda não está pronta para release:** o ciclo de abastecimento proativo não está fechado e a nova integração de mídia não demonstra, por código, cumprir os prazos e a recuperação operacional prometidos. O plano é corrigir primeiro as invariantes do produto, preservando a arquitetura existente, e usar build/simulador para distinguir implementação provável de comportamento realmente confirmado.
 
 **Links-base:** [compare no GitHub](https://github.com/wsmontes/feedmine_v2/compare/a259e96d41d43e8e5657dffaa6d33ddd1d317fb3...1e53ed20aae3bf438a39f5c5ab748dec41ad7822) · [decisões de produto](../product/PRODUCT_DECISIONS_2026-10-09.md) · [revisão anterior](CODE_REVIEW_2026-10-08.md).
+
+---
+
+## Resposta — `main` @ `f0fa2ef` (2026-10-09)
+
+Corrigido sem compilador (ver [PORT_LOG](../v1-study/PORT_LOG.md), rodada 3). Os critérios de aceite ainda precisam de build, simulador e dispositivo.
+
+| Achado | Status | Commit | O que mudou |
+| --- | --- | --- | --- |
+| F01 | Corrigido | `a964559` | `RunwayResourceFacts.reserveCards`: cobertura abaixo da reserva é pressão mesmo com leitor parado ou sem amostras; o app usa a janela à frente (16). |
+| F02 | Pendente (decisão) | — | Catálogo de 118 MB fora do repo; precisa de LFS ou download e de Copy Bundle Resources. |
+| F03 | Corrigido | `5906b9a` | O deadline libera o chamador via continuação única; o download continua sob o actor. |
+| F04 | Corrigido | `5906b9a` | `MediaFetchFailure`: falha definitiva vira text-only; transitória volta a ser tentada com atraso crescente. |
+| F05 | Corrigido | `c822f0c` | O driver passa os próximos candidatos editoriais (mesmo contexto e cursor, sem os já expostos). |
+| F06 | Corrigido | `17f3300` | O primeiro feed que traz supply já tenta publicar, e o app instala na hora. |
+| F07 | Corrigido | `dd4e29d` | A chave material inclui a mídia principal; origem com ocorrência à frente do leitor não entra de novo (PD-1 regra 2). |
+| F08 | Corrigido | `a0c8f54` | Cooldown vira `deferred` sem consumir a intent; oportunidade única na expiração. |
+| F09 | Corrigido | `7e04a9d` | Estado de visibilidade; o background cancela o retry. |
+| F10 | Corrigido | `f0fa2ef` | O toque abre o artigo; só o `PublicationCardID` cruza a UI. |
+| F11–F14 | Medir | — | Depende de medição no dispositivo. |
+| F15 | Pendente | — | Contextos e filtros na UI. |
+| F16 | Corrigido | `17f3300` | Cold start sem Edition reagenda `launch()` sozinho (expiração do cooldown ou um timeout de request). |

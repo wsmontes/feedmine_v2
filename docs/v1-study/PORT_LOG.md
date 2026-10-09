@@ -78,6 +78,18 @@ A static audit of all round-2 commits found no compile or test-consistency defec
 - **PD-2 catalog file.** The 118 MB `catalog.sqlite` is not in this repo. Bundle it (LFS) or download it, then add it to the app's Copy Bundle Resources.
 - **PD-2 onboarding.** Source choice and onboarding are not built. The app registers at most 64 default catalog sources.
 
+## Round 3 — 2026-10-09 (comparative review F01–F16, uncompiled)
+
+Commits `5906b9a` through `f0fa2ef`; the per-finding status table is in `docs/reviews/CODE_REVIEW_COMPARATIVO_2026-10-09.md` (Resposta).
+
+Additional device checks:
+11. **Slow image.** Block one image URL so it never answers. The first screen still appears within about 5 s, and that card is text-only (F03).
+12. **Flaky image host.** Images return after the network recovers; they are not stuck as text-only (F04).
+13. **Stationary reader.** After launch, leave the app idle. Published cards ahead keep growing to the 16-card reserve (F01).
+14. **One slow feed.** The first screen appears as soon as the fast feed answers (F06).
+15. **All feeds failing, then recovering.** Content arrives with no gesture (F08, F16).
+16. **Background during a scheduled retry.** No work runs while hidden (F09).
+17. **Tap a card.** The article opens in Safari (F10).
 ## Device test checklist (needs a Mac and an iPhone)
 
 Run `swift build && swift test` first. Then on device:
