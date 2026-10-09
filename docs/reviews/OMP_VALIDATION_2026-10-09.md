@@ -25,4 +25,4 @@ Logs completos: `~/Documents/feedmine-evidence/2026-10-09/t1/` (OMP) e `~/Docume
 
 Não houve push nem integração em main.
 
-T2 residual encontrado na inspeção: a chave material ainda usa URL de mídia literal; tracking churn pode criar republicação indevida. Regressão e correção necessárias antes de fechar T2.
+T2 residual corrigido com RED→GREEN: tracking churn na URL principal não republica; query significativa continua material. Domain agora possui ContentLocatorIdentity e MaterialContentIdentity usados por Editorial/Publication; Syndication mantém a mesma normalização anterior via adapter. Não há mudança nas URLs de transporte nem nos IDs de guid opacos. Suíte após a correção: 815 testes / 0 falhas (inclui uma prova T3 de lookup exato); testes iOS atuais 12 / 0 falhas. T2 concluído no simulador; dispositivo físico continua pendente do fechamento T8.

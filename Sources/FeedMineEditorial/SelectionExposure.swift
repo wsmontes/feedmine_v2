@@ -27,8 +27,7 @@ public struct SelectionExposureSnapshot: Hashable, Sendable {
     /// `PublicationStore.materialKey` over the published title/primary text (copied verbatim from
     /// the candidate) and the revision's ordinal-0 media locator.
     public static func materialKey(headline: String?, summary: String?, primaryMedia: String? = nil) -> String {
-        func collapse(_ text: String?) -> String { (text ?? "").split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") }
-        return collapse(headline) + "\u{1F}" + collapse(summary) + "\u{1F}" + (primaryMedia ?? "")
+        MaterialContentIdentity.key(title: headline, text: summary, primaryMedia: primaryMedia)
     }
 
     /// PD-1: an already-published origin is eligible again only with materially new content, and

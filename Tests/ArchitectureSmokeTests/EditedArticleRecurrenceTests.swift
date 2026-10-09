@@ -110,6 +110,10 @@ extension EditedArticleRecurrenceTests {
                 window: .init(candidates: [c], examinedCount: 1, nextCursor: nil, exhausted: true), exposure: exposure).orderedCandidates.count
         }
         XCTAssertEqual(try select(candidate(media: "https://example.test/a.jpg"), unseen: false), 0, "same text and image")
+        XCTAssertEqual(try select(candidate(media: "https://example.test/a.jpg?utm_source=rss&fbclid=changed"), unseen: false), 0,
+            "tracking parameters do not change the primary image")
+        XCTAssertEqual(try select(candidate(media: "https://example.test/a.jpg?image=other"), unseen: false), 1,
+            "meaningful query parameters still identify a different image")
         XCTAssertEqual(try select(candidate(media: "https://example.test/b.jpg"), unseen: false), 1, "new primary image")
         XCTAssertEqual(try select(candidate(media: "https://example.test/b.jpg"), unseen: true), 0, "earlier occurrence still unseen")
     }

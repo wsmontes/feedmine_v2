@@ -206,8 +206,7 @@ public struct PublicationStore: Sendable {
     /// revision's primary media locator (review F07 / PD-1: a new primary image is material).
     /// Editorial computes the identical key from candidate facts (`SelectionExposureSnapshot`).
     public static func materialKey(title: String?, primaryText: String?, primaryMedia: String? = nil) -> String {
-        func collapse(_ text: String?) -> String { (text ?? "").split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") }
-        return collapse(title) + "\u{1F}" + collapse(primaryText) + "\u{1F}" + (primaryMedia ?? "")
+        MaterialContentIdentity.key(title: title, text: primaryText, primaryMedia: primaryMedia)
     }
 
     /// Ordinal-0 canonical media locator of a revision; immutable, so both sides agree.

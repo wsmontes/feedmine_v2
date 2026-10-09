@@ -1,0 +1,1 @@
+FeedMineApp/FeedMineApp/Resources/catalog.sqlite filter=lfs diff=lfs merge=lfs -text
