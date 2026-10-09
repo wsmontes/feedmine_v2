@@ -44,6 +44,7 @@ public actor FeedRunwayDriver {
     private let publicationHistory: PublicationHistory
     private let localProductionSlice: LocalProductionSlice
     private let acquisitionCycle: RunwayAcquisitionCycle
+    private let coordinator: AcquisitionCoordinator
     private let monotonicNow: @Sendable () -> RunwayMonotonicTime
     private let makeSegmentIdentity: @Sendable () throws -> FeedRunwaySegmentIdentity
     private let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication
@@ -65,6 +66,7 @@ public actor FeedRunwayDriver {
         publicationHistory = PublicationHistory(database: acquisition.runtimeDatabase)
         localProductionSlice = LocalProductionSlice(database: acquisition.runtimeDatabase)
         acquisitionCycle = RunwayAcquisitionCycle(runway: runway, coordinator: coordinator)
+        self.coordinator = coordinator
         self.monotonicNow = monotonicNow; self.makeSegmentIdentity = makeSegmentIdentity; self.prepare = prepare
     }
 
@@ -237,5 +239,11 @@ public actor FeedRunwayDriver {
     public func markConsumptionInactive() async { await runway.markConsumptionInactive() }
     /// Review M7: when a failed local slice becomes retryable without a new user signal.
     public func localRetryEligibleAt() async -> RunwayMonotonicTime? { await runway.snapshot().localRetryEligibleAt }
+    /// Review F08: when a deferred acquisition intent can be resumed because a cooling target recovers.
+    public func acquisitionResumeAt() async -> RunwayMonotonicTime? {
+        guard await runway.snapshot().outstandingAcquisition != nil,
+            let expiry = await coordinator.nextCoolingExpiry() else { return nil }
+        return RunwayMonotonicTime(seconds: expiry)
+    }
     public func deactivate() async { await runway.deactivate() }
 }

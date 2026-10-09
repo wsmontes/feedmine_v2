@@ -123,6 +123,10 @@ public struct ColdFeedBootstrap: Sendable {
         }
         switch planning {
         case .disposition(.noEligibleTargets):
+            // Review F08: only cooling down is a temporary denial, not unavailability.
+            if !eligibleTargets.isEmpty, await coordinator.nextCoolingExpiry() != nil {
+                return .deferred(firstProgress, .resourceDenied)
+            }
             return .unavailable(firstProgress)
         case .disposition(.resourceDenied):
             return .deferred(firstProgress, .resourceDenied)

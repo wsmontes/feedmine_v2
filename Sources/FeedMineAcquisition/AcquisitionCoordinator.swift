@@ -82,6 +82,13 @@ public actor AcquisitionCoordinator {
         })
     }
 
+    /// Review F08: the earliest monotonic time at which a cooling target becomes eligible again.
+    public func nextCoolingExpiry() -> Double? {
+        guard let backoff else { return nil }
+        let now = monotonicSeconds()
+        return failures.values.map { $0.at + backoff.delay(afterConsecutiveFailures: $0.consecutive) }.filter { $0 > now }.min()
+    }
+
     /// Like `selectionOpportunity`, also lending the cooling set atomically with the position.
     public func selectionOpportunity(
         _ select: @Sendable (AcquisitionTargetID?, [AcquisitionActiveExecution], Set<AcquisitionTargetID>) throws -> AcquisitionPlanningResult

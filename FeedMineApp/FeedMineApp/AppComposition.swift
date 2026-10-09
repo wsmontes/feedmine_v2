@@ -288,7 +288,11 @@ final class FeedAssociation {
     private func scheduleLocalRetryIfNeeded() async {
         retryTask?.cancel()
         retryTask = nil
-        guard active, visible, let eligible = await driver.localRetryEligibleAt() else { return }
+        let local = await driver.localRetryEligibleAt()?.seconds
+        let acquisition = await driver.acquisitionResumeAt()?.seconds
+        // One opportunity at the earliest fact-derived time: a local retry or a feed leaving cooldown.
+        guard active, visible, let at = [local, acquisition].compactMap({ $0 }).min() else { return }
+        let eligible = RunwayMonotonicTime(seconds: at) ?? RunwayMonotonicTime(seconds: 0)!
         let wait = max(0, eligible.seconds - ProcessInfo.processInfo.systemUptime)
         retryTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))

@@ -40,6 +40,11 @@ public struct RunwayAcquisitionCycle: Sendable {
         }
         switch planning {
         case .disposition(.noEligibleTargets):
+            // Review F08: eligible targets that are only cooling down are a temporary denial. The
+            // intent stays outstanding so the opportunity at cooling expiry resumes it.
+            if !eligibleTargets.isEmpty, await coordinator.nextCoolingExpiry() != nil {
+                return .deferred(.resourceDenied)
+            }
             try await runway.acknowledgeAcquisition(intent)
             return .acceptedUnavailable(.noEligibleTargets)
         case .disposition(.resourceDenied): return .deferred(.resourceDenied)
