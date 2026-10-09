@@ -32,7 +32,7 @@ public struct FeedPreparationView: View {
     private var header: some View {
         VStack(spacing: 6) {
             Text("Indo atrás do que vale a pena ler")
-                .font(.title2.weight(.semibold))
+                .font(.system(.title2, design: .serif).weight(.semibold))
                 .multilineTextAlignment(.center)
             Text(verbatim: status)
                 .font(.subheadline)
@@ -97,12 +97,12 @@ private struct HeadlineCard: View {
     let emphasized: Bool
     var body: some View {
         Text(verbatim: text)
-            .font(emphasized ? .headline : .subheadline)
+            .font(emphasized ? .system(.headline, design: .serif) : .system(.subheadline, design: .serif))
             .lineLimit(3)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .background(.background, in: RoundedRectangle(cornerRadius: 14))
+            .background(FeedDesign.surface, in: RoundedRectangle(cornerRadius: FeedDesign.cardRadius, style: .continuous))
             .shadow(color: .black.opacity(emphasized ? 0.18 : 0.08), radius: emphasized ? 12 : 6, y: 4)
     }
 }

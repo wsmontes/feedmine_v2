@@ -44,12 +44,10 @@ struct FeedMineApp: App {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Fontes") { showingSources = true }.accessibilityIdentifier("reader-sources")
                 }
-                ToolbarItem(placement: .bottomBar) {
-                    TextField("Buscar no conteúdo local", text: $searchQuery)
-                        .accessibilityIdentifier("reader-local-search")
-                        .onSubmit { if let query = SearchContext(query: searchQuery) { switchContext(.search(query)) } }
-                }
             }
+            // System search field: collapses with the navigation bar instead of a permanent bottom bar.
+            .searchable(text: $searchQuery, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Buscar no conteúdo local")
+            .onSubmit(of: .search) { if let query = SearchContext(query: searchQuery) { switchContext(.search(query)) } }
             .sheet(isPresented: $showingSources) {
                 NavigationStack {
                     FeedSourcePicker(options: composition.sourceOptions,
@@ -63,6 +61,7 @@ struct FeedMineApp: App {
                 Button("OK") { readerError = nil }
             } message: { Text(readerError ?? "") }
             }
+            .tint(FeedDesign.accent)
             .task { await composition.launch() }
             .onChange(of: phase) { _, next in
                 if next == .background { Task { await composition.background() } }

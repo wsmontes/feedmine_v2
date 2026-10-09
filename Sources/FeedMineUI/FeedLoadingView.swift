@@ -26,7 +26,11 @@ public struct FeedLoadingView: View {
                 FeedPreparationView(progress: progress)
             }
         }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(FeedDesign.page.ignoresSafeArea())
     }
 }

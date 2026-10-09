@@ -19,9 +19,10 @@ public struct FeedScreen: View {
         if let presentation = store.state.presentation {
             if #available(iOS 18, macOS 15, *) {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 16) {
+                    LazyVStack(alignment: .leading, spacing: FeedDesign.cardSpacing) {
                         ForEach(presentation.window.items) { card in
                             FeedCardView(card: card, onOpen: { store.open(card) })
+                                .equatable()
                                 .contextMenu {
                                     Button(store.bookmarkedIDs.contains(card.id) ? "Remover dos salvos" : "Salvar artigo",
                                         systemImage: store.bookmarkedIDs.contains(card.id) ? "bookmark.fill" : "bookmark") { store.bookmark(card) }
@@ -50,13 +51,14 @@ public struct FeedScreen: View {
                     .modifier(NativeFeedTargets())
                 }
                 .modifier(NativeFeedViewport(capture: $capture, store: store))
-                .safeAreaInset(edge: .bottom) { FeedWorkBadge(work: store.state.work) }
+                .modifier(FeedPage(work: store.state.work))
             } else {
                 // macOS 14 renders local cards without automatic viewport capture.
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 16) {
+                    LazyVStack(alignment: .leading, spacing: FeedDesign.cardSpacing) {
                         ForEach(presentation.window.items) { card in
                             FeedCardView(card: card, onOpen: { store.open(card) })
+                                .equatable()
                                 .contextMenu {
                                     Button(store.bookmarkedIDs.contains(card.id) ? "Remover dos salvos" : "Salvar artigo",
                                         systemImage: store.bookmarkedIDs.contains(card.id) ? "bookmark.fill" : "bookmark") { store.bookmark(card) }
@@ -65,11 +67,29 @@ public struct FeedScreen: View {
                     }
                     .padding()
                 }
-                .safeAreaInset(edge: .bottom) { FeedWorkBadge(work: store.state.work) }
+                .modifier(FeedPage(work: store.state.work))
             }
         } else {
             FeedLoadingView(work: store.state.work)
         }
+    }
+}
+
+/// The page around the cards: warm paper background and the work badge floating over a constant
+/// bottom margin. The badge is an overlay, so its appearance never resizes or moves the scroll
+/// content and never changes the viewport facts the runway reads (the feed is not disturbed).
+@MainActor
+struct FeedPage: ViewModifier {
+    let work: FeedPresentationState.Work
+    func body(content: Content) -> some View {
+        content
+            .contentMargins(.bottom, FeedDesign.badgeClearance, for: .scrollContent)
+            .background(FeedDesign.page.ignoresSafeArea())
+            .overlay(alignment: .bottom) {
+                FeedWorkBadge(work: work)
+                    .allowsHitTesting(false)
+                    .animation(.easeInOut(duration: 0.25), value: work)
+            }
     }
 }
 
@@ -82,9 +102,11 @@ struct FeedWorkBadge: View {
         case .pending, .preparing:
             Label("Buscando novidades", systemImage: "arrow.triangle.2.circlepath")
                 .modifier(BadgeStyle())
+                .transition(.move(edge: .bottom).combined(with: .opacity))
         case .failed(let message):
             Label { Text(verbatim: message) } icon: { Image(systemName: "exclamationmark.triangle") }
                 .modifier(BadgeStyle())
+                .transition(.move(edge: .bottom).combined(with: .opacity))
         case .idle, .unavailable, .deferred:
             EmptyView()
         }
