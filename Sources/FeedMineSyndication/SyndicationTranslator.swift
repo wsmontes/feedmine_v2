@@ -58,11 +58,18 @@ public struct SyndicationTranslator: Sendable {
         func rss(_ item: RSSFeedItem, kind: String, language: String?) -> Result<AcquisitionObservation, ItemFailure> {
             let object = Self.nonempty(item.guid?.text).map { identity(kind + "-guid", $0) }
                 ?? Self.nonempty(item.link).map { identity(kind + "-link", $0) }
+            let base = Self.webURL(item.link)
             var media: [AcquisitionMediaCandidateClaim] = []
-            if let image = Self.media(item.iTunes?.image?.attributes?.href) { media.append(image) }
-            media += Self.thumbnails(item.media?.thumbnails)
+            if let image = Self.media(item.iTunes?.image?.attributes?.href, base: base) { media.append(image) }
+            media += Self.thumbnails(item.media?.thumbnails, base: base)
+            media += Self.contents(item.media?.contents, base: base)
+            media += Self.thumbnails(item.media?.group?.thumbnails, base: base)
+            media += Self.contents(item.media?.group?.contents, base: base)
+            if let enclosure = item.enclosure?.attributes, SyndicationMediaLocator.isImageMIMEType(enclosure.type),
+                let image = Self.media(enclosure.url, base: base, mimeType: enclosure.type) { media.append(image) }
+            if let image = Self.htmlImage(item.content?.encoded ?? item.description, base: base) { media.append(image) }
             return observation(object, title: item.title, summary: item.description, authored: item.pubDate,
-                language: language, link: item.link, media: media)
+                language: language, link: item.link, media: Self.unique(media))
         }
         switch feed {
         case .rss(let document):
@@ -82,17 +89,33 @@ public struct SyndicationTranslator: Sendable {
                 let object = Self.nonempty(item.id).map { identity("atom-id", $0) }
                     ?? link.map { identity("atom-link", $0) }
                 let version = item.updated.map { identity("atom-updated", String($0.timeIntervalSinceReferenceDate.bitPattern, radix: 16), .version) }
+                let base = Self.webURL(link)
+                var media = Self.thumbnails(item.media?.thumbnails, base: base) + Self.contents(item.media?.contents, base: base)
+                    + Self.thumbnails(item.media?.group?.thumbnails, base: base) + Self.contents(item.media?.group?.contents, base: base)
+                for enclosure in item.links ?? [] where enclosure.attributes?.rel?.lowercased() == "enclosure"
+                    && SyndicationMediaLocator.isImageMIMEType(enclosure.attributes?.type) {
+                    if let image = Self.media(enclosure.attributes?.href, base: base, mimeType: enclosure.attributes?.type) {
+                        media.append(image)
+                    }
+                }
+                if let image = Self.htmlImage(item.content?.text ?? item.summary?.text, base: base) { media.append(image) }
                 return observation(object, version: version, title: item.title, summary: item.summary?.text,
-                    authored: item.published, modified: item.updated, link: link, media: Self.thumbnails(item.media?.thumbnails))
+                    authored: item.published, modified: item.updated, link: link, media: Self.unique(media))
             }
         case .json(let document):
             return try window(document.items ?? [], kind: .json, start: startIndex, capacity: itemCapacity) { item in
                 let object = Self.nonempty(item.id).map { identity("json-id", $0) }
                 let version = item.dateModified.map { identity("json-modified", String($0.timeIntervalSinceReferenceDate.bitPattern, radix: 16), .version) }
-                let media = [Self.media(item.image), Self.media(item.bannerImage)].compactMap { $0 }
+                let link = Self.nonempty(item.url) ?? item.externalURL
+                let base = Self.webURL(link)
+                var media = [Self.media(item.image, base: base), Self.media(item.bannerImage, base: base)].compactMap { $0 }
+                for attachment in item.attachments ?? [] where SyndicationMediaLocator.isImageMIMEType(attachment.mimeType) {
+                    if let image = Self.media(attachment.url, base: base, mimeType: attachment.mimeType) { media.append(image) }
+                }
+                if let image = Self.htmlImage(item.contentHtml, base: base) { media.append(image) }
                 return observation(object, version: version, title: item.title, summary: item.summary, body: item.contentText,
                     authored: item.datePublished, modified: item.dateModified, language: item.language,
-                    link: Self.nonempty(item.url) ?? item.externalURL, media: media)
+                    link: link, media: Self.unique(media))
             }
         }
     }
@@ -120,19 +143,36 @@ public struct SyndicationTranslator: Sendable {
             scheme == "http" || scheme == "https", let host = url.host, !host.isEmpty else { return nil }
         return url
     }
-    private static func media(_ text: String?, width: Int? = nil, height: Int? = nil) -> AcquisitionMediaCandidateClaim? {
-        guard let url = webURL(text) else { return nil }
-        return .init(role: .cardVisual, mediaClass: .image, remoteURL: url, declaredMimeType: nil,
-            declaredPixelWidth: width, declaredPixelHeight: height)
+    private static func media(_ text: String?, base: URL? = nil, width: Int? = nil, height: Int? = nil,
+        mimeType: String? = nil) -> AcquisitionMediaCandidateClaim? {
+        guard let url = SyndicationMediaLocator.resolve(text, base: base) else { return nil }
+        let dimensions: (Int?, Int?) = (width ?? 0) > 0 && (height ?? 0) > 0 ? (width, height) : (nil, nil)
+        // Declared tiny visuals are logos/icons, not card art (v1 isLikelyFaviconOrLogo).
+        if let w = dimensions.0, let h = dimensions.1, w <= 150 && h <= 150 { return nil }
+        return .init(role: .cardVisual, mediaClass: .image, remoteURL: url, declaredMimeType: mimeType,
+            declaredPixelWidth: dimensions.0, declaredPixelHeight: dimensions.1)
     }
-    private static func thumbnails(_ values: [MediaThumbnail]?) -> [AcquisitionMediaCandidateClaim] {
+    private static func thumbnails(_ values: [MediaThumbnail]?, base: URL?) -> [AcquisitionMediaCandidateClaim] {
         (values ?? []).compactMap { value in
-            let width = value.attributes?.width.flatMap(Int.init)
-            let height = value.attributes?.height.flatMap(Int.init)
-            if let width, let height, width > 0, height > 0 {
-                return media(value.attributes?.url, width: width, height: height)
-            }
-            return media(value.attributes?.url)
+            media(value.attributes?.url, base: base, width: value.attributes?.width.flatMap(Int.init),
+                height: value.attributes?.height.flatMap(Int.init))
         }
+    }
+    /// `media:content` entries that are images by medium or MIME type; audio/video are not card visuals.
+    private static func contents(_ values: [MediaContent]?, base: URL?) -> [AcquisitionMediaCandidateClaim] {
+        (values ?? []).compactMap { value in
+            guard let attributes = value.attributes,
+                attributes.medium?.lowercased() == "image" || SyndicationMediaLocator.isImageMIMEType(attributes.type) else { return nil }
+            return media(attributes.url, base: base, width: attributes.width, height: attributes.height,
+                mimeType: SyndicationMediaLocator.isImageMIMEType(attributes.type) ? attributes.type : nil)
+        }
+    }
+    private static func htmlImage(_ html: String?, base: URL?) -> AcquisitionMediaCandidateClaim? {
+        SyndicationMediaLocator.firstContentImage(inHTML: html, base: base).flatMap { media($0.absoluteString) }
+    }
+    /// Same locator from several elements is one candidate; first occurrence keeps its declared facts.
+    private static func unique(_ values: [AcquisitionMediaCandidateClaim]) -> [AcquisitionMediaCandidateClaim] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0.remoteURL.absoluteString).inserted }
     }
 }

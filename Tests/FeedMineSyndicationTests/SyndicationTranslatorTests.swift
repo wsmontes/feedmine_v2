@@ -183,13 +183,13 @@ final class SyndicationTranslatorTests: XCTestCase {
         XCTAssertEqual(o.mediaCandidates[0].remoteURL.absoluteString,"https://Example.test/Artwork?Size=A")
     }
     func test22RSSMediaThumbnailDimensionsAndPrecedence() throws {
-        let o = try item(rss("<item><guid>g</guid><media:thumbnail url=\"https://example.test/one\" width=\"20\" height=\"30\"/><media:thumbnail url=\"https://example.test/two\" width=\"20\"/><media:thumbnail url=\"https://example.test/three\" width=\"bad\" height=\"-1\"/><itunes:image href=\"https://example.test/art\"/></item>"))
+        let o = try item(rss("<item><guid>g</guid><media:thumbnail url=\"https://example.test/one\" width=\"200\" height=\"300\"/><media:thumbnail url=\"https://example.test/two\" width=\"20\"/><media:thumbnail url=\"https://example.test/three\" width=\"bad\" height=\"-1\"/><itunes:image href=\"https://example.test/art\"/></item>"))
         XCTAssertEqual(o.mediaCandidates.map(\.remoteURL.absoluteString),["https://example.test/art","https://example.test/one","https://example.test/two","https://example.test/three"])
-        XCTAssertEqual(o.mediaCandidates.map(\.declaredPixelWidth),[nil,20,nil,nil]); XCTAssertEqual(o.mediaCandidates.map(\.declaredPixelHeight),[nil,30,nil,nil])
+        XCTAssertEqual(o.mediaCandidates.map(\.declaredPixelWidth),[nil,200,nil,nil]); XCTAssertEqual(o.mediaCandidates.map(\.declaredPixelHeight),[nil,300,nil,nil])
         XCTAssertTrue(o.mediaCandidates.allSatisfy { $0.declaredMimeType == nil })
     }
     func test23AtomMediaThumbnail() throws {
-        let o = try item(atom("<entry><id>a</id><media:thumbnail url=\"https://example.test/A\"/><media:thumbnail url=\"https://example.test/B\" width=\"1\" height=\"2\"/></entry>"))
+        let o = try item(atom("<entry><id>a</id><media:thumbnail url=\"https://example.test/A\"/><media:thumbnail url=\"https://example.test/B\" width=\"640\" height=\"360\"/></entry>"))
         XCTAssertEqual(o.mediaCandidates.map(\.remoteURL.absoluteString),["https://example.test/A","https://example.test/B"])
     }
     func test24JSONImageOrder() throws {
@@ -214,5 +214,51 @@ final class SyndicationTranslatorTests: XCTestCase {
         // Past dates are untouched.
         XCTAssertEqual(try item(rss("<item><guid>p</guid><pubDate>Tue, 03 Jun 2003 09:39:21 GMT</pubDate></item>")).authoredAt,
             date("2003-06-03T09:39:21Z"))
+    }
+    // MARK: - v1 media admission lessons (MD / IN quirks 4–8)
+    func test27RelativeProtocolRelativeAndEscapedLocatorsResolveAgainstItemLink() throws {
+        let o = try item(rss("<item><guid>g</guid><link>https://site.example/posts/a</link>"
+            + "<media:thumbnail url=\"/img/hero.jpg\"/><media:thumbnail url=\"//cdn.example/b.jpg\"/>"
+            + "<media:thumbnail url=\"https://cdn.example/c.jpg?w=1&amp;h=2\"/></item>"))
+        XCTAssertEqual(o.mediaCandidates.map(\.remoteURL.absoluteString),
+            ["https://site.example/img/hero.jpg","https://cdn.example/b.jpg","https://cdn.example/c.jpg?w=1&h=2"])
+    }
+    func test28DecorativeTrackingSvgAndTinyCandidatesAreNotAdmitted() throws {
+        let rejected = ["https://example.test/favicon.ico","https://secure.gravatar.com/avatar/abc","https://example.test/pixel.gif",
+            "https://example.test/tracker/open.gif","https://example.test/spacer.gif","https://example.test/1x1.png",
+            "https://example.test/logo.svg","https://example.test/clip.mp4","https://example.test/icon-32x32.png",
+            "https://example.test/a.jpghttps://other.test/b.jpg","https://s.w.org/images/core/emoji/14.0.0/72x72/1f600.png"]
+        let thumbs = rejected.map { "<media:thumbnail url=\"\($0)\"/>" }.joined()
+        let o = try item(rss("<item><guid>g</guid>\(thumbs)<media:thumbnail url=\"https://example.test/small\" width=\"120\" height=\"90\"/>"
+            + "<media:thumbnail url=\"https://example.test/photo-16x9.jpg\"/><media:thumbnail url=\"https://example.test/art-1400x1400.jpg\"/></item>"))
+        XCTAssertEqual(o.mediaCandidates.map(\.remoteURL.absoluteString),
+            ["https://example.test/photo-16x9.jpg","https://example.test/art-1400x1400.jpg"])
+    }
+    func test29ImagesFromMediaContentGroupEnclosureAndHTMLBody() throws {
+        let o = try item(rss("<item><guid>g</guid><link>https://site.example/p</link>"
+            + "<media:content url=\"https://example.test/audio.mp3\" type=\"audio/mpeg\"/>"
+            + "<media:content url=\"https://example.test/content.jpg\" medium=\"image\" width=\"1200\" height=\"800\"/>"
+            + "<media:group><media:content url=\"https://example.test/group.jpg\" type=\"image/jpeg\"/></media:group>"
+            + "<enclosure url=\"https://example.test/enclosure.png\" type=\"image/png\" length=\"1\"/>"
+            + "<description><![CDATA[<p><img src=\"https://gravatar.com/avatar/x\"><img data-src=\"/body.jpg\" src=\"data:image/gif;base64,R0\"></p>]]></description></item>"))
+        XCTAssertEqual(o.mediaCandidates.map(\.remoteURL.absoluteString), ["https://example.test/content.jpg",
+            "https://example.test/group.jpg","https://example.test/enclosure.png","https://site.example/body.jpg"])
+        XCTAssertEqual(o.mediaCandidates[0].declaredPixelWidth,1200); XCTAssertEqual(o.mediaCandidates[0].declaredPixelHeight,800)
+        XCTAssertEqual(o.mediaCandidates[1].declaredMimeType,"image/jpeg")
+    }
+    func test30SrcsetPrefersSufficientWidthAndDuplicatesCollapse() throws {
+        let o = try item(rss("<item><guid>g</guid><media:thumbnail url=\"https://example.test/s-1200.jpg\"/><description><![CDATA["
+            + "<img srcset=\"https://example.test/s-480.jpg 480w, https://example.test/s-1200.jpg 1200w, https://example.test/s-2400.jpg 2400w\">"
+            + "]]></description></item>"))
+        XCTAssertEqual(o.mediaCandidates.map(\.remoteURL.absoluteString), ["https://example.test/s-1200.jpg"])
+    }
+    func test31AtomAndJSONAdditionalImageSources() throws {
+        let a = try item(atom("<entry><id>a</id><link href=\"https://site.example/a\"/>"
+            + "<link rel=\"enclosure\" type=\"image/jpeg\" href=\"/enc.jpg\"/><link rel=\"enclosure\" type=\"audio/mpeg\" href=\"/a.mp3\"/>"
+            + "<content type=\"html\">&lt;img src=\"https://example.test/body.jpg\"&gt;</content></entry>"))
+        XCTAssertEqual(a.mediaCandidates.map(\.remoteURL.absoluteString), ["https://site.example/enc.jpg","https://example.test/body.jpg"])
+        let j = try item(json("{\"id\":\"j\",\"url\":\"https://site.example/j\",\"attachments\":[{\"url\":\"https://example.test/att.webp\",\"mime_type\":\"image/webp\"},"
+            + "{\"url\":\"https://example.test/ep.mp3\",\"mime_type\":\"audio/mpeg\"}],\"content_html\":\"<img src='/inline.jpg'>\"}"))
+        XCTAssertEqual(j.mediaCandidates.map(\.remoteURL.absoluteString), ["https://example.test/att.webp","https://site.example/inline.jpg"])
     }
 }
