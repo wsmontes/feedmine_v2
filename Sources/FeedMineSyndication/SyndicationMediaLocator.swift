@@ -7,6 +7,7 @@
 // supply so later media choice starts from plausible card visuals only.
 
 import Foundation
+import FeedMineDomain
 
 enum SyndicationMediaLocator {
     /// Resolves and admits one raw locator, or returns nil when it cannot be a card image.
@@ -28,6 +29,7 @@ enum SyndicationMediaLocator {
         }
         guard let url = absolute, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
             let host = url.host, !host.isEmpty, url.user == nil, url.password == nil,
+            NetworkHostPolicy.isPubliclyRoutable(host), // review R15: no loopback/LAN/metadata targets
             !isMalformedNestedScheme(lower), !isUnsupported(url), !isDecorative(url.absoluteString) else { return nil }
         return url
     }
