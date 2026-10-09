@@ -142,3 +142,33 @@ Answers `docs/reviews/OMP_ROUND4_VERIFICATION_2026-10-09.md`:
   - FTS5 search is optional; the measured gain is in the report.
 - **R15** (ChatGPT review `FeedMine_V1_vs_V2_Code_Review_Comparativo`), commit `555a656`. `NetworkHostPolicy` refuses loopback, LAN, link-local, metadata and numeric-shorthand hosts at media admission, before each fetch, on every redirect and on the final URL. Tests added. A DNS name that resolves to a private address is not covered.
 - **ChatGPT review, other open items.** R01 overlaps D1. R16 (AppComposition size) is a refactor that needs a compiler. R09 (estimate quality) and test-only gaps are R04, R06–R08, R11 and R13.
+
+## UI branch `ui/v1-visual-port` (uncompiled; for Codex build and test)
+
+Ports v1's visual language without v1's scroll costs. Sources:
+- v1 `DesignTokens`, `CircadianEngine`, `FeedItemCardView` and `Assets.xcassets`.
+- WWDC23 "Demystify SwiftUI performance" (dependencies and identity).
+- WWDC26 "Dive into lazy stacks and scrolling" (rows sized before appear, stable identity, constant subview count, prefetch).
+
+What changed:
+- **Tokens (`FeedDesign`).** Warm paper page, surfaces with light and dark variants (v1 was light-only), and a stable per-source color from v1's category palette. Serif headlines (New York, Dynamic Type), and the v1 Warm Earth accent.
+- **Card.**
+  - Source kicker, left accent bar, full-bleed hero, and a designed text-only card (PD-5).
+  - Saved mark as an overlay.
+  - Press feedback by transform only.
+  - No shadows, no geometry readers, constant structure per layout. `FeedCardView` is `Equatable` on the card value plus bookmark (`.equatable()`).
+- **Screen.** The work badge is an overlay over a constant bottom margin, so it never moves content or viewport facts.
+- **Waiting and preparation.** Text-free card skeletons while pending, with an opacity pulse that is off under Reduce Motion. Serif type in the preparation view.
+- **App.** v1 icon and wordmark, a `LaunchBackground` equal to the page color, AccentColor, and a system `.searchable` field.
+
+To check in the simulator or on device:
+1. Scroll hitches (Instruments: SwiftUI and Hitches templates) against `main`.
+2. Dark mode.
+3. Dynamic Type XXL.
+4. Reduce Motion.
+5. Saved mark after long-press, then Save.
+6. The badge appears without moving cards.
+7. Icon and wordmark.
+8. Launch in dark mode has no white flash.
+
+Watch item from the static audit: the `nonisolated ==` on `FeedCardView` under Swift 6. If it errors, drop `nonisolated`, or mark the stored lets `nonisolated`.
