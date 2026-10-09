@@ -64,11 +64,18 @@ final class LegacyCatalogReaderTests: XCTestCase {
         XCTAssertNil(try reader.source(key: "missing' OR 1=1 --"))
     }
 
-    /// Search ranks by catalog facts: title prefix, then quality_score (unscored last), then key.
+    /// Search order: title prefix, then v1 sort key (default_enabled, quality descending, title).
     func testSearchRanksByTitlePrefixThenQuality() throws {
-        let reader = try LegacyCatalogReader(catalogURL: try catalog())
-        // Both text sources match "example" by key; B is scored (80), A is not. Audio C is excluded.
-        XCTAssertEqual(try reader.matchingSources(query: "example", limit: 10).map(\.title), ["B", "A", "D"])
+        let url = try catalog()
+        try DatabaseQueue(path: url.path).write { db in
+            try db.execute(sql: """
+                INSERT INTO catalog_source (id, key, title, declared_url, request_url, media_kind, quality_score, default_enabled)
+                VALUES (14, 'https://e.example/feed', 'E', 'https://e.example/feed', 'https://e.example/feed', 'text', 40, 1)
+                """)
+        }
+        let reader = try LegacyCatalogReader(catalogURL: url)
+        // Matches by key: B (80) before E (40) proves descending quality; unscored A next; disabled D last.
+        XCTAssertEqual(try reader.matchingSources(query: "example", limit: 10).map(\.title), ["B", "E", "A", "D"])
         // "A" is a title prefix only for A, so A comes first despite B's score.
         XCTAssertEqual(try reader.matchingSources(query: "a", limit: 10).first?.title, "A")
         XCTAssertEqual(try reader.matchingSources(query: "100%_", limit: 10), [])

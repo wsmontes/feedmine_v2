@@ -12,9 +12,14 @@ SIZE=117940224
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="${ROOT}/FeedMineApp/FeedMineApp/Resources/catalog.sqlite"
 
+# OMP K7: check tools before a 118 MB download, so a missing tool is not blamed on the download.
+if command -v shasum >/dev/null 2>&1; then SHA_TOOL="shasum -a 256"
+elif command -v sha256sum >/dev/null 2>&1; then SHA_TOOL="sha256sum"
+else echo "error: shasum or sha256sum is required" >&2; exit 1; fi
+command -v curl >/dev/null 2>&1 || { echo "error: curl is required" >&2; exit 1; }
+
 sha256_of() {
-    if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d ' ' -f 1
-    else sha256sum "$1" | cut -d ' ' -f 1; fi
+    $SHA_TOOL "$1" | cut -d ' ' -f 1
 }
 
 valid() {

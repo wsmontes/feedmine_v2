@@ -12,6 +12,7 @@ final class ReaderPreferencesStoreTests: XCTestCase {
         let initial = try store.initialize(sourceKeys: ["a", "b"])
         XCTAssertEqual(initial.selectionVersion, 2)
         XCTAssertEqual(try store.updateSources(["a", "b"]), initial)
+        XCTAssertEqual(try store.updateSources(["b", "a"]), initial, "reordering is the same selection")
         let selected = try store.updateSources(["b"])
         XCTAssertEqual(selected.selectionVersion, 3)
         let source = SourceID()

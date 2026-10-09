@@ -200,6 +200,29 @@ final class CompositionTests: XCTestCase {
         XCTAssertThrowsError(try TrustedFeed.catalog(limit: 64, resourceURL: invalid))
     }
 
+    /// OMP C1: a saved key the catalog no longer has must not brick startup.
+    func testSavedKeysMissingFromCatalogAreRepairedNotFatal() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let starter = try TrustedFeed.catalog(limit: 64, resourceURL: XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite")))
+        do {
+            let store = ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+            _ = try store.initialize(sourceKeys: ["https://absent.example/rss", "bbc-world"])
+            _ = try store.setContext(.source(SourceID()))
+        }
+        let composition = AppComposition(directory: directory, feeds: starter, transportConfiguration: .ephemeral)
+        XCTAssertNil(composition.startupFailure)
+        XCTAssertEqual(composition.feeds.map(\.principal), starter.map(\.principal))
+        XCTAssertEqual(composition.currentContext, .main)
+        let repaired = try XCTUnwrap(ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory))).load())
+        XCTAssertEqual(repaired.sourceKeys, starter.map(\.principal))
+        XCTAssertEqual(repaired.activeContext, .main)
+
+        // Valid keys survive; only the vanished one is dropped.
+        let partial = try TrustedFeed.resolveAvailable(keys: ["https://absent.example/rss", starter[1].principal], fallback: starter)
+        XCTAssertEqual(partial.map(\.principal), [starter[1].principal])
+    }
+
     func testSourceSelectionSurvivesRelaunchAndFiltersCanonicalSupply() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let first = root(directory: directory)
