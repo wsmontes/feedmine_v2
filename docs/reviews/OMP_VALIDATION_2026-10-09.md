@@ -49,3 +49,7 @@ Código testado: `f8eb67e`. A rodada anterior de iOS passou 15 testes de integra
 Pendências reais: iPhone 14 Plus e iPhone 15 aparecem indisponíveis em devicectl; falta validação em hardware de scroll prolongado, memória, energia, térmica e rede. Falta publicar o objeto do catálogo LFS após regularizar a cota ou mudar a distribuição. Não houve merge em main. O transporte 3R11A original permanece preservado e fora da compilação deste worktree; seu gate não foi implementado nesta rodada.
 
 Resultados finais executados sobre o código `f8eb67e`: `swift test` PASS, 827 testes / 0 falhas, 21,008 s; `xcodebuild test` PASS, 15 integração + 3 XCUI / 0 falhas, iPhone 16 simulator iOS 26.5, `/tmp/feedmine-codex-final-code.xcresult`. Logs `t8-package-final.txt` e `t8-app-final-code.txt`. `git diff --check` PASS. Commits de documentação posteriores não alteram o código testado.
+
+## Pós-integração — `main`
+
+`main` = `9503a5a` + `8c31b83`: catálogo via release `catalog-v1` + `scripts/fetch-catalog.sh` (sem LFS); + `e78786e`: ranking da busca de fontes. A ser revalidado por build/test: `scripts/fetch-catalog.sh && swift test` e os testes iOS de bundle/checksum a partir de um clone limpo.

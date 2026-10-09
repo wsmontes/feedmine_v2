@@ -72,7 +72,7 @@ Swift toolchain on the machine where they were written. Local compilation/valida
 
 A static audit of all round-2 commits found no compile or test-consistency defects. That audit is not a build.
 
-### Known gaps (by design or pending)
+### Known gaps at round 2 (status 2026-10-09: all addressed — successor tail and PD-1 rule 2 by Codex T5, catalog by release asset, source choice by T4)
 - **PD-5, unseen published cards.** Already-published but unseen cards are not re-prepared with late media. That requires a Publication successor-tail mechanism; until then, late media improves only future cards.
 - **PD-1 rule 2** (at most one unseen future occurrence per origin) is not enforced.
 - **PD-2 catalog file.** The 118 MB `catalog.sqlite` is not in this repo. Bundle it (LFS) or download it, then add it to the app's Copy Bundle Resources.
@@ -108,7 +108,7 @@ Run `swift build && swift test` first. Then on device:
 9. **Catalog bundled.** Feeds come from the catalog defaults; relaunch keeps the same sources (stable UUIDs).
 10. **Logs.** Check `tidy evicted=… reclaimed=… budget=…` on backgrounding.
 
-## Next candidates
+## Next candidates (round-2 list; first three done, see below)
 
 - Publication successor-tail mechanism, to re-prepare unseen published cards while the app is not visible (PD-5).
 - PD-1 rule 2 (one unseen future occurrence per origin).
@@ -119,3 +119,11 @@ Run `swift build && swift test` first. Then on device:
 ## Fechamento Codex — 2026-10-09
 
 Branch `codex/omp-plan-execution`, código `f8eb67e`: fontes/contextos/busca local persistidos, cauda não vista transacional e bookmarks/uso de mídia integrados. Pacote final: 827 testes, zero falhas. Release no simulador compilou; resultados iOS e limitações estão em [relatório OMP/Codex](../reviews/OMP_VALIDATION_2026-10-09.md). O catálogo real está em LFS, mas o upload remoto foi recusado por cota excedida: clone remoto ainda precisa receber esse objeto. iPhone 14 Plus/15 indisponíveis; checklist físico e energia/térmica permanecem pendentes.
+
+## Round 4 — 2026-10-09 (integration after Codex, uncompiled)
+
+- `main` fast-forwarded to `codex/omp-plan-execution` (`9503a5a`); Codex's 827/0 package and 15+3 iOS results apply to `f8eb67e`.
+- `8c31b83` F02: the catalog is the asset of release `catalog-v1` (sha256 `c2ae483a…`, 117,940,224 bytes, verified after upload). `scripts/fetch-catalog.sh` downloads and verifies it. LFS is no longer used. Existing checkouts lose the tracked file on pull and must run the script once.
+- `e78786e` catalog search ranks by title prefix, then `quality_score`, then key (test added, not run).
+- Still open, needs a product decision: diversity beyond PD-4 (provider spacing, `quality_score` in editorial selection) and taxonomy browsing over catalog nodes. Not started, so no ranking is invented without a defined meaning.
+- Still open, needs hardware: the physical checklist above, plus energy, thermal and memory measurements.

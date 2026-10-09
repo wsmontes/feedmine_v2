@@ -234,3 +234,5 @@ Esta atualização sucede o estado histórico acima. Referência: [relatório co
 | F15 | Implementado e verificado | Fontes persistidas, busca local e checkpoints A→B→A offline; bookmarks protegidos na retenção. |
 
 PD-1/PD-3/PD-4/PD-5/PD-6 possuem regressões executadas; PD-2 funciona com catálogo local, mas depende de resolver distribuição LFS. PD-7: execução prosseguiu com commits/push; indisponibilidade dos aparelhos foi registrada sem declarar release pronta.
+
+Atualização `8c31b83`: a distribuição do F02 foi resolvida sem LFS. O catálogo é o asset da release `catalog-v1`, com checksum conferido após o upload, e é instalado por `scripts/fetch-catalog.sh`. Falta só um build que confirme o bundle a partir de um clone limpo.

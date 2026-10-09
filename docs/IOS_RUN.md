@@ -16,11 +16,11 @@ Primeiro, `scripts/fetch-catalog.sh` (catálogo V1 verificado por SHA-256; ver `
 
 Abra `FeedMineApp/FeedMineApp.xcodeproj`, scheme `FeedMine`, simulador iOS 18+. Deployment iOS 18, Swift 6, bundle `com.feedmine.development` configurável no target. Assinatura de dispositivo é configuração local do desenvolvedor; não há Team ID versionado.
 
-A configuração confiável fica em `TrustedFeeds.swift`: RSS BBC World e Science/Environment, com IDs fixos. Banco normal: Application Support/FeedMine/runtime.sqlite. Não apague esse diretório para testar reabertura. Nenhum backend FeedMine ou conta é necessário.
+As fontes vêm do catálogo V1 empacotado (`TrustedFeeds.swift`: starter set de quatro fontes por key, IDs derivados de forma estável; fontes escolhidas persistem em `reader_preferences`). As duas BBC fixas são apenas fallback de Debug. Banco normal: Application Support/FeedMine/runtime.sqlite. Não apague esse diretório para testar reabertura. Nenhum backend FeedMine ou conta é necessário.
 
 ## Associação e oportunidades
 
-Uma FeedAssociation possui uma Session e um Store. A instalação chama Store.install; frescor/provenance permanecem no Runtime/PresentationState. Scroll e foreground usam o driver real e preservam a associação. Background salva o cursor e informa consumo inativo. Sem apresentação, um foreground oferece outra oportunidade finita ao Cold, sem timer ou retry automático. Uma chamada Cold pendente não é duplicada.
+Uma FeedAssociation possui uma Session e um Store. A instalação chama Store.install; frescor/provenance permanecem no Runtime/PresentationState. Scroll e foreground usam o driver real e preservam a associação. Background salva o cursor e informa consumo inativo. Sem apresentação, o Cold se reagenda sozinho uma vez por oportunidade (expiração do cooldown ou um timeout de request), apenas com o app visível (F16/F09); um foreground também oferece oportunidade. Uma chamada Cold pendente não é duplicada.
 
 replaceSession é uma operação explícita de composição: desassocia, encerra o driver/transport anteriores e só então cria outra associação com Store vazio. Callbacks antigos continuam apontando para a associação encerrada e não instalam. A provenance não é persistida nem reconstruída no app.
 
