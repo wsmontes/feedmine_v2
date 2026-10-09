@@ -110,7 +110,8 @@ public struct LegacyCatalogReader: Sendable {
         } }
     }
 
-    /// Bounded literal name/key lookup; values never become SQL syntax.
+    /// Bounded literal name/key lookup; values never become SQL syntax. Ranking uses catalog facts only:
+    /// a title starting with the query first, then v1 `quality_score` (unscored last), then key for stability.
     public func matchingSources(query: String, limit: Int) throws -> [LegacyCatalogSourceRecord] {
         guard limit > 0 else { return [] }
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -120,8 +121,9 @@ public struct LegacyCatalogReader: Sendable {
         let keys = try Self.wrap { try queue.read { db in
             try String.fetchAll(db, sql: """
                 SELECT key FROM catalog_source WHERE media_kind = 'text'
-                    AND (title LIKE ? ESCAPE '!' OR key LIKE ? ESCAPE '!') ORDER BY key LIMIT ?
-                """, arguments: ["%" + escaped + "%", "%" + escaped + "%", min(limit, 100)])
+                    AND (title LIKE ? ESCAPE '!' OR key LIKE ? ESCAPE '!')
+                    ORDER BY (title LIKE ? ESCAPE '!') DESC, quality_score IS NULL, quality_score DESC, key LIMIT ?
+                """, arguments: ["%" + escaped + "%", "%" + escaped + "%", escaped + "%", min(limit, 100)])
         } }
         return try keys.compactMap { try source(key: $0) }
     }

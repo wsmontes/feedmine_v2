@@ -64,4 +64,14 @@ final class LegacyCatalogReaderTests: XCTestCase {
         XCTAssertNil(try reader.source(key: "missing' OR 1=1 --"))
     }
 
+    /// Search ranks by catalog facts: title prefix, then quality_score (unscored last), then key.
+    func testSearchRanksByTitlePrefixThenQuality() throws {
+        let reader = try LegacyCatalogReader(catalogURL: try catalog())
+        // Both text sources match "example" by key; B is scored (80), A is not. Audio C is excluded.
+        XCTAssertEqual(try reader.matchingSources(query: "example", limit: 10).map(\.title), ["B", "A", "D"])
+        // "A" is a title prefix only for A, so A comes first despite B's score.
+        XCTAssertEqual(try reader.matchingSources(query: "a", limit: 10).first?.title, "A")
+        XCTAssertEqual(try reader.matchingSources(query: "100%_", limit: 10), [])
+    }
+
 }
