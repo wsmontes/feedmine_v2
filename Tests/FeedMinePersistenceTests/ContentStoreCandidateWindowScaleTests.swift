@@ -210,7 +210,7 @@ final class ContentStoreCandidateWindowScaleTests: XCTestCase {
         let path = String(source[start.lowerBound..<end.lowerBound])
         XCTAssertFalse(path.uppercased().contains("OFFSET"))
         XCTAssertTrue(path.contains("SELECT origin_record_id, origin_revision_id, sort_date, sort_date_basis FROM selection_supply"))
-        XCTAssertTrue(path.contains("WHERE (sort_date, origin_record_id) < (?, ?)"))
+        XCTAssertTrue(path.contains(#"conditions.append("(sort_date, origin_record_id) < (?, ?)")"#))
         XCTAssertTrue(path.contains("ORDER BY sort_date DESC, origin_record_id DESC LIMIT ?"))
         XCTAssertTrue(path.contains("SELECT EXISTS(SELECT 1 FROM source_memberships WHERE origin_record_id = ?)"))
         XCTAssertTrue(path.contains("SELECT EXISTS(SELECT 1 FROM source_memberships WHERE origin_record_id = ? AND source_id = ?)"))

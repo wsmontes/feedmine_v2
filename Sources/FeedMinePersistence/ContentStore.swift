@@ -63,22 +63,35 @@ public struct ContentStore: Sendable {
         public let exhausted: Bool
     }
 
+    public func candidateWindow(sourceID: SourceID?, after cursor: CandidateCursor?, examinedCapacity: Int) throws -> CandidateWindow {
+        try candidateWindow(sourceID: sourceID, after: cursor, examinedCapacity: examinedCapacity, originIDs: nil)
+    }
+
     public func candidateWindow(sourceID: SourceID?, after cursor: CandidateCursor?,
-        examinedCapacity: Int) throws -> CandidateWindow {
+        examinedCapacity: Int, originIDs: [OriginRecordID]?) throws -> CandidateWindow {
         guard examinedCapacity > 0 else { throw ContentStoreError.invalidCapacity }
         return try database.read { db in
             try Self.coding {
                 // Fix examined work before performing any source eligibility lookup.
                 let columns = "SELECT origin_record_id, origin_revision_id, sort_date, sort_date_basis FROM selection_supply"
                 let order = " ORDER BY sort_date DESC, origin_record_id DESC LIMIT ?"
-                let rows: [Row]
+                var conditions: [String] = []
+                var arguments: [DatabaseValueConvertible] = []
+                if let originIDs {
+                    let keys = Set(originIDs).map { Self.key($0.rawValue) }.sorted()
+                    if keys.isEmpty { return CandidateWindow(records: [], examinedCount: 0, nextCursor: nil, exhausted: true) }
+                    guard keys.count <= db.maximumStatementArgumentCount - 3 else { throw ContentStoreError.invalidCapacity }
+                    conditions.append("origin_record_id IN (" + Array(repeating: "?", count: keys.count).joined(separator: ",") + ")")
+                    arguments += keys.map { $0 as DatabaseValueConvertible }
+                }
                 if let cursor {
                     let date = try PersistenceValueCoding.date(cursor.sortDate, field: "cursor.sort_date")
-                    rows = try Row.fetchAll(db, sql: columns + " WHERE (sort_date, origin_record_id) < (?, ?)" + order,
-                        arguments: [date, Self.key(cursor.originRecordID.rawValue), examinedCapacity])
-                } else {
-                    rows = try Row.fetchAll(db, sql: columns + order, arguments: [examinedCapacity])
+                    conditions.append("(sort_date, origin_record_id) < (?, ?)")
+                    arguments += [date, Self.key(cursor.originRecordID.rawValue)]
                 }
+                arguments.append(examinedCapacity)
+                let filter = conditions.isEmpty ? "" : " WHERE " + conditions.joined(separator: " AND ")
+                let rows = try Row.fetchAll(db, sql: columns + filter + order, arguments: StatementArguments(arguments))
                 var records: [CandidateRecord] = []
                 var nextCursor: CandidateCursor?
                 for row in rows {

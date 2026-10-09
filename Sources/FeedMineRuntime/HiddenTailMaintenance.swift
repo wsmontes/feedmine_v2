@@ -19,7 +19,7 @@ public struct HiddenTailMaintenance: Sendable {
             backwardCapacity: 0, forwardCapacity: examinedCapacity + 1).dropFirst()
         guard !future.isEmpty, future.count <= examinedCapacity else { return .ineligible }
         let content = ContentStore(database: database)
-        let window = try CandidateProvider(contentStore: content).candidates(for: plan, after: nil, examinedCapacity: examinedCapacity)
+        let window = try CandidateProvider(contentStore: content).candidates(for: plan, after: nil, examinedCapacity: examinedCapacity, originIDs: future.map(\.originRecordID))
         let seen = try store.seenMaterial(lease: lease, originIDs: window.candidates.map(\.originRecordID))
         guard let exposure = SelectionExposureSnapshot(requestedOriginIDs: window.candidates.map(\.originRecordID),
             publishedOriginIDs: Set(seen.keys), publishedMaterialKeys: seen),
@@ -29,7 +29,7 @@ public struct HiddenTailMaintenance: Sendable {
         let selection = try SelectionEngine().select(plan: plan, policy: policy, window: window, exposure: exposure,
             after: SelectionNeighbor(sourceIDs: sources, providerID: boundary.providerID))
         let selected = Set(selection.orderedCandidates.map(\.originRecordID))
-        // A bounded scan must cover the previous suffix, otherwise retain it intact.
+        // Every previous future origin must remain eligible; bounded exact lookup also works far behind the supply head.
         guard Set(future.map(\.originRecordID)).isSubset(of: selected) else { return .ineligible }
         await prefetch(selection.orderedCandidates.map(\.originRevisionID))
         let prepared = try prepare(selection)

@@ -79,8 +79,8 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let database = try RuntimeDatabase(location: .init(directory: root))
         let content = ContentStore(database: database), source = SourceID(), anchorOrigin = OriginRecordID(), editedOrigin = OriginRecordID()
-        func admit(_ origin: OriginRecordID, text: String, previous: OriginRevisionID?) throws -> OriginRevisionID {
-            let date = Date(timeIntervalSince1970: origin == anchorOrigin ? 2000 : 1000)
+        func admit(_ origin: OriginRecordID, text: String, previous: OriginRevisionID?, authored: Double? = nil) throws -> OriginRevisionID {
+            let date = Date(timeIntervalSince1970: authored ?? (origin == anchorOrigin ? 2000 : 1000))
             let revision = OriginRevision(id: OriginRevisionID(), originRecordID: origin, externalVersionIdentity: nil,
                 headline: "H", summary: text, bodyText: nil, authoredAt: date, modifiedAt: nil, observedAt: date,
                 language: nil, primaryLink: nil, searchProjection: nil, providerID: nil)
@@ -111,6 +111,7 @@ final class EditedArticleRecurrenceTests: XCTestCase {
         let before = try PublicationStore(database: database).card(id: prepared.cardIDs[0])
         let e2 = try admit(editedOrigin, text: "E2", previous: e1)
         let e3 = try admit(editedOrigin, text: "E3", previous: e2)
+        for _ in 0..<12 { _ = try admit(OriginRecordID(), text: "New head item", previous: nil, authored: 3000) }
         let store = PublicationStore(database: database), lease = try XCTUnwrap(store.hiddenTail(editionID: edition))
         let result = try await HiddenTailMaintenance(database: database).run(plan: plan, policy: policy, lease: lease,
             examinedCapacity: 10, prefetch: { _ in }, prepare: Self.prepare)

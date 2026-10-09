@@ -32,8 +32,12 @@ public struct CandidateProvider: Sendable {
     public init(contentStore: ContentStore) { self.contentStore = contentStore }
 
     /// Uses only the plan context. Editorial policy versions are not executed in 3C.
+    public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?, examinedCapacity: Int) throws -> CandidateSupplyWindow {
+        try candidates(for: plan, after: cursor, examinedCapacity: examinedCapacity, originIDs: nil)
+    }
+
     public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?,
-        examinedCapacity: Int) throws -> CandidateSupplyWindow {
+        examinedCapacity: Int, originIDs: [OriginRecordID]?) throws -> CandidateSupplyWindow {
         let sourceID: SourceID?
         switch plan.context.request {
         case .main: sourceID = nil
@@ -42,7 +46,7 @@ public struct CandidateProvider: Sendable {
         }
         let window = try contentStore.candidateWindow(sourceID: sourceID,
             after: cursor.map { ContentStore.CandidateCursor(sortDate: $0.sortDate, originRecordID: $0.originRecordID) },
-            examinedCapacity: examinedCapacity)
+            examinedCapacity: examinedCapacity, originIDs: originIDs)
         var candidates = window.records.map { record in
             let kind: CandidateTimestampKind
             switch record.sortDateBasis {
