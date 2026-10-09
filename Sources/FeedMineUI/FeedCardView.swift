@@ -13,16 +13,18 @@ import FeedMineRuntime
 @MainActor
 public struct FeedCardView: View, Equatable {
     private let card: PresentationCard
+    private let bookmarked: Bool
     private let onOpen: (@MainActor () -> Void)?
 
-    public init(card: PresentationCard, onOpen: (@MainActor () -> Void)? = nil) {
+    public init(card: PresentationCard, bookmarked: Bool = false, onOpen: (@MainActor () -> Void)? = nil) {
         self.card = card
+        self.bookmarked = bookmarked
         self.onOpen = onOpen
     }
 
     /// The card value is the whole visual input; the callback only forwards identity.
     public nonisolated static func == (lhs: FeedCardView, rhs: FeedCardView) -> Bool {
-        lhs.card == rhs.card
+        lhs.card == rhs.card && lhs.bookmarked == rhs.bookmarked
     }
 
     public var body: some View {
@@ -49,7 +51,7 @@ public struct FeedCardView: View, Equatable {
                 text(style: .hero, summaryLines: 3)
                     .padding(FeedDesign.cardPadding)
             }
-            .modifier(CardChrome(id: card.id.rawValue.uuidString, accent: accent, tint: nil))
+            .modifier(CardChrome(id: card.id.rawValue.uuidString, accent: accent, tint: nil, bookmarked: bookmarked))
         case .thumbnail:
             HStack(alignment: .top, spacing: 12) {
                 text(style: .thumbnail, summaryLines: 3)
@@ -58,13 +60,13 @@ public struct FeedCardView: View, Equatable {
                     .clipShape(RoundedRectangle(cornerRadius: FeedDesign.thumbnailRadius, style: .continuous))
             }
             .padding(FeedDesign.cardPadding)
-            .modifier(CardChrome(id: card.id.rawValue.uuidString, accent: accent, tint: nil))
+            .modifier(CardChrome(id: card.id.rawValue.uuidString, accent: accent, tint: nil, bookmarked: bookmarked))
         case .textOnly:
             // PD-5: a designed text card, not a card with a missing picture.
             text(style: .textOnly, summaryLines: 6)
                 .padding(.vertical, FeedDesign.cardPadding + 4)
                 .padding(.horizontal, FeedDesign.cardPadding)
-                .modifier(CardChrome(id: card.id.rawValue.uuidString, accent: accent, tint: accent))
+                .modifier(CardChrome(id: card.id.rawValue.uuidString, accent: accent, tint: accent, bookmarked: bookmarked))
         }
     }
 
@@ -136,6 +138,7 @@ private struct CardChrome: ViewModifier {
     let id: String
     let accent: Color
     let tint: Color?
+    let bookmarked: Bool
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: FeedDesign.cardRadius, style: .continuous)
@@ -153,6 +156,16 @@ private struct CardChrome: ViewModifier {
                     .accessibilityHidden(true)
             }
             .overlay { shape.strokeBorder(FeedDesign.hairline, lineWidth: 0.5) }
+            // Saved mark: a corner ribbon drawn over the card, never part of its layout.
+            .overlay(alignment: .topTrailing) {
+                if bookmarked {
+                    Image(systemName: "bookmark.fill")
+                        .font(.footnote)
+                        .foregroundStyle(FeedDesign.accent)
+                        .padding(10)
+                        .accessibilityLabel(Text("Salvo"))
+                }
+            }
             .contentShape(shape)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(id)

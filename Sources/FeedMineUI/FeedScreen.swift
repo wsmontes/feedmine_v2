@@ -21,7 +21,7 @@ public struct FeedScreen: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FeedDesign.cardSpacing) {
                         ForEach(presentation.window.items) { card in
-                            FeedCardView(card: card, onOpen: { store.open(card) })
+                            FeedCardView(card: card, bookmarked: store.bookmarkedIDs.contains(card.id), onOpen: { store.open(card) })
                                 .equatable()
                                 .contextMenu {
                                     Button(store.bookmarkedIDs.contains(card.id) ? "Remover dos salvos" : "Salvar artigo",
@@ -57,7 +57,7 @@ public struct FeedScreen: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FeedDesign.cardSpacing) {
                         ForEach(presentation.window.items) { card in
-                            FeedCardView(card: card, onOpen: { store.open(card) })
+                            FeedCardView(card: card, bookmarked: store.bookmarkedIDs.contains(card.id), onOpen: { store.open(card) })
                                 .equatable()
                                 .contextMenu {
                                     Button(store.bookmarkedIDs.contains(card.id) ? "Remover dos salvos" : "Salvar artigo",
