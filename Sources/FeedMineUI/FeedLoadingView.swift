@@ -22,6 +22,8 @@ public struct FeedLoadingView: View {
                 Text("Preparação adiada")
             case .failed(let message):
                 Text(verbatim: message)
+            case .preparing(let progress):
+                FeedPreparationView(progress: progress)
             }
         }
         .padding()

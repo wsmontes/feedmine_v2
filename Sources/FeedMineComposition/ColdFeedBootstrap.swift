@@ -55,6 +55,13 @@ public enum ColdFeedBootstrapOutcome: Hashable, Sendable {
     case noPublicationAfterAcquisition(LocalProductionProgress, [AcquisitionExecutionResult])
 }
 
+/// PD-3: real first-launch evidence for an entertaining, honest preparation screen.
+public enum ColdFeedEvidence: Hashable, Sendable {
+    case contacting([AcquisitionTargetID])
+    case settled(AcquisitionTargetID, stop: AcquisitionExecutionStop, supplyChanged: Bool)
+    case preparingMedia
+}
+
 public enum ColdFeedBootstrapError: Error, Equatable, Sendable {
     case policyContextMismatch
     case sessionAlreadyInstalled
@@ -70,14 +77,17 @@ public struct ColdFeedBootstrap: Sendable {
     private let coordinator: AcquisitionCoordinator
     private let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication
     private let prepareMedia: (@Sendable () async -> Void)?
+    private let evidence: (@Sendable (ColdFeedEvidence) async -> Void)?
 
     /// The external composition supplies a coordinator over the snapshot's same runtime database.
     public init(session: FeedSession, plan: FeedPlan, policy: ResolvedSelectionPolicy,
         acquisition: SyndicationAcquisitionSnapshot, coordinator: AcquisitionCoordinator,
         prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication,
-        prepareMedia: (@Sendable () async -> Void)? = nil) throws {
+        prepareMedia: (@Sendable () async -> Void)? = nil,
+        evidence: (@Sendable (ColdFeedEvidence) async -> Void)? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw ColdFeedBootstrapError.policyContextMismatch }
         self.prepareMedia = prepareMedia
+        self.evidence = evidence
         self.session = session
         self.plan = plan
         self.policy = policy
@@ -124,11 +134,16 @@ public struct ColdFeedBootstrap: Sendable {
 
         try Task.checkCancellation()
         // First launch contacts every planned feed at once; the slowest no longer gates the rest.
-        let results = try await coordinator.executeConcurrently(acquisitionPlan.work) { _ in }
+        let evidence = self.evidence
+        await evidence?(.contacting(acquisitionPlan.work.map(Self.targetID)))
+        let results = try await coordinator.executeConcurrently(acquisitionPlan.work) { result in
+            await evidence?(.settled(result.targetID, stop: result.stop, supplyChanged: result.selectableSupplyChanged))
+        }
         let changed = results.contains { $0.selectableSupplyChanged }
         guard changed else { return .noPublicationAfterAcquisition(firstProgress, results) }
         // PD-5/PD-6: give fresh supply a bounded chance to arrive with real images before the first
         // screen; whatever is not ready is published as a designed text-only card.
+        if prepareMedia != nil { await evidence?(.preparingMedia) }
         await prepareMedia?()
 
         // Reuse the exact request; each initial slice starts selection at the canonical head.
@@ -139,6 +154,10 @@ public struct ColdFeedBootstrap: Sendable {
         case .advancedWithoutPublication(let progress):
             return .noPublicationAfterAcquisition(progress, results)
         }
+    }
+
+    private static func targetID(_ work: AcquisitionPlannedWork) -> AcquisitionTargetID {
+        switch work { case .start(let target, _), .joinActive(let target): return target.id }
     }
 
     private func makeRequest(identity: ColdFeedPublicationIdentity,

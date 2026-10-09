@@ -46,6 +46,7 @@ public struct FeedScreen: View {
                     .modifier(NativeFeedTargets())
                 }
                 .modifier(NativeFeedViewport(capture: $capture, store: store))
+                .safeAreaInset(edge: .bottom) { FeedWorkBadge(work: store.state.work) }
             } else {
                 // macOS 14 renders local cards without automatic viewport capture.
                 ScrollView {
@@ -56,10 +57,38 @@ public struct FeedScreen: View {
                     }
                     .padding()
                 }
+                .safeAreaInset(edge: .bottom) { FeedWorkBadge(work: store.state.work) }
             }
         } else {
             FeedLoadingView(work: store.state.work)
         }
+    }
+}
+
+/// Review M17: work that continues after cards are visible is shown without touching the cards.
+@MainActor
+struct FeedWorkBadge: View {
+    let work: FeedPresentationState.Work
+    var body: some View {
+        switch work {
+        case .pending, .preparing:
+            Label("Buscando novidades", systemImage: "arrow.triangle.2.circlepath")
+                .modifier(BadgeStyle())
+        case .failed(let message):
+            Label { Text(verbatim: message) } icon: { Image(systemName: "exclamationmark.triangle") }
+                .modifier(BadgeStyle())
+        case .idle, .unavailable, .deferred:
+            EmptyView()
+        }
+    }
+}
+
+private struct BadgeStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content.font(.caption.weight(.medium))
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(.thinMaterial, in: Capsule())
+            .padding(.bottom, 8)
     }
 }
 

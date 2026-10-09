@@ -96,6 +96,10 @@ final class FeedAssociation {
     let media: MediaPrefetcher
     let acquisition: SyndicationAcquisitionSnapshot
     private let cold: ColdFeedBootstrap
+    @ObservationIgnored private let relay: EvidenceRelay
+    @ObservationIgnored private var preparation: PreparationProgress?
+    @ObservationIgnored private let targetNames: [AcquisitionTargetID: String]
+    @ObservationIgnored private let admittedHeadlines: @Sendable () -> [String]
     private let transport: URLSession
     private(set) var active = true
     private var launching = false
@@ -198,8 +202,14 @@ final class FeedAssociation {
             monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
             makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date())! },
             prepare: prepare, prepareMedia: prepareMedia)
+        let relay = EvidenceRelay()
+        self.relay = relay
         cold = try ColdFeedBootstrap(session: session, plan: plan, policy: policy,
-            acquisition: acquisition, coordinator: coordinator, prepare: prepare, prepareMedia: prepareMedia)
+            acquisition: acquisition, coordinator: coordinator, prepare: prepare, prepareMedia: prepareMedia,
+            evidence: { await relay.deliver($0) })
+        targetNames = Dictionary(uniqueKeysWithValues: feeds.map { ($0.targetID, $0.displayName) })
+        let provider = CandidateProvider(contentStore: ContentStore(database: db))
+        admittedHeadlines = { (try? provider.candidates(for: plan, after: nil, examinedCapacity: 12))?.candidates.compactMap(\.headline) ?? [] }
     }
 
     /// PD-5: each card is drawn with a prepared image or designed text-only — never "missing" one.
@@ -234,7 +244,12 @@ final class FeedAssociation {
             try install(FeedPresentationHandoff.receive(snapshot: restored, into: store.state))
             Self.log("local restore before HTTP")
         } else {
-            try install(store.state.reporting(.pending))
+            // PD-3: show real evidence of content arriving while the first Edition is prepared.
+            let started = PreparationProgress(startedAt: ProcessInfo.processInfo.systemUptime)
+            preparation = started
+            try install(store.state.reporting(.preparing(started)))
+            relay.receive = { [weak self] in self?.receive($0) }
+            defer { relay.receive = nil; preparation = nil }
             Self.log("cold bootstrap started")
             let now = Date()
             let outcome = try await cold.run(identity: .init(editionID: FeedEditionID(), publicationSchemaVersion: .init(rawValue: 1),
@@ -262,6 +277,28 @@ final class FeedAssociation {
             guard !Task.isCancelled else { return }
             await self?.foreground()
         }
+    }
+
+    /// PD-3: reduce pipeline evidence into the preparation screen value.
+    private func receive(_ evidence: ColdFeedEvidence) {
+        guard active, var progress = preparation else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        switch evidence {
+        case .contacting(let targets):
+            for target in targets {
+                progress = progress.applying(.contacting(id: target.rawValue.uuidString,
+                    name: targetNames[target] ?? "Fonte"), at: now)
+            }
+        case .settled(let target, let stop, let changed):
+            let reachable: Bool
+            if case .operationalFailure = stop { reachable = false } else { reachable = true }
+            progress = progress.applying(.settled(id: target.rawValue.uuidString, contributed: changed, reachable: reachable), at: now)
+            if changed { progress = progress.applying(.admitted(headlines: admittedHeadlines()), at: now) }
+        case .preparingMedia:
+            break
+        }
+        preparation = progress
+        do { try install(store.state.reporting(.preparing(progress))) } catch { Self.log("preparation update rejected") }
     }
 
     func viewport(_ observation: ViewportObservation, activity: RunwayActivity) async {
@@ -403,4 +440,11 @@ final class NetworkPathObserver: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         return path
     }
+}
+
+/// Delivers cold-bootstrap evidence to the main-actor association after it is constructed.
+@MainActor
+final class EvidenceRelay {
+    var receive: ((ColdFeedEvidence) -> Void)?
+    func deliver(_ evidence: ColdFeedEvidence) { receive?(evidence) }
 }

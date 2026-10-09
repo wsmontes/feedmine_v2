@@ -16,6 +16,8 @@ public struct FeedPresentationState: Hashable, Sendable {
         case unavailable
         case deferred
         case failed(message: String)
+        /// PD-3: first-launch preparation with real evidence of content arriving.
+        case preparing(PreparationProgress)
     }
 
     public let presentation: FeedPresentationSnapshot?
