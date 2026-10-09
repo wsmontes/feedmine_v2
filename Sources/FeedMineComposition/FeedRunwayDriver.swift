@@ -202,5 +202,7 @@ public actor FeedRunwayDriver {
     }
 
     public func markConsumptionInactive() async { await runway.markConsumptionInactive() }
+    /// Review M7: when a failed local slice becomes retryable without a new user signal.
+    public func localRetryEligibleAt() async -> RunwayMonotonicTime? { await runway.snapshot().localRetryEligibleAt }
     public func deactivate() async { await runway.deactivate() }
 }

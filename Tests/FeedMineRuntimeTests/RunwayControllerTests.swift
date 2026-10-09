@@ -77,7 +77,8 @@ final class RunwayControllerTests: XCTestCase {
         snap = await sut.snapshot(); XCTAssertEqual(snap.consumption.cardsPerSecond,0)
         let far = observation(9,8)
         try await sut.submitObservation(far); try await sut.acceptMeasurement(facts(far,from: b.anchorCardID,advance: .forwardBeyondProbe(20)))
-        snap = await sut.snapshot(); XCTAssertNil(snap.consumption.cardsPerSecond)
+        // Review M6: a probe-exceeding advance is a lower-bound rate, not an unknown one.
+        snap = await sut.snapshot(); XCTAssertGreaterThan(snap.consumption.cardsPerSecond ?? 0, 0)
         let after = observation(10,10)
         try await sut.submitObservation(after)
         let probe = try await sut.reconsider(resources: resources(),at: time(11))
@@ -459,4 +460,35 @@ final class RunwayControllerTests: XCTestCase {
         catch { XCTAssertEqual(error as? RunwayControllerError,.staleAcquisitionAcknowledgement) }
     }
 
+}
+
+extension RunwayControllerTests {
+    /// Review M7: a stationary reader gets a retry after a failed local slice, with doubling delay.
+    func testFailedLocalSliceBecomesRetryableAfterDoublingDelay() async throws {
+        let sut = RunwayController(configuration: RunwayControllerConfiguration(policyInputs: RunwayPolicyInputs(safetyFactor: 1,
+            releaseMarginSeconds: 0)!, consumptionSampleLimit: 2, replenishmentSampleLimit: 2, localRetryBaseSeconds: 4)!)
+        let o = RunwayObservation(editionID: FeedEditionID(rawValue: UUID()), anchorCardID: PublicationCardID(rawValue: UUID()),
+            sampledAt: RunwayMonotonicTime(seconds: 0)!, activity: .forward)
+        await sut.activate(RunwayScope(editionID: o.editionID, contextKey: ContextKey(request: .main), editorialRevisionID: EditorialRevisionID()))
+        try await sut.submitObservation(o)
+        try await sut.acceptMeasurement(RunwayMeasurement(observation: o, readyAhead: ReadyAheadFacts(editionID: o.editionID,
+            anchorCardID: o.anchorCardID, observedTailCardID: o.anchorCardID, amount: .exact(0)), advanceFromHighWater: nil))
+        func at(_ s: Double) -> RunwayMonotonicTime { RunwayMonotonicTime(seconds: s)! }
+        guard case .runLocalSlice(let first) = try await sut.reconsider(resources: RunwayResourceFacts(localWorkAllowed: true,
+            examinedCandidateCapacity: 7, readyProbeBound: 5, readyProbeCeiling: 100, forwardAdvanceProbeBound: 20)!, at: at(10)) else {
+            return XCTFail("Expected a local slice")
+        }
+        let res = RunwayResourceFacts(localWorkAllowed: true, examinedCandidateCapacity: 7, readyProbeBound: 5,
+            readyProbeCeiling: 100, forwardAdvanceProbeBound: 20)!
+        try await sut.failLocalSlice(first, failure: .failed, at: at(11))
+        var snap = await sut.snapshot(); XCTAssertEqual(snap.localRetryEligibleAt, at(15))
+        let early = try await sut.reconsider(resources: res, at: at(14)); XCTAssertEqual(early, .none)
+        guard case .runLocalSlice(let second) = try await sut.reconsider(resources: res, at: at(15)) else { return XCTFail("Expected retry") }
+        try await sut.failLocalSlice(second, failure: .failed, at: at(16))
+        snap = await sut.snapshot(); XCTAssertEqual(snap.localRetryEligibleAt, at(24))
+        // Cancellation is not retried automatically.
+        guard case .runLocalSlice(let third) = try await sut.reconsider(resources: res, at: at(24)) else { return XCTFail("Expected retry") }
+        try await sut.failLocalSlice(third, failure: .cancelled, at: at(25))
+        snap = await sut.snapshot(); XCTAssertNil(snap.localRetryEligibleAt)
+    }
 }

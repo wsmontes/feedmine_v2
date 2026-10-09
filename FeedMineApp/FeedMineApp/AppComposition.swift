@@ -165,7 +165,9 @@ final class FeedAssociation {
         let session = FeedSession(publicationHistory: history)
         self.session = session
         let runway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1.2,
-            releaseMarginSeconds: 2)!, consumptionSampleLimit: 8, replenishmentSampleLimit: 8)!)
+            releaseMarginSeconds: 2)!, consumptionSampleLimit: 8, replenishmentSampleLimit: 8,
+            // M7: first retry after a failed local slice one second later, doubling per failure.
+            localRetryBaseSeconds: 1)!)
         driver = try FeedRunwayDriver(session: session, runway: runway, plan: plan, policy: policy,
             acquisition: acquisition, coordinator: coordinator,
             monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
@@ -213,6 +215,21 @@ final class FeedAssociation {
         }
         let snapshot = try await driver.activateCurrentPresentation(resources: Self.resources)
         try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
+        await scheduleLocalRetryIfNeeded()
+    }
+
+    /// Review M7: a stationary reader produces no new observation, so a failed local slice would
+    /// otherwise never be retried. One opportunity is scheduled at the controller's eligibility time.
+    @ObservationIgnored private var retryTask: Task<Void, Never>?
+    private func scheduleLocalRetryIfNeeded() async {
+        retryTask?.cancel()
+        guard active, let eligible = await driver.localRetryEligibleAt() else { return }
+        let wait = max(0, eligible.seconds - ProcessInfo.processInfo.systemUptime)
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self?.foreground()
+        }
     }
 
     func viewport(_ observation: ViewportObservation, activity: RunwayActivity) async {
@@ -226,12 +243,13 @@ final class FeedAssociation {
             let received = try await FeedPresentationHandoff.submitViewport(observation, activity: activity,
                 resources: Self.resources, driver: driver, into: store.state)
             try install(received)
+            await scheduleLocalRetryIfNeeded()
             #if DEBUG
             viewportCompleted += 1
             if activity == .backward { backwardCompleted += 1 }
             #endif
             Self.log("Runway opportunity completed activity=\(activity)")
-        } catch { reportFailure(error) }
+        } catch { reportFailure(error); await scheduleLocalRetryIfNeeded() }
     }
 
     func foreground() async {
@@ -243,7 +261,8 @@ final class FeedAssociation {
             }
             let snapshot = try await driver.drive(resources: Self.resources)
             try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
-        } catch { reportFailure(error) }
+            await scheduleLocalRetryIfNeeded()
+        } catch { reportFailure(error); await scheduleLocalRetryIfNeeded() }
     }
 
     func background() async {
@@ -257,6 +276,7 @@ final class FeedAssociation {
 
     func close() async {
         active = false
+        retryTask?.cancel()
         await driver.deactivate()
         transport.invalidateAndCancel()
     }

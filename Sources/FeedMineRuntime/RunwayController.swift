@@ -122,17 +122,25 @@ public struct RunwayControllerSnapshot: Hashable, Sendable {
     public let localSupplyExhausted: Bool
     public let lastLocalFailure: RunwayLocalFailure?
     public let outstandingAcquisition: RunwayAcquisitionIntent?
+    /// When a failed local slice becomes retryable without another signal (M7); nil when not scheduled.
+    public let localRetryEligibleAt: RunwayMonotonicTime?
 }
 
 public struct RunwayControllerConfiguration: Hashable, Sendable {
     public let policyInputs: RunwayPolicyInputs
     public let consumptionSampleLimit: Int
     public let replenishmentSampleLimit: Int
-    public init?(policyInputs: RunwayPolicyInputs, consumptionSampleLimit: Int, replenishmentSampleLimit: Int) {
-        guard consumptionSampleLimit > 0, replenishmentSampleLimit > 0 else { return nil }
+    /// Review M7: after a failed local slice, a retry becomes eligible once this many seconds,
+    /// doubled per consecutive failure, have passed. nil keeps the explicit-signal-only behavior.
+    public let localRetryBaseSeconds: Double?
+    public init?(policyInputs: RunwayPolicyInputs, consumptionSampleLimit: Int, replenishmentSampleLimit: Int,
+        localRetryBaseSeconds: Double? = nil) {
+        guard consumptionSampleLimit > 0, replenishmentSampleLimit > 0,
+            localRetryBaseSeconds.map({ $0.isFinite && $0 > 0 }) ?? true else { return nil }
         self.policyInputs = policyInputs
         self.consumptionSampleLimit = consumptionSampleLimit
         self.replenishmentSampleLimit = replenishmentSampleLimit
+        self.localRetryBaseSeconds = localRetryBaseSeconds
     }
 }
 
@@ -165,6 +173,8 @@ public actor RunwayController {
     private var preferredLane: RunwayProductionLane = .episode
     private var bootstrapObservation: RunwayObservation?
     private var lastFailure: RunwayLocalFailure?
+    private var lastFailureAt: RunwayMonotonicTime?
+    private var consecutiveLocalFailures = 0
     private var lastCoverage: RunwayCoverage?
     private var previouslyPressured = false
     private var outstandingAcquisitionIntent: RunwayAcquisitionIntent?
@@ -223,6 +233,8 @@ public actor RunwayController {
         pendingReset = false
         preferredLane = .episode
         lastFailure = nil
+        lastFailureAt = nil
+        consecutiveLocalFailures = 0
         lastCoverage = nil
         previouslyPressured = false
     }
@@ -268,6 +280,7 @@ public actor RunwayController {
 
     public func reconsider(resources: RunwayResourceFacts, at now: RunwayMonotonicTime) throws -> RunwayControllerAction {
         guard let scope, let observation = latestObservation else { return .none }
+        if lastFailure != nil, let eligible = retryEligibleAt, now >= eligible { lastFailure = nil }
         guard inFlight == nil, lastFailure == nil else { return .none }
         guard let readyAhead else {
             return measurementRequest(observation, scope: scope, bound: resources.readyProbeBound,
@@ -337,8 +350,12 @@ public actor RunwayController {
                 guard count >= 0, rate.isFinite else { throw RunwayControllerError.invalidMeasurement }
                 appendConsumption(rate)
                 if count > 0 { highWater = observation.anchorCardID }
-            case .forwardBeyondProbe:
-                consumptionSamples = []
+            case .forwardBeyondProbe(let bound):
+                // Review M6: the fastest reader must not get the weakest signal. The probe proves
+                // at least `bound` cards were passed, so bound/elapsed is a valid lower-bound rate.
+                let rate = Double(bound) / elapsed
+                guard bound > 0, rate.isFinite else { throw RunwayControllerError.invalidMeasurement }
+                appendConsumption(rate)
                 highWater = observation.anchorCardID
             }
         }
@@ -373,6 +390,8 @@ public actor RunwayController {
         let latency = completedAt.seconds - (attemptStartedAt ?? intent.startedAt).seconds
         if published, latency <= 0 { throw RunwayControllerError.invalidCompletionTime }
         invalidateAcquisitionDemand()
+        consecutiveLocalFailures = 0
+        lastFailureAt = nil
         if progress.exhausted { readyAhead = nil }
         let updated = Progress(cursor: progress.nextCursor, exhausted: progress.exhausted)
         if intent.lane == .episode { episode = updated }
@@ -393,6 +412,8 @@ public actor RunwayController {
         inFlight = nil
         attemptStartedAt = nil
         lastFailure = failure
+        lastFailureAt = completedAt
+        if failure == .failed { consecutiveLocalFailures += 1 }
     }
 
     public func noteLocalSupplyChanged(scope: RunwayScope) throws {
@@ -437,6 +458,13 @@ public actor RunwayController {
             replenishment: ReplenishmentFacts(p95Seconds: runwayP95(latencySamples))!, readyAhead: readyAhead,
             lastCoverage: lastCoverage, localSliceInFlight: inFlight != nil, pendingSupplyReset: pendingReset,
             localSupplyExhausted: localSupplyExhausted, lastLocalFailure: lastFailure,
-            outstandingAcquisition: outstandingAcquisitionIntent)
+            outstandingAcquisition: outstandingAcquisitionIntent, localRetryEligibleAt: retryEligibleAt)
+    }
+
+    /// Time after which a failed local slice may be retried; doubles per consecutive failure.
+    private var retryEligibleAt: RunwayMonotonicTime? {
+        guard lastFailure == .failed, let base = configuration.localRetryBaseSeconds, let failedAt = lastFailureAt else { return nil }
+        let delay = base * pow(2, Double(min(consecutiveLocalFailures - 1, 30)))
+        return RunwayMonotonicTime(seconds: failedAt.seconds + delay)
     }
 }
