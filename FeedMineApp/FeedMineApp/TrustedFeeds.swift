@@ -1,5 +1,7 @@
 import Foundation
 import FeedMineDomain
+import FeedMinePersistence
+import FeedMineComposition
 
 struct TrustedFeed: Sendable {
     let targetID: AcquisitionTargetID
@@ -22,7 +24,22 @@ struct TrustedFeed: Sendable {
     ]
 }
 
-
+extension TrustedFeed {
+    /// PD-2: when the v1 catalog is bundled (`catalog.sqlite`), the app follows its curated default
+    /// sources instead of the two development feeds. Registration is bounded by `limit`; choosing
+    /// which sources a reader follows belongs to a later onboarding gate.
+    static func catalogOrDevelopment(limit: Int) -> [TrustedFeed] {
+        guard let url = Bundle.main.url(forResource: "catalog", withExtension: "sqlite"),
+            let reader = try? LegacyCatalogReader(catalogURL: url),
+            let entries = try? LegacyCatalogImport.entries(from: reader, limit: limit), !entries.isEmpty else {
+            return development
+        }
+        return entries.map { entry in
+            TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id, bindingID: entry.bindingID,
+                principal: entry.principal, endpoint: entry.endpoint, displayName: entry.source.displayName)
+        }
+    }
+}
 #if DEBUG
 // A real closed proxy used only for the development network-blocked relaunch proof.
 enum DevelopmentNetworkBlock {

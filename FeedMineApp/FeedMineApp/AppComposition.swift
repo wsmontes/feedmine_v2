@@ -25,7 +25,7 @@ final class AppComposition {
     private let feeds: [TrustedFeed]
     private let transportConfiguration: URLSessionConfiguration
 
-    init(directory: URL? = nil, feeds: [TrustedFeed] = TrustedFeed.development,
+    init(directory: URL? = nil, feeds: [TrustedFeed] = TrustedFeed.catalogOrDevelopment(limit: 64),
         transportConfiguration: URLSessionConfiguration? = nil) {
         self.directory = directory ?? RuntimeDatabaseLocation.applicationSupport(
             FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).directory
@@ -156,7 +156,8 @@ final class FeedAssociation {
             let target = try existing ?? authority.register(id: feed.targetID,
                 connectorKind: .syndication, authorizedSources: [feed.sourceID])
             let binding = SourceBinding(id: feed.bindingID, sourceID: feed.sourceID,
-                externalPrincipal: .init(connectorKind: .syndication, namespace: "feedmine-development-rss",
+                externalPrincipal: .init(connectorKind: .syndication,
+                    namespace: feed.principal.hasPrefix("http") ? LegacyCatalogImport.principalNamespace : "feedmine-development-rss",
                     value: feed.principal, role: .principal), aliases: [], generation: 1, state: .enabled)!
             return SyndicationTargetRegistration(targetID: target.id, targetGeneration: target.generation,
                 endpoint: feed.endpoint, bindings: [binding])!
