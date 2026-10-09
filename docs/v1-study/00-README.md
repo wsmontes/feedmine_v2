@@ -122,3 +122,7 @@ Ordered by risk to the user-visible feed. "Lesson" names the v1 study item that 
 7. **Process:** is CI mandatory before merge, and does every TestFlight build carry a SHA/tag?
 
 Area-specific questions are in section 7 of each document.
+
+## Port progress
+
+Code changes that apply this study are tracked in [PORT_LOG.md](PORT_LOG.md).

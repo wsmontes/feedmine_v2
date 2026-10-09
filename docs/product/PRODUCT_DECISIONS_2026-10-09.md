@@ -80,8 +80,8 @@ wants."
 must never degrade the shuffle.
 
 **Rules.**
-1. Adjacent cards differ by `SourceID`, and by `ProviderID` when known. Applies across segment
-   boundaries, re-occurrences (PD-1) and re-entered withheld cards (PD-5).
+1. Adjacent cards differ by `SourceID`. Applies across segment boundaries, re-occurrences (PD-1)
+   and re-entered withheld cards (PD-5). Provider is not a PD-4 criterion.
 2. If supply cannot satisfy the rule, **do not publish the violating card**: hold it and emit
    acquisition demand for other sources. A shorter runway is acceptable; a repeated source is not.
 3. Order is decided by Editorial from candidates, never by arrival order of network or media.
