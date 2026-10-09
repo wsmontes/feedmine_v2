@@ -276,15 +276,24 @@ final class FeedAssociation {
     /// Review M7: a stationary reader produces no new observation, so a failed local slice would
     /// otherwise never be retried. One opportunity is scheduled at the controller's eligibility time.
     @ObservationIgnored private var retryTask: Task<Void, Never>?
+    /// Review F09: only a visible association may drive the feed. Background and close revoke it.
+    @ObservationIgnored private var visible = true
     private func scheduleLocalRetryIfNeeded() async {
         retryTask?.cancel()
-        guard active, let eligible = await driver.localRetryEligibleAt() else { return }
+        retryTask = nil
+        guard active, visible, let eligible = await driver.localRetryEligibleAt() else { return }
         let wait = max(0, eligible.seconds - ProcessInfo.processInfo.systemUptime)
         retryTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            await self?.foreground()
+            await self?.scheduledOpportunity()
         }
+    }
+
+    /// A timed opportunity runs only if the app is still visible when it fires.
+    private func scheduledOpportunity() async {
+        guard active, visible, !launching else { return }
+        await foreground()
     }
 
     /// PD-3: reduce pipeline evidence into the preparation screen value.
@@ -330,6 +339,7 @@ final class FeedAssociation {
     }
 
     func foreground() async {
+        visible = true
         do {
             guard active, !launching else { return }
             if await session.currentPresentation() == nil {
@@ -343,6 +353,9 @@ final class FeedAssociation {
     }
 
     func background() async {
+        visible = false
+        retryTask?.cancel()
+        retryTask = nil
         guard active else { return }
         do {
             _ = try await session.checkpointCurrentPosition(at: Date())
@@ -360,6 +373,7 @@ final class FeedAssociation {
 
     func close() async {
         active = false
+        visible = false
         retryTask?.cancel()
         await driver.deactivate()
         transport.invalidateAndCancel()
