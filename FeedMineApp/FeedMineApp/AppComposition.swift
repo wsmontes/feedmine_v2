@@ -94,6 +94,8 @@ final class FeedAssociation {
     let driver: FeedRunwayDriver
     let coordinator: AcquisitionCoordinator
     let media: MediaPrefetcher
+    @ObservationIgnored private let tidy: MediaTidy
+    @ObservationIgnored private let tidyWaitSeconds: Double
     let acquisition: SyndicationAcquisitionSnapshot
     private let cold: ColdFeedBootstrap
     @ObservationIgnored private let relay: EvidenceRelay
@@ -183,6 +185,11 @@ final class FeedAssociation {
             conditions: { rate in DeviceMediaConditions.policy(device: device, measuredBytesPerSecond: rate,
                 assetDirectory: assetDirectory) })
         self.media = media
+        tidy = MediaTidy(assetDirectory: assetDirectory, prefetcher: media, freeStorageBytes: {
+            try? FileManager.default.temporaryDirectory
+                .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
+        })
+        tidyWaitSeconds = configuration.timeoutIntervalForRequest / 4
         let session = FeedSession(publicationHistory: history, imageDecoder: PresentationImageDecoder(
             assetDirectory: assetDirectory, heroMaxPixel: device.heroPixelWidth, thumbnailMaxPixel: device.thumbnailPixelWidth))
         self.session = session
@@ -340,6 +347,13 @@ final class FeedAssociation {
             _ = try await session.checkpointCurrentPosition(at: Date())
             await driver.markConsumptionInactive()
             Self.log("lifecycle checkpoint")
+            // PD-5: the screen is not visible now, so the house can be tidied: complete media for
+            // the next cards and bring local media under the device-derived budget. Seen and visible
+            // cards are never changed.
+            let visible = Set(store.state.presentation?.window.items.compactMap { $0.image?.key } ?? [])
+            let report = await tidy.run(visibleKeys: visible, supplyHeadLimit: 32,
+                deadline: ProcessInfo.processInfo.systemUptime + tidyWaitSeconds)
+            Self.log("tidy evicted=\(report.evictedAssets) reclaimed=\(report.reclaimedBytes) budget=\(report.budgetBytes)")
         } catch { reportFailure(error) }
     }
 
