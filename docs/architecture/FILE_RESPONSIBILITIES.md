@@ -897,3 +897,21 @@ FeedSession.swift owns the sequence identity and checked projection position, an
 FeedPresentationState.swift validates editorial identity, sequence compatibility and projection order, with typed staleProjection, projectionSequenceMismatch and inconsistentProjectionOrder errors. FeedScreenStore.swift, FeedPresentationHandoff.swift, FeedRunwayDriver.swift and RunwayController.swift are unchanged. S11/S12 still inspect the same Store fields and effect boundary. M14 capture code, U14 and the V6-L/V9-L behavioral proofs are unchanged.
 
 PresentationProjectionOrderingTests.swift uses real Publication/Session/Store objects and deterministic async completion gating to reproduce A(order1), B(order2), delayed A. It also covers accepted reverse navigation, exact idempotence, deliberately conflicting copied provenance, independent sessions, no-op operations, real committed append/refresh, database close/reopen and checked overflow. Existing Runtime projection and native UI hosting fixtures now obtain valid provenance through actual persisted Publication and FeedSession instead of constructing unversioned snapshots. Their original projection and visual-preservation assertions remain. No other production boundary or schema changes are introduced.
+
+
+## Phase 3R10 — iOS application composition
+
+FeedMineApp/FeedMineApp.xcodeproj references the repository package without copying its modules. FeedMineApp.swift owns SwiftUI launch and scene lifecycle, renders the unmodified FeedScreen. TrustedFeeds.swift owns the small replaceable development RSS configuration and stable target/Source/binding identities.
+
+AppComposition.swift owns the persistent database directory and one active FeedAssociation. Each association owns one FeedSession, one FeedScreenStore, one RunwayController through its real driver, and one coordinator shared by ColdFeedBootstrap and FeedRunwayDriver. The synchronous store callback crosses to the async handoff at this boundary. Session replacement retires the old association before creating a fresh receiving store; retired callbacks cannot install. Sources and package manifests remain unchanged.
+
+FeedMineAppTests contains controlled-transport integration of the actual pipeline and XCUITest of the executable with actual configured RSS feeds. docs/IOS_RUN.md records execution and evidence limitations.
+
+Historical 3R10 status before the 3R10-N amendment: BLOCKED before commit. Real iOS gestures move the rendered list but do not reach the existing store viewport callback in the final simulator run. The app callback-to-handoff path passes direct integration tests; native capture remains an unresolved package boundary. No package source was modified.
+
+
+### Phase 3R10-N — native delivery correction
+
+FeedScreen.swift retains its single private visual State. Each independent stream contributes its latest displacement direction; a stable reference card must keep size and content coordinates invariant. Consistent directions can confirm movement without common endpoints; consuming both proofs prevents reusing a past card displacement to authorize a layout-only global delta. An offscreen/non-reference update clears the matching visible proof. Native ScrollGeometry is normalized to contentOffset + top inset and container height, matching the actual card viewport coordinate space. Only one current reference is retained.
+
+Velocity remains diagnostic when its orientation is unverified, without a global veto. DEBUG native phase, first geometry/reference sample, and semantic event logs are bounded to existing observation points. App DEBUG counters count received observations and successful real handoff/driver returns; they do not emit observations or own projection order. The XCUITest fails the old capture and passes the corrected path, including reverse navigation. Current status: verified for external review on the existing branch; no main integration.
