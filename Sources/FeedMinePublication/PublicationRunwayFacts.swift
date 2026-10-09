@@ -18,8 +18,8 @@ public struct ReadyAheadFacts: Hashable, Sendable {
 public struct PublishedExposureFacts: Hashable, Sendable {
     public let editionID: FeedEditionID
     public let observedTailCardID: PublicationCardID
-    public let requestedRevisionIDs: [OriginRevisionID]
-    public let publishedRevisionIDs: Set<OriginRevisionID>
+    public let requestedOriginIDs: [OriginRecordID]
+    public let publishedOriginIDs: Set<OriginRecordID>
 }
 
 public enum PublicationAdvance: Hashable, Sendable {

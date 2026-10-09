@@ -59,13 +59,13 @@ public struct PublicationHistory: Sendable {
 
     /// History presence only; Editorial decides what to exclude in a future gate.
     public func exposure(editionID: FeedEditionID,
-        revisionIDs: [OriginRevisionID]) throws -> PublishedExposureFacts {
-        guard Set(revisionIDs).count == revisionIDs.count else {
+        originIDs: [OriginRecordID]) throws -> PublishedExposureFacts {
+        guard Set(originIDs).count == originIDs.count else {
             throw PublicationHistoryError.invalidExposureRequest
         }
-        let record = try publicationStore.exposure(editionID: editionID, revisionIDs: revisionIDs)
+        let record = try publicationStore.exposure(editionID: editionID, originIDs: originIDs)
         return PublishedExposureFacts(editionID: editionID, observedTailCardID: record.observedTailCardID,
-            requestedRevisionIDs: revisionIDs, publishedRevisionIDs: record.publishedRevisionIDs)
+            requestedOriginIDs: originIDs, publishedOriginIDs: record.publishedOriginIDs)
     }
 
     public func forwardAdvance(editionID: FeedEditionID, fromCardID: PublicationCardID,

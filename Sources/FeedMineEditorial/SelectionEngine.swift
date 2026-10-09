@@ -60,10 +60,10 @@ public struct SelectionEngine: Sendable {
             eligible = window.candidates
         case .excludePublishedRevisions:
             guard let exposure else { throw SelectionError.exposureRequired }
-            guard exposure.requestedRevisionIDs == window.candidates.map(\.originRevisionID) else {
+            guard exposure.requestedOriginIDs == window.candidates.map(\.originRecordID) else {
                 throw SelectionError.exposureCoverageMismatch
             }
-            eligible = window.candidates.filter { !exposure.publishedRevisionIDs.contains($0.originRevisionID) }
+            eligible = window.candidates.filter { !exposure.publishedOriginIDs.contains($0.originRecordID) }
         }
         let ordered: [Candidate]
         switch policy.sequencing {

@@ -107,7 +107,7 @@ The draft brings primaryAction or nil. PublicationCoordinator does not infer an 
 
 > Later media preparation can affect only future publication.
 
-A published text-only card is never updated when media arrives. Using later media requires a new PublishedCard occurrence in a future publication. Once assets exist, preparation must complete durable materialization before publishing an asset reference; remote URLs are not media identities. Phase 3H specifies local-only preparation from explicit bytes or already-local assets, opaque content-addressed identity and durability before reference. RenderContract stays in Publication; Media returns prepared facts. Real media preparation and asset storage remain unimplemented, with concrete 3I1/3I2/3I3 gates in [MEDIA_DESIGN.md](MEDIA_DESIGN.md).
+A published text-only card is never updated when media arrives. Using later media requires a new PublishedCard occurrence in another Edition, according to its own editorial policy. Late media never rewrites an already-published card and does not create another occurrence of the same OriginRecordID within the same Edition. Once assets exist, preparation must complete durable materialization before publishing an asset reference; remote URLs are not media identities. Phase 3H specifies local-only preparation from explicit bytes or already-local assets, opaque content-addressed identity and durability before reference. RenderContract stays in Publication; Media returns prepared facts. Real media preparation and asset storage remain unimplemented, with concrete 3I1/3I2/3I3 gates in [MEDIA_DESIGN.md](MEDIA_DESIGN.md).
 
 ## 7. Explicit identity/time/seed inputs
 
@@ -205,3 +205,12 @@ Persistence may add only a narrow mechanical Edition-tail read to PublicationSto
 Tests must prove atomic Edition + Segment 0 creation, empty selection with zero writes, exact selection order, rejected draft/candidate mismatch and duplicate card IDs, next-tail append, rejected revision mismatch, stale concurrent tail refusal without renumbering, exact history after reopen, late future drafts unable to mutate earlier PublishedCards and text-only publication without media infrastructure.
 
 Phase 3F is complete. Phase 3G1 bounded publication tail, Phase 3G2 immutable PublicationCoordinator and Phase 3G are complete. The hot append path uses an indexed tail row instead of scanning all retained Segments; full-history materialization still audits historical gaps. Tests prove exact create/append/reopen, empty and short supply, alignment refusal, late-collision rollback and unchanged earlier occurrences. Coordinator does not prepare media, perform canonical enrichment, retry or discover a global active Edition. Text-only is a valid prepared baseline; Runtime/Session still owns Edition visibility. Preparation, retention, exposure, session swaps, Runway and acquisition remain deferred.
+
+
+## Phase 3R5 — one origin per Edition
+
+A FeedEdition admits at most one published occurrence of each OriginRecordID. New revisions, late media, render layout and enrichment never create another occurrence within that Edition. Another Edition has independent eligibility; no automatic Edition is created for enrichment.
+
+Selection probes durable published origin identities for its exact candidate window. PublicationStore enforces the same rule inside the serialized write transaction for initial creation and both append paths, including expectedTail. Duplicate origins reject the entire proposed segment with duplicateOriginInEdition; stale expectedTail retains precedence. Published cards and checkpoints remain immutable on rejection.
+
+The measured forward-only migration publication-origin-exposure-index-v1 adds the non-unique published_cards_origin_record_segment index on (origin_record_id, segment_id). This supports candidate-origin lookup, with Edition scope through feed_segments, while the transaction remains correctness authority.

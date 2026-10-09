@@ -20,6 +20,7 @@ public enum PublicationStoreError: Error, Equatable, Sendable {
     case corruption(String)
     case invalidCapacity
     case staleHistoryExpectation
+    case duplicateOriginInEdition
 }
 
 public struct PublicationStore: Sendable {
@@ -214,6 +215,9 @@ public struct PublicationStore: Sendable {
                 throw PublicationStoreError.invalidAppendOrdinal
             }
             try Self.validate(segment, cards: cards, version: edition.publicationSchemaVersion)
+            guard try Self.publishedOrigins(cards.map(\.originRecordID), editionID: segment.editionID, in: db).isEmpty else {
+                throw PublicationStoreError.duplicateOriginInEdition
+            }
             try Self.insertSegment(segment, cards: cards, db: db)
         }
     }
@@ -377,28 +381,44 @@ public struct PublicationStore: Sendable {
 
     public struct ExposureRecord: Hashable, Sendable {
         public let observedTailCardID: PublicationCardID
-        public let publishedRevisionIDs: Set<OriginRevisionID>
+        public let publishedOriginIDs: Set<OriginRecordID>
     }
 
     public func exposure(editionID: FeedEditionID,
-        revisionIDs: [OriginRevisionID]) throws -> ExposureRecord {
+        originIDs: [OriginRecordID]) throws -> ExposureRecord {
         try database.read { db in
             let editionKey = PersistenceValueCoding.uuid(editionID.rawValue)
             let schema = try Self.historySchema(editionKey, in: db)
             let tail = try Self.historyTail(editionKey: editionKey, schema: schema, in: db)
-            var published = Set<OriginRevisionID>()
-            for id in Set(revisionIDs) {
-                // Fix the driving side to the supplied revision probe, not the Edition archive.
-                if try Int.fetchOne(db, sql: """
-                    SELECT 1 FROM published_cards c INDEXED BY published_cards_origin_revision_segment
-                    JOIN feed_segments s ON s.id = c.segment_id
-                    WHERE c.origin_revision_id = ? AND s.edition_id = ? LIMIT 1
-                    """, arguments: [PersistenceValueCoding.uuid(id.rawValue), editionKey]) != nil {
-                    published.insert(id)
-                }
-            }
-            return ExposureRecord(observedTailCardID: tail.cardID, publishedRevisionIDs: published)
+            return ExposureRecord(observedTailCardID: tail.cardID,
+                publishedOriginIDs: try Self.publishedOrigins(originIDs, editionID: editionID, in: db))
         }
+    }
+
+    // Shared by the bounded exposure read and the serialized pre-insert guard.
+    // Chunk only at SQLite's actual parameter limit; never one query per candidate.
+    private static func publishedOrigins(_ ids: [OriginRecordID], editionID: FeedEditionID,
+        in db: Database) throws -> Set<OriginRecordID> {
+        let keys = Array(Set(ids)).map { PersistenceValueCoding.uuid($0.rawValue) }
+        let capacity = db.maximumStatementArgumentCount - 1
+        guard capacity > 0 else { throw PublicationStoreError.invalidCapacity }
+        var found = Set<OriginRecordID>()
+        for start in stride(from: 0, to: keys.count, by: capacity) {
+            let group = Array(keys[start..<min(start + capacity, keys.count)])
+            let placeholders = Array(repeating: "?", count: group.count).joined(separator: ",")
+            let values = try String.fetchAll(db, sql: """
+                SELECT DISTINCT c.origin_record_id FROM published_cards c
+                JOIN feed_segments s ON s.id = c.segment_id
+                WHERE c.origin_record_id IN (\(placeholders)) AND s.edition_id = ?
+                """, arguments: StatementArguments(group + [PersistenceValueCoding.uuid(editionID.rawValue)]))
+            for value in values {
+                guard let uuid = UUID(uuidString: value), PersistenceValueCoding.uuid(uuid) == value else {
+                    throw PublicationStoreError.corruption("origin_record_id")
+                }
+                found.insert(OriginRecordID(rawValue: uuid))
+            }
+        }
+        return found
     }
 
     public func forwardAdvance(editionID: FeedEditionID, fromCardID: PublicationCardID,
@@ -527,6 +547,9 @@ public struct PublicationStore: Sendable {
         }
         _ = try segmentValues(segment)
         for card in cards { try validateCard(card); _ = try cardValues(card) }
+        guard Set(cards.map(\.originRecordID)).count == cards.count else {
+            throw PublicationStoreError.duplicateOriginInEdition
+        }
     }
 
     private static func validateCard(_ card: CardRecord) throws {

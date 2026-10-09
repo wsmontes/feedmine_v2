@@ -305,3 +305,62 @@ final class PublicationStoreTests: XCTestCase {
     }
 
 }
+
+
+extension PublicationStoreTests {
+    private func revisedCard(_ original: PublicationStore.CardRecord) -> PublicationStore.CardRecord {
+        .init(id: PublicationCardID(), originRecordID: original.originRecordID, originRevisionID: OriginRevisionID(),
+            sourceID: nil,providerID: nil,sourceDisplayName: "New enrichment",providerDisplayName: nil,
+            contentEntityID: nil,contentClusterID: nil,title: "New revision",primaryText: nil,
+            timestampValue: nil,timestampKind: nil,mediaKey: nil,mediaPixelWidth: nil,mediaPixelHeight: nil,
+            mediaMimeType: nil,renderLayout: "textOnly",renderMediaAspectRatio: nil,primaryActionKind: nil,primaryActionReference: nil)
+    }
+
+    func test3R5InitialAndAtomicInitialRejectDuplicateOriginsWithoutAnyWrites() throws {
+        let db = try StorageFixture.database(self), store = PublicationStore(database: db)
+        let edition = StorageFixture.edition(), first = StorageFixture.card(), duplicate = revisedCard(first)
+        let cards = [first,duplicate], segment = StorageFixture.segment(edition,cards)
+        XCTAssertThrowsError(try store.createEdition(edition,firstSegment: segment,cards: cards)) {
+            XCTAssertEqual($0 as? PublicationStoreError,.duplicateOriginInEdition)
+        }
+        XCTAssertThrowsError(try store.createInitialEdition(edition,firstSegment: segment,cards: cards,
+            initialCheckpoint: .init(editionID: edition.id,cardID: first.id,anchorPlacement: "top",updatedAt: Date()))) {
+            XCTAssertEqual($0 as? PublicationStoreError,.duplicateOriginInEdition)
+        }
+        XCTAssertNil(try store.edition(id: edition.id)); XCTAssertNil(try store.card(id: first.id))
+        XCTAssertNil(try SessionStore(database: db).checkpoint())
+        try store.createInitialEdition(edition,firstSegment: StorageFixture.segment(edition,[first]),cards: [first],
+            initialCheckpoint: .init(editionID: edition.id,cardID: first.id,anchorPlacement: "top",updatedAt: Date()))
+        XCTAssertEqual(try SessionStore(database: db).checkpoint()?.cardID,first.id)
+    }
+
+    func test3R5BothAppendPathsRejectEntireMixedSegmentPreserveTailCheckpointAndReopen() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let location = RuntimeDatabaseLocation(directory: root)
+        let edition = StorageFixture.edition(), original = StorageFixture.card(), duplicate = revisedCard(original), fresh = StorageFixture.card()
+        let checkpoint = SessionStore.CheckpointRecord(editionID: edition.id,cardID: original.id,anchorPlacement: "center",updatedAt: Date(timeIntervalSince1970: 500))
+        do {
+            let db = try RuntimeDatabase(location: location), store = PublicationStore(database: db)
+            try store.createInitialEdition(edition,firstSegment: StorageFixture.segment(edition,[original]),cards: [original],initialCheckpoint: checkpoint)
+            let mixed = StorageFixture.segment(edition,[fresh,duplicate],ordinal: 1)
+            XCTAssertThrowsError(try store.appendSegment(mixed,cards: [fresh,duplicate])) { XCTAssertEqual($0 as? PublicationStoreError,.duplicateOriginInEdition) }
+            XCTAssertThrowsError(try store.appendSegment(mixed,cards: [fresh,duplicate],expectingTailCardID: original.id)) { XCTAssertEqual($0 as? PublicationStoreError,.duplicateOriginInEdition) }
+            XCTAssertThrowsError(try store.appendSegment(mixed,cards: [fresh,duplicate],expectingTailCardID: PublicationCardID())) { XCTAssertEqual($0 as? PublicationStoreError,.staleHistoryExpectation) }
+            XCTAssertNil(try store.card(id: fresh.id)); XCTAssertNil(try store.card(id: duplicate.id))
+            XCTAssertEqual(try store.tail(editionID: edition.id).ordinal,0)
+            XCTAssertEqual(try SessionStore(database: db).checkpoint(),checkpoint)
+            let repeatedFresh = revisedCard(fresh)
+            XCTAssertThrowsError(try store.appendSegment(StorageFixture.segment(edition,[fresh,repeatedFresh],ordinal: 1),cards: [fresh,repeatedFresh])) { XCTAssertEqual($0 as? PublicationStoreError,.duplicateOriginInEdition) }
+            try store.appendSegment(StorageFixture.segment(edition,[fresh],ordinal: 1),cards: [fresh],expectingTailCardID: original.id)
+        }
+        let db = try RuntimeDatabase(location: location), store = PublicationStore(database: db)
+        XCTAssertEqual(try store.card(id: original.id),original)
+        XCTAssertEqual(try store.tail(editionID: edition.id).ordinal,1)
+        XCTAssertEqual(try SessionStore(database: db).checkpoint(),checkpoint)
+        XCTAssertEqual(try store.exposure(editionID: edition.id,originIDs: [duplicate.originRecordID]).publishedOriginIDs,[original.originRecordID])
+        let other = StorageFixture.edition()
+        try store.createEdition(other,firstSegment: StorageFixture.segment(other,[duplicate]),cards: [duplicate])
+        XCTAssertEqual(try store.segments(editionID: other.id).flatMap(\.cardIDs),[duplicate.id])
+    }
+}

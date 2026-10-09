@@ -239,7 +239,7 @@ final class PublicationCoordinatorTests: XCTestCase {
         }
     }
 
-    func testFutureOccurrenceChangesEnrichmentWithoutMutatingOldCard() throws {
+    func testAnotherEditionChangesEnrichmentWithoutMutatingOldCard() throws {
         try withLocation { location in
             let db = try RuntimeDatabase(location: location), store = PublicationStore(database: db), coordinator = PublicationCoordinator(database: db)
             let c = candidate(1), first = try create([c])
@@ -247,7 +247,11 @@ final class PublicationCoordinatorTests: XCTestCase {
             let old = try PublicationPersistenceMapping.card(XCTUnwrap(store.card(id: first.cardIDs[0])))
             let later = try draft(c, sourceName: "New source name", providerName: "New provider name", action: .localContentDetail)
             let id = PublicationCardID(rawValue: uuid(2100))
-            _ = try coordinator.append(append([c], target: first.editionID, segment: 1001, ids: [id], drafts: [later]))
+            let second = try create([c], drafts: [later], ids: [id], edition: 901, segment: 1001)
+            _ = try coordinator.createEdition(second)
+            XCTAssertNotEqual(first.editionID, second.editionID)
+            XCTAssertEqual(try store.segments(editionID: first.editionID).flatMap(\.cardIDs).count, 1)
+            XCTAssertEqual(try store.segments(editionID: second.editionID).flatMap(\.cardIDs).count, 1)
             XCTAssertEqual(try PublicationPersistenceMapping.card(XCTUnwrap(store.card(id: first.cardIDs[0]))), old)
             let new = try PublicationPersistenceMapping.card(XCTUnwrap(store.card(id: id)))
             XCTAssertEqual(new, try frozen(later, id: id))
@@ -287,4 +291,48 @@ final class PublicationCoordinatorTests: XCTestCase {
         }
     }
 
+}
+
+extension PublicationCoordinatorTests {
+    func test3R5DelayedConcurrentAppendMustNotRepublishSameOrigin() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try RuntimeDatabase(location: .init(directory: root))
+        let coordinator = PublicationCoordinator(database: database)
+        let initial = try create([candidate(3)])
+        _ = try coordinator.createEdition(initial)
+        let first = candidate(1)
+        let edited = Candidate(originRecordID: first.originRecordID, originRevisionID: OriginRevisionID(),
+            headline: "Edited", summary: first.summary, timestamp: first.timestamp,
+            language: first.language, providerID: first.providerID)
+        // Both callers observe no exposure before either publishes this origin.
+        let facts = try PublicationHistory(database: database).exposure(editionID: initial.editionID,
+            originIDs: [first.originRecordID])
+        XCTAssertTrue(facts.publishedOriginIDs.isEmpty)
+        let requestA = try append([first], target: initial.editionID, segment: 1101,
+            ids: [PublicationCardID(rawValue: uuid(2101))])
+        let requestB = try append([edited], target: initial.editionID, segment: 1102,
+            ids: [PublicationCardID(rawValue: uuid(2102))])
+        let (ready, announce) = AsyncStream<Void>.makeStream()
+        let (release, resume) = AsyncStream<Void>.makeStream()
+        let delayed = Task {
+            announce.yield(())
+            for await _ in release { break }
+            // This public overload has no expectation tied to B's original exposure.
+            return try coordinator.append(requestB)
+        }
+        for await _ in ready { break }
+        _ = try coordinator.append(requestA)
+        resume.yield(())
+        do { _ = try await delayed.value; XCTFail("Delayed duplicate must be rejected") }
+        catch { XCTAssertEqual(error as? PublicationStoreError, .duplicateOriginInEdition) }
+        let count = try database.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+                WHERE s.edition_id = ? AND c.origin_record_id = ?
+                """, arguments: [initial.editionID.rawValue.uuidString.lowercased(), first.originRecordID.rawValue.uuidString.lowercased()])!
+        }
+        print("3R5 P15: occurrencesForSameOrigin=\(count), segments=\(try PublicationStore(database: database).segments(editionID: initial.editionID).count)")
+        XCTAssertEqual(count, 1, "Publication authority must reject the delayed duplicate origin regardless of revision")
+    }
 }

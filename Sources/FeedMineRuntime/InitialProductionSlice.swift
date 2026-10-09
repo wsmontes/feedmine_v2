@@ -68,7 +68,7 @@ public struct InitialProductionSlice: Sendable {
         let window = try candidateProvider.candidates(for: request.plan,
             after: nil, examinedCapacity: request.examinedCapacity)
         guard let exposure = SelectionExposureSnapshot(
-            requestedRevisionIDs: window.candidates.map(\.originRevisionID), publishedRevisionIDs: []) else {
+            requestedOriginIDs: window.candidates.map(\.originRecordID), publishedOriginIDs: []) else {
             throw InitialProductionSliceError.invalidExposureFacts
         }
         let selection = try selectionEngine.select(plan: request.plan, policy: request.policy,

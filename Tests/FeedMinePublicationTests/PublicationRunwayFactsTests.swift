@@ -49,35 +49,35 @@ final class PublicationRunwayFactsTests: XCTestCase {
     func testHeadReconsiderationExposurePreservesRequestAndExactSubsetAfterCloseReopen() throws {
         let loc = location(), edition = RestoreFixture.edition()
         let c = try (0..<4).map { try RestoreFixture.card(index: $0) }
-        let a = c[0].origin.originRevisionID, b = c[1].origin.originRevisionID, n = OriginRevisionID()
+        let a = c[0].origin.originRecordID, b = c[1].origin.originRecordID, n = OriginRecordID()
         let request = [n,a,b]
         do {
             let db = try RuntimeDatabase(location: loc)
             try persist(edition, c, in: db)
-            let facts = try PublicationHistory(database: db).exposure(editionID: edition.id, revisionIDs: request)
-            XCTAssertEqual(facts.observedTailCardID, c[3].id); XCTAssertEqual(facts.requestedRevisionIDs, request); XCTAssertEqual(facts.publishedRevisionIDs, [a,b])
+            let facts = try PublicationHistory(database: db).exposure(editionID: edition.id, originIDs: request)
+            XCTAssertEqual(facts.observedTailCardID, c[3].id); XCTAssertEqual(facts.requestedOriginIDs, request); XCTAssertEqual(facts.publishedOriginIDs, [a,b])
         }
         let history = PublicationHistory(database: try RuntimeDatabase(location: loc))
-        let facts = try history.exposure(editionID: edition.id, revisionIDs: request)
-        XCTAssertEqual(facts.editionID, edition.id); XCTAssertEqual(facts.requestedRevisionIDs, request)
-        XCTAssertEqual(facts.publishedRevisionIDs, [a,b]); XCTAssertFalse(facts.publishedRevisionIDs.contains(n))
-        XCTAssertTrue(facts.publishedRevisionIDs.isSubset(of: Set(facts.requestedRevisionIDs)))
-        XCTAssertThrowsError(try history.exposure(editionID: edition.id, revisionIDs: [a,a])) { XCTAssertEqual($0 as? PublicationHistoryError, .invalidExposureRequest) }
-        let empty = try history.exposure(editionID: edition.id, revisionIDs: [])
-        XCTAssertEqual(empty.observedTailCardID, c[3].id); XCTAssertEqual(empty.requestedRevisionIDs, []); XCTAssertEqual(empty.publishedRevisionIDs, [])
-        XCTAssertThrowsError(try history.exposure(editionID: FeedEditionID(), revisionIDs: [])) { XCTAssertEqual($0 as? PublicationStoreError, .missingEdition) }
+        let facts = try history.exposure(editionID: edition.id, originIDs: request)
+        XCTAssertEqual(facts.editionID, edition.id); XCTAssertEqual(facts.requestedOriginIDs, request)
+        XCTAssertEqual(facts.publishedOriginIDs, [a,b]); XCTAssertFalse(facts.publishedOriginIDs.contains(n))
+        XCTAssertTrue(facts.publishedOriginIDs.isSubset(of: Set(facts.requestedOriginIDs)))
+        XCTAssertThrowsError(try history.exposure(editionID: edition.id, originIDs: [a,a])) { XCTAssertEqual($0 as? PublicationHistoryError, .invalidExposureRequest) }
+        let empty = try history.exposure(editionID: edition.id, originIDs: [])
+        XCTAssertEqual(empty.observedTailCardID, c[3].id); XCTAssertEqual(empty.requestedOriginIDs, []); XCTAssertEqual(empty.publishedOriginIDs, [])
+        XCTAssertThrowsError(try history.exposure(editionID: FeedEditionID(), originIDs: [])) { XCTAssertEqual($0 as? PublicationStoreError, .missingEdition) }
     }
     func testSemanticExposureTailChangesOnlyInNewSnapshotAfterAppend() throws {
         let loc = location(), edition = RestoreFixture.edition()
         let c = try (0..<4).map { try RestoreFixture.card(index: $0) }
         let db = try RuntimeDatabase(location: loc)
         try persist(edition,c,in: db)
-        let history = PublicationHistory(database: db), old = try history.exposure(editionID: edition.id,revisionIDs: [])
+        let history = PublicationHistory(database: db), old = try history.exposure(editionID: edition.id,originIDs: [])
         let next = try RestoreFixture.card(index: 0)
         let records = try PublicationPersistenceMapping.records(segment: RestoreFixture.segment(edition,cards: [next],ordinal: 2),cards: [next])
         try PublicationStore(database: db).appendSegment(records.0,cards: records.1)
         XCTAssertEqual(old.observedTailCardID,c[3].id)
-        XCTAssertEqual(try history.exposure(editionID: edition.id,revisionIDs: []).observedTailCardID,next.id)
+        XCTAssertEqual(try history.exposure(editionID: edition.id,originIDs: []).observedTailCardID,next.id)
     }
 
 }

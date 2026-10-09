@@ -175,11 +175,12 @@ final class PublicationPreparationTests: XCTestCase {
             preparedKey = asset.key
             let laterDrafts = try PublicationPreparation.drafts(selection: selection,
                 inputs: [input(candidate, presentation: .image(result, layout: .thumbnail))])
-            let later = try coordinator.append(.init(selection: selection, drafts: laterDrafts,
-                editionID: editionID, segmentID: FeedSegmentID(rawValue: uuid(911)), segmentSeed: 13,
+            let later = try coordinator.createEdition(.init(selection: selection, drafts: laterDrafts,
+                editionID: FeedEditionID(rawValue: uuid(903)), publicationSchemaVersion: PublicationSchemaVersion(rawValue: 1),
+                selectionSeed: 14, editionCreatedAt: Date(timeIntervalSince1970: 202), segmentID: FeedSegmentID(rawValue: uuid(911)), segmentSeed: 13,
                 segmentCreatedAt: Date(timeIntervalSince1970: 202), cardIDs: [nextID]))
             guard case .published(let receipt) = later else { return XCTFail("Expected later publication") }
-            XCTAssertEqual(receipt.segmentOrdinal, 1)
+            XCTAssertEqual(receipt.segmentOrdinal, 0)
             XCTAssertEqual(try PublicationStore(database: database).card(id: firstID), original)
         }
         let store = PublicationStore(database: try RuntimeDatabase(location: location))
@@ -191,5 +192,8 @@ final class PublicationPreparationTests: XCTestCase {
         XCTAssertEqual(later.renderLayout, "thumbnail")
         XCTAssertEqual(later.mediaPixelWidth, 2)
         XCTAssertEqual(later.mediaPixelHeight, 3)
+        XCTAssertNotEqual(later.id, original.id)
+        XCTAssertEqual(try store.segments(editionID: editionID).flatMap(\.cardIDs), [firstID])
+        XCTAssertEqual(try store.segments(editionID: FeedEditionID(rawValue: uuid(903))).flatMap(\.cardIDs), [nextID])
     }
 }

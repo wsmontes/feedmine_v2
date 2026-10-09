@@ -57,10 +57,10 @@ private struct LocalSliceFixture: Sendable {
             scoringPolicyVersion: r.scoringPolicyVersion,sequencingPolicyVersion: r.sequencingPolicyVersion,exposurePolicyVersion: r.exposurePolicyVersion,
             selectionSchemaVersion: r.selectionSchemaVersion,eligibility: .structuralOnly,scoring: .equal,sequencing: .recencyDescending,exposure: exposure)
     }
-    func admit(_ revision: OriginRevision, previous: OriginRevisionID? = nil) throws {
+    func admit(_ revision: OriginRevision, previous: OriginRevisionID? = nil, media: [MediaCandidate] = [], identity: ExternalIdentity? = nil) throws {
         try ContentStore(database: database).commitCanonicalChange(.init(recordID: revision.originRecordID,
-            externalObjectIdentity: ExternalIdentity(connectorKind: ConnectorKind(rawValue: "test"),namespace: "objects",value: revision.originRecordID.rawValue.uuidString,role: .object),
-            revision: revision,mediaCandidates: [],availability: .available,observedAt: revision.observedAt,
+            externalObjectIdentity: identity ?? ExternalIdentity(connectorKind: ConnectorKind(rawValue: "test"),namespace: "objects",value: revision.originRecordID.rawValue.uuidString,role: .object),
+            revision: revision,mediaCandidates: media,availability: .available,observedAt: revision.observedAt,
             expectedCurrent: previous.map { .revision($0) } ?? .none,currentUpdate: .useSuppliedRevision,
             membershipMutations: [.upsert(sourceID: SourceID(rawValue: Self.uuid(43000)),kind: .direct,observedAt: revision.observedAt)]))
     }
@@ -135,14 +135,86 @@ final class LocalProductionSliceTests: XCTestCase {
         XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.editionID).count,2)
     }
 
-    func testNewRevisionOfSameOriginPublishesAndShortSupplyDoesNotRefill() throws {
+    func testNewRevisionOfSameOriginAdvancesWithoutRepublicationAndAnotherEditionCanSelectIt() throws {
         let old = LocalSliceFixture.revision(1), new = LocalSliceFixture.revision(1,version: 20)
         let f = try fixture(initial: [old])
         try f.admit(old); try f.admit(new,previous: old.id)
-        let (progress,receipt) = try published(LocalProductionSlice(database: f.database).run(f.request()) { LocalSliceFixture.prepared($0) })
+        XCTAssertEqual(try ContentStore(database: f.database).currentRevision(originRecordID: old.originRecordID),new)
+        let store = PublicationStore(database: f.database)
+        let original = try XCTUnwrap(store.card(id: f.initialCardIDs[0]))
+        let calls = LocalPreparationCalls()
+        let outcome = try LocalProductionSlice(database: f.database).run(f.request()) { selected in
+            calls.mark(); return LocalSliceFixture.prepared(selected)
+        }
+        guard case .advancedWithoutPublication(let progress) = outcome else { return XCTFail("Expected origin exclusion") }
         XCTAssertEqual(progress.examinedCount,1); XCTAssertTrue(progress.exhausted)
-        XCTAssertEqual(receipt.cardIDs,[LocalSliceFixture.cardID(LocalSliceFixture.candidate(new))])
-        XCTAssertEqual(try PublicationStore(database: f.database).card(id: receipt.cardIDs[0])?.originRecordID,old.originRecordID)
+        XCTAssertNotNil(progress.nextCursor); XCTAssertEqual(calls.value,0)
+        XCTAssertEqual(try store.card(id: original.id),original)
+        try assertOnlyInitial(f)
+        let other = FeedEditionID(rawValue: LocalSliceFixture.uuid(41001))
+        let seed = LocalSliceFixture.revision(901)
+        let initial = SelectionResult(editorialRevision: f.plan.revision, orderedCandidates: [LocalSliceFixture.candidate(seed)],
+            supplyReport: .init(examinedCount: 0,nextCursor: nil,exhausted: true))
+        let prepared = LocalSliceFixture.prepared(initial)
+        _ = try PublicationCoordinator(database: f.database).createEdition(.init(selection: initial,
+            drafts: PublicationPreparation.drafts(selection: initial,inputs: prepared.inputs), editionID: other,
+            publicationSchemaVersion: .init(rawValue: 1),selectionSeed: 1,editionCreatedAt: Date(),
+            segmentID: .init(),segmentSeed: 2,segmentCreatedAt: Date(),cardIDs: prepared.cardIDs))
+        let (_,receipt) = try published(LocalProductionSlice(database: f.database).run(f.request(edition: other)) { LocalSliceFixture.prepared($0) })
+        XCTAssertEqual(try store.card(id: receipt.cardIDs[0])?.originRevisionID,new.id)
+        XCTAssertEqual(try store.card(id: original.id),original)
+    }
+
+    func test3R5CanonicalPayloadAndMediaChangesRemainExcludedAfterReopen() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let location = RuntimeDatabaseLocation(directory: root)
+        let old = LocalSliceFixture.revision(2)
+        let changed = OriginRevision(id: OriginRevisionID(),originRecordID: old.originRecordID,externalVersionIdentity: nil,
+            headline: "Edited RSS title",summary: "Edited description",bodyText: old.bodyText,authoredAt: old.authoredAt,
+            modifiedAt: old.modifiedAt,observedAt: old.observedAt,language: old.language,primaryLink: old.primaryLink,
+            searchProjection: old.searchProjection,providerID: old.providerID)
+        let mediaOnly = OriginRevision(id: OriginRevisionID(),originRecordID: old.originRecordID,externalVersionIdentity: nil,
+            headline: changed.headline,summary: changed.summary,bodyText: changed.bodyText,authoredAt: changed.authoredAt,
+            modifiedAt: changed.modifiedAt,observedAt: changed.observedAt,language: changed.language,primaryLink: changed.primaryLink,
+            searchProjection: changed.searchProjection,providerID: changed.providerID)
+        let identity = ExternalIdentity(connectorKind: ConnectorKind(rawValue: "syndication"),namespace: "rss-guid",value: "stable-guid",role: .object)
+        let f = try LocalSliceFixture(database: RuntimeDatabase(location: location),initial: [old])
+        try f.admit(old,identity: identity); try f.admit(changed,previous: old.id,identity: identity)
+        let original = try XCTUnwrap(PublicationStore(database: f.database).card(id: f.initialCardIDs[0]))
+        func assertExcluded(_ database: RuntimeDatabase) throws {
+            let outcome = try LocalProductionSlice(database: database).run(f.request()) { _ in throw PreparationFailure.refused }
+            guard case .advancedWithoutPublication(let progress) = outcome else { return XCTFail("Expected same-origin exclusion") }
+            XCTAssertEqual(progress.examinedCount,1); XCTAssertTrue(progress.exhausted); XCTAssertNotNil(progress.nextCursor)
+            XCTAssertEqual(try PublicationStore(database: database).card(id: original.id),original)
+            XCTAssertEqual(try PublicationStore(database: database).segments(editionID: f.editionID).flatMap(\.cardIDs),[original.id])
+        }
+        try assertExcluded(f.database)
+        let media = try XCTUnwrap(MediaCandidate(id: MediaCandidateID(),originRevisionID: mediaOnly.id,role: .cardVisual,mediaClass: .image,
+            remoteURL: URL(string: "https://example.invalid/image.png")!,declaredMimeType: "image/png",declaredPixelWidth: 20,declaredPixelHeight: 30))
+        try f.admit(mediaOnly,previous: changed.id,media: [media],identity: identity)
+        XCTAssertEqual(try ContentStore(database: f.database).currentRevision(originRecordID: old.originRecordID),mediaOnly)
+        try assertExcluded(f.database)
+        try assertExcluded(RuntimeDatabase(location: location))
+    }
+
+    func test3R5LaterSliceAndHeadReconsiderationSkipEditedPublishedOriginButPublishDistinctOrigin() throws {
+        let old = LocalSliceFixture.revision(1), edited = LocalSliceFixture.revision(1,version: 20), distinct = LocalSliceFixture.revision(2)
+        let f = try fixture()
+        try f.admit(old)
+        let (_,first) = try published(LocalProductionSlice(database: f.database).run(f.request(segment: 44001)) { LocalSliceFixture.prepared($0) })
+        let store = PublicationStore(database: f.database)
+        let original = try XCTUnwrap(store.card(id: first.cardIDs[0]))
+        try f.admit(edited,previous: old.id); try f.admit(distinct)
+        let (progress,second) = try published(LocalProductionSlice(database: f.database).run(f.request(segment: 44002)) { LocalSliceFixture.prepared($0) })
+        XCTAssertEqual(progress.examinedCount,2); XCTAssertTrue(progress.exhausted)
+        XCTAssertEqual(second.cardIDs,[LocalSliceFixture.cardID(LocalSliceFixture.candidate(distinct))])
+        XCTAssertEqual(try store.card(id: original.id),original)
+        XCTAssertEqual(try store.segments(editionID: f.editionID).flatMap(\.cardIDs),f.initialCardIDs + first.cardIDs + second.cardIDs)
+        let head = try LocalProductionSlice(database: f.database).run(f.request(segment: 44003)) { _ in throw PreparationFailure.refused }
+        guard case .advancedWithoutPublication(let exhausted) = head else { return XCTFail("Expected fully exposed head") }
+        XCTAssertEqual(exhausted.examinedCount,2); XCTAssertTrue(exhausted.exhausted)
+        XCTAssertEqual(try store.card(id: original.id),original)
     }
 
     func testPreparationThrowsOrMismatchesWithoutPublishingAndSameCursorCanRunAgain() throws {

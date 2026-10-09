@@ -141,7 +141,7 @@ When presentation policy permits, media = none and render = text-only is a first
 
 > A card that is already locally presentable must not wait on speculative remote media merely to become publishable.
 
-File failure cannot yield a false asset reference; text-only remains an alternative when policy allows it. Publication may remain valid without integral audio/video bytes. Media arriving later can improve only a future PublishedCard occurrence; no prior draft commit, published key, layout, text or history is rewritten. Local fallback after loss of resident bytes follows the existing frozen presentation contract.
+File failure cannot yield a false asset reference; text-only remains an alternative when policy allows it. Publication may remain valid without integral audio/video bytes. Media arriving later can improve only a future PublishedCard occurrence in another Edition, according to its editorial policy; no prior draft commit, published key, layout, text or history is rewritten. Local fallback after loss of resident bytes follows the existing frozen presentation contract.
 
 ## 13. Explicitly deferred behavior
 
@@ -165,6 +165,11 @@ Keep three distinct gates; ownership separation is more valuable than reducing c
 
 **3I2 — durable content-addressed local assets — complete.** AssetStore implements final-byte SHA-256 identity, exact-byte file storage, strict persistent key parsing, file sync, exclusive atomic installation and directory sync. ImageMaterializer implements pre-store container inspection and authenticated local re-inspection, returning LocalImageAsset. Tests prove the known abc digest/key, same/different content identity, idempotency and concurrent installation, deterministic file/directory-sync failure, corrupt/unsupported keys, exact reopen, measured PNG metadata and rejected non-image input. No metadata table, transformation, HTTP, retries, cache or retention policy.
 
-**3I3 — local preparation + publication preparation integration — complete.** MediaPreparation prepares one explicitly supplied candidate/local input into Media-owned usable/unavailable/unsuitable facts, propagating storage/integrity errors. Pure Runtime PublicationPreparation assembles aligned ordered drafts using exact Selection text/time, explicit presentation and actual prepared image metadata. Tests prove text-only without media work, positional count/origin/revision/provider validation, no fallback, hero/thumbnail actual ratio and a later local-media occurrence that leaves the earlier text-only publication unchanged after reopen. PublicationCoordinator remains sole history producer. MediaResolver/MediaPolicy, FeedSession/Runway integration, remote acquisition, UI loading and retention remain deferred.
+**3I3 — local preparation + publication preparation integration — complete.** MediaPreparation prepares one explicitly supplied candidate/local input into Media-owned usable/unavailable/unsuitable facts, propagating storage/integrity errors. Pure Runtime PublicationPreparation assembles aligned ordered drafts using exact Selection text/time, explicit presentation and actual prepared image metadata. Tests prove text-only without media work, positional count/origin/revision/provider validation, no fallback, hero/thumbnail actual ratio and a later local-media occurrence in another Edition that leaves the earlier text-only publication unchanged after reopen. PublicationCoordinator remains sole history producer. MediaResolver/MediaPolicy, FeedSession/Runway integration, remote acquisition, UI loading and retention remain deferred.
 
 Phase 3H — complete (design only). Phase 3I1 — canonical MediaCandidate facts — complete. Phase 3I2 — durable content-addressed local assets — complete. Phase 3I3 — local preparation + publication preparation integration — complete. Phase 3I — complete. Network, resolver policy and FeedSession/Runway integration remain deferred.
+
+
+### Phase 3R5 product boundary
+
+Late media may update canonical resources and future preparation. It never changes a published card, its key, revision, layout or position, and never creates a second occurrence of that origin in the same Edition. A later Edition may publish the origin with newly available media or enrichment. No new Edition is automatically created to display late media, and the Media pipeline is unchanged.

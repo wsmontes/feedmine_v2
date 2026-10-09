@@ -2,14 +2,14 @@
 import FeedMineDomain
 
 public struct SelectionExposureSnapshot: Hashable, Sendable {
-    public let requestedRevisionIDs: [OriginRevisionID]
-    public let publishedRevisionIDs: Set<OriginRevisionID>
+    public let requestedOriginIDs: [OriginRecordID]
+    public let publishedOriginIDs: Set<OriginRecordID>
 
-    public init?(requestedRevisionIDs: [OriginRevisionID], publishedRevisionIDs: Set<OriginRevisionID>) {
-        let requested = Set(requestedRevisionIDs)
-        guard requested.count == requestedRevisionIDs.count,
-            publishedRevisionIDs.isSubset(of: requested) else { return nil }
-        self.requestedRevisionIDs = requestedRevisionIDs
-        self.publishedRevisionIDs = publishedRevisionIDs
+    public init?(requestedOriginIDs: [OriginRecordID], publishedOriginIDs: Set<OriginRecordID>) {
+        let requested = Set(requestedOriginIDs)
+        guard requested.count == requestedOriginIDs.count,
+            publishedOriginIDs.isSubset(of: requested) else { return nil }
+        self.requestedOriginIDs = requestedOriginIDs
+        self.publishedOriginIDs = publishedOriginIDs
     }
 }

@@ -185,3 +185,10 @@ Publication semantics have one owner: FeedMinePublication.
 
 Persistence stores publication history but does not independently define
 what publication means.
+
+
+## Phase 3R5 — publication occurrence identity
+
+Uma FeedEdition admite no máximo uma ocorrência publicada para cada OriginRecordID. Nova revisão, enriquecimento ou chegada tardia de mídia não constitui uma nova ocorrência na mesma Edition. O histórico permanece imutável. Outra Edition possui elegibilidade independente.
+
+Selection reduces redundant publication attempts using durable origin exposure scoped to the Edition and bounded candidate set. PublicationStore enforces uniqueness transactionally for initial creation and both append paths; concurrent callers cannot duplicate an origin and a mixed invalid segment is never partially published. Late media does not create an Edition automatically.

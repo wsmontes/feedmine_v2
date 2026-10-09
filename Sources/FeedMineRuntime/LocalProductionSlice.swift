@@ -80,10 +80,10 @@ public struct LocalProductionSlice: Sendable {
         let window = try candidateProvider.candidates(for: request.plan,
             after: request.after, examinedCapacity: request.examinedCapacity)
         let facts = try publicationHistory.exposure(editionID: request.editionID,
-            revisionIDs: window.candidates.map(\.originRevisionID))
+            originIDs: window.candidates.map(\.originRecordID))
         guard facts.editionID == request.editionID,
-            let exposure = SelectionExposureSnapshot(requestedRevisionIDs: facts.requestedRevisionIDs,
-                publishedRevisionIDs: facts.publishedRevisionIDs) else {
+            let exposure = SelectionExposureSnapshot(requestedOriginIDs: facts.requestedOriginIDs,
+                publishedOriginIDs: facts.publishedOriginIDs) else {
             throw LocalProductionSliceError.invalidExposureFacts
         }
         let selection = try selectionEngine.select(plan: request.plan, policy: request.policy,

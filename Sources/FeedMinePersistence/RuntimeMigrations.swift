@@ -282,6 +282,12 @@ public enum RuntimeMigrations {
                 );
                 """)
         }
+        migrator.registerMigration("publication-origin-exposure-index-v1") { db in
+            try db.execute(sql: """
+                CREATE INDEX published_cards_origin_record_segment
+                ON published_cards (origin_record_id, segment_id);
+                """)
+        }
         return migrator
     }
 }

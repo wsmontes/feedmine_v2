@@ -56,38 +56,23 @@ final class PublicationRunwayStoreTests: XCTestCase {
             XCTAssertThrowsError(try store.forwardAdvance(editionID: edition.id, fromCardID: c[0].id, toCardID: id, probeBound: 1))
             XCTAssertThrowsError(try store.forwardAdvance(editionID: edition.id, fromCardID: id, toCardID: c[0].id, probeBound: 1))
         }
-        XCTAssertThrowsError(try store.exposure(editionID: FeedEditionID(), revisionIDs: []).publishedRevisionIDs) { XCTAssertEqual($0 as? PublicationStoreError, .missingEdition) }
+        XCTAssertThrowsError(try store.exposure(editionID: FeedEditionID(), originIDs: []).publishedOriginIDs) { XCTAssertEqual($0 as? PublicationStoreError, .missingEdition) }
         XCTAssertThrowsError(try store.readyAhead(editionID: FeedEditionID(), anchorCardID: c[0].id, probeBound: 1)) { XCTAssertEqual($0 as? PublicationStoreError, .missingEdition) }
     }
 
-    func testExposureUsesExactRevisionAndEditionAndAllowsRepeatedOccurrences() throws {
-        let (db, store, edition, c) = try fixture()
-        let r1 = c[0].originRevisionID, r2 = OriginRevisionID(), r3 = c[2].originRevisionID
-        let other = StorageFixture.edition(revision: edition.editorialRevision), card = StorageFixture.card()
-        try store.createEdition(other, firstSegment: StorageFixture.segment(other, [card]), cards: [card])
-        // Same origin record, different revision; and repeated explicit R1 occurrence.
-        try db.write { db in
-            try db.execute(sql: "UPDATE published_cards SET origin_record_id = ? WHERE id = ?", arguments: [c[0].originRecordID.rawValue.uuidString.lowercased(), c[1].id.rawValue.uuidString.lowercased()])
-            try db.execute(sql: "UPDATE published_cards SET origin_revision_id = ? WHERE id IN (?, ?)", arguments: [r1.rawValue.uuidString.lowercased(), c[5].id.rawValue.uuidString.lowercased(), card.id.rawValue.uuidString.lowercased()])
-        }
-        XCTAssertEqual(try store.exposure(editionID: edition.id, revisionIDs: [r1,r2,r3,r1]).publishedRevisionIDs, [r1,r3])
-        XCTAssertEqual(try store.exposure(editionID: other.id, revisionIDs: [r1,r2,r3]).publishedRevisionIDs, [r1])
-        XCTAssertEqual(try store.exposure(editionID: edition.id, revisionIDs: []).publishedRevisionIDs, [])
-        XCTAssertEqual(try store.exposure(editionID: edition.id, revisionIDs: [c[0].originRevisionID, c[1].originRevisionID]).publishedRevisionIDs, [c[0].originRevisionID,c[1].originRevisionID])
+    func testExposureUsesExactOriginAndEdition() throws {
+        let (_, store, edition, cards) = try fixture()
+        let other = StorageFixture.edition(), foreign = StorageFixture.card()
+        try store.createEdition(other, firstSegment: StorageFixture.segment(other,[foreign]), cards:[foreign])
+        let request = [cards[0].originRecordID, foreign.originRecordID, OriginRecordID()]
+        XCTAssertEqual(try store.exposure(editionID:edition.id,originIDs:request).publishedOriginIDs,[cards[0].originRecordID])
+        XCTAssertEqual(try store.exposure(editionID:other.id,originIDs:request).publishedOriginIDs,[foreign.originRecordID])
+        XCTAssertTrue(try store.exposure(editionID:edition.id,originIDs:[]).publishedOriginIDs.isEmpty)
     }
 
-    func testUnpublishedNewRevisionOfSameOriginIsNotSuppressedByOldRevision() throws {
+    func testNewRevisionOfPublishedOriginRemainsExposed() throws {
         let (_, store, edition, cards) = try fixture()
-        let old = cards[0]
-        let new = PublicationStore.CardRecord(id: PublicationCardID(), originRecordID: old.originRecordID,
-            originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil,
-            sourceDisplayName: nil, providerDisplayName: nil, contentEntityID: nil, contentClusterID: nil,
-            title: nil, primaryText: nil, timestampValue: nil, timestampKind: nil,
-            mediaKey: nil, mediaPixelWidth: nil, mediaPixelHeight: nil, mediaMimeType: nil,
-            renderLayout: "textOnly", renderMediaAspectRatio: nil, primaryActionKind: nil, primaryActionReference: nil)
-        XCTAssertEqual(new.originRecordID, old.originRecordID)
-        XCTAssertEqual(try store.exposure(editionID: edition.id,
-            revisionIDs: [old.originRevisionID, new.originRevisionID]).publishedRevisionIDs, [old.originRevisionID])
+        XCTAssertEqual(try store.exposure(editionID:edition.id,originIDs:[cards[0].originRecordID]).publishedOriginIDs,[cards[0].originRecordID])
     }
 
     func testReadyOnlyValidatesAnchorAndTailSchemaRatherThanAuditingOldSegments() throws {
@@ -115,7 +100,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
         XCTAssertEqual(try store.forwardAdvance(editionID: edition.id, fromCardID: all[20].id, toCardID: all[30].id, probeBound: 10), .forwardExact(10))
         XCTAssertEqual(try store.forwardAdvance(editionID: edition.id, fromCardID: all[98].id, toCardID: all[102].id, probeBound: 4), .forwardExact(4))
         XCTAssertEqual(try store.forwardAdvance(editionID: edition.id, fromCardID: all[98].id, toCardID: all[9999].id, probeBound: 3), .forwardBeyondProbe(3))
-        XCTAssertEqual(try store.exposure(editionID: edition.id, revisionIDs: [all[0].originRevisionID, OriginRevisionID(), all[9999].originRevisionID]).publishedRevisionIDs, [all[0].originRevisionID,all[9999].originRevisionID])
+        XCTAssertEqual(try store.exposure(editionID: edition.id, originIDs: [all[0].originRecordID, OriginRecordID(), all[9999].originRecordID]).publishedOriginIDs, [all[0].originRecordID,all[9999].originRecordID])
         try db.read { db in
             func indexes(_ table: String, _ fields: [String]) throws -> [String] {
                 var names: [String] = []
@@ -189,24 +174,24 @@ final class PublicationRunwayStoreTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(store.card(id: card.id)).originRevisionID, card.originRevisionID)
         XCTAssertEqual(try SessionStore(database: migrated).checkpoint()?.cardID, card.id)
         XCTAssertEqual(try store.readyAhead(editionID: edition.id, anchorCardID: card.id, probeBound: 1).amount, .exact(0))
-        XCTAssertEqual(try store.exposure(editionID: edition.id, revisionIDs: [card.originRevisionID]).publishedRevisionIDs, [card.originRevisionID])
+        XCTAssertEqual(try store.exposure(editionID: edition.id, originIDs: [card.originRecordID]).publishedOriginIDs, [card.originRecordID])
         XCTAssertFalse(RuntimeMigrations.current.eraseDatabaseOnSchemaChange)
         try migrated.read { db in
             let schema = try String.fetchAll(db, sql: "SELECT name || ':' || COALESCE(sql, '') FROM sqlite_master WHERE name != 'published_cards_origin_revision_segment' ORDER BY name")
             XCTAssertTrue(Set(oldSchema).isSubset(of: Set(schema))) // Every old table, column, trigger and index definition unchanged.
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('published_cards_origin_revision_segment') ORDER BY seqno"), ["origin_revision_id","segment_id"])
-            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1"])
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1"])
         }
     }
 
     func testExposureTailIsObservedEvenForEmptyRequestAndOldFactsStayImmutable() throws {
         let (_,store,edition,c) = try fixture()
-        let old = try store.exposure(editionID: edition.id,revisionIDs: [])
-        XCTAssertEqual(old.observedTailCardID,c[5].id); XCTAssertEqual(old.publishedRevisionIDs,[])
+        let old = try store.exposure(editionID: edition.id,originIDs: [])
+        XCTAssertEqual(old.observedTailCardID,c[5].id); XCTAssertEqual(old.publishedOriginIDs,[])
         let next = StorageFixture.card()
         try store.appendSegment(StorageFixture.segment(edition,[next],ordinal: 3),cards: [next],expectingTailCardID: c[5].id)
         XCTAssertEqual(old.observedTailCardID,c[5].id)
-        XCTAssertEqual(try store.exposure(editionID: edition.id,revisionIDs: []).observedTailCardID,next.id)
+        XCTAssertEqual(try store.exposure(editionID: edition.id,originIDs: []).observedTailCardID,next.id)
     }
 
     func testExpectedTailStaleRefusesBeforeOrdinalAcceptanceAndLeavesWinnerIntact() throws {
@@ -218,7 +203,85 @@ final class PublicationRunwayStoreTests: XCTestCase {
         XCTAssertNil(try store.card(id: stale.id))
         XCTAssertFalse(try store.segments(editionID: edition.id).contains { $0.id == incoming.id })
         XCTAssertEqual(try store.card(id: winner.id),winner)
-        XCTAssertEqual(try store.exposure(editionID: edition.id,revisionIDs: []).observedTailCardID,winner.id)
+        XCTAssertEqual(try store.exposure(editionID: edition.id,originIDs: []).observedTailCardID,winner.id)
     }
 
+}
+
+extension PublicationRunwayStoreTests {
+    func test3R5MeasureOriginExposureOnExistingIndexes() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root,withIntermediateDirectories: true)
+        let location = RuntimeDatabaseLocation(directory: root)
+        do {
+            let pool = try DatabasePool(path: location.databaseURL.path)
+            try RuntimeMigrations.current.migrate(pool,upTo: "acquisition-target-authority-v1")
+        }
+        // Existing test injection opens the real previous schema without applying later migrations.
+        let database = try RuntimeDatabase(location: location,migrator: DatabaseMigrator())
+        let store = PublicationStore(database: database)
+        let edition = StorageFixture.edition()
+        var first: OriginRecordID?, last: OriginRecordID?
+        for ordinal in 0..<100 {
+            let cards = (0..<100).map { _ in StorageFixture.card() }
+            if first == nil { first = cards[0].originRecordID }
+            last = cards.last!.originRecordID
+            let segment = StorageFixture.segment(edition, cards, ordinal: UInt64(ordinal))
+            if ordinal == 0 { try store.createEdition(edition, firstSegment: segment, cards: cards) }
+            else { try store.appendSegment(segment, cards: cards) }
+        }
+        let ids = [first!, last!, OriginRecordID()].map { $0.rawValue.uuidString.lowercased() }
+        let editionKey = edition.id.rawValue.uuidString.lowercased()
+        let sql = """
+                SELECT DISTINCT c.origin_record_id
+                FROM feed_segments s JOIN published_cards c ON c.segment_id = s.id
+                WHERE s.edition_id = ? AND c.origin_record_id IN (?, ?, ?)
+                """
+        let arguments = StatementArguments([editionKey] + ids)
+        let before = try database.read { db in
+            try Row.fetchAll(db,sql: "EXPLAIN QUERY PLAN " + sql,arguments: arguments).map { $0["detail"] as String }
+        }
+        let rowsBefore = try database.read { try String.fetchAll($0,sql: sql,arguments: arguments) }
+        let cardsBefore = try store.segments(editionID: edition.id).flatMap { segment in
+            try segment.cardIDs.map { try XCTUnwrap(store.card(id: $0)) }
+        }
+        let editionBefore = try store.edition(id: edition.id)
+        let segmentsBefore = try store.segments(editionID: edition.id)
+        try SessionStore(database: database).saveCheckpoint(.init(editionID: edition.id,cardID: cardsBefore[5000].id,anchorPlacement: "center",updatedAt: Date(timeIntervalSince1970: 1234)))
+        let checkpointBefore = try XCTUnwrap(SessionStore(database: database).checkpoint())
+        let schemaBefore = try database.read { try String.fetchAll($0,sql: "SELECT name || ':' || COALESCE(sql,'') FROM sqlite_master ORDER BY name") }
+        let upgraded = try RuntimeDatabase(location: location)
+        let upgradedStore = PublicationStore(database: upgraded)
+        XCTAssertEqual(try upgradedStore.edition(id: edition.id),editionBefore)
+        XCTAssertEqual(try upgradedStore.segments(editionID: edition.id),segmentsBefore)
+        XCTAssertEqual(try cardsBefore.map { try upgradedStore.card(id: $0.id) },cardsBefore.map(Optional.some))
+        XCTAssertEqual(try SessionStore(database: upgraded).checkpoint(),checkpointBefore)
+        try upgraded.read { db in
+            let schemaAfter = try String.fetchAll(db,sql: "SELECT name || ':' || COALESCE(sql,'') FROM sqlite_master ORDER BY name")
+            XCTAssertTrue(Set(schemaBefore).isSubset(of: Set(schemaAfter)))
+            XCTAssertEqual(Set(schemaAfter).subtracting(schemaBefore).count,1)
+            XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
+            XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
+            let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }
+            let found = try String.fetchAll(db, sql: sql, arguments: arguments)
+            XCTAssertEqual(Set(found), Set(ids.prefix(2)))
+            XCTAssertEqual(Set(found),Set(rowsBefore))
+            XCTAssertTrue(details.contains { $0.contains("published_cards_origin_record_segment (origin_record_id=?)") })
+            XCTAssertFalse(before.contains { $0.contains("published_cards_origin_record_segment") })
+            print("3R5 BEFORE: \(before)")
+            print("3R5 AFTER: \(details)")
+            let indexes = try Row.fetchAll(db, sql: "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('published_cards', 'feed_segments')")
+                .map { "\($0["name"] as String): \($0["sql"] as String? ?? "autoindex")" }
+            print("3R5 measurement: candidates=3 editionCards=10000 editionSegments=100 returnedOrigins=\(found.count)")
+            print("3R5 origin query plan: \(details)")
+            print("3R5 existing indexes: \(indexes)")
+            // EXPLAIN bytecode shows where candidate identity is checked relative to the index traversal.
+            let program = try Row.fetchAll(db, sql: "EXPLAIN " + sql, arguments: arguments)
+            print("3R5 origin query bytecode: \(program.map { "\($0["addr"] as Int) \($0["opcode"] as String) \($0["p1"] as Int) \($0["p2"] as Int) \($0["p3"] as Int) \($0["p4"] as String? ?? "")" })")
+        }
+        let reopened = PublicationStore(database: try RuntimeDatabase(location: location))
+        XCTAssertEqual(try reopened.segments(editionID: edition.id),segmentsBefore)
+        XCTAssertEqual(try reopened.exposure(editionID: edition.id,originIDs: [first!,last!]).publishedOriginIDs,[first!,last!])
+    }
 }
