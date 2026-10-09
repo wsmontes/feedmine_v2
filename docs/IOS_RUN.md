@@ -12,6 +12,8 @@ App resources and transport bounds are explicit development configuration, not a
 
 ## Abrir e executar
 
+Primeiro, `scripts/fetch-catalog.sh` (catálogo V1 verificado por SHA-256; ver `FeedMineApp/FeedMineApp/Resources/CATALOG.md`).
+
 Abra `FeedMineApp/FeedMineApp.xcodeproj`, scheme `FeedMine`, simulador iOS 18+. Deployment iOS 18, Swift 6, bundle `com.feedmine.development` configurável no target. Assinatura de dispositivo é configuração local do desenvolvedor; não há Team ID versionado.
 
 A configuração confiável fica em `TrustedFeeds.swift`: RSS BBC World e Science/Environment, com IDs fixos. Banco normal: Application Support/FeedMine/runtime.sqlite. Não apague esse diretório para testar reabertura. Nenhum backend FeedMine ou conta é necessário.

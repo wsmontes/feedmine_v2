@@ -7,7 +7,7 @@ Metadata schema_version=2; catalog_version=1789618085179441; SQLite user_version
 
 Origem da cópia em 2026-10-09: `feedmine/Resources/FeedEngine/catalog.sqlite` do checkout local V1 em `712a6ba9`, com modificações locais preexistentes preservadas. O checksum identifica os bytes copiados; não se afirma que o arquivo corresponde integralmente ao commit V1.
 
-Git LFS armazena o recurso. Depois de clonar, executar `git lfs pull`; antes de distribuir, verificar que o bundle contém o SQLite completo, não o pointer. O teste iOS verifica SHA-256 por streaming e consulta a contagem real.
+O recurso não é versionado no Git nem no LFS (a cota LFS da conta foi excedida). Ele é o asset `catalog.sqlite` da release `catalog-v1` deste repositório. Depois de clonar, executar `scripts/fetch-catalog.sh`: o script baixa, confere tamanho e SHA-256 e só então instala em `Resources/`. Sem o arquivo, o build falha em Copy Bundle Resources (falha explícita, sem fallback). O teste iOS verifica SHA-256 por streaming e consulta a contagem real.
 
 Inicialização registra somente quatro fontes encontradas por key no catálogo: BBC News, BBC Science, NPR News e Guardian World. A seleção não usa a ordem alfabética global nem considera podcasts com quality_score alto como notícias. O catálogo completo permanece disponível para seleção posterior. Identidades UUID são derivadas por LegacyCatalogImport; request_url permanece separado da key.
 

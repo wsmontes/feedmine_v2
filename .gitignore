@@ -15,3 +15,7 @@ xcuserdata/
 .DS_Store
 Thumbs.db
 *.swp
+
+# V1 catalog: release asset fetched by scripts/fetch-catalog.sh (review F02), not Git/LFS content.
+FeedMineApp/FeedMineApp/Resources/catalog.sqlite
+FeedMineApp/FeedMineApp/Resources/catalog.sqlite.download
