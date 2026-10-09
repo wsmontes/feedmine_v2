@@ -52,6 +52,35 @@ public final class MediaReadiness: @unchecked Sendable {
     }
 }
 
+/// How a media fetch failed. Definitive failures (missing, not an image, too large) settle the
+/// revision as designed text-only; transient ones (timeouts, 5xx, lost connection) retry later.
+public enum MediaFetchFailure: Error, Hashable, Sendable {
+    case transient
+    case definitive
+}
+
+/// Resumes one continuation exactly once, from whichever racer gets there first.
+final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var resumed = false
+    func install(_ value: CheckedContinuation<Void, Never>) {
+        lock.lock()
+        if resumed { lock.unlock(); value.resume(); return }
+        continuation = value
+        lock.unlock()
+    }
+    func resume() {
+        lock.lock()
+        guard !resumed else { lock.unlock(); return }
+        resumed = true
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume()
+    }
+}
+
 public actor MediaPrefetcher {
     public typealias Fetch = @Sendable (_ url: URL, _ byteCeiling: Int) async throws -> Data
     public typealias Conditions = @Sendable (_ measuredBytesPerSecond: Double?) -> MediaPolicy?
@@ -62,37 +91,68 @@ public actor MediaPrefetcher {
     private let fetch: Fetch
     private let conditions: Conditions
     private let concurrentDownloadLimit: Int
+    private let transientRetryBaseSeconds: Double
+    private let monotonicSeconds: @Sendable () -> Double
     private var inFlight: Set<OriginRevisionID> = []
     private var measuredBytesPerSecond: Double?
+    private var transientFailures: [OriginRevisionID: Int] = [:]
+    private var transientRetryAt: [OriginRevisionID: Double] = [:]
 
     public init(database: RuntimeDatabase, assetDirectory: URL, readiness: MediaReadiness = MediaReadiness(),
-        concurrentDownloadLimit: Int, fetch: @escaping Fetch, conditions: @escaping Conditions) {
+        concurrentDownloadLimit: Int, transientRetryBaseSeconds: Double = 30,
+        monotonicSeconds: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime },
+        fetch: @escaping Fetch, conditions: @escaping Conditions) {
         self.readiness = readiness
         contentStore = ContentStore(database: database)
         preparation = MediaPreparation(assetDirectory: assetDirectory)
         self.fetch = fetch
         self.conditions = conditions
         self.concurrentDownloadLimit = max(1, concurrentDownloadLimit)
+        self.transientRetryBaseSeconds = transientRetryBaseSeconds.isFinite && transientRetryBaseSeconds > 0 ? transientRetryBaseSeconds : 30
+        self.monotonicSeconds = monotonicSeconds
     }
 
     /// Prepares media for the newest `limit` supply items not yet settled. Returns when all chosen
     /// items settled, or when `deadline` (monotonic seconds) passes — unfinished downloads keep
-    /// running and only help later selections.
+    /// running (owned by this actor, single-flight via `inFlight`) and only help later selections.
     public func prefetchSupplyHead(limit: Int, deadline: Double? = nil) async {
         guard limit > 0, let window = try? contentStore.candidateWindow(sourceID: nil, after: nil, examinedCapacity: limit) else { return }
-        let revisions = window.records.map(\.originRevisionID).filter { !readiness.isSettled($0) && !inFlight.contains($0) }
+        await prefetch(window.records.map(\.originRevisionID), deadline: deadline)
+    }
+
+    /// Prepares media for an explicit, priority-ordered list of revisions (review F05: the next
+    /// editorial candidates). Same deadline contract as `prefetchSupplyHead`.
+    public func prefetch(_ ordered: [OriginRevisionID], deadline: Double? = nil) async {
+        let now = monotonicSeconds()
+        var seen = Set<OriginRevisionID>()
+        let revisions = ordered.filter { revision in
+            guard seen.insert(revision).inserted, !readiness.isSettled(revision), !inFlight.contains(revision) else { return false }
+            if let retry = transientRetryAt[revision], now < retry { return false }
+            return true
+        }
         guard !revisions.isEmpty else { return }
         inFlight.formUnion(revisions)
         let work = Task { await self.prepareAll(revisions) }
         guard let deadline else { await work.value; return }
         let wait = deadline - ProcessInfo.processInfo.systemUptime
         guard wait > 0 else { return }
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await work.value }
-            group.addTask { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
-            await group.next()
-            group.cancelAll()
+        // Review F03: never join the unstructured work. Whichever finishes first — the work or the
+        // deadline — resumes the caller exactly once; the work keeps running independently.
+        await Self.firstOf(work, orSeconds: wait)
+    }
+
+    private static func firstOf(_ work: Task<Void, Never>, orSeconds wait: Double) async {
+        let gate = ResumeOnce()
+        var timer: Task<Void, Never>?
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            gate.install(continuation)
+            Task { await work.value; gate.resume() }
+            timer = Task {
+                try? await Task.sleep(nanoseconds: UInt64(max(0, wait) * 1_000_000_000))
+                gate.resume()
+            }
         }
+        timer?.cancel()
     }
 
     private func prepareAll(_ revisions: [OriginRevisionID]) async {
@@ -120,24 +180,57 @@ public actor MediaPrefetcher {
         switch MediaResolver.resolve(candidates, policy: policy) {
         case .prepare(let chosen, let rest): first = chosen; fallbacks = rest
         case .textOnly(.conditionsForbidRemoteMedia): return // Offline or overheated: try again later.
-        case .textOnly: readiness.record(revision, nil); return
+        case .textOnly: settle(revision, nil); return
         }
         let ceiling = policy.downloadByteBudget
         guard ceiling > 0 else { return } // Not affordable now; retry when conditions improve.
+        var sawTransient = false
         for candidate in [first] + fallbacks {
             if Task.isCancelled { return }
             let started = ProcessInfo.processInfo.systemUptime
-            guard let bytes = try? await fetch(candidate.remoteURL, ceiling) else { continue }
+            let bytes: Data
+            do { bytes = try await fetch(candidate.remoteURL, ceiling) }
+            catch {
+                // Review F04: only a definitive answer (missing, not an image, too large) is final.
+                if Self.isTransient(error) { sawTransient = true }
+                continue
+            }
             observeThroughput(bytes: bytes.count, seconds: ProcessInfo.processInfo.systemUptime - started)
             guard let result = try? preparation.prepare(candidate: candidate, input: .bytes(bytes)),
                 case .usable(let asset) = result.state else { continue }
             let fit = policy.fit(measuredPixelWidth: asset.pixelWidth, height: asset.pixelHeight)
             guard fit != .unsuitable else { continue }
-            readiness.record(revision, .init(result: result, fit: fit))
+            settle(revision, .init(result: result, fit: fit))
             return
         }
-        // Every viable candidate failed or was unsuitable: this revision is designed text-only.
-        readiness.record(revision, nil)
+        if sawTransient {
+            // Network trouble, not a bad image: offer the revision again after a growing delay.
+            let failures = (transientFailures[revision] ?? 0) + 1
+            transientFailures[revision] = failures
+            transientRetryAt[revision] = monotonicSeconds() + transientRetryBaseSeconds * pow(2, Double(min(failures - 1, 16)))
+            return
+        }
+        // Every viable candidate was definitively unusable: this revision is designed text-only.
+        settle(revision, nil)
+    }
+
+    private func settle(_ revision: OriginRevisionID, _ value: MediaReadiness.Ready?) {
+        transientFailures.removeValue(forKey: revision)
+        transientRetryAt.removeValue(forKey: revision)
+        readiness.record(revision, value)
+    }
+
+    /// Definitive failures are explicitly marked by the fetcher; anything else (timeouts, lost
+    /// connections, 5xx, unknown errors) is treated as transient.
+    static func isTransient(_ error: any Error) -> Bool {
+        if let failure = error as? MediaFetchFailure { return failure == .transient }
+        if let url = error as? URLError {
+            switch url.code {
+            case .badURL, .unsupportedURL, .fileDoesNotExist, .noPermissionsToReadFile, .dataLengthExceedsMaximum: return false
+            default: return true
+            }
+        }
+        return true
     }
 
     /// Exponentially weighted throughput; feeds the next policy's byte budget (PD-6).
