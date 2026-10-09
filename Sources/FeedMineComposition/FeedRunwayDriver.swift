@@ -28,6 +28,13 @@ public enum FeedRunwayDriverError: Error, Equatable, Sendable {
     case sessionEditorialRevisionMismatch(expected: EditorialRevisionID, actual: EditorialRevisionID)
 }
 public actor FeedRunwayDriver {
+    // Non-nil only while one caller owns causal effects. Reentrant callers may update
+    // resource facts; observations and intents remain exclusively controller-owned.
+    private struct CausalExecution {
+        var resources: FeedRunwayDriverResources
+        var reconsiderRequested = false
+    }
+    private var causalExecution: CausalExecution?
     private let session: FeedSession
     private let runway: RunwayController
     private let plan: FeedPlan
@@ -101,16 +108,52 @@ public actor FeedRunwayDriver {
     }
 
     public func drive(resources: FeedRunwayDriverResources) async throws -> FeedPresentationSnapshot? {
-        guard try await validateCurrentScope() != nil else { return nil }
-        // An explicit new caller opportunity may execute the exact controller-owned deferred intent.
-        // reconsider does not emit an outstanding intent twice; this does not create a new action.
-        if let outstanding = await runway.snapshot().outstandingAcquisition {
-            guard try await executeAcquisition(outstanding, resources: resources) else { return await session.currentPresentation() }
+        if causalExecution != nil {
+            causalExecution?.resources = resources
+            causalExecution?.reconsiderRequested = true
+            return await session.currentPresentation()
         }
+        // Claim before the first suspension, including scope validation.
+        causalExecution = CausalExecution(resources: resources)
+        defer { causalExecution = nil }
+        var resumeOutstanding = true
         while true {
-            let action = try await runway.reconsider(resources: resources.runway, at: monotonicNow())
+            causalExecution?.reconsiderRequested = false
+            let presentation = try await driveCausalEffects(resumeOutstanding: resumeOutstanding)
+            resumeOutstanding = false
+            // No await between this decision and releasing ownership. A caller arriving
+            // during the last presentation read therefore cannot lose its opportunity.
+            if causalExecution!.reconsiderRequested { continue }
+            return presentation
+        }
+    }
+
+    private func driveCausalEffects(resumeOutstanding: Bool) async throws -> FeedPresentationSnapshot? {
+        guard let scope = try await validateCurrentScope() else { return nil }
+        var resumeOutstanding = resumeOutstanding
+        while true {
+            try Task.checkCancellation()
+            let before = await runway.snapshot()
+            guard before.scope == scope, await session.currentRunwayScope() == scope else {
+                return await session.currentPresentation()
+            }
+            causalExecution?.reconsiderRequested = false
+            let currentResources = causalExecution!.resources
+            let action: RunwayControllerAction
+            if resumeOutstanding, let outstanding = before.outstandingAcquisition {
+                // Only an explicit caller opportunity resumes a deferred intent.
+                action = .requestAcquisition(outstanding)
+            } else {
+                action = try await runway.reconsider(resources: currentResources.runway, at: monotonicNow())
+            }
+            resumeOutstanding = false
             switch action {
-            case .none: return await session.currentPresentation()
+            case .none:
+                let after = await runway.snapshot()
+                if after.scope == scope, after.latestObservation != before.latestObservation { continue }
+                let presentation = await session.currentPresentation()
+                if causalExecution!.reconsiderRequested { continue }
+                return presentation
             case .measure(let request):
                 let ready = try publicationHistory.readyAhead(editionID: request.scope.editionID,
                     anchorCardID: request.observation.anchorCardID, probeBound: request.readyProbeBound)
@@ -118,22 +161,42 @@ public actor FeedRunwayDriver {
                     try publicationHistory.forwardAdvance(editionID: $0.editionID, fromCardID: $0.fromCardID,
                         toCardID: $0.toCardID, probeBound: $0.probeBound)
                 }
-                try await runway.acceptMeasurement(.init(observation: request.observation, readyAhead: ready, advanceFromHighWater: advance))
-            case .runLocalSlice(let intent):
                 do {
+                    try await runway.acceptMeasurement(.init(observation: request.observation, readyAhead: ready, advanceFromHighWater: advance))
+                } catch RunwayControllerError.staleMeasurement {
+                    // A legitimate newer observation owns the next measurement.
+                    continue
+                }
+            case .runLocalSlice(let intent):
+                guard intent.scope == scope, await session.currentRunwayScope() == scope,
+                    await runway.snapshot().scope == scope else { return await session.currentPresentation() }
+                do {
+                    try Task.checkCancellation()
                     let identity = try makeSegmentIdentity()
                     let request = LocalProductionSlice.Request(plan: plan, policy: policy, editionID: intent.scope.editionID,
                         after: intent.after, examinedCapacity: intent.examinedCapacity, segmentID: identity.segmentID,
                         segmentSeed: identity.segmentSeed, segmentCreatedAt: identity.segmentCreatedAt)
                     let outcome = try localProductionSlice.run(request, prepare: prepare)
                     try await runway.completeLocalSlice(intent, outcome: outcome, at: monotonicNow())
-                    if case .published = outcome { _ = try await session.refreshCurrentPresentation() }
+                    if case .published = outcome, await session.currentRunwayScope() == scope {
+                        _ = try await session.refreshCurrentPresentation()
+                    }
                 } catch {
                     try await runway.failLocalSlice(intent, failure: error is CancellationError ? .cancelled : .failed, at: monotonicNow())
                     throw error
                 }
             case .requestAcquisition(let intent):
-                guard try await executeAcquisition(intent, resources: resources) else { return await session.currentPresentation() }
+                let changed: Bool
+                do { changed = try await executeAcquisition(intent, resources: currentResources) }
+                catch RunwayAcquisitionCycleError.staleIntent { continue }
+                catch RunwayControllerError.staleAcquisitionAcknowledgement { continue }
+                if !changed {
+                    let after = await runway.snapshot()
+                    if after.scope == scope, after.latestObservation != before.latestObservation { continue }
+                    let presentation = await session.currentPresentation()
+                    if causalExecution!.reconsiderRequested { continue }
+                    return presentation
+                }
             }
         }
     }

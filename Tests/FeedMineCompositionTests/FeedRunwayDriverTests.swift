@@ -18,6 +18,7 @@ final class FeedRunwayDriverTests: XCTestCase {
     private enum Failure: Error, Equatable { case preparation }
     private struct Fixture {
         let database: RuntimeDatabase
+        let location: RuntimeDatabaseLocation
         let plan: FeedPlan
         let policy: ResolvedSelectionPolicy
         let edition: FeedEditionID
@@ -104,7 +105,7 @@ final class FeedRunwayDriverTests: XCTestCase {
             monotonicNow:{ clock.next() },makeSegmentIdentity:{ .init(segmentID:FeedSegmentID(),segmentSeed:2,segmentCreatedAt:Date(timeIntervalSince1970:6))! },prepare:{ selection in
                 if cancelPrepare { throw CancellationError() }; if prepareFailure { throw Failure.preparation }; return Self.prepared(selection)
             })
-        return .init(database:db,plan:p,policy:pol,edition:edition,cards:prepared.cardIDs,source:source,target:target,session:session,runway:runway,driver:driver,acquisition:acquisition,coordinator:coordinator,http:http,otherHTTP:otherHTTP)
+        return .init(database:db,location:.init(directory:root),plan:p,policy:pol,edition:edition,cards:prepared.cardIDs,source:source,target:target,session:session,runway:runway,driver:driver,acquisition:acquisition,coordinator:coordinator,http:http,otherHTTP:otherHTTP)
     }
     private func restore(_ f:Fixture,forward:Int = 4,resources:FeedRunwayDriverResources? = nil) async throws -> FeedPresentationSnapshot {
         let result = try await f.driver.restoreAndActivate(backwardCapacity:1,forwardCapacity:forward,resources:resources ?? self.resources())
@@ -334,6 +335,198 @@ final class FeedRunwayDriverTests: XCTestCase {
         }
     }
 
+    func testR3NewestViewportDuringHTTPDoesNotStartAnotherCausalExecutor() async throws {
+        let f = try fixture(historyCount: 3, paused: true), initial = try await restore(f)
+        let first = Task { try await self.tail(f, initial) }
+        defer { f.http.release() }
+        var started = f.http.started.makeAsyncIterator(); _ = await started.next()
+        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.otherHTTP.calls, 0)
+        // B changes tail demand while A is still at the external boundary.
+        let b = PresentationAnchor(cardID: f.cards[2], placement: .top)
+        let (events, signal) = AsyncStream<String>.makeStream()
+        f.otherHTTP.onStart { signal.yield("secondGET") }
+        let second = Task {
+            defer { signal.yield("returned") }
+            return try await f.driver.submitViewport(.init(anchor: b), activity: .explicitTailApproach, resources: self.resources())
+        }
+        var event = events.makeAsyncIterator()
+        let boundary = await event.next()
+        // Old code starts another target while A is still pending; release it to avoid a hanging reproduction.
+        if boundary == "secondGET" { f.http.release() }
+        XCTAssertEqual(boundary, "returned", "Concurrent caller must not own another external effect")
+        let during = try await second.value
+        XCTAssertEqual(during?.window.anchor, b)
+        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.otherHTTP.calls, 0)
+        let current = await f.session.currentPresentation(); XCTAssertEqual(current, during)
+        let observed = await f.runway.snapshot(); XCTAssertEqual(observed.latestObservation?.anchorCardID, b.cardID)
+        let c = PresentationAnchor(cardID: f.cards[1], placement: .center)
+        let latest = try await f.driver.submitViewport(.init(anchor: c), activity: .explicitTailApproach, resources: resources())
+        XCTAssertEqual(latest?.window.anchor, c)
+        let pending = await f.runway.snapshot(); XCTAssertNil(pending.readyAhead)
+        XCTAssertEqual(pending.latestObservation?.anchorCardID, c.cardID)
+        f.http.release()
+        let final = try await first.value
+        XCTAssertEqual(final?.window.anchor, c)
+        let settled = await f.runway.snapshot(); XCTAssertEqual(settled.latestObservation?.anchorCardID, c.cardID)
+        XCTAssertEqual(settled.readyAhead?.anchorCardID, c.cardID)
+        XCTAssertFalse(settled.localSliceInFlight)
+        XCTAssertEqual(try ContentStore(database: f.database).candidateWindow(sourceID: f.source, after: nil, examinedCapacity: 8).records.count, 1)
+        let store = PublicationStore(database: f.database)
+        let cards = try store.segments(editionID: f.edition).flatMap { segment in
+            try segment.cardIDs.map { try XCTUnwrap(store.card(id: $0)) }
+        }
+        XCTAssertEqual(Set(cards.map(\.originRecordID)).count, cards.count)
+        let reopened = try RuntimeDatabase(location: f.location)
+        XCTAssertEqual(try PublicationStore(database: reopened).segments(editionID: f.edition), try store.segments(editionID: f.edition))
+    }
+
+    func testR1ConcurrentDriveWhileHTTPSuspendedReturnsPresentationWithoutEffects() async throws {
+        let f = try fixture(paused: true), p = try await restore(f)
+        let first = Task { try await self.tail(f, p) }
+        defer { f.http.release() }
+        var started = f.http.started.makeAsyncIterator(); _ = await started.next()
+        let before = await f.runway.snapshot()
+        let other = try await f.driver.drive(resources: resources())
+        XCTAssertEqual(other, p); XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.otherHTTP.calls, 0)
+        let after = await f.runway.snapshot(); XCTAssertEqual(after, before)
+        f.http.release(); _ = try await first.value
+        try await assertLegitimateSecondTarget(f, seededLocal: false)
+    }
+
+    func testR14DeactivateDuringHTTPKeepsSupplyWithoutReactivatingOrPublishing() async throws {
+        let f = try fixture(paused: true), p = try await restore(f)
+        let first = Task { try await self.tail(f, p) }
+        defer { f.http.release() }
+        var started = f.http.started.makeAsyncIterator(); _ = await started.next()
+        await f.driver.deactivate()
+        f.http.release(); let result = try await first.value
+        XCTAssertEqual(result, p)
+        let snapshot = await f.runway.snapshot(); XCTAssertNil(snapshot.scope); XCTAssertNil(snapshot.latestObservation)
+        XCTAssertEqual(try ContentStore(database: f.database).candidateWindow(sourceID: f.source, after: nil, examinedCapacity: 8).records.count, 1)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.edition).count, 1)
+        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.otherHTTP.calls, 0)
+        _ = try await f.driver.activateCurrentPresentation(resources: resources())
+        let active = await f.runway.snapshot(); XCTAssertEqual(active.scope?.editionID, f.edition)
+    }
+
+    func testR12StructuralFailureReleasesOwnerAndPreservesPresentation() async throws {
+        let f = try fixture(paused: true), p = try await restore(f)
+        let first = Task { try await self.tail(f, p) }
+        defer { f.http.release() }
+        var started = f.http.started.makeAsyncIterator(); _ = await started.next()
+        _ = try AcquisitionTargetAuthority(database: f.database).reconfigure(id: f.target.id, expectedGeneration: 1,
+            connectorKind: .syndication, checkpoint: .preserve, authorizedSources: [f.source])
+        f.http.release()
+        do { _ = try await first.value; XCTFail("Expected structural fence error") }
+        catch { XCTAssertEqual(error as? AcquisitionTargetStoreError, .staleGeneration(expected: 1, actual: 2)) }
+        let current = await f.session.currentPresentation(); XCTAssertEqual(current, p)
+        let again = try await f.driver.activateCurrentPresentation(resources: resources())
+        XCTAssertEqual(again, p)
+        let snapshot = await f.runway.snapshot(); XCTAssertNotNil(snapshot.readyAhead)
+        let active = await f.coordinator.activeExecutions(); XCTAssertTrue(active.isEmpty)
+        XCTAssertEqual(f.http.calls, 1)
+    }
+
+    func testR13CancellationDuringHTTPReleasesOwnerAndCoordinator() async throws {
+        let f = try fixture(paused: true), p = try await restore(f)
+        let first = Task { try await self.tail(f, p) }
+        defer { f.http.release() }
+        var started = f.http.started.makeAsyncIterator(); _ = await started.next()
+        first.cancel()
+        do { let result = try await first.value; XCTAssertEqual(result, p) }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let active = await f.coordinator.activeExecutions(); XCTAssertTrue(active.isEmpty)
+        XCTAssertEqual(try AcquisitionTargetAuthority(database: f.database).target(id: f.target.id)?.checkpointRevision, 0)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.edition).count, 1)
+        let again = try await f.driver.activateCurrentPresentation(resources: resources())
+        XCTAssertEqual(again, p)
+        let snapshot = await f.runway.snapshot(); XCTAssertNotNil(snapshot.readyAhead)
+        XCTAssertEqual(f.http.calls, 1)
+    }
+
+    func testR15ContextAndEditionChangeDuringHTTPPreservesNewPresentation() async throws {
+        let f = try fixture(paused: true), p = try await restore(f)
+        let first = Task { try await self.tail(f, p) }
+        defer { f.http.release() }
+        var started = f.http.started.makeAsyncIterator(); _ = await started.next()
+        let otherPlan = plan(.init(request: .source(SourceID()))), otherEdition = FeedEditionID()
+        let candidate = Candidate(originRecordID: OriginRecordID(), originRevisionID: OriginRevisionID(), headline: "other-context",
+            summary: nil, timestamp: .init(value: Date(timeIntervalSince1970: 30), kind: .observed), language: nil, providerID: nil)
+        let selection = SelectionResult(editorialRevision: otherPlan.revision, orderedCandidates: [candidate],
+            supplyReport: .init(examinedCount: 0, nextCursor: nil, exhausted: true))
+        let prepared = Self.prepared(selection)
+        _ = try PublicationCoordinator(database: f.database).createEdition(.init(selection: selection,
+            drafts: PublicationPreparation.drafts(selection: selection, inputs: prepared.inputs), editionID: otherEdition,
+            publicationSchemaVersion: .init(rawValue: 1), selectionSeed: 1, editionCreatedAt: Date(timeIntervalSince1970: 30),
+            segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date(timeIntervalSince1970: 31), cardIDs: prepared.cardIDs))
+        try PublicationHistory(database: f.database).saveCursor(.init(editionID: otherEdition,
+            anchor: .init(cardID: prepared.cardIDs[0], placement: .center)), updatedAt: Date(timeIntervalSince1970: 32))
+        let restored = try await f.session.restoreLocalPresentation(backwardCapacity: 1, forwardCapacity: 4)
+        let current = try XCTUnwrap(restored), scope = await f.session.currentRunwayScope()
+        await f.runway.activate(try XCTUnwrap(scope))
+        try await f.runway.submitObservation(.init(editionID: otherEdition, anchorCardID: current.window.anchor.cardID,
+            sampledAt: .init(seconds: 100)!, activity: .stationary))
+        let before = await f.runway.snapshot()
+        f.http.release(); let result = try await first.value
+        XCTAssertEqual(result, current)
+        let after = await f.runway.snapshot(); XCTAssertEqual(after, before)
+        let final = await f.session.currentPresentation(); XCTAssertEqual(final, current)
+        XCTAssertEqual(final?.contextKey, otherPlan.context.key)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: otherEdition).count, 1)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.edition).count, 1)
+        XCTAssertEqual(try ContentStore(database: f.database).candidateWindow(sourceID: f.source, after: nil, examinedCapacity: 8).records.count, 1)
+        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.otherHTTP.calls, 0)
+    }
+
+    func testR16NewEditionActivationDuringHTTPGetsReconsideredByOwner() async throws {
+        let f = try fixture(paused: true), p = try await restore(f)
+        let first = Task { try await self.tail(f, p) }
+        defer { f.http.release() }
+        var started = f.http.started.makeAsyncIterator(); _ = await started.next()
+        let otherPlan = f.plan, otherEdition = FeedEditionID()
+        let candidate = Candidate(originRecordID: OriginRecordID(), originRevisionID: OriginRevisionID(), headline: "other-context",
+            summary: nil, timestamp: .init(value: Date(timeIntervalSince1970: 30), kind: .observed), language: nil, providerID: nil)
+        let selection = SelectionResult(editorialRevision: otherPlan.revision, orderedCandidates: [candidate],
+            supplyReport: .init(examinedCount: 0, nextCursor: nil, exhausted: true))
+        let prepared = Self.prepared(selection)
+        _ = try PublicationCoordinator(database: f.database).createEdition(.init(selection: selection,
+            drafts: PublicationPreparation.drafts(selection: selection, inputs: prepared.inputs), editionID: otherEdition,
+            publicationSchemaVersion: .init(rawValue: 1), selectionSeed: 1, editionCreatedAt: Date(timeIntervalSince1970: 30),
+            segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date(timeIntervalSince1970: 31), cardIDs: prepared.cardIDs))
+        try PublicationHistory(database: f.database).saveCursor(.init(editionID: otherEdition,
+            anchor: .init(cardID: prepared.cardIDs[0], placement: .center)), updatedAt: Date(timeIntervalSince1970: 32))
+        let restored = try await f.session.restoreLocalPresentation(backwardCapacity: 1, forwardCapacity: 4)
+        let current = try XCTUnwrap(restored)
+        let activated = try await f.driver.activateCurrentPresentation(resources: resources())
+        XCTAssertEqual(activated, current)
+        let before = await f.runway.snapshot()
+        f.http.release(); let result = try await first.value
+        XCTAssertEqual(result, current)
+        let after = await f.runway.snapshot(); XCTAssertEqual(after.scope, before.scope)
+        XCTAssertNotNil(after.readyAhead); XCTAssertEqual(after.readyAhead?.anchorCardID, current.window.anchor.cardID)
+        let final = await f.session.currentPresentation(); XCTAssertEqual(final, current)
+        XCTAssertEqual(final?.contextKey, otherPlan.context.key)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: otherEdition).count, 1)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.edition).count, 1)
+        XCTAssertEqual(try ContentStore(database: f.database).candidateWindow(sourceID: f.source, after: nil, examinedCapacity: 8).records.count, 1)
+        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.otherHTTP.calls, 0)
+    }
+
+    func testR18IndependentDriversBothEnterHTTPBeforeEitherIsReleased() async throws {
+        let a = try fixture(paused: true), b = try fixture(paused: true)
+        let pa = try await restore(a), pb = try await restore(b)
+        let first = Task { try await self.tail(a, pa) }
+        let second = Task { try await self.tail(b, pb) }
+        defer { a.http.release(); b.http.release() }
+        var sa = a.http.started.makeAsyncIterator(), sb = b.http.started.makeAsyncIterator()
+        _ = await sa.next(); _ = await sb.next()
+        XCTAssertEqual(a.http.calls, 1); XCTAssertEqual(b.http.calls, 1)
+        a.http.release(); b.http.release()
+        _ = try await first.value; _ = try await second.value
+        try await assertLegitimateSecondTarget(a, seededLocal: false)
+        try await assertLegitimateSecondTarget(b, seededLocal: false)
+    }
+
     private func coldIdentity() -> ColdFeedPublicationIdentity {
         .init(editionID: FeedEditionID(), publicationSchemaVersion: .init(rawValue: 1), selectionSeed: 1,
             editionCreatedAt: Date(timeIntervalSince1970: 10), segmentID: FeedSegmentID(), segmentSeed: 2,
@@ -459,6 +652,8 @@ private final class DriverHTTPFixture: @unchecked Sendable {
     private var readyCounts: [ReadyAheadAmount] = []
     private let readyBeforePull: (@Sendable () throws -> ReadyAheadAmount)?
     private var released = false
+    private var startCallback: (@Sendable () -> Void)?
+    func onStart(_ callback: @escaping @Sendable () -> Void) { lock.withLock { startCallback = callback } }
     init(paused:Bool,error:URLError?, readyBeforePull: (@Sendable () throws -> ReadyAheadAmount)? = nil) {
         self.readyBeforePull = readyBeforePull
         self.paused = paused; self.error = error; (started,signal) = AsyncStream.makeStream()
@@ -474,7 +669,7 @@ private final class DriverHTTPFixture: @unchecked Sendable {
             do { let amount = try readyBeforePull(); lock.withLock { readyCounts.append(amount) } }
             catch { XCTFail("Ready-before-pull evidence failed: \(error)") }
         }
-        signal.yield(()); if !wait { respond(loader) }
+        signal.yield(()); let callback = lock.withLock { startCallback }; callback?(); if !wait { respond(loader) }
     }
     func release() { let loader = lock.withLock { released = true; let value = pending; pending = nil; return value }; if let loader { respond(loader) } }
     private func respond(_ loader:DriverURLProtocol) {
