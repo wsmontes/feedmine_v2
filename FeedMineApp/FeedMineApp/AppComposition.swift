@@ -32,10 +32,21 @@ final class AppComposition {
     private let transportConfiguration: URLSessionConfiguration
     /// U2: set once by the app host; every association receives it so the reader stays in-app.
     var onExternalURL: ((URL) -> Void)?
+    /// T5: set once by the app host; the reader's chrome reports a destination, the host presents it.
+    var onNavigate: ((ReaderDestination) -> Void)?
 
     private func connecting(_ association: FeedAssociation) -> FeedAssociation {
         association.onExternalURL = { [weak self] url in self?.onExternalURL?(url) }
+        // T5: the reader shell reports a destination; the host presents it. Nothing is resolved here.
+        association.onNavigate = { [weak self] destination in self?.onNavigate?(destination) }
+        association.onSearch = { [weak self] term in self?.submitSearch(term) }
         return association
+    }
+
+    /// T5: one search submission is a context change, exactly like the sources menu.
+    private func submitSearch(_ term: String) {
+        guard let context = SearchContext(query: term) else { return }
+        Task { try? await selectContext(.search(context)) }
     }
 
     init(directory: URL? = nil, feeds: [TrustedFeed] = TrustedFeed.catalogOrDevelopment(limit: 64),
@@ -226,6 +237,10 @@ final class FeedAssociation {
     @ObservationIgnored
     static let readerCardActions: Set<ReaderCardAction> = [.open, .save]
 
+    /// Destinations this build can present today: the source sheet and the saved list (V1's bookmark
+    /// boxes arrive in T8). The header menu renders exactly these — never a dead item.
+    static let readerDestinations: Set<ReaderDestination> = [.sources, .bookmarkBoxes]
+
     @ObservationIgnored
     lazy var store: FeedScreenStore = FeedScreenStore(onViewport: { [weak self] observation, activity in
         guard let self else { return }
@@ -237,7 +252,9 @@ final class FeedAssociation {
         case .save: self.toggleBookmark(event.cardID)
         default: break
         }
-    })
+    }, availableDestinations: Self.readerDestinations,
+        onSubmitSearch: { [weak self] term in self?.onSearch?(term) },
+        onNavigate: { [weak self] destination in self?.onNavigate?(destination) })
 
     /// Saving is the reader's own durable state (U2); the occurrence must already be admitted.
     private func toggleBookmark(_ cardID: PublicationCardID) {
@@ -251,6 +268,9 @@ final class FeedAssociation {
     /// U2: the app host owns presentation. The composition resolves the frozen target; it never
     /// opens a URL itself and never lets one cross the UI boundary.
     @ObservationIgnored var onExternalURL: ((URL) -> Void)?
+    /// T5: the reader shell's intents. The association reports them; the app host presents them.
+    @ObservationIgnored var onNavigate: ((ReaderDestination) -> Void)?
+    @ObservationIgnored var onSearch: ((String) -> Void)?
 
     /// Review F10: resolve the frozen action target from published history and open it.
     /// The URL never crosses the UI boundary; only the card identity does.

@@ -12,14 +12,40 @@ public struct FeedScreen: View {
     /// The frozen visual system for this session. It is an immutable host input, never internal
     /// observable state: an appearance change is an explicit decision, not an effect of this view.
     private let appearance: ReaderAppearance
+    /// The host's own status chip (V1's `CompactFeedStatus` equivalent). Nil renders the delivery's
+    /// default, which states only what the presentation value knows.
+    private let customStatusChip: AnyView?
     @State private var capture = FeedVisualCapture()
 
-    public init(store: FeedScreenStore, appearance: ReaderAppearance = .standard) {
+    public init(store: FeedScreenStore, appearance: ReaderAppearance = .standard,
+        statusChip: AnyView? = nil) {
         self.store = store
         self.appearance = appearance
+        self.customStatusChip = statusChip
     }
 
     public var body: some View {
+        // The reader's chrome belongs to the feed surface: before the first presentation there is no
+        // feed to read, so the preparation state keeps its own full-screen surface (V1 too drew its
+        // header for the session, and T11 owns the preparation experience).
+        if store.state.presentation != nil {
+            ReaderShell(store: store, appearance: appearance, status: { statusChip }, lens: { EmptyView() }) {
+                feedBody
+            }
+        } else {
+            FeedLoadingView(work: store.state.work)
+        }
+    }
+
+    /// The chip states the reader's situation. The host can replace it (T5 hook) because the host owns
+    /// the counters; this default states only what the presentation value knows.
+    @ViewBuilder private var statusChip: some View {
+        if let customStatusChip { customStatusChip } else { FeedWorkBadge(work: store.state.work) }
+    }
+
+    private var workFeedback: some View { FeedWorkFeedback(work: store.state.work) }
+
+    @ViewBuilder private var feedBody: some View {
         if let presentation = store.state.presentation {
             if #available(iOS 18, macOS 15, *) {
                 ScrollView {
@@ -59,11 +85,7 @@ public struct FeedScreen: View {
                 .modifier(NativeFeedViewport(capture: $capture, store: store))
                 // T3: work feedback is an overlay of constant height that never takes touches, so the
                 // scroll viewport keeps exactly the geometry the reader was admitted into.
-                .overlay(alignment: .bottom) {
-                    FeedWorkBadge(work: store.state.work)
-                        .frame(height: FeedDesignTokens.Measurement.workFeedbackHeight, alignment: .bottom)
-                        .allowsHitTesting(false)
-                }
+                .overlay(alignment: .bottom) { workFeedback }
             } else {
                 // macOS 14 renders local cards without automatic viewport capture.
                 ScrollView {
@@ -81,11 +103,7 @@ public struct FeedScreen: View {
                 }
                 // T3: work feedback is an overlay of constant height that never takes touches, so the
                 // scroll viewport keeps exactly the geometry the reader was admitted into.
-                .overlay(alignment: .bottom) {
-                    FeedWorkBadge(work: store.state.work)
-                        .frame(height: FeedDesignTokens.Measurement.workFeedbackHeight, alignment: .bottom)
-                        .allowsHitTesting(false)
-                }
+                .overlay(alignment: .bottom) { workFeedback }
             }
         } else {
             FeedLoadingView(work: store.state.work)
@@ -93,8 +111,19 @@ public struct FeedScreen: View {
     }
 }
 
-/// Review M17: work that continues after cards are visible is shown without touching the cards.
+/// Reserved, non-interactive work feedback (T3): constant height, no hit testing, so reporting work can
+/// never change the scroll geometry the reader was admitted into.
 @MainActor
+struct FeedWorkFeedback: View {
+    let work: FeedPresentationState.Work
+    var body: some View {
+        FeedWorkBadge(work: work)
+            .frame(height: FeedDesignTokens.Measurement.workFeedbackHeight, alignment: .bottom)
+            .allowsHitTesting(false)
+    }
+}
+
+/// Review M17: work that continues after cards are visible is shown without touching the cards.
 struct FeedWorkBadge: View {
     let work: FeedPresentationState.Work
     var body: some View {

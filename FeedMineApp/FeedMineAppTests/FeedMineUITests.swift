@@ -19,7 +19,8 @@ final class FeedMineUITests: XCTestCase {
         app.buttons["reader-contexts"].tap()
         app.buttons["Principal"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 15))
-        app.buttons["reader-sources"].tap()
+        openMenu(app)
+        app.buttons["Fontes"].tap()
         XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'source-choice-'")).firstMatch.waitForExistence(timeout: 10))
         app.buttons["Concluir"].tap()
@@ -106,7 +107,8 @@ final class FeedMineUITests: XCTestCase {
         let counters = proof.label
         let anchor = try XCTUnwrap(topmostCardIdentifier(app: app, scroll: scroll), "a card must be visible inside the viewport")
         // U1-C: the source sheet is the one destination that exists today.
-        app.buttons["reader-sources"].tap()
+        openMenu(app)
+        app.buttons["Fontes"].tap()
         XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 10))
         app.buttons["Concluir"].tap()
         XCTAssertTrue(scroll.waitForExistence(timeout: 10))
@@ -147,7 +149,7 @@ final class FeedMineUITests: XCTestCase {
         let save = app.buttons["Salvar artigo"]
         XCTAssertTrue(save.waitForExistence(timeout: 10), "the card menu must offer saving")
         save.tap()
-        app.buttons["reader-saved"].tap()
+        app.buttons["bookmark-boxes-button"].tap()
         let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'saved-article-'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), "the saved article must be listed")
         let list = XCTAttachment(screenshot: app.screenshot())
@@ -188,16 +190,21 @@ final class FeedMineUITests: XCTestCase {
         app.launch()
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 45))
-        let bar = app.otherElements["reader-context-bar"]
-        XCTAssertFalse(bar.exists, "the main context needs no bar")
-        app.buttons["reader-contexts"].tap()
+        // T5: the chip in the floating header states the context; the main context states none. The chip
+        // is a SwiftUI Menu (a pop-up button to XCUITest), so it is located by identifier across types.
+        let chip = element(app, "reader-contexts")
+        XCTAssertTrue(chip.waitForExistence(timeout: 10), "the header must state the reading context")
+        XCTAssertFalse(chip.label.contains("BBC Science"), "the main context states no source")
+        chip.tap()
         app.buttons["BBC Science"].tap()
         XCTAssertTrue(scroll.waitForExistence(timeout: 15))
-        XCTAssertTrue(bar.waitForExistence(timeout: 10), "a source context must state which source is shown")
-        XCTAssertEqual(app.staticTexts["reader-context-label"].label, "BBC Science")
-        app.buttons["reader-context-clear"].tap()
+        XCTAssertTrue(element(app, "reader-contexts").label.contains("BBC Science"),
+            "a source context must state which source is shown; observed: \(element(app, "reader-contexts").label)")
+        element(app, "reader-contexts").tap()
+        element(app, "reader-context-clear").tap()
         XCTAssertTrue(scroll.waitForExistence(timeout: 15))
-        XCTAssertFalse(bar.waitForExistence(timeout: 3), "clearing returns to the main context")
+        XCTAssertFalse(element(app, "reader-contexts").label.contains("BBC Science"),
+            "clearing returns to the main context")
     }
 
     /// The card whose top edge sits inside the scroll viewport and is closest to it.
@@ -253,6 +260,78 @@ final class FeedMineUITests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+    }
+
+    /// T5: the reader's chrome is V1's, every control reaches a real flow, and no gesture is swallowed
+    /// by an overlapping one. Only the actions this build executes are offered, so nothing here can be a
+    /// dead control.
+    @MainActor
+    func testT5HeaderChromeAndCardGesturesReachRealFlows() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        // V1's header controls exist, and the navigation toolbar is gone.
+        for identifier in ["search-button", "bookmark-boxes-button", "more-menu"] {
+            XCTAssertTrue(app.buttons[identifier].waitForExistence(timeout: 10), identifier)
+        }
+        XCTAssertFalse(app.buttons["reader-sources"].exists, "the V2 toolbar must be gone")
+        // The overflow menu offers exactly what this build can present.
+        openMenu(app)
+        XCTAssertTrue(app.buttons["Fontes"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Ajustes"].exists, "an unimplemented destination is never offered")
+        XCTAssertFalse(app.buttons["Copiar link"].exists, "a card action this build cannot execute is gated")
+        app.buttons["Fontes"].tap()
+        XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 10))
+        app.buttons["Concluir"].tap()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+        // The search surface opens and cancels without touching the feed.
+        app.buttons["search-button"].tap()
+        XCTAssertTrue(app.textFields["reader-search-field"].waitForExistence(timeout: 10))
+        app.buttons["reader-search-cancel"].tap()
+        XCTAssertFalse(app.textFields["reader-search-field"].waitForExistence(timeout: 3))
+        XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+        // A long press reaches the card's own menu; the same card's tap is not consumed by it.
+        let cards = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"))
+        let card = cards.firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 45), "a real published occurrence must appear")
+        card.press(forDuration: 1.2)
+        let save = app.buttons["Salvar artigo"]
+        XCTAssertTrue(save.waitForExistence(timeout: 10), "the long press must reach the card menu")
+        save.tap()
+        // Saving is really durable: the header's bookmark control shows the saved list with the row.
+        app.buttons["bookmark-boxes-button"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'saved-article-'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 15), "the saved article must be listed")
+        app.navigationBars.buttons["BackButton"].tap()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15))
+        // A plain tap on the same card still opens it (the tap was never swallowed by the long press).
+        card.tap()
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "tapping the card must open it")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "t5-shell-and-gestures"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    /// Any element with this identifier, whatever role SwiftUI exposed it as (a `Menu` is a pop-up
+    /// button to XCUITest, and the same declaration can be reported as either one).
+    @MainActor
+    private func element(_ app: XCUIApplication, _ identifier: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", identifier)).firstMatch
+    }
+
+    /// T5: the reading destinations that used to live in the navigation toolbar are now V1's overflow
+    /// menu inside the floating header.
+    @MainActor
+    private func openMenu(_ app: XCUIApplication) {
+        let menu = app.buttons["more-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 10), "the header must offer the overflow menu")
+        menu.tap()
     }
 
     /// The element of the card whose top edge sits inside the scroll viewport and is closest to it.

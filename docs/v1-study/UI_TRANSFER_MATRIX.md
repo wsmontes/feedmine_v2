@@ -49,6 +49,14 @@ delivery flips to `em transferência` / `validado`.
 
 ## 1. Reader shell — `FeedScreen.swift`
 
+**T5 state (2026-10-09).** The shell, the header, the overflow menu, the search bar and the feedback views
+are transferred (`Sources/FeedMineUI/Reader/**`, `Feedback/**`); the V2 navigation toolbar and the U3 context
+bar are gone. Rows below therefore read: **`em transferência`** for the header controls, the menu vocabulary
+and the search bar; **`inventariado`** for everything whose *flow* arrives later — the lens bar (T6), the
+unified search results panel (T6), the destination sheets the host cannot present yet (T7–T11) and the DEBUG
+catalog button (not transferred). The menu *values* exist for all 14 V1 items; the host renders only the ones
+it implements, so `Fontes` and the bookmark boxes are live today and the rest are not shown rather than dead.
+
 ### 1.1 Header (floating overlay)
 
 | surface | v1Path | v1Symbol | actions | dataDependencies | v2Path (delivery) | proof | status |
@@ -62,6 +70,12 @@ delivery flips to `em transferência` / `validado`.
 | Debug info (DEBUG) | idem | `CompactDebugInfo` 508; triple-tap toggle 1851–1861 (`showDebugBar` `@AppStorage`, gate 62–68) | replaces the chip with counters | debug counters | **not transferred** (debug-only; keep V2's DEBUG overlay) — recorded, not a parity gap | src | inventariado |
 
 ### 1.2 Ellipsis menu items (conditional paths included)
+
+**T5:** all 14 items exist as `ReaderMenuEntry` values with V1's labels, symbols, roles and grouping
+(`Sources/FeedMineUI/Reader/ReaderNavigation.swift`). `FeedScreenStore.menuEntries` renders
+`availableDestinations ∩ standard`, and `AppComposition.readerDestinations = [.sources, .bookmarkBoxes]`
+today, so only those two are reachable; each remaining item joins when its delivery lands (T7 sources/catalog,
+T8 collections/bookmarks/presets, T10 add-feed/export/import, T11 curation).
 
 | action | trigger condition | symbol/icon | executes | v2 destination | proof | status |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -82,12 +96,20 @@ delivery flips to `em transferência` / `validado`.
 
 ### 1.3 Search bar and unified search panel
 
+**T5:** the search *surface* (field, submit, explicit cancel) is transferred and a submission still becomes the
+same search context the toolbar field used to submit; the results panel stays `inventariado` (T6 owns search as
+a context with results).
+
 | surface | v1Path | v1Symbol | actions | data deps | v2 destination | proof | status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Search bar | `Views/FeedScreen.swift` | `searchBar` 655–716; `TextField` id `unified-search-field`; chips id `search-term-tags` | Return → `commitSearchDraft()` 1318–1334 → `loader.submitSearchTerms`; `+` `plus.circle.fill` → same; `Cancel` → `closeSearch()` 1306–1312; chip `xmark` → `removeSearchTerm(term)` 722–732; toggles Sources/Contents (`checkmark.square.fill`/`square`) 776–791 bind `searchIncludesSources`/`searchIncludesContents` (277/283) → resubmit; `searchActivityLine` 735–766 is status-only | `loader.searchQuery`, `submittedSearchTerms`, `searchIncludesSources/Contents`, `isSearchLoading/Scanning`, `searchScannedSourceCount` | `ReaderSearchBar` (**T5**), search context (**T6**) | src | inventariado |
 | Unified results panel | idem | `unifiedSearchPanel` 793–864; id `unified-search-results`; top padding = `headerHeight + searchControlsHeight` 862 | row tap → `searchFocused=false` + `selectedSource = source.sourceReference` (812–816); context menu `View Source` (819–823) → same; `Add Source to Collection` (824–826) → `sourceToCollect`; saved/local row tap → `loader.markAsClicked(id)` + `articleItem = item` (884–889) | `loader.unifiedSearchResults` (sources/savedItems/localItems) | `ReaderSearchResults` (**T5**), search semantics (**T6**) | src | inventariado |
 
 ### 1.4 Feed content, sections and scroll
+
+**T5:** the chrome no longer changes the feed's geometry — the header is measured by the shell itself
+(`ReaderHeaderHeightKey`) and the work feedback is a constant-height non-interactive overlay (T3). The
+scroll-driven lens state and the lens bar remain `inventariado` for T6.
 
 | surface | v1Path | v1Symbol | actions / behaviour | data deps | v2 destination | proof | status |
 | --- | --- | --- | --- | --- | --- | --- | --- |

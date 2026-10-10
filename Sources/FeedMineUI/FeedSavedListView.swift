@@ -46,6 +46,11 @@ public struct FeedSavedListView: View {
             }
         }
         .navigationTitle("Salvos")
+        #if canImport(UIKit)
+        // T5: the reader's root hides the navigation bar (V1 draws its own floating header); a pushed
+        // destination brings it back so the reader keeps a way back.
+        .toolbar(.visible, for: .navigationBar)
+        #endif
     }
 
     @ViewBuilder private func row(_ article: FeedSavedArticle) -> some View {

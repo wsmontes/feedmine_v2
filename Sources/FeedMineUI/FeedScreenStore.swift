@@ -14,6 +14,20 @@ public final class FeedScreenStore {
     /// What this host can actually execute. A card renders only these controls, so a menu item can
     /// never be a dead control while its delivery (T5–T11) has not landed yet.
     public let availableActions: Set<ReaderCardAction>
+    /// Destinations this host can present today. The header's menu shows exactly these.
+    public let availableDestinations: Set<ReaderDestination>
+    /// Reader's search surface state. It is presentation state: the host decides what a submission means
+    /// (T6 owns search as a context) and no submission here touches production.
+    public private(set) var isSearching = false
+    public private(set) var searchQuery = ""
+    /// The one transient message the reader is showing. The host states it; the shell owns its lifetime.
+    public private(set) var toast: ReaderToastMessage?
+    /// Active filter count and bookmark-box selection: filled by T6 and T8. Zero/false means "none",
+    /// never a fabricated state, so the header draws no badge until a delivery can prove one.
+    public private(set) var filterCount = 0
+    public private(set) var bookmarkBoxActive = false
+    @ObservationIgnored private let onSubmitSearch: @MainActor (String) -> Void
+    @ObservationIgnored private let onNavigate: @MainActor (ReaderDestination) -> Void
     @ObservationIgnored private let onAction: @MainActor (ReaderCardActionEvent) -> Void
 
     /// `onAction` receives one semantic request per user interaction (review F10): the occurrence and
@@ -21,12 +35,54 @@ public final class FeedScreenStore {
     /// composition resolves them from published history.
     public init(onViewport: @escaping @MainActor (ViewportObservation, RunwayActivity) -> Void,
         availableActions: Set<ReaderCardAction> = Set(ReaderCardAction.allCases),
-        onAction: @escaping @MainActor (ReaderCardActionEvent) -> Void = { _ in }) {
+        onAction: @escaping @MainActor (ReaderCardActionEvent) -> Void = { _ in },
+        availableDestinations: Set<ReaderDestination> = [],
+        onSubmitSearch: @escaping @MainActor (String) -> Void = { _ in },
+        onNavigate: @escaping @MainActor (ReaderDestination) -> Void = { _ in }) {
         state = FeedPresentationState(presentation: nil)
         self.onViewport = onViewport
         self.availableActions = availableActions
         self.onAction = onAction
+        self.availableDestinations = availableDestinations
+        self.onSubmitSearch = onSubmitSearch
+        self.onNavigate = onNavigate
     }
+
+    /// V1's menu order, limited to what this host can present.
+    public var menuEntries: [ReaderMenuEntry] {
+        ReaderMenuEntry.standard.filter { availableDestinations.contains($0.destination) }
+    }
+
+    // MARK: - Reader chrome (T5)
+
+    public func toggleSearch() {
+        isSearching.toggle()
+        if !isSearching { searchQuery = "" }
+    }
+
+    /// One explicit search submission. The host decides what a term means; UI starts no work.
+    public func submitSearch(_ term: String) {
+        let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        searchQuery = trimmed
+        guard !trimmed.isEmpty else { return }
+        onSubmitSearch(trimmed)
+    }
+
+    public func cancelSearch() {
+        isSearching = false
+        searchQuery = ""
+    }
+
+    public func navigate(to destination: ReaderDestination) {
+        guard availableDestinations.contains(destination) else { return }
+        onNavigate(destination)
+    }
+
+    public func showToast(text: String, systemImage: String? = nil) {
+        toast = ReaderToastMessage(text: text, systemImage: systemImage)
+    }
+
+    public func dismissToast() { toast = nil }
 
     public func installBookmarks(_ ids: Set<PublicationCardID>) { bookmarkedIDs = ids }
 

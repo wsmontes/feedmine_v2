@@ -290,3 +290,52 @@ title, `2 days ago`, accent bar, slot-sized placeholder, overlay bookmark). Cave
 is veiled/dimmed by the current simulator display state, so it is **structural** evidence — a colour-fidelity
 side-by-side against `feed-portrait-light.png` is still owed, and is now part of T4's remainder together with the
 badge/category fields.
+
+## T5 — 2026-10-09 (V1 reader shell, header, menus and search)
+
+Plan task T5. The reader's chrome is now V1's: the V2 navigation toolbar is gone.
+
+**What was copied.**
+
+| V1 source | V2 destination | Notes |
+| --- | --- | --- |
+| `Views/FeedScreen.swift` `compactHeader` (502–653) | `Sources/FeedMineUI/Reader/ReaderHeader.swift` | Floating header: status chip slot, search / bookmarks / filter buttons and the ellipsis menu, `.ultraThinMaterial` background, bottom divider and the lens slot. V1's `headerButtonStyle` (44×44, accent-tinted circle) is `ReaderHeaderButton`; V1's identifiers (`search-button`, `bookmark-boxes-button`, `filter-button`, `more-menu`) are kept. |
+| V1's ellipsis menu (556–635) | `ReaderMenu.swift` + `ReaderNavigation.swift` | All 14 V1 items as values (`ReaderMenuEntry.standard`), with V1's labels, SF Symbols, destructive roles and grouping. |
+| V1's search bar (655–716) | `ReaderShell.swift` `searchBar` | Field, submit, explicit cancel; the surface closes without touching the feed. |
+| `Views/ToastView.swift` + V1's toast lifetime (1097–1119) | `Feedback/ToastView.swift` | Black capsule, 2 s, spring 0.35/0.8, 100 pt above the bottom; non-interactive. |
+| `Views/ClipboardBanner.swift` | `Feedback/ClipboardBanner.swift` | Add / dismiss; the pasteboard check stays with the host (T10 owns import). |
+| `Views/FeedScreen.swift` composition (`feedTopPadding`, `ZStack` + `HeaderHeightKey`) | `ReaderShell.swift` | The shell measures **its own** chrome with a layout preference and pads the content by exactly that; production can never open, close or resize it (T3/T5 rule). |
+
+**Removed from V2:** the navigation toolbar (Feed context menu, Salvos, Fontes and the bottom search
+field) and the U3 context bar. The context switcher survives as the header's status chip menu — the one
+working V2 flow that has no V1 equivalent yet; T6 replaces it with V1's filter/preset surfaces. The chip
+states the active context with the identifiers the U3 flow already used (`reader-contexts`,
+`reader-context-label`, `reader-context-clear`), so no flow was lost.
+
+**One owner for each decision.** `FeedScreenStore` gained the shell's state and intents: `isSearching`,
+`searchQuery`, `toast`, `filterCount` (0 until T6), `bookmarkBoxActive` (false until T8),
+`availableDestinations`, and `toggleSearch`/`submitSearch`/`cancelSearch`/`navigate(to:)`/`showToast`/
+`dismissToast`. `menuEntries` is computed from `availableDestinations ∩ ReaderMenuEntry.standard`, so the
+overflow menu can only show what the host can present. `AppComposition.readerDestinations` is
+`[.sources, .bookmarkBoxes]` today; the host presents the source sheet and the saved list, and
+`AppComposition.onNavigate` is the single presentation switch.
+
+**Tests.** New `ReaderShellTests` (6): the menu offers exactly the available destinations in V1's order and
+never repeats an identity; the search surface reports one submission and starts no work; navigation to an
+unavailable destination is refused in the store; feedback is host-owned; the shell measures only its own
+chrome and references no production type; the V1 control identifiers, 44×44 style and the non-geometric
+work feedback are asserted structurally. New iOS UI test
+`testT5HeaderChromeAndCardGesturesReachRealFlows`: V1's controls exist and the V2 toolbar does not; the menu
+offers `Fontes` but not `Ajustes` (unimplemented) nor `Copiar link` (unavailable action); the source sheet
+opens and closes; the search surface opens and cancels; a long press reaches the card menu, saving lands in
+the saved list reached from the header, and a plain tap still opens the card (no gesture swallowed). The
+three existing UI tests that used the removed toolbar were migrated to the header (`reader-sources` →
+`more-menu` + `Fontes`, `reader-saved` → `bookmark-boxes-button`, the U3 context bar → the chip menu).
+
+**Measured defect fixed during the transfer.** An `accessibilityIdentifier` on the search bar's container
+overrode its children's identifiers, making the field and the cancel button unreachable to XCUITest; the
+container now uses `accessibilityElement(children: .contain)` with no identifier of its own.
+
+**Verification (executed).** `swift build` clean; `swift test` **867 tests, 0 failures**; iOS build
+**BUILD SUCCEEDED**; `-only-testing:…/testT5HeaderChromeAndCardGesturesReachRealFlows` → **TEST SUCCEEDED**;
+the three migrated UI tests → **TEST SUCCEEDED**.

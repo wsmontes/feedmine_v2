@@ -9,6 +9,21 @@ public enum FeedPresentationStateError: Error, Equatable, Sendable {
     case inconsistentProjectionOrder
 }
 
+public extension FeedPresentationState.Work {
+    /// The short status the reader's chip states. It describes receiving work only; it never claims
+    /// content that is not there (INV-06) and never implies the feed changed.
+    var shortDescription: String {
+        switch self {
+        case .idle: ""
+        case .pending: String(localized: "Buscando novidades")
+        case .preparing: String(localized: "Preparando")
+        case .unavailable: String(localized: "Sem conexão")
+        case .deferred: String(localized: "Aguardando")
+        case .failed(let message): message
+        }
+    }
+}
+
 public struct FeedPresentationState: Hashable, Sendable {
     public enum Work: Hashable, Sendable {
         case idle
