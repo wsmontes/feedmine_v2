@@ -1,5 +1,7 @@
 # FeedMine
 
+**Por que existe:** fazer a internet aberta voltar a ser um lugar onde é gostoso descobrir coisas. O objetivo é oferecer descoberta contínua de conteúdo interessante, inclusive de fontes que a pessoa ainda não conhece — sem exigir que ela primeiro configure um leitor RSS. Leia o [norte de produto](docs/product/PRODUCT_NORTH_STAR.md) antes de decidir funcionalidades, prioridades ou mudanças na experiência de leitura.
+
 FeedMine é um feed reader local-first/offline-first, sem servidor próprio. O pacote Swift contém dez módulos; o aplicativo iOS separado usa esses módulos por referência local.
 
 Abra `FeedMineApp/FeedMineApp.xcodeproj`, selecione o scheme compartilhado **FeedMine** e um simulador iOS 18 ou posterior. Não é necessário configurar uma equipe para compilar no simulador. Para um dispositivo físico, configure sua assinatura de desenvolvimento no Xcode.
