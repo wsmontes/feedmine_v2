@@ -189,6 +189,16 @@ O catálogo elegível é um universo de **exploração progressiva**, não uma l
 
 Capacidade é reconsiderada em oportunidades reais, a partir de sinais disponíveis do sistema operacional e métricas já medidas — **sem** exigir monitoramento em loop, cache paralelo ou execução irrestrita em background. Reaproveitar donos existentes, sem criar controlador concorrente universal.
 
+## INV-18 — Public catalog authority, local bootstrap and nonblocking reconciliation
+
+A **autoridade do catálogo público gerenciado** é `https://github.com/wawasoft/feed-repository`, não o banco embarcado nem uma lista fixa definida por agentes. O `catalog.sqlite` distribuído com cada release é a **última revisão pública validada disponível na montagem**, gravada com procedência e versão, para iniciar imediatamente e funcionar offline. A escala editorial não é limitada à contagem desse snapshot.
+
+A sincronização com a autoridade pública é **obrigatória na release**, mas nunca uma dependência da primeira apresentação. Quando o app está ativo e tem oportunidade de rede, uma verificação bem-sucedida do manifesto com cerca de 24 horas de idade deve ser renovada em background, inclusive em launch/foreground. Se iOS, suspensão, falta de rede ou recursos impedirem a execução, a verificação ocorre na próxima oportunidade: não existe garantia artificial de trabalho diário com app fechado, polling constante nem segundo scheduler.
+
+Uma nova revisão pode adicionar, remover ou reclassificar fontes, alterar metadados e endpoints. A aplicação é verificada (revisão, schema, tamanho e SHA-256 de cada entrada), staged e atômica; falha preserva o snapshot anterior. Mudanças impactam elegibilidade e aquisição futuras; não reescrevem publicação existente (INV-08/09), não travam runway e **não apagam dados do usuário** (imports próprios, leitura, coleções, bookmarks, histórico, conteúdo local). O catálogo substituível e `runtime.sqlite` têm ciclos distintos. Remoções do catálogo gerenciado não equivalem a exclusão do universo pessoal do usuário. A identidade de fontes deve continuar estável ou ter migração explícita quando a chave canônica mudar.
+
+Fonte normativa: [PD-10](../product/PRODUCT_DECISIONS_2026-10-09.md). Sua existência como invariante **não implica implementação concluída**; evidência end-to-end é requisito de F01/F09/F10.
+
 # Boundary consequences
 
 INV-01 + INV-02:
