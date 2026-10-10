@@ -19,6 +19,8 @@ public protocol SourceManagementBackend: Sendable {
     func sources(in node: CatalogNodeSummary) async throws -> [CatalogSourceSummary]
     func searchSources(_ query: String) async throws -> [CatalogSourceSummary]
     func countryKeys() async throws -> [Int64: Set<String>]
+    /// Each child of a node with its own keys: one call per level, never one per row.
+    func childKeys(of node: CatalogNodeSummary) async throws -> [Int64: Set<String>]
     func selection() async throws -> [String]
     func setSelection(_ keys: [String]) async throws
     func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws
@@ -40,6 +42,8 @@ public final class SourceManagementStore {
     public private(set) var selection: Set<String> = []
     /// Every country's own keys, so a country row can state whether all of its sources are selected.
     public private(set) var countryKeys: [Int64: Set<String>] = [:]
+    /// The keys of the open node's children, read with the level so a sub-node row can state its own state.
+    public private(set) var nodeChildKeys: [Int64: Set<String>] = [:]
     public private(set) var query = ""
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
@@ -91,6 +95,7 @@ public final class SourceManagementStore {
             children = node.hasChildren ? try await backend.children(of: node) : []
             breadcrumb = try await backend.breadcrumb(of: node)
             sources = try await backend.sources(in: node)
+            nodeChildKeys = children.isEmpty ? [:] : try await backend.childKeys(of: node)
             errorMessage = nil
         } catch { errorMessage = String(localized: "Não foi possível abrir esta parte do catálogo.") }
     }
@@ -115,13 +120,25 @@ public final class SourceManagementStore {
             if openNode == node { sources = try await backend.sources(in: node) }
             errorMessage = nil
         } catch {
-            errorMessage = enabled
-                ? String(localized: "Não foi possível habilitar estas fontes.")
-                : String(localized: "Mantenha ao menos uma fonte selecionada.")
+            errorMessage = String(localized: "Não foi possível alterar a seleção de fontes.")
         }
     }
 
     public func isSelected(_ source: CatalogSourceSummary) -> Bool { selection.contains(source.id) }
+
+    /// The sections the open node's own sources are drawn in: V1's grouped list, by the catalog's own
+    /// media kind (it has no category column), with the layout as a value.
+    public var nodeSections: [NodeSourceSection] {
+        NodeSourcesView.sections(sources: sources, selection: selection)
+    }
+
+    /// Whether a node is enabled: it has sources and every one of them is selected. A node the catalog placed
+    /// no source under is never reported as enabled (V1's `isRegionEnabled` had the same rule by accident of
+    /// an empty list).
+    public func isNodeEnabled(_ node: CatalogNodeSummary) -> Bool {
+        let keys = countryKeys[node.id] ?? nodeChildKeys[node.id] ?? []
+        return !keys.isEmpty && keys.allSatisfy(selection.contains)
+    }
 
     private func apply(_ keys: [String]) async {
         do {
@@ -129,7 +146,7 @@ public final class SourceManagementStore {
             selection = Set(try await backend.selection())
             errorMessage = nil
         } catch {
-            errorMessage = String(localized: "Mantenha ao menos uma fonte selecionada.")
+            errorMessage = String(localized: "Não foi possível alterar a seleção de fontes.")
         }
     }
 }

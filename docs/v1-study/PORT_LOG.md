@@ -624,6 +624,37 @@ surface; V2 refused at `ReaderPreferencesStore.validate`. Both moved together:
   *Fontes* from the surface's own button, returns to the empty surface, and gets the feed back by enabling one
   source.
 
+**Eighth slice — the source surface itself, wired end to end** (matrix rows 200/201/203/204/205).
+
+- `SourceCatalogBackend` (Composition) is the single place where the surface's protocol (UI) meets the catalog
+  coordinator: values in, values out, ids translated at that boundary and nowhere above it. Proven against a
+  **real catalog file and a real preferences database** (`SourceCatalogBackendTests`), not a recording double:
+  sections, countries, a node's children and sources in the catalogue's own order, one child-key read per level,
+  the search (still scoped to text sources, as V1 had it), and both writes reaching the reader's own selection —
+  including an emptied one.
+- `SourceManagementView` (UI) is V1's `SourceManagementView` shell: the catalog's sections with a whole-section
+  toggle, the way into the country list, and the stated enabled count with V1's footer semantics.
+  **Deliberate differences recorded:** V1 drew one flat list of every category and source at once plus a health
+  column and an OPML import/export section; V2 draws the levels the catalog has (this entry → country list → a
+  node's own sources, all ported), the health column waits for the runtime's own availability read, and
+  import/export belongs to T10 — none of the three is drawn as a dead control. V1's "N of M sources" is replaced
+  by the enabled count, which the persisted selection makes exact; a total would double-count sources the
+  catalog places under several nodes.
+- `NodeSourcesView` (UI) is V1's `CountryDetailScreen`/`RegionDetailScreen` — the same screen twice — as one
+  view over V2's single node model: the node's children (V1's "Regions" section, each row drilling further or
+  toggling the whole sub-tree with `childKeys`, one read per level) and the node's own sources grouped into
+  sections by the catalog's **media kind**, because V2's catalog has no category column (V1 grouped by the free
+  `FeedSource.category` string). The grouping, the section titles/icons and the child label are values, so the
+  layout is testable without a store.
+- Adopting the change: the source surface writes the selection through the coordinator, and the app re-reads it
+  **when the surface closes** (`adoptSelectionChange`) — looking at the list is not a selection change, an
+  emptied selection is adopted as a state, and only a real change rebuilds the association (with the
+  single-source rule `toggleSource` already had).
+- Evidence: `swift test` **928 tests, 0 failures**; iOS build **SUCCEEDED**; and the ported path is exercised in
+  the simulator by `testEmptySelectionStatesItsOwnSurfaceAndOffersTheWayBack`, which now walks the empty surface
+  → *Fontes* (shell, enabled count) → *Todos os países* → a country's toggle → the sheet closing → **the feed
+  back**.
+
 Fourth slice: the surface the T7 views bind to. The catalog **values moved to Runtime** (`CatalogValues.swift`) —
 UI imports Runtime and must never import Composition, so values cannot live next to the coordinator that produces
 them. New `SourceManagementStore` (UI) is observable values plus intents over a `SourceManagementBackend`

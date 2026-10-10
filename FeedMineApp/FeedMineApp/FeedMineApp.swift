@@ -1,6 +1,7 @@
 import SwiftUI
 import FeedMineUI
 import FeedMineDomain
+import FeedMineRuntime
 
 @main
 struct FeedMineApp: App {
@@ -28,6 +29,15 @@ struct FeedMineApp: App {
         }
     }
     @State private var presentation: ReaderPresentation?
+    /// T7: the source surface's own navigation and the one store it draws from.
+    @State private var sourcesStore: SourceManagementStore?
+    @State private var sourcesPath: [SourceRoute] = []
+
+    /// The levels under the source surface's root. A typed route, like the app's other destinations.
+    enum SourceRoute: Hashable {
+        case countries
+        case node(CatalogNodeSummary)
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -57,15 +67,32 @@ struct FeedMineApp: App {
                 // T5: the reader draws its own floating header; the navigation bar exists only for
                 // pushed destinations, so it stays out of the reading surface.
                 .toolbar(.hidden, for: .navigationBar)
-                .sheet(item: $presentation) { presentation in
+                .sheet(item: $presentation, onDismiss: {
+                    // A selection made in the source surface is adopted when it closes, never mid-list.
+                    Task { await composition.adoptSelectionChange() }
+                }) { presentation in
                     switch presentation {
                     case .sources:
-                        NavigationStack {
-                            FeedSourcePicker(options: composition.sourceOptions,
-                                onSearch: { query in Task { do { try await composition.searchSources(query) } catch { readerError = String(describing: error) } } },
-                                onToggle: { id in Task { do { try await composition.toggleSource(id) } catch { readerError = "Não foi possível alterar a seleção de fontes." } } })
-                            .toolbar { Button("Concluir") { self.presentation = nil } }
-                            .task { try? await composition.searchSources("") }
+                        NavigationStack(path: $sourcesPath) {
+                            if let store = sourcesStore {
+                                SourceManagementView(store: store,
+                                    onOpenNode: { sourcesPath.append(.node($0)) },
+                                    onOpenCountries: { sourcesPath.append(.countries) },
+                                    onClose: { self.presentation = nil })
+                                    .navigationDestination(for: SourceRoute.self) { route in
+                                        switch route {
+                                        case .countries:
+                                            CountriesListView(store: store,
+                                                onOpenNode: { sourcesPath.append(.node($0)) },
+                                                onClose: { self.presentation = nil })
+                                        case .node(let node):
+                                            NodeSourcesView(store: store, node: node,
+                                                onOpenNode: { sourcesPath.append(.node($0)) })
+                                        }
+                                    }
+                            } else {
+                                ProgressView("Abrindo o catálogo de fontes")
+                            }
                         }
                     case .filters:
                         NavigationStack {
@@ -100,6 +127,7 @@ struct FeedMineApp: App {
                 // U2: the reader stays in the app. The composition resolves the frozen target and
                 // hands the URL here; no URL ever comes from a view.
                 composition.onExternalURL = { url in presentation = .reader(url) }
+                sourcesStore = composition.makeSourceManagementStore()
                 // T5: the reader's chrome reports destinations; the host presents the ones it implements.
                 composition.onNavigate = { destination in
                     switch destination {

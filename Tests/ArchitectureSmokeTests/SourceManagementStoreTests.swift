@@ -43,6 +43,10 @@ final class SourceManagementStoreTests: XCTestCase {
         }
         var countryKeysByNode: [Int64: Set<String>] = [:]
         func countryKeys() async throws -> [Int64: Set<String>] { try guardFailure(); return countryKeysByNode }
+        var childKeysByNode: [Int64: [Int64: Set<String>]] = [:]
+        func childKeys(of node: CatalogNodeSummary) async throws -> [Int64: Set<String>] {
+            try guardFailure(); return childKeysByNode[node.id] ?? [:]
+        }
         func selection() async throws -> [String] { try guardFailure(); return selection }
         func setSelection(_ keys: [String]) async throws {
             try guardFailure(); if failSetSelection { throw SourceManagementErrorDouble.invalid }; selection = keys
@@ -153,6 +157,43 @@ final class SourceManagementStoreTests: XCTestCase {
             sourceCount: 1, hasChildren: false)
         XCTAssertEqual(CountriesListView.slug(odd), "worldwide")
         XCTAssertEqual(CountriesListView.flag("worldwide"), "🌐")
+    }
+
+    /// T7 layout: a node's own sources are drawn in sections by the catalog's media kind, and a sub-node is
+    /// "enabled" only when every one of its own sources is selected — read with the level, not per row.
+    func testNodeSectionsAndSubNodeStateComeFromTheLevel() async {
+        let backend = Backend()
+        let brazil = node(10, "Brazil", kind: .country, children: true)
+        let saoPaulo = node(30, "São Paulo")
+        backend.countries = [brazil]
+        backend.childrenByNode = [10: [saoPaulo]]
+        backend.sourcesByNode = [10: [
+            .init(id: "a", title: "Alpha", language: "pt", mediaKind: "text", defaultEnabled: true),
+            .init(id: "b", title: "Beta", language: nil, mediaKind: "audio", defaultEnabled: true),
+            .init(id: "c", title: "Gamma", language: nil, mediaKind: "video", defaultEnabled: true),
+        ]]
+        backend.childKeysByNode = [10: [30: ["c"]]]
+        backend.selection = ["a", "c"]
+        let store = SourceManagementStore(backend: backend)
+        // `load` is what brings the reader's own selection in; the node's level then reads its own keys.
+        await store.load()
+        await store.open(brazil)
+        XCTAssertEqual(store.nodeSections.map(\.id), ["audio", "video", "text"],
+            "media kinds draw in one fixed order, not the catalog's row order")
+        XCTAssertEqual(store.nodeSections.map(\.title), ["Podcasts", "Vídeo", "Texto"])
+        XCTAssertEqual(store.nodeSections.map(\.icon), ["headphones", "play.rectangle.fill", "doc.text"])
+        XCTAssertEqual(store.nodeSections.first?.rows.map(\.detail), ["b"], "the row's second line is the feed's own address")
+        XCTAssertFalse(store.nodeSections.first?.rows.first?.isSelected ?? true,
+            "the audio row is not selected: only the text and video sources are")
+        XCTAssertTrue(store.nodeSections.last?.rows.first?.isSelected == true, "the text source is")
+        // The sub-node's own keys were read with the level, and "c" alone is not all of São Paulo's… but it is
+        // what the catalog placed under it, so the row states exactly that.
+        XCTAssertTrue(store.isNodeEnabled(saoPaulo), "every key the catalog placed under it is selected")
+        backend.childKeysByNode = [10: [30: ["c", "d"]]]
+        await store.open(brazil)
+        XCTAssertFalse(store.isNodeEnabled(saoPaulo), "one of its own sources is not selected")
+        // A node the catalog placed nothing under is never reported as enabled.
+        XCTAssertFalse(store.isNodeEnabled(node(99, "Empty")))
     }
 
     func testSearchTrimsAndClears() async {

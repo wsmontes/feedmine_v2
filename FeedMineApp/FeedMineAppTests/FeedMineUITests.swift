@@ -46,13 +46,18 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 15))
         app.buttons["Concluir"].tap()
         XCTAssertTrue(title.waitForExistence(timeout: 15), "dismissing the picker leaves the reader where they were")
-        // The way back: enable one source and the feed exists again.
+        // The way back: the ported source surface — the country list is one level in (V1's structure), and
+        // enabling one country brings the feed back.
         app.buttons["feed-empty-action"].tap()
-        let choice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'source-choice-'")).firstMatch
-        XCTAssertTrue(choice.waitForExistence(timeout: 15))
-        choice.tap()
-        app.buttons["Concluir"].tap()
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
+        XCTAssertTrue(app.buttons["sources-open-countries"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["sources-enabled-count"].exists, "the surface states the enabled count")
+        app.buttons["sources-open-countries"].tap()
+        let countryToggle = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH 'country-toggle-'")).firstMatch
+        XCTAssertTrue(countryToggle.waitForExistence(timeout: 20))
+        countryToggle.tap()
+        app.buttons["countries-done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60),
+            "the selection the source surface accepted is what the app adopts when it closes")
     }
 
     @MainActor

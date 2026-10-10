@@ -244,6 +244,27 @@ public struct LegacyCatalogReader: Sendable {
         } }
     }
 
+    /// Every source key placed under each child of one node, grouped by the child — one query, so a node's
+    /// level states which sub-nodes are fully selected without asking per row (V1's `isRegionEnabled`).
+    public func sourceKeysByParent(nodeID: Int64, perNodeCeiling: Int = 20_000) throws -> [Int64: [String]] {
+        guard perNodeCeiling > 0 else { return [:] }
+        return try Self.wrap { try queue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT p.node_id AS node_id, s.key AS key
+                FROM catalog_node n JOIN catalog_placement p ON p.node_id = n.id
+                JOIN catalog_source s ON s.id = p.source_id
+                WHERE n.parent_id = ? ORDER BY p.node_id, p.sort_order, p.source_id
+                """, arguments: [nodeID])
+            var grouped: [Int64: [String]] = [:]
+            for row in rows {
+                let childID: Int64 = row["node_id"]
+                guard (grouped[childID]?.count ?? 0) < perNodeCeiling else { continue }
+                grouped[childID, default: []].append(row["key"])
+            }
+            return grouped
+        } }
+    }
+
     /// Exact canonical identity lookup; fetching still uses the separate requestURL.
     public func source(key: String) throws -> LegacyCatalogSourceRecord? {
         try Self.wrap { try queue.read { db in

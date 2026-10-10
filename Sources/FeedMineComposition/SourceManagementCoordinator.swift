@@ -67,6 +67,12 @@ public struct SourceManagementCoordinator: Sendable {
     }
 
     /// A node's catalog id by its stable key, for a caller that navigated by key.
+    /// The keys of every child of a node, for one level's worth of state. Values only, as everything here.
+    public func keysByParent(nodeID: Int64) throws -> [Int64: Set<String>] {
+        guard let catalog else { throw SourceManagementError.catalogUnavailable }
+        return try catalog.sourceKeysByParent(nodeID: nodeID).mapValues(Set.init)
+    }
+
     public func nodeByKey(_ key: String) throws -> Int64? {
         guard let catalog else { throw SourceManagementError.catalogUnavailable }
         return try catalog.node(key: key)?.id

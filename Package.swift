@@ -80,7 +80,9 @@ let package = Package(
                 "FeedMineAcquisition",
                 "FeedMineEditorial",
                 "FeedMinePublication",
-                "FeedMineRuntime"
+                "FeedMineRuntime",
+                // The T7 adapter conforms to the source surface's protocol, which is declared in UI.
+                "FeedMineUI"
             ]
         ),
         .testTarget(

@@ -262,6 +262,36 @@ final class AppComposition {
         resolvedFilter(at: now)
     }
 
+    /// T7: the source surface's store, over the catalog coordinator. One store per presentation, so its
+    /// levels and the reader's selection are one consistent picture while it is open.
+    func makeSourceManagementStore() -> SourceManagementStore {
+        let catalogURL = Bundle.main.url(forResource: "catalog", withExtension: "sqlite")
+        let database = try? RuntimeDatabase(location: RuntimeDatabaseLocation(directory: directory))
+        return SourceManagementStore(backend: SourceCatalogBackend(
+            coordinator: SourceManagementCoordinator(catalogURL: catalogURL, database: database)))
+    }
+
+    /// T7: the source surface writes the selection through the coordinator, so the app re-reads the persisted
+    /// selection when that surface closes and rebuilds the association only if it actually changed — looking
+    /// at the list is not a selection change, and an emptied selection is a state the reader's own surface
+    /// states.
+    func adoptSelectionChange() async {
+        guard let preferences, let record = try? preferences.load() else { return }
+        guard record.selectionVersion != selectionVersion else { return }
+        selectionVersion = record.selectionVersion
+        var resolved = (try? TrustedFeed.resolveAvailable(keys: record.sourceKeys, fallback: feeds)) ?? []
+        if resolved.isEmpty, !record.sourceKeys.isEmpty { resolved = feeds }
+        feeds = resolved
+        // One selected source is its own surface, exactly as `toggleSource` decides; a context pointing at a
+        // source that is no longer selected would be a fence around nothing.
+        let request: FeedContextRequest = resolved.count == 1 ? .source(resolved[0].sourceID) : .main
+        currentContextKey = ContextKey(request: request, preset: currentContextKey.preset,
+            filter: currentContextKey.filter)
+        _ = try? preferences.setContext(currentContextKey)
+        do { try await replaceSession() }
+        catch { startupFailure = "Não foi possível atualizar a seleção de fontes: \(error)" }
+    }
+
     /// Explicit session replacement; no replacement occurs during normal feed opportunities.
     func replaceSession() async throws {
         guard !replacingSession else { return }
