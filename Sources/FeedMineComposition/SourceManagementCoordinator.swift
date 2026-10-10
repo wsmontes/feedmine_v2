@@ -8,69 +8,7 @@
 import Foundation
 import FeedMineDomain
 import FeedMinePersistence
-
-/// One language the catalogue declares, as the reader's sheet shows it.
-public struct CatalogLanguageSummary: Hashable, Sendable, Identifiable {
-    public let code: String
-    public let displayName: String
-    /// Enabled (selected) sources for this language, and the total the catalog holds.
-    public let enabledSources: Int
-    public let totalSources: Int
-    /// `und`/empty: a bucket, never a choice a reader makes.
-    public let isUndeclared: Bool
-
-    public var id: String { code }
-    public var primarySubtag: String { String(code.prefix(while: { $0 != "-" && $0 != "_" })).lowercased() }
-}
-
-/// One taxonomy node, as the reader's browser shows it.
-public struct CatalogNodeSummary: Hashable, Sendable, Identifiable {
-    public enum Kind: String, Hashable, Sendable {
-        case section
-        case country
-        case topic
-        case other
-    }
-
-    public let id: Int64
-    public let key: String
-    public let name: String
-    public let kind: Kind
-    public let sourceCount: Int
-    public let hasChildren: Bool
-}
-
-/// One page of catalog values: bounded, with a cursor and a truthful exhaustion flag. The cursor is the
-/// catalogue's own position type (a node id, a placement position), never a global row number.
-public struct CatalogPage<Value: Hashable & Sendable, Cursor: Hashable & Sendable>: Hashable, Sendable {
-    public let values: [Value]
-    public let nextCursor: Cursor?
-    public let exhausted: Bool
-
-    public init(values: [Value], nextCursor: Cursor?, exhausted: Bool) {
-        self.values = values; self.nextCursor = nextCursor; self.exhausted = exhausted
-    }
-}
-
-/// Placement cursor for a node's sources: `(sort_order, source_id)` in the catalogue's own order.
-public struct CatalogSourceCursor: Hashable, Sendable {
-    public let sortOrder: Int64
-    public let sourceID: Int64
-
-    public init(sortOrder: Int64, sourceID: Int64) {
-        self.sortOrder = sortOrder
-        self.sourceID = sourceID
-    }
-}
-
-/// One source the catalog offers, as a row in source management shows it.
-public struct CatalogSourceSummary: Hashable, Sendable, Identifiable {
-    public let id: String
-    public let title: String
-    public let language: String?
-    public let mediaKind: String
-    public let defaultEnabled: Bool
-}
+import FeedMineRuntime
 
 public enum SourceManagementError: Error, Equatable, Sendable {
     case catalogUnavailable
