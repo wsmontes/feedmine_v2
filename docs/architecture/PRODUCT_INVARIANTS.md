@@ -171,6 +171,16 @@ Não criar abstração porque ela poderá ser útil futuramente.
 
 Criar abstração somente quando existe responsabilidade real atual.
 
+## INV-16 — Universal measured adaptation, progressive coverage, no magic quotas
+
+A regra adaptativa não pertence somente ao runway. **Todo subsistema que decide quantidade, ritmo, prioridade operacional ou retenção** (catálogo, descoberta, aquisição, Editorial, preparação, mídia, runway, memória, disco, persistência e limpeza) deve responder a capacidade, custo, demanda e restrições efetivamente observáveis. Bons recursos permitem mais exploração e preservação local; pressão real reduz trabalho especulativo. A sessão visível e sua continuidade têm precedência.
+
+O catálogo elegível é um universo de **exploração progressiva**, não uma lista fechada. Com oportunidades operacionais suficientes ao longo do uso, uma fonte elegível de baixa prioridade deve eventualmente receber oportunidade de contato; fontes preferidas podem ser revisitadas mais vezes, mas não monopolizar permanentemente o trabalho. Limites de uma chamada ou rodada são físicos e transitórios; não representam conclusão.
+
+**Proibido usar números mágicos como política:** contagens permanentes de fontes, cotas arbitrárias de artigos armazenados, tamanhos fixos de página usados como estratégia de runway, percentuais editoriais artificiais, timers de sondagem e janelas finitas que ocultam indefinidamente conteúdo elegível. Limites de segurança, protocolo, memória e trabalho por operação permanecem possíveis quando fundamentados; o benchmark mede o produto, não determina sua política de execução. Regras de correção e restrições explícitas do leitor (por exemplo, idioma) continuam determinantes.
+
+Capacidade é reconsiderada em oportunidades reais, a partir de sinais disponíveis do sistema operacional e métricas já medidas — **sem** exigir monitoramento em loop, cache paralelo ou execução irrestrita em background. Reaproveitar donos existentes, sem criar controlador concorrente universal.
+
 # Boundary consequences
 
 INV-01 + INV-02:
