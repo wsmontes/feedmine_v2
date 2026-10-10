@@ -448,7 +448,17 @@ already-drawn cards. New `ReaderFilterEligibilityTests` (6).
 
 **Verified.** `swift test` **899 tests, 0 failures**.
 
-**Remaining for T6**: the filter sheet + lens in the UI wired to the draft with the coordinator that persists the
-selection and activates its context, the expiry record (pending fact, applied on an explicit transition), the
-`EditorialRevision` compatibility widening for the new key (`AppComposition.swift:358`), and the A→B→A /
-stale-callback tests.
+**Step 5 landed — the selection is persisted as the whole identity.** `ReaderPreferencesStore.Record` carries
+`activeContextKey: ContextKey` (with `activeContext` kept as the surface convenience), `setContext(_ key:)`
+writes it, and `read` accepts **both** shapes that have ever lived in that column: a row written since T6 (the
+key), and a pre-T6 row (the bare `FeedContextRequest`, which becomes the default surface of the request it
+recorded). No migration was needed for this column — the legacy payload is detected by decoding, not by a
+version column. `ReaderPreferencesStoreTests` gains a case for the whole-identity round trip, the
+equivalent-selection case, the search scope, and the legacy row.
+
+**Verified.** `swift test` **900 tests, 0 failures**.
+
+**Remaining for T6**: the filter sheet + lens in the UI wired to `ReaderFilterDraft` and the coordinator that
+applies it (persist the selection, then activate its context), the expiry record (pending fact, applied on an
+explicit transition), the `EditorialRevision` compatibility widening for the new key
+(`AppComposition.swift:358`), and the A→B→A / stale-callback tests.
