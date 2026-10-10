@@ -36,7 +36,9 @@ struct FeedMineApp: App {
                     if let association = composition.association {
                         FeedScreen(store: association.store,
                             statusChip: AnyView(contextChip(association)),
-                            lens: AnyView(filterLens))
+                            lens: AnyView(filterLens),
+                            hasSources: composition.hasSelectedSources,
+                            onChooseSources: { presentation = .sources })
                             .id(ObjectIdentifier(association))
                             #if DEBUG
                             .overlay(alignment: .topTrailing) {
@@ -61,7 +63,7 @@ struct FeedMineApp: App {
                         NavigationStack {
                             FeedSourcePicker(options: composition.sourceOptions,
                                 onSearch: { query in Task { do { try await composition.searchSources(query) } catch { readerError = String(describing: error) } } },
-                                onToggle: { id in Task { do { try await composition.toggleSource(id) } catch { readerError = "Mantenha ao menos uma fonte selecionada." } } })
+                                onToggle: { id in Task { do { try await composition.toggleSource(id) } catch { readerError = "Não foi possível alterar a seleção de fontes." } } })
                             .toolbar { Button("Concluir") { self.presentation = nil } }
                             .task { try? await composition.searchSources("") }
                         }

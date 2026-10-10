@@ -17,21 +17,36 @@ public struct FeedScreen: View {
     private let customStatusChip: AnyView?
     /// The host's filter lens (V1's chip bar). Nil draws nothing above the feed.
     private let lens: AnyView?
+    /// Whether the reader's accepted selection has any sources at all, and what to do about it. It is the
+    /// host's fact: this view owns no selection. An empty selection is not a preparation and not a failure —
+    /// it is V1's own empty surface, so it takes precedence over both.
+    private let hasSources: Bool
+    private let onChooseSources: @MainActor () -> Void
     @State private var capture = FeedVisualCapture()
 
     public init(store: FeedScreenStore, appearance: ReaderAppearance = .standard,
-        statusChip: AnyView? = nil, lens: AnyView? = nil) {
+        statusChip: AnyView? = nil, lens: AnyView? = nil, hasSources: Bool = true,
+        onChooseSources: @escaping @MainActor () -> Void = {}) {
         self.store = store
         self.appearance = appearance
         self.customStatusChip = statusChip
         self.lens = lens
+        self.hasSources = hasSources
+        self.onChooseSources = onChooseSources
     }
 
     public var body: some View {
         // The reader's chrome belongs to the feed surface: before the first presentation there is no
         // feed to read, so the preparation state keeps its own full-screen surface (V1 too drew its
         // header for the session, and T11 owns the preparation experience).
-        if store.state.presentation != nil {
+        if !hasSources {
+            // V1 drew this surface instead of the feed, with the reader's chrome: nothing is being prepared,
+            // so there is no progress to state.
+            ReaderShell(store: store, appearance: appearance, status: { statusChip },
+                lens: { if let lens { lens } }) {
+                FeedSourcesEmptyStateView(appearance: appearance, onChooseSources: onChooseSources)
+            }
+        } else if store.state.presentation != nil {
             ReaderShell(store: store, appearance: appearance, status: { statusChip },
                 lens: { if let lens { lens } }) {
                 feedBody

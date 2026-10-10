@@ -29,6 +29,13 @@ final class AppComposition {
     private(set) var currentContextKey: ContextKey = ContextKey(request: .main)
     var currentContext: FeedContextRequest { currentContextKey.request }
     var currentFilter: ReaderFilter { currentContextKey.filter }
+
+    /// T7: whether the reader's accepted selection has any sources at all. It is read from the persisted
+    /// selection, never from the resolved feed list — an empty selection is a decision, and the reader is
+    /// shown the surface that states it and offers the way back.
+    var hasSelectedSources: Bool {
+        !(preferences.flatMap { try? $0.load() }?.sourceKeys.isEmpty ?? true)
+    }
     var currentPreset: ReaderPresetID { currentContextKey.preset }
     private var selectionVersion: UInt64 = 2
     private(set) var sourceOptions: [FeedSourceOption] = []
@@ -91,8 +98,18 @@ final class AppComposition {
                 // OMP C1: the repair path (toggleSource) needs preferences even if resolution fails.
                 self.preferences = preferences
                 var saved = try preferences.initialize(sourceKeys: feeds.map(\.principal))
+                #if DEBUG
+                // T7 UI evidence: launch with no selected source at all, which is a state V1 allowed and
+                // stated with its own surface.
+                if ProcessInfo.processInfo.environment["FEEDMINE_EMPTY_SELECTION"] == "1" {
+                    saved = try preferences.updateSources([])
+                }
+                #endif
                 var resolved = try TrustedFeed.resolveAvailable(keys: saved.sourceKeys, fallback: feeds)
-                if resolved.isEmpty { resolved = feeds }
+                // T7: a selection the reader emptied stays empty — V1 allowed zero sources and said so with its
+                // own surface. The fallback repairs a selection whose sources vanished from the catalogue, which
+                // is why it needs the saved selection to have had sources in the first place.
+                if resolved.isEmpty, !saved.sourceKeys.isEmpty { resolved = feeds }
                 if resolved.map(\.principal) != saved.sourceKeys { saved = try preferences.updateSources(resolved.map(\.principal)) }
                 if case .source(let id) = saved.activeContext, !resolved.contains(where: { $0.sourceID == id }) {
                     saved = try preferences.setContext(.main)

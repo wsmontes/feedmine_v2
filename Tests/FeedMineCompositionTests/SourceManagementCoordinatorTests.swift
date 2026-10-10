@@ -99,13 +99,14 @@ final class SourceManagementCoordinatorTests: XCTestCase {
         XCTAssertEqual(try coordinator.selection().count, 2)
         XCTAssertEqual(try coordinator.setSelection(["https://b.example/feed", "https://a.example/feed"]), version,
             "reordering the same set is not a new selection (V2 fences restore on this)")
-        XCTAssertThrowsError(try coordinator.setSelection([])) {
-            XCTAssertEqual($0 as? SourceManagementError, .invalidSelection)
-        }
+        // T7: zero sources is a state the reader may choose (V1 allowed it and stated it).
+        let emptied = try coordinator.setSelection([])
+        XCTAssertEqual(emptied, version + 1, "emptying the selection is a selection change")
+        XCTAssertTrue(try coordinator.selection().isEmpty)
     }
 
     /// V1's "whole region on/off": enabling a node merges its placed sources into the selection; disabling it
-    /// removes them, and never leaves an empty selection.
+    /// removes them — including the last one, because zero sources is a state the surface now states.
     func testBulkNodeEnableAndDisablePersistThroughPreferences() throws {
         let database = try database()
         let preferences = ReaderPreferencesStore(database: database)
@@ -124,11 +125,13 @@ final class SourceManagementCoordinatorTests: XCTestCase {
         XCTAssertEqual(try coordinator.selection(), ["https://other.example/feed"])
         XCTAssertEqual(try coordinator.setEnabled(nodeID: brazil, enabled: false), enabled + 1,
             "its sources are already absent, so nothing changes")
-        // Emptying the reader's whole selection is refused: V2 requires one source, and V1's "zero sources"
-        // state has to arrive together with its empty-state UI (recorded as T7's open parity item).
+        // Disabling the last enabled node is legal: the selection empties and the reader is told, instead of
+        // the change being refused (V1's parity item, closed together with `FeedSourcesEmptyStateView`).
         _ = try coordinator.setSelection(["https://a.example/feed"])
-        XCTAssertThrowsError(try coordinator.setEnabled(nodeID: brazil, enabled: false)) {
-            XCTAssertEqual($0 as? SourceManagementError, .invalidSelection)
-        }
+        XCTAssertEqual(try coordinator.setEnabled(nodeID: brazil, enabled: false), enabled + 3)
+        XCTAssertTrue(try coordinator.selection().isEmpty)
+        // And the way back: the same node can be re-enabled from the empty selection.
+        XCTAssertEqual(try coordinator.setEnabled(nodeID: brazil, enabled: true), enabled + 4)
+        XCTAssertEqual(Set(try coordinator.selection()), ["https://a.example/feed", "https://b.example/feed"])
     }
 }

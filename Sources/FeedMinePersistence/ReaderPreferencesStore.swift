@@ -76,7 +76,10 @@ public struct ReaderPreferencesStore: Sendable {
         try setContext(ContextKey(request: context))
     }
     private static func validate(_ keys: [String]) throws {
-        guard !keys.isEmpty, Set(keys).count == keys.count, keys.allSatisfy({ !$0.isEmpty }) else { throw ReaderPreferencesError.invalidSelection }
+        // T7: zero selected sources is a legitimate state — V1 allowed it and stated its own empty surface
+        // ("No sources enabled" with a way back). Duplicates and blanks stay refused: those are malformed,
+        // not empty.
+        guard Set(keys).count == keys.count, keys.allSatisfy({ !$0.isEmpty }) else { throw ReaderPreferencesError.invalidSelection }
     }
     private static func read(_ db: Database) throws -> Record? {
         guard let row = try Row.fetchOne(db, sql: "SELECT * FROM reader_preferences WHERE singleton_id = 1") else { return nil }

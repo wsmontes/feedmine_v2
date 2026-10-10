@@ -17,11 +17,35 @@ final class ReaderPreferencesStoreTests: XCTestCase {
         XCTAssertEqual(selected.selectionVersion, 3)
         let source = SourceID()
         let contextual = try store.setContext(.source(source))
-        XCTAssertThrowsError(try store.updateSources([]))
-        XCTAssertEqual(try store.load(), contextual)
+        // A *malformed* change is still refused and still atomic (T7 relaxed emptiness, not validity):
+        XCTAssertThrowsError(try store.updateSources(["", "b"]))
+        XCTAssertEqual(try store.load(), contextual, "a refused write leaves nothing behind")
+        // T7: emptying the selection is legal, atomic, and does not touch the surface the reader is on.
+        let emptied = try store.updateSources([])
+        XCTAssertEqual(emptied.selectionVersion, selected.selectionVersion + 1)
+        XCTAssertEqual(emptied.activeContext, .source(source))
+        XCTAssertEqual(try store.load()?.sourceKeys, [])
         let reopened = ReaderPreferencesStore(database: try RuntimeDatabase(location: location))
-        XCTAssertEqual(try reopened.load()?.sourceKeys, ["b"])
+        XCTAssertEqual(try reopened.load()?.sourceKeys, [], "the reopened store states the emptied selection")
         XCTAssertEqual(try reopened.load()?.activeContext, .source(source))
+    }
+
+    /// T7: V1 allowed zero selected sources, and that state is now reachable again (the reader can empty the
+    /// selection from source management). Only a malformed set is refused.
+    func testEmptySelectionIsAStateAndNotAMalformedRecord() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))
+        let store = ReaderPreferencesStore(database: database)
+        let initial = try store.initialize(sourceKeys: ["a", "b"])
+        let emptied = try store.updateSources([])
+        XCTAssertTrue(emptied.sourceKeys.isEmpty)
+        XCTAssertGreaterThan(emptied.selectionVersion, initial.selectionVersion, "emptying is a selection change")
+        XCTAssertEqual(emptied.activeContextKey, initial.activeContextKey, "the surface is not the selection")
+        XCTAssertEqual(try store.load()?.sourceKeys, [])
+        // Malformed sets stay refused.
+        XCTAssertThrowsError(try store.updateSources(["a", "a"]))
+        XCTAssertThrowsError(try store.updateSources([""]))
     }
 
     /// T6: the expiry record lives with the preferences, and a fresh row reads as V1's default (auto-expire

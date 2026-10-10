@@ -106,9 +106,9 @@ public struct SourceManagementCoordinator: Sendable {
         } else {
             let removing = Set(keys)
             selection.removeAll { removing.contains($0) }
-            // V2 requires at least one selected source (`ReaderPreferencesStore.validate`). V1 allowed zero and
-            // said so with its own empty state; T7 must relax this *together with* that state, not before it.
-            guard !selection.isEmpty else { throw SourceManagementError.invalidSelection }
+            // V1 allowed zero selected sources and stated it with its own empty surface; `validate` was relaxed
+            // together with that surface (`FeedSourcesEmptyStateView`), so disabling the last node is legal and
+            // the reader is told what happened instead of being refused.
         }
         do { return try preferences.updateSources(selection).selectionVersion }
         catch { throw SourceManagementError.invalidSelection }

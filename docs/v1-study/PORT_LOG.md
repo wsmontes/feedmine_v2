@@ -595,9 +595,34 @@ caller navigate by stable key.
 
 New tests extend `SourceManagementCoordinatorTests` (3 total): a node's sources keep the catalogue's order and page
 by placement position; a bulk enable merges and versions, re-enabling is not a new version, a bulk disable removes
-exactly the node's sources and keeps the reader's others. **Open parity item recorded:** V1 allowed *zero* selected
-sources and said so with its own empty state; V2 requires at least one (`ReaderPreferencesStore.validate`), so the
-bulk disable refuses to empty the selection until the empty-state UI is ported — relax both together, not before.
+exactly the node's sources and keeps the reader's others.
+
+**The parity item above is closed** (seventh slice). V1 allowed *zero* selected sources and stated it with its own
+surface; V2 refused at `ReaderPreferencesStore.validate`. Both moved together:
+
+- `validate` now refuses only **malformed** sets (duplicates, blanks) — emptiness is a state, and
+  `testEmptySelectionIsAStateAndNotAMalformedRecord` proves it persists, versions, keeps the surface the reader
+  was on, and that a refused write is still atomic.
+- `SourceManagementCoordinator.setEnabled(nodeID:enabled:)` may empty the selection; the test now ends with the
+  last node disabled, the selection empty, and the same node re-enabled from there.
+- `FeedSourcesEmptyStateView` (UI) ports V1's `FeedEmptyStateView` for this mode: the accent circle with
+  `globe.americas.fill`, the title, the description and the one prominent action, with V1's own layout metrics
+  (title `.title3` bold, `maxWidth: 360`, `lineLimit(3)`, `minimumScaleFactor(0.82)`; the action `.frame(maxWidth:
+  200)` and `.controlSize(.large)`), identifier `feed-empty-state` / `feed-empty-title` as V1 had it. `FeedScreen`
+  draws it **ahead of** the preparation surface and ahead of the feed, because nothing is being prepared.
+- **Two deliberate differences from V1, recorded.** (1) The copy is Portuguese, like every other ported view
+  (`Todos os países`, `Países`, `Concluir`), not V1's English literal. (2) V1's description sent the reader to
+  *Filters*; in V2 the country/topic *selection* lives in source management and a filter criterion cannot add
+  content to an empty selection, so the action opens **Fontes** and says so.
+- The app now reads `hasSelectedSources` from the **persisted selection**, and a selection the reader emptied is
+  no longer silently repaired at launch: the old fallback (`if resolved.isEmpty { resolved = feeds }`) is now
+  gated on the saved selection having had sources at all — it repairs keys that vanished from the catalogue, not a
+  choice of none.
+- Evidence: `swift test` **925 tests, 0 failures**; the new
+  `testEmptySelectionStatesItsOwnSurfaceAndOffersTheWayBack` (real simulator) launches with
+  `FEEDMINE_EMPTY_SELECTION=1`, sees V1's surface, proves **no feed and no "Preparando"** are drawn, opens
+  *Fontes* from the surface's own button, returns to the empty surface, and gets the feed back by enabling one
+  source.
 
 Fourth slice: the surface the T7 views bind to. The catalog **values moved to Runtime** (`CatalogValues.swift`) —
 UI imports Runtime and must never import Composition, so values cannot live next to the coordinator that produces

@@ -27,6 +27,34 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 10))
     }
 
+    /// T7: a selection with no sources is a state the reader may choose (V1 allowed it), not a preparation
+    /// and not a failure — its own surface, naming the action that fixes it, and the way back.
+    @MainActor
+    func testEmptySelectionStatesItsOwnSurfaceAndOffersTheWayBack() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_EMPTY_SELECTION"] = "1"
+        app.launch()
+        let title = app.staticTexts["feed-empty-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 45))
+        XCTAssertEqual(title.label, "Nenhuma fonte habilitada", "V1's own words for this state, in the app's language")
+        XCTAssertFalse(app.scrollViews.firstMatch.exists, "no feed is drawn for a selection with no sources")
+        XCTAssertFalse(app.staticTexts["Preparando"].exists, "nothing is being prepared, so nothing claims it")
+        // The action the surface names is the one the app implements: the empty state's own button.
+        app.buttons["feed-empty-action"].tap()
+        XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 15))
+        app.buttons["Concluir"].tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "dismissing the picker leaves the reader where they were")
+        // The way back: enable one source and the feed exists again.
+        app.buttons["feed-empty-action"].tap()
+        let choice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'source-choice-'")).firstMatch
+        XCTAssertTrue(choice.waitForExistence(timeout: 15))
+        choice.tap()
+        app.buttons["Concluir"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
+    }
+
     @MainActor
     func testNativeSwipeReachesRealRunwayAndReverseNavigation() throws {
         let app = XCUIApplication()
