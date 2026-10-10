@@ -24,7 +24,12 @@ final class AppComposition {
     private let directory: URL
     private(set) var feeds: [TrustedFeed]
     @ObservationIgnored private var preferences: ReaderPreferencesStore?
-    private(set) var currentContext: FeedContextRequest = .main
+    /// T6: the active identity — surface, preset, filter and search scope. The plain surface's key equals the
+    /// pre-T6 identity, so nothing changes for a reader who never filters.
+    private(set) var currentContextKey: ContextKey = ContextKey(request: .main)
+    var currentContext: FeedContextRequest { currentContextKey.request }
+    var currentFilter: ReaderFilter { currentContextKey.filter }
+    var currentPreset: ReaderPresetID { currentContextKey.preset }
     private var selectionVersion: UInt64 = 2
     private(set) var sourceOptions: [FeedSourceOption] = []
     @ObservationIgnored private var sourceSearchID = UUID()
@@ -41,6 +46,15 @@ final class AppComposition {
         association.onNavigate = { [weak self] destination in self?.onNavigate?(destination) }
         association.onSearch = { [weak self] term in self?.submitSearch(term) }
         return association
+    }
+
+    /// The languages the filter sheet offers, read from the shipped catalog through the T7 surface. The sheet
+    /// shows declared codes with their counts and the undeclared bucket last; a missing asset yields none.
+    func filterLanguages() -> [CatalogLanguageSummary] {
+        guard let association else { return [] }
+        let catalogURL = Bundle.main.url(forResource: "catalog", withExtension: "sqlite")
+        let coordinator = SourceManagementCoordinator(catalogURL: catalogURL, database: association.database)
+        return (try? coordinator.languages()) ?? []
     }
 
     /// T5: one search submission is a context change, exactly like the sources menu.
@@ -84,7 +98,7 @@ final class AppComposition {
                     saved = try preferences.setContext(.main)
                 }
                 self.feeds = resolved
-                currentContext = saved.activeContext
+                currentContextKey = saved.activeContextKey
                 selectionVersion = saved.selectionVersion
             } catch { startupFailure = "Não foi possível carregar a seleção de fontes: \(error)" }
         }
@@ -94,7 +108,7 @@ final class AppComposition {
         guard !replacingSession, association == nil, startupFailure == nil else { return }
         let current: FeedAssociation
         do {
-            current = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration, contextRequest: currentContext, selectionVersion: selectionVersion))
+            current = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration, contextKey: currentContextKey, selectionVersion: selectionVersion))
         } catch {
             startupFailure = "Não foi possível abrir o feed local: \(String(describing: error))"
             return
@@ -159,10 +173,11 @@ final class AppComposition {
         feeds = next
         selectionVersion = saved.selectionVersion
         let request: FeedContextRequest = next.count == 1 ? .source(next[0].sourceID) : .main
-        _ = try preferences.setContext(request)
-        currentContext = request
+        currentContextKey = ContextKey(request: request, preset: currentContextKey.preset,
+            filter: currentContextKey.filter)
+        _ = try preferences.setContext(currentContextKey)
         let nextAssociation = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration,
-            contextRequest: request, selectionVersion: selectionVersion))
+            contextKey: currentContextKey, selectionVersion: selectionVersion))
         association = nextAssociation
         startupFailure = nil
         try await nextAssociation.launch()
@@ -174,7 +189,8 @@ final class AppComposition {
             throw ReaderPreferencesError.invalidSelection
         }
         guard !replacingSession else { return }
-        if request == currentContext, association != nil { return }
+        if request == currentContext, association != nil,
+            currentContextKey.filter.isUnrestricted, currentContextKey.preset == .everything { return }
         replacingSession = true
         defer { replacingSession = false }
         if let retired = association {
@@ -182,13 +198,25 @@ final class AppComposition {
             await retired.close()
         }
         association = nil
-        _ = try preferences?.setContext(request)
-        currentContext = request
+        currentContextKey = ContextKey(request: request, preset: currentContextKey.preset,
+            filter: currentContextKey.filter)
+        _ = try preferences?.setContext(currentContextKey)
         let next = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration,
-            contextRequest: request, selectionVersion: selectionVersion))
+            contextKey: currentContextKey, selectionVersion: selectionVersion))
         association = next
         startupFailure = nil
         try await next.launch()
+    }
+
+    /// T6: an explicit filter transition. The selection is persisted first, then the association is rebuilt
+    /// around the new identity, so A→B→A finds A's own checkpoint and no old callback can install into B.
+    func applyFilter(_ filter: ReaderFilter, preset: ReaderPresetID) async throws {
+        let key = ContextKey(request: currentContextKey.request, preset: preset, filter: filter,
+            searchScope: currentContextKey.searchScope)
+        guard key != currentContextKey else { return }
+        currentContextKey = key
+        _ = try preferences?.setContext(key)
+        try await replaceSession()
     }
 
     /// Explicit session replacement; no replacement occurs during normal feed opportunities.
@@ -202,7 +230,7 @@ final class AppComposition {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
             await retired.close()
         }
-        let next = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration, contextRequest: currentContext, selectionVersion: selectionVersion))
+        let next = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration, contextKey: currentContextKey, selectionVersion: selectionVersion))
         association = next
         startupFailure = nil
         try await next.launch()
@@ -239,7 +267,7 @@ final class FeedAssociation {
 
     /// Destinations this build can present today: the source sheet and the saved list (V1's bookmark
     /// boxes arrive in T8). The header menu renders exactly these — never a dead item.
-    static let readerDestinations: Set<ReaderDestination> = [.sources, .bookmarkBoxes]
+    static let readerDestinations: Set<ReaderDestination> = [.sources, .bookmarkBoxes, .filters]
 
     @ObservationIgnored
     lazy var store: FeedScreenStore = FeedScreenStore(onViewport: { [weak self] observation, activity in
@@ -344,17 +372,17 @@ final class FeedAssociation {
     }
 
     init(directory: URL, feeds: [TrustedFeed], configuration: URLSessionConfiguration,
-        contextRequest: FeedContextRequest = .main, selectionVersion: UInt64 = 2) throws {
+        contextKey: ContextKey = ContextKey(request: .main), selectionVersion: UInt64 = 2) throws {
         let db = try RuntimeDatabase(location: .init(directory: directory))
         database = db
         let history = PublicationHistory(database: db)
-        let context = FeedContext(request: contextRequest)
+        let context = FeedContext(key: contextKey)
         let checkpoints = SessionStore(database: db)
-        try checkpoints.activateContext(contextRequest)
+        try checkpoints.activateContext(contextKey)
         if let active = try checkpoints.checkpoint() {
             try PublicationStore(database: db).setVisibility(editionID: active.editionID, visible: true)
         }
-        var saved = try history.restore(backwardCapacity: 8, forwardCapacity: 16, contextKey: context.key)
+        var saved = try history.restore(backwardCapacity: 8, forwardCapacity: 16, contextKey: contextKey)
         if let restored = saved, restored.edition.editorialRevision.userSelectionVersion != PolicyVersion(rawValue: selectionVersion)
             || restored.edition.editorialRevision.eligibilityPolicyVersion != PolicyVersion(rawValue: 2) {
             try checkpoints.clearActiveCheckpoint()
@@ -366,7 +394,7 @@ final class FeedAssociation {
         let alternating = PolicyVersion(rawValue: 2)
         let revision = try saved?.edition.editorialRevision ?? EditorialRevision(
             id: .init(rawValue: LegacyCatalogImport.stableUUID(namespace: "feedmine.editorial.context",
-                key: try JSONEncoder().encode(contextRequest).base64EncodedString() + "|" + String(selectionVersion))),
+                key: try JSONEncoder().encode(contextKey).base64EncodedString() + "|" + String(selectionVersion))),
             contextKey: context.key, catalogGeneration: .init(rawValue: 1), userSelectionVersion: PolicyVersion(rawValue: selectionVersion),
             eligibilityPolicyVersion: alternating, scoringPolicyVersion: v, sequencingPolicyVersion: alternating,
             exposurePolicyVersion: alternating, selectionSchemaVersion: .init(rawValue: 1))

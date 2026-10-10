@@ -47,6 +47,23 @@ public struct FilterSheetView: View {
     private let onShowTopics: () -> Void
     private let onDone: () -> Void
 
+    /// Builds the draft store from values, so the host never mutates state while rendering to open the sheet.
+    /// `onApply` is the host's persist-and-activate step; the sheet closes only after it returns.
+    public init(applying filter: ReaderFilter, preset: ReaderPresetID,
+        availableCriteria: Set<ReaderFilterCriterion>, languages: [CatalogLanguageSummary] = [],
+        appearance: ReaderAppearance = .standard, onApply: @escaping @MainActor (ReaderFilter, ReaderPresetID) async throws -> Void,
+        onShowCountries: @escaping () -> Void = {}, onShowTopics: @escaping () -> Void = {},
+        onDone: @escaping () -> Void = {}) {
+        _store = State(initialValue: ReaderFilterStore(applying: filter, preset: preset,
+            availableCriteria: availableCriteria, onApply: onApply))
+        self.languages = languages
+        self.presets = FilterSheetView.defaultPresets
+        self.appearance = appearance
+        self.onShowCountries = onShowCountries
+        self.onShowTopics = onShowTopics
+        self.onDone = onDone
+    }
+
     public init(store: ReaderFilterStore, languages: [CatalogLanguageSummary] = [],
         presets: [FilterPresetRow] = FilterSheetView.defaultPresets, appearance: ReaderAppearance = .standard,
         onShowCountries: @escaping () -> Void = {}, onShowTopics: @escaping () -> Void = {},
@@ -164,6 +181,9 @@ public struct FilterSheetView: View {
                                     Text(verbatim: "\(row.enabledSources) on")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
+                                // A plain button in a List only hits its label's drawn area; the row itself must
+                                // be the target, including the spacer.
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("language-\(row.code)")
@@ -199,8 +219,15 @@ public struct FilterSheetView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
-                Button(String(localized: "Concluído"), action: onDone)
-                    .accessibilityIdentifier("filter-done")
+                // V1: the sheet going away is the apply. The host's `onApply` persists the identity and
+                // activates its context; the sheet closes only after that succeeded.
+                Button(String(localized: "Concluído")) {
+                    Task {
+                        _ = try? await store.apply()
+                        onDone()
+                    }
+                }
+                .accessibilityIdentifier("filter-done")
             }
         }
     }
@@ -224,6 +251,7 @@ public struct FilterSheetView: View {
             Spacer(minLength: 0)
             if isSelected { Image(systemName: "checkmark").foregroundStyle(appearance.accent) }
         }
+        .contentShape(Rectangle())
     }
 
 }

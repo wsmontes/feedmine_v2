@@ -458,6 +458,30 @@ equivalent-selection case, the search scope, and the legacy row.
 
 **Verified.** `swift test` **900 tests, 0 failures**.
 
+**Step 8 landed — the transition is reachable end to end.** `FeedAssociation` now takes the whole
+`ContextKey` (not a surface request): it builds `FeedContext(key:)` and the editorial revision from it, activates
+the checkpoint by identity and restores by identity, so a filtered context gets its own Edition *and* its own
+position — the revision id itself derives from the key JSON, so two filters never share an edition. The app keeps
+`currentContextKey` and gained `applyFilter(_:preset:)`: persist the identity, then rebuild the association (an
+explicit transition, never a production-side effect). The header's filter button opens V1's sheet, whose `Done`
+applies through that path and closes only after it succeeded.
+
+**Three defects the UI test caught, all fixed.**
+1. The app offered **every** criterion (`Set(ReaderFilterCriterion.allCases)`) while the supply could answer only
+   preset/language/mood — i.e. it offered controls that would be accepted and ignored. It now passes
+   `ReaderFilterCriterion.enforceable`, and the test asserts content type and topics are *absent* while the
+   language list (257 real codes) is present.
+2. The sheet's store was created **while the parent rendered**, so the sheet received an orphan store and its
+   edits never reached the host. The sheet now builds its own store from value inputs in its initializer, and its
+   `Done` applies before the host closes it.
+3. A `Button` with `.buttonStyle(.plain)` inside a `List` only hits its label's drawn area, so a row's spacer
+   swallowed the tap — measured as "Clear All never enabled after tapping a language". The row labels now carry
+   `.contentShape(Rectangle())`.
+
+New iOS UI test `testT6FilterSheetOpensAppliesAndKeepsTheReader`: the sheet opens, offers only enforceable
+criteria, a row tap edits the draft (Clear All enables), `Done` closes it, and the reader keeps its feed after the
+transition.
+
 **Step 7 landed — the sheet itself.** `Sources/FeedMineUI/Filters/FilterSheetView.swift` copies V1's
 `FilterSheetView` order and controls: Clear All, the preset picker (V1's "Everything"/"Last clicked" plus whatever
 named presets the host offers; T8 brings collections/smart/curated), the Countries link, content-type buttons, the
@@ -577,4 +601,6 @@ writes state swallows the tap.
 empty state — the catalog health check (`testHealth`, which needs the acquisition transport and its own slice), and
 the offline/scale UI tests.
 
-**Verified.** `swift test` **920 tests, 0 failures**.
+**Verified.** `swift test` **920 tests, 0 failures**; iOS build **SUCCEEDED**;
+`-only-testing:FeedMineUITests/FeedMineUITests/testT6FilterSheetOpensAppliesAndKeepsTheReader test` →
+**TEST SUCCEEDED**.

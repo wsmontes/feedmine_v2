@@ -15,10 +15,12 @@ struct FeedMineApp: App {
     /// shadow the first. The reader's URL was resolved by the composition, never by a view.
     private enum ReaderPresentation: Identifiable {
         case sources
+        case filters
         case reader(URL)
         var id: String {
             switch self {
             case .sources: return "sources"
+            case .filters: return "filters"
             case .reader(let url): return "reader:" + url.absoluteString
             }
         }
@@ -60,6 +62,17 @@ struct FeedMineApp: App {
                             .toolbar { Button("Concluir") { self.presentation = nil } }
                             .task { try? await composition.searchSources("") }
                         }
+                    case .filters:
+                        NavigationStack {
+                            FilterSheetView(applying: composition.currentFilter,
+                                preset: composition.currentPreset,
+                                availableCriteria: ReaderFilterCriterion.enforceable,
+                                languages: composition.filterLanguages(),
+                                onApply: { filter, preset in
+                                    try await composition.applyFilter(filter, preset: preset)
+                                },
+                                onDone: { self.presentation = nil })
+                        }
                     case .reader(let url):
                         InAppBrowser(url: url)
                     }
@@ -86,6 +99,8 @@ struct FeedMineApp: App {
                 composition.onNavigate = { destination in
                     switch destination {
                     case .sources: presentation = .sources
+                    case .filters:
+                        presentation = .filters
                     case .bookmarkBoxes, .saved: savedPath.append(.saved)
                     default: break
                     }
@@ -98,6 +113,7 @@ struct FeedMineApp: App {
             }
         }
     }
+
 
     private func switchContext(_ request: FeedContextRequest) {
         Task { do { try await composition.selectContext(request) } catch { readerError = String(describing: error) } }

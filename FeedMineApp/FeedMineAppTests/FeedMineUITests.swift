@@ -325,6 +325,44 @@ final class FeedMineUITests: XCTestCase {
             .matching(NSPredicate(format: "identifier == %@", identifier)).firstMatch
     }
 
+    /// T6: the reader's filter sheet is V1's, and applying a selection is one explicit transition — the sheet
+    /// closes only after the host persisted the identity and rebuilt the session around it.
+    @MainActor
+    func testT6FilterSheetOpensAppliesAndKeepsTheReader() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        app.buttons["filter-button"].tap()
+        XCTAssertTrue(app.buttons["filter-done"].waitForExistence(timeout: 10), "the filter sheet must open")
+        // The criteria this build can enforce are the ones it offers; the rest are absent, not inert.
+        let languages = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'language-'")).firstMatch
+        XCTAssertTrue(languages.waitForExistence(timeout: 10),
+            "the declared languages come from the shipped catalog")
+        XCTAssertFalse(app.buttons["browse-topics"].exists,
+            "a criterion without metadata is not offered, never offered and ignored")
+        XCTAssertFalse(app.buttons["content-type-videos"].exists,
+            "content type still has no truthful derivation, so it is not offered")
+        // A language criterion is a draft edit; the draft's own behaviour (toggle, mood rule, clear all) is
+        // proven at the unit level — 257 language rows make scrolling to the last section a flaky gesture here.
+        languages.tap()
+        XCTAssertTrue(app.buttons["filter-clear-all"].isEnabled,
+            "editing the draft enables Clear All, which was disabled on a clean selection")
+        app.buttons["filter-done"].tap()
+        // The transition is explicit and complete: the sheet is gone and the reader is on the filtered context.
+        XCTAssertFalse(app.buttons["filter-done"].waitForExistence(timeout: 3))
+        XCTAssertTrue(scroll.waitForExistence(timeout: 20), "the reader keeps a feed after the transition")
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "t6-filter-transition"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     /// T5: the reading destinations that used to live in the navigation toolbar are now V1's overflow
     /// menu inside the floating header.
     @MainActor
