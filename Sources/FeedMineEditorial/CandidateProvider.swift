@@ -47,6 +47,9 @@ public struct CandidateProvider: Sendable {
         let window = try contentStore.candidateWindow(sourceID: sourceID,
             after: cursor.map { ContentStore.CandidateCursor(sortDate: $0.sortDate, originRecordID: $0.originRecordID) },
             examinedCapacity: examinedCapacity, originIDs: originIDs)
+        // T6: the supply is where a filter is enforced (plan:147 — never on already-drawn cards). Only the
+        // criteria this build can answer are consulted, and a missing fact never satisfies one.
+        let eligibility = ReaderFilterEligibility(filter: plan.context.key.filter)
         var candidates = window.records.map { record in
             let kind: CandidateTimestampKind
             switch record.sortDateBasis {
@@ -58,7 +61,7 @@ public struct CandidateProvider: Sendable {
                 timestamp: CandidateTimestamp(value: record.sortDate, kind: kind),
                 language: record.language, providerID: record.providerID, sourceIDs: Set(record.sourceIDs),
                 primaryMediaLocator: record.primaryMediaLocator, primaryLink: record.primaryLink)
-        }
+        }.filter { eligibility.admits($0) }
         if case .search(let search) = plan.context.request {
             let query = search.query.trimmingCharacters(in: .whitespacesAndNewlines)
             candidates = candidates.filter { candidate in

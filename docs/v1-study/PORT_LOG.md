@@ -434,7 +434,21 @@ columns are excluded from the whole-row dump and asserted directly, including th
 
 **Verified.** `swift test` **893 tests, 0 failures**.
 
-**Remaining for T6** (spec §6 step 5 and the rest): the sheet and lens in the UI wired to the draft plus the
-coordinator that persists and activates the new context, supply-side enforcement of the criteria the data can
-answer (language, source membership, keyword exclusions and V1's mood rule), the expiry record, and the
-A→B→A/stale-callback tests.
+**Step 4 landed — enforcement in the supply.** `FeedContext` now carries the whole identity (surface, preset,
+filter, scope; the defaults are the plain surface), so a plan can describe a filtered context. `ReaderFilterCriterion`
+moved to Domain with `enforceable = [.preset, .languages, .mood]` — the criteria today's canonical data can
+answer. New `ReaderFilterEligibility` (Editorial) decides one candidate: a language criterion compares the
+primary subtag (`pt-BR` satisfies `pt`) and **fails** a candidate with no language rather than passing it by
+default; mood uses V1's keyword rule over the headline; keyword exclusions hide by headline or summary and never
+expire; a restricted source set excludes a candidate that belongs only to other sources; and a criterion outside
+`enforced` is **never consulted**, so the honesty rule holds in both directions (the UI refuses to set it, the
+supply must not pretend to answer it). `CandidateProvider.candidates(for:after:examinedCapacity:originIDs:)`
+applies that eligibility to the window it builds, which is where the plan requires a filter to act — never on
+already-drawn cards. New `ReaderFilterEligibilityTests` (6).
+
+**Verified.** `swift test` **899 tests, 0 failures**.
+
+**Remaining for T6**: the filter sheet + lens in the UI wired to the draft with the coordinator that persists the
+selection and activates its context, the expiry record (pending fact, applied on an explicit transition), the
+`EditorialRevision` compatibility widening for the new key (`AppComposition.swift:358`), and the A→B→A /
+stale-callback tests.

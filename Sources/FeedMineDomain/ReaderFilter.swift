@@ -156,6 +156,22 @@ public enum ReaderPresetID: Hashable, Codable, Sendable {
     public var isCollection: Bool { if case .collection = self { return true } else { return false } }
 }
 
+/// One criterion of the filter sheet. The host states which of them this build can enforce, and a criterion
+/// that cannot be enforced is shown as unavailable instead of being accepted and silently ignored (T6).
+public enum ReaderFilterCriterion: String, CaseIterable, Hashable, Codable, Sendable {
+    case preset
+    case region
+    case taxonomy
+    case contentType
+    case languages
+    case mood
+
+    /// The criteria today's canonical data can answer: the candidate carries a language and its source
+    /// memberships, the text carries keywords, and V1's mood rule is a keyword test over the headline.
+    /// A criterion outside this set is never consulted by enforcement.
+    public static let enforceable: Set<ReaderFilterCriterion> = [.preset, .languages, .mood]
+}
+
 /// The reader's criteria as one normalized value. Criterion groups combine with **AND**; an empty group
 /// means "unrestricted", so the default filter is exactly today's unfiltered feed.
 public struct ReaderFilter: Hashable, Codable, Sendable {

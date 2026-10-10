@@ -116,13 +116,3 @@ public struct ReaderFilterDraft: Hashable, Sendable {
         preset = basePreset
     }
 }
-
-/// One criterion of the filter sheet. The host states which of them it can enforce.
-public enum ReaderFilterCriterion: String, CaseIterable, Hashable, Sendable {
-    case preset
-    case region
-    case taxonomy
-    case contentType
-    case languages
-    case mood
-}

@@ -29,13 +29,26 @@ import Foundation
 /// A requested logical context; equivalent requests produce equal reusable keys.
 public struct FeedContext: Hashable, Codable, Sendable {
     public let request: FeedContextRequest
+    /// T6: a context is the whole identity, not only its surface. The defaults mean "the plain surface".
+    public let preset: ReaderPresetID
+    public let filter: ReaderFilter
+    public let searchScope: ReaderSearchScope?
 
-    public init(request: FeedContextRequest) {
+    public init(request: FeedContextRequest, preset: ReaderPresetID = .everything,
+        filter: ReaderFilter = .unrestricted, searchScope: ReaderSearchScope? = nil) {
         self.request = request
+        self.preset = preset
+        self.filter = filter
+        self.searchScope = searchScope
+    }
+
+    public init(key: ContextKey) {
+        self.init(request: key.request, preset: key.preset, filter: key.filter,
+            searchScope: key.searchScope)
     }
 
     public var key: ContextKey {
-        ContextKey(request: request)
+        ContextKey(request: request, preset: preset, filter: filter, searchScope: searchScope)
     }
 }
 
