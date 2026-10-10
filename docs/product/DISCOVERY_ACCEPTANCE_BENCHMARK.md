@@ -36,22 +36,24 @@ Em ambos, congelar a versão do aplicativo, commit, build, catálogo, perfil, co
 
 ### B01 — Descoberta sem assinatura (o verdadeiro primeiro uso)
 
-**Entrada:** instalação limpa; catálogo disponível; usuário escolhe dois interesses, um conjunto explícito de idiomas e uma região; **zero seleção manual de fontes, zero OPML**.
+**Alinhamento de jornada (decisão expressa do product owner, 2026-10-10):** o teste mantém os mesmos limiares de quantidade, duração, diversidade e relevância, mas os dois assuntos agora são **expressos no feed**, depois da orientação inicial de idiomas e lugares; ver [PRD F02](F02_DISCOVERY_FEED_ONBOARDING_PRD.md).
+
+**Entrada:** instalação limpa; catálogo disponível; onboarding curto com **múltiplos idiomas e lugares de interesse**; o usuário entra no feed **sem escolher assuntos previamente** e declara **dois interesses temáticos por respostas explícitas dentro do próprio feed**; **zero seleção manual de fontes, zero OPML**. A fase neutra inicial e a fase após as duas respostas devem ser observadas separadamente.
 
 **Obrigatório:**
 - A experiência produz um feed útil a partir do catálogo, sem depender exclusivamente das quatro fontes padrão nem exigir "Fontes → adicionar" como etapa escondida.
 - No cenário rico do corpus, **pelo menos 50 fontes distintas entram automaticamente no conjunto de aquisição elegível**, e **pelo menos 20 fontes distintas contribuem com os primeiros 300 cards**. Esses valores são condições do *teste de capacidade de descoberta*, não quotas ou lotes fixos do runtime.
-- A escolha de idioma/assunto efetivamente altera o conteúdo e as fontes consultadas; repetir a jornada com outro perfil muda a seleção de modo explicável.
-- O onboarding apresenta evidência real durante a preparação e não fabrica títulos, imagens nem progresso.
+- As escolhas de **idiomas e lugares** orientam a descoberta inicial, sem confundir idioma com país ou origem do publicador com assunto geográfico da matéria. As **duas preferências temáticas declaradas no feed** alteram efetivamente a busca futura de fontes e o conteúdo; repetir a jornada com outro perfil muda a seleção de modo explicável.
+- O onboarding apresenta evidência real durante a preparação e não fabrica títulos, imagens nem progresso. **O primeiro feed, antes de qualquer voto temático, já deve ter artigos íntegros e atraentes de fontes editorialmente defensáveis, incluindo referências reconhecidas e fontes independentes/especializadas de qualidade; o score técnico do catálogo não basta como prova de credibilidade.**
 
 **FAIL típico:** o app exibe cards bonitos mas consulta somente a lista estática de quatro feeds; a receita apenas reordena essa lista.
 
 ### B02 — Relevância, variedade e identidade editorial
 
-**Entrada:** o mesmo corpus rotulado, primeiro conjunto de 200 cards publicados sob um perfil com múltiplas fontes elegíveis.
+**Entrada:** o mesmo corpus rotulado, conjunto de **200 cards publicados após as duas preferências temáticas explícitas no feed** sob perfil com múltiplas fontes elegíveis; observar separadamente o feed neutro anterior. Os limiares de B02 permanecem inalterados.
 
 **Obrigatório:**
-- **≥80% dos 200 cards** correspondem aos interesses/idiomas declarados, de acordo com o rótulo externo congelado; a distribuição de relevância por assunto/idioma é publicada junto do resultado.
+- **≥80% dos 200 cards** correspondem aos interesses/idiomas declarados **na etapa de preferências temáticas explícitas**, de acordo com o rótulo externo congelado; a distribuição de relevância por assunto/idioma é publicada junto do resultado. **Não exigir relevância a temas ainda não declarados no feed inicial neutro.**
 - **≥20 fontes distintas** aparecem; nenhuma fonte representa **>15%** dos cards quando o corpus oferece alternativas.
 - **Zero pares de cards consecutivos da mesma fonte** em contexto multi-fonte (PD-4), incluindo fronteiras de segmentos.
 - **Zero duplicatas de artigo canônico** apresentadas como descobertas novas na mesma edição; uma edição material segue a decisão PD-1 e é contada separadamente.
