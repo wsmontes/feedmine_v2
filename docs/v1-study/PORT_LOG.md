@@ -675,6 +675,12 @@ surface; V2 refused at `ReaderPreferencesStore.validate`. Both moved together:
   none.
 - Evidence: `swift test` **931 tests, 0 failures**; iOS build **SUCCEEDED**.
 
+**One T7 row is deliberately ordered last, not dropped (matrix row 201, `CatalogExploreView`).** V1 drew that
+surface behind `#if DEBUG` (row 68 records the same gate for its header button): a paginated developer browser
+with a details sheet, not a reader surface. It is scheduled into T12's parity sweep — after the reader-facing
+deliveries (T8–T11), so a developer tool never occupies the place of a user-facing port — and it is listed as its
+own task so it cannot be lost. Everything the reader sees under *Fontes* is delivered and proven above.
+
 Fourth slice: the surface the T7 views bind to. The catalog **values moved to Runtime** (`CatalogValues.swift`) —
 UI imports Runtime and must never import Composition, so values cannot live next to the coordinator that produces
 them. New `SourceManagementStore` (UI) is observable values plus intents over a `SourceManagementBackend`
