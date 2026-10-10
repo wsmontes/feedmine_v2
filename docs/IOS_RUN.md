@@ -175,3 +175,19 @@ pacote, 18 unitários do app e 5 de UI, verdes em iPhone 16 e iPad Pro 11-inch (
 Limitação de ambiente registrada: neste runtime (iOS 26.5) `simctl ui appearance` não altera a
 aparência de nenhum app — o próprio Settings permaneceu claro com o dispositivo em `dark` —, então a
 adaptação a claro/escuro é provada por resolução de `UITraitCollection` nos testes, não por captura.
+
+
+## U2 — jornada de leitura (build 25)
+
+Gate U2 integrado (`26dcbb6`, build 25 no TestFlight), executado pelo OMP porque os dois canais
+externos recusaram entrada durante todo o gate (o relay do navegador devolvia
+`extension rpc 'send' timed out` e a janela do Codex, `AxFailed: copying AXwindows failed`). O
+arquiteto definiu o U2 como leitor in-app, salvos e gestão de fontes; a operacionalização e as provas
+executadas estão em [FEEDMINE_V2_U2_REVIEW.md](reviews/FEEDMINE_V2_U2_REVIEW.md).
+
+Resumo: a composição resolve a ação congelada e entrega a URL ao app host, que abre
+`SFSafariViewController` (sem WKWebView próprio); `openSaved` lê o histórico publicado sem afrouxar o
+guard dos cards do feed; a tela `Salvos` usa só a autoridade de bookmark existente (limite 200, ordem
+por data publicada, sem tabela nova); um único `enum` de apresentação governa as sheets; o seletor de
+fontes mostra selecionadas primeiro, com contagem e estado vazio. Provas: 842 testes do pacote,
+19 unitários e 6 de UI, 0 falhas em iPhone 16 / iOS 26.5.
