@@ -55,6 +55,7 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 **Aceite:** o perfil altera a descoberta de modo demonstrável, preservando alternância e relevância sem fabricar diversidade.
 
 ### F05 — Continuidade, antecipação e recuperação do runway
+**Especificação vigente:** [F05 — Continuidade do feed e exploração progressiva](F05_CONTINUOUS_RUNWAY_PRODUCT_PRD.md). Exige runway relativo ao consumo, aquisição progressiva com folga, saída imediata do candidato pendente da fila pronta e invariância do feed admitido. Os cenários F05-01..09 complementam, mas **não substituem B03/B04 nem significam PASS**.
 **Promessa:** o leitor percorre um feed fluido, enquanto o próximo conteúdo é preparado antecipadamente; a preparação e a cobertura futura se ajustam ao consumo e à capacidade real, sem limites fixos de cards nem parar a descoberta só porque o runway está saudável.  
 **Jornada/oráculo:** execução controlada com oferta elegível suficiente, 30 minutos de avanço real e rajadas de consumo; medir reserva publicada/admitida ao longo do tempo, consumo, produção, hitches, sinais de pressão e recuperação após rede lenta. Aplicar B03 integralmente.  
 **Evidência inicial:** RunwayController mede consumo e reposição; FeedSession separa publicado de admitido. O ensaio anterior navegou ~4 minutos/~135 cards antes de esgotar a oferta escolhida; **30 minutos não foram demonstrados**.  
