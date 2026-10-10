@@ -77,6 +77,8 @@ public struct CountriesListView: View {
                         .labelsHidden()
                         .tint(.green)
                         .accessibilityIdentifier("country-toggle-all")
+                        // An identifier is for a test; VoiceOver needs a name for the control it lands on.
+                        .accessibilityLabel(Text(verbatim: String(localized: "Todos os países")))
                     }
                 }
                 Section {
@@ -164,6 +166,7 @@ public struct CountryRowView: View {
                 .labelsHidden()
                 .tint(.green)
                 .accessibilityIdentifier("country-toggle-\(row.slug)")
+                .accessibilityLabel(Text(verbatim: row.name))
                 .accessibilityValue(row.isEnabled ? "selected" : "not selected")
         }
     }

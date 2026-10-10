@@ -210,6 +210,7 @@ public struct NodeSourceRowView: View {
                 .labelsHidden()
                 .tint(.green)
                 .accessibilityIdentifier("node-source-toggle-\(row.id)")
+                .accessibilityLabel(Text(verbatim: row.title))
         }
     }
 
@@ -274,6 +275,7 @@ public struct NodeChildRow: View {
                 // the toggle was unreachable for a UI test and unlabelled for VoiceOver (found by walking the
                 // source surface in a test).
                 .accessibilityIdentifier("node-child-toggle-\(child.id)")
+                .accessibilityLabel(Text(verbatim: child.name))
                 .accessibilityValue(isEnabled ? "selected" : "not selected")
         }
     }
