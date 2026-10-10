@@ -796,3 +796,38 @@ a card from a box in that box's list.
 collection appearing in the filter sheet's picker) and
 `testT8ASavedPresetIsOfferedAndActivatesItsOwnContext` (saving a search as a smart bookmark switches the session
 to the saved identity, and the row carries the whole key).
+
+## T9 — 2026-10-09 (reader, media and sharing): first part, the action targets
+
+**`ReaderActionCoordinator` (Composition)** resolves what a card action *means*, from the occurrence itself, and
+hands the host a typed target: `.externalURL`, `.copiedText`, `.share(ReaderSharePayload)`, `.media`. Nothing in
+it opens a URL, touches a pasteboard, presents a sheet or starts a player.
+
+- V1's share item was the link alone (`ShareLink(item: URL(item.url))`): `ReaderSharePayload.text` is the URL,
+  and `subject` carries the two facts V1 composed for its social card (title, source) for a sheet's own line.
+- **The occurrence's frozen target, proven:** `testAnEditedArticleDoesNotChangeWhatACardOpens` publishes a card,
+  then publishes the *same origin* under a new revision and a new target in a later edition, and shows the first
+  card still opens, copies and shares the target it was published with.
+- **No invented fallback, proven:** a card without an external target reports `.actionUnavailable`, a card that
+  does not exist reports `.cardNotFound`, and a card that *claims* an external target while carrying none cannot
+  even be published (`PublicationStore.validateCard` refuses it), so the coordinator's "unusable reference"
+  branch is defensive rather than reachable.
+- `viewSource` is deliberately **not** the article's URL: V1's "View Source" opens the card's *source*, which
+  needs the catalog and the target-to-principal mapping. The coordinator refuses it, and the app resolves it
+  (`sourcePage(for:)`: the card's source id names one of this session's trusted feeds, whose principal is the
+  catalog key → the catalog's own `site_url`), stating a failure when any link of that chain is missing.
+- Media reads the kind the pipeline states: `PublicationStore` already validates a `mediaPlayback` action kind
+  with a URL, so `openMedia` resolves exactly for cards marked that way and for no others.
+  **Recorded gap:** today's syndication keeps image enclosures only (`SyndicationMediaLocator.isImageMIMEType`)
+  and `media_candidates` is image-only by schema, so no real card carries `mediaPlayback` yet. The action is
+  honest about the card it is given; the pipeline that produces such a card, the player and the mini player are
+  the rest of T9.
+
+**The app (host) executes them, and the platform surfaces live there:** `PlatformPasteboard` (the clipboard) and
+`ActivityView` (the share sheet, presented from the app, never from a renderer). `viewSource`, `copyLink` and
+`share` are enabled for cards now, `open`/`save` already were, and `openMedia` states that no playable media
+exists in this build instead of opening a player on nothing.
+
+**Verified.** `swift test` **956 tests, 0 failures**; iOS build **SUCCEEDED**; and
+`testCardCopiesItsOwnLinkAndStatesIt` (real simulator) opens a card's own menu, taps *Copiar link*, and sees the
+reader told that the link is on the clipboard — the whole chain, renderer → app → coordinator → pasteboard.

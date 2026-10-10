@@ -42,6 +42,8 @@ struct FeedMineApp: App {
     /// T8: the collections surface, and the three library prompts V1 asked with an alert.
     @State private var collectionsStore: CollectionsStore?
     @State private var libraryPrompt: LibraryPrompt?
+    /// T9: the link a card asked to share, presented by the platform surface.
+    @State private var sharedLink: SharedLink?
     @State private var promptName = ""
 
     /// V1's three library prompts: collect the current sources, save the current context, delete a saved one.
@@ -188,6 +190,13 @@ struct FeedMineApp: App {
                         EmptyView()
                     }
                 }
+                .sheet(item: $sharedLink) { link in
+                    #if os(iOS)
+                    ActivityView(url: link.url, subject: link.subject)
+                    #else
+                    Text(verbatim: link.url.absoluteString).padding()
+                    #endif
+                }
                 .alert(libraryPrompt?.title ?? "", isPresented: Binding(
                     get: { libraryPrompt != nil }, set: { if !$0 { libraryPrompt = nil } })) {
                     if libraryPrompt == .deleteSmartFeed {
@@ -228,6 +237,8 @@ struct FeedMineApp: App {
                 // U2: the reader stays in the app. The composition resolves the frozen target and
                 // hands the URL here; no URL ever comes from a view.
                 composition.onExternalURL = { url in presentation = .reader(url) }
+                // T9: a card's share action opens the platform sheet; the app presents it, no renderer does.
+                composition.onShare = { link in sharedLink = link }
                 sourcesStore = composition.makeSourceManagementStore()
                 boxesStore = composition.makeBookmarkBoxesStore()
                 collectionsStore = composition.makeCollectionsStore()

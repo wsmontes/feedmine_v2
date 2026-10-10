@@ -379,6 +379,19 @@ public struct PublicationStore: Sendable {
         }
     }
 
+    /// The ordinal-0 canonical media locator of a card's own revision. It is immutable per occurrence, so a
+    /// card's media is the media it was published with, whatever the origin says later.
+    public func mediaLocator(cardID: PublicationCardID) throws -> String? {
+        try database.read { db in
+            let row = try Row.fetchOne(db, sql: """
+                SELECT m.remote_locator AS locator FROM published_cards c
+                LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0
+                WHERE c.id = ?
+                """, arguments: [PersistenceValueCoding.uuid(cardID.rawValue)])
+            return row?["locator"] as String?
+        }
+    }
+
     public struct MediaUsage: Hashable, Sendable {
         public let lastSeenAt: Date?
         public let bookmarked: Bool

@@ -126,6 +126,28 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
 
+    /// T9: a card's copy action reaches the platform clipboard through the app, and the reader is told.
+    @MainActor
+    func testCardCopiesItsOwnLinkAndStatesIt() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
+        // The card's own menu, opened the way a reader opens it.
+        let card = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'Development'")).firstMatch
+        let target = card.exists ? card : app.scrollViews.firstMatch
+        target.press(forDuration: 1.2)
+        XCTAssertTrue(app.buttons["Copiar link"].waitForExistence(timeout: 10))
+        app.buttons["Copiar link"].tap()
+        // Either the clipboard took the card's own target, or the app says what it could not do — never both
+        // silently. The copy path is the one this build ships, so it is the one asserted.
+        let toast = app.staticTexts["Link copiado"]
+        XCTAssertTrue(toast.waitForExistence(timeout: 10),
+            "a card with a frozen target copies it and says so")
+        XCTAssertFalse(app.staticTexts["Não foi possível abrir a fonte"].exists)
+    }
+
     @MainActor
     func testNativeSwipeReachesRealRunwayAndReverseNavigation() throws {
         let app = XCUIApplication()

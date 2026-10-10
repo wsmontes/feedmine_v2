@@ -44,6 +44,8 @@ final class AppComposition {
     private let transportConfiguration: URLSessionConfiguration
     /// U2: set once by the app host; every association receives it so the reader stays in-app.
     var onExternalURL: ((URL) -> Void)?
+    /// T9: the share sheet a card's share action opens, presented by the app host.
+    var onShare: ((SharedLink) -> Void)?
     /// T5: set once by the app host; the reader's chrome reports a destination, the host presents it.
     var onNavigate: ((ReaderDestination) -> Void)?
 
@@ -60,6 +62,8 @@ final class AppComposition {
         // T5: the reader shell reports a destination; the host presents it. Nothing is resolved here.
         association.onNavigate = { [weak self] destination in self?.onNavigate?(destination) }
         association.onSearch = { [weak self] term in self?.submitSearch(term) }
+        association.onShare = { [weak self] link in self?.onShare?(link) }
+
         return association
     }
 
@@ -506,7 +510,7 @@ final class FeedAssociation {
     /// The remaining V1 controls appear as their deliveries land (T5 shell/feedback, T9 reader/media),
     /// so a rendered control is never a dead one.
     @ObservationIgnored
-    static let readerCardActions: Set<ReaderCardAction> = [.open, .save]
+    static let readerCardActions: Set<ReaderCardAction> = [.open, .save, .copyLink, .share, .viewSource]
 
     /// Destinations this build can present today: the source sheet and the saved list (V1's bookmark
     /// boxes arrive in T8). The header menu renders exactly these — never a dead item.
@@ -524,11 +528,64 @@ final class FeedAssociation {
         switch event.action {
         case .open: self.open(event.cardID)
         case .save: self.toggleBookmark(event.cardID)
-        default: break
+        default: self.perform(event.action, cardID: event.cardID)
         }
     }, availableDestinations: Self.readerDestinations,
         onSubmitSearch: { [weak self] term in self?.onSearch?(term) },
         onNavigate: { [weak self] destination in self?.onNavigate?(destination) })
+
+    /// T9: the card actions this host executes. Resolution is the action coordinator's (the occurrence's own
+    /// frozen target); what happens next — a browser, a clipboard, a share sheet — is here, and nowhere near a
+    /// renderer.
+    func perform(_ action: ReaderCardAction, cardID: PublicationCardID) {
+        Task {
+            // "View Source" is the source's own page, resolved here through the catalog: the coordinator refuses
+            // it because it needs the mapping this host holds (the card's source id names one of these feeds).
+            if action == .viewSource {
+                guard let url = sourcePage(for: cardID) else {
+                    store.showToast(text: String(localized: "Não foi possível abrir a fonte"),
+                        systemImage: "exclamationmark.triangle")
+                    return
+                }
+                present(url, cardID)
+                return
+            }
+            do {
+                switch try await ReaderActionCoordinator(database: database).perform(action, cardID: cardID) {
+                case .externalURL(let url):
+                    present(url, cardID)
+                case .copiedText(let text):
+                    if PlatformPasteboard.copy(text) {
+                        store.showToast(text: String(localized: "Link copiado"), systemImage: "doc.on.doc")
+                    } else {
+                        reportFailure(ReaderActionError.unusableReference(text))
+                    }
+                case .share(let payload):
+                    onShare?(SharedLink(url: payload.url, subject: payload.subject))
+                case .media:
+                    // No card this pipeline publishes carries a playable target yet (PORT_LOG, T9): the surface
+                    // states that instead of opening a player on nothing.
+                    store.showToast(text: String(localized: "Mídia indisponível nesta compilação"),
+                        systemImage: "speaker.slash")
+                }
+            } catch { reportFailure(error) }
+        }
+    }
+
+    /// V1's "View Source": the *source* of the card, resolved from the shipped catalog through the same
+    /// mapping acquisition uses (the card's source id names a trusted feed, whose principal is the catalog key).
+    /// Nil when the card, the feed or the catalog entry is missing — the caller states that rather than opening
+    /// something else.
+    func sourcePage(for cardID: PublicationCardID) -> URL? {
+        guard let card = try? PublicationStore(database: database).card(id: cardID),
+            let sourceID = card.sourceID, let feed = feeds.first(where: { $0.sourceID == sourceID }),
+            let catalogURL = Bundle.main.url(forResource: "catalog", withExtension: "sqlite"),
+            let record = try? LegacyCatalogReader(catalogURL: catalogURL).source(key: feed.principal),
+            let site = record.siteURL, let url = URL(string: site), url.scheme?.lowercased() != nil else {
+            return nil
+        }
+        return url
+    }
 
     /// Saving is the reader's own durable state (U2); the occurrence must already be admitted, and it lands in
     /// the box the reader preferred (V1's `preferredBookmarkListID`), which is the default box until they say
@@ -567,8 +624,13 @@ final class FeedAssociation {
     @ObservationIgnored var preferredBookmarkListID: () -> String = { ReaderBookmarkList.defaultID }
     /// The identity this session is on. It does not change for the life of the association.
     let contextKey: ContextKey
+    /// The feeds this session was built over: a card's source id names one of them, and its principal is the
+    /// catalog key V1's "View Source" needs.
+    let feeds: [TrustedFeed]
     /// T5: the reader shell's intents. The association reports them; the app host presents them.
     @ObservationIgnored var onNavigate: ((ReaderDestination) -> Void)?
+    /// T9: the share sheet a card's share action opens. The app presents it; the association never does.
+    @ObservationIgnored var onShare: ((SharedLink) -> Void)?
     @ObservationIgnored var onSearch: ((String) -> Void)?
 
     /// Review F10: resolve the frozen action target from published history and open it.
@@ -665,6 +727,7 @@ final class FeedAssociation {
         database = db
         // T8: the context this session reads and writes, kept so the menu can state what applies to it.
         self.contextKey = contextKey
+        self.feeds = feeds
         let history = PublicationHistory(database: db)
         let context = FeedContext(key: contextKey)
         let checkpoints = SessionStore(database: db)
