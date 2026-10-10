@@ -503,3 +503,19 @@ walk section → country → topic; stable paging with a truthful `exhausted`; t
 message if the release asset is absent).
 
 **Verified.** `swift test` **910 tests, 0 failures**, including the assertions against the bundled catalogue.
+
+Second slice: `Sources/FeedMineComposition/SourceManagementCoordinator.swift` — the UI-facing surface over that
+reader. It hands out **values only** (`CatalogLanguageSummary`, `CatalogNodeSummary` with `section`/`country`/
+`topic`, `CatalogPage` with a cursor and a truthful `exhausted`, `CatalogSourceSummary` whose identity is the
+catalog *key* and never the integer), states a **typed absence** (`SourceManagementError.catalogUnavailable`)
+when the release asset is missing instead of pretending an empty tree, and persists a selection change through the
+reader's own preferences (`setSelection` → `ReaderPreferencesStore.updateSources`, returning the selection
+version that fences restore, so reordering the same set is not a new selection). New
+`SourceManagementCoordinatorTests` (2): values-only plus the typed absence plus the undeclared-language label;
+and selection persistence with the version semantics.
+
+**Still open in T7**: the source-management/exploration/browse **views** bound to this coordinator (V1's
+`SourceManagementView`, `CatalogExploreView`, `TaxonomyBrowseView`, country/region screens), the catalog health
+check (`testHealth`, which needs the acquisition transport and its own slice), and the offline/scale UI tests.
+
+**Verified.** `swift test` **912 tests, 0 failures**.
