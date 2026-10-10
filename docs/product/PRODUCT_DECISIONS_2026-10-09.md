@@ -150,3 +150,13 @@ No hosted CI. Practices must speed development up, not slow it down.
 4. Keep `FeedMineApp.xcodeproj` a thin shell over the SwiftPM package; all code lives in the package.
 5. Every TestFlight build carries the git SHA (build number or tag).
 6. No mandatory PRs, no approval gates. Async review via `docs/reviews/`.
+
+---
+
+## PD-8 — Progressive coverage and resource-relative operation (2026-10-10)
+
+**Decision.** The full eligible catalog is a progressive exploration universe. Source priority determines visit order and revisit frequency, never a permanently limited shortlist. Given sufficient available opportunities across use, each eligible source must eventually get a contact opportunity. Language selected by the reader is a hard content eligibility rule. Thematic preferences guide relevance and nearby discovery, not an arbitrary exploration quota; an explicitly restricted context remains restricted.
+
+**Applies everywhere.** Acquisition, editorial candidate examination, sequencing, runway, media preparation, local storage, retention and cleanup adapt to measured demand and available capabilities: actual consumption, supply, network throughput and latency, data cost, memory and disk pressure, power, thermal state and iOS execution permission. Spare capacity permits more discovery and useful retention; pressure reduces speculative work. Existing visible cards and continuity take precedence.
+
+**No magic numbers as strategy.** A fixed per-operation work bound may protect memory, I/O, safety or platform rules but cannot permanently cap discoverable sources, available stories or retained articles. Frozen benchmark thresholds remain acceptance checks, not runtime quotas. Reconsider opportunities through existing owners and actual events rather than introducing an extra polling scheduler or duplicating state. This extends PD-2, PD-3, PD-6 and INV-16 without changing the contracts of earlier phases.
