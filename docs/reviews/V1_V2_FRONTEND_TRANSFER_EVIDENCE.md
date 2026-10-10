@@ -42,7 +42,9 @@ $ grep -rn "TODO\|FIXME\|HACK\|temporary\|deprecated" Sources/ FeedMineApp/FeedM
 ```
 
 No replaced renderer, route or adapter remains: every surface either has a live caller or was never built (the
-DEBUG-only catalogue explorer, recorded above).
+DEBUG-only catalogue explorer, recorded above). `docs/architecture/FILE_RESPONSIBILITIES.md` gained its Phase 4
+section in this pass: one row per transferred surface, naming the files it owns and what it must not own, with
+every path in the table checked to exist.
 
 ## The integrated scenario (T12, item 3)
 
@@ -55,6 +57,18 @@ projection* is refused outright, and only a gesture reaches the host. The frame/
 is proven where it can be measured — `FeedPresentationAdmission`'s own tests, `FeedScreenStoreTests`'
 invariance, and the simulator test below.
 
+## The unit-test harness and the forward-admission activity (2026-10-10)
+
+Six `CompositionTests` cases asserted a window wider than the anchor card, and each failed on its first supply
+assertion. The cause was the harness's activity, not the app: `RunwayActivity.admitsForwardContent` is true only
+for `.explicitTailApproach`, so an observation sent with `.forward` records the position and never extends the
+admitted list — while the real shell (`Sources/FeedMineUI/FeedScreen.swift`) already sends
+`.explicitTailApproach` when the reader moves forward and the tail is visible, which is what makes cards arrive
+as the reader reaches them. The harness now produces (one `driver.drive`) and then admits as a reader does, with
+that activity: `1 anchor + 16 = 17`, the composition's own bounds. Evidence: the six tests plus
+`testT12KeyboardSearchKeepsTheReadingPointAndRestoresIt` in one command → **TEST SUCCEEDED**; `swift test` → 1017
+tests, 0 failures.
+
 ## Native gestures, rotation and Dynamic Type (T12, item 4)
 
 `testNativeScrollRotationAndDynamicTypeKeepTheAdmittedCardInPlace` — **TEST SUCCEEDED** (simulator, launch
@@ -65,6 +79,11 @@ counters do not change, and the feed still readable throughout.
 `testNativeSwipeReachesRealRunwayAndReverseNavigation` — **TEST SUCCEEDED** (the T3 gesture test that already
 existed): the first delivery is `received=0 completed=0 backward=0`, i.e. restore and layout are not a user
 observation, and a swipe is what completes one.
+
+`testT12KeyboardSearchKeepsTheReadingPointAndRestoresIt` — **TEST SUCCEEDED** (added by this pass; the keyboard
+scenario the plan lists and the T5 test did not cover, since T5 only opened and cancelled the search surface):
+the reader's own search field takes a written query, the feed's published counters do not move while it is
+written, and cancelling returns the same card to the same reader with the counters still unchanged.
 
 ## Offline and relaunch (T12, item 6)
 
@@ -109,8 +128,9 @@ Command → result:
 
 | Plan item | State |
 |---|---|
-| `CompositionTests` as one run (20 tests) | **6 of 20 fail, and none of them is claimed above.** Measured 2026-10-10: 13 pass; `testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates` (reserve 1 ≠ 17), `testS1SameSessionStoreAcrossViewportRefreshAndLifecycle`, `testS2DelayedResultAndS7AtomicWorkRejection`, `testS5OfflineReopenRestoresEditionWithFreshProvenance`, `testS6NewerReverseProjectionAccepted` and `testMainSourceMainRestoresPositionOfflineAndRejectsOldAssociation` fail at their *first* supply assertion — the fixture run admits the anchor card and no second one. The committed HEAD cannot run them either: its test target does not compile (`saveCuratedFeed` returns `ReaderPreset?` while the committed test treats it as non-optional), so no green baseline exists to compare against. Two causes were measured and **disproved** on 2026-10-10: the fixture items lack a `pubDate`, and their links point at `fixture.invalid` instead of the feed's own host (`-only-testing` the two representative tests, both still failing). The admitted-and-prepared supply is where the next diagnostic belongs. Every claim in this document is per test, because that is how the runs were made. |
-| Physical iPhone: 10 minutes idle + 30 minutes of scrolling, memory/CPU/hitches and media budget | **Not executed.** No physical device is attached to this machine; the plan's own validation section asks for a simulator UUID for everything else. Needs the reader's device. |
+| `CompositionTests` as one run (24 tests) | **24 tests, 0 failures** (2026-10-10, whole-scheme run). The six cases that failed here before failed on the harness's activity, not on the app: `.forward` observes and never admits, so the window held the anchor card alone. Each one now produces once and admits with `.explicitTailApproach`, the activity the real shell sends when the reader moves forward and the tail is visible. |
+| `FeedMineUITests` as one run (21 tests) | **93 failures in a single whole-target pass** (2026-10-10), while every one of them passes under its own `-only-testing:` invocation — which is how this document's UI rows were produced. Measured cause: launches share the simulator's persisted reader state (onboarding answered, settings, context), and the tests only vary `FEEDMINE_RUNTIME_NAMESPACE`, which namespaces the runtime database and not `UserDefaults`. A DEBUG-only reset switch and its use by the tests is the fix under way. |
+| Physical iPhone: 10 minutes idle + 30 minutes of scrolling, memory/CPU/hitches and media budget | **Not executed.** No physical device is attached to this machine (`xcrun devicectl list devices`, 2026-10-10: two iPhones known, both `unavailable`); the plan's own validation section asks for a simulator UUID for everything else. Needs the reader's device. |
 | Visual comparison by screenshots, surface by surface | **Not executed as a screenshot diff.** The UI tests assert structure, identifiers, labels and one geometry (the mini player's 56 pt); no pixel comparison was made. |
 | 30-minute scroll budget on heterogeneous networks | **Not executed.** The deterministic, short-horizon scenario is the substitute that was run; long-horizon behaviour is the physical-device item above. |
 
