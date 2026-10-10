@@ -128,6 +128,14 @@ Steps, in this order (each with its own test, all additive):
 1. **`feed_editions.context_identity TEXT NOT NULL DEFAULT ''`**, written from
    `edition.editorialRevision.contextKey.canonicalIdentity` (`PublicationPersistenceMapping.record(edition:)`).
    No lookup changes yet.
+   *Representation (decided here, before writing it):* the readable canonical text is the **identity used for
+   matching**, and the full key is persisted alongside it as **sorted-keys JSON** (`ContextKey` is already
+   `Codable`, and `.sortedKeys` makes it deterministic). Two columns, one job each: `context_identity` answers
+   "is this my context?" and `context_key_json` reconstructs `EditorialRevision.contextKey` faithfully, which
+   the driver's scope validation needs for a filtered context. Reconstructing the key from the reduced
+   `context_kind`/`source`/`query` columns alone would silently degrade every filtered Edition back to the
+   default surface on read (`decodeEdition` does exactly that today, `PublicationStore.swift:881-895`).
+   Do **not** write a parser for the readable text: JSON is the reversible form.
 2. **`context_checkpoints.context_identity TEXT NOT NULL DEFAULT ''`**, written by `persistContext` by *copying*
    the edition's column instead of re-deriving the reduced key.
 3. **Backfill in the same migration, in Swift** (not in SQL): for every row with an empty `context_identity`,
