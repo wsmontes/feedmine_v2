@@ -71,7 +71,7 @@ final class AvailabilityPrecedenceTests: XCTestCase {
             try database.read { db in
                 XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT COUNT(*) FROM origin_records"),5)
                 XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT COUNT(*) FROM origin_records WHERE availability_observed_at IS NULL OR availability_observed_at != last_observed_at"),0)
-                XCTAssertEqual(try String.fetchOne(db,sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1"),"publication-media-use-v1")
+                XCTAssertEqual(try String.fetchOne(db,sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1"),"reader-context-identity-v1")
             }
         }
         let reopened = try RuntimeDatabase(location: location)

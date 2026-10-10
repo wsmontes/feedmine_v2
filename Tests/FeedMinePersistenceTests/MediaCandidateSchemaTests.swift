@@ -129,12 +129,21 @@ final class MediaCandidateSchemaTests: XCTestCase {
         }
         let database = try RuntimeDatabase(location: location), store = ContentStore(database: database)
         let after = try database.read { db in
+            // Additive columns are compared explicitly below, not through the whole-row dump: T6 added the
+            // context identity to feed_editions and the availability column predates it.
             try tables.map { table in try Row.fetchAll(db, sql: "SELECT * FROM \(table) ORDER BY 1").map { row in
-                row.filter { table != "origin_records" || $0.0 != "availability_observed_at" }.map { $0.1 }
+                row.filter { column in
+                    if table == "origin_records" { return column.0 != "availability_observed_at" }
+                    if table == "feed_editions" { return column.0 != "context_identity" && column.0 != "context_key_json" }
+                    return true
+                }.map { $0.1 }
             } }
         }
         XCTAssertEqual(after, before) // Every preexisting value remains exact; the additive column is checked separately.
         XCTAssertEqual(try database.read { try Double.fetchOne($0,sql: "SELECT availability_observed_at FROM origin_records") },1)
+        // T6: the pre-existing Edition acquires the default-surface identity of the context it recorded.
+        XCTAssertEqual(try database.read { try String.fetchOne($0, sql: "SELECT context_identity FROM feed_editions") },
+            ContextKey(request: .main).canonicalIdentity)
         let schemaAfter = try database.read { db in Set(try String.fetchAll(db, sql: "SELECT type || ':' || name FROM sqlite_schema")) }
         XCTAssertTrue(Set(["table:media_candidates", "index:sqlite_autoindex_media_candidates_1", "index:sqlite_autoindex_media_candidates_2"]).isSubset(of: schemaAfter.subtracting(schemaBefore)))
         XCTAssertTrue(schemaBefore.isSubset(of: schemaAfter))

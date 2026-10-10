@@ -91,7 +91,7 @@ public struct PublicationHistory: Sendable {
 
     /// Nil means no saved session. Storage and mapping failures propagate unchanged.
     public func restore(backwardCapacity: Int, forwardCapacity: Int, contextKey: ContextKey? = nil) throws -> RestoredPublication? {
-        let saved = try contextKey.map { try sessionStore.checkpoint(for: $0.request) } ?? sessionStore.checkpoint()
+        let saved = try contextKey.map { try sessionStore.checkpoint(for: $0) } ?? sessionStore.checkpoint()
         guard let checkpoint = saved else { return nil }
         let cursor = try PublicationPersistenceMapping.cursor(checkpoint)
         guard let record = try publicationStore.edition(id: cursor.editionID) else {

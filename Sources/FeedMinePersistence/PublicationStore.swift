@@ -842,7 +842,7 @@ public struct PublicationStore: Sendable {
         }
     }
 
-    private static let editionColumns = ["id", "editorial_revision_id", "context_kind", "context_source_id", "context_search_query", "catalog_generation", "user_selection_version", "eligibility_policy_version", "scoring_policy_version", "sequencing_policy_version", "exposure_policy_version", "selection_schema_version", "publication_schema_version", "selection_seed", "created_at"]
+    private static let editionColumns = ["id", "editorial_revision_id", "context_kind", "context_source_id", "context_search_query", "catalog_generation", "user_selection_version", "eligibility_policy_version", "scoring_policy_version", "sequencing_policy_version", "exposure_policy_version", "selection_schema_version", "publication_schema_version", "selection_seed", "created_at", "context_identity", "context_key_json"]
     private static let segmentColumns = ["id", "edition_id", "ordinal", "segment_seed", "publication_schema_version", "created_at"]
     private static func editionValues(_ e: EditionRecord) throws -> [DatabaseValue] {
         let r = e.editorialRevision
@@ -852,6 +852,10 @@ public struct PublicationStore: Sendable {
         case .source(let id): kind = "source"; source = PersistenceValueCoding.uuid(id.rawValue); query = nil
         case .search(let search): kind = "search"; source = nil; query = search.query
         }
+        // T6: the Edition records the whole context identity it belongs to, in both the matching form and
+        // the reversible form, so a filtered context survives a read (spec §6).
+        let identity = r.contextKey.canonicalIdentity.databaseValue
+        let identityJSON = (r.contextKey.canonicalJSON() ?? "").databaseValue
         return try [
             PersistenceValueCoding.uuid(e.id.rawValue).databaseValue,
             PersistenceValueCoding.uuid(r.id.rawValue).databaseValue,
@@ -865,7 +869,8 @@ public struct PublicationStore: Sendable {
             PublicationValueCoding.counter(r.selectionSchemaVersion.rawValue, field: "selectionSchemaVersion").databaseValue,
             PublicationValueCoding.counter(e.publicationSchemaVersion, field: "publication_schema_version").databaseValue,
             PersistenceValueCoding.seed(e.selectionSeed).databaseValue,
-            PublicationValueCoding.date(e.createdAt, field: "created_at").databaseValue
+            PublicationValueCoding.date(e.createdAt, field: "created_at").databaseValue,
+            identity, identityJSON
         ]
     }
 
@@ -890,8 +895,12 @@ public struct PublicationStore: Sendable {
             request = .search(search)
         default: throw PublicationStoreError.corruption("context")
         }
+        // T6: a row written with an identity restores its exact key (filter, preset and scope included);
+        // a row from before the migration restores the default surface it recorded.
+        let storedIdentity = (row["context_key_json"] as String?) ?? ""
+        let contextKey = ContextKey.fromCanonicalJSON(storedIdentity) ?? ContextKey(request: request)
         let revision = EditorialRevision(id: EditorialRevisionID(rawValue: try f.uuid("editorial_revision_id")),
-            contextKey: ContextKey(request: request),
+            contextKey: contextKey,
             catalogGeneration: CatalogGeneration(rawValue: try f.counter("catalog_generation")),
             userSelectionVersion: PolicyVersion(rawValue: try f.counter("user_selection_version")),
             eligibilityPolicyVersion: PolicyVersion(rawValue: try f.counter("eligibility_policy_version")),

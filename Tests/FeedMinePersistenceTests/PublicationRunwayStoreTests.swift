@@ -7,6 +7,15 @@ import FeedMineDomain
 final class PublicationRunwayStoreTests: XCTestCase {
     /// Remove only the authorized additive column when comparing prior SQL definitions.
     /// Every other byte of each existing schema object's definition remains checked.
+    /// T6 rebuilt `context_checkpoints` and expanded `feed_editions`; those two definitions are compared by
+    /// their columns, never by their SQL text, in both before/after sets.
+    static func normalizeRebuiltDefinitions(_ entries: [String]) -> Set<String> {
+        Set(entries.map { entry in
+            for name in ["context_checkpoints", "feed_editions"] where entry.hasPrefix(name + ":") { return name }
+            return entry
+        })
+    }
+
     private static func schemaBeforeAvailability(_ schema: [String], in db: Database) throws -> Set<String> {
         let addition = ", availability_observed_at REAL"
         let origin = try XCTUnwrap(schema.first { $0.hasPrefix("origin_records:") })
@@ -16,7 +25,16 @@ final class PublicationRunwayStoreTests: XCTestCase {
         XCTAssertEqual(column["notnull"] as Int, 0)
         XCTAssertNil(column["dflt_value"] as String?)
         XCTAssertEqual(column["pk"] as Int, 0)
-        return Set(schema.map { $0 == origin ? $0.replacingOccurrences(of: addition, with: "") : $0 })
+        // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+        // columns, and its SQL text is not part of this comparison.
+        let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+        XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+            ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement", "updated_at"])
+        XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('feed_editions') ORDER BY cid").suffix(2),
+            ["context_identity", "context_key_json"])
+        return Set(Self.normalizeRebuiltDefinitions(schema).map { entry in
+            entry == origin ? entry.replacingOccurrences(of: addition, with: "") : entry
+        })
     }
 
     private func fixture() throws -> (RuntimeDatabase, PublicationStore, PublicationStore.EditionRecord, [PublicationStore.CardRecord]) {
@@ -192,9 +210,9 @@ final class PublicationRunwayStoreTests: XCTestCase {
         XCTAssertFalse(RuntimeMigrations.current.eraseDatabaseOnSchemaChange)
         try migrated.read { db in
             let schema = try String.fetchAll(db, sql: "SELECT name || ':' || COALESCE(sql, '') FROM sqlite_master WHERE name != 'published_cards_origin_revision_segment' ORDER BY name")
-            XCTAssertTrue(Set(oldSchema).isSubset(of: try Self.schemaBeforeAvailability(schema, in: db))) // Only the explicitly checked additive column changes an old definition.
+            XCTAssertTrue(Self.normalizeRebuiltDefinitions(oldSchema).isSubset(of: try Self.schemaBeforeAvailability(schema, in: db))) // Only the explicitly checked additive columns change an old definition.
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('published_cards_origin_revision_segment') ORDER BY seqno"), ["origin_revision_id","segment_id"])
-            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1"])
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1"])
         }
     }
 
@@ -237,13 +255,40 @@ extension PublicationRunwayStoreTests {
         let store = PublicationStore(database: database)
         let edition = StorageFixture.edition()
         var first: OriginRecordID?, last: OriginRecordID?
-        for ordinal in 0..<100 {
+        // The fixture is written with raw SQL: it is a *historical* schema, and the current store writes the
+        // newest columns (T6 added the context identity to feed_editions). The subject here is the
+        // origin-exposure index and its measurement, not which columns the writer knows.
+        let fixture = (0..<100).map { ordinal -> (PublicationStore.SegmentRecord, [PublicationStore.CardRecord]) in
             let cards = (0..<100).map { _ in StorageFixture.card() }
             if first == nil { first = cards[0].originRecordID }
             last = cards.last!.originRecordID
-            let segment = StorageFixture.segment(edition, cards, ordinal: UInt64(ordinal))
-            if ordinal == 0 { try store.createEdition(edition, firstSegment: segment, cards: cards) }
-            else { try store.appendSegment(segment, cards: cards) }
+            return (StorageFixture.segment(edition, cards, ordinal: UInt64(ordinal)), cards)
+        }
+        try database.write { db in
+            try db.execute(sql: """
+                INSERT INTO feed_editions (id, editorial_revision_id, context_kind, catalog_generation,
+                    user_selection_version, eligibility_policy_version, scoring_policy_version,
+                    sequencing_policy_version, exposure_policy_version, selection_schema_version,
+                    publication_schema_version, selection_seed, created_at)
+                VALUES (?, ?, 'main', 1, 1, 2, 3, 4, 5, 6, 1, -1, 123.25)
+                """, arguments: [edition.id.rawValue.uuidString.lowercased(),
+                    edition.editorialRevision.id.rawValue.uuidString.lowercased()])
+            for (segment, cards) in fixture {
+                try db.execute(sql: """
+                    INSERT INTO feed_segments (id, edition_id, ordinal, segment_seed,
+                        publication_schema_version, created_at) VALUES (?, ?, ?, ?, 1, 124.5)
+                    """, arguments: [segment.id.rawValue.uuidString.lowercased(),
+                        edition.id.rawValue.uuidString.lowercased(), Int64(segment.ordinal), -1])
+                for (index, card) in cards.enumerated() {
+                    try db.execute(sql: """
+                        INSERT INTO published_cards (id, segment_id, ordinal, origin_record_id, origin_revision_id,
+                            render_layout) VALUES (?, ?, ?, ?, ?, 'textOnly')
+                        """, arguments: [card.id.rawValue.uuidString.lowercased(),
+                            segment.id.rawValue.uuidString.lowercased(), Int64(index),
+                            card.originRecordID.rawValue.uuidString.lowercased(),
+                            card.originRevisionID.rawValue.uuidString.lowercased()])
+                }
+            }
         }
         let ids = [first!, last!, OriginRecordID()].map { $0.rawValue.uuidString.lowercased() }
         let editionKey = edition.id.rawValue.uuidString.lowercased()
@@ -278,7 +323,8 @@ extension PublicationRunwayStoreTests {
         try upgraded.read { db in
             let schemaAfter = try String.fetchAll(db,sql: "SELECT name || ':' || COALESCE(sql,'') FROM sqlite_master ORDER BY name")
             let priorDefinitions = try Self.schemaBeforeAvailability(schemaAfter, in: db)
-            XCTAssertTrue(Set(schemaBefore).isSubset(of: priorDefinitions))
+            let normalizedBefore = Self.normalizeRebuiltDefinitions(schemaBefore)
+            XCTAssertTrue(normalizedBefore.isSubset(of: priorDefinitions))
             // One new object (3R5 index), plus one altered existing definition (3R6B column).
             let originDefinition = try XCTUnwrap(schemaAfter.first { $0.hasPrefix("origin_records:") })
             let originIndex = "published_cards_origin_record_segment:CREATE INDEX published_cards_origin_record_segment\nON published_cards (origin_record_id, segment_id)"
@@ -301,10 +347,10 @@ extension PublicationRunwayStoreTests {
                 "edition_reading_state", "sqlite_autoindex_edition_reading_state_1", "retired_published_cards", "retired_published_cards_id",
                 "retired_feed_segments", "retired_feed_segments_id", "publication_card_usage", "sqlite_autoindex_publication_card_usage_1",
                 "publication_bookmarks", "sqlite_autoindex_publication_bookmarks_1"])
-            let contextual = Set(schemaAfter.filter { addedNames.contains(String($0.split(separator: ":", maxSplits: 1)[0])) })
+            let contextual = Set(priorDefinitions.filter { addedNames.contains(String($0.split(separator: ":", maxSplits: 1)[0])) })
             XCTAssertEqual(contextual.count, addedNames.count)
-            XCTAssertEqual(priorDefinitions.subtracting(schemaBefore), Set([originIndex, authorityTable, authorityIndex]).union(contextual))
-            XCTAssertEqual(Set(schemaAfter).subtracting(schemaBefore), Set([originIndex, originDefinition, authorityTable, authorityIndex]).union(contextual))
+            XCTAssertEqual(priorDefinitions.subtracting(normalizedBefore), Set([originIndex, authorityTable, authorityIndex]).union(contextual))
+            XCTAssertEqual(Self.normalizeRebuiltDefinitions(schemaAfter).subtracting(normalizedBefore), Set([originIndex, originDefinition, authorityTable, authorityIndex]).union(contextual))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }

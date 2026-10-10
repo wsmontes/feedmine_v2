@@ -403,6 +403,38 @@ criteria stay independent.
 
 **Verified.** `swift test` **889 tests, 0 failures**.
 
-**Remaining for T6** (fully specified in the spec): the persistence migration of checkpoint/edition identifiers
-(§6 steps 1–5), the sheet and lens in the UI wired to the draft, supply-side enforcement of the criteria that can
-be answered, the expiry record and the A→B→A/stale-callback tests.
+**Step 3 landed — the durable identity (spec §6 steps 1–4).**
+- Migration `reader-context-identity-v1`: `feed_editions` gains `context_identity` (the canonical text used for
+  matching) and `context_key_json` (the same key as sorted-keys JSON, the reversible form); `context_checkpoints`
+  is **rebuilt** keyed by `context_identity`, because the old reduced `context_key` was its primary key and
+  cannot hold two filtered contexts of one surface (the reduced text is kept for one release).
+- Backfill, in Swift so the identity keeps exactly one implementation (`RuntimeMigrations
+  .backfillEditionContextIdentities` / `.backfillCheckpointContextIdentities`, both idempotent and called by the
+  migration): a row written before T6 acquires the **default-surface** identity of the surface it recorded, which
+  is what preserves pre-T6 main/source/search history instead of orphaning it; the tests assert the checkpoint is
+  then still found under that identity and that a second run changes nothing.
+- Write path: `PublicationStore.editionValues` derives both columns from
+  `edition.editorialRevision.contextKey`; `decodeEdition` restores the exact key from the JSON and falls back to
+  the recorded surface for a pre-migration row.
+- Lookups: `SessionStore.activateContext(_ key:)` / `checkpoint(for key:)` match on the identity (request-based
+  overloads kept as the default-surface convenience), `persistContext` files a checkpoint under its Edition's
+  identity and refuses to file a row without one, and `PublicationHistory.restore(..., contextKey:)` looks up by
+  the whole key.
+
+New `ContextIdentityPersistenceTests` (4): an Edition round-trips a *filtered* key in both persisted forms; two
+filters on the same surface keep separate checkpoints and neither collides with the plain surface; the backfill
+gives a pre-T6 row its surface identity, preserves its position and is idempotent; restore by a filtered identity
+finds that context's window while an identity that never had a position finds none.
+
+**Schema-catalogue tests updated in the same commit** (they pin the migration list and the table definitions):
+`AvailabilityPrecedenceTests`, `PublicationRunwayStoreTests` (the migration catalogue, the rebuilt-definition
+normalization and its 3R5 fixture, which is now written with raw SQL because it deliberately targets the
+*historical* schema while the store writes the newest columns) and `MediaCandidateSchemaTests` (the additive
+columns are excluded from the whole-row dump and asserted directly, including that the backfill filled them).
+
+**Verified.** `swift test` **893 tests, 0 failures**.
+
+**Remaining for T6** (spec §6 step 5 and the rest): the sheet and lens in the UI wired to the draft plus the
+coordinator that persists and activates the new context, supply-side enforcement of the criteria the data can
+answer (language, source membership, keyword exclusions and V1's mood rule), the expiry record, and the
+A→B→A/stale-callback tests.

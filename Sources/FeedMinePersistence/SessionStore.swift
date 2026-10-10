@@ -88,15 +88,17 @@ public struct SessionStore: Sendable {
         }
     }
 
-    /// Selects the saved position for a logical context; old history/checkpoints remain retained.
-    public func activateContext(_ request: FeedContextRequest) throws {
+    /// Selects the saved position for a logical context *identity* (T6: the whole key — surface, preset,
+    /// filter and search scope — so two filtered contexts of the same surface never share a position).
+    /// Old history/checkpoints remain retained.
+    public func activateContext(_ key: ContextKey) throws {
         try database.write { db in
             if let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1") {
                 try Self.persistContext(Self.decode(row, in: db), in: db)
             }
             try db.execute(sql: "DELETE FROM session_checkpoint WHERE singleton_id = 1")
-            if let row = try Row.fetchOne(db, sql: "SELECT * FROM context_checkpoints WHERE context_key = ?",
-                arguments: [Self.contextIdentifier(request)]) {
+            if let row = try Row.fetchOne(db, sql: "SELECT * FROM context_checkpoints WHERE context_identity = ?",
+                arguments: [key.canonicalIdentity]) {
                 let saved = try Self.decode(row, in: db)
                 try db.execute(sql: "INSERT INTO session_checkpoint VALUES (1, ?, ?, ?, ?)", arguments: [
                     PersistenceValueCoding.uuid(saved.editionID.rawValue), PersistenceValueCoding.uuid(saved.cardID.rawValue),
@@ -114,12 +116,22 @@ public struct SessionStore: Sendable {
         }
     }
 
-    public func checkpoint(for request: FeedContextRequest) throws -> CheckpointRecord? {
+    /// The saved position of a context identity, or nil when that identity never had one.
+    public func checkpoint(for key: ContextKey) throws -> CheckpointRecord? {
         try database.read { db in
-            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM context_checkpoints WHERE context_key = ?",
-                arguments: [Self.contextIdentifier(request)]) else { return nil }
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM context_checkpoints WHERE context_identity = ?",
+                arguments: [key.canonicalIdentity]) else { return nil }
             return try Self.decode(row, in: db)
         }
+    }
+
+    /// Surface-only convenience: the plain, unfiltered context of that request.
+    public func activateContext(_ request: FeedContextRequest) throws {
+        try activateContext(ContextKey(request: request))
+    }
+
+    public func checkpoint(for request: FeedContextRequest) throws -> CheckpointRecord? {
+        try checkpoint(for: ContextKey(request: request))
     }
 
     private static func contextIdentifier(_ request: FeedContextRequest) -> String {
@@ -131,12 +143,20 @@ public struct SessionStore: Sendable {
     }
 
     private static func persistContext(_ checkpoint: CheckpointRecord, in db: Database) throws {
+        // The identity comes from the Edition (one implementation of it, in `ContextKey`); the reduced
+        // `context_key` text is still written for one release so an older build can read this database.
+        // A row without an identity cannot be filed: it is skipped rather than merged into another context.
         try db.execute(sql: """
-            INSERT INTO context_checkpoints(context_key, edition_id, card_id, anchor_placement, updated_at)
-            SELECT CASE context_kind WHEN 'main' THEN 'main' WHEN 'source' THEN 'source:' || context_source_id
-                WHEN 'search' THEN 'search:' || context_search_query END, id, ?, ?, ? FROM feed_editions WHERE id = ?
-            ON CONFLICT(context_key) DO UPDATE SET edition_id = excluded.edition_id, card_id = excluded.card_id,
-                anchor_placement = excluded.anchor_placement, updated_at = excluded.updated_at
+            INSERT INTO context_checkpoints(context_identity, context_key, context_key_json, edition_id, card_id, anchor_placement, updated_at)
+            SELECT e.context_identity,
+                CASE e.context_kind WHEN 'main' THEN 'main' WHEN 'source' THEN 'source:' || e.context_source_id
+                    WHEN 'search' THEN 'search:' || e.context_search_query END,
+                e.context_key_json, e.id, ?, ?, ? FROM feed_editions e
+            WHERE e.id = ? AND e.context_identity <> ''
+            ON CONFLICT(context_identity) DO UPDATE SET context_key = excluded.context_key,
+                context_key_json = excluded.context_key_json, edition_id = excluded.edition_id,
+                card_id = excluded.card_id, anchor_placement = excluded.anchor_placement,
+                updated_at = excluded.updated_at
             """, arguments: [PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement,
                 checkpoint.updatedAt.timeIntervalSince1970, PersistenceValueCoding.uuid(checkpoint.editionID.rawValue)])
     }

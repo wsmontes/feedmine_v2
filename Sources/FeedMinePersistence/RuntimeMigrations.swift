@@ -24,7 +24,9 @@
 //   Foundation, publication, canonical supply and canonical-media-candidates-v1 schema authority.
 //
 
+import Foundation
 import GRDB
+import FeedMineDomain
 
 public enum RuntimeMigrations {
     static var current: DatabaseMigrator {
@@ -351,6 +353,82 @@ public enum RuntimeMigrations {
                 INSERT INTO publication_card_usage SELECT card_id, updated_at FROM context_checkpoints;
                 """)
         }
+        migrator.registerMigration("reader-context-identity-v1") { db in
+            // T6 step 1–3 (docs/superpowers/specs/2026-10-09-reader-filters-and-context-identity.md §6):
+            // an Edition states the whole context identity it belongs to, the durable form is reversible,
+            // and a checkpoint is keyed by that identity instead of the reduced surface text.
+            try db.execute(sql: """
+                ALTER TABLE feed_editions ADD COLUMN context_identity TEXT NOT NULL DEFAULT '';
+                ALTER TABLE feed_editions ADD COLUMN context_key_json TEXT NOT NULL DEFAULT '';
+                """)
+            try Self.backfillEditionContextIdentities(db)
+            // The reduced `context_key` was the primary key, which cannot hold two filtered contexts of the
+            // same surface; the identity becomes the key and the reduced text is kept for one release.
+            try db.execute(sql: """
+                CREATE TABLE context_checkpoints_v2 (
+                    context_identity TEXT PRIMARY KEY NOT NULL,
+                    context_key TEXT NOT NULL,
+                    context_key_json TEXT NOT NULL,
+                    edition_id TEXT NOT NULL REFERENCES feed_editions(id),
+                    card_id TEXT NOT NULL REFERENCES published_cards(id),
+                    anchor_placement TEXT NOT NULL CHECK(anchor_placement IN ('top', 'center')),
+                    updated_at REAL NOT NULL);
+                INSERT INTO context_checkpoints_v2 SELECT
+                    (SELECT e.context_identity FROM feed_editions e WHERE e.id = c.edition_id),
+                    c.context_key,
+                    (SELECT e.context_key_json FROM feed_editions e WHERE e.id = c.edition_id),
+                    c.edition_id, c.card_id, c.anchor_placement, c.updated_at
+                    FROM context_checkpoints c
+                    WHERE (SELECT e.context_identity FROM feed_editions e WHERE e.id = c.edition_id) IS NOT NULL
+                        AND (SELECT e.context_identity FROM feed_editions e WHERE e.id = c.edition_id) <> '';
+                DROP TABLE context_checkpoints;
+                ALTER TABLE context_checkpoints_v2 RENAME TO context_checkpoints;
+                """)
+            try Self.backfillCheckpointContextIdentities(db)
+        }
         return migrator
+    }
+
+    /// Files every checkpoint under its Edition's identity. Idempotent, and separate from the migration so
+    /// the backfill is testable and re-runnable.
+    static func backfillCheckpointContextIdentities(_ db: Database) throws {
+        try db.execute(sql: """
+            UPDATE context_checkpoints SET
+                context_identity = COALESCE((SELECT e.context_identity FROM feed_editions e
+                    WHERE e.id = context_checkpoints.edition_id), ''),
+                context_key_json = COALESCE((SELECT e.context_key_json FROM feed_editions e
+                    WHERE e.id = context_checkpoints.edition_id), '')
+            WHERE context_identity = '' OR context_key_json = ''
+            """)
+    }
+
+    /// Gives every Edition written before T6 the *default-surface* identity of the surface it recorded.
+    /// In Swift on purpose: the identity has exactly one implementation (`ContextKey`), never a second one
+    /// re-derived in SQL. Idempotent — rows that already carry an identity are left alone.
+    static func backfillEditionContextIdentities(_ db: Database) throws {
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT id, context_kind, context_source_id, context_search_query FROM feed_editions
+            WHERE context_identity = '' OR context_key_json = ''
+            """)
+        for row in rows {
+            let kind: String = row["context_kind"]
+            let source: String? = row["context_source_id"]
+            let query: String? = row["context_search_query"]
+            let request: FeedContextRequest
+            switch kind {
+            case "main": request = .main
+            case "source":
+                guard let source, let uuid = UUID(uuidString: source) else { continue }
+                request = .source(SourceID(rawValue: uuid))
+            case "search":
+                guard let query, let search = SearchContext(query: query) else { continue }
+                request = .search(search)
+            default: continue
+            }
+            let key = ContextKey(request: request)
+            guard let json = key.canonicalJSON() else { continue }
+            try db.execute(sql: "UPDATE feed_editions SET context_identity = ?, context_key_json = ? WHERE id = ?",
+                arguments: [key.canonicalIdentity, json, row["id"]])
+        }
     }
 }

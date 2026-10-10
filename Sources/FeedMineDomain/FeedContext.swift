@@ -106,6 +106,22 @@ public struct ContextKey: Hashable, Codable, Sendable {
         return parts.joined(separator: "|")
     }
 
+    /// The identity in its reversible persisted form: the whole key as JSON with sorted keys, so the same
+    /// request always produces the same bytes and a stored Edition can rebuild its exact key on read
+    /// (T6 spec §6).
+    public func canonicalJSON() -> String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(self) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Rebuilds a key from `canonicalJSON()`. Nil when the payload is absent or malformed.
+    public static func fromCanonicalJSON(_ json: String) -> ContextKey? {
+        guard !json.isEmpty, let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(ContextKey.self, from: data)
+    }
+
     /// True when this key describes the plain, unfiltered surface — the identity every checkpoint written
     /// before T6 already has.
     public var isDefaultSurface: Bool {
