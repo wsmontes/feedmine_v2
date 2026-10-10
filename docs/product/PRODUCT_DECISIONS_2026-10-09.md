@@ -68,7 +68,7 @@ wants."
 3. Available subterfuges, chosen dynamically:
    - start with targets measured fastest/most reliable (without breaking fairness over time);
    - publish the first screen as soon as a PD-4-valid prefix exists for the actual viewport;
-   - prefer cards designed text-only when media would delay the first screen (PD-5);
+   - publish other prepared stories while image-dependent candidates remain deferred; use text-only when intentionally suitable or supported by failure evidence (PD-5/PD-9);
    - keep entertaining while work continues after the first cards (INV-05).
 4. "Ready" counts contributing sources and prepared cards, never HTTP successes (v1 `100/43556` bug).
 
@@ -92,28 +92,18 @@ Owner: `FeedMineEditorial` (single ordering owner, `04-catalog-editorial.md` Les
 
 ---
 
-## PD-5 — Missing image: designed text-only card or withhold; late image never touches the screen
+## PD-5 — Per-story media readiness; late assets never block or rewrite the feed (revised 2026-10-10)
 
-**Decision.** If the image is not ready, the program decides per card, continuously:
-- publish a card **designed** without image (a real text-only layout, not a card missing its image), or
-- take the content out of the queue until it is complete.
-
-If the image arrives after publication, **the visible screen does not change**. Only when the app
-loses focus or is closed may the program "tidy the house" quickly.
+**Decision.** A story whose expected image is still arriving or being prepared leaves the current **ready-to-publish opportunity**, not the pool of eligible stories. Other ready stories must advance without waiting. The deferred story retains its identity and reusable acquisition/preparation facts, and returns to consideration when ready. Its previous position is not reserved.
 
 **Rules.**
-1. Withholding defers the item to a later selection; it re-enters as a normal candidate under PD-4.
-2. Seen cards are immutable forever (INV-08).
-3. Published-but-unseen cards may be re-prepared with late media **only while the app is not
-   visible** (background, inactive, closed). "Seen" is derived from real viewport observations
-   (high-water mark), not from publication.
-4. On return, the reader's position and every seen card are exactly as left.
+1. **Pending is not broken.** A slow image, temporary failure, pending decode, unknown condition or network restriction does not by itself justify converting the story into text-only.
+2. **Text-only is an evidence-based presentation decision, not a timeout.** Use a purposefully designed text-only card when it is editorially appropriate from the outset, or when available evidence establishes that a usable image is not reasonably obtainable (e.g. definitively broken, unsupported, invalid, or realistic alternatives have been tried under measured cost and failure conditions). No fixed waiting time or magic retry count decides this automatically.
+3. **Independent bounded work.** Deferred preparation proceeds or is reconsidered on legitimate availability/resource/retry opportunities as budget allows, alongside other stories, using existing owners. Do not busy-poll, block the whole selection, discard eligible items or create a second scheduler. An attempt's transient/definitive outcome and media readiness must not be silently conflated.
+4. **Before versus after publication.** Before publication, candidate priority, representation and resources may improve. **After publication**, occurrence ID, selected text/action, layout and referenced media contract remain immutable whether the user has seen the card or not. The admitted reader sequence additionally preserves position, order and geometry. Re-decoding the same frozen local asset into its reserved slot may change pixels, not shape; a published text-only card cannot silently acquire a hero image. A later legitimate Edition may publish a new occurrence under existing editorial rules; late media alone never rewrites history.
+5. A story deferred for an image re-enters ordinary editorial selection, including current freshness, relevance, eligibility and PD-4 alternation. Legitimately image-free stories remain first-class; image absence alone is not proof of bad editorial quality.
 
-**Conflict to resolve.** INV-08/INV-09 currently forbid any change to published history. Amend:
-"seen history is immutable; unseen published runway may be re-prepared only while the app is not
-visible." Publication needs a mechanism for this (e.g. a successor for the unseen tail); choose it
-in the media gate.
-
+**Supersedes** the old permission to re-prepare published-but-unseen cards while the app is inactive. The immutable publication boundary stays strict; **the visible/admitted prefix is sacred**. See PD-9 for image, link, content and other preparation failures alike.
 ---
 
 ## PD-6 — Media budget is dynamic and device-aware
@@ -127,8 +117,7 @@ throughput and latency per host, actual slot size × screen scale.
 
 **Rules.**
 1. Never fetch or keep pixels larger than the slot actually rendered on this device.
-2. Choose the candidate (srcset size, og:image vs feed image) that fits network and slot; when
-   cost is high, prefer a designed text-only card (PD-5) over a slow image.
+2. Choose image resources that fit the network and slot; slow or costly image-dependent stories defer while other cards advance. Text-only is a legitimate editorial choice or evidence-based unusable-media decision under PD-5, never an arbitrary time limit.
 3. Disk budget scales with free space and shrinks under pressure; eviction order:
    far-future unseen → old seen → recent seen; bookmarked never evicted.
 4. Safety ceilings (decode-bomb dimensions, byte cap while streaming) are operational bounds,
@@ -160,3 +149,15 @@ No hosted CI. Practices must speed development up, not slow it down.
 **Applies everywhere.** Acquisition, editorial candidate examination, sequencing, runway, media preparation, local storage, retention and cleanup adapt to measured demand and available capabilities: actual consumption, supply, network throughput and latency, data cost, memory and disk pressure, power, thermal state and iOS execution permission. Spare capacity permits more discovery and useful retention; pressure reduces speculative work. Existing visible cards and continuity take precedence.
 
 **No magic numbers as strategy.** A fixed per-operation work bound may protect memory, I/O, safety or platform rules but cannot permanently cap discoverable sources, available stories or retained articles. Frozen benchmark thresholds remain acceptance checks, not runtime quotas. Reconsider opportunities through existing owners and actual events rather than introducing an extra polling scheduler or duplicating state. This extends PD-2, PD-3, PD-6 and INV-16 without changing the contracts of earlier phases.
+
+---
+
+## PD-9 — Nonblocking per-story preparation for all card dependencies (2026-10-10)
+
+**Decision (product owner).** A story may be unable to become presentation-ready because of image, link, body text, media, decode or another required preparation step. **One unready story never blocks other ready stories.** Remove it from the immediate publication opportunity without deleting its identity or reusable work. Independent resource-bounded work continues; when the missing requirement is genuinely resolved, the story returns to future editorial consideration, with no guaranteed old rank or insertion into already admitted reading history.
+
+**Different failure meanings.** Transient/unknown means deferred and recoverable. Definitively broken image may justify a designed text-only presentation when the article can still be consumed. A broken article link never becomes a fake viable card: try a verified legitimate alternative or authorized complete local content; otherwise hold as unavailable and trace the reason. Final editorial exclusion and temporary deferral must be distinguishable in observed outcomes.
+
+**No magic retries.** Operational connection timeouts or per-operation safety bounds are allowed; they do not by themselves classify a story as unusable or dictate a fixed count of attempts before downgrading. Reconsider retries with the observed error, source history, cost, resource permission and real opportunities; no spin loop, indefinite head-of-line blocking, silently forgotten candidate, fabricated readiness or new parallel scheduling engine.
+
+**Acceptance.** In a mixed corpus with slow image, permanently broken image, transient link failure, dead link and several ready stories, ready content progresses independently; recoverable candidates remain reachable and may later enter the feed, broken image becomes text-only only when justified, dead links never publish without real consumption, and previously published/admitted cards remain unchanged. This is not yet implementation evidence.
