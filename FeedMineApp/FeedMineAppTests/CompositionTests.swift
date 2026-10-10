@@ -272,6 +272,59 @@ final class CompositionTests: XCTestCase {
         await root.association?.close()
     }
 
+    /// T6: filters *are* context identity. A→B→A recovers A's own edition and reading position, B gets its own
+    /// identity, and the retired association's callback can never install into the active store.
+    func testT6FilterTransitionKeepsContextsSeparateAndStaleCallbackInert() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = root(directory: directory)
+        await root.launch()
+        let plain = try XCTUnwrap(root.association)
+        let plainKey = root.currentContextKey
+        XCTAssertTrue(plainKey.isDefaultSurface, "a reader who never filters is on the pre-T6 identity")
+        let initial = try XCTUnwrap(plain.store.state.presentation)
+        // Advance inside A and make the position durable, so A→B→A has something to recover. How many cards
+        // the development feeds publish in the first breath varies, so the move does not depend on a second one.
+        if let card = initial.window.items.dropFirst().first {
+            await plain.viewport(.init(anchor: .init(cardID: card.id, placement: .top)), activity: .forward)
+        } else {
+            await plain.viewport(.init(anchor: initial.window.anchor), activity: .explicitTailApproach)
+        }
+        let a = try XCTUnwrap(plain.store.state.presentation)
+        _ = try await plain.session.checkpointCurrentPosition(at: Date())
+
+        // A → B: a filtered context is a different identity, its own association, its own edition.
+        try await root.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
+        let filtered = try XCTUnwrap(root.association)
+        XCTAssertFalse(filtered === plain)
+        XCTAssertFalse(plain.active)
+        XCTAssertEqual(root.currentFilter.mood, .fun)
+        XCTAssertNotEqual(root.currentContextKey, plainKey)
+        XCTAssertNotEqual(filtered.store.state.presentation?.editionID, a.editionID,
+            "a filtered context never shows the plain context's edition")
+
+        // B → A, offline: A's own edition and anchor come back.
+        FixtureTransport.rejecting.withLock { $0 = true }
+        defer { FixtureTransport.rejecting.withLock { $0 = false } }
+        try await root.applyFilter(.unrestricted, preset: .everything)
+        let back = try XCTUnwrap(root.association)
+        XCTAssertEqual(root.currentContextKey, plainKey)
+        let restored = try XCTUnwrap(back.store.state.presentation)
+        XCTAssertEqual(restored.editionID, a.editionID, "returning to A recovers A's edition")
+        XCTAssertEqual(restored.window.anchor, a.window.anchor, "…and A's reading position")
+
+        // The retired association is inert: neither its snapshot nor its callbacks reach the active store.
+        let installed = back.store.state
+        XCTAssertThrowsError(try back.install(.init(presentation: a))) {
+            XCTAssertEqual($0 as? FeedPresentationStateError, .projectionSequenceMismatch)
+        }
+        await plain.viewport(.init(anchor: a.window.anchor), activity: .forward)
+        XCTAssertThrowsError(try plain.install(.init(presentation: a))) {
+            XCTAssertEqual($0 as? FeedPresentationStateError, .projectionSequenceMismatch)
+        }
+        XCTAssertEqual(back.store.state, installed)
+        await back.close()
+    }
+
     func testS1SameSessionStoreAcrossViewportRefreshAndLifecycle() async throws {
         let (root, association) = try await launched()
         let store = association.store
