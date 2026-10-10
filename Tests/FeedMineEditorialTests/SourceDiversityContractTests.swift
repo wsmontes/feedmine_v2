@@ -69,6 +69,9 @@ final class SourceDiversityContractTests: XCTestCase {
 
     func testEverySourceInTheWindowIsMetBeforeAnySourceRepeats() throws {
         let sequence = try published(Self.measuredWindow)
+        // R2 review: the unweighted v3 must reproduce exactly the results the architect reviewed, so the
+        // published order is pinned, not only its properties. First pass: every source in the window, once.
+        XCTAssertEqual(sequence, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 2, 6, 2, 7, 6, 2, 6, 2, 7, 2, 5, 4, 6, 2, 6, 2, 7, 2, 6, 2])
         var seen = Set<Int>()
         for (position, source) in sequence.enumerated() {
             if seen.contains(source) {
