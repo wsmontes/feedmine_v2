@@ -19,7 +19,7 @@ public struct FeedScreen: View {
         if let presentation = store.state.presentation {
             if #available(iOS 18, macOS 15, *) {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 16) {
+                    LazyVStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
                         ForEach(presentation.window.items) { card in
                             FeedCardView(card: card, onOpen: { store.open(card) })
                                 .contextMenu {
@@ -48,13 +48,17 @@ public struct FeedScreen: View {
                         }
                     }
                     .modifier(NativeFeedTargets())
+                    // U1-F: one FeedScreen for every device; wide displays keep a readable column
+                    // instead of stretching editorial text across the window.
+                    .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
+                    .frame(maxWidth: .infinity)
                 }
                 .modifier(NativeFeedViewport(capture: $capture, store: store))
                 .safeAreaInset(edge: .bottom) { FeedWorkBadge(work: store.state.work) }
             } else {
                 // macOS 14 renders local cards without automatic viewport capture.
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 16) {
+                    LazyVStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
                         ForEach(presentation.window.items) { card in
                             FeedCardView(card: card, onOpen: { store.open(card) })
                                 .contextMenu {
@@ -63,7 +67,9 @@ public struct FeedScreen: View {
                                 }
                         }
                     }
-                    .padding()
+                    .padding(FeedDesignTokens.Spacing.page)
+                    .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
+                    .frame(maxWidth: .infinity)
                 }
                 .safeAreaInset(edge: .bottom) { FeedWorkBadge(work: store.state.work) }
             }
@@ -93,10 +99,11 @@ struct FeedWorkBadge: View {
 
 private struct BadgeStyle: ViewModifier {
     func body(content: Content) -> some View {
-        content.font(.caption.weight(.medium))
-            .padding(.horizontal, 12).padding(.vertical, 8)
+        content.font(FeedDesignTokens.Typography.badge)
+            .padding(.horizontal, FeedDesignTokens.Spacing.normal)
+            .padding(.vertical, FeedDesignTokens.Spacing.compact)
             .background(.thinMaterial, in: Capsule())
-            .padding(.bottom, 8)
+            .padding(.bottom, FeedDesignTokens.Spacing.compact)
     }
 }
 

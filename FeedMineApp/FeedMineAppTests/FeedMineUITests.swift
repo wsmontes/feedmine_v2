@@ -83,4 +83,112 @@ final class FeedMineUITests: XCTestCase {
         reopened.lifetime = .keepAlways
         add(reopened)
     }
+
+    /// U1-P3/U1-P4/U1-P6: presenting and dismissing the existing source sheet, and changing the
+    /// system appearance, keep the same FeedAssociation — proven by the DEBUG delivery counters
+    /// not resetting — and keep the reading point. Navigation chrome must never rebuild the
+    /// session or lose the anchor.
+    @MainActor
+    func testU1ChromeAndAppearancePreserveAssociationAndReadingPoint() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        XCTAssertEqual(proof.label, "received=0 completed=0 backward=0", "restore/layout is not a native observation")
+        // Establish a reading point that is not the top of the feed.
+        scroll.swipeUp()
+        let delivered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label MATCHES %@", ".*completed=[1-9][0-9]*.*"), object: proof)
+        XCTAssertEqual(XCTWaiter.wait(for: [delivered], timeout: 20), .completed, "observed: \(proof.label)")
+        let counters = proof.label
+        let anchor = try XCTUnwrap(topmostCardIdentifier(app: app, scroll: scroll), "a card must be visible inside the viewport")
+        // U1-C: the source sheet is the one destination that exists today.
+        app.buttons["reader-sources"].tap()
+        XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 10))
+        app.buttons["Concluir"].tap()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+        XCTAssertEqual(proof.label, counters, "presenting a sheet must not replace the association")
+        XCTAssertEqual(topmostCardIdentifier(app: app, scroll: scroll), anchor, "presenting a sheet must keep the reading point")
+        // U1-P1/P4: an appearance change is presentation only.
+        XCUIDevice.shared.appearance = .dark
+        XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+        XCTAssertEqual(proof.label, counters, "an appearance change must not replace the association")
+        XCTAssertEqual(topmostCardIdentifier(app: app, scroll: scroll), anchor, "an appearance change must keep the reading point")
+        let dark = XCTAttachment(screenshot: app.screenshot())
+        dark.name = "u1-dark-appearance"
+        dark.lifetime = .keepAlways
+        add(dark)
+        XCUIDevice.shared.appearance = .light
+        XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+        XCTAssertEqual(proof.label, counters, "returning to the light appearance must not replace the association")
+    }
+
+    /// The card whose top edge sits inside the scroll viewport and is closest to it.
+    @MainActor
+    private func topmostCardIdentifier(app: XCUIApplication, scroll: XCUIElement) -> String? {
+        let cards = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"))
+        let top = scroll.frame.minY
+        return cards.allElementsBoundByIndex
+            .filter { $0.frame.height > 40 && $0.frame.minY >= top - 1 }
+            .min { $0.frame.minY < $1.frame.minY }?
+            .identifier
+    }
+
+    /// U1-P8: one FeedScreen serves iPhone and iPad. Portrait and landscape keep every visible
+    /// card inside the viewport (no horizontal overflow) and rotating never fabricates backward
+    /// movement.
+    @MainActor
+    func testU1iPadLayoutPortraitAndLandscape() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        assertCardsFitInsideViewport(app: app, scroll: scroll, name: "u1-wide-portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+        assertCardsFitInsideViewport(app: app, scroll: scroll, name: "u1-wide-landscape")
+        XCTAssertTrue(proof.label.hasSuffix("backward=0"),
+            "rotation must not fabricate backward movement; observed: \(proof.label)")
+        XCUIDevice.shared.orientation = .portrait
+    }
+
+    /// U1-P8 geometry: no card may be wider than the window (that is what a stretched or clipped
+    /// card looks like) and none may exceed the tokenised readable column. XCUITest rounds
+    /// accessibility frames outward, so the window comparison allows a small tolerance; the real
+    /// failures this guards against (a card stretched across an iPad, or a clipped row) are tens
+    /// of points wide, not fractions.
+    @MainActor
+    private func assertCardsFitInsideViewport(app: XCUIApplication, scroll: XCUIElement, name: String) {
+        let viewport = scroll.frame
+        XCTAssertGreaterThan(viewport.width, 0)
+        let window = app.windows.firstMatch.frame
+        let tolerance: CGFloat = 4
+        // FeedDesignTokens.Measurement.readableContentWidth; duplicated here because the UI test
+        // target does not link the package module.
+        let readableColumn: CGFloat = 700
+        let cards = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"))
+            .allElementsBoundByIndex
+        XCTAssertFalse(cards.isEmpty, "\(name): a card must be visible")
+        for card in cards {
+            XCTAssertLessThanOrEqual(card.frame.width, window.width + tolerance,
+                "\(name): a card is wider than the window (\(card.frame.width) vs \(window.width))")
+            XCTAssertLessThanOrEqual(card.frame.width, readableColumn + tolerance,
+                "\(name): a card exceeds the readable column (\(card.frame.width))")
+            XCTAssertGreaterThan(card.frame.width, 100, "\(name): a card collapsed")
+        }
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
 }

@@ -5,10 +5,18 @@ import FeedMineDomain
 @main
 struct FeedMineApp: App {
     @State private var composition = AppComposition()
-    @State private var showingSources = false
+    /// U1-C: one typed destination model for the destinations that actually exist today. No
+    /// booleans per future screen and no placeholder routes for U2–U4 work.
+    @State private var destination: ReaderDestination?
     @State private var searchQuery = ""
     @State private var readerError: String?
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private enum ReaderDestination: Identifiable, Equatable {
+        case sources
+        var id: Self { self }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -32,6 +40,10 @@ struct FeedMineApp: App {
                 }
             }
             .navigationTitle("FeedMine")
+            // U1-D: at accessibility text sizes a large title clips on a phone (observed as
+            // "FeedMir" in the AX5 screenshot). The inline title stays legible and VoiceOver
+            // still reads the product name in full.
+            .navigationBarTitleDisplayMode(dynamicTypeSize.isAccessibilitySize ? .inline : .automatic)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu("Feed") {
@@ -42,7 +54,7 @@ struct FeedMineApp: App {
                     }.accessibilityIdentifier("reader-contexts")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Fontes") { showingSources = true }.accessibilityIdentifier("reader-sources")
+                    Button("Fontes") { destination = .sources }.accessibilityIdentifier("reader-sources")
                 }
                 ToolbarItem(placement: .bottomBar) {
                     TextField("Buscar no conteúdo local", text: $searchQuery)
@@ -50,13 +62,16 @@ struct FeedMineApp: App {
                         .onSubmit { if let query = SearchContext(query: searchQuery) { switchContext(.search(query)) } }
                 }
             }
-            .sheet(isPresented: $showingSources) {
-                NavigationStack {
-                    FeedSourcePicker(options: composition.sourceOptions,
-                        onSearch: { query in Task { do { try await composition.searchSources(query) } catch { readerError = String(describing: error) } } },
-                        onToggle: { id in Task { do { try await composition.toggleSource(id) } catch { readerError = "Mantenha ao menos uma fonte selecionada." } } })
-                    .toolbar { Button("Concluir") { showingSources = false } }
-                    .task { try? await composition.searchSources("") }
+            .sheet(item: $destination) { destination in
+                switch destination {
+                case .sources:
+                    NavigationStack {
+                        FeedSourcePicker(options: composition.sourceOptions,
+                            onSearch: { query in Task { do { try await composition.searchSources(query) } catch { readerError = String(describing: error) } } },
+                            onToggle: { id in Task { do { try await composition.toggleSource(id) } catch { readerError = "Mantenha ao menos uma fonte selecionada." } } })
+                        .toolbar { Button("Concluir") { self.destination = nil } }
+                        .task { try? await composition.searchSources("") }
+                    }
                 }
             }
             .alert("Não foi possível atualizar", isPresented: Binding(get: { readerError != nil }, set: { if !$0 { readerError = nil } })) {

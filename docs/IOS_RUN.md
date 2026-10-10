@@ -155,3 +155,23 @@ Os resultados históricos acima pertencem ao gate 3R10. O código atual inclui m
 ## Fechamento Codex — 2026-10-09
 
 Branch `codex/omp-plan-execution`, código `f8eb67e`: fontes/contextos/busca local persistidos, cauda não vista transacional e bookmarks/uso de mídia integrados. Pacote final: 827 testes, zero falhas. Release no simulador compilou; resultados iOS e limitações estão em [relatório OMP/Codex](reviews/OMP_VALIDATION_2026-10-09.md). (Histórico: o catálogo estava em LFS com upload recusado. Desde `8c31b83` é o asset da release `catalog-v1`, instalado por `scripts/fetch-catalog.sh`; clone limpo verificado pelo OMP na rodada 4.) iPhone 14 Plus/15 indisponíveis; checklist físico e energia/térmica permanecem pendentes.
+
+
+## TestFlight e U1 — 2026-10-09
+
+O app iOS passou a ter distribuição real: bundle de Release `com.feedmine.app`, build 22 (pipeline)
+e build 23 (correção D1), ambos `VALID`/`IN_BETA_TESTING` no App Store Connect. Evidência executada
+em [FEEDMINE_V2_RELEASE_EVIDENCE.md](reviews/FEEDMINE_V2_RELEASE_EVIDENCE.md). O release é feito por
+`scripts/release-testflight.sh`, que recusa árvore suja, confere o `FeedmineGitSHA` gravado no
+archive contra `HEAD` e cria a tag local `ios/<versão>-build.<build>-<sha>`.
+
+O gate U1 (identidade visual do V1 + shell de navegação do V2) está em
+[FEEDMINE_V2_U1_REVIEW.md](reviews/FEEDMINE_V2_U1_REVIEW.md): `FeedMineUI` ganhou uma única
+autoridade de tokens (`FeedDesignTokens.swift`) — sem `CircadianEngine`, sem deriva por hora do dia
+e sem overlay de aparência —, nove imagesets de marca do V1 com nomes exatos, coluna de leitura de
+700 pt para iPad e o app host com um modelo tipado de destinos. Provas executadas: 842 testes do
+pacote, 18 unitários do app e 5 de UI, verdes em iPhone 16 e iPad Pro 11-inch (iOS 26.5).
+
+Limitação de ambiente registrada: neste runtime (iOS 26.5) `simctl ui appearance` não altera a
+aparência de nenhum app — o próprio Settings permaneceu claro com o dispositivo em `dark` —, então a
+adaptação a claro/escuro é provada por resolução de `UITraitCollection` nos testes, não por captura.

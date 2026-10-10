@@ -1,5 +1,7 @@
 import XCTest
 import Foundation
+import UIKit
+import SwiftUI
 import Synchronization
 import CryptoKit
 import FeedMinePersistence
@@ -360,5 +362,59 @@ final class CompositionTests: XCTestCase {
         try association.install(.init(presentation: reverse))
         XCTAssertEqual(association.store.state.presentation?.window.anchor, first.window.anchor)
         await association.close()
+    }
+
+    /// U1-P2: the approved V1 branding imagesets resolve by their exact catalog names from the
+    /// application bundle, and no palette-constructed name resolves. V1 built names such as
+    /// `Placeholder-Article-<palette>` that did not exist in its own catalog; U1 must not
+    /// reproduce that, so the exact names live in the token authority and nowhere else.
+    @MainActor
+    func testU1ApprovedBrandingAssetsResolveFromTheApplicationBundle() throws {
+        let approved = ["Wordmark-Light", "Wordmark-Dark", "Symbol-Gradient", "Symbol-Ink",
+            "Splash-Dark", "Placeholder-Article", "Placeholder-Podcast", "Placeholder-Forum", "Placeholder-Video"]
+        for name in approved {
+            XCTAssertNotNil(UIImage(named: name), "approved imageset must resolve: \(name)")
+        }
+        for constructed in ["Placeholder-Article-amber", "Placeholder-Video-blue", "Wordmark-Light-Dark"] {
+            XCTAssertNil(UIImage(named: constructed), "no constructed asset name may resolve: \(constructed)")
+        }
+        // U1 does not touch the distribution icon or its iPad variants. App icons are not named
+        // images, so the proof reads the built Info.plist instead of UIImage(named: "AppIcon").
+        let icons = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any])
+        let primary = try XCTUnwrap(icons["CFBundlePrimaryIcon"] as? [String: Any])
+        XCTAssertEqual(primary["CFBundleIconName"] as? String, "AppIcon")
+        XCTAssertEqual(primary["CFBundleIconFiles"] as? [String], ["AppIcon60x60"])
+        // `CFBundleIcons~ipad` is not readable through Bundle on an iPhone-idiom process, so the
+        // iPad variant is proven by its bundled file, which has existed since build 22.
+        XCTAssertNotNil(Bundle.main.path(forResource: "AppIcon76x76@2x~ipad", ofType: "png"),
+            "the iPad app icon variant must stay in the bundle")
+        XCTAssertEqual(FeedDesignTokens.AssetName.wordmark(for: .light), "Wordmark-Light")
+        XCTAssertEqual(FeedDesignTokens.AssetName.wordmark(for: .dark), "Wordmark-Dark")
+        XCTAssertEqual(FeedDesignTokens.AssetName.symbolGradient, "Symbol-Gradient")
+    }
+
+    /// U1-P1: the token palette is adaptive by construction. The iOS 26.5 simulator does not
+    /// apply `simctl ui appearance` to any app (the system Settings app also stayed light while
+    /// the device reported dark), so appearance adaptation is proven by resolving the tokens
+    /// under both trait collections instead of by a screenshot.
+    @MainActor
+    func testU1TokenPaletteAdaptsToAppearanceWithoutAnOverlay() throws {
+        let light = UITraitCollection(userInterfaceStyle: .light)
+        let dark = UITraitCollection(userInterfaceStyle: .dark)
+        func resolved(_ color: Color, _ traits: UITraitCollection) -> [CGFloat] {
+            let values = UIColor(color).resolvedColor(with: traits).cgColor.components ?? []
+            return values.map { ($0 * 1000).rounded() / 1000 }
+        }
+        for (name, token) in [("cardSurface", FeedDesignTokens.Palette.cardSurface),
+            ("mediaPlaceholder", FeedDesignTokens.Palette.mediaPlaceholder)] {
+            let lightValue = resolved(token, light)
+            let darkValue = resolved(token, dark)
+            XCTAssertNotEqual(lightValue, darkValue, "\(name) must adapt to the appearance")
+            XCTAssertFalse(lightValue.isEmpty, "\(name) must resolve to real components")
+        }
+        // The text roles follow the same system labels, so contrast comes from the system rather
+        // than from a darkening overlay.
+        XCTAssertNotEqual(resolved(.primary, light), resolved(.primary, dark))
+        XCTAssertNotEqual(resolved(FeedDesignTokens.Palette.accent, light), resolved(FeedDesignTokens.Palette.accent, dark))
     }
 }

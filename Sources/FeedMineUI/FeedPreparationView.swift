@@ -16,13 +16,18 @@ public struct FeedPreparationView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: FeedDesignTokens.Spacing.deck) {
+            Image(FeedDesignTokens.AssetName.symbolGradient)
+                .resizable()
+                .scaledToFit()
+                .frame(width: FeedDesignTokens.Measurement.deckSymbolWidth)
+                .accessibilityHidden(true)
             header
             headlineDeck
-                .frame(maxWidth: 420, minHeight: 220)
+                .frame(maxWidth: FeedDesignTokens.Measurement.headlineDeckWidth, minHeight: 220)
             sourceCloud
         }
-        .padding(24)
+        .padding(FeedDesignTokens.Spacing.page)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.spring(response: 0.55, dampingFraction: 0.78), value: progress)
         .accessibilityElement(children: .ignore)
@@ -30,13 +35,13 @@ public struct FeedPreparationView: View {
     }
 
     private var header: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: FeedDesignTokens.Spacing.tight) {
             Text("Indo atrás do que vale a pena ler")
-                .font(.title2.weight(.semibold))
+                .font(FeedDesignTokens.Typography.pageTitle)
                 .multilineTextAlignment(.center)
             Text(verbatim: status)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(FeedDesignTokens.Typography.label)
+                .foregroundStyle(FeedDesignTokens.Palette.secondaryText)
                 .contentTransition(.numericText())
         }
     }
@@ -76,13 +81,13 @@ public struct FeedPreparationView: View {
     }
 
     private var sourceCloud: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: FeedDesignTokens.Spacing.compact) {
             ForEach(progress.sources.prefix(8)) { source in
                 SourceChip(name: source.name, state: source.state, animate: !reduceMotion)
                     .transition(.scale.combined(with: .opacity))
             }
         }
-        .frame(maxWidth: 520)
+        .frame(maxWidth: FeedDesignTokens.Measurement.sourceCloudWidth)
     }
 
     private var accessibilitySummary: String {
@@ -97,13 +102,13 @@ private struct HeadlineCard: View {
     let emphasized: Bool
     var body: some View {
         Text(verbatim: text)
-            .font(emphasized ? .headline : .subheadline)
+            .font(emphasized ? FeedDesignTokens.Typography.cardTitle : FeedDesignTokens.Typography.label)
             .lineLimit(3)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(.background, in: RoundedRectangle(cornerRadius: 14))
-            .shadow(color: .black.opacity(emphasized ? 0.18 : 0.08), radius: emphasized ? 12 : 6, y: 4)
+            .padding(FeedDesignTokens.Spacing.card)
+            .background(.background, in: RoundedRectangle(cornerRadius: FeedDesignTokens.Radius.overlay))
+            .shadow(color: FeedDesignTokens.Palette.shadow.opacity(emphasized ? 0.18 : 0.08), radius: emphasized ? 12 : 6, y: 4)
     }
 }
 
@@ -117,8 +122,9 @@ private struct SourceChip: View {
         } icon: {
             Image(systemName: icon)
         }
-        .font(.caption.weight(.medium))
-        .padding(.horizontal, 10).padding(.vertical, 6)
+        .font(FeedDesignTokens.Typography.badge)
+        .padding(.horizontal, FeedDesignTokens.Spacing.compact)
+        .padding(.vertical, FeedDesignTokens.Spacing.tight)
         .background(tint.opacity(0.15), in: Capsule())
         .foregroundStyle(tint)
         .phaseAnimator(state == .contacting && animate ? [1.0, 0.55] : [1.0]) { view, phase in
@@ -135,10 +141,10 @@ private struct SourceChip: View {
     }
     private var tint: Color {
         switch state {
-        case .contacting: return .accentColor
-        case .contributed: return .green
-        case .quiet: return .secondary
-        case .unreachable: return .orange
+        case .contacting: return FeedDesignTokens.Palette.accent
+        case .contributed: return FeedDesignTokens.Palette.statusPositive
+        case .quiet: return FeedDesignTokens.Palette.secondaryText
+        case .unreachable: return FeedDesignTokens.Palette.statusCaution
         }
     }
 }

@@ -9,6 +9,12 @@ import FeedMineRuntime
 public struct FeedCardView: View {
     private let card: PresentationCard
     private let onOpen: (@MainActor () -> Void)?
+    /// U1-D: at accessibility text sizes the compact row becomes a vertical arrangement instead
+    /// of clipping text into a fixed-width thumbnail column.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The row thumbnail follows the reader's text size; the Runtime decode slot stays at the
+    /// reference size (reported as a limitation rather than changing media policy in this gate).
+    @ScaledMetric(relativeTo: .body) private var thumbnailSide = FeedDesignTokens.Measurement.compactThumbnailBase
 
     public init(card: PresentationCard, onOpen: (@MainActor () -> Void)? = nil) {
         self.card = card
@@ -29,44 +35,54 @@ public struct FeedCardView: View {
     @ViewBuilder private var content: some View {
         switch card.layout {
         case .hero:
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.compact) {
                 visual(aspectRatio: card.mediaAspectRatio ?? 16.0 / 9.0)
                     .frame(maxWidth: .infinity)
                 text
             }
             .modifier(CardChrome(id: card.id.rawValue.uuidString))
         case .thumbnail:
-            HStack(alignment: .top, spacing: 12) {
-                text
-                Spacer(minLength: 0)
-                visual(aspectRatio: 1)
-                    .frame(width: 88, height: 88)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.normal) {
+                    text
+                    visual(aspectRatio: 1)
+                        .frame(width: thumbnailSide, height: thumbnailSide, alignment: .leading)
+                }
+                .modifier(CardChrome(id: card.id.rawValue.uuidString))
+            } else {
+                HStack(alignment: .top, spacing: FeedDesignTokens.Spacing.normal) {
+                    text
+                    Spacer(minLength: 0)
+                    visual(aspectRatio: 1)
+                        .frame(width: thumbnailSide, height: thumbnailSide)
+                }
+                .modifier(CardChrome(id: card.id.rawValue.uuidString))
             }
-            .modifier(CardChrome(id: card.id.rawValue.uuidString))
         case .textOnly:
             text.modifier(CardChrome(id: card.id.rawValue.uuidString))
         }
     }
 
     private var text: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.compact) {
             if let title = card.title {
                 Text(verbatim: title)
-                    .font(card.layout == .hero ? .title2 : .headline)
+                    .font(card.layout == .hero ? FeedDesignTokens.Typography.cardTitleFeatured : FeedDesignTokens.Typography.cardTitle)
             }
             if let text = card.primaryText {
                 Text(verbatim: text)
+                    .font(FeedDesignTokens.Typography.body)
                     .lineLimit(card.layout == .textOnly ? 8 : 4)
             }
             if let source = card.sourceDisplayName {
                 Text(verbatim: source)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(FeedDesignTokens.Typography.metadata)
+                    .foregroundStyle(FeedDesignTokens.Palette.secondaryText)
             }
             if let provider = card.providerDisplayName {
                 Text(verbatim: provider)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(FeedDesignTokens.Typography.metadata)
+                    .foregroundStyle(FeedDesignTokens.Palette.secondaryText)
             }
             if let timestamp = card.timestamp {
                 HStack {
@@ -77,8 +93,8 @@ public struct FeedCardView: View {
                     }
                     Text(timestamp.value, format: .dateTime.day().month().year().hour().minute())
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(FeedDesignTokens.Typography.metadata)
+                .foregroundStyle(FeedDesignTokens.Palette.secondaryText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -86,7 +102,7 @@ public struct FeedCardView: View {
 
     private func visual(aspectRatio: Double) -> some View {
         Rectangle()
-            .fill(.quaternary)
+            .fill(FeedDesignTokens.Palette.mediaPlaceholder)
             .aspectRatio(aspectRatio, contentMode: .fit)
             .overlay {
                 if let image = card.image {
@@ -95,7 +111,7 @@ public struct FeedCardView: View {
                         .scaledToFill()
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: FeedDesignTokens.Radius.media))
             .accessibilityHidden(true)
     }
 }
@@ -105,8 +121,8 @@ private struct CardChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
+            .padding(FeedDesignTokens.Spacing.card)
+            .background(FeedDesignTokens.Palette.cardSurface, in: RoundedRectangle(cornerRadius: FeedDesignTokens.Radius.card))
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(id)
     }
