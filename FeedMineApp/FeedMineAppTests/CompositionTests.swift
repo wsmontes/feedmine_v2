@@ -383,6 +383,52 @@ final class CompositionTests: XCTestCase {
         XCTAssertTrue(FeedAssociation.mayShow(revision(equivalent), for: key, selectionVersion: 7))
     }
 
+    /// R2 review: the mapping is exact, never a threshold. A version this build does not know must not be
+    /// silently treated as v3, and v2 must keep the behavior its Editions were published under.
+    func testSequencingVersionMappingIsExplicit() throws {
+        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 1)), .recencyDescending)
+        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 2)), .recencyAlternatingSources)
+        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 3)), .recencyAlternatingSourcesBySupplyShare)
+        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 4)), .recencyDescending,
+            "an unknown future version is not v3")
+        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 99)), .recencyDescending)
+    }
+
+    /// R2-D2/R2-D8: a behavior change gets its own EditorialRevision identity. `PublicationStore`
+    /// rejects a second Edition whose `editorial_revision_id` matches an existing row with different
+    /// revision content, so the identity must carry every version that changes the behavior — otherwise
+    /// the next publication on an installation that already holds a v2 Edition would fail.
+    func testASequencingBehaviorChangeGetsItsOwnEditorialRevisionIdentity() throws {
+        let key = ContextKey(request: .main)
+        let encoded = try JSONEncoder().encode(key).base64EncodedString()
+        // The derivation an existing installation's v2 Edition was stored under.
+        let storedUnderV2 = LegacyCatalogImport.stableUUID(namespace: "feedmine.editorial.context",
+            key: encoded + "|" + "2")
+        // The derivation this build uses for a v3 Edition of the same context and selection.
+        let storedUnderV3 = LegacyCatalogImport.stableUUID(namespace: "feedmine.editorial.context",
+            key: encoded + "|" + "2" + "|scoring:1|sequencing:3")
+        XCTAssertNotEqual(storedUnderV2, storedUnderV3,
+            "a v3 Edition must not reuse the identity a v2 Edition was persisted under")
+    }
+
+    /// R2: a fresh session declares the proportional sequencing behavior, and a v2 revision stays usable
+    /// for the Editions already published under it.
+    func testFreshSessionDeclaresSupplyShareSequencingAndStillAcceptsV2Editions() async throws {
+        let root = root()
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        XCTAssertEqual(association.policy.sequencingPolicyVersion, PolicyVersion(rawValue: 3))
+        XCTAssertEqual(association.policy.sequencing, .recencyAlternatingSourcesBySupplyShare)
+        let v2 = EditorialRevision(id: EditorialRevisionID(), contextKey: ContextKey(request: .main),
+            catalogGeneration: CatalogGeneration(rawValue: 1), userSelectionVersion: PolicyVersion(rawValue: 2),
+            eligibilityPolicyVersion: PolicyVersion(rawValue: 2), scoringPolicyVersion: PolicyVersion(rawValue: 1),
+            sequencingPolicyVersion: PolicyVersion(rawValue: 2), exposurePolicyVersion: PolicyVersion(rawValue: 2),
+            selectionSchemaVersion: SelectionSchemaVersion(rawValue: 1))
+        XCTAssertTrue(FeedAssociation.mayShow(v2, for: ContextKey(request: .main), selectionVersion: 2),
+            "an Edition published under v2 is still shown, and keeps running under v2")
+        await association.close()
+    }
+
     /// T8: a saved smart bookmark is offered by the filter sheet with the identity it activates, and choosing
     /// it moves the session there through T6's transition — no second feed engine, no draft side effect.
     func testT8ASavedPresetIsOfferedAndActivatesItsOwnContext() async throws {

@@ -99,7 +99,7 @@ public struct SelectionEngine: Sendable {
         }
         let ordered: [Candidate]
         switch policy.sequencing {
-        case .recencyDescending, .recencyAlternatingSources:
+        case .recencyDescending, .recencyAlternatingSources, .recencyAlternatingSourcesBySupplyShare:
             ordered = eligible.sorted { left, right in
                 let leftWeight = weight(left), rightWeight = weight(right)
                 if leftWeight != rightWeight { return leftWeight > rightWeight }
@@ -114,12 +114,28 @@ public struct SelectionEngine: Sendable {
             }
         }
         // PD-4: a single-source context is exempt by definition; other contexts alternate when the
-        // resolved sequencing behavior says so (a behavior change is a new EditorialRevision).
+        // resolved sequencing behavior says so (a behavior change is a new EditorialRevision, and an
+        // Edition restored from disk keeps the behavior its revision names).
+        // The supply-share accounting counts only the sources this context selected: a candidate may carry
+        // memberships the reader never asked for, and those must not invent representativeness. PD-4 keeps
+        // using the candidate's full source set.
+        let countedSources: Set<SourceID>?
+        switch policy.eligibility {
+        case .structuralOnly: countedSources = nil
+        case .selectedSources(let selected): countedSources = selected
+        }
         let alternated: (placed: [Candidate], held: [Candidate])
-        if policy.sequencing == .recencyAlternatingSources, !Self.isSingleSource(plan.context.request) {
-            alternated = SourceAlternation.apply(ordered, after: neighbor)
-        } else {
+        if Self.isSingleSource(plan.context.request) {
             alternated = (ordered, [])
+        } else {
+            switch policy.sequencing {
+            case .recencyAlternatingSources:
+                alternated = SourceAlternation.apply(ordered, after: neighbor)
+            case .recencyAlternatingSourcesBySupplyShare:
+                alternated = SourceAlternation.applyBySupplyShare(ordered, after: neighbor, countingSources: countedSources)
+            case .recencyDescending:
+                alternated = (ordered, [])
+            }
         }
         return SelectionResult(editorialRevision: plan.revision, orderedCandidates: alternated.placed,
             supplyReport: Self.report(window: window, held: alternated.held, placedAny: !alternated.placed.isEmpty))

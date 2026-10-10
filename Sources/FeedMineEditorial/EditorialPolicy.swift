@@ -14,8 +14,17 @@ public struct ResolvedSelectionPolicy: Hashable, Sendable {
     }
     public enum SequencingBehavior: Hashable, Sendable {
         case recencyDescending
-        /// Recency order with PD-4 source alternation: never two adjacent cards sharing a source.
+        /// Sequencing v2: recency order with PD-4 source alternation — never two adjacent cards sharing a
+        /// source, taking the earliest compatible candidate. An Edition published under v2 keeps this
+        /// behavior when it is restored and read forward; changing it in place would re-run old Editions
+        /// under a rule they were never published with.
         case recencyAlternatingSources
+        /// Sequencing v3 (R2-D1): the same PD-4 alternation, but the next source is the one that has
+        /// consumed the smallest share of what this window offers it (recency breaks the tie). PD-4 alone
+        /// produced `A B A C A` on a real window holding twelve sources; measured, this rule meets every
+        /// source in the window before repeating one, keeps a reserve of the scarce sources PD-4 needs to
+        /// keep publishing, and places as many cards as the greedy rule did.
+        case recencyAlternatingSourcesBySupplyShare
     }
     public enum ExposureBehavior: Hashable, Sendable {
         case none

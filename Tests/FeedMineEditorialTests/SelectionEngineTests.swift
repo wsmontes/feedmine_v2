@@ -200,12 +200,32 @@ final class SelectionEngineTests: XCTestCase {
 
     func testPD4NoTwoAdjacentCardsShareASourceWhileAlternativesExist() throws {
         let plan = try plan()
-        // Recency order: A1 A2 A3 B4 C5 — speed of one source must not produce a run.
+        // Sequencing v2 keeps the order it was published with: recency order, earliest compatible
+        // candidate. A1 B4 A2 C5 A3 — the shape R2 replaced with least-used, retained for restored
+        // Editions that name v2.
         let input = [sourced(1, time: 10, 1), sourced(2, time: 9, 1), sourced(3, time: 8, 1), sourced(4, time: 7, 2), sourced(5, time: 6, 3)]
         let result = try SelectionEngine().select(plan: plan, policy: alternating(plan.revision), window: window(input), exposure: nil, after: nil)
         XCTAssertEqual(origins(result), [0, 3, 1, 4, 2].map { input[$0].originRecordID })
         let sequence = result.orderedCandidates
         for (a, b) in zip(sequence, sequence.dropFirst()) { XCTAssertTrue(a.sourceIDs.isDisjoint(with: b.sourceIDs)) }
+    }
+    func testV3LeastUsedServesEverySourceBeforeReturningToTheFirst() throws {
+        let plan = try plan()
+        let input = [sourced(1, time: 10, 1), sourced(2, time: 9, 1), sourced(3, time: 8, 1), sourced(4, time: 7, 2), sourced(5, time: 6, 3)]
+        let p = alternating(plan.revision)
+        // The plan's own revision names the sequencing version; only the behavior differs here.
+        let v3 = ResolvedSelectionPolicy(contextKey: p.contextKey, userSelectionVersion: p.userSelectionVersion,
+            eligibilityPolicyVersion: p.eligibilityPolicyVersion, scoringPolicyVersion: p.scoringPolicyVersion,
+            sequencingPolicyVersion: plan.revision.sequencingPolicyVersion, exposurePolicyVersion: p.exposurePolicyVersion,
+            selectionSchemaVersion: p.selectionSchemaVersion, eligibility: p.eligibility, scoring: p.scoring,
+            sequencing: .recencyAlternatingSourcesBySupplyShare, exposure: p.exposure)
+        let result = try SelectionEngine().select(plan: plan, policy: v3, window: window(input), exposure: nil, after: nil)
+        // A1 B4 C5 A2, with A3 held: nothing else remains to separate it.
+        XCTAssertEqual(origins(result), [0, 3, 4, 1].map { input[$0].originRecordID })
+        XCTAssertFalse(result.supplyReport.exhausted)
+        for (a, b) in zip(result.orderedCandidates, result.orderedCandidates.dropFirst()) {
+            XCTAssertTrue(a.sourceIDs.isDisjoint(with: b.sourceIDs))
+        }
     }
     func testPD4ViolatingCardsAreHeldNotPublishedAndCursorRewindsToThem() throws {
         let plan = try plan()

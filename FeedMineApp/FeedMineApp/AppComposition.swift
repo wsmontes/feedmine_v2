@@ -976,6 +976,17 @@ final class FeedAssociation {
             && revision.scoringPolicyVersion == PolicyVersion(rawValue: max(1, scoringVersion))
     }
 
+    /// The exact behavior each sequencing policy version names. Explicit, never a threshold: a version this
+    /// build does not know must not be silently treated as v3 (R2 review, 2026-10-10). Version 1 and any
+    /// unknown version keep the recency order the earliest revisions were published under.
+    static func sequencingBehavior(for version: PolicyVersion) -> ResolvedSelectionPolicy.SequencingBehavior {
+        switch version.rawValue {
+        case 2: return .recencyAlternatingSources
+        case 3: return .recencyAlternatingSourcesBySupplyShare
+        default: return .recencyDescending
+        }
+    }
+
     static var resources: FeedRunwayDriverResources {
         .init(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 32,
             readyProbeBound: 32, readyProbeCeiling: 256, forwardAdvanceProbeBound: 256,
@@ -1013,20 +1024,31 @@ final class FeedAssociation {
         // T11: a curated feed's ranking is part of the behavior the Edition was published under, so an edit to
         // the recipe (which keeps the identity) is a new revision and never reuses an older checkpoint.
         let scoringPolicy = PolicyVersion(rawValue: max(1, scoringVersion))
-        // Sequencing v2 = PD-4 source alternation; exposure v2 = PD-1 edited articles reappear.
-        // A behavior change is a new EditorialRevision; a restored Edition keeps its own behavior.
+        // Sequencing v2 = PD-4 source alternation; v3 = the same rule plus least-used fairness inside the
+        // examined window (R2, 2026-10-10); exposure v2 = PD-1 edited articles reappear.
+        // A behavior change is a new EditorialRevision, and a restored Edition keeps the behavior its own
+        // revision names — so v2 and v3 resolve to different cases, never to a re-defined one.
         let alternating = PolicyVersion(rawValue: 2)
+        let sequencingVersion = PolicyVersion(rawValue: 3)
         let revision = try saved?.edition.editorialRevision ?? EditorialRevision(
+            // The revision identity carries every version that changes what an Edition was published
+            // under. `PublicationStore.insertEditionAndFirstSegment` rejects a second Edition whose
+            // `editorial_revision_id` matches an existing row but whose revision content differs
+            // (`editorialRevisionConflict`), so a behavior change that keeps the identity would make the
+            // next publication fail on an installation that already has an Edition for this context.
+            // Adding the scoring and sequencing versions keeps v2 Editions exactly as they were and gives
+            // a v3 Edition its own stable identity — no checkpoint is cleared, no history is rewritten.
             id: .init(rawValue: LegacyCatalogImport.stableUUID(namespace: "feedmine.editorial.context",
-                key: try JSONEncoder().encode(contextKey).base64EncodedString() + "|" + String(selectionVersion))),
+                key: try JSONEncoder().encode(contextKey).base64EncodedString() + "|" + String(selectionVersion)
+                    + "|scoring:" + String(scoringPolicy.rawValue)
+                    + "|sequencing:" + String(sequencingVersion.rawValue))),
             contextKey: context.key, catalogGeneration: .init(rawValue: 1), userSelectionVersion: PolicyVersion(rawValue: selectionVersion),
-            eligibilityPolicyVersion: alternating, scoringPolicyVersion: scoringPolicy, sequencingPolicyVersion: alternating,
+            eligibilityPolicyVersion: alternating, scoringPolicyVersion: scoringPolicy, sequencingPolicyVersion: sequencingVersion,
             exposurePolicyVersion: alternating, selectionSchemaVersion: .init(rawValue: 1))
         guard let plan = FeedPlan(context: context, revision: revision) else {
             throw FeedRunwayDriverError.policyContextMismatch
         }
-        let sequencing: ResolvedSelectionPolicy.SequencingBehavior =
-            revision.sequencingPolicyVersion >= alternating ? .recencyAlternatingSources : .recencyDescending
+        let sequencing = Self.sequencingBehavior(for: revision.sequencingPolicyVersion)
         let policy = ResolvedSelectionPolicy(contextKey: revision.contextKey,
             userSelectionVersion: revision.userSelectionVersion, eligibilityPolicyVersion: revision.eligibilityPolicyVersion,
             scoringPolicyVersion: revision.scoringPolicyVersion, sequencingPolicyVersion: revision.sequencingPolicyVersion,
