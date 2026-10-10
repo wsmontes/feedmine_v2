@@ -191,3 +191,22 @@ guard dos cards do feed; a tela `Salvos` usa só a autoridade de bookmark existe
 por data publicada, sem tabela nova); um único `enum` de apresentação governa as sheets; o seletor de
 fontes mostra selecionadas primeiro, com contagem e estado vazio. Provas: 842 testes do pacote,
 19 unitários e 6 de UI, 0 falhas em iPhone 16 / iOS 26.5.
+
+
+## U3 (fatia) — contexto ativo visível (build 26)
+
+Primeira fatia do U3, entregue sozinha e verificada: contexto diferente do principal (uma fonte ou uma
+busca) agora diz o que está sendo mostrado e oferece "Mostrar tudo" para voltar. Antes, uma busca ou
+um contexto de fonte eram indistinguíveis do feed principal a não ser pelo conteúdo, e o único retorno
+era o menu Feed. É chrome de tela, portanto vive no app host (`FeedMineApp.swift`), alimentado por
+`composition.currentContext` — nenhum tipo de fronteira, engine ou projeção foi alterado.
+
+Prova: `testU3ActiveContextIsVisibleAndClearable` (barra ausente no principal; presente com o nome da
+fonte; "Mostrar tudo" volta ao principal). Suíte iOS: 20 unitários + 7 de UI, 0 falhas.
+
+O restante do U3 continua pendente e depende do arquiteto: superfície de busca apresentável, filtros
+realmente suportados, pull-to-refresh com transição segura de Edition (o arquiteto o marcou como
+*condicionado*: a intenção explícita não pode destruir a Edition visível enquanto prepara a sucessora)
+e indicadores honestos de offline — hoje o fato de rede existe na composição apenas para a política de
+mídia (`NetworkPathObserver.shared.current` em `DeviceMediaConditions`), então expô-lo à UI exige
+decisão sobre o estado apresentado.

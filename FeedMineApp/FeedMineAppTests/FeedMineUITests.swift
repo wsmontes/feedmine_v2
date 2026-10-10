@@ -178,6 +178,28 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertEqual(proof.label, counters, "reading a saved article must not rebuild the association")
     }
 
+    /// U3: the active context is stated and has a way back. A source or search context used to be
+    /// indistinguishable from the main feed apart from its contents.
+    @MainActor
+    func testU3ActiveContextIsVisibleAndClearable() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let bar = app.otherElements["reader-context-bar"]
+        XCTAssertFalse(bar.exists, "the main context needs no bar")
+        app.buttons["reader-contexts"].tap()
+        app.buttons["BBC Science"].tap()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15))
+        XCTAssertTrue(bar.waitForExistence(timeout: 10), "a source context must state which source is shown")
+        XCTAssertEqual(app.staticTexts["reader-context-label"].label, "BBC Science")
+        app.buttons["reader-context-clear"].tap()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15))
+        XCTAssertFalse(bar.waitForExistence(timeout: 3), "clearing returns to the main context")
+    }
+
     /// The card whose top edge sits inside the scroll viewport and is closest to it.
     @MainActor
     private func topmostCardIdentifier(app: XCUIApplication, scroll: XCUIElement) -> String? {

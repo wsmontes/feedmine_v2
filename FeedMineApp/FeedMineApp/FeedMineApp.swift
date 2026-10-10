@@ -54,6 +54,7 @@ struct FeedMineApp: App {
                     ProgressView("Abrindo feed local")
                 }
             }
+            .safeAreaInset(edge: .top, spacing: 0) { contextBar }
             .navigationTitle("FeedMine")
             // U1-D: at accessibility text sizes a large title clips on a phone (observed as
             // "FeedMir" in the AX5 screenshot). The inline title stays legible and VoiceOver
@@ -119,5 +120,45 @@ struct FeedMineApp: App {
     }
     private func switchContext(_ request: FeedContextRequest) {
         Task { do { try await composition.selectContext(request) } catch { readerError = String(describing: error) } }
+    }
+
+    /// U3: a non-main context used to look like the main feed with no explanation and no way back
+    /// except the Feed menu. The bar states which context is shown and clears it.
+    @ViewBuilder private var contextBar: some View {
+        if let label = activeContextLabel {
+            HStack(spacing: 8) {
+                Image(systemName: currentContextSymbol)
+                    .accessibilityHidden(true)
+                Text(verbatim: label)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .accessibilityIdentifier("reader-context-label")
+                Spacer(minLength: 0)
+                Button("Mostrar tudo") { switchContext(.main) }
+                    .font(.subheadline.weight(.medium))
+                    .accessibilityIdentifier("reader-context-clear")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.thinMaterial)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("reader-context-bar")
+        }
+    }
+
+    private var activeContextLabel: String? {
+        switch composition.currentContext {
+        case .main: return nil
+        case .source(let id): return composition.feeds.first { $0.sourceID == id }?.displayName ?? "Uma fonte"
+        case .search(let context): return "Busca: \(context.query)"
+        }
+    }
+
+    private var currentContextSymbol: String {
+        switch composition.currentContext {
+        case .main: return "square.grid.2x2"
+        case .source: return "dot.radiowaves.left.and.right"
+        case .search: return "magnifyingglass"
+        }
     }
 }
