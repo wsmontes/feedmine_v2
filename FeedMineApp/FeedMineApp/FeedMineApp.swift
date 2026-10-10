@@ -20,6 +20,7 @@ struct FeedMineApp: App {
         case sources
         case bookmarkBoxes
         case collections
+        case settings
         case filters
         case reader(URL)
         var id: String {
@@ -27,6 +28,7 @@ struct FeedMineApp: App {
             case .sources: return "sources"
             case .bookmarkBoxes: return "bookmarkBoxes"
             case .collections: return "collections"
+            case .settings: return "settings"
             case .filters: return "filters"
             case .reader(let url): return "reader:" + url.absoluteString
             }
@@ -45,6 +47,11 @@ struct FeedMineApp: App {
     /// T9: the link a card asked to share, presented by the platform surface, and the full player.
     @State private var sharedLink: SharedLink?
     @State private var showsPlayer = false
+    /// T10: the settings surface and the appearance the reader's preferences imply. The appearance is refreshed
+    /// when the reader changes something, when the app comes back, and at launch — a clock moving the palette
+    /// never rebuilds a session.
+    @State private var settingsStore: ReaderSettingsStore?
+    @State private var appearance: ReaderAppearance = .standard
     @State private var promptName = ""
 
     /// V1's three library prompts: collect the current sources, save the current context, delete a saved one.
@@ -86,6 +93,7 @@ struct FeedMineApp: App {
                 Group {
                     if let association = composition.association {
                         FeedScreen(store: association.store,
+                            appearance: appearance,
                             statusChip: AnyView(contextChip(association)),
                             lens: AnyView(filterLens),
                             hasSources: composition.hasSelectedSources,
@@ -125,7 +133,9 @@ struct FeedMineApp: App {
                 }
                 .toolbar(.hidden, for: .navigationBar)
                 .sheet(item: $presentation, onDismiss: {
-                    // A selection made in the source surface is adopted when it closes, never mid-list.
+                    // A selection made in the source surface is adopted when it closes, never mid-list, and the
+                    // appearance is re-derived because the settings surface may have changed it.
+                    appearance = composition.currentAppearance()
                     Task { await composition.adoptSelectionChange() }
                 }) { presentation in
                     switch presentation {
@@ -178,6 +188,17 @@ struct FeedMineApp: App {
                                     }
                             } else {
                                 ProgressView("Abrindo as caixas de salvos")
+                            }
+                        }
+                    case .settings:
+                        NavigationStack {
+                            if let store = settingsStore {
+                                ReaderSettingsView(store: store, appearance: appearance,
+                                    period: ReaderPeriod.from(hour: Calendar.current.component(.hour, from: Date())),
+                                    storageDescription: composition.libraryStorageDescription(),
+                                    onClose: { self.presentation = nil })
+                            } else {
+                                ProgressView("Abrindo os ajustes")
                             }
                         }
                     case .collections:
@@ -269,6 +290,8 @@ struct FeedMineApp: App {
                 sourcesStore = composition.makeSourceManagementStore()
                 boxesStore = composition.makeBookmarkBoxesStore()
                 collectionsStore = composition.makeCollectionsStore()
+                settingsStore = composition.makeReaderSettingsStore()
+                appearance = composition.currentAppearance()
                 // T5: the reader's chrome reports destinations; the host presents the ones it implements.
                 composition.onNavigate = { destination in
                     switch destination {
@@ -278,6 +301,7 @@ struct FeedMineApp: App {
                     case .saved: savedPath.append(.saved)
                     case .bookmarkBoxes: presentation = .bookmarkBoxes
                     case .collections: presentation = .collections
+                    case .settings: presentation = .settings
                     case .collectionFromContextPrompt:
                         promptName = ""
                         libraryPrompt = .collectSources
@@ -298,7 +322,12 @@ struct FeedMineApp: App {
             }
             .onChange(of: phase) { _, next in
                 if next == .background { Task { await composition.background() } }
-                if next == .active { Task { await composition.foreground() } }
+                if next == .active {
+                    // T10: the hour can move the palette, so the appearance is re-derived when the reader comes
+                    // back. The feed's own identity is untouched.
+                    appearance = composition.currentAppearance()
+                    Task { await composition.foreground() }
+                }
             }
         }
     }

@@ -966,3 +966,45 @@ OPML document **5/5**, import/export **6/6**.
 circadian, desempenho, leitura, armazenamento, sobre), the app deriving `ReaderAppearance` from the settings and
 the clock (today it passes the default and the hour never moves the palette), V1's String Catalog, and the UI
 wiring for import (file importer → preview → commit) and export (scope × format → share/save).
+
+### T10, second part — the settings surface and the appearance it implies
+
+- **The surface.** `ReaderSettingsView` + `ReaderSettingsStore` port V1's `SettingsSheetView`: "Aparência" with
+  the text size, "Design circadiano" with the two clock rules, the palette family and the font style (each picker
+  offered only while its rule is on), V1's footer stating the hour it is on now, "Desempenho" with image
+  preloading, "Leitura" with night mode, the four-hour filter rule and the content filters, the library file's
+  size under "Armazenamento" and an "Sobre" section. A refused write states what happened **and** reloads what
+  the backend has, which is V1's own lesson about a failed write that looked like a success.
+  **Recorded differences:** V1's "Language" section is not drawn (V2 has no catalog of its own yet, and a picker
+  that changes nothing would be a dead control), nor its "Reading Data"/"Share" sections (V1 stated counts from
+  its own registry and shared a rendered stats card; V2 keeps neither — the same reason T9 records for the
+  image share).
+- **The appearance is derived, never stored.** `ReaderSettingsCoordinator.appearance(at:calendar:)` reads the
+  reader's preferences and the hour the caller states: the two clock rules decide whether the hour is read at
+  all, `nightMode` pins the night palette as V1's override did, and an unknown palette family, font style or
+  type scale falls back to V1's default instead of inventing one. The app re-derives it at launch, when the
+  reader changes something and when it comes back to the foreground — and never rebuilds a session for it, so a
+  clock moving the palette cannot move the reader to another feed (the plan's own rule, and the reason the
+  appearance is not part of any identity).
+- **The app finally draws with it.** Until now the app passed `ReaderAppearance.standard` to every surface, so
+  the clock never moved anything; `FeedScreen` now receives the derived appearance, which is what makes the
+  preferences visible.
+
+**The localization asked for by the plan is deliberately not re-keyed, and this is the reason.** V1's strings
+live in one `Resources/Localizable.xcstrings` catalog keyed by **English source strings** (39 languages). V2's
+copy is its own — Portuguese, matching the product's current language — and every one of its strings already goes
+through `String(localized:)`, so the *infrastructure* is V1's. Copying the catalog verbatim would translate
+nothing (no key matches), and re-keying V2's copy to V1's English would change the app's language for the reader
+who has it today. Preserving V1's *translations* is therefore a product i18n decision with its own key strategy,
+not a file copy, and it is recorded rather than half-done.
+
+**Verified.** `swift test` **992 tests, 0 failures**; the new suite: settings and the appearance derivation
+**5/5** (the clock's five periods, turning the clock off, night mode pinning, unknown values falling back, and
+the surface store's acceptance discipline); iOS build **SUCCEEDED**; and
+`testSettingsReachTheirControlsAndSurviveReopening` (real simulator) opens *Ajustes* from the reader's own menu,
+finds V1's sections, writes two preferences and reads them back after closing and reopening the surface —
+**TEST SUCCEEDED**.
+
+**Remaining for T10:** the import and export *surfaces* — V1's file importer driving preview → commit, and the
+export sheet with its scope × format pickers, preview, share and save — all over the coordinators already
+delivered and proven above.

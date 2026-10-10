@@ -427,6 +427,26 @@ final class AppComposition {
         feeds = sessionFeeds
     }
 
+    /// T10: the settings surface's store, and the appearance the reader's own preferences imply right now.
+    func makeReaderSettingsStore() -> ReaderSettingsStore? {
+        libraryDatabase().map { ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: $0)) }
+    }
+
+    /// The appearance this hour implies for the stored preferences. Derived on demand, never kept as state: a
+    /// clock moving the palette must not become a second source of truth about how the app looks.
+    func currentAppearance() -> ReaderAppearance {
+        libraryDatabase().map { ReaderSettingsCoordinator(database: $0).appearance() } ?? .standard
+    }
+
+    /// The library file's size, as the settings surface states it.
+    func libraryStorageDescription() -> String? {
+        let url = directory.appendingPathComponent("runtime.sqlite")
+        guard let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64 else {
+            return nil
+        }
+        return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+    }
+
     /// The reader's playback state, as the shell draws it.
     var mediaState: ReaderMediaState { mediaAdapter.state }
 

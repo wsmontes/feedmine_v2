@@ -183,6 +183,41 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(bar.exists, "the bar is still there after the full player closes")
     }
 
+    /// T10: the settings surface — reachable from the reader's own menu, its controls write, and what they wrote
+    /// is what the reader finds when they come back.
+    @MainActor
+    func testSettingsReachTheirControlsAndSurviveReopening() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
+        openMenu(app)
+        app.buttons["Ajustes"].tap()
+        XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 15))
+        // V1's sections, in the app's own words, and the clock it is on right now.
+        XCTAssertTrue(app.staticTexts["Design circadiano"].exists)
+        XCTAssertTrue(app.switches["settings-circadian-palette"].exists)
+        XCTAssertTrue(app.staticTexts["settings-circadian-footer"].exists)
+        XCTAssertTrue(app.switches["settings-prefetch"].exists)
+        XCTAssertTrue(app.switches["settings-night-mode"].exists)
+        // Write two preferences and see them hold.
+        app.switches["settings-night-mode"].tap()
+        app.switches["settings-circadian-palette"].tap()
+        let nightOff = app.switches["settings-night-mode"].value as? String
+        XCTAssertEqual(nightOff, "1", "the switch states what was written")
+        app.buttons["settings-done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+        // Reopen: the surface reads back what the database took.
+        openMenu(app)
+        app.buttons["Ajustes"].tap()
+        XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.switches["settings-night-mode"].value as? String, "1")
+        XCTAssertEqual(app.switches["settings-circadian-palette"].value as? String, "0")
+        app.buttons["settings-done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+    }
+
     @MainActor
     func testNativeSwipeReachesRealRunwayAndReverseNavigation() throws {
         let app = XCUIApplication()
