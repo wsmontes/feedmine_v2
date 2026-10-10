@@ -1,5 +1,9 @@
 # Persistence design — local publication/session and canonical supply schema
 
+## Transversal product contract — adaptive local retention (2026-10-10)
+
+Persistent content is a local-first asset, not a fixed-size feed cache. With safe free storage and device headroom, retain as much useful acquired content as reasonably possible. Apply more economical retention only in response to measured disk, memory, system or reader constraints; preserve user-owned data, bookmarks and published reading history in accordance with existing contracts. No arbitrary global article-count cap or fixed cleanup interval defines the strategy. Bounded database reads/writes remain legitimate resource protections, not lifetime content limits. Re-evaluate at actual opportunities, without inventing a second retention engine. See [PD-8](../product/PRODUCT_DECISIONS_2026-10-09.md) and [INV-16](PRODUCT_INVARIANTS.md). This paragraph does not assert that an adaptive eviction implementation already exists.
+
 ## 1. Frozen physical topology
 
 - `catalog.sqlite`: replaceable, read-mostly, independently generated catalog.
