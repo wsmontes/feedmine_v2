@@ -312,6 +312,20 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(restored.editionID, a.editionID, "returning to A recovers A's edition")
         XCTAssertEqual(restored.window.anchor, a.window.anchor, "…and A's reading position")
 
+        // T6 expiry: a pending deadline is resolved by an *explicit transition*, and by nothing else.
+        let preferences = ReaderPreferencesStore(database: plain.database)
+        try await root.applyFilter(ReaderFilter(languages: ["pt"], mood: .fun), preset: .everything)
+        XCTAssertEqual(root.currentFilter.languages, ["pt"], "a fresh selection starts its own window")
+        let renewedStart = try XCTUnwrap(preferences.load()?.filterExpiry.startsAt)
+        XCTAssertEqual(renewedStart.timeIntervalSince1970, Date().timeIntervalSince1970, accuracy: 30,
+            "applying a selection renews the window")
+        // Age the record, then switch surfaces: that transition drops the overlay criteria.
+        _ = try preferences.setFilterExpiry(ReaderFilterExpiry(isEnabled: true,
+            startsAt: Date().addingTimeInterval(-5 * 3600)))
+        try await root.selectContext(.main)
+        XCTAssertTrue(root.currentFilter.languages.isEmpty, "an expired overlay selection is dropped")
+        XCTAssertEqual(root.currentFilter.mood, .all)
+
         // The retired association is inert: neither its snapshot nor its callbacks reach the active store.
         let installed = back.store.state
         XCTAssertThrowsError(try back.install(.init(presentation: a))) {

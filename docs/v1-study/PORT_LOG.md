@@ -520,7 +520,8 @@ its own, a swipe that reports a dismissal instead of deciding it, and no bar at 
 also asserts the end-to-end chip: apply a language, the chip appears, tapping it clears that criterion and the
 reader survives.
 
-**Verified.** `swift test` **922 tests, 0 failures**; iOS build **SUCCEEDED**; the T6 UI test → **TEST SUCCEEDED**.
+**Verified.** `swift test` **924 tests, 0 failures**; iOS build **SUCCEEDED**; the T6 UI test → **TEST
+SUCCEEDED**; the app-level T6 transition test → **TEST SUCCEEDED**.
 
 **Remaining for T6**: the expiry record (a pending fact applied on an explicit transition — never a timer that
 changes the presentation), the `EditorialRevision` compatibility widening for the new key

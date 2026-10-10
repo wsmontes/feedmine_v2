@@ -11,7 +11,9 @@ final class PublicationRunwayStoreTests: XCTestCase {
     /// their columns, never by their SQL text, in both before/after sets.
     static func normalizeRebuiltDefinitions(_ entries: [String]) -> Set<String> {
         Set(entries.map { entry in
-            for name in ["context_checkpoints", "feed_editions"] where entry.hasPrefix(name + ":") { return name }
+            // reader_preferences also gained columns in T6 (the filter expiry record).
+            for name in ["context_checkpoints", "feed_editions", "reader_preferences"]
+                where entry.hasPrefix(name + ":") { return name }
             return entry
         })
     }
@@ -212,7 +214,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
             let schema = try String.fetchAll(db, sql: "SELECT name || ':' || COALESCE(sql, '') FROM sqlite_master WHERE name != 'published_cards_origin_revision_segment' ORDER BY name")
             XCTAssertTrue(Self.normalizeRebuiltDefinitions(oldSchema).isSubset(of: try Self.schemaBeforeAvailability(schema, in: db))) // Only the explicitly checked additive columns change an old definition.
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('published_cards_origin_revision_segment') ORDER BY seqno"), ["origin_revision_id","segment_id"])
-            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1"])
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1"])
         }
     }
 

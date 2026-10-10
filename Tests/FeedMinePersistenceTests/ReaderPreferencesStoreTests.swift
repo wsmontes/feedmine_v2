@@ -24,6 +24,29 @@ final class ReaderPreferencesStoreTests: XCTestCase {
         XCTAssertEqual(try reopened.load()?.activeContext, .source(source))
     }
 
+    /// T6: the expiry record lives with the preferences, and a fresh row reads as V1's default (auto-expire
+    /// on, nothing set yet — which is not the same as "expired").
+    func testFilterExpiryPersistsAndDefaultsForLegacyRows() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))
+        let store = ReaderPreferencesStore(database: database)
+        let initial = try store.initialize(sourceKeys: ["a"])
+        XCTAssertTrue(initial.filterExpiry.isEnabled, "V1's four-hour rule is on by default")
+        XCTAssertNil(initial.filterExpiry.startsAt)
+        XCTAssertFalse(initial.filterExpiry.isExpired(at: Date()), "nothing set is not expired")
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let saved = try store.setFilterExpiry(ReaderFilterExpiry(isEnabled: true, startsAt: start))
+        XCTAssertEqual(saved.filterExpiry.startsAt, start)
+        XCTAssertEqual(try store.load()?.filterExpiry, saved.filterExpiry)
+        // Turning the rule off persists too, and survives a reopened store.
+        _ = try store.setFilterExpiry(ReaderFilterExpiry(isEnabled: false, startsAt: start))
+        let reopened = try ReaderPreferencesStore(
+            database: RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))).load()
+        XCTAssertEqual(reopened?.filterExpiry.isEnabled, false)
+        XCTAssertNil(reopened?.filterExpiry.expiresAt())
+    }
+
     /// T6: the stored active context is the whole identity, and a row written before that (a bare request)
     /// still loads — as the default surface of the request it recorded.
     func testActiveContextCarriesTheWholeIdentityAndReadsLegacyRows() throws {

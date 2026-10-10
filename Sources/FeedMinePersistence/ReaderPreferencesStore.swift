@@ -13,6 +13,9 @@ public struct ReaderPreferencesStore: Sendable {
         /// JSON and a legacy payload (a bare `FeedContextRequest`) decodes into the key's default surface, so
         /// no migration is needed and a pre-T6 row keeps working.
         public let activeContextKey: ContextKey
+        /// V1's `filterAutoExpire` + `filterSetAt`: when the overlay selection was set, and whether the
+        /// four-hour rule is on. A deadline is not identity, so it does not live in the key.
+        public let filterExpiry: ReaderFilterExpiry
 
         /// The surface of the active identity; the convenience older callers used.
         public var activeContext: FeedContextRequest { activeContextKey.request }
@@ -25,7 +28,10 @@ public struct ReaderPreferencesStore: Sendable {
         return try database.write { db in
             if let current = try Self.read(db) { return current }
             let initial = Record(sourceKeys: sourceKeys, selectionVersion: 2,
-                activeContextKey: ContextKey(request: .main))
+                activeContextKey: ContextKey(request: .main),
+                // V1 shipped auto-expiry on; a fresh database says so explicitly rather than relying on the
+                // column default.
+                filterExpiry: ReaderFilterExpiry(isEnabled: true, startsAt: nil))
             try Self.save(initial, in: db)
             return initial
         }
@@ -39,17 +45,28 @@ public struct ReaderPreferencesStore: Sendable {
             if Set(keys) == Set(current.sourceKeys) { return current }
             guard current.selectionVersion < UInt64(Int64.max) else { throw ReaderPreferencesError.versionOverflow }
             let updated = Record(sourceKeys: keys, selectionVersion: current.selectionVersion + 1,
-                activeContextKey: current.activeContextKey)
+                activeContextKey: current.activeContextKey, filterExpiry: current.filterExpiry)
             try Self.save(updated, in: db)
             return updated
         }
     }
+    /// Saves the expiry record of the overlay selection (V1 wrote it beside the filter itself).
+    public func setFilterExpiry(_ expiry: ReaderFilterExpiry) throws -> Record {
+        try database.write { db in
+            guard let current = try Self.read(db) else { throw ReaderPreferencesError.missingPreferences }
+            let updated = Record(sourceKeys: current.sourceKeys, selectionVersion: current.selectionVersion,
+                activeContextKey: current.activeContextKey, filterExpiry: expiry)
+            try Self.save(updated, in: db)
+            return updated
+        }
+    }
+
     /// Saves the active identity. `setContext(_ request:)` stays as the plain-surface convenience.
     public func setContext(_ key: ContextKey) throws -> Record {
         try database.write { db in
             guard let current = try Self.read(db) else { throw ReaderPreferencesError.missingPreferences }
             let updated = Record(sourceKeys: current.sourceKeys, selectionVersion: current.selectionVersion,
-                activeContextKey: key)
+                activeContextKey: key, filterExpiry: current.filterExpiry)
             try Self.save(updated, in: db)
             return updated
         }
@@ -76,13 +93,21 @@ public struct ReaderPreferencesStore: Sendable {
         let version: Int64 = row["selection_version"]
         guard version >= 2 else { throw ReaderPreferencesError.invalidRecord }
         try validate(keys)
-        return Record(sourceKeys: keys, selectionVersion: UInt64(version), activeContextKey: context)
+        let autoExpire: Int64 = row["filter_auto_expire"] as Int64? ?? 1
+        let setAt: Double? = row["filter_set_at"]
+        return Record(sourceKeys: keys, selectionVersion: UInt64(version), activeContextKey: context,
+            filterExpiry: ReaderFilterExpiry(isEnabled: autoExpire != 0,
+                startsAt: setAt.map(Date.init(timeIntervalSince1970:))))
     }
     private static func save(_ value: Record, in db: Database) throws {
         try db.execute(sql: """
-            INSERT INTO reader_preferences (singleton_id, source_keys, selection_version, active_context) VALUES (1, ?, ?, ?)
+            INSERT INTO reader_preferences (singleton_id, source_keys, selection_version, active_context,
+                filter_auto_expire, filter_set_at) VALUES (1, ?, ?, ?, ?, ?)
             ON CONFLICT(singleton_id) DO UPDATE SET source_keys = excluded.source_keys,
-                selection_version = excluded.selection_version, active_context = excluded.active_context
-            """, arguments: [try JSONEncoder().encode(value.sourceKeys), Int64(value.selectionVersion), try JSONEncoder().encode(value.activeContextKey)])
+                selection_version = excluded.selection_version, active_context = excluded.active_context,
+                filter_auto_expire = excluded.filter_auto_expire, filter_set_at = excluded.filter_set_at
+            """, arguments: [try JSONEncoder().encode(value.sourceKeys), Int64(value.selectionVersion),
+                try JSONEncoder().encode(value.activeContextKey), value.filterExpiry.isEnabled ? 1 : 0,
+                value.filterExpiry.startsAt?.timeIntervalSince1970])
     }
 }

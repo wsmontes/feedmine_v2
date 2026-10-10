@@ -386,6 +386,14 @@ public enum RuntimeMigrations {
                 """)
             try Self.backfillCheckpointContextIdentities(db)
         }
+        migrator.registerMigration("reader-filter-expiry-v1") { db in
+            // T6: the overlay selection's expiry lives with the reader's preferences — never in the context
+            // identity (a deadline is not identity) and never applied by a clock.
+            try db.execute(sql: """
+                ALTER TABLE reader_preferences ADD COLUMN filter_auto_expire INTEGER NOT NULL DEFAULT 1;
+                ALTER TABLE reader_preferences ADD COLUMN filter_set_at REAL;
+                """)
+        }
         return migrator
     }
 

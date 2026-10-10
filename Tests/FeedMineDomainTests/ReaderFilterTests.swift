@@ -129,6 +129,50 @@ final class ReaderFilterTests: XCTestCase {
         XCTAssertEqual(filter.removing(.preset), filter, "a preset is removed through the preset id, not a filter")
     }
 
+    /// T6 expiry: the four-hour window is a *pending* fact that an explicit transition resolves; content
+    /// exclusions never expire (V1's content-filter screen was outside the rule).
+    func testExpiryIsPendingAndResolvesOnlyTheOverlaySelection() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let set = ReaderFilter(regionIDs: ["br"], taxonomyNodeIDs: ["tech"], languages: ["pt"],
+            contentType: .audio, mood: .fun,
+            exclusions: ReaderContentExclusions(isEnabled: true, rules: ["ads"]))
+
+        // Disabled, or enabled with nothing set: nothing expires, and there is no deadline to state.
+        XCTAssertFalse(ReaderFilterExpiry.disabled.isExpired(at: start.addingTimeInterval(86_400)))
+        XCTAssertNil(ReaderFilterExpiry.disabled.expiresAt())
+        XCTAssertNil(ReaderFilterExpiry(isEnabled: true, startsAt: nil).expiresAt())
+        XCTAssertEqual(ReaderFilterExpiry(isEnabled: true, startsAt: nil).resolving(set, at: start), set)
+
+        let record = ReaderFilterExpiry(isEnabled: true, startsAt: start)
+        XCTAssertEqual(record.expiresAt(), start.addingTimeInterval(ReaderFilterExpiry.lifetime))
+        XCTAssertEqual(ReaderFilterExpiry.lifetime, 4 * 60 * 60, "V1's window is four hours")
+        // Inside the window nothing moves, including on a transition.
+        XCTAssertFalse(record.isExpired(at: start.addingTimeInterval(3 * 3600)))
+        XCTAssertEqual(record.resolving(set, at: start.addingTimeInterval(3 * 3600)), set)
+        // At and after the boundary the overlay selection is dropped, and the exclusions survive.
+        for moment in [start.addingTimeInterval(4 * 3600), start.addingTimeInterval(9 * 3600)] {
+            XCTAssertTrue(record.isExpired(at: moment))
+            let resolved = record.resolving(set, at: moment)
+            XCTAssertTrue(resolved.regionIDs.isEmpty)
+            XCTAssertTrue(resolved.taxonomyNodeIDs.isEmpty)
+            XCTAssertTrue(resolved.languages.isEmpty)
+            XCTAssertEqual(resolved.contentType, .all)
+            XCTAssertEqual(resolved.mood, .all)
+            XCTAssertEqual(resolved.exclusions.rules, ["ads"], "content exclusions are outside the rule")
+            XCTAssertFalse(resolved.isUnrestricted, "the surviving exclusions keep the filter non-default")
+        }
+        // Renewing the selection restarts the window without changing whether expiry is on.
+        let renewed = record.renewed(at: start.addingTimeInterval(5 * 3600))
+        XCTAssertTrue(renewed.isEnabled)
+        XCTAssertFalse(renewed.isExpired(at: start.addingTimeInterval(5 * 3600)))
+        XCTAssertFalse(renewed.isExpired(at: start.addingTimeInterval(8 * 3600 + 3599)))
+        XCTAssertTrue(renewed.isExpired(at: start.addingTimeInterval(9 * 3600)))
+        // The record round-trips through persistence.
+        let decoded = try? JSONDecoder().decode(ReaderFilterExpiry.self,
+            from: JSONEncoder().encode(record))
+        XCTAssertEqual(decoded, record)
+    }
+
     /// The default filter must round-trip through persistence byte-identically (canonical encoding).
     func testFilterRoundTripsThroughCodable() throws {
         let original = ReaderFilter(regionIDs: ["br"], taxonomyNodeIDs: ["tech"], languages: ["pt"],

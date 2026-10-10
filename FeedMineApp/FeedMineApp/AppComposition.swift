@@ -198,8 +198,9 @@ final class AppComposition {
             await retired.close()
         }
         association = nil
+        // A surface switch is an explicit transition too, so a pending expiry is resolved here.
         currentContextKey = ContextKey(request: request, preset: currentContextKey.preset,
-            filter: currentContextKey.filter)
+            filter: resolvedFilter(at: Date()))
         _ = try preferences?.setContext(currentContextKey)
         let next = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration,
             contextKey: currentContextKey, selectionVersion: selectionVersion))
@@ -216,7 +217,32 @@ final class AppComposition {
         guard key != currentContextKey else { return }
         currentContextKey = key
         _ = try preferences?.setContext(key)
+        // A new overlay selection starts the window again; a selection without overlay criteria has none.
+        _ = try preferences?.setFilterExpiry(filterExpiry(renewing: filter, at: Date()))
         try await replaceSession()
+    }
+
+    /// T6: the expiry record for a selection applied now. V1's four-hour rule covers the overlay criteria
+    /// (region, taxonomy, language, type, mood); content exclusions are outside it, so a filter that only
+    /// excludes keeps no deadline.
+    func filterExpiry(renewing filter: ReaderFilter, at now: Date) -> ReaderFilterExpiry {
+        let overlayIsSet = !(filter.regionIDs.isEmpty && filter.taxonomyNodeIDs.isEmpty
+            && filter.languages.isEmpty && filter.contentType == .all && filter.mood == .all)
+        let enabled = preferences.flatMap { try? $0.load() }?.filterExpiry.isEnabled ?? true
+        return ReaderFilterExpiry(isEnabled: enabled, startsAt: overlayIsSet ? now : nil)
+    }
+
+    /// What an explicit transition applies: a *pending* expiry is resolved here and nowhere else, so a clock
+    /// never changes the reader's active presentation (`filterExpiry` is the record, `resolvedFilter` the
+    /// decision).
+    func resolvedFilter(at now: Date) -> ReaderFilter {
+        let record = preferences.flatMap { try? $0.load() }?.filterExpiry ?? .disabled
+        return record.resolving(currentFilter, at: now)
+    }
+
+    /// The filter an explicit transition will activate, resolving a pending expiry first.
+    func transitionFilter(at now: Date = Date()) -> ReaderFilter {
+        resolvedFilter(at: now)
     }
 
     /// Explicit session replacement; no replacement occurs during normal feed opportunities.
