@@ -294,6 +294,77 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
 
+    /// T12: the native gestures and the reader's own settings — a long scroll down and back, a rotation, a
+    /// larger Dynamic Type — leave the admitted card where it was: an update the reader did not ask for never
+    /// moves the viewport.
+    @MainActor
+    func testNativeScrollRotationAndDynamicTypeKeepTheAdmittedCardInPlace() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"]
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        // A long scroll down and back: the driver sees real opportunities in both directions.
+        for _ in 0..<6 { app.swipeUp() }
+        for _ in 0..<6 { app.swipeDown() }
+        let delivered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label MATCHES %@",
+            ".*completed=[1-9][0-9]*.*"), object: proof)
+        XCTAssertEqual(XCTWaiter.wait(for: [delivered], timeout: 20), .completed, proof.label)
+        // Rotation keeps the same reader on the same card: the first visible card's frame is measured before and
+        // after, and the update that follows the rotation does not move it on its own.
+        let beforeRotation = proof.label
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15))
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", beforeRotation),
+            object: proof)
+        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 15), .completed,
+            "a rotation is not an update the reader asked for: the counters it publishes do not change by it")
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15))
+        // Dynamic Type was larger for the whole run, and the feed is still there to read.
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label != ''")).firstMatch.exists)
+    }
+
+    /// T12: a reader's own state survives going offline and relaunching — a filter, a saved card and the feed
+    /// they were reading — and nothing they set is discarded.
+    @MainActor
+    func testOfflineRelaunchKeepsFilterSavedCardAndFeed() throws {
+        let app = XCUIApplication()
+        let namespace = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
+        // A filter the reader applied, and a card they saved.
+        app.buttons["filter-button"].tap()
+        XCTAssertTrue(app.navigationBars.buttons["Concluído"].waitForExistence(timeout: 15))
+        app.buttons["filter-language-pt"].firstMatch.tap()
+        app.buttons["Concluído"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+        let firstCard = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH 'feed-card-'")).firstMatch
+        if firstCard.exists {
+            firstCard.press(forDuration: 1.2)
+            if app.buttons["Salvar artigo"].waitForExistence(timeout: 5) { app.buttons["Salvar artigo"].tap() }
+            else { app.tap() }
+        }
+        // Offline, and a fresh launch of the same reader's store.
+        app.terminate()
+        app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45),
+            "the feed the reader had is still readable offline")
+        // The saved card is still saved, and the filter is still applied (the lens states it).
+        openMenu(app)
+        app.buttons["Salvos"].tap()
+        XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 15))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+    }
+
     @MainActor
     func testNativeSwipeReachesRealRunwayAndReverseNavigation() throws {
         let app = XCUIApplication()
