@@ -357,6 +357,12 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertFalse(app.buttons["filter-done"].waitForExistence(timeout: 3))
         XCTAssertTrue(scroll.waitForExistence(timeout: 20), "the reader keeps a feed after the transition")
         XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        // The lens states the criterion that is applied and removes exactly that one when its chip is tapped.
+        let lensChip = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'lens-chip-language-'")).firstMatch
+        XCTAssertTrue(lensChip.waitForExistence(timeout: 10), "an applied criterion must show its chip")
+        lensChip.tap()
+        XCTAssertFalse(lensChip.waitForExistence(timeout: 5), "removing the chip clears that criterion")
+        XCTAssertTrue(scroll.waitForExistence(timeout: 20), "the reader survives a criterion removal")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "t6-filter-transition"
         shot.lifetime = .keepAlways

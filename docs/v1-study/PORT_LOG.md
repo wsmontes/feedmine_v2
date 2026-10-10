@@ -510,10 +510,21 @@ than thrown away silently). New `ReaderFilterStoreTests` (5).
 with its own association and edition, returning to A **offline** recovers A's edition *and* its anchor, and the
 retired association cannot install into the active store — `.projectionSequenceMismatch`).
 
+**Step 10 landed — the filter lens.** `ReaderFilter.activeCriteria` (Domain) states the criteria that are set and
+`removing(_:)` returns the filter without exactly one of them (removing something absent is a no-op, so a chip can
+never invent a change). `Sources/FeedMineUI/Filters/ReaderFilterLens.swift` copies V1's `FilterLensBar`: one chip
+per active criterion in V1's order (preset, search, region, content type, topic, language, mood), each removing
+its own, a swipe that reports a dismissal instead of deciding it, and no bar at all on a plain surface.
+`ReaderFilterLens.chips(...)` is a value, so the bar is testable without a store, and the app draws it from the
+*applied* identity — a removal goes through the same `applyFilter` transition as the sheet. The T6 UI test now
+also asserts the end-to-end chip: apply a language, the chip appears, tapping it clears that criterion and the
+reader survives.
+
+**Verified.** `swift test` **922 tests, 0 failures**; iOS build **SUCCEEDED**; the T6 UI test → **TEST SUCCEEDED**.
+
 **Remaining for T6**: the expiry record (a pending fact applied on an explicit transition — never a timer that
 changes the presentation), the `EditorialRevision` compatibility widening for the new key
-(`AppComposition.swift:358`), the filter lens bar (`TaxonomyChipBar`, the chips that remove one active criterion)
-and the full preset picker, which needs T8's named presets.
+(`AppComposition.swift:358`) and the full preset picker, which needs T8's named presets.
 
 ## T7 — 2026-10-09 (catalog metadata: the values T6's sheet and T7's source management need)
 

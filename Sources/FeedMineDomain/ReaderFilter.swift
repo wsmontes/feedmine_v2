@@ -241,6 +241,62 @@ public struct ReaderFilter: Hashable, Codable, Sendable {
         return [regions, taxonomy, languageList, type, moodValue, exclusionsValue].joined(separator: ";")
     }
 
+    /// One active criterion, as the lens shows and removes it (V1's `FilterLensChip`).
+    public enum Active: Hashable, Sendable {
+        case preset
+        case region(String)
+        case taxonomyNode(String)
+        case contentType
+        case language(String)
+        case mood
+        case exclusions
+    }
+
+    /// Everything the lens must draw, in V1's order: the preset, the region, the topics, the content type, each
+    /// language, the mood, then the exclusions. Only criteria that are actually set appear.
+    public var activeCriteria: [Active] {
+        var active: [Active] = []
+        for region in regionIDs.sorted() { active.append(.region(region)) }
+        for node in taxonomyNodeIDs.sorted() { active.append(.taxonomyNode(node)) }
+        if contentType != .all { active.append(.contentType) }
+        for language in languages.sorted() { active.append(.language(language)) }
+        if mood != .all { active.append(.mood) }
+        if effectiveExclusionRules != nil { active.append(.exclusions) }
+        return active
+    }
+
+    /// The filter without one active criterion — what a lens chip does when the reader taps its `x`.
+    /// Removing something that is not set returns the same value, so the lens can never invent a change.
+    public func removing(_ criterion: Active) -> ReaderFilter {
+        switch criterion {
+        case .preset:
+            return self
+        case .region(let id):
+            return with(regionIDs: regionIDs.subtracting([id]))
+        case .taxonomyNode(let id):
+            return with(taxonomyNodeIDs: taxonomyNodeIDs.subtracting([id]))
+        case .contentType:
+            return with(contentType: .all)
+        case .language(let code):
+            return with(languages: languages.subtracting([code]))
+        case .mood:
+            return with(mood: .all)
+        case .exclusions:
+            return with(exclusions: .disabled)
+        }
+    }
+
+    private func with(regionIDs: Set<String>? = nil, taxonomyNodeIDs: Set<String>? = nil,
+        languages: Set<String>? = nil, contentType: ReaderContentType? = nil, mood: ReaderMood? = nil,
+        exclusions: ReaderContentExclusions? = nil) -> ReaderFilter {
+        ReaderFilter(regionIDs: regionIDs ?? self.regionIDs,
+            taxonomyNodeIDs: taxonomyNodeIDs ?? self.taxonomyNodeIDs,
+            languages: languages ?? self.languages,
+            contentType: contentType ?? self.contentType,
+            mood: mood ?? self.mood,
+            exclusions: exclusions ?? self.exclusions)
+    }
+
     private static func normalizeSet(_ values: Set<String>) -> Set<String> {
         Set(values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
     }

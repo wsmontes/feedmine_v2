@@ -9,6 +9,8 @@ struct FeedMineApp: App {
     /// no placeholder routes for T6–T11 work.
     @State private var savedPath: [ReaderDestination] = []
     @State private var readerError: String?
+    /// The lens hidden by a swipe, keyed by the selection it was hidden for: a new selection shows it again.
+    @State private var hiddenLensSignature: String?
     @Environment(\.scenePhase) private var phase
 
     /// U1/U2: one sheet presentation for every modal surface, so a second sheet modifier can never
@@ -33,7 +35,8 @@ struct FeedMineApp: App {
                 Group {
                     if let association = composition.association {
                         FeedScreen(store: association.store,
-                            statusChip: AnyView(contextChip(association)))
+                            statusChip: AnyView(contextChip(association)),
+                            lens: AnyView(filterLens))
                             .id(ObjectIdentifier(association))
                             #if DEBUG
                             .overlay(alignment: .topTrailing) {
@@ -114,6 +117,29 @@ struct FeedMineApp: App {
         }
     }
 
+
+    /// T6: the lens states the criteria that are actually applied and removes exactly one per tap; hiding it is
+    /// a presentation choice that lasts until the selection changes again.
+    @ViewBuilder private var filterLens: some View {
+        let filter = composition.currentFilter
+        let chips = ReaderFilterLens.chips(filter: filter, preset: composition.currentPreset,
+            presetName: nil, searchQuery: nil,
+            languageNames: Dictionary(uniqueKeysWithValues: composition.filterLanguages()
+                .map { ($0.code, $0.displayName) }))
+        if hiddenLensSignature != signature(of: filter, chips) {
+            ReaderFilterLens(chips: chips,
+                onRemove: { chip in
+                    guard let removal = chip.removal else { return }
+                    Task { try? await composition.applyFilter(filter.removing(removal),
+                        preset: composition.currentPreset) }
+                },
+                onDismiss: { hiddenLensSignature = signature(of: filter, chips) })
+        }
+    }
+
+    private func signature(of filter: ReaderFilter, _ chips: [ReaderFilterChip]) -> String {
+        chips.map(\.id).joined(separator: "|")
+    }
 
     private func switchContext(_ request: FeedContextRequest) {
         Task { do { try await composition.selectContext(request) } catch { readerError = String(describing: error) } }

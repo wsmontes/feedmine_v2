@@ -15,13 +15,16 @@ public struct FeedScreen: View {
     /// The host's own status chip (V1's `CompactFeedStatus` equivalent). Nil renders the delivery's
     /// default, which states only what the presentation value knows.
     private let customStatusChip: AnyView?
+    /// The host's filter lens (V1's chip bar). Nil draws nothing above the feed.
+    private let lens: AnyView?
     @State private var capture = FeedVisualCapture()
 
     public init(store: FeedScreenStore, appearance: ReaderAppearance = .standard,
-        statusChip: AnyView? = nil) {
+        statusChip: AnyView? = nil, lens: AnyView? = nil) {
         self.store = store
         self.appearance = appearance
         self.customStatusChip = statusChip
+        self.lens = lens
     }
 
     public var body: some View {
@@ -29,7 +32,8 @@ public struct FeedScreen: View {
         // feed to read, so the preparation state keeps its own full-screen surface (V1 too drew its
         // header for the session, and T11 owns the preparation experience).
         if store.state.presentation != nil {
-            ReaderShell(store: store, appearance: appearance, status: { statusChip }, lens: { EmptyView() }) {
+            ReaderShell(store: store, appearance: appearance, status: { statusChip },
+                lens: { if let lens { lens } }) {
                 feedBody
             }
         } else {

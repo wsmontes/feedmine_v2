@@ -137,6 +137,25 @@ final class ReaderFilterStoreTests: XCTestCase {
         XCTAssertFalse(subject.isDirty)
     }
 
+    /// T6 lens: the chips mirror what is applied, in V1's order, with names resolved by the host.
+    func testLensChipsMirrorTheAppliedSelection() {
+        let filter = ReaderFilter(regionIDs: ["br"], taxonomyNodeIDs: ["tech"], languages: ["en-US"],
+            contentType: .audio, mood: .fun)
+        let chips = ReaderFilterLens.chips(filter: filter, preset: .collection("c1"), presetName: "Minha coleção",
+            searchQuery: "mercado", languageNames: ["en-US": "English (US)"],
+            taxonomyNames: ["tech": "Technology"], regionNames: ["br": "Brazil"])
+        XCTAssertEqual(chips.map(\.label),
+            ["Minha coleção", "mercado", "Brazil", "Podcasts", "Technology", "English (US)", "Fun"])
+        XCTAssertEqual(chips.map(\.kind), [.preset, .search, .region, .contentType, .topic, .language, .mood],
+            "V1's chip order: preset, search, region, content type, topic, language, mood")
+        XCTAssertNil(chips.first { $0.kind == .search }?.removal,
+            "a search chip is a context of its own: it has no filter criterion to remove")
+        XCTAssertEqual(chips.first { $0.kind == .region }?.removal, .region("br"))
+        // A plain surface has no lens, and the preset chip only appears when a preset is active.
+        XCTAssertTrue(ReaderFilterLens.chips(filter: .unrestricted, preset: .everything).isEmpty)
+        XCTAssertEqual(ReaderFilterLens.chips(filter: .unrestricted, preset: .lastClicked).map(\.kind), [.preset])
+    }
+
     /// A criterion this build cannot enforce is refused by the draft inside the store too, and hydrating a
     /// clean draft follows a selection that changed elsewhere.
     func testUnavailableCriteriaAreRefusedAndHydrationFollows() async throws {

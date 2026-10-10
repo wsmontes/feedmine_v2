@@ -103,6 +103,32 @@ final class ReaderFilterTests: XCTestCase {
         XCTAssertTrue(ReaderSearchScope.both.includesContents)
     }
 
+    /// T6 lens: the criteria the bar must draw, in V1's order, and the removal of exactly one of them.
+    func testActiveCriteriaAndRemovalTouchExactlyOneCriterion() throws {
+        let filter = ReaderFilter(regionIDs: ["br", "us"], taxonomyNodeIDs: ["tech"], languages: ["pt"],
+            contentType: .audio, mood: .serious,
+            exclusions: ReaderContentExclusions(isEnabled: true, rules: ["ads"]))
+        XCTAssertEqual(filter.activeCriteria, [
+            .region("br"), .region("us"), .taxonomyNode("tech"), .contentType, .language("pt"), .mood, .exclusions
+        ], "the lens follows V1's chip order and only shows what is set")
+        XCTAssertTrue(ReaderFilter.unrestricted.activeCriteria.isEmpty, "a plain surface shows no lens at all")
+
+        XCTAssertEqual(filter.removing(.region("br")).regionIDs, ["us"])
+        XCTAssertEqual(filter.removing(.region("us")).regionIDs, ["br"])
+        XCTAssertEqual(filter.removing(.taxonomyNode("tech")).taxonomyNodeIDs, [])
+        XCTAssertEqual(filter.removing(.contentType).contentType, .all)
+        XCTAssertEqual(filter.removing(.language("pt")).languages, [])
+        XCTAssertEqual(filter.removing(.mood).mood, .all)
+        XCTAssertEqual(filter.removing(.exclusions).exclusions, .disabled)
+        // Everything else survives a removal, and removing something absent changes nothing.
+        let withoutMood = filter.removing(.mood)
+        XCTAssertEqual(withoutMood.regionIDs, filter.regionIDs)
+        XCTAssertEqual(withoutMood.languages, ["pt"])
+        XCTAssertEqual(withoutMood.exclusions.rules, ["ads"])
+        XCTAssertEqual(withoutMood.removing(.mood), withoutMood)
+        XCTAssertEqual(filter.removing(.preset), filter, "a preset is removed through the preset id, not a filter")
+    }
+
     /// The default filter must round-trip through persistence byte-identically (canonical encoding).
     func testFilterRoundTripsThroughCodable() throws {
         let original = ReaderFilter(regionIDs: ["br"], taxonomyNodeIDs: ["tech"], languages: ["pt"],
