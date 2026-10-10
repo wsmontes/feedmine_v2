@@ -59,6 +59,10 @@ public actor AcquisitionCoordinator {
     public nonisolated let concurrentTargetLimit: Int
     private var selectionAfter: AcquisitionTargetID?
     private var inFlight: [AcquisitionTargetID: InFlight] = [:]
+    // One transient coverage fact per actually settled target, including empty/304/failure.
+    // The coordinator is shared by cold and active-session work and lives for their association.
+    // Checkpoints cannot represent an attempt that admitted nothing.
+    private var settledGenerations: [AcquisitionTargetID: UInt64] = [:]
     private var failures: [AcquisitionTargetID: (consecutive: Int, at: Double)] = [:]
 
     public init(database: RuntimeDatabase,
@@ -97,6 +101,17 @@ public actor AcquisitionCoordinator {
         return try selectionOpportunity { position, active in try select(position, active, cooling) }
     }
 
+    /// Atomically supplies existing execution outcomes as coverage facts to the same planner.
+    public func selectionOpportunity(
+        _ select: @Sendable (AcquisitionTargetID?, [AcquisitionActiveExecution], Set<AcquisitionTargetID>,
+            [AcquisitionTargetID: UInt64]) throws -> AcquisitionPlanningResult
+    ) rethrows -> AcquisitionPlanningResult {
+        let settled = settledGenerations
+        return try selectionOpportunity { position, active, cooling in
+            try select(position, active, cooling, settled)
+        }
+    }
+
     /// Runs a finite plan through a sliding window of at most `concurrentTargetLimit` executions
     /// (v1 lesson, commit 814b0a5e: refill per completion, never per chunk). Results are returned
     /// in plan order; `onResult` sees each as it settles. A cancelled result stops starting new
@@ -129,6 +144,7 @@ public actor AcquisitionCoordinator {
     }
 
     private func record(_ result: AcquisitionExecutionResult) {
+        if result.stop != .cancelled { settledGenerations[result.targetID] = result.generation }
         if case .operationalFailure = result.stop {
             let previous = failures[result.targetID]?.consecutive ?? 0
             failures[result.targetID] = (previous + 1, monotonicSeconds())

@@ -364,7 +364,8 @@ final class FeedAssociation {
             acquisition: acquisition, coordinator: coordinator,
             monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
             makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date())! },
-            prepare: prepare, prepareMedia: prepareRunwayMedia)
+            prepare: prepare, prepareMedia: prepareRunwayMedia,
+            selectedSourceCoverage: .init(selectedSourceCoverageFor: plan.context.key, editorialRevisionID: plan.revision.id))
         let relay = EvidenceRelay()
         self.relay = relay
         cold = try ColdFeedBootstrap(session: session, plan: plan, policy: policy,

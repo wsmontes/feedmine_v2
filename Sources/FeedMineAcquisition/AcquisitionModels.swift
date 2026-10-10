@@ -10,6 +10,7 @@ public enum AcquisitionPressure: Hashable, Sendable {
     case coverageDeficit(requiredCards: Int)
     case logicalTailPressure
     case initialPublication
+    case selectedSourceCoverage
 }
 
 /// Construction asserts that the relevant bounded local structural walk completed.
@@ -26,7 +27,17 @@ public struct AcquisitionDemand: Hashable, Sendable {
     public let editorialRevisionID: EditorialRevisionID
     public let purpose: AcquisitionPurpose
     public let pressure: AcquisitionPressure
-    public let localSupply: ExhaustedLocalSupply
+    public let localSupply: ExhaustedLocalSupply?
+
+    /// A finite opportunity for selected targets, independent of published depth. No local
+    /// exhaustion assertion is made: local presentation may already be fully covered.
+    public init(selectedSourceCoverageFor contextKey: ContextKey, editorialRevisionID: EditorialRevisionID) {
+        self.contextKey = contextKey
+        self.editorialRevisionID = editorialRevisionID
+        purpose = .readerContinuation
+        pressure = .selectedSourceCoverage
+        localSupply = nil
+    }
 
     public init?(contextKey: ContextKey, editorialRevisionID: EditorialRevisionID,
         purpose: AcquisitionPurpose, pressure: AcquisitionPressure, localSupply: ExhaustedLocalSupply) {

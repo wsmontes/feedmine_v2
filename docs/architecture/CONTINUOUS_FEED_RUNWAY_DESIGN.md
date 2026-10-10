@@ -295,3 +295,34 @@ RunwayAcquisitionCycle acknowledges its controller-owned intent before external 
 The cycle and cold bootstrap use the same injected AcquisitionCoordinator for atomic ephemeral selection-position ownership. Planner remains pure and explicit; no parallel execution, scheduler, automatic retry, timer, backoff or persisted fairness state was added. The cold presentation contract and handoff are unchanged: successful first publication is visually successful despite another source's operational failure.
 
 Driver regression fixtures deliberately contain two eligible Main targets A/B. With capacity one, the existing controller may emit successive distinct intents after confirmed local publication changes ready-ahead facts. Before 3R2, repeated selection of A replayed its document and stopped before B. After 3R2, controlled pulls observe A at ready-ahead 0, B at 1, and final A replay at 2; with one seeded local item these facts are 1/2/3. B contributes exactly one additional canonical revision and one appended segment. Tests verify both targets' eligibility, exact canonical-to-published revision correspondence, absence of duplicate appended revisions, original cards, unchanged anchors/Edition, exact HTTP counts (A twice, B once), and quiescence on another drive with unchanged facts. This is existing controller-owned reconsideration after factual supply/publication, not a new retry policy or a second cold acquisition round.
+
+## D1 — Selected-source acquisition coverage
+
+Published depth and selected-target acquisition coverage are independent. AppComposition
+supplies an explicit `selectedSourceCoverage` demand to its existing FeedRunwayDriver.
+This demand has no ExhaustedLocalSupply: a healthy local runway is not exhaustion.
+Depth-only compositions retain their original contract. Runtime still owns depth policy;
+no reserve inflation or second source-alternation algorithm is introduced.
+
+When depth effects settle, the same causal driver asks RunwayAcquisitionCycle to plan
+unattempted eligible targets through the existing AcquisitionPlanner/Coordinator. Its
+mechanical `selectionAfter` rotation, target single-flight and work bounds are retained.
+Actual coordinator settlements, including 304/empty/repeated/failure, establish a transient
+target-generation coverage fact. Checkpoints alone cannot represent these outcomes.
+The coordinator is the sole owner of this fact for the composition association's lifetime;
+cold and active-session work share it. No persisted counter or migration is needed.
+
+Each causal completion may authorize the next bounded plan while useful uncovered work
+remains. The finite set is the authorized target generations in the selected snapshot,
+not a card quota. Shared bindings cause one target execution. Cooling/resource-denied
+or conflicting work settles the current drive without polling; a legitimate later drive
+can reconsider pending targets. Cancellation stops continuation. Successful supply follows
+the existing scoped notification/local production path; Editorial still owns PD-4 across
+segment boundaries. A new association receives a new coverage opportunity; this is not
+persistent freshness state or a periodic fetch policy.
+
+BASE reproduction (`0c53fac`): four authorized sources/targets, capacity two, first pair
+provides more than reserve 16. Stationary measured depth is healthy, yet connector entry
+and terminal journal contain only targets 1/2. Regression failed with three coverage
+assertions; the same regression passes with all four actual pulls/terminals after D1.
+Evidence: `~/Documents/feedmine-evidence/2026-10-09/d1/red.txt` and `green-initial.txt`.

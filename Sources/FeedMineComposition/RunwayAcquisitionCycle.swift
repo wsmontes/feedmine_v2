@@ -64,4 +64,32 @@ public struct RunwayAcquisitionCycle: Sendable {
             return .executed(results)
         }
     }
+    /// Coverage uses the existing planner/coordinator without claiming local exhaustion or
+    /// reserving a depth-shortage intent in Runtime. The driver owns this finite opportunity.
+    public func runCoverage(_ demand: AcquisitionDemand, scope: RunwayScope,
+        eligibleTargets: [AcquisitionTarget], resources: AcquisitionPlanningResources) async throws -> RunwayAcquisitionCycleOutcome {
+        guard demand.pressure == .selectedSourceCoverage,
+            demand.contextKey == scope.contextKey, demand.editorialRevisionID == scope.editorialRevisionID,
+            await runway.snapshot().scope == scope else { throw RunwayAcquisitionCycleError.staleIntent }
+        let planning = try await coordinator.selectionOpportunity { position, active, cooling, settled in
+            try AcquisitionPlanner.plan(demand: demand,
+                eligibleTargets: eligibleTargets.filter {
+                    settled[$0.id] != $0.generation && !cooling.contains($0.id)
+                }, activeExecutions: active, resources: resources, selectionAfter: position)
+        }
+        switch planning {
+        case .disposition(let reason): return .acceptedUnavailable(reason)
+        case .planned(let plan):
+            guard await runway.snapshot().scope == scope else { throw RunwayAcquisitionCycleError.staleIntent }
+            try Task.checkCancellation()
+            let results = try await coordinator.executeConcurrently(plan.work) { result in
+                guard result.selectableSupplyChanged else { return }
+                do { try await runway.noteLocalSupplyChanged(scope: scope) }
+                catch RunwayControllerError.noActiveScope {}
+                catch RunwayControllerError.scopeMismatch {}
+            }
+            return .executed(results)
+        }
+    }
+
 }

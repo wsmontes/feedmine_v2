@@ -320,7 +320,7 @@ final class RunwayControllerTests: XCTestCase {
         XCTAssertEqual(d.demand.editorialRevisionID,scope().editorialRevisionID)
         XCTAssertEqual(d.demand.purpose,.readerContinuation)
         XCTAssertEqual(d.demand.pressure,.coverageDeficit(requiredCards: 6))
-        XCTAssertEqual(d.demand.localSupply.readyCards,2)
+        XCTAssertEqual(d.demand.localSupply?.readyCards,2)
         for n in 23...26 {
             let action = try await sut.reconsider(resources: resources(),at: time(Double(n)))
             XCTAssertEqual(action,.none)
@@ -349,7 +349,7 @@ final class RunwayControllerTests: XCTestCase {
         try await sut.completeLocalSlice(last,outcome: outcome(last,exhausted: true),at: time(11))
         try await sut.acceptMeasurement(facts(o))
         let d = try await demand(sut)
-        XCTAssertEqual(d.demand.pressure,.logicalTailPressure); XCTAssertEqual(d.demand.localSupply.readyCards,0)
+        XCTAssertEqual(d.demand.pressure,.logicalTailPressure); XCTAssertEqual(d.demand.localSupply?.readyCards,0)
     }
 
     func testUnknownHealthyAndSaturatedStockNeverEscalate() async throws {

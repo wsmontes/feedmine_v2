@@ -51,6 +51,7 @@ public actor FeedRunwayDriver {
     /// Receives the next editorial candidates (priority order) so media is prepared for exactly
     /// what the coming slice can publish (review F05).
     private let prepareMedia: (@Sendable ([OriginRevisionID]) async -> Void)?
+    private let selectedSourceCoverage: AcquisitionDemand?
     private let candidateProvider: CandidateProvider
 
     public init(session: FeedSession, runway: RunwayController, plan: FeedPlan, policy: ResolvedSelectionPolicy,
@@ -58,8 +59,14 @@ public actor FeedRunwayDriver {
         monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime,
         makeSegmentIdentity: @escaping @Sendable () throws -> FeedRunwaySegmentIdentity,
         prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication,
-        prepareMedia: (@Sendable ([OriginRevisionID]) async -> Void)? = nil) throws {
+        prepareMedia: (@Sendable ([OriginRevisionID]) async -> Void)? = nil,
+        selectedSourceCoverage: AcquisitionDemand? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw FeedRunwayDriverError.policyContextMismatch }
+        if let demand = selectedSourceCoverage {
+            guard demand.contextKey == plan.context.key, demand.editorialRevisionID == plan.revision.id,
+                demand.pressure == .selectedSourceCoverage else { throw FeedRunwayDriverError.policyContextMismatch }
+        }
+        self.selectedSourceCoverage = selectedSourceCoverage
         self.prepareMedia = prepareMedia
         candidateProvider = CandidateProvider(contentStore: ContentStore(database: acquisition.runtimeDatabase))
         self.session = session; self.runway = runway; self.plan = plan; self.policy = policy; self.acquisition = acquisition
@@ -161,6 +168,15 @@ public actor FeedRunwayDriver {
             case .none:
                 let after = await runway.snapshot()
                 if after.scope == scope, after.latestObservation != before.latestObservation { continue }
+                if let demand = selectedSourceCoverage {
+                    let targets = try acquisition.eligibleTargets(for: plan.context)
+                    do {
+                        let outcome = try await acquisitionCycle.runCoverage(demand, scope: scope,
+                            eligibleTargets: targets, resources: currentResources.acquisition)
+                        if case .executed(let results) = outcome,
+                            !results.isEmpty, !results.contains(where: { $0.stop == .cancelled }) { continue }
+                    } catch RunwayAcquisitionCycleError.staleIntent { continue }
+                }
                 let presentation = await session.currentPresentation()
                 if causalExecution!.reconsiderRequested { continue }
                 return presentation
@@ -211,6 +227,12 @@ public actor FeedRunwayDriver {
                 catch RunwayAcquisitionCycleError.staleIntent { continue }
                 catch RunwayControllerError.staleAcquisitionAcknowledgement { continue }
                 if !changed {
+                    if selectedSourceCoverage != nil {
+                        let after = await runway.snapshot()
+                        // Deferred depth work must not be retried inside this drain. Coverage
+                        // can still consider other targets when the depth intent has settled.
+                        if after.scope == scope, after.outstandingAcquisition == nil { continue }
+                    }
                     let after = await runway.snapshot()
                     if after.scope == scope, after.latestObservation != before.latestObservation { continue }
                     let presentation = await session.currentPresentation()
