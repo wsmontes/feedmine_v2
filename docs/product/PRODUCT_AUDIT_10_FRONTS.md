@@ -29,11 +29,11 @@ As frentes são **fatias da experiência**, não times, módulos Swift nem autor
 
 ### F02 — Primeira abertura, onboarding e tempo até a primeira descoberta
 **Especificação de produto vigente:** [F02 — O feed que apresenta a internet e conhece o leitor](F02_DISCOVERY_FEED_ONBOARDING_PRD.md). A interface inicial é o próprio feed, com intervenções editoriais e preferências explícitas opcionais; Welcome → Composer não é uma barreira obrigatória.
-**Promessa:** uma pessoa que não conhece RSS escolhe seus interesses, vê preparação honesta e começa a explorar.  
-**Jornada/oráculo:** instalação limpa sem dados locais; Welcome → Composer → interesses → primeiro conteúdo real; comparar diferentes idiomas, rede lenta, fontes vazias e retorno após falha. Medir tempo até o primeiro card legível, utilidade dos primeiros cards e proveniência real de toda informação mostrada na preparação.  
-**Evidência inicial:** existe onboarding em duas etapas, ColdFeedBootstrap e tela de progresso baseada em fatos do pipeline; testes validaram componentes e o fluxo básico.  
-**Risco a verificar:** Composer parecer personalizado sem ampliar as fontes de acordo com interesses; primeira tela depender de somente poucos feeds; progressos tecnicamente verdadeiros mas pouco envolventes.  
-**Aceite:** o usuário obtém material coerente sem ter que ir à tela de Fontes, e não há título, imagem nem progresso inventados.
+**Promessa:** a pessoa já começa explorando um feed real, com diversidade, comentários editoriais interessantes e respostas opcionais “Quero mais disso” / “Não é minha praia”; suas escolhas orientam descobertas futuras sem interromper o scroll.  
+**Jornada/oráculo:** instalação limpa; feed exploratório real sem formulário obrigatório; interagir ou não com convites de preferência; comparar temas/fontes efetivamente encontrados, mudanças após votos, desfazer, leitura, estado offline, idiomas, conteúdo sensível e retorno após falha. Ver [US-01..US-14](F02_DISCOVERY_FEED_ONBOARDING_PRD.md).  
+**Evidência inicial:** a V2 atual possui Welcome → Composer, progresso de preparação, receitas e testes de fluxo; isso demonstra transferência da interface da V1, **não** aprovação da nova experiência F02.  
+**Risco a verificar:** preferências só reordenarem fontes predefinidas; controles sem efeito real; comentários sem histórias; bloqueio do feed por configuração ou erro mascarado.  
+**Aceite:** feed inicial já útil sem configuração manual, variedade real, preferências explícitas com efeito futuro, silêncio permitido, correção reversível, sem conteúdo inventado, sem deslocar leitura; critérios B01–B06 preservados.
 
 ### F03 — Aquisição, frescor e integridade das histórias
 **Promessa:** o conteúdo de diferentes sites realmente chega, é recente, é legível e pode ser aberto.  
