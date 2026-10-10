@@ -82,10 +82,34 @@ reader-facing behaviour, its V1 form reads the old registry directly, and every 
 it fronted is ported and proven above. If it is wanted, it is a self-contained addition over
 `SourceManagementCoordinator`'s paging.
 
+## Curated ranking: an edit is a new behaviour
+
+Executed 2026-10-10 over `41ed1a5`, delivered as `bd3c4b9`. The recipe's ranking was right as a *value*
+(`FeedRecipeResolutionTests`, `WeightedScoringTests`) but three links around it were not:
+
+- one session construction site bypassed the curated decision, so a curated session ranked by the baseline;
+- an edit that left the context key alone kept the running session's behaviour version, so an Edition published
+  under the superseded recipe was still shown and restored;
+- the behaviour version was a hash over the recipe, and the policy version contract rejects it (a counter).
+
+The recipe now carries its own revision (`reader_presets.recipe_revision`, migration
+`reader-curated-recipe-revision-v1`, bumped on every edit); an explicit transition happens when the identity
+*or* the behaviour changes; and an Edition or saved position published under a superseded scoring policy is
+neither shown nor restored (`AppComposition.mayShow(… scoringVersion:)`, `SessionStore.clearCheckpoint(for:)`).
+
+Command → result:
+
+- `xcodebuild … -only-testing:FeedMineAppTests/CompositionTests/testT11ACuratedFeedRanksByItsRecipeAndEditingChangesTheBehaviorVersion test`
+  → **TEST SUCCEEDED**: the policy is `.weighted` over the node the recipe answered on, the revision goes 1 → 2,
+  and the new session's scoring policy version follows it. Run in the same command: T6 identity, T8 preset and
+  S3/S4 replacement — all **SUCCEEDED**.
+- `swift test` → **1017 tests, 0 failures**.
+
 ## Not executed, and why
 
 | Plan item | State |
 |---|---|
+| `CompositionTests` as one run (20 tests) | **6 of 20 fail, and none of them is claimed above.** Measured 2026-10-10: 13 pass; `testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates` (reserve 1 ≠ 17), `testS1SameSessionStoreAcrossViewportRefreshAndLifecycle`, `testS2DelayedResultAndS7AtomicWorkRejection`, `testS5OfflineReopenRestoresEditionWithFreshProvenance`, `testS6NewerReverseProjectionAccepted` and `testMainSourceMainRestoresPositionOfflineAndRejectsOldAssociation` fail at their *first* supply assertion — the fixture run admits the anchor card and no second one. The committed HEAD cannot run them either: its test target does not compile (`saveCuratedFeed` returns `ReaderPreset?` while the committed test treats it as non-optional), so no green baseline exists to compare against. Two causes were measured and **disproved** on 2026-10-10: the fixture items lack a `pubDate`, and their links point at `fixture.invalid` instead of the feed's own host (`-only-testing` the two representative tests, both still failing). The admitted-and-prepared supply is where the next diagnostic belongs. Every claim in this document is per test, because that is how the runs were made. |
 | Physical iPhone: 10 minutes idle + 30 minutes of scrolling, memory/CPU/hitches and media budget | **Not executed.** No physical device is attached to this machine; the plan's own validation section asks for a simulator UUID for everything else. Needs the reader's device. |
 | Visual comparison by screenshots, surface by surface | **Not executed as a screenshot diff.** The UI tests assert structure, identifiers, labels and one geometry (the mini player's 56 pt); no pixel comparison was made. |
 | 30-minute scroll budget on heterogeneous networks | **Not executed.** The deterministic, short-horizon scenario is the substitute that was run; long-horizon behaviour is the physical-device item above. |
