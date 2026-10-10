@@ -59,18 +59,21 @@ public struct SourceManagementCoordinator: Sendable {
         return try catalog.ancestors(ofNodeID: id).map(Self.summary)
     }
 
-    /// Every country's own source keys, in one read, so a list can show each country's state.
+    /// Every country's own source keys, in one read, so a list can show each country's state. A country is a
+    /// *region tree* (V1's `SourceRegistry`): the shipped catalog places its sources under the country's topic
+    /// leaves, so a country's rows are everything placed at any depth beneath it.
     public func countryKeys() throws -> [Int64: Set<String>] {
         guard let catalog else { throw SourceManagementError.catalogUnavailable }
-        return try catalog.sourceKeysByNode(kind: LegacyCatalogNodeRecord.countryKind)
+        return try catalog.sourceKeysByNodeInSubtree(kind: LegacyCatalogNodeRecord.countryKind)
             .mapValues(Set.init)
     }
 
     /// A node's catalog id by its stable key, for a caller that navigated by key.
-    /// The keys of every child of a node, for one level's worth of state. Values only, as everything here.
+    /// The keys of every child of a node, for one level's worth of state: a child is a subtree too (V1's
+    /// region cascade), so its state is everything placed under it, not only at it. Values only.
     public func keysByParent(nodeID: Int64) throws -> [Int64: Set<String>] {
         guard let catalog else { throw SourceManagementError.catalogUnavailable }
-        return try catalog.sourceKeysByParent(nodeID: nodeID).mapValues(Set.init)
+        return try catalog.sourceKeysByParentInSubtree(nodeID: nodeID).mapValues(Set.init)
     }
 
     public func nodeByKey(_ key: String) throws -> Int64? {
@@ -101,9 +104,24 @@ public struct SourceManagementCoordinator: Sendable {
     /// keys into the reader's own selection. Returns the new selection version.
     @discardableResult
     public func setEnabled(nodeID: Int64, enabled: Bool, ceiling: Int = 500) throws -> UInt64 {
-        guard let catalog, let preferences else { throw SourceManagementError.catalogUnavailable }
+        guard let catalog else { throw SourceManagementError.catalogUnavailable }
+        return try apply(enabled: enabled, keys: try catalog.sourceKeys(inNode: nodeID, ceiling: ceiling))
+    }
+
+    /// V1's `SourceRegistry.setRegionEnabled`, which cascaded down the region tree: a country's sources are
+    /// placed under its topic leaves (`90_countries/algeria/sports/football`) in the shipped catalog, so the
+    /// reader's toggle over a region covers everything placed at any depth beneath it.
+    @discardableResult
+    public func setEnabledTree(nodeID: Int64, enabled: Bool, ceiling: Int = 20_000) throws -> UInt64 {
+        guard let catalog else { throw SourceManagementError.catalogUnavailable }
+        return try apply(enabled: enabled, keys: try catalog.sourceKeys(inSubtreeOf: nodeID, ceiling: ceiling))
+    }
+
+    /// One write for both scopes: the keys are what the catalog answered for the scope, and the reader's own
+    /// selection is the only thing that changes.
+    private func apply(enabled: Bool, keys: [String]) throws -> UInt64 {
+        guard let preferences else { throw SourceManagementError.catalogUnavailable }
         guard let record = try preferences.load() else { throw SourceManagementError.catalogUnavailable }
-        let keys = try catalog.sourceKeys(inNode: nodeID, ceiling: ceiling)
         guard !keys.isEmpty else { throw SourceManagementError.invalidSelection }
         var selection = record.sourceKeys
         if enabled {

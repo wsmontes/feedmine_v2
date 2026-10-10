@@ -260,6 +260,78 @@ public struct LegacyCatalogReader: Sendable {
         } }
     }
 
+    /// Every source key placed at a node **or anywhere beneath it** (V1's `SourceRegistry.setRegionEnabled`
+    /// cascaded down the region tree). The shipped catalog places a country's sources at its topic leaves —
+    /// `90_countries/algeria/sports/football` — so a region's own rows are not its sources, and a surface that
+    /// toggles a region must state and change the whole tree under it.
+    public func sourceKeys(inSubtreeOf nodeID: Int64, ceiling: Int = 20_000) throws -> [String] {
+        guard ceiling > 0 else { return [] }
+        return try Self.wrap { try queue.read { db in
+            try String.fetchAll(db, sql: """
+                WITH RECURSIVE subtree(id) AS (
+                    SELECT id FROM catalog_node WHERE id = ?
+                    UNION ALL
+                    SELECT n.id FROM catalog_node n JOIN subtree s ON n.parent_id = s.id
+                )
+                SELECT s.key FROM catalog_placement p JOIN catalog_source s ON s.id = p.source_id
+                WHERE p.node_id IN (SELECT id FROM subtree)
+                ORDER BY p.sort_order, p.source_id LIMIT ?
+                """, arguments: [nodeID, ceiling])
+        } }
+    }
+
+    /// The same grouping as `sourceKeysByNode(kind:)`, with each node's whole subtree: what a list needs to
+    /// state a country's own state when the catalog places its sources below it.
+    public func sourceKeysByNodeInSubtree(kind: Int, perNodeCeiling: Int = 20_000) throws -> [Int64: [String]] {
+        guard perNodeCeiling > 0 else { return [:] }
+        return try Self.wrap { try queue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                WITH RECURSIVE subtree(root_id, id) AS (
+                    SELECT id, id FROM catalog_node WHERE kind = ?
+                    UNION ALL
+                    SELECT s.root_id, n.id FROM catalog_node n JOIN subtree s ON n.parent_id = s.id
+                )
+                SELECT s.root_id AS node_id, src.key AS key
+                FROM subtree s JOIN catalog_placement p ON p.node_id = s.id
+                JOIN catalog_source src ON src.id = p.source_id
+                ORDER BY s.root_id, p.sort_order, p.source_id
+                """, arguments: [kind])
+            var grouped: [Int64: [String]] = [:]
+            for row in rows {
+                let nodeID: Int64 = row["node_id"]
+                guard (grouped[nodeID]?.count ?? 0) < perNodeCeiling else { continue }
+                grouped[nodeID, default: []].append(row["key"])
+            }
+            return grouped
+        } }
+    }
+
+    /// The same grouping as `sourceKeysByParent(nodeID:)`, with each child's whole subtree.
+    public func sourceKeysByParentInSubtree(nodeID: Int64, perNodeCeiling: Int = 20_000)
+        throws -> [Int64: [String]] {
+        guard perNodeCeiling > 0 else { return [:] }
+        return try Self.wrap { try queue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                WITH RECURSIVE subtree(root_id, id) AS (
+                    SELECT id, id FROM catalog_node WHERE parent_id = ?
+                    UNION ALL
+                    SELECT s.root_id, n.id FROM catalog_node n JOIN subtree s ON n.parent_id = s.id
+                )
+                SELECT s.root_id AS node_id, src.key AS key
+                FROM subtree s JOIN catalog_placement p ON p.node_id = s.id
+                JOIN catalog_source src ON src.id = p.source_id
+                ORDER BY s.root_id, p.sort_order, p.source_id
+                """, arguments: [nodeID])
+            var grouped: [Int64: [String]] = [:]
+            for row in rows {
+                let nodeID: Int64 = row["node_id"]
+                guard (grouped[nodeID]?.count ?? 0) < perNodeCeiling else { continue }
+                grouped[nodeID, default: []].append(row["key"])
+            }
+            return grouped
+        } }
+    }
+
     /// Every source key placed under each child of one node, grouped by the child — one query, so a node's
     /// level states which sub-nodes are fully selected without asking per row (V1's `isRegionEnabled`).
     public func sourceKeysByParent(nodeID: Int64, perNodeCeiling: Int = 20_000) throws -> [Int64: [String]] {

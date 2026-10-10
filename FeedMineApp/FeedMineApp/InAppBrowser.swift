@@ -6,10 +6,13 @@ import SafariServices
 
 struct InAppBrowser: UIViewControllerRepresentable {
     let url: URL
-    @Environment(\.dismiss) private var dismiss
+    /// The reader's own way out, reported to the host: the host owns the presentation, so it is the host that
+    /// clears the state the sheet was presented from. `dismiss()` here would leave that state set, and a
+    /// presentation whose item is still set is one SwiftUI may keep or re-present.
+    let onFinish: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onFinish: { dismiss() })
+        Coordinator(onFinish: onFinish)
     }
 
     func makeUIViewController(context: Context) -> SFSafariViewController {

@@ -50,7 +50,9 @@ public struct MiniPlayerBar: View {
                         .accessibilityIdentifier("mini-player-title")
                     progress
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // The row fills the bar: opening the player is the whole bar's own gesture (V1's), and the
+                // bar's element then measures the height the bar reserves.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -64,11 +66,15 @@ public struct MiniPlayerBar: View {
         }
         .padding(.horizontal, FeedDesignTokens.Spacing.page)
         .frame(height: Self.height)
+        // The bar states its own identity without taking the controls' away, and without claiming the safe
+        // area below it: a plain identifier on this container would override `mini-player-toggle` and
+        // `mini-player-title` (measured), and the material's inset is not part of the bar's own height.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mini-player")
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) {
             Divider()
         }
-        .accessibilityIdentifier("mini-player")
     }
 
     @ViewBuilder private var progress: some View {
@@ -154,6 +160,8 @@ public struct FullPlayerView: View {
             Spacer()
         }
         .padding(.top, 8)
+        // Same rule as the bar: the sheet's own identity must not replace the skips' and the toggle's.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("full-player")
     }
 

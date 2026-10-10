@@ -26,6 +26,16 @@ public protocol SourceManagementBackend: Sendable {
     func selection() async throws -> [String]
     func setSelection(_ keys: [String]) async throws
     func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws
+    /// V1's "whole region on/off" over the node's *tree*: the shipped catalog places a country's sources under
+    /// its topic leaves (`90_countries/algeria/sports/football`), so the reader's toggle must cover everything
+    /// placed at any depth beneath the node. A backend that has no tree states what it always did.
+    func setEnabledTree(node: CatalogNodeSummary, enabled: Bool) async throws
+}
+
+public extension SourceManagementBackend {
+    func setEnabledTree(node: CatalogNodeSummary, enabled: Bool) async throws {
+        try await setEnabled(node: node, enabled: enabled)
+    }
 }
 
 @MainActor
@@ -115,12 +125,14 @@ public final class SourceManagementStore {
         await apply(Array(next))
     }
 
-    /// V1's "whole region on/off".
+    /// V1's "whole region on/off". A node row is a region *tree* — the catalog places a country's sources under
+    /// its topic leaves — so the control covers everything placed beneath the node, not only at it. The list is
+    /// refreshed from the backend, so the surface never shows an optimistic state the preferences did not accept.
     public func setEnabled(_ node: CatalogNodeSummary, enabled: Bool) async {
         isLoading = true
         defer { isLoading = false }
         do {
-            try await backend.setEnabled(node: node, enabled: enabled)
+            try await backend.setEnabledTree(node: node, enabled: enabled)
             selection = Set(try await backend.selection())
             /* Refresh the node's own rows so their checkmarks follow the change. */
             if openNode == node { sources = try await backend.sources(in: node) }

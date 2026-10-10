@@ -64,7 +64,10 @@ public struct FeedItemView: View, Equatable {
                     availableActions: availableActions, onAction: onAction)
             }
         }
-        // The identity used by the delivery's UI tests: the published occurrence.
+        // The identity used by the delivery's UI tests: the published occurrence. It is the card's own
+        // element — without `.contain` the identifier would replace every identifier inside the card, and
+        // the card itself would have no element with the card's frame.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(card.id.rawValue.uuidString)
         .contentShape(Rectangle())
         .onTapGesture { emit(.open) }

@@ -82,6 +82,8 @@ public struct FeedSourcesEmptyStateView: View {
         }
         .padding(.top, 40)
         .frame(maxWidth: .infinity)
+        // The surface's own identifier stays on the surface; the title and the action keep theirs inside it.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("feed-empty-state")
     }
 }

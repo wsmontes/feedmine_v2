@@ -124,6 +124,9 @@ final class AppComposition {
         else {
             do {
                 let database = try RuntimeDatabase(location: .init(directory: self.directory))
+                // The same connection serves every library surface: the reader's preferences are read through it
+                // here, and an export, a box, a collection or a setting is the same file.
+                self.library = database
                 let preferences = ReaderPreferencesStore(database: database)
                 // OMP C1: the repair path (toggleSource) needs preferences even if resolution fails.
                 self.preferences = preferences
@@ -359,9 +362,17 @@ final class AppComposition {
     }
 
     /// One handle on the reader's database for every library surface; the file is opened the way the rest of
-    /// the composition opens it.
+    /// the composition opens it. One connection for every library read and write the host performs: opening a
+    /// fresh pool per action ran the migrations again and contended with the session's own connections, and a
+    /// refused open was swallowed by `try?` — which is how an export could silently become "nothing to export".
+    /// A failed open is not remembered, so the next action tries again.
+    @ObservationIgnored private var library: RuntimeDatabase?
+
     private func libraryDatabase() -> RuntimeDatabase? {
-        try? RuntimeDatabase(location: RuntimeDatabaseLocation(directory: directory))
+        if let library { return library }
+        let opened = try? RuntimeDatabase(location: RuntimeDatabaseLocation(directory: directory))
+        library = opened
+        return opened
     }
 
     /// The library boundary, for the reader's own actions on it.
@@ -748,9 +759,15 @@ final class FeedAssociation {
     /// boxes arrive in T8). The header menu renders exactly these — never a dead item.
     /// The destinations this host can present. `collectionFromContextPrompt` and `smartFeedPrompt` are V1's
     /// two conditional entries; the app narrows them to the contexts where V1 offered them.
+    ///
+    /// The settings and tools surfaces (T9/T10) are wired in the host — its `onNavigate` presents
+    /// `.settings` as the settings sheet and `.export`/`.collectionExport` as the export sheet — so they are
+    /// offered here too, and the reader can reach what the build draws. V1's `addFeed` entries and its
+    /// "Importar para a coleção" stay out: this host has no composer for adding a feed and no collection
+    /// import, and an entry that opens the wrong surface is worse than one that is not offered.
     static let readerDestinations: Set<ReaderDestination> = [.sources, .bookmarkBoxes, .filters,
         .collections, .collectionFromContextPrompt, .smartFeedPrompt, .smartFeedDeletion,
-        .curatedOnboarding, .curatedInspector, .curatedDeletion]
+        .curatedOnboarding, .curatedInspector, .curatedDeletion, .export, .collectionExport, .settings]
 
     @ObservationIgnored
     lazy var store: FeedScreenStore = FeedScreenStore(onViewport: { [weak self] observation, activity in

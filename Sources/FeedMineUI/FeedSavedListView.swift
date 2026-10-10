@@ -38,10 +38,16 @@ public struct FeedSavedListView: View {
                 }
             } else {
                 List(articles) { article in
-                    Button { onOpen(article.id) } label: { row(article) }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("saved-article-" + article.id.rawValue.uuidString)
-                        .accessibilityAddTraits(.isLink)
+                    // U2: the row's whole area is the reader's target, not only the text it draws. The row is a
+                    // link-styled button, and a tap between the title and the metadata line is a tap on the row
+                    // — measured: at the row's centre the button's action never ran, and the same tap reached it
+                    // once the label declared its own shape (V1's own dead taps for a card without one).
+                    Button { onOpen(article.id) } label: {
+                        row(article).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("saved-article-" + article.id.rawValue.uuidString)
+                    .accessibilityAddTraits(.isLink)
                 }
             }
         }

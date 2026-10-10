@@ -117,6 +117,7 @@ enum DevelopmentLocalFeeds {
           <title>\(feedTitle)</title>
           <link>\(url.absoluteString)</link>
           <description>Fixture feed</description>
+          <language>en</language>
           \(items)
         </channel></rss>
         """

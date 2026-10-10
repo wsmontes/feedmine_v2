@@ -60,6 +60,10 @@ public struct ReaderOnboardingView: View {
             }
         }
         .animation(reduceMotion ? nil : .spring(response: 0.6, dampingFraction: 0.7), value: stage)
+        // The gate's own identifier stays on the gate: a plain identifier on the container would override
+        // every identifier inside it (the same rule the reader's search bar documents), which left the
+        // Welcome and Composer controls unreachable. `.contain` keeps them elements of their own.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("onboarding")
     }
 
@@ -149,6 +153,7 @@ public struct ReaderOnboardingView: View {
                 .foregroundStyle(.white.opacity(0.7))
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("welcome-trust")
     }
 
@@ -192,29 +197,34 @@ public struct ReaderOnboardingView: View {
     // MARK: - Stage 2: the Composer (V1's FeedComposerScene)
 
     private var composer: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.deck) {
-                HStack {
-                    Spacer()
-                    closeButton
+        // V1 pinned the footer as a *sibling* of the sheet's scroll view (`FeedComposerScene.editorialSheet`),
+        // which is what keeps the last rows reachable. An inset drawn over the same scroll view left the media
+        // toggles under the footer's own buttons (measured: a tap on the podcast switch hit "Abrir meu feed").
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.deck) {
+                    HStack {
+                        Spacer()
+                        closeButton
+                    }
+                    previewZone
+                    Text(verbatim: String(localized: "Monte seu primeiro feed"))
+                        .font(FeedDesignTokens.Typography.pageTitle)
+                    Text(verbatim: String(localized: "Opcional. Mude tudo depois."))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("composer-subtitle")
+                    languageControl
+                    discoveryControl
+                    balanceControl
+                    topicControl
+                    mediaControl
                 }
-                previewZone
-                Text(verbatim: String(localized: "Monte seu primeiro feed"))
-                    .font(FeedDesignTokens.Typography.pageTitle)
-                Text(verbatim: String(localized: "Opcional. Mude tudo depois."))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("composer-subtitle")
-                languageControl
-                discoveryControl
-                balanceControl
-                topicControl
-                mediaControl
+                .padding(FeedDesignTokens.Spacing.page)
             }
-            .padding(FeedDesignTokens.Spacing.page)
+            .background(Color.clear)
+            composerFooter
         }
-        .background(Color.clear)
-        .safeAreaInset(edge: .bottom) { composerFooter }
     }
 
     @ViewBuilder private var previewZone: some View {

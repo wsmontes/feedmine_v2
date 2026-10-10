@@ -24,7 +24,13 @@ final class FeedMineUITests: XCTestCase {
         openMenu(app)
         app.buttons["Fontes"].tap()
         XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'source-choice-'")).firstMatch.waitForExistence(timeout: 10))
+        // The source surface this build ships is the catalog's own levels (V1's structure, port log T7): the
+        // country list is one level in, and the enabled count states the selection. Those rows sit below the
+        // sheet's fold, so the sheet's own list is scrolled into the tree first.
+        XCTAssertTrue(scrollIntoView(app.buttons["sources-open-countries"], in: app, timeout: 20),
+            "the source surface offers its choices")
+        XCTAssertTrue(scrollIntoView(app.staticTexts["sources-enabled-count"], in: app, timeout: 10),
+            "the surface states the enabled count")
         app.buttons["Concluir"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 10))
     }
@@ -53,12 +59,18 @@ final class FeedMineUITests: XCTestCase {
         // The way back: the ported source surface — the country list is one level in (V1's structure), and
         // enabling one country brings the feed back.
         app.buttons["feed-empty-action"].tap()
-        XCTAssertTrue(app.buttons["sources-open-countries"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.staticTexts["sources-enabled-count"].exists, "the surface states the enabled count")
+        // The sheet lists the sections first: the countries row and the enabled count sit below its fold, and
+        // a `List` row is only in the accessibility tree once it has been scrolled into it.
+        XCTAssertTrue(scrollIntoView(app.buttons["sources-open-countries"], in: app, timeout: 20),
+            "the source surface offers the country list one level in")
+        XCTAssertTrue(scrollIntoView(app.staticTexts["sources-enabled-count"], in: app, timeout: 10),
+            "the surface states the enabled count")
         app.buttons["sources-open-countries"].tap()
-        let countryToggle = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH 'country-toggle-'")).firstMatch
-        XCTAssertTrue(countryToggle.waitForExistence(timeout: 20))
-        countryToggle.tap()
+        let countryToggle = app.switches.matching(NSPredicate(
+            format: "identifier BEGINSWITH 'country-toggle-' AND identifier != 'country-toggle-all'")).firstMatch
+        XCTAssertTrue(countryToggle.waitForExistence(timeout: 20), "the country list offers a toggle per country")
+        // The row is the switch element; the control inside it is what enables the country.
+        countryToggle.switches.firstMatch.tap()
         app.buttons["countries-done"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60),
             "the selection the source surface accepted is what the app adopts when it closes")
@@ -91,7 +103,7 @@ final class FeedMineUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["Longreads"].waitForExistence(timeout: 15))
         // And the box survives the surface being closed and opened again.
-        app.buttons.matching(identifier: "Concluir").firstMatch.tap()
+        app.buttons["bookmarkBoxes.done"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
         app.buttons["bookmark-boxes-button"].tap()
         XCTAssertTrue(app.staticTexts["Longreads"].waitForExistence(timeout: 15))
@@ -110,14 +122,17 @@ final class FeedMineUITests: XCTestCase {
         openMenu(app)
         app.buttons["Coleções de fontes"].tap()
         XCTAssertTrue(app.navigationBars["Coleções de fontes"].waitForExistence(timeout: 15))
-        // V1's empty state explains what a collection is before the reader has any.
-        XCTAssertTrue(app.otherElements["collections-empty"].waitForExistence(timeout: 10))
+        // V1's empty state explains what a collection is before the reader has any. The identifier lands on
+        // the state's own drawn elements (measured: an image and its two texts), so it is located by
+        // identifier across types.
+        XCTAssertTrue(element(app, "collections-empty").waitForExistence(timeout: 10))
         app.buttons["collections.new"].tap()
         let nameField = app.textFields.firstMatch
         XCTAssertTrue(nameField.waitForExistence(timeout: 10))
         nameField.typeText("Ciência")
         app.buttons["Criar"].tap()
-        XCTAssertTrue(app.staticTexts["Ciência"].waitForExistence(timeout: 15))
+        XCTAssertTrue(scrollIntoView(app.staticTexts["Ciência"], in: app, timeout: 15),
+            "the collection the reader created is listed")
         // Open it: the detail names the feed action and states that it has no sources yet.
         app.staticTexts["Ciência"].tap()
         XCTAssertTrue(app.buttons["collection.openFeed"].waitForExistence(timeout: 15))
@@ -127,9 +142,11 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
         // The filter sheet's picker now offers V1's two entries and the reader's own collection.
         app.buttons["filter-button"].tap()
-        XCTAssertTrue(app.buttons["preset-option-everything"].waitForExistence(timeout: 15))
+        let everything = app.buttons["preset-option-everything"]
+        XCTAssertTrue(scrollIntoView(everything, in: app, timeout: 20), "the preset picker is offered")
         XCTAssertTrue(app.buttons["preset-option-lastClicked"].exists)
-        XCTAssertTrue(app.staticTexts["Ciência"].waitForExistence(timeout: 10))
+        XCTAssertTrue(scrollIntoView(app.staticTexts["Ciência"], in: app, timeout: 15),
+            "the reader's own collection is one of the presets")
         app.buttons["Concluído"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
@@ -145,9 +162,10 @@ final class FeedMineUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
         // The card's own menu, opened the way a reader opens it.
-        let card = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'Development'")).firstMatch
-        let target = card.exists ? card : app.scrollViews.firstMatch
-        target.press(forDuration: 1.2)
+        let card = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", Self.cardIdentifier)).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 45), "a real published occurrence must appear")
+        pressCard(card)
         XCTAssertTrue(app.buttons["Copiar link"].waitForExistence(timeout: 10))
         app.buttons["Copiar link"].tap()
         // Either the clipboard took the card's own target, or the app says what it could not do — never both
@@ -215,9 +233,10 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["settings-circadian-footer"].exists)
         XCTAssertTrue(app.switches["settings-prefetch"].exists)
         XCTAssertTrue(app.switches["settings-night-mode"].exists)
-        // Write two preferences and see them hold.
-        app.switches["settings-night-mode"].tap()
-        app.switches["settings-circadian-palette"].tap()
+        // Write two preferences and see them hold. The row is the switch element; the control inside it is
+        // what toggles the preference, so the control is what is tapped.
+        app.switches["settings-night-mode"].switches.firstMatch.tap()
+        app.switches["settings-circadian-palette"].switches.firstMatch.tap()
         let nightOff = app.switches["settings-night-mode"].value as? String
         XCTAssertEqual(nightOff, "1", "the switch states what was written")
         app.buttons["settings-done"].tap()
@@ -244,20 +263,19 @@ final class FeedMineUITests: XCTestCase {
         app.launchEnvironment["FEEDMINE_IMPORT_FIXTURE"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
-        // The fixture: one usable feed, one repeat of it, one address that cannot be used.
+        // The fixture: one usable feed, one repeat of it, one address that cannot be used. Each row is one
+        // element of its own, so the counts are the number of rows the preview states.
         XCTAssertTrue(app.navigationBars["Importar OPML"].waitForExistence(timeout: 20))
-        XCTAssertEqual(app.staticTexts.matching(identifier: "import-entry").count, 1)
-        XCTAssertEqual(app.staticTexts.matching(identifier: "import-rejection").count, 1)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "import-entry").count, 1)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "import-rejection").count, 1)
         let summary = app.staticTexts["import-summary"].label
         XCTAssertTrue(summary.contains("1 fontes"), summary)
         XCTAssertTrue(summary.contains("1 repetidas"), summary)
         XCTAssertTrue(summary.contains("1 ignoradas"), summary)
         // Confirming writes it — in the app, through the real database — and states what it did.
         app.buttons["import-confirm"].tap()
-        let toast = NSPredicate(format: "label CONTAINS %@", "Importadas 1")
-        let seen = XCTNSPredicateExpectation(predicate: toast, object: app.staticTexts.firstMatch)
-        XCTAssertEqual(XCTWaiter.wait(for: [seen], timeout: 20), .completed,
-            "the import states what it wrote")
+        let toast = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Importadas 1")).firstMatch
+        XCTAssertTrue(toast.waitForExistence(timeout: 20), "the import states what it wrote")
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
         // The export sheet, from the reader's own menu, with a preview of the document.
         openMenu(app)
@@ -265,7 +283,9 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Exportar"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["export-scope-selection"].exists)
         XCTAssertTrue(app.buttons["export-share"].exists)
-        XCTAssertTrue(app.staticTexts["export-preview"].waitForExistence(timeout: 15))
+        // The document's own preview is a section of that sheet's list, so it is scrolled into the tree.
+        XCTAssertTrue(scrollIntoView(app.staticTexts["export-preview"], in: app, timeout: 15),
+            "the export sheet shows the document it would produce")
         app.buttons["export-done"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
@@ -289,14 +309,28 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.sliders["composer-discovery"].exists)
         XCTAssertTrue(app.buttons["composer-language-pt"].exists || app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH 'composer-language-'")).firstMatch.exists)
+        // The Composer scrolls: its topic rows and media toggles sit below the fold. The scroll is anchored on
+        // the Composer's own vertical scroll view — the gate's first — and never on the horizontal preview zone
+        // inside it, which leaves the screen as soon as the sheet moves.
+        let composer = element(app, "onboarding").scrollViews.firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10), "the Composer is on screen")
+        composer.swipeUp()
         let topic = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-topic-'")).firstMatch
-        XCTAssertTrue(topic.waitForExistence(timeout: 10))
+        XCTAssertTrue(topic.waitForExistence(timeout: 10), "the Composer offers its topic controls")
         // A topic cycles normal → more → less → normal, and the label follows.
         let label = topic.label
         topic.tap()
         XCTAssertNotEqual(topic.label, label, "tapping a topic changes its answer")
-        XCTAssertTrue(app.switches["composer-media-podcast"].exists)
-        app.switches["composer-media-podcast"].tap()
+        let podcast = app.switches["composer-media-podcast"]
+        XCTAssertTrue(podcast.waitForExistence(timeout: 10), "the Composer offers its media toggles")
+        // The last rows sit below the fold: the sheet's own scroll view is what moves them, and the footer is
+        // its sibling, so the toggle ends above the footer instead of under its own buttons.
+        for _ in 0..<4 where !podcast.isHittable { composer.swipeUp() }
+        XCTAssertTrue(podcast.isHittable, "the Composer's media toggles are reachable")
+        // The control is the row's trailing switch (the row's own label is not its target), so the switch's own
+        // position is what is tapped — and the toggle states the answer it took.
+        podcast.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(podcast.value as? String, "0", "the toggle states what the reader chose")
         // The footer saves and opens the feed.
         app.buttons["composer-open-feed"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60))
@@ -363,26 +397,39 @@ final class FeedMineUITests: XCTestCase {
         // A filter the reader applied, and a card they saved.
         app.buttons["filter-button"].tap()
         XCTAssertTrue(app.navigationBars.buttons["Concluído"].waitForExistence(timeout: 15))
-        app.buttons["filter-language-pt"].firstMatch.tap()
+        // The criterion the fixtures declare (`en`), and the sheet's own table is what scrolls to it.
+        let english = app.buttons["language-en"]
+        XCTAssertTrue(scrollIntoView(english, in: app, timeout: 15), "the sheet offers the language criterion")
+        english.tap()
         app.buttons["Concluído"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
-        let firstCard = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH 'feed-card-'")).firstMatch
-        if firstCard.exists {
-            firstCard.press(forDuration: 1.2)
-            if app.buttons["Salvar artigo"].waitForExistence(timeout: 5) { app.buttons["Salvar artigo"].tap() }
-            else { app.tap() }
-        }
+        let firstCard = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", Self.cardIdentifier)).firstMatch
+        XCTAssertTrue(firstCard.waitForExistence(timeout: 45), "a real published occurrence must appear")
+        pressCard(firstCard)
+        XCTAssertTrue(app.buttons["Salvar artigo"].waitForExistence(timeout: 10), "the card menu offers saving")
+        app.buttons["Salvar artigo"].tap()
         // Offline, and a fresh launch of the same reader's store.
         app.terminate()
         app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45),
             "the feed the reader had is still readable offline")
-        // The saved card is still saved, and the filter is still applied (the lens states it).
-        openMenu(app)
-        app.buttons["Salvos"].tap()
-        XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 15))
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        // The filter the reader applied is still applied, and the lens states the criterion it kept.
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'lens-chip-language-'"))
+            .firstMatch.waitForExistence(timeout: 15), "the filter survives an offline relaunch")
+        // The saved card is still saved: the header's own saved surfaces list it. (The overflow menu has no
+        // saved entry — `Salvos` is the header's bookmark control, whose label is the same word.)
+        app.buttons["bookmark-boxes-button"].tap()
+        XCTAssertTrue(app.buttons["Todos os salvos"].waitForExistence(timeout: 15))
+        app.buttons["Todos os salvos"].tap()
+        let saved = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'saved-article-'")).firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 15), "the saved card survives an offline relaunch")
+        // The list is a level of its own: its back button returns to the boxes, and the boxes' own "Concluir"
+        // returns to the feed.
+        app.navigationBars.buttons["BackButton"].tap()
+        XCTAssertTrue(app.buttons["bookmarkBoxes.done"].waitForExistence(timeout: 15))
+        app.buttons["bookmarkBoxes.done"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
 
@@ -512,31 +559,37 @@ final class FeedMineUITests: XCTestCase {
         let card = cards.firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 45), "a real published occurrence must appear")
         let counters = proof.label
-        card.press(forDuration: 1.2)
+        pressCard(card)
         let save = app.buttons["Salvar artigo"]
         XCTAssertTrue(save.waitForExistence(timeout: 10), "the card menu must offer saving")
         save.tap()
         app.buttons["bookmark-boxes-button"].tap()
+        XCTAssertTrue(app.buttons["Todos os salvos"].waitForExistence(timeout: 15))
+        app.buttons["Todos os salvos"].tap()
         let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'saved-article-'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), "the saved article must be listed")
         let list = XCTAttachment(screenshot: app.screenshot())
         list.name = "u2-saved-list"
         list.lifetime = .keepAlways
         add(list)
-        row.tap()
+        // The row is a link-styled button, and the same element is reported as Button or Link depending on the
+        // surface: the reader's own tap goes through the row's centre, as it does for a card in the feed.
+        tapCard(row)
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "the reader must open inside the app")
         let reader = XCTAttachment(screenshot: app.screenshot())
         reader.name = "u2-in-app-reader"
         reader.lifetime = .keepAlways
         add(reader)
-        // SafariServices owns the reader's close control; try its localized titles, then the
-        // standard sheet dismissal, and keep the hierarchy for diagnosis if neither works.
+        // SafariServices owns the reader's close control; try its localized titles, and fall back to the sheet's
+        // own dismissal only while the browser is still up. The reader may also have finished by itself, and
+        // dismissing whatever is on screen then would take the saved list with it.
         var dismissed = false
         for label in ["Close", "Done", "Fechar", "Concluído"] {
             let button = app.buttons[label].firstMatch
             if button.waitForExistence(timeout: 3) { button.tap(); dismissed = true; break }
+            if !app.webViews.firstMatch.exists { dismissed = true; break }
         }
-        if !dismissed {
+        if !dismissed, app.webViews.firstMatch.exists {
             app.swipeDown(velocity: .fast)
         }
         // Closing the reader returns to the saved list (the feed is behind the pushed screen, so
@@ -654,7 +707,12 @@ final class FeedMineUITests: XCTestCase {
         // The overflow menu offers exactly what this build can present.
         openMenu(app)
         XCTAssertTrue(app.buttons["Fontes"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["Ajustes"].exists, "an unimplemented destination is never offered")
+        // Every surface this build draws is offered, and only those: the settings sheet (T10) is reachable
+        // here, while a destination this build cannot present is never offered.
+        XCTAssertTrue(app.buttons["Ajustes"].waitForExistence(timeout: 10),
+            "the settings surface the reader has is offered")
+        XCTAssertFalse(app.buttons["Importar para a coleção"].exists,
+            "a destination this build cannot present is never offered")
         XCTAssertFalse(app.buttons["Copiar link"].exists, "a card action this build cannot execute is gated")
         app.buttons["Fontes"].tap()
         XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 10))
@@ -671,18 +729,24 @@ final class FeedMineUITests: XCTestCase {
             .matching(NSPredicate(format: "identifier MATCHES %@", "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"))
         let card = cards.firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 45), "a real published occurrence must appear")
-        card.press(forDuration: 1.2)
+        pressCard(card)
         let save = app.buttons["Salvar artigo"]
         XCTAssertTrue(save.waitForExistence(timeout: 10), "the long press must reach the card menu")
         save.tap()
-        // Saving is really durable: the header's bookmark control shows the saved list with the row.
+        // Saving is really durable: the header's bookmark control opens the reader's saved surfaces (V1's own
+        // screen), and the article is in the list it leads to.
         app.buttons["bookmark-boxes-button"].tap()
+        XCTAssertTrue(app.buttons["Todos os salvos"].waitForExistence(timeout: 15))
+        app.buttons["Todos os salvos"].tap()
         let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'saved-article-'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 15), "the saved article must be listed")
         app.navigationBars.buttons["BackButton"].tap()
+        // The saved surface is a sheet of its own: closing it is what puts the reader back on the feed.
+        XCTAssertTrue(app.buttons["bookmarkBoxes.done"].waitForExistence(timeout: 15))
+        app.buttons["bookmarkBoxes.done"].tap()
         XCTAssertTrue(scroll.waitForExistence(timeout: 15))
         // A plain tap on the same card still opens it (the tap was never swallowed by the long press).
-        card.tap()
+        tapCard(card)
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "tapping the card must open it")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "t5-shell-and-gestures"
@@ -696,6 +760,41 @@ final class FeedMineUITests: XCTestCase {
     private func element(_ app: XCUIApplication, _ identifier: String) -> XCUIElement {
         app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == %@", identifier)).firstMatch
+    }
+
+    /// A row of a scrolling list is not in the accessibility hierarchy until it has been scrolled into it.
+    /// The gesture is real (the reader's own scroll) and lands on the list that is on screen — a sheet's
+    /// `List` is a table, and the feed's own scroll view is what is left when there is none.
+    @MainActor
+    @discardableResult
+    private func scrollIntoView(_ element: XCUIElement, in app: XCUIApplication,
+        timeout: TimeInterval = 20) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if element.exists && element.isHittable { return true }
+            let table = app.tables.firstMatch
+            if table.exists { table.swipeUp() } else { app.swipeUp() }
+        }
+        return element.exists
+    }
+
+    /// The delivery's own card identity: the published occurrence's UUID, which each card states as its own
+    /// identifier.
+    private static let cardIdentifier =
+        "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"
+
+    /// The card's own element contains the card, so a hit test at its centre lands on what is inside it; the
+    /// reader's own long press therefore goes through that centre. It is still a real press on the card they
+    /// saw, and the card's menu is what answers it.
+    @MainActor
+    private func pressCard(_ card: XCUIElement, forDuration duration: TimeInterval = 1.2) {
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: duration)
+    }
+
+    /// The same for the reader's own tap: the card opens the article it publishes.
+    @MainActor
+    private func tapCard(_ card: XCUIElement) {
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     /// T6: the reader's filter sheet is V1's, and applying a selection is one explicit transition — the sheet
@@ -714,8 +813,10 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(proof.waitForExistence(timeout: 10))
         app.buttons["filter-button"].tap()
         XCTAssertTrue(app.buttons["filter-done"].waitForExistence(timeout: 10), "the filter sheet must open")
-        // The criteria this build can enforce are the ones it offers; the rest are absent, not inert.
-        let languages = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'language-'")).firstMatch
+        // The criteria this build can enforce are the ones it offers; the rest are absent, not inert. The
+        // criterion applied is the one the fixtures themselves declare (`en`), so the filtered context is a
+        // context this reader can be in: its feed comes back with cards.
+        let languages = app.buttons["language-en"]
         XCTAssertTrue(languages.waitForExistence(timeout: 10),
             "the declared languages come from the shipped catalog")
         XCTAssertFalse(app.buttons["browse-topics"].exists,

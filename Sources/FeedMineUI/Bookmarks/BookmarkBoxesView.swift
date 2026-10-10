@@ -71,6 +71,12 @@ public struct BookmarkBoxesView: View {
         .background(appearance.pageBackground)
         .navigationTitle(Text(verbatim: String(localized: "Caixas de salvos")))
         .toolbar {
+            // V1's own way out of the surface, as the source sheet and the collections surface have:
+            // a "Concluir" that closes it. Without it the sheet could only be dragged away.
+            ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
+                Button(String(localized: "Concluir"), action: onClose)
+                    .accessibilityIdentifier("bookmarkBoxes.done")
+            }
             ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
                 Button(store.isReordering ? String(localized: "Concluir") : String(localized: "Reordenar")) {
                     store.setReordering(!store.isReordering)

@@ -67,4 +67,8 @@ public struct SourceCatalogBackend: SourceManagementBackend {
     public func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws {
         _ = try coordinator.setEnabled(nodeID: node.id, enabled: enabled)
     }
+
+    public func setEnabledTree(node: CatalogNodeSummary, enabled: Bool) async throws {
+        _ = try coordinator.setEnabledTree(nodeID: node.id, enabled: enabled)
+    }
 }

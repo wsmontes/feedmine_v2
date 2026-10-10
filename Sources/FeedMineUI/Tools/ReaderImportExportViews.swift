@@ -172,6 +172,7 @@ public struct ReaderImportPreviewView: View {
                                 .foregroundStyle(.tertiary)
                         }
                     }
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("import-entry")
                 }
             } header: {
@@ -195,6 +196,7 @@ public struct ReaderImportPreviewView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("import-rejection")
                     }
                 }

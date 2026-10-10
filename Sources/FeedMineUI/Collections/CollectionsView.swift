@@ -86,11 +86,12 @@ public struct CollectionsView: View {
                 .accessibilityIdentifier("collections.new")
             }
         }
-        .sheet(item: $opened) { collection in
-            NavigationStack {
-                CollectionDetailView(store: store, collection: collection, appearance: appearance,
-                    onOpenFeed: onOpenFeed)
-            }
+        // V1 pushed one collection's own detail inside the same navigation stack (`NavigationLink`), so the
+        // way back is the stack's own. Presenting it as a second sheet left the detail with no way out but a
+        // drag, and made the surface behind it unreachable.
+        .navigationDestination(item: $opened) { collection in
+            CollectionDetailView(store: store, collection: collection, appearance: appearance,
+                onOpenFeed: onOpenFeed)
         }
         .alert(String(localized: "Nova coleção de fontes"), isPresented: $isCreating) {
             TextField(String(localized: "Nome"), text: $newName)
@@ -159,6 +160,9 @@ struct CollectionRowView: View {
             label
         }
         .buttonStyle(.plain)
+        // The row states its identity without taking its own name away: a plain identifier here would
+        // override the name inside it (the same rule the card and the empty state document).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("collection.row")
         .swipeActions(edge: .trailing) {
             Button(role: .destructive, action: onDelete) {

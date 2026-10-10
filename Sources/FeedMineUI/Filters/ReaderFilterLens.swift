@@ -74,6 +74,9 @@ public struct ReaderFilterLens: View {
                 .padding(.vertical, 6)
             }
             .background(.ultraThinMaterial)
+            // The bar's own identity must not replace its chips': a plain identifier on this container would
+            // override every `lens-chip-*` inside it (measured), so the chips stay elements of their own.
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("reader-filter-lens")
             // V1 hid the bar with a swipe; the same gesture here reports the dismissal, it does not decide it.
             .gesture(DragGesture(minimumDistance: 16)

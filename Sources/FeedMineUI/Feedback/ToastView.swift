@@ -31,6 +31,9 @@ public struct ToastView: View {
         .shadow(color: .black.opacity(0.2), radius: 8, y: 2)
         // Feedback must never intercept a gesture or move content (T3): it is decoration over the feed.
         .allowsHitTesting(false)
+        // The message stays a text of its own inside the toast's own element, so what the app says is
+        // readable as what it says.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("reader-toast")
     }
 }
