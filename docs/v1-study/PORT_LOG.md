@@ -458,7 +458,20 @@ equivalent-selection case, the search scope, and the legacy row.
 
 **Verified.** `swift test` **900 tests, 0 failures**.
 
-**Remaining for T6**: the filter sheet + lens in the UI wired to `ReaderFilterDraft` and the coordinator that
-applies it (persist the selection, then activate its context), the expiry record (pending fact, applied on an
-explicit transition), the `EditorialRevision` compatibility widening for the new key
-(`AppComposition.swift:358`), and the A→B→A / stale-callback tests.
+**Step 6 landed — one moment turns a draft into the applied selection.** New `ReaderFilterStore` (UI): it holds
+the applied selection and the draft, forwards the sheet's edits, and has exactly one applying path.
+`dismiss()` is that path (V1: the sheet has no Cancel, it commits the dirty parts when it goes away);
+a clean draft applies nothing; a **stale** draft (the applied selection moved beneath it) is refused instead of
+overwriting a context the reader is no longer editing; a host failure leaves the draft intact so the reader can
+retry; `revert()` discards the edits and re-hydrates from the *currently applied* selection, which is also what
+clears staleness; and `hydrate` is how a foreign change arrives (a dirty draft is kept and marked stale rather
+than thrown away silently). New `ReaderFilterStoreTests` (5).
+
+**Verified.** `swift test` **905 tests, 0 failures**.
+
+**Remaining for T6**: the sheet and lens views themselves (V1's `FilterSheetView` layout: preset picker, countries
+link, content type, topics, language, mood, "Clear All Filters", toolbar Done) bound to this store, the composition
+coordinator that implements `onApply` (persist the selection through `ReaderPreferencesStore.setContext(_ key:)`
+and then activate that context), the expiry record (pending fact, applied on an explicit transition), the
+`EditorialRevision` compatibility widening for the new key (`AppComposition.swift:358`), and the A→B→A /
+stale-callback tests.
