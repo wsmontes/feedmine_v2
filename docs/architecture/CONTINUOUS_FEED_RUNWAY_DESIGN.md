@@ -1,5 +1,9 @@
 # Continuous feed production + adaptive runway — Phase 3J
 
+## Cross-cutting product rule — adaptive runway and continuing exploration (2026-10-10)
+
+Runway replenishment, candidate-work capacity, preparation, media and the opportunities for wider catalog acquisition all respond to **measured consumption, supply, resource headroom and replenishment cost**, rather than a constant page count, fixed article target, percentage or polling interval. Every bounded window and execution budget is operational and transient; a healthy runway does not mean catalog exploration is finished. With spare capacity and valid OS execution opportunities, continued acquisition should progressively cover lower-priority but eligible sources as well. Under memory, disk, network, energy or thermal pressure, protect the currently visible feed and its presentation-ready runway before speculative work. Do not introduce a competing scheduling system or claim indefinite iOS background execution. See [PD-8](../product/PRODUCT_DECISIONS_2026-10-09.md) and [INV-16](PRODUCT_INVARIANTS.md). These are product requirements, **not a claim that all historic phases implement them**.
+
 ## 1. Scope
 
 Design only. This gate closes the continuous local-production ownership model; it changes no Swift, tests, package graph or schema. 3J policy/controller/production value names below remain proposed future surfaces. The bounded Publication history facts described in the 3K1 completion record below are now implemented APIs. 3J design base: Phase 3I3, `2778291ef462ca33e56567bbb0322ee4b3c39355`. Phase 3J — complete. Phase 3K1 — bounded exposure + ready-runway history facts — complete. Phase 3K2 — one bounded local production slice — complete. Phase 3K3 — adaptive policy + minimal controller — complete. 3K1 implementation base: `31f409528eb16f1ef300716824e7656464d863c5`.
