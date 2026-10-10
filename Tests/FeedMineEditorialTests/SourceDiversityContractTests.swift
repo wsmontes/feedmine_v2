@@ -144,12 +144,18 @@ final class SourceDiversityContractTests: XCTestCase {
             let result = try SelectionEngine().select(plan: plan, policy: policy,
                 window: CandidateSupplyWindow(candidates: candidates, examinedCount: candidates.count, nextCursor: nil, exhausted: true),
                 exposure: nil, after: nil)
+            let selectedLabels: Set<Int> = [1, 2]
             return result.orderedCandidates.map { candidate in
-                Int(candidate.sourceIDs.first!.rawValue.uuidString.suffix(12), radix: 16)! - 1000
+                // The label is the *selected* source of the candidate: the shared one carries a second,
+                // unselected source whose raw value must not leak into the comparison.
+                let values = candidate.sourceIDs.map { Int($0.rawValue.uuidString.suffix(12), radix: 16)! - 1000 }
+                return values.filter(selectedLabels.contains).min()!
             }
         }
         XCTAssertEqual(try run(extraMembership: false), try run(extraMembership: true),
             "an unselected SourceID must not change what the selected sources are offered")
+        // Non-vacuity: the comparison above only means something if the window actually publishes cards.
+        XCTAssertEqual(try run(extraMembership: true).count, 6, "every candidate in this window is placeable")
     }
 
     /// Compatibility of the change itself: an Edition published under sequencing v2 keeps the behavior
@@ -250,11 +256,14 @@ final class SourceDiversityContractTests: XCTestCase {
     func testTheTailWindowMeetsEverySourceBeforeRepeatingOne() throws {
         let sequence = try published(Self.measuredTailWindow)
         var seen = Set<Int>()
-        for (position, source) in sequence.enumerated() where seen.contains(source) {
-            let missing = Set(Self.measuredTailWindow).subtracting(seen)
-            XCTAssertTrue(missing.isEmpty,
-                "source \(source) repeated at position \(position) before sources \(missing.sorted()) were met")
-            break
+        for (position, source) in sequence.enumerated() {
+            if seen.contains(source) {
+                let missing = Set(Self.measuredTailWindow).subtracting(seen)
+                XCTAssertTrue(missing.isEmpty,
+                    "source \(source) repeated at position \(position) before sources \(missing.sorted()) were met")
+                return
+            }
+            seen.insert(source)
         }
     }
 }
