@@ -223,6 +223,27 @@ public struct LegacyCatalogReader: Sendable {
         } }
     }
 
+    /// Every source key placed under a node of one kind, grouped by node — one query, for a surface that must
+    /// show each country's state without asking per row.
+    public func sourceKeysByNode(kind: Int, perNodeCeiling: Int = 20_000) throws -> [Int64: [String]] {
+        guard perNodeCeiling > 0 else { return [:] }
+        return try Self.wrap { try queue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT p.node_id AS node_id, s.key AS key
+                FROM catalog_node n JOIN catalog_placement p ON p.node_id = n.id
+                JOIN catalog_source s ON s.id = p.source_id
+                WHERE n.kind = ? ORDER BY p.node_id, p.sort_order, p.source_id
+                """, arguments: [kind])
+            var grouped: [Int64: [String]] = [:]
+            for row in rows {
+                let nodeID: Int64 = row["node_id"]
+                guard (grouped[nodeID]?.count ?? 0) < perNodeCeiling else { continue }
+                grouped[nodeID, default: []].append(row["key"])
+            }
+            return grouped
+        } }
+    }
+
     /// Exact canonical identity lookup; fetching still uses the separate requestURL.
     public func source(key: String) throws -> LegacyCatalogSourceRecord? {
         try Self.wrap { try queue.read { db in

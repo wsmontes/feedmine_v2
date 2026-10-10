@@ -18,6 +18,7 @@ public protocol SourceManagementBackend: Sendable {
     func breadcrumb(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary]
     func sources(in node: CatalogNodeSummary) async throws -> [CatalogSourceSummary]
     func searchSources(_ query: String) async throws -> [CatalogSourceSummary]
+    func countryKeys() async throws -> [Int64: Set<String>]
     func selection() async throws -> [String]
     func setSelection(_ keys: [String]) async throws
     func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws
@@ -37,6 +38,8 @@ public final class SourceManagementStore {
     public private(set) var results: [CatalogSourceSummary] = []
     /// Selected catalog keys, exactly as the reader's preferences store them.
     public private(set) var selection: Set<String> = []
+    /// Every country's own keys, so a country row can state whether all of its sources are selected.
+    public private(set) var countryKeys: [Int64: Set<String>] = [:]
     public private(set) var query = ""
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
@@ -55,6 +58,7 @@ public final class SourceManagementStore {
             languages = try await backend.languages()
             sections = try await backend.sections()
             countries = try await backend.countries()
+            countryKeys = try await backend.countryKeys()
             selection = Set(try await backend.selection())
             hasCatalog = true
             errorMessage = nil

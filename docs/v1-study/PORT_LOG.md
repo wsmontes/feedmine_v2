@@ -538,9 +538,19 @@ missing catalog is a **stated state**, not an empty tree, and a refused change n
 selection on screen — the shown selection is always the one the backend accepted. New
 `SourceManagementStoreTests` (4) with a recording backend that can be told to fail.
 
-**Still open in T7**: the source-management/exploration/browse **views** bound to this coordinator (V1's
+Fifth slice — the first ported view: `Sources/FeedMineUI/Sources/CountriesListView.swift`, V1's
+`CountriesListScreen` layout on top of the store (flag + name + "N feeds" + a per-country toggle, an
+"All countries" row, a footer with the totals, and the done control), with `CountryRow` as a rendering value so
+the layout is testable without a store. `LegacyCatalogReader.sourceKeysByNode(kind:)` returns every country's own
+keys in **one** read and the store holds that map, so a row can state "enabled" only when *all* of its sources are
+selected — one query per list, not one per row. Two deliberate differences from V1 are recorded: the toggle binds
+to the store's *accepted* selection (V1 flipped optimistically and deferred the write with
+`DispatchQueue.main.async`), and the flag is derived from the catalog's own `countries/<code>` key shape with a
+globe fallback (a two-letter slug outside that shape is not claimed to be a country).
+
+**Still open in T7**: the remaining source-management/exploration/browse views (V1's
 `SourceManagementView`, `CatalogExploreView`, `TaxonomyBrowseView`, country/region screens) — including that
 empty state — the catalog health check (`testHealth`, which needs the acquisition transport and its own slice), and
 the offline/scale UI tests.
 
-**Verified.** `swift test` **917 tests, 0 failures**.
+**Verified.** `swift test` **918 tests, 0 failures**.

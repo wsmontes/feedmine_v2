@@ -41,6 +41,8 @@ final class SourceManagementStoreTests: XCTestCase {
         func searchSources(_ query: String) async throws -> [CatalogSourceSummary] {
             try guardFailure(); searches.append(query); return searchResults
         }
+        var countryKeysByNode: [Int64: Set<String>] = [:]
+        func countryKeys() async throws -> [Int64: Set<String>] { try guardFailure(); return countryKeysByNode }
         func selection() async throws -> [String] { try guardFailure(); return selection }
         func setSelection(_ keys: [String]) async throws {
             try guardFailure(); if failSetSelection { throw SourceManagementErrorDouble.invalid }; selection = keys
@@ -62,12 +64,16 @@ final class SourceManagementStoreTests: XCTestCase {
         let backend = Backend()
         backend.sections = [node(1, "News", kind: .section)]
         backend.countries = [node(2, "Brazil", kind: .country)]
+        backend.countryKeysByNode = [2: ["https://a.example/feed"]]
         let store = SourceManagementStore(backend: backend)
         await store.load()
         XCTAssertEqual(store.languages.map(\.code), ["pt"])
         XCTAssertEqual(store.sections.map(\.name), ["News"])
         XCTAssertEqual(store.countries.map(\.kind), [.country])
         XCTAssertEqual(store.selection, ["a"])
+        XCTAssertEqual(store.countryKeys[2], ["https://a.example/feed"])
+        XCTAssertFalse(store.isCountryEnabled(store.countries[0]),
+            "a country is enabled only when every one of its sources is selected")
         XCTAssertTrue(store.hasCatalog)
         XCTAssertNil(store.errorMessage)
 
@@ -124,6 +130,31 @@ final class SourceManagementStoreTests: XCTestCase {
     }
 
     /// Search is scoped to what the reader typed and clears back to the node's own sources.
+    /// T7 layout: the country rows the list draws carry the flag, the count and the country's own state, and
+    /// a country is only "enabled" when every one of its sources is selected.
+    func testCountryRowsCarryFlagCountAndState() {
+        let brazil = CatalogNodeSummary(id: 10, key: "countries/br", name: "Brazil", kind: .country,
+            sourceCount: 30, hasChildren: true)
+        let portugal = CatalogNodeSummary(id: 11, key: "countries/pt", name: "Portugal", kind: .country,
+            sourceCount: 10, hasChildren: false)
+        let keys: [Int64: Set<String>] = [10: ["a", "b"], 11: ["c"]]
+        let rows = CountriesListView.rows(countries: [brazil, portugal], selection: ["a", "b"], keys: keys)
+        XCTAssertEqual(rows.map(\.name), ["Brazil", "Portugal"])
+        XCTAssertEqual(rows.map(\.slug), ["br", "pt"])
+        XCTAssertEqual(rows.map(\.flag), ["🇧🇷", "🇵🇹"])
+        XCTAssertEqual(rows.map(\.feedCount), [30, 10])
+        XCTAssertTrue(rows[0].isEnabled, "every source of Brazil is selected")
+        XCTAssertFalse(rows[1].isEnabled, "Portugal has an unselected source")
+        // A country the catalog did not place any source under is never reported as enabled.
+        let empty = CountriesListView.rows(countries: [brazil], selection: ["a"], keys: [:])
+        XCTAssertFalse(empty[0].isEnabled)
+        // An unusual key shape degrades to itself, with a globe instead of a wrong flag.
+        let odd = CatalogNodeSummary(id: 12, key: "worldwide", name: "Worldwide", kind: .country,
+            sourceCount: 1, hasChildren: false)
+        XCTAssertEqual(CountriesListView.slug(odd), "worldwide")
+        XCTAssertEqual(CountriesListView.flag("worldwide"), "🌐")
+    }
+
     func testSearchTrimsAndClears() async {
         let backend = Backend()
         let alpha = CatalogSourceSummary(id: "https://a.example/feed", title: "Alpha", language: nil,

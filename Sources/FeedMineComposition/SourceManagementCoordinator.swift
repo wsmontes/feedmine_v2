@@ -59,6 +59,13 @@ public struct SourceManagementCoordinator: Sendable {
         return try catalog.ancestors(ofNodeID: id).map(Self.summary)
     }
 
+    /// Every country's own source keys, in one read, so a list can show each country's state.
+    public func countryKeys() throws -> [Int64: Set<String>] {
+        guard let catalog else { throw SourceManagementError.catalogUnavailable }
+        return try catalog.sourceKeysByNode(kind: LegacyCatalogNodeRecord.countryKind)
+            .mapValues(Set.init)
+    }
+
     /// A node's catalog id by its stable key, for a caller that navigated by key.
     public func nodeByKey(_ key: String) throws -> Int64? {
         guard let catalog else { throw SourceManagementError.catalogUnavailable }
