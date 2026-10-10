@@ -36,6 +36,16 @@ public struct FilterPresetRow: Hashable, Sendable, Identifiable {
     public let name: String
     public let systemImage: String
     public let isSelected: Bool
+    /// T8: a *saved* preset carries the whole identity it activates (terms, filters, scope), because selecting
+    /// it is not editing a criterion — it is moving to the context the reader stored. Nil for V1's two plain
+    /// entries, which are the draft's own preset and are applied with Concluído like every other criterion.
+    public let key: ContextKey?
+
+    public init(id: String, preset: ReaderPresetID, name: String, systemImage: String, isSelected: Bool,
+        key: ContextKey? = nil) {
+        self.id = id; self.preset = preset; self.name = name; self.systemImage = systemImage
+        self.isSelected = isSelected; self.key = key
+    }
 }
 
 public struct FilterSheetView: View {
@@ -43,6 +53,8 @@ public struct FilterSheetView: View {
     private let languages: [CatalogLanguageSummary]
     private let presets: [FilterPresetRow]
     private let appearance: ReaderAppearance
+    /// T8: a saved preset's selection is an activation, not a draft change.
+    private let onActivate: @MainActor (ContextKey) async throws -> Void
     private let onShowCountries: () -> Void
     private let onShowTopics: () -> Void
     private let onDone: () -> Void
@@ -51,13 +63,16 @@ public struct FilterSheetView: View {
     /// `onApply` is the host's persist-and-activate step; the sheet closes only after it returns.
     public init(applying filter: ReaderFilter, preset: ReaderPresetID,
         availableCriteria: Set<ReaderFilterCriterion>, languages: [CatalogLanguageSummary] = [],
-        appearance: ReaderAppearance = .standard, onApply: @escaping @MainActor (ReaderFilter, ReaderPresetID) async throws -> Void,
+        presets: [FilterPresetRow] = FilterSheetView.defaultPresets, appearance: ReaderAppearance = .standard,
+        onApply: @escaping @MainActor (ReaderFilter, ReaderPresetID) async throws -> Void,
+        onActivate: @escaping @MainActor (ContextKey) async throws -> Void = { _ in },
         onShowCountries: @escaping () -> Void = {}, onShowTopics: @escaping () -> Void = {},
         onDone: @escaping () -> Void = {}) {
         _store = State(initialValue: ReaderFilterStore(applying: filter, preset: preset,
             availableCriteria: availableCriteria, onApply: onApply))
+        self.onActivate = onActivate
         self.languages = languages
-        self.presets = FilterSheetView.defaultPresets
+        self.presets = presets
         self.appearance = appearance
         self.onShowCountries = onShowCountries
         self.onShowTopics = onShowTopics
@@ -66,9 +81,11 @@ public struct FilterSheetView: View {
 
     public init(store: ReaderFilterStore, languages: [CatalogLanguageSummary] = [],
         presets: [FilterPresetRow] = FilterSheetView.defaultPresets, appearance: ReaderAppearance = .standard,
+        onActivate: @escaping @MainActor (ContextKey) async throws -> Void = { _ in },
         onShowCountries: @escaping () -> Void = {}, onShowTopics: @escaping () -> Void = {},
         onDone: @escaping () -> Void = {}) {
         _store = State(initialValue: store)
+        self.onActivate = onActivate
         self.languages = languages
         self.presets = presets
         self.appearance = appearance
@@ -102,7 +119,15 @@ public struct FilterSheetView: View {
                 Section(String(localized: "Feeds")) {
                     ForEach(presets) { row in
                         Button {
-                            store.select(preset: row.preset)
+                            // A saved preset carries its whole identity: choosing it moves the reader there.
+                            if let key = row.key {
+                                Task {
+                                    try? await onActivate(key)
+                                    onDone()
+                                }
+                            } else {
+                                store.select(preset: row.preset)
+                            }
                         } label: {
                             HStack {
                                 Label(row.name, systemImage: row.systemImage)

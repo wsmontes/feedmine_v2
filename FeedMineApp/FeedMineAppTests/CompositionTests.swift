@@ -367,6 +367,38 @@ final class CompositionTests: XCTestCase {
         XCTAssertTrue(FeedAssociation.mayShow(revision(equivalent), for: key, selectionVersion: 7))
     }
 
+    /// T8: a saved smart bookmark is offered by the filter sheet with the identity it activates, and choosing
+    /// it moves the session there through T6's transition — no second feed engine, no draft side effect.
+    func testT8ASavedPresetIsOfferedAndActivatesItsOwnContext() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = root(directory: directory)
+        await root.launch()
+        // A search context, saved under a name: the terms and the scope travel with it.
+        let search = try XCTUnwrap(SearchContext(query: "clima"))
+        try await root.selectContext(.search(search))
+        let savedPreset = try await root.saveCurrentContextAsPreset(named: "Clima", kind: .smartBookmark)
+        let saved = try XCTUnwrap(savedPreset)
+        XCTAssertEqual(saved.key.request, .search(search))
+        XCTAssertEqual(saved.key.preset, saved.presetID)
+        let rows = root.presetRows()
+        XCTAssertEqual(rows.prefix(2).map(\.id), ["everything", "lastClicked"], "V1's two plain entries come first")
+        let offered = try XCTUnwrap(rows.first { $0.id == saved.presetID.identityText })
+        XCTAssertEqual(offered.name, "Clima")
+        XCTAssertEqual(offered.key, saved.key, "the row carries the whole identity, not just a name")
+        XCTAssertTrue(offered.isSelected, "the reader is on it")
+        // Activating it is an ordinary transition: the session moves to the stored key.
+        try await root.activateSavedPreset(saved.key)
+        XCTAssertEqual(root.currentContextKey, saved.key)
+        XCTAssertEqual(try XCTUnwrap(root.association).contextKey, saved.key,
+            "the session runs on the identity the reader saved")
+        // A collection the reader made is offered too, and without a key it is chosen as a plain criterion.
+        _ = try root.collectCurrentSources(named: "Minhas")
+        let collectionRow = try XCTUnwrap(root.presetRows().first { $0.name == "Minhas" })
+        XCTAssertNil(collectionRow.key)
+        if case .collection = collectionRow.preset {} else { XCTFail("a collection row carries its identity") }
+        try await root.selectContext(.main)
+    }
+
     func testS1SameSessionStoreAcrossViewportRefreshAndLifecycle() async throws {
         let (root, association) = try await launched()
         let store = association.store

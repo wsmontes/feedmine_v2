@@ -440,6 +440,11 @@ public enum RuntimeMigrations {
                 """, arguments: [ReaderBookmarkList.defaultID])
             try db.execute(sql: "DROP TABLE publication_bookmarks")
         }
+        migrator.registerMigration("reader-preferred-box-v1") { db in
+            // V1 kept the box a new bookmark lands in beside the reader's other preferences, and it is a
+            // *preference*, not identity: changing it must never move the reader to another surface.
+            try db.execute(sql: "ALTER TABLE reader_preferences ADD COLUMN preferred_bookmark_list TEXT")
+        }
         return migrator
     }
 

@@ -18,11 +18,15 @@ struct FeedMineApp: App {
     /// shadow the first. The reader's URL was resolved by the composition, never by a view.
     private enum ReaderPresentation: Identifiable {
         case sources
+        case bookmarkBoxes
+        case collections
         case filters
         case reader(URL)
         var id: String {
             switch self {
             case .sources: return "sources"
+            case .bookmarkBoxes: return "bookmarkBoxes"
+            case .collections: return "collections"
             case .filters: return "filters"
             case .reader(let url): return "reader:" + url.absoluteString
             }
@@ -32,6 +36,40 @@ struct FeedMineApp: App {
     /// T7: the source surface's own navigation and the one store it draws from.
     @State private var sourcesStore: SourceManagementStore?
     @State private var sourcesPath: [SourceRoute] = []
+    /// T8: the boxes surface and the two lists it opens (every save, or one box's).
+    @State private var boxesStore: BookmarkBoxesStore?
+    @State private var libraryPath: [LibraryRoute] = []
+    /// T8: the collections surface, and the three library prompts V1 asked with an alert.
+    @State private var collectionsStore: CollectionsStore?
+    @State private var libraryPrompt: LibraryPrompt?
+    @State private var promptName = ""
+
+    /// V1's three library prompts: collect the current sources, save the current context, delete a saved one.
+    private enum LibraryPrompt: Identifiable {
+        case collectSources
+        case saveSmartBookmark
+        case deleteSmartFeed
+        var id: String {
+            switch self {
+            case .collectSources: return "collectSources"
+            case .saveSmartBookmark: return "saveSmartBookmark"
+            case .deleteSmartFeed: return "deleteSmartFeed"
+            }
+        }
+        var title: String {
+            switch self {
+            case .collectSources: return String(localized: "Reunir estas fontes")
+            case .saveSmartBookmark: return String(localized: "Salvar como marcador inteligente")
+            case .deleteSmartFeed: return String(localized: "Excluir marcador inteligente")
+            }
+        }
+    }
+
+    /// The lists a box surface can open. A payload-carrying route, because a box is an identity, not a flag.
+    enum LibraryRoute: Hashable {
+        case savedAll
+        case box(String)
+    }
 
     /// The levels under the source surface's root. A typed route, like the app's other destinations.
     enum SourceRoute: Hashable {
@@ -100,10 +138,41 @@ struct FeedMineApp: App {
                                 preset: composition.currentPreset,
                                 availableCriteria: ReaderFilterCriterion.enforceable,
                                 languages: composition.filterLanguages(),
+                                presets: composition.presetRows(),
                                 onApply: { filter, preset in
                                     try await composition.applyFilter(filter, preset: preset)
                                 },
+                                onActivate: { key in try await composition.activateSavedPreset(key) },
                                 onDone: { self.presentation = nil })
+                        }
+                    case .bookmarkBoxes:
+                        NavigationStack(path: $libraryPath) {
+                            if let store = boxesStore {
+                                BookmarkBoxesView(store: store,
+                                    onOpenAll: { libraryPath.append(.savedAll) },
+                                    onOpenBox: { libraryPath.append(.box($0)) },
+                                    onClose: { self.presentation = nil })
+                                    .navigationDestination(for: LibraryRoute.self) { route in
+                                        FeedSavedListView(
+                                            articles: composition.association?.savedArticles(inBox: Self.boxID(route)) ?? [],
+                                            onOpen: { composition.association?.openSaved($0) })
+                                    }
+                            } else {
+                                ProgressView("Abrindo as caixas de salvos")
+                            }
+                        }
+                    case .collections:
+                        NavigationStack {
+                            if let store = collectionsStore {
+                                CollectionsView(store: store,
+                                    onOpenFeed: { id in
+                                        self.presentation = nil
+                                        Task { try? await composition.openCollectionFeed(id: id) }
+                                    },
+                                    onClose: { self.presentation = nil })
+                            } else {
+                                ProgressView("Abrindo as coleções")
+                            }
                         }
                     case .reader(let url):
                         InAppBrowser(url: url)
@@ -119,6 +188,38 @@ struct FeedMineApp: App {
                         EmptyView()
                     }
                 }
+                .alert(libraryPrompt?.title ?? "", isPresented: Binding(
+                    get: { libraryPrompt != nil }, set: { if !$0 { libraryPrompt = nil } })) {
+                    if libraryPrompt == .deleteSmartFeed {
+                        Button("Excluir", role: .destructive) {
+                            Task { try? await composition.deleteCurrentPreset() }
+                        }
+                    } else {
+                        TextField("Nome", text: $promptName)
+                        Button("Cancelar", role: .cancel) { libraryPrompt = nil }
+                        Button("Salvar") {
+                            let name = promptName
+                            guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                            Task {
+                                switch libraryPrompt {
+                                case .collectSources:
+                                    _ = try? composition.collectCurrentSources(named: name)
+                                    presentation = .collections
+                                case .saveSmartBookmark:
+                                    _ = try? await composition.saveCurrentContextAsPreset(named: name,
+                                        kind: .smartBookmark)
+                                default: break
+                                }
+                            }
+                        }
+                    }
+                } message: {
+                    Text(verbatim: libraryPrompt == .collectSources
+                        ? String(localized: "Uma coleção reúne as fontes do que você está lendo agora.")
+                        : libraryPrompt == .saveSmartBookmark
+                            ? String(localized: "A busca e os filtros atuais ficam guardados com este nome.")
+                            : String(localized: "O marcador inteligente guardado com este nome será removido."))
+                }
                 .alert("Não foi possível atualizar", isPresented: Binding(get: { readerError != nil }, set: { if !$0 { readerError = nil } })) {
                     Button("OK") { readerError = nil }
                 } message: { Text(readerError ?? "") }
@@ -128,13 +229,24 @@ struct FeedMineApp: App {
                 // hands the URL here; no URL ever comes from a view.
                 composition.onExternalURL = { url in presentation = .reader(url) }
                 sourcesStore = composition.makeSourceManagementStore()
+                boxesStore = composition.makeBookmarkBoxesStore()
+                collectionsStore = composition.makeCollectionsStore()
                 // T5: the reader's chrome reports destinations; the host presents the ones it implements.
                 composition.onNavigate = { destination in
                     switch destination {
                     case .sources: presentation = .sources
                     case .filters:
                         presentation = .filters
-                    case .bookmarkBoxes, .saved: savedPath.append(.saved)
+                    case .saved: savedPath.append(.saved)
+                    case .bookmarkBoxes: presentation = .bookmarkBoxes
+                    case .collections: presentation = .collections
+                    case .collectionFromContextPrompt:
+                        promptName = ""
+                        libraryPrompt = .collectSources
+                    case .smartFeedPrompt:
+                        promptName = ""
+                        libraryPrompt = .saveSmartBookmark
+                    case .smartFeedDeletion: libraryPrompt = .deleteSmartFeed
                     default: break
                     }
                 }
@@ -147,6 +259,12 @@ struct FeedMineApp: App {
         }
     }
 
+
+    /// The box a library route names, or nil for the all-saved list.
+    private static func boxID(_ route: LibraryRoute) -> String? {
+        if case .box(let id) = route { return id }
+        return nil
+    }
 
     /// T6: the lens states the criteria that are actually applied and removes exactly one per tap; hiding it is
     /// a presentation choice that lasts until the selection changes again.

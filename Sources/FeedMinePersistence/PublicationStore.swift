@@ -390,22 +390,33 @@ public struct PublicationStore: Sendable {
             })
         }
     }
-    public func toggleBookmark(cardID: PublicationCardID, at date: Date) throws {
+    /// Toggles one card in one box. The caller states the box: V1 wrote into the reader's *preferred* box, and
+    /// the app resolves that preference before calling here.
+    public func toggleBookmark(cardID: PublicationCardID, in listID: String, at date: Date) throws {
         let time = try PersistenceValueCoding.date(date, field: "bookmarked_at")
         try database.write { db in
             let key = PersistenceValueCoding.uuid(cardID.rawValue)
             guard try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM published_cards WHERE id = ?)", arguments: [key]) == true else {
                 throw PublicationStoreError.cardIdentityMismatch
             }
+            guard try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_bookmark_lists WHERE id = ?)",
+                arguments: [listID]) == true else {
+                throw PublicationStoreError.cardIdentityMismatch
+            }
             if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_bookmark_memberships WHERE list_id = ? AND card_id = ?)",
-                arguments: [ReaderBookmarkList.defaultID, key]) == true {
+                arguments: [listID, key]) == true {
                 try db.execute(sql: "DELETE FROM reader_bookmark_memberships WHERE list_id = ? AND card_id = ?",
-                    arguments: [ReaderBookmarkList.defaultID, key])
+                    arguments: [listID, key])
             } else {
                 try db.execute(sql: "INSERT INTO reader_bookmark_memberships (list_id, card_id, added_at) VALUES (?, ?, ?)",
-                    arguments: [ReaderBookmarkList.defaultID, key, time])
+                    arguments: [listID, key, time])
             }
         }
+    }
+
+    /// The default box's convenience, for a caller with no preference to resolve.
+    public func toggleBookmark(cardID: PublicationCardID, at date: Date) throws {
+        try toggleBookmark(cardID: cardID, in: ReaderBookmarkList.defaultID, at: date)
     }
     public func mediaUsage() throws -> [String: MediaUsage] {
         try database.read { db in

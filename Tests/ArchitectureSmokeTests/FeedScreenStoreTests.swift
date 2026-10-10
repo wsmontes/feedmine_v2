@@ -243,9 +243,12 @@ final class FeedScreenStoreTests: XCTestCase {
             XCTAssertFalse(field.value is PresentationAnchor)
             XCTAssertFalse(field.value is PublicationCardID)
         }
+        // The reader's own facts the host installs (T8) are values or closures: no second presentation, no
+        // stored identity, and nothing that could execute work.
         XCTAssertEqual(Set(fields.compactMap(\.label)), ["_state", "onViewport", "onAction", "availableActions",
-            "availableDestinations", "onSubmitSearch", "onNavigate", "_bookmarkedIDs", "_isSearching",
-            "_searchQuery", "_toast", "_filterCount", "_bookmarkBoxActive", "_$observationRegistrar"])
+            "_availableDestinations", "onSubmitSearch", "onNavigate", "_bookmarkedIDs", "_isSearching",
+            "_searchQuery", "_toast", "_filterCount", "_bookmarkBoxActive", "_hasCommittedSearch",
+            "_$observationRegistrar"])
     }
 
     func testS12ModuleBoundaryAndNoExecutionMechanisms() throws {

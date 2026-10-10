@@ -113,6 +113,16 @@ public struct ReaderLibraryStore: Sendable {
         }
     }
 
+    /// How many cards each box holds, in one read — the row's own figure, never one query per row.
+    public func bookmarkListCounts() throws -> [String: Int] {
+        try database.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT list_id, COUNT(*) AS total FROM reader_bookmark_memberships GROUP BY list_id
+                """)
+            return Dictionary(uniqueKeysWithValues: rows.map { row in (row["list_id"] as String, row["total"] as Int) })
+        }
+    }
+
     public func bookmarkedCardIDs(inList listID: String) throws -> Set<PublicationCardID> {
         try database.read { db in
             Set(try String.fetchAll(db, sql: "SELECT card_id FROM reader_bookmark_memberships WHERE list_id = ? ORDER BY added_at, card_id",
@@ -333,6 +343,22 @@ public struct ReaderLibraryStore: Sendable {
         }
     }
 
+    /// Rewrites one preset's stored key. Used when a context is saved: the key a preset activates has to name
+    /// that preset, otherwise activating it would claim to be a surface it is not.
+    @discardableResult
+    public func replacePresetKey(id: String, key: ContextKey) throws -> ReaderPreset {
+        let payload = try JSONEncoder().encode(key)
+        return try database.write { db in
+            try db.execute(sql: "UPDATE reader_presets SET context_key = ? WHERE id = ?", arguments: [payload, id])
+            guard let row = try Row.fetchOne(db, sql: "SELECT id, name, kind, position, context_key FROM reader_presets WHERE id = ?",
+                arguments: [id]), let kind = ReaderPreset.Kind(rawValue: row["kind"] as String) else {
+                throw ReaderLibraryError.missingLibraryItem
+            }
+            return ReaderPreset(id: row["id"], name: row["name"], kind: kind, position: row["position"],
+                key: try JSONDecoder().decode(ContextKey.self, from: row["context_key"] as Data))
+        }
+    }
+
     @discardableResult
     public func deletePreset(id: String) throws -> Bool {
         try database.write { db in
@@ -375,5 +401,7 @@ public struct ReaderLibraryStore: Sendable {
     }
 
     /// A stable, opaque id. Never a V1 integer and never reused: a deleted collection's id stays deleted.
-    static func mintID() -> String { UUID().uuidString.lowercased() }
+    /// Public so a caller that must build a whole library atomically (an import, or "collect these sources")
+    /// mints the id it will then insert in one transaction.
+    public static func mintID() -> String { UUID().uuidString.lowercased() }
 }

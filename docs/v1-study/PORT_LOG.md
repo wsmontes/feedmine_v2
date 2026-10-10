@@ -721,3 +721,78 @@ the offline/scale UI tests.
 **Verified.** `swift test` **920 tests, 0 failures**; iOS build **SUCCEEDED**;
 `-only-testing:FeedMineUITests/FeedMineUITests/testT6FilterSheetOpensAppliesAndKeepsTheReader test` →
 **TEST SUCCEEDED**.
+
+## T8 — 2026-10-09 (collections, bookmark boxes and saved presets)
+
+Executed in three parts: what the reader's library *is* (Domain + storage), what V1's own database gives it
+(the legacy import), and the surfaces.
+
+**The library itself.** `ReaderBookmarkList`, `ReaderCollection` and `ReaderPreset` (Domain) state identity,
+naming and ordering. A box holds published *card occurrences* (a bookmark marks a card, never a source), a
+collection holds catalog keys, and a preset is a **whole T6 `ContextKey`** under a name — including the search
+scope it was born from — with `presetID` naming itself (`.smartFeed(id)` / `.curatedFeed(id)`), so activating
+one is an ordinary context transition. There is no second feed engine behind a preset: that was the plan's
+condition and the reason the identity model needed nothing new.
+
+- Migration `reader-library-v1`: `reader_bookmark_lists`, `reader_bookmark_memberships` (PK `(list_id, card_id)`,
+  cascade), `reader_collections`, `reader_collection_memberships` (PK `(collection_id, source_key)`, cascade),
+  `reader_presets` (`kind`, `context_key` BLOB). V2's one implicit bookmarked set
+  (`publication_bookmarks`) is folded into the default box and the old table is **dropped** — one source of
+  truth, proven by `testTheLegacyBookmarkSetBecomesTheDefaultBox`, which rebuilds the pre-T8 shape and reopens.
+- `ReaderLibraryStore` (Persistence): CRUD, reorder, membership, and `apply(ReaderLibraryImport)` which performs
+  a whole import in **one** transaction. `testARefusedWriteLeavesNoPartialState` proves a refused write leaves
+  nothing behind; `testSeveralBoxesHoldTheSameCardAndAnEmptyBoxIsAState`, `testCollectionsGroupSourcesAndDeletingOneKeepsThem`
+  and `testLibrarySurvivesReopen` carry the rest of T8's acceptance.
+- `ReaderLibraryCoordinator` (Composition) is the UI-facing boundary, and it owns the two product operations V1
+  offered from a context: `collectSources(named:sourceKeys:)` (atomic) and `savePreset(named:kind:from:)`, which
+  rewrites the stored key so it names its own preset.
+- The reader's *preferred* box (V1's `preferredBookmarkListID`, where a new bookmark lands) is a preference, not
+  identity: `reader-preferences` gained the column (migration `reader-preferred-box-v1`), a preference for a box
+  that does not exist is refused, and the card control writes it (`PublicationStore.toggleBookmark(cardID:in:at:)`).
+
+**The legacy import.** `LegacyUserStateReader` (Persistence) opens V1's `user.sqlite` **read-only** and hands out
+records; `LegacyUserStateImport` (Composition) maps them with an explicit, stable id map (`v1:list:<id>`,
+`v1:collection:<id>`, `v1:smart:<id>`). What it carries: every non-default box (name and order), every
+collection with its members, and every smart feed whose definition a T6 key can express — required terms → the
+search, excluded terms and keywords → the content exclusions, `includeSources/Contents` → the search scope,
+region/taxonomy/languages/contentType/mood → the filter (V2's enums use V1's own strings verbatim).
+What it deliberately does not carry, and *reports* instead of approximating: V1's bookmarked articles (their
+`item_id` names an object V2 has no referent for — the boxes keep their names and the items cannot come),
+curated feeds (profile weights and recipes have no V2 counterpart; T11 owns curation), a smart feed's
+source-collection scope (V2's identity has no collection-scoped request), and V1's persistent-search lists (no
+V1 UI ever created one). `testImportCarriesBoxesCollectionsAndSmartFeedsOnce` runs the import twice — nothing
+duplicates — and asserts the V1 file is **byte-identical** afterwards.
+
+**The surfaces.** `BookmarkBoxesView` + `BookmarkBoxesStore` + `BookmarkBoxesBackend` port V1's
+`BookmarkBoxesView`: the all-saved row, one row per box with its count, bold + checkmark for the preferred box,
+swipe actions (Padrão / Renomear / Apagar), drag reorder, the New Box alert and the Reorder mode, with V1's
+error discipline (a refused write reloads what the database has instead of keeping the screen's version).
+`CollectionsView` + `CollectionsStore` + `CollectionsBackend` port `CollectionManagementView` and
+`SourceCollectionDetailView`: V1's empty state, create/rename/delete/reorder, the footer that states that
+deleting a collection removes only the playlist, a member list with its own removal, and "Abrir o feed da
+coleção" — which opens a session over exactly that collection's sources with `.collection(id)` as its preset,
+**without touching the reader's selection** (V1's collection feed behaved the same way).
+T6's filter sheet now receives the reader's own presets as rows (`FilterPresetRow.key`): V1's two plain entries
+first, then curated presets, then collections and smart bookmarks, and choosing a saved one is an immediate
+activation of its stored key. The reader's overflow menu offers V1's conditional entries again —
+"Reunir estas fontes" (a search or ≥2 criteria) and "Salvar como marcador inteligente" (a committed search) —
+plus "Excluir marcador inteligente" when the reader is on one of their own presets; saving a smart bookmark
+**switches to it**, as V1 did (`setActivePreset(.smartFeed)`).
+
+**Deliberate differences, recorded.** (1) V1's box row tap made the feed show that box (its `lastClicked`
+preset over `selectedBookmarkListID`) and it carried two marks; V2's row opens the box's own saved list and the
+checkmark is the box a new bookmark lands in — a box as a *reading surface* needs a presentation source over
+the publication store, which T9 owns. (2) V1 let the reader change which box is "default" as well as
+"preferred"; V2 keeps `saved` as the default box and the preference decides where saves land. (3) A collection
+member's row shows the feed's host: V1 printed a `title_snapshot` that could go stale, and the catalog is there
+to state it. (4) V1's `AddSourceToCollectionSheet` (adding a source to a collection from the source surface) is
+not ported yet — membership is currently set from a card result's own action and from the legacy import.
+(5) A card cannot be moved between boxes from the card itself: the reader changes the preferred box, or removes
+a card from a box in that box's list.
+
+**Verified.** `swift test` **952 tests, 0 failures**; iOS build **SUCCEEDED**; and three simulator tests:
+`testBookmarkBoxesManageAndOpenTheirOwnList` (default box, New Box, opening an empty box, surviving a reopen),
+`testCollectionsManageAndReachThePresetPicker` (V1's empty state, create, the detail's feed action, and the
+collection appearing in the filter sheet's picker) and
+`testT8ASavedPresetIsOfferedAndActivatesItsOwnContext` (saving a search as a smart bookmark switches the session
+to the saved identity, and the row carries the whole key).

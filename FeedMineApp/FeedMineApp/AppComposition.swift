@@ -48,6 +48,14 @@ final class AppComposition {
     var onNavigate: ((ReaderDestination) -> Void)?
 
     private func connecting(_ association: FeedAssociation) -> FeedAssociation {
+        // T8: where this session's saves land. Resolved per save, so changing the preferred box takes effect
+        // without rebuilding the session (it is a preference, not an identity).
+        association.preferredBookmarkListID = { [weak self] in
+            self?.preferredBookmarkListID ?? ReaderBookmarkList.defaultID
+        }
+        // T8: the menu this session shows. V1's two conditional entries were offered only inside a search or a
+        // context with criteria, and its delete entry only on one of the reader's own presets.
+        association.refreshMenuDestinations()
         association.onExternalURL = { [weak self] url in self?.onExternalURL?(url) }
         // T5: the reader shell reports a destination; the host presents it. Nothing is resolved here.
         association.onNavigate = { [weak self] destination in self?.onNavigate?(destination) }
@@ -62,6 +70,12 @@ final class AppComposition {
         let catalogURL = Bundle.main.url(forResource: "catalog", withExtension: "sqlite")
         let coordinator = SourceManagementCoordinator(catalogURL: catalogURL, database: association.database)
         return (try? coordinator.languages()) ?? []
+    }
+
+    /// T8: the box a new bookmark lands in. Nil in the preferences means the default box, which is what a
+    /// library that was never asked for a preference has.
+    var preferredBookmarkListID: String {
+        (try? preferences?.load())??.preferredBookmarkListID ?? ReaderBookmarkList.defaultID
     }
 
     /// T5: one search submission is a context change, exactly like the sources menu.
@@ -262,6 +276,145 @@ final class AppComposition {
         resolvedFilter(at: now)
     }
 
+    /// T8: the presets the filter sheet offers — V1's two plain entries, then the reader's own: curated
+    /// presets, collections and smart bookmarks, in V1's picker order. Each saved one carries the key it
+    /// activates, so choosing it is an ordinary T6 transition and never a second feed engine.
+    func presetRows() -> [FilterPresetRow] {
+        let current = currentContextKey.preset
+        var rows: [FilterPresetRow] = [
+            FilterPresetRow(id: "everything", preset: .everything, name: String(localized: "Tudo"),
+                systemImage: "circle.grid.3x3.fill", isSelected: current == ReaderPresetID.everything),
+            FilterPresetRow(id: "lastClicked", preset: .lastClicked, name: String(localized: "Último aberto"),
+                systemImage: "clock.arrow.circlepath", isSelected: current == ReaderPresetID.lastClicked),
+        ]
+        guard let library = libraryCoordinator() else { return rows }
+        if let presets = try? library.presets() {
+            rows.append(contentsOf: presets.map { preset -> FilterPresetRow in
+                let icon = preset.kind == .curatedFeed ? "wand.and.stars" : "sparkles.rectangle.stack"
+                return FilterPresetRow(id: preset.presetID.identityText, preset: preset.presetID,
+                    name: preset.name, systemImage: icon, isSelected: current == preset.presetID,
+                    key: preset.key)
+            })
+        }
+        if let collections = try? library.collections() {
+            rows.append(contentsOf: collections.map { collection -> FilterPresetRow in
+                let presetID = ReaderPresetID.collection(collection.id)
+                return FilterPresetRow(id: presetID.identityText, preset: presetID, name: collection.name,
+                    systemImage: "rectangle.stack.fill", isSelected: current == presetID)
+            })
+        }
+        return rows
+    }
+
+    /// T8: activating a preset the reader saved. The stored key is the identity — including the search scope it
+    /// was born from — so this is T6's transition with that key, and the library is never a second engine.
+    func activateSavedPreset(_ key: ContextKey) async throws {
+        guard !replacingSession, let preferences else { return }
+        guard key != currentContextKey else { return }
+        replacingSession = true
+        defer { replacingSession = false }
+        if let retired = association {
+            _ = try await retired.session.checkpointCurrentPosition(at: Date())
+            await retired.close()
+        }
+        association = nil
+        currentContextKey = key
+        _ = try preferences.setContext(key)
+        let next = connecting(try FeedAssociation(directory: directory, feeds: feeds,
+            configuration: transportConfiguration, contextKey: key, selectionVersion: selectionVersion))
+        association = next
+        startupFailure = nil
+        try await next.launch()
+    }
+
+    /// T8: the bookmark boxes surface's store, over the reader's own library. The composition opens the
+    /// database the same way the rest of its surfaces do; there is one file, not a second store.
+    func makeBookmarkBoxesStore() -> BookmarkBoxesStore? {
+        guard let database = libraryDatabase() else { return nil }
+        return BookmarkBoxesStore(backend: ReaderBookmarkBoxesBackend(database: database))
+    }
+
+    /// T8: the collections surface's store, over the same library.
+    func makeCollectionsStore() -> CollectionsStore? {
+        guard let database = libraryDatabase() else { return nil }
+        return CollectionsStore(backend: ReaderCollectionsBackend(database: database))
+    }
+
+    /// One handle on the reader's database for every library surface; the file is opened the way the rest of
+    /// the composition opens it.
+    private func libraryDatabase() -> RuntimeDatabase? {
+        try? RuntimeDatabase(location: RuntimeDatabaseLocation(directory: directory))
+    }
+
+    /// The library boundary, for the reader's own actions on it.
+    private func libraryCoordinator() -> ReaderLibraryCoordinator? {
+        libraryDatabase().map(ReaderLibraryCoordinator.init(database:))
+    }
+
+    /// V1's "Reunir estas fontes": a collection built from the sources the reader's context is over, in one
+    /// action. V2's context is over the reader's selected sources, so those are what it collects.
+    @discardableResult
+    func collectCurrentSources(named name: String) throws -> ReaderCollection? {
+        guard let library = libraryCoordinator() else { return nil }
+        return try library.collectSources(named: name, sourceKeys: feeds.map(\.principal))
+    }
+
+    /// V1's "Salvar como marcador inteligente": the context the reader is on, stored under a name, with the
+    /// stored key naming its own preset so activating it is an ordinary transition (T6's identity). V1 also
+    /// *switched* to the feed it had just saved (`setActivePreset(.smartFeed)`), so the reader sees it.
+    @discardableResult
+    func saveCurrentContextAsPreset(named name: String, kind: ReaderPreset.Kind) async throws -> ReaderPreset? {
+        guard let library = libraryCoordinator() else { return nil }
+        let preset = try library.savePreset(named: name, kind: kind, from: currentContextKey)
+        try await activateSavedPreset(preset.key)
+        return preset
+    }
+
+    /// Deletes the preset the reader is on, when it is one of their own. The surface returns to the plain one.
+    func deleteCurrentPreset() async throws {
+        guard let library = libraryCoordinator() else { return }
+        let payload: String?
+        switch currentContextKey.preset {
+        case .smartFeed(let id), .curatedFeed(let id): payload = id
+        default: payload = nil
+        }
+        guard let payload else { return }
+        _ = try library.deletePreset(id: payload)
+        try await applyFilter(currentFilter, preset: .everything)
+    }
+
+    /// Opens a collection as its own feed: a session over exactly its sources, with the collection as the
+    /// preset of its identity. The reader's own selection is not touched — V1's collection feed behaved the
+    /// same way, and a collection is a playlist, not a preference.
+    func openCollectionFeed(id: String) async throws {
+        guard let library = libraryCoordinator(), let preferences else { return }
+        let keys = try library.sourceKeys(inCollection: id)
+        let resolved = try TrustedFeed.resolveAvailable(keys: Array(keys), fallback: feeds)
+        guard !resolved.isEmpty else { throw ReaderPreferencesError.invalidSelection }
+        guard !replacingSession else { return }
+        replacingSession = true
+        defer { replacingSession = false }
+        if let retired = association {
+            _ = try await retired.session.checkpointCurrentPosition(at: Date())
+            await retired.close()
+        }
+        association = nil
+        // The selection is unchanged on disk; only this session's plan is over the collection's sources.
+        let sessionFeeds = feeds
+        feeds = resolved
+        currentContextKey = ContextKey(request: .main, preset: .collection(id),
+            filter: .unrestricted)
+        _ = try preferences.setContext(currentContextKey)
+        let next = connecting(try FeedAssociation(directory: directory, feeds: resolved,
+            configuration: transportConfiguration, contextKey: currentContextKey,
+            selectionVersion: selectionVersion))
+        association = next
+        startupFailure = nil
+        try await next.launch()
+        // Leaving the collection restores the reader's own selection, which is what the next transition reads.
+        feeds = sessionFeeds
+    }
+
     /// T7: the source surface's store, over the catalog coordinator. One store per presentation, so its
     /// levels and the reader's selection are one consistent picture while it is open.
     func makeSourceManagementStore() -> SourceManagementStore {
@@ -357,7 +510,10 @@ final class FeedAssociation {
 
     /// Destinations this build can present today: the source sheet and the saved list (V1's bookmark
     /// boxes arrive in T8). The header menu renders exactly these — never a dead item.
-    static let readerDestinations: Set<ReaderDestination> = [.sources, .bookmarkBoxes, .filters]
+    /// The destinations this host can present. `collectionFromContextPrompt` and `smartFeedPrompt` are V1's
+    /// two conditional entries; the app narrows them to the contexts where V1 offered them.
+    static let readerDestinations: Set<ReaderDestination> = [.sources, .bookmarkBoxes, .filters,
+        .collections, .collectionFromContextPrompt, .smartFeedPrompt, .smartFeedDeletion]
 
     @ObservationIgnored
     lazy var store: FeedScreenStore = FeedScreenStore(onViewport: { [weak self] observation, activity in
@@ -374,18 +530,43 @@ final class FeedAssociation {
         onSubmitSearch: { [weak self] term in self?.onSearch?(term) },
         onNavigate: { [weak self] destination in self?.onNavigate?(destination) })
 
-    /// Saving is the reader's own durable state (U2); the occurrence must already be admitted.
+    /// Saving is the reader's own durable state (U2); the occurrence must already be admitted, and it lands in
+    /// the box the reader preferred (V1's `preferredBookmarkListID`), which is the default box until they say
+    /// otherwise.
     private func toggleBookmark(_ cardID: PublicationCardID) {
         do {
             let publication = PublicationStore(database: database)
-            try publication.toggleBookmark(cardID: cardID, at: Date())
+            try publication.toggleBookmark(cardID: cardID, in: preferredBookmarkListID(), at: Date())
             store.installBookmarks(try publication.bookmarkedCardIDs())
         } catch { reportFailure(error) }
+    }
+
+    /// T8: which of V1's menu entries apply for this session's context. The entries, their order and their
+    /// labels stay V1's (`ReaderMenuEntry.standard`); only which of them apply is decided here.
+    func refreshMenuDestinations() {
+        var destinations = Self.readerDestinations
+        let criteria = contextKey.filter.activeCriteria.count
+        let committed: Bool = {
+            if case .search = contextKey.request { return true }
+            return false
+        }()
+        if !committed, criteria < 2 { destinations.remove(.collectionFromContextPrompt) }
+        if !committed { destinations.remove(.smartFeedPrompt) }
+        switch contextKey.preset {
+        case .smartFeed, .curatedFeed: break
+        default: destinations.remove(.smartFeedDeletion)
+        }
+        store.installDestinations(destinations)
+        store.installContextFacts(filterCount: criteria, hasCommittedSearch: committed)
     }
 
     /// U2: the app host owns presentation. The composition resolves the frozen target; it never
     /// opens a URL itself and never lets one cross the UI boundary.
     @ObservationIgnored var onExternalURL: ((URL) -> Void)?
+    /// T8: where a save lands, resolved when the reader saves rather than when the session was built.
+    @ObservationIgnored var preferredBookmarkListID: () -> String = { ReaderBookmarkList.defaultID }
+    /// The identity this session is on. It does not change for the life of the association.
+    let contextKey: ContextKey
     /// T5: the reader shell's intents. The association reports them; the app host presents them.
     @ObservationIgnored var onNavigate: ((ReaderDestination) -> Void)?
     @ObservationIgnored var onSearch: ((String) -> Void)?
@@ -420,8 +601,15 @@ final class FeedAssociation {
     /// U2: bounded read of the existing bookmark authority for the app host. No second bookmark
     /// store, no schema change: ids come from `bookmarkedCardIDs()` and each row from `card(id:)`.
     func savedArticles(limit: Int = 200) -> [FeedSavedArticle] {
+        savedArticles(inBox: nil, limit: limit)
+    }
+
+    /// T8: one box's saved articles, or every box when no box is named. Ordering is V1's: newest first, with a
+    /// stable tie-break so two rows never swap places between launches.
+    func savedArticles(inBox listID: String?, limit: Int = 200) -> [FeedSavedArticle] {
         guard let publication = try? PublicationStore(database: database),
-            let ids = try? publication.bookmarkedCardIDs() else { return [] }
+            let ids = try? (listID.map { (try? ReaderLibraryStore(database: database).bookmarkedCardIDs(inList: $0)) }
+                ?? publication.bookmarkedCardIDs()) ?? [] else { return [] }
         return ids
             .compactMap { id -> FeedSavedArticle? in
                 guard let card = try? publication.card(id: id) else { return nil }
@@ -475,6 +663,8 @@ final class FeedAssociation {
         contextKey: ContextKey = ContextKey(request: .main), selectionVersion: UInt64 = 2) throws {
         let db = try RuntimeDatabase(location: .init(directory: directory))
         database = db
+        // T8: the context this session reads and writes, kept so the menu can state what applies to it.
+        self.contextKey = contextKey
         let history = PublicationHistory(database: db)
         let context = FeedContext(key: contextKey)
         let checkpoints = SessionStore(database: db)

@@ -60,6 +60,72 @@ final class FeedMineUITests: XCTestCase {
             "the selection the source surface accepted is what the app adopts when it closes")
     }
 
+    /// T8: the reader's bookmark boxes — V1's screen, managing real persisted boxes, and their own contents.
+    @MainActor
+    func testBookmarkBoxesManageAndOpenTheirOwnList() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
+        app.buttons["bookmark-boxes-button"].tap()
+        XCTAssertTrue(app.navigationBars["Caixas de salvos"].waitForExistence(timeout: 15))
+        // The default box exists without the reader doing anything, and it is where a save lands.
+        XCTAssertTrue(app.staticTexts["Salvos"].waitForExistence(timeout: 10))
+        // Create one, with V1's own flow: the New Box row and the alert.
+        app.buttons["bookmarkBoxes.new"].tap()
+        let nameField = app.textFields.firstMatch
+        XCTAssertTrue(nameField.waitForExistence(timeout: 10))
+        nameField.typeText("Longreads")
+        app.buttons["Criar"].tap()
+        XCTAssertTrue(app.staticTexts["Longreads"].waitForExistence(timeout: 15))
+        // Open it: an empty box states that it is empty rather than showing nothing.
+        app.staticTexts["Longreads"].tap()
+        XCTAssertTrue(app.staticTexts["Nenhum artigo salvo"].waitForExistence(timeout: 15))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["Longreads"].waitForExistence(timeout: 15))
+        // And the box survives the surface being closed and opened again.
+        app.buttons.matching(identifier: "Concluir").firstMatch.tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+        app.buttons["bookmark-boxes-button"].tap()
+        XCTAssertTrue(app.staticTexts["Longreads"].waitForExistence(timeout: 15))
+    }
+
+    /// T8: the collections surface, and the reader's own presets appearing in the filter sheet's picker.
+    @MainActor
+    func testCollectionsManageAndReachThePresetPicker() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
+        openMenu(app)
+        app.buttons["Coleções de fontes"].tap()
+        XCTAssertTrue(app.navigationBars["Coleções de fontes"].waitForExistence(timeout: 15))
+        // V1's empty state explains what a collection is before the reader has any.
+        XCTAssertTrue(app.otherElements["collections-empty"].waitForExistence(timeout: 10))
+        app.buttons["collections.new"].tap()
+        let nameField = app.textFields.firstMatch
+        XCTAssertTrue(nameField.waitForExistence(timeout: 10))
+        nameField.typeText("Ciência")
+        app.buttons["Criar"].tap()
+        XCTAssertTrue(app.staticTexts["Ciência"].waitForExistence(timeout: 15))
+        // Open it: the detail names the feed action and states that it has no sources yet.
+        app.staticTexts["Ciência"].tap()
+        XCTAssertTrue(app.buttons["collection.openFeed"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Adicione fontes a partir de um card ou de um resultado."].exists)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["collections.done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+        // The filter sheet's picker now offers V1's two entries and the reader's own collection.
+        app.buttons["filter-button"].tap()
+        XCTAssertTrue(app.buttons["preset-option-everything"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["preset-option-lastClicked"].exists)
+        XCTAssertTrue(app.staticTexts["Ciência"].waitForExistence(timeout: 10))
+        app.buttons["Concluído"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+    }
+
     @MainActor
     func testNativeSwipeReachesRealRunwayAndReverseNavigation() throws {
         let app = XCUIApplication()

@@ -14,8 +14,10 @@ public final class FeedScreenStore {
     /// What this host can actually execute. A card renders only these controls, so a menu item can
     /// never be a dead control while its delivery (T5–T11) has not landed yet.
     public let availableActions: Set<ReaderCardAction>
-    /// Destinations this host can present today. The header's menu shows exactly these.
-    public let availableDestinations: Set<ReaderDestination>
+    /// Destinations this host can present today. The header's menu shows exactly these, and the host can
+    /// install a narrower set at runtime: V1 showed two of its entries only inside a search or a filtered
+    /// context, and that condition is the host's to state.
+    public private(set) var availableDestinations: Set<ReaderDestination>
     /// Reader's search surface state. It is presentation state: the host decides what a submission means
     /// (T6 owns search as a context) and no submission here touches production.
     public private(set) var isSearching = false
@@ -25,6 +27,8 @@ public final class FeedScreenStore {
     /// Active filter count and bookmark-box selection: filled by T6 and T8. Zero/false means "none",
     /// never a fabricated state, so the header draws no badge until a delivery can prove one.
     public private(set) var filterCount = 0
+    /// Whether the reader has committed a search term — V1's condition for saving it as a Smart Bookmark.
+    public private(set) var hasCommittedSearch = false
     public private(set) var bookmarkBoxActive = false
     @ObservationIgnored private let onSubmitSearch: @MainActor (String) -> Void
     @ObservationIgnored private let onNavigate: @MainActor (ReaderDestination) -> Void
@@ -85,6 +89,19 @@ public final class FeedScreenStore {
     public func dismissToast() { toast = nil }
 
     public func installBookmarks(_ ids: Set<PublicationCardID>) { bookmarkedIDs = ids }
+
+    /// The host's own reading of what the reader is doing: how many criteria are applied, and whether a search
+    /// is committed. The header badges and V1's two conditional menu entries read exactly these.
+    public func installContextFacts(filterCount: Int, hasCommittedSearch: Bool) {
+        self.filterCount = max(0, filterCount)
+        self.hasCommittedSearch = hasCommittedSearch
+    }
+
+    /// Replaces the destinations the menu offers. The entries themselves, their order and their labels stay
+    /// V1's; only which of them apply is stated here.
+    public func installDestinations(_ destinations: Set<ReaderDestination>) {
+        availableDestinations = destinations
+    }
 
     /// Receives the value computed by external composition using the existing handoff.
     /// Reception delegates identity rules to the state contract; absence retains visible content.
