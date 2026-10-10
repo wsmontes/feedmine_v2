@@ -124,12 +124,20 @@ public struct ReaderLibraryCoordinator: Sendable {
     /// V1's "Save as Smart Bookmark" and its curated counterpart: the context the reader is on is stored under
     /// a name, and the stored key **names its own preset**, so activating it is an ordinary transition.
     @discardableResult
-    public func savePreset(named name: String, kind: ReaderPreset.Kind, from key: ContextKey) throws -> ReaderPreset {
-        let provisional = try store.createPreset(named: name, kind: kind, key: key)
+    public func savePreset(named name: String, kind: ReaderPreset.Kind, from key: ContextKey,
+        recipe: FeedRecipeDefinition? = nil) throws -> ReaderPreset {
+        let provisional = try store.createPreset(named: name, kind: kind, key: key, recipe: recipe)
         let renamed = ContextKey(request: key.request, preset: provisional.presetID, filter: key.filter,
             searchScope: key.searchScope, identitySchemaVersion: key.identitySchemaVersion)
         guard renamed != provisional.key else { return provisional }
         return try store.replacePresetKey(id: provisional.id, key: renamed)
+    }
+
+    /// T11: edits a curated feed — its name, the recipe, and the identity the recipe resolves to, together.
+    @discardableResult
+    public func updateCuratedPreset(id: String, name: String, key: ContextKey,
+        recipe: FeedRecipeDefinition) throws -> ReaderPreset {
+        try store.updateCuratedPreset(id: id, name: name, key: key, recipe: recipe)
     }
 
     @discardableResult

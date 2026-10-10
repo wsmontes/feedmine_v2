@@ -109,18 +109,8 @@ public enum FeedRecipeResolution {
         ReaderFilter(languages: recipe.languageCriterion, contentType: recipe.contentTypeCriterion)
     }
 
-    /// V1's `autoName()`: the feed is named by what the reader asked for more of. One topic is its own name, two
-    /// or more are "A & B", and nothing is "My Feed".
+    /// V1's `autoName()`, from the one rule Domain owns — a surface and a resolver must name a recipe the same.
     public static func suggestedName(for recipe: FeedRecipeDefinition, names: [String: String] = [:]) -> String {
-        let more = recipe.topicPreferences.filter { $0.value == .more }.keys.sorted()
-        let labels = more.map { key -> String in
-            if let name = names[key] { return name }
-            return key.hasPrefix("topic:") ? String(key.dropFirst("topic:".count)) : key
-        }
-        switch labels.count {
-        case 0: return String(localized: "Meu feed")
-        case 1: return labels[0]
-        default: return labels.prefix(2).joined(separator: " & ")
-        }
+        FeedRecipeNaming.suggestedName(for: recipe, names: names)
     }
 }

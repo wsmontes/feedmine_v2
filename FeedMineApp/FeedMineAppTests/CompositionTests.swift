@@ -399,6 +399,38 @@ final class CompositionTests: XCTestCase {
         try await root.selectContext(.main)
     }
 
+    /// T11: a curated feed's session ranks by the reader's own recipe, and editing the recipe is a different
+    /// behaviour for the same identity — which is what keeps an older checkpoint from being restored under it.
+    func testT11ACuratedFeedRanksByItsRecipeAndEditingChangesTheBehaviorVersion() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = root(directory: directory)
+        await root.launch()
+        // A recipe that asks for more of one topic the development feeds are placed under, and less of another.
+        var recipe = FeedRecipeDefinition(discoveryLevel: 0.2)
+        let principal = try XCTUnwrap(root.association?.feeds.first?.principal)
+        recipe.topicPreferences["topic:\(principal)"] = .more
+        let preset = try root.saveCuratedFeed(recipe, named: "Curadoria")
+        try await root.activateSavedPreset(preset.key)
+        let association = try XCTUnwrap(root.association)
+        XCTAssertEqual(association.contextKey.preset, preset.presetID, "the session runs on the feed's identity")
+        guard case .weighted(let weights) = association.policy.scoring else {
+            return XCTFail("a curated feed ranks by its recipe, not by the baseline")
+        }
+        XCTAssertFalse(weights.isEmpty, "the weights name the sources the recipe says something about")
+        let version = association.policy.scoringPolicyVersion
+        XCTAssertEqual(version.rawValue, AppComposition.recipeVersion(preset.recipe ?? recipe),
+            "the published behaviour is the recipe it was ranked by")
+        // Editing the recipe keeps the identity and changes the behaviour: a new scoring version.
+        var edited = recipe
+        edited.discoveryLevel = 0.9
+        let updated = try root.updateCuratedFeed(preset, recipe: edited, named: "Curadoria")
+        try await root.activateSavedPreset(updated.key)
+        let after = try XCTUnwrap(root.association)
+        XCTAssertEqual(after.contextKey.preset, preset.presetID, "editing is not a new feed")
+        XCTAssertNotEqual(after.policy.scoringPolicyVersion, version,
+            "a different recipe is a different behaviour, so an older Edition is not reused")
+    }
+
     func testS1SameSessionStoreAcrossViewportRefreshAndLifecycle() async throws {
         let (root, association) = try await launched()
         let store = association.store

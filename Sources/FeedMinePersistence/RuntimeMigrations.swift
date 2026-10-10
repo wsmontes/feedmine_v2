@@ -501,6 +501,11 @@ public enum RuntimeMigrations {
                 );
                 """)
         }
+        migrator.registerMigration("reader-curated-recipe-v1") { db in
+            // T11: a curated feed's recipe lives with the preset it produces — one row, one identity, and a
+            // deletion takes both. A smart bookmark leaves it nil: its rule is the search it was saved from.
+            try db.execute(sql: "ALTER TABLE reader_presets ADD COLUMN recipe_json BLOB")
+        }
         return migrator
     }
 

@@ -22,6 +22,7 @@ struct FeedMineApp: App {
         case bookmarkBoxes
         case collections
         case settings
+        case curatedHood
         case export
         case filters
         case reader(URL)
@@ -31,6 +32,7 @@ struct FeedMineApp: App {
             case .bookmarkBoxes: return "bookmarkBoxes"
             case .collections: return "collections"
             case .settings: return "settings"
+            case .curatedHood: return "curatedHood"
             case .export: return "export"
             case .filters: return "filters"
             case .reader(let url): return "reader:" + url.absoluteString
@@ -63,6 +65,9 @@ struct FeedMineApp: App {
     @State private var importPreview: ReaderImportPreview?
     @State private var importIsCommitting = false
     @State private var sharedExport: SharedLink?
+    /// T11: the onboarding gate and the curated feed's own hood.
+    @State private var showsOnboarding = false
+    @State private var showsCuratedHood = false
     @State private var promptName = ""
 
     /// V1's three library prompts: collect the current sources, save the current context, delete a saved one.
@@ -173,6 +178,8 @@ struct FeedMineApp: App {
                                 ProgressView("Abrindo o catálogo de fontes")
                             }
                         }
+                    case .curatedHood:
+                        curatedHood
                     case .export:
                         exportSheet
                     case .filters:
@@ -252,6 +259,7 @@ struct FeedMineApp: App {
                         EmptyView()
                     }
                 }
+                .fullScreenCover(isPresented: $showsOnboarding) { onboardingCover }
                 .sheet(item: $sharedExport) { link in
                     #if os(iOS)
                     ActivityView(url: link.url, subject: link.subject)
@@ -334,6 +342,9 @@ struct FeedMineApp: App {
                 collectionsStore = composition.makeCollectionsStore()
                 settingsStore = composition.makeReaderSettingsStore()
                 appearance = composition.currentAppearance()
+                // T11: the first launch meets the app (V1 forced it in its own UI tests the same way).
+                showsOnboarding = composition.needsOnboarding
+                    || ProcessInfo.processInfo.environment["FEEDMINE_ONBOARDING"] == "1"
                 // T5: the reader's chrome reports destinations; the host presents the ones it implements.
                 composition.onNavigate = { destination in
                     switch destination {
@@ -344,6 +355,12 @@ struct FeedMineApp: App {
                     case .bookmarkBoxes: presentation = .bookmarkBoxes
                     case .collections: presentation = .collections
                     case .settings: presentation = .settings
+                    case .curatedOnboarding:
+                        showsOnboarding = true
+                    case .curatedInspector:
+                        presentation = .curatedHood
+                    case .curatedDeletion:
+                        readerError = String(localized: "Excluir este feed curado?")
                     case .export, .collectionExport, .addFeed:
                         exportRequest = ReaderExportRequest(scope: .selection, format: .opml)
                         exportText = composition.exportPreview(exportRequest)
@@ -385,6 +402,64 @@ struct FeedMineApp: App {
         }
     }
 
+
+    /// T11: V1's own gate — the reader meets the app before the feed, and what they answer becomes a feed.
+    @ViewBuilder private var onboardingCover: some View {
+        let options = composition.onboardingOptions()
+        ReaderOnboardingView(recipe: .neutral(languages: [Self.deviceLanguage]), isFirstRun: true,
+            previewCards: composition.onboardingPreviewCards(),
+            topics: options.topics, languages: options.languages,
+            deviceLanguage: Self.deviceLanguage,
+            onSave: { recipe, name, isBroad in
+                Task { await completeOnboarding(with: recipe, named: name, isBroad: isBroad) }
+            },
+            onClose: {
+                composition.completeOnboarding()
+                showsOnboarding = false
+            })
+    }
+
+    /// Saving the Composer's recipe: the feed is stored, activated, and the reader has met the app.
+    private func completeOnboarding(with recipe: FeedRecipeDefinition, named name: String, isBroad: Bool) async {
+        if let preset = try? composition.saveCuratedFeed(recipe, named: name) {
+            try? await composition.activateSavedPreset(preset.key)
+        } else if isBroad {
+            // "Start broad" with nothing savable is still a start: the reader has met the app either way.
+            try? await composition.selectContext(.main)
+        }
+        composition.completeOnboarding()
+        showsOnboarding = false
+    }
+
+    private static var deviceLanguage: String {
+        Locale.current.language.languageCode?.identifier ?? "en"
+    }
+
+    /// T11: V1's "open hood", over the feed the reader is on.
+    @ViewBuilder private var curatedHood: some View {
+        if let summary = composition.currentCuratedSummary() {
+            NavigationStack {
+                CuratedFeedInspectorView(summary: summary,
+                    onSave: { name in
+                        Task {
+                            try? await composition.renameCurrentCuratedFeed(to: name)
+                            presentation = nil
+                        }
+                    },
+                    onEdit: {
+                        presentation = nil
+                        showsOnboarding = true
+                    },
+                    onDelete: {
+                        presentation = nil
+                        Task { try? await composition.deleteCurrentPreset() }
+                    },
+                    onClose: { presentation = nil })
+            }
+        } else {
+            ProgressView()
+        }
+    }
 
     /// T10: the export sheet — V1's scope × format with a preview of the document it would write.
     @ViewBuilder private var exportSheet: some View {

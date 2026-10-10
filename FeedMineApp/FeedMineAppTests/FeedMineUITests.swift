@@ -254,6 +254,46 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
 
+    /// T11: V1's two-stage onboarding — Welcome, then the Composer — and the feed its answers produce.
+    @MainActor
+    func testOnboardingWelcomeComposerAndSave() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        app.launch()
+        // Stage 1: the welcome scene, with V1's own words and its two ways forward.
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 45))
+        XCTAssertTrue(app.staticTexts["welcome-body"].exists)
+        XCTAssertTrue(app.otherElements["welcome-trust"].exists)
+        app.buttons["welcome-shape"].tap()
+        // Stage 2: the composer, with the controls V1 had.
+        XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.sliders["composer-discovery"].exists)
+        XCTAssertTrue(app.buttons["composer-language-pt"].exists || app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'composer-language-'")).firstMatch.exists)
+        let topic = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-topic-'")).firstMatch
+        XCTAssertTrue(topic.waitForExistence(timeout: 10))
+        // A topic cycles normal → more → less → normal, and the label follows.
+        let label = topic.label
+        topic.tap()
+        XCTAssertNotEqual(topic.label, label, "tapping a topic changes its answer")
+        XCTAssertTrue(app.switches["composer-media-podcast"].exists)
+        app.switches["composer-media-podcast"].tap()
+        // The footer saves and opens the feed.
+        app.buttons["composer-open-feed"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60))
+        XCTAssertFalse(app.staticTexts["welcome-headline"].exists, "the gate is done")
+        // And the reader can reach the hood of the feed they just made.
+        openMenu(app)
+        XCTAssertTrue(app.buttons["Abrir o capô do feed curado"].waitForExistence(timeout: 10))
+        app.buttons["Abrir o capô do feed curado"].tap()
+        XCTAssertTrue(app.staticTexts["hood-badge"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["hood-privacy"].exists)
+        app.buttons["hood-close"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+    }
+
     @MainActor
     func testNativeSwipeReachesRealRunwayAndReverseNavigation() throws {
         let app = XCUIApplication()

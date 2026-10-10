@@ -177,9 +177,11 @@ public struct ReaderLibraryStore: Sendable {
                     arguments: [preset.id]) == false else { continue }
                 let position = try Int.fetchOne(db, sql: "SELECT COALESCE(MAX(position) + 1, 0) FROM reader_presets WHERE kind = ?",
                     arguments: [preset.kind.rawValue]) ?? 0
-                try db.execute(sql: "INSERT INTO reader_presets (id, name, kind, position, context_key) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [preset.id, preset.name, preset.kind.rawValue, position,
-                        try JSONEncoder().encode(preset.key)])
+                try db.execute(sql: """
+                    INSERT INTO reader_presets (id, name, kind, position, context_key, recipe_json)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """, arguments: [preset.id, preset.name, preset.kind.rawValue, position,
+                    try JSONEncoder().encode(preset.key), try preset.recipe.map { try JSONEncoder().encode($0) }])
                 presets += 1
             }
             return ReaderLibraryImportReport(insertedBookmarkLists: lists, insertedCollections: collections,
@@ -347,7 +349,7 @@ public struct ReaderLibraryStore: Sendable {
     public func presets() throws -> [ReaderPreset] {
         try database.read { db in
             try Row.fetchAll(db, sql: """
-                SELECT id, name, kind, position, context_key FROM reader_presets
+                SELECT id, name, kind, position, context_key, recipe_json FROM reader_presets
                 ORDER BY \(Self.presetKindRank), position, id
                 """)
                 .map { row in
@@ -355,23 +357,63 @@ public struct ReaderLibraryStore: Sendable {
                         throw ReaderLibraryError.missingLibraryItem
                     }
                     let key = try JSONDecoder().decode(ContextKey.self, from: row["context_key"] as Data)
-                    return ReaderPreset(id: row["id"], name: row["name"], kind: kind, position: row["position"], key: key)
+                    return ReaderPreset(id: row["id"], name: row["name"], kind: kind, position: row["position"],
+                        key: key, recipe: try Self.recipe(row["recipe_json"] as Data?))
                 }
         }
     }
 
     @discardableResult
-    public func createPreset(named rawName: String, kind: ReaderPreset.Kind, key: ContextKey) throws -> ReaderPreset {
+    public func createPreset(named rawName: String, kind: ReaderPreset.Kind, key: ContextKey,
+        recipe: FeedRecipeDefinition? = nil) throws -> ReaderPreset {
         guard let name = ReaderLibraryRules.normalizedName(rawName) else { throw ReaderLibraryError.invalidName }
         let payload = try JSONEncoder().encode(key)
+        let recipePayload = try recipe.map { try JSONEncoder().encode($0) }
         return try database.write { db in
             let position = try Int.fetchOne(db, sql: "SELECT COALESCE(MAX(position) + 1, 0) FROM reader_presets WHERE kind = ?",
                 arguments: [kind.rawValue]) ?? 0
-            let preset = ReaderPreset(id: Self.mintID(), name: name, kind: kind, position: position, key: key)
-            try db.execute(sql: "INSERT INTO reader_presets (id, name, kind, position, context_key) VALUES (?, ?, ?, ?, ?)",
-                arguments: [preset.id, preset.name, preset.kind.rawValue, preset.position, payload])
+            let preset = ReaderPreset(id: Self.mintID(), name: name, kind: kind, position: position, key: key,
+                recipe: recipe)
+            try db.execute(sql: """
+                INSERT INTO reader_presets (id, name, kind, position, context_key, recipe_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [preset.id, preset.name, preset.kind.rawValue, preset.position, payload,
+                recipePayload])
             return preset
         }
+    }
+
+    /// T11: rewrites a curated preset's recipe and the identity it activates, in one transaction — editing a
+    /// feed's controls changes both, and they must never disagree.
+    @discardableResult
+    public func updateCuratedPreset(id: String, name: String, key: ContextKey,
+        recipe: FeedRecipeDefinition) throws -> ReaderPreset {
+        guard let name = ReaderLibraryRules.normalizedName(name) else { throw ReaderLibraryError.invalidName }
+        let payload = try JSONEncoder().encode(key)
+        let recipePayload = try JSONEncoder().encode(recipe)
+        return try database.write { db in
+            try db.execute(sql: """
+                UPDATE reader_presets SET name = ?, context_key = ?, recipe_json = ? WHERE id = ?
+                """, arguments: [name, payload, recipePayload, id])
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT id, name, kind, position, context_key, recipe_json FROM reader_presets WHERE id = ?
+                """, arguments: [id]), let kind = ReaderPreset.Kind(rawValue: row["kind"] as String) else {
+                throw ReaderLibraryError.missingLibraryItem
+            }
+            return ReaderPreset(id: row["id"], name: row["name"], kind: kind, position: row["position"],
+                key: try JSONDecoder().decode(ContextKey.self, from: row["context_key"] as Data),
+                recipe: try Self.recipe(row["recipe_json"] as Data?))
+        }
+    }
+
+    /// A stored recipe, or nil when the preset is not a curated one. A recipe that cannot be decoded is a
+    /// missing library item, not a preset that silently lost its controls.
+    private static func recipe(_ payload: Data?) throws -> FeedRecipeDefinition? {
+        guard let payload else { return nil }
+        guard let recipe = try? JSONDecoder().decode(FeedRecipeDefinition.self, from: payload) else {
+            throw ReaderLibraryError.missingLibraryItem
+        }
+        return recipe
     }
 
     @discardableResult
@@ -395,12 +437,14 @@ public struct ReaderLibraryStore: Sendable {
         let payload = try JSONEncoder().encode(key)
         return try database.write { db in
             try db.execute(sql: "UPDATE reader_presets SET context_key = ? WHERE id = ?", arguments: [payload, id])
-            guard let row = try Row.fetchOne(db, sql: "SELECT id, name, kind, position, context_key FROM reader_presets WHERE id = ?",
-                arguments: [id]), let kind = ReaderPreset.Kind(rawValue: row["kind"] as String) else {
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT id, name, kind, position, context_key, recipe_json FROM reader_presets WHERE id = ?
+                """, arguments: [id]), let kind = ReaderPreset.Kind(rawValue: row["kind"] as String) else {
                 throw ReaderLibraryError.missingLibraryItem
             }
             return ReaderPreset(id: row["id"], name: row["name"], kind: kind, position: row["position"],
-                key: try JSONDecoder().decode(ContextKey.self, from: row["context_key"] as Data))
+                key: try JSONDecoder().decode(ContextKey.self, from: row["context_key"] as Data),
+                recipe: try Self.recipe(row["recipe_json"] as Data?))
         }
     }
 

@@ -5,7 +5,13 @@ import FeedMineDomain
 
 public struct ResolvedSelectionPolicy: Hashable, Sendable {
     public enum EligibilityBehavior: Hashable, Sendable { case structuralOnly; case selectedSources(Set<SourceID>) }
-    public enum ScoringBehavior: Hashable, Sendable { case equal }
+    public enum ScoringBehavior: Hashable, Sendable {
+        case equal
+        /// T11: a curated feed ranks its sources by the reader's own recipe. The weights are keyed by the
+        /// session's own source identities, which is what the engine can see; resolving a recipe into them is
+        /// `FeedRecipeResolution`'s business and never the engine's. A source with no weight weighs 1.
+        case weighted([SourceID: Double])
+    }
     public enum SequencingBehavior: Hashable, Sendable {
         case recencyDescending
         /// Recency order with PD-4 source alternation: never two adjacent cards sharing a source.

@@ -36,6 +36,15 @@ public enum ReaderPreferenceLevel: String, CaseIterable, Codable, Sendable {
         }
     }
 
+    /// V1's own cycle for a row the reader taps: normal → more → less → normal.
+    public func next() -> ReaderPreferenceLevel {
+        switch self {
+        case .neutral: return .more
+        case .more: return .less
+        case .less: return .neutral
+        }
+    }
+
     /// V1's `profileWeight`: an answer weighs ±1.5, and "normal" weighs nothing at all.
     public var weight: Double {
         switch self {
@@ -176,6 +185,24 @@ public struct FeedRecipeDefinition: Hashable, Codable, Sendable {
         guard mediaTypes.count < ReaderRecipeMediaType.allCases.count else { return .all }
         let kinds = mediaTypes.map(\.contentType)
         return kinds.count == 1 ? kinds[0] : .all
+    }
+}
+
+/// V1's `autoName()`: the feed is named by what the reader asked for more of. One topic is its own name, two or
+/// more are "A & B", and nothing is "My Feed". It lives here so the resolver and the Composer cannot name the
+/// same recipe differently.
+public enum FeedRecipeNaming {
+    public static func suggestedName(for recipe: FeedRecipeDefinition, names: [String: String] = [:]) -> String {
+        let more = recipe.topicPreferences.filter { $0.value == .more }.keys.sorted()
+        let labels = more.map { key -> String in
+            if let name = names[key] { return name }
+            return key.hasPrefix("topic:") ? String(key.dropFirst("topic:".count)) : key
+        }
+        switch labels.count {
+        case 0: return String(localized: "Meu feed")
+        case 1: return labels[0]
+        default: return labels.prefix(2).joined(separator: " & ")
+        }
     }
 }
 

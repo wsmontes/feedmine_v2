@@ -151,7 +151,7 @@ final class AppComposition {
         guard !replacingSession, association == nil, startupFailure == nil else { return }
         let current: FeedAssociation
         do {
-            current = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration, contextKey: currentContextKey, selectionVersion: selectionVersion))
+            current = try association(contextKey: currentContextKey)
         } catch {
             startupFailure = "Não foi possível abrir o feed local: \(String(describing: error))"
             return
@@ -219,8 +219,7 @@ final class AppComposition {
         currentContextKey = ContextKey(request: request, preset: currentContextKey.preset,
             filter: currentContextKey.filter)
         _ = try preferences.setContext(currentContextKey)
-        let nextAssociation = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration,
-            contextKey: currentContextKey, selectionVersion: selectionVersion))
+        let nextAssociation = try association(contextKey: currentContextKey)
         association = nextAssociation
         startupFailure = nil
         try await nextAssociation.launch()
@@ -245,8 +244,7 @@ final class AppComposition {
         currentContextKey = ContextKey(request: request, preset: currentContextKey.preset,
             filter: resolvedFilter(at: Date()))
         _ = try preferences?.setContext(currentContextKey)
-        let next = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration,
-            contextKey: currentContextKey, selectionVersion: selectionVersion))
+        let next = try association(contextKey: currentContextKey)
         association = next
         startupFailure = nil
         try await next.launch()
@@ -427,6 +425,72 @@ final class AppComposition {
         feeds = sessionFeeds
     }
 
+    /// T11: the hood of the feed the reader is on, when it is one of their own.
+    func currentCuratedSummary() -> CuratedFeedSummary? {
+        guard case .curatedFeed(let id) = currentContextKey.preset,
+            let preset = try? libraryCoordinator()?.preset(id: id), let recipe = preset.recipe else { return nil }
+        return CuratedFeedSummary(name: preset.name, recipe: recipe)
+    }
+
+    /// Renaming a curated feed keeps its identity and its recipe: only the name changes.
+    func renameCurrentCuratedFeed(to name: String) async throws {
+        guard case .curatedFeed(let id) = currentContextKey.preset,
+            let coordinator = makeCuratedCoordinator(), let preset = try coordinator.curatedPresets().first(where: { $0.id == id }),
+            let recipe = preset.recipe else { return }
+        _ = try coordinator.update(preset, recipe: recipe, named: name)
+    }
+
+    /// T11: whether the reader still has to meet the app. V1 gated on its own `hasSeenOnboarding`, which T10
+    /// brought across as a preference.
+    var needsOnboarding: Bool {
+        !(((try? preferences?.load())??.settings.hasSeenOnboarding) ?? false)
+    }
+
+    /// The reader has met the app: the flag is a preference, and setting it is what a later launch reads.
+    func completeOnboarding() {
+        guard let preferences, let current = try? preferences.load() else { return }
+        var settings = current.settings
+        settings.hasSeenOnboarding = true
+        _ = try? preferences.setSettings(settings)
+    }
+
+    /// What the Composer can offer, from the catalogue the app already reads: its languages, and its own
+    /// sections as topics (their keys are the ones a source is placed under, which is what a recipe stores).
+    func onboardingOptions() -> (languages: [OnboardingLanguage], topics: [OnboardingTopic]) {
+        guard let catalogURL = Bundle.main.url(forResource: "catalog", withExtension: "sqlite"),
+            let coordinator = Optional(SourceManagementCoordinator(catalogURL: catalogURL,
+                database: libraryDatabase())) else { return ([], []) }
+        let languages = ((try? coordinator.languages()) ?? [])
+            .filter { !$0.isUndeclared }
+            .prefix(12)
+            .map { OnboardingLanguage(code: $0.code, name: $0.displayName) }
+        let topics = ((try? coordinator.sections()) ?? []).map {
+            OnboardingTopic(key: "topic:\($0.key)", name: $0.name)
+        }
+        return (Array(languages), topics)
+    }
+
+    /// The cards the Welcome and Composer scenes may show: the reader's own published cards, never a fabricated
+    /// headline. An empty feed shows the scenes' own abstract panels.
+    func onboardingPreviewCards(limit: Int = 6) -> [PresentationCard] {
+        Array((association?.store.state.presentation?.window.items ?? []).prefix(limit))
+    }
+
+    /// T11: the reader's own curated feed. The Composer hands a recipe over; the coordinator stores it with the
+    /// identity it resolves to, and the session ranks by it from then on.
+    func makeCuratedCoordinator() -> CuratedFeedCoordinator? {
+        libraryDatabase().map(CuratedFeedCoordinator.init(database:))
+    }
+
+    func saveCuratedFeed(_ recipe: FeedRecipeDefinition, named name: String) throws -> ReaderPreset? {
+        try makeCuratedCoordinator()?.save(recipe, named: name)
+    }
+
+    func updateCuratedFeed(_ preset: ReaderPreset, recipe: FeedRecipeDefinition,
+        named name: String) throws -> ReaderPreset? {
+        try makeCuratedCoordinator()?.update(preset, recipe: recipe, named: name)
+    }
+
     /// T10: the two tools, over the reader's own database. An export writes into the app's documents directory,
     /// which is where a share or a save can find it.
     func makeImportExportCoordinator() -> ReaderImportExportCoordinator? {
@@ -581,6 +645,58 @@ final class AppComposition {
         catch { startupFailure = "Não foi possível atualizar a seleção de fontes: \(error)" }
     }
 
+    /// T11: the ranking this context runs on, and the version that says so. A curated feed's recipe resolves
+    /// into multipliers over the *sources'* own identities (the engine sees SourceIDs, the recipe speaks catalog
+    /// keys), and its version is derived from the recipe so an edit is a new behaviour for a checkpoint.
+    private func curatedScoring() -> (ResolvedSelectionPolicy.ScoringBehavior, UInt64) {
+        guard case .curatedFeed(let id) = currentContextKey.preset,
+            let preset = try? libraryCoordinator()?.preset(id: id), let recipe = preset.recipe else {
+            return (.equal, 1)
+        }
+        let version = Self.recipeVersion(recipe)
+        let multipliers = FeedRecipeResolution.multipliers(for: feedFacts(), recipe: recipe)
+        guard !multipliers.isEmpty else { return (.equal, version) }
+        let bySource = Dictionary(uniqueKeysWithValues: feeds.compactMap { feed in
+            multipliers[feed.principal].map { (feed.sourceID, $0) }
+        })
+        return bySource.isEmpty ? (.equal, version) : (.weighted(bySource), version)
+    }
+
+    /// What the catalogue says about each feed this session reads: the facts a recipe is resolved against.
+    private func feedFacts() -> [FeedRecipeResolution.SourceFacts] {
+        guard let catalogURL = Bundle.main.url(forResource: "catalog", withExtension: "sqlite"),
+            let catalog = try? LegacyCatalogReader(catalogURL: catalogURL) else { return [] }
+        return feeds.compactMap { feed in
+            guard let record = try? catalog.source(key: feed.principal) else { return nil }
+            let host = record.displayHost ?? URL(string: record.requestURL)?.host ?? record.key
+            let editorial = FeedEditorialReader.assess(.init(title: record.title,
+                description: record.sourceDescription, tags: record.tags, host: host,
+                qualityScore: record.qualityScore, activity: record.activity, nature: record.nature))
+            return FeedRecipeResolution.SourceFacts(identity: record.key, nodeKeys: record.nodeKeys,
+                mediaKind: record.mediaKind, nature: record.nature, qualityScore: record.qualityScore,
+                editorial: editorial)
+        }
+    }
+
+    /// A stable version for a recipe: an FNV-1a over its canonical JSON, so the same recipe is always the same
+    /// behaviour and any edit is a different one.
+    static func recipeVersion(_ recipe: FeedRecipeDefinition) -> UInt64 {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(recipe), !data.isEmpty else { return 2 }
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in data { hash = (hash ^ UInt64(byte)) &* 0x100000001b3 }
+        return hash
+    }
+
+    /// The one place a session is built: every transition ranks with the context's own scoring.
+    private func association(contextKey: ContextKey) throws -> FeedAssociation {
+        let (scoring, version) = curatedScoring()
+        return connecting(try FeedAssociation(directory: directory, feeds: feeds,
+            configuration: transportConfiguration, contextKey: contextKey, selectionVersion: selectionVersion,
+            scoring: scoring, scoringVersion: version))
+    }
+
     /// Explicit session replacement; no replacement occurs during normal feed opportunities.
     func replaceSession() async throws {
         guard !replacingSession else { return }
@@ -592,7 +708,7 @@ final class AppComposition {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
             await retired.close()
         }
-        let next = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration, contextKey: currentContextKey, selectionVersion: selectionVersion))
+        let next = try association(contextKey: currentContextKey)
         association = next
         startupFailure = nil
         try await next.launch()
@@ -633,7 +749,8 @@ final class FeedAssociation {
     /// The destinations this host can present. `collectionFromContextPrompt` and `smartFeedPrompt` are V1's
     /// two conditional entries; the app narrows them to the contexts where V1 offered them.
     static let readerDestinations: Set<ReaderDestination> = [.sources, .bookmarkBoxes, .filters,
-        .collections, .collectionFromContextPrompt, .smartFeedPrompt, .smartFeedDeletion]
+        .collections, .collectionFromContextPrompt, .smartFeedPrompt, .smartFeedDeletion,
+        .curatedOnboarding, .curatedInspector, .curatedDeletion]
 
     @ObservationIgnored
     lazy var store: FeedScreenStore = FeedScreenStore(onViewport: { [weak self] observation, activity in
@@ -729,6 +846,11 @@ final class FeedAssociation {
         case .smartFeed, .curatedFeed: break
         default: destinations.remove(.smartFeedDeletion)
         }
+        // V1 offered the hood and its deletion only while the reader was on a curated feed.
+        if !contextKey.preset.isCurated {
+            destinations.remove(.curatedInspector)
+            destinations.remove(.curatedDeletion)
+        }
         store.installDestinations(destinations)
         store.installContextFacts(filterCount: criteria, hasCommittedSearch: committed)
     }
@@ -742,6 +864,8 @@ final class FeedAssociation {
     @ObservationIgnored var onMedia: ((PublicationCardID) -> Void)?
     /// The identity this session is on. It does not change for the life of the association.
     let contextKey: ContextKey
+    /// What this session ranks by: eligibility, scoring (a curated feed's weights), sequencing and exposure.
+    let policy: ResolvedSelectionPolicy
     /// The feeds this session was built over: a card's source id names one of them, and its principal is the
     /// catalog key V1's "View Source" needs.
     let feeds: [TrustedFeed]
@@ -840,7 +964,8 @@ final class FeedAssociation {
     }
 
     init(directory: URL, feeds: [TrustedFeed], configuration: URLSessionConfiguration,
-        contextKey: ContextKey = ContextKey(request: .main), selectionVersion: UInt64 = 2) throws {
+        contextKey: ContextKey = ContextKey(request: .main), selectionVersion: UInt64 = 2,
+        scoring: ResolvedSelectionPolicy.ScoringBehavior = .equal, scoringVersion: UInt64 = 1) throws {
         let db = try RuntimeDatabase(location: .init(directory: directory))
         database = db
         // T8: the context this session reads and writes, kept so the menu can state what applies to it.
@@ -860,6 +985,9 @@ final class FeedAssociation {
             saved = nil
         }
         let v = PolicyVersion(rawValue: 1)
+        // T11: a curated feed's ranking is part of the behavior the Edition was published under, so an edit to
+        // the recipe (which keeps the identity) is a new revision and never reuses an older checkpoint.
+        let scoringPolicy = PolicyVersion(rawValue: max(1, scoringVersion))
         // Sequencing v2 = PD-4 source alternation; exposure v2 = PD-1 edited articles reappear.
         // A behavior change is a new EditorialRevision; a restored Edition keeps its own behavior.
         let alternating = PolicyVersion(rawValue: 2)
@@ -867,7 +995,7 @@ final class FeedAssociation {
             id: .init(rawValue: LegacyCatalogImport.stableUUID(namespace: "feedmine.editorial.context",
                 key: try JSONEncoder().encode(contextKey).base64EncodedString() + "|" + String(selectionVersion))),
             contextKey: context.key, catalogGeneration: .init(rawValue: 1), userSelectionVersion: PolicyVersion(rawValue: selectionVersion),
-            eligibilityPolicyVersion: alternating, scoringPolicyVersion: v, sequencingPolicyVersion: alternating,
+            eligibilityPolicyVersion: alternating, scoringPolicyVersion: scoringPolicy, sequencingPolicyVersion: alternating,
             exposurePolicyVersion: alternating, selectionSchemaVersion: .init(rawValue: 1))
         guard let plan = FeedPlan(context: context, revision: revision) else {
             throw FeedRunwayDriverError.policyContextMismatch
@@ -878,8 +1006,11 @@ final class FeedAssociation {
             userSelectionVersion: revision.userSelectionVersion, eligibilityPolicyVersion: revision.eligibilityPolicyVersion,
             scoringPolicyVersion: revision.scoringPolicyVersion, sequencingPolicyVersion: revision.sequencingPolicyVersion,
             exposurePolicyVersion: revision.exposurePolicyVersion, selectionSchemaVersion: revision.selectionSchemaVersion,
-            eligibility: .selectedSources(Set(feeds.map(\.sourceID))), scoring: .equal, sequencing: sequencing,
+            eligibility: .selectedSources(Set(feeds.map(\.sourceID))), scoring: scoring, sequencing: sequencing,
             exposure: revision.exposurePolicyVersion >= alternating ? .excludePublishedMaterial : .excludePublishedRevisions)
+        // The policy is a fact about this session (T11): what it ranks by, and the versions it was published
+        // under. A surface or a test can state it without rebuilding the decision.
+        self.policy = policy
         let authority = AcquisitionTargetAuthority(database: db)
         let registrations = try feeds.map { feed in
             let existing = try authority.target(id: feed.targetID)

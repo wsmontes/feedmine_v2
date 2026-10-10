@@ -58,9 +58,14 @@ public struct ReaderPreset: Hashable, Codable, Sendable, Identifiable {
     public let kind: Kind
     /// The whole identity it activates — the T6 key, including the search scope it was saved from.
     public let key: ContextKey
+    /// T11: a curated feed's recipe. A smart bookmark has none (its rule is the search it was saved from), and a
+    /// curated feed without one would be a name with nothing behind it.
+    public let recipe: FeedRecipeDefinition?
 
-    public init(id: String, name: String, kind: Kind, position: Int, key: ContextKey) {
+    public init(id: String, name: String, kind: Kind, position: Int, key: ContextKey,
+        recipe: FeedRecipeDefinition? = nil) {
         self.id = id; self.name = name; self.kind = kind; self.position = position; self.key = key
+        self.recipe = recipe
     }
 
     /// The preset identity this saved context activates. A preset whose key does not name itself cannot be
@@ -96,8 +101,11 @@ public struct ReaderLibraryImport: Hashable, Sendable {
         public let name: String
         public let kind: ReaderPreset.Kind
         public let key: ContextKey
-        public init(id: String, name: String, kind: ReaderPreset.Kind, key: ContextKey) {
+        public let recipe: FeedRecipeDefinition?
+        public init(id: String, name: String, kind: ReaderPreset.Kind, key: ContextKey,
+            recipe: FeedRecipeDefinition? = nil) {
             self.id = id; self.name = name; self.kind = kind; self.key = key
+            self.recipe = recipe
         }
     }
 

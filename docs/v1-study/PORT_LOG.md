@@ -1101,3 +1101,45 @@ filtro, o resumo ordenado, envelope parcial e round trip).
 **Remaining for T11:** o `CuratedFeedCoordinator` (`save`/`inspect`/`update`) com a receita persistida ao lado do
 preset e os multiplicadores ligados ao `ResolvedSelectionPolicy` da sessão; as duas cenas (Welcome e Composer,
 com o preview de cards reais e os controles exatos do V1) e o capô; e a evidência de UI.
+
+### T11, third part — a feed the reader shapes, and the ranking it produces
+
+- **The ranking reaches the session.** `ScoringBehavior` gained `.weighted([SourceID: Double])`: the engine ranks
+  by the reader's own recipe, a card taking the strongest of its sources' weights, and a session that is not
+  weighting keeps ordering by recency exactly as before (`WeightedScoringTests`, 3). The app resolves a curated
+  context's recipe against the **catalogue's own facts** (`feedFacts()`: placements, media kind, nature, quality
+  and the editorial assessment) and maps catalog keys onto the session's `SourceID`s.
+- **A recipe edit is a new behaviour.** The scoring policy version is derived from the recipe itself (an FNV-1a
+  over its canonical JSON), so an edited feed keeps its identity — the reader stays where they are — while an
+  Edition published under the old recipe is never reused. The app-level test proves both: the session's policy is
+  `.weighted`, its version equals the recipe's, and editing the recipe changes it.
+- **The coordinator and storage.** `CuratedFeedCoordinator.save/inspect/update/delete` over the recipe persisted
+  with the preset (`reader-curated-recipe-v1`: a nullable column, so a smart bookmark carries none and a curated
+  feed's deletion takes both). `CuratedFeedCoordinatorTests` covers save (the identity is the preset plus the
+  criteria the recipe states — the weights are *not* identity), inspect, edit, delete, the multipliers and the
+  naming rule.
+- **The two scenes.** `ReaderOnboardingView` is V1's **Welcome → Composer**, with its own copy, the card cascade
+  (the reader's real cards, or abstract panels — never a fabricated headline), the trust badges, the two CTAs,
+  and the Composer's exact controls: language chips (the last one cannot be removed), the Discovery slider with
+  V1's own "Focused/Exploratory" ends and no percentage, the Source balance rows with their three editorial keys,
+  the topic rows cycling normal → more → less, the media toggles, and the pinned footer (Reset / Start broad /
+  Open my feed). **The duel scenes are deliberately not ported**: V1 keeps them in the repo with no production
+  caller.
+- **The hood.** `CuratedFeedInspectorView` is V1's "open hood": the badge and its promise, the editable name, the
+  three metrics, the reader's own answers strongest first, languages and media kinds, discovery with the hour,
+  the privacy note word for word — and the two actions, editing the controls and deleting the feed.
+  **Recorded difference:** V1 drew sliders over its *learned* weights with a confidence label; V2 has no
+  evidence yet, so the hood lists the answers instead of inventing a confidence.
+- **The gate.** The app shows the onboarding when the reader has not met it (`hasSeenOnboarding`, T10's
+  preference) or when a UI test asks for it, and a saved recipe is stored, activated and closes the gate.
+
+**Verified.** `swift test` **1016 tests, 0 failures**; iOS build **SUCCEEDED**; and
+`testOnboardingWelcomeComposerAndSave` (real simulator) walks the whole flow — the welcome scene with V1's words
+and badges, the Composer with its sliders, chips, a topic cycling its answer and a media toggle, saving and
+opening the feed, and then the hood with its badge, its privacy note and its close — **TEST SUCCEEDED**; the
+app-level curated-session test also **TEST SUCCEEDED**.
+
+**Known, recorded gaps for T12:** V1's Composer preview ranks the reader's own cards by the recipe being shaped;
+V2's shows the reader's own cards in their published order (no preview pipeline is invented for it). V1's
+"Re-watch intro" setting is not drawn — the gate is reachable through the menu's own "Criar feed curado", which
+is V1's other entry point.

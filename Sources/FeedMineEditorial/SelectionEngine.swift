@@ -65,7 +65,14 @@ public struct SelectionEngine: Sendable {
         case .selectedSources(let selected):
             sourceEligible = window.candidates.filter { !Set($0.sourceIDs).isDisjoint(with: selected) }
         }
-        switch policy.scoring { case .equal: break }
+        // T11: a curated feed's ranking. The weights are the session's own source identities; a candidate
+        // carrying several sources takes the strongest of them, because a card is admitted once and the reader
+        // asked for the kind of source it came from most strongly.
+        let weights: [SourceID: Double]
+        switch policy.scoring {
+        case .equal: weights = [:]
+        case .weighted(let values): weights = values
+        }
         let eligible: [Candidate]
         switch policy.exposure {
         case .none:
@@ -84,10 +91,18 @@ public struct SelectionEngine: Sendable {
             }
             eligible = sourceEligible.filter { !exposure.alreadyPublished($0) }
         }
+        /// The weight a candidate carries: the strongest of its sources' recipe weights, or 1 when the session
+        /// is not weighting at all.
+        func weight(_ candidate: Candidate) -> Double {
+            guard !weights.isEmpty else { return 1 }
+            return candidate.sourceIDs.compactMap { weights[$0] }.max() ?? 1
+        }
         let ordered: [Candidate]
         switch policy.sequencing {
         case .recencyDescending, .recencyAlternatingSources:
             ordered = eligible.sorted { left, right in
+                let leftWeight = weight(left), rightWeight = weight(right)
+                if leftWeight != rightWeight { return leftWeight > rightWeight }
                 if left.timestamp.value != right.timestamp.value {
                     return left.timestamp.value > right.timestamp.value
                 }
