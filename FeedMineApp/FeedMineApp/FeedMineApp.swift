@@ -342,9 +342,12 @@ struct FeedMineApp: App {
                 collectionsStore = composition.makeCollectionsStore()
                 settingsStore = composition.makeReaderSettingsStore()
                 appearance = composition.currentAppearance()
-                // T11: the first launch meets the app (V1 forced it in its own UI tests the same way).
-                showsOnboarding = composition.needsOnboarding
-                    || ProcessInfo.processInfo.environment["FEEDMINE_ONBOARDING"] == "1"
+                // T11: the first launch meets the app. V1 forced the gate in its own UI tests with launch
+                // arguments; a run that is testing something *else* says so and keeps the gate out of the way.
+                let environment = ProcessInfo.processInfo.environment
+                let skipsOnboarding = environment["FEEDMINE_SKIP_ONBOARDING"] == "1"
+                showsOnboarding = !skipsOnboarding
+                    && (composition.needsOnboarding || environment["FEEDMINE_ONBOARDING"] == "1")
                 // T5: the reader's chrome reports destinations; the host presents the ones it implements.
                 composition.onNavigate = { destination in
                     switch destination {

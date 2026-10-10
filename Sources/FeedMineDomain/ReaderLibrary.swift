@@ -61,11 +61,16 @@ public struct ReaderPreset: Hashable, Codable, Sendable, Identifiable {
     /// T11: a curated feed's recipe. A smart bookmark has none (its rule is the search it was saved from), and a
     /// curated feed without one would be a name with nothing behind it.
     public let recipe: FeedRecipeDefinition?
+    /// How many times the recipe has been edited, counting from one. It is the *behaviour* version an Edition is
+    /// published under: an edit keeps the feed's identity — the reader stays where they are — and changes what
+    /// was ranked, so an Edition from before the edit is never reused. A counter, not a hash: a policy version
+    /// is a small number by contract.
+    public let recipeRevision: Int
 
     public init(id: String, name: String, kind: Kind, position: Int, key: ContextKey,
-        recipe: FeedRecipeDefinition? = nil) {
+        recipe: FeedRecipeDefinition? = nil, recipeRevision: Int = 1) {
         self.id = id; self.name = name; self.kind = kind; self.position = position; self.key = key
-        self.recipe = recipe
+        self.recipe = recipe; self.recipeRevision = recipeRevision
     }
 
     /// The preset identity this saved context activates. A preset whose key does not name itself cannot be

@@ -506,6 +506,11 @@ public enum RuntimeMigrations {
             // deletion takes both. A smart bookmark leaves it nil: its rule is the search it was saved from.
             try db.execute(sql: "ALTER TABLE reader_presets ADD COLUMN recipe_json BLOB")
         }
+        migrator.registerMigration("reader-curated-recipe-revision-v1") { db in
+            // T11: the recipe's own revision, so an edit is a new behaviour to publish under while the feed keeps
+            // its identity.
+            try db.execute(sql: "ALTER TABLE reader_presets ADD COLUMN recipe_revision INTEGER NOT NULL DEFAULT 1")
+        }
         return migrator
     }
 

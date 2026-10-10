@@ -9,6 +9,7 @@ import FeedMineDomain
 import FeedMineRuntime
 import FeedMineUI
 import FeedMineComposition
+import FeedMineEditorial
 @testable import FeedMine
 
 // Controlled transport exists only in this test target; all admission and publication are real.
@@ -52,6 +53,7 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
 
 @MainActor
 final class CompositionTests: XCTestCase {
+
     private func root(requestTimeout: TimeInterval = 60, directory: URL? = nil) -> AppComposition {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
@@ -400,33 +402,72 @@ final class CompositionTests: XCTestCase {
     }
 
     /// T11: a curated feed's session ranks by the reader's own recipe, and editing the recipe is a different
-    /// behaviour for the same identity — which is what keeps an older checkpoint from being restored under it.
+    /// behaviour for the same identity — which keeps an older checkpoint from being restored under it.
+    ///
+    /// The feed has to be one the **catalogue** knows: a recipe weighs sources by what the catalogue says about
+    /// them, so a source with no catalogue record is correctly left at the centre (the development feeds are
+    /// exactly that, which is why this test reads the shipped catalogue).
     func testT11ACuratedFeedRanksByItsRecipeAndEditingChangesTheBehaviorVersion() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let root = root(directory: directory)
+        let catalog = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let root = AppComposition(
+            directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+            feeds: try TrustedFeed.catalog(limit: 4, resourceURL: catalog),
+            transportConfiguration: configuration)
         await root.launch()
-        // A recipe that asks for more of one topic the development feeds are placed under, and less of another.
+        let feed = try XCTUnwrap(root.association?.feeds.first)
+        let reader = try LegacyCatalogReader(catalogURL: catalog)
+        let record = try XCTUnwrap(try reader.source(key: feed.principal),
+            "a curated feed ranks by sources the catalogue knows")
+        let node = try XCTUnwrap(record.nodeKeys.first, "every catalogue source is placed somewhere")
+        // A recipe that asks for more of the node this feed is placed under.
         var recipe = FeedRecipeDefinition(discoveryLevel: 0.2)
-        let principal = try XCTUnwrap(root.association?.feeds.first?.principal)
-        recipe.topicPreferences["topic:\(principal)"] = .more
-        let preset = try root.saveCuratedFeed(recipe, named: "Curadoria")
+        recipe.topicPreferences["topic:\(node)"] = .more
+        let saved = try root.saveCuratedFeed(recipe, named: "Curadoria")
+        let preset = try XCTUnwrap(saved, "a curated feed is saved with its recipe")
         try await root.activateSavedPreset(preset.key)
         let association = try XCTUnwrap(root.association)
         XCTAssertEqual(association.contextKey.preset, preset.presetID, "the session runs on the feed's identity")
+        // Diagnostics: the pieces the ranking is built from, asserted before the policy itself.
+        let summary = try XCTUnwrap(root.currentCuratedSummary(), "the hood can read the feed the reader is on")
+        XCTAssertEqual(summary.answers.first?.key, "topic:\(node)", "the recipe states the node it answered on")
+        let storedRecipe = try XCTUnwrap(try XCTUnwrap(root.makeCuratedCoordinator()).curatedPresets()
+            .first(where: { $0.id == preset.id })?.recipe, "the recipe is stored with the preset")
+        XCTAssertEqual(storedRecipe.topicPreferences["topic:\(node)"], ReaderPreferenceLevel.more)
+        XCTAssertFalse(FeedRecipeResolution.multipliers(for: [
+            FeedRecipeResolution.SourceFacts(identity: feed.principal, nodeKeys: record.nodeKeys,
+                mediaKind: record.mediaKind, nature: record.nature, qualityScore: record.qualityScore)
+        ], recipe: storedRecipe).isEmpty, "the recipe weighs a source the catalogue places on that node")
+        XCTAssertFalse(root.feedFacts().isEmpty, "the app states the catalogue's facts for its own feeds")
         guard case .weighted(let weights) = association.policy.scoring else {
             return XCTFail("a curated feed ranks by its recipe, not by the baseline")
         }
         XCTAssertFalse(weights.isEmpty, "the weights name the sources the recipe says something about")
         let version = association.policy.scoringPolicyVersion
-        XCTAssertEqual(version.rawValue, AppComposition.recipeVersion(preset.recipe ?? recipe),
-            "the published behaviour is the recipe it was ranked by")
+        XCTAssertEqual(preset.recipeRevision, 1, "a recipe starts at its first revision")
+        XCTAssertEqual(version.rawValue, UInt64(preset.recipeRevision),
+            "the published behaviour is the revision of the recipe it was ranked by")
         // Editing the recipe keeps the identity and changes the behaviour: a new scoring version.
         var edited = recipe
         edited.discoveryLevel = 0.9
-        let updated = try root.updateCuratedFeed(preset, recipe: edited, named: "Curadoria")
+        let updatedPreset = try root.updateCuratedFeed(preset, recipe: edited, named: "Curadoria")
+        let updated = try XCTUnwrap(updatedPreset, "editing a curated feed returns the edited one")
+        XCTAssertEqual(updated.id, preset.id, "an edit keeps the stored identity")
+        let reread = try XCTUnwrap(try XCTUnwrap(root.makeCuratedCoordinator()).curatedPresets()
+            .first(where: { $0.id == updated.id }))
+        XCTAssertEqual(reread.recipeRevision, 2, "the edited revision is what the library holds")
+        XCTAssertEqual(reread.recipe?.discoveryLevel, 0.9, "and it is the edited recipe")
+        let resolved = root.scoring(for: updated.key)
+        XCTAssertEqual(resolved.1, 2, "the app resolves the edited revision for that key")
+        let before = try XCTUnwrap(root.association)
         try await root.activateSavedPreset(updated.key)
         let after = try XCTUnwrap(root.association)
+        XCTAssertFalse(after === before, "a behaviour change replaces the session")
         XCTAssertEqual(after.contextKey.preset, preset.presetID, "editing is not a new feed")
+        XCTAssertEqual(updated.recipeRevision, 2, "an edit is the next revision of the same recipe")
+        XCTAssertEqual(after.policy.scoringPolicyVersion.rawValue, UInt64(updated.recipeRevision),
+            "the new session ranks under the edited revision")
         XCTAssertNotEqual(after.policy.scoringPolicyVersion, version,
             "a different recipe is a different behaviour, so an older Edition is not reused")
     }

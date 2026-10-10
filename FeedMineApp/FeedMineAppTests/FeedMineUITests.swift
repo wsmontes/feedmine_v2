@@ -7,6 +7,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
         app.terminate()
@@ -34,6 +36,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["FEEDMINE_EMPTY_SELECTION"] = "1"
         app.launch()
         let title = app.staticTexts["feed-empty-title"]
@@ -66,6 +70,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
         app.buttons["bookmark-boxes-button"].tap()
@@ -97,6 +103,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
         openMenu(app)
@@ -132,6 +140,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
         // The card's own menu, opened the way a reader opens it.
@@ -156,6 +166,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["FEEDMINE_MEDIA_SIMULATION"] = "1"
         app.launch()
         let bar = app.otherElements["mini-player"]
@@ -190,6 +202,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
         openMenu(app)
@@ -225,6 +239,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["FEEDMINE_IMPORT_FIXTURE"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
@@ -260,6 +276,7 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
         app.launch()
         // Stage 1: the welcome scene, with V1's own words and its two ways forward.
@@ -302,6 +319,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"]
         app.launch()
         let scroll = app.scrollViews.firstMatch
@@ -337,6 +356,8 @@ final class FeedMineUITests: XCTestCase {
         let namespace = UUID().uuidString
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
         // A filter the reader applied, and a card they saved.
@@ -370,6 +391,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
         let proof = app.staticTexts["native-viewport-delivery"]
@@ -393,6 +416,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 45))
@@ -432,6 +457,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 45))
@@ -473,6 +500,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 45))
@@ -525,6 +554,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 45))
@@ -565,6 +596,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 45))
@@ -608,6 +641,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 45))
@@ -670,6 +705,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 45))
@@ -735,6 +772,8 @@ final class FeedMineUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         XCUIDevice.shared.orientation = .portrait
         app.launch()
         let scroll = app.scrollViews.firstMatch

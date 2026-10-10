@@ -349,7 +349,7 @@ public struct ReaderLibraryStore: Sendable {
     public func presets() throws -> [ReaderPreset] {
         try database.read { db in
             try Row.fetchAll(db, sql: """
-                SELECT id, name, kind, position, context_key, recipe_json FROM reader_presets
+                SELECT id, name, kind, position, context_key, recipe_json, recipe_revision FROM reader_presets
                 ORDER BY \(Self.presetKindRank), position, id
                 """)
                 .map { row in
@@ -358,7 +358,8 @@ public struct ReaderLibraryStore: Sendable {
                     }
                     let key = try JSONDecoder().decode(ContextKey.self, from: row["context_key"] as Data)
                     return ReaderPreset(id: row["id"], name: row["name"], kind: kind, position: row["position"],
-                        key: key, recipe: try Self.recipe(row["recipe_json"] as Data?))
+                        key: key, recipe: try Self.recipe(row["recipe_json"] as Data?),
+                        recipeRevision: row["recipe_revision"])
                 }
         }
     }
@@ -392,17 +393,20 @@ public struct ReaderLibraryStore: Sendable {
         let payload = try JSONEncoder().encode(key)
         let recipePayload = try JSONEncoder().encode(recipe)
         return try database.write { db in
+            // An edit is a new revision of the recipe: the behaviour changes while the identity does not.
             try db.execute(sql: """
-                UPDATE reader_presets SET name = ?, context_key = ?, recipe_json = ? WHERE id = ?
+                UPDATE reader_presets SET name = ?, context_key = ?, recipe_json = ?,
+                    recipe_revision = recipe_revision + 1 WHERE id = ?
                 """, arguments: [name, payload, recipePayload, id])
             guard let row = try Row.fetchOne(db, sql: """
-                SELECT id, name, kind, position, context_key, recipe_json FROM reader_presets WHERE id = ?
+                SELECT id, name, kind, position, context_key, recipe_json, recipe_revision
+                FROM reader_presets WHERE id = ?
                 """, arguments: [id]), let kind = ReaderPreset.Kind(rawValue: row["kind"] as String) else {
                 throw ReaderLibraryError.missingLibraryItem
             }
             return ReaderPreset(id: row["id"], name: row["name"], kind: kind, position: row["position"],
                 key: try JSONDecoder().decode(ContextKey.self, from: row["context_key"] as Data),
-                recipe: try Self.recipe(row["recipe_json"] as Data?))
+                recipe: try Self.recipe(row["recipe_json"] as Data?), recipeRevision: row["recipe_revision"])
         }
     }
 
@@ -438,13 +442,14 @@ public struct ReaderLibraryStore: Sendable {
         return try database.write { db in
             try db.execute(sql: "UPDATE reader_presets SET context_key = ? WHERE id = ?", arguments: [payload, id])
             guard let row = try Row.fetchOne(db, sql: """
-                SELECT id, name, kind, position, context_key, recipe_json FROM reader_presets WHERE id = ?
+                SELECT id, name, kind, position, context_key, recipe_json, recipe_revision
+                FROM reader_presets WHERE id = ?
                 """, arguments: [id]), let kind = ReaderPreset.Kind(rawValue: row["kind"] as String) else {
                 throw ReaderLibraryError.missingLibraryItem
             }
             return ReaderPreset(id: row["id"], name: row["name"], kind: kind, position: row["position"],
                 key: try JSONDecoder().decode(ContextKey.self, from: row["context_key"] as Data),
-                recipe: try Self.recipe(row["recipe_json"] as Data?))
+                recipe: try Self.recipe(row["recipe_json"] as Data?), recipeRevision: row["recipe_revision"])
         }
     }
 

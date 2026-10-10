@@ -114,6 +114,10 @@ final class AppComposition {
         if ProcessInfo.processInfo.environment["FEEDMINE_BLOCK_RSS_NETWORK"] == "1" {
             DevelopmentNetworkBlock.apply(to: config)
         }
+        // T12: a run that must not touch public RSS says so, and gets the app's own fixtures instead.
+        if ProcessInfo.processInfo.environment["FEEDMINE_LOCAL_FEEDS"] == "1" {
+            DevelopmentLocalFeeds.apply(to: config)
+        }
         #endif
         self.transportConfiguration = config
         if feeds.isEmpty { startupFailure = "Não foi possível carregar o catálogo local de fontes." }
@@ -320,7 +324,12 @@ final class AppComposition {
     /// was born from — so this is T6's transition with that key, and the library is never a second engine.
     func activateSavedPreset(_ key: ContextKey) async throws {
         guard !replacingSession, let preferences else { return }
-        guard key != currentContextKey else { return }
+        // An explicit transition happens when the identity changes *or* when the behaviour does: editing a recipe
+        // that leaves the context key alone still changes what the feed ranks, and the running session must not
+        // keep publishing under the revision it was built for.
+        let (_, version) = scoring(for: key)
+        if let current = association, current.contextKey == key,
+            current.policy.scoringPolicyVersion.rawValue == version { return }
         replacingSession = true
         defer { replacingSession = false }
         if let retired = association {
@@ -330,8 +339,7 @@ final class AppComposition {
         association = nil
         currentContextKey = key
         _ = try preferences.setContext(key)
-        let next = connecting(try FeedAssociation(directory: directory, feeds: feeds,
-            configuration: transportConfiguration, contextKey: key, selectionVersion: selectionVersion))
+        let next = try association(contextKey: key)
         association = next
         startupFailure = nil
         try await next.launch()
@@ -415,9 +423,7 @@ final class AppComposition {
         currentContextKey = ContextKey(request: .main, preset: .collection(id),
             filter: .unrestricted)
         _ = try preferences.setContext(currentContextKey)
-        let next = connecting(try FeedAssociation(directory: directory, feeds: resolved,
-            configuration: transportConfiguration, contextKey: currentContextKey,
-            selectionVersion: selectionVersion))
+        let next = try association(contextKey: currentContextKey, sessionFeeds: resolved)
         association = next
         startupFailure = nil
         try await next.launch()
@@ -648,12 +654,14 @@ final class AppComposition {
     /// T11: the ranking this context runs on, and the version that says so. A curated feed's recipe resolves
     /// into multipliers over the *sources'* own identities (the engine sees SourceIDs, the recipe speaks catalog
     /// keys), and its version is derived from the recipe so an edit is a new behaviour for a checkpoint.
-    private func curatedScoring() -> (ResolvedSelectionPolicy.ScoringBehavior, UInt64) {
-        guard case .curatedFeed(let id) = currentContextKey.preset,
+    /// What a session ranks by for one context. A context that is not a curated feed ranks equally, under the
+    /// baseline behaviour version.
+    func scoring(for key: ContextKey) -> (ResolvedSelectionPolicy.ScoringBehavior, UInt64) {
+        guard case .curatedFeed(let id) = key.preset,
             let preset = try? libraryCoordinator()?.preset(id: id), let recipe = preset.recipe else {
             return (.equal, 1)
         }
-        let version = Self.recipeVersion(recipe)
+        let version = UInt64(max(1, preset.recipeRevision))
         let multipliers = FeedRecipeResolution.multipliers(for: feedFacts(), recipe: recipe)
         guard !multipliers.isEmpty else { return (.equal, version) }
         let bySource = Dictionary(uniqueKeysWithValues: feeds.compactMap { feed in
@@ -663,7 +671,7 @@ final class AppComposition {
     }
 
     /// What the catalogue says about each feed this session reads: the facts a recipe is resolved against.
-    private func feedFacts() -> [FeedRecipeResolution.SourceFacts] {
+    func feedFacts() -> [FeedRecipeResolution.SourceFacts] {
         guard let catalogURL = Bundle.main.url(forResource: "catalog", withExtension: "sqlite"),
             let catalog = try? LegacyCatalogReader(catalogURL: catalogURL) else { return [] }
         return feeds.compactMap { feed in
@@ -680,19 +688,11 @@ final class AppComposition {
 
     /// A stable version for a recipe: an FNV-1a over its canonical JSON, so the same recipe is always the same
     /// behaviour and any edit is a different one.
-    static func recipeVersion(_ recipe: FeedRecipeDefinition) -> UInt64 {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(recipe), !data.isEmpty else { return 2 }
-        var hash: UInt64 = 0xcbf29ce484222325
-        for byte in data { hash = (hash ^ UInt64(byte)) &* 0x100000001b3 }
-        return hash
-    }
-
-    /// The one place a session is built: every transition ranks with the context's own scoring.
-    private func association(contextKey: ContextKey) throws -> FeedAssociation {
-        let (scoring, version) = curatedScoring()
-        return connecting(try FeedAssociation(directory: directory, feeds: feeds,
+    /// The one place a session is built: every transition ranks with the context's own scoring. A collection's
+    /// own feed passes its own sources; everything else is the reader's selection.
+    private func association(contextKey: ContextKey, sessionFeeds: [TrustedFeed]? = nil) throws -> FeedAssociation {
+        let (scoring, version) = scoring(for: contextKey)
+        return connecting(try FeedAssociation(directory: directory, feeds: sessionFeeds ?? feeds,
             configuration: transportConfiguration, contextKey: contextKey, selectionVersion: selectionVersion,
             scoring: scoring, scoringVersion: version))
     }
@@ -946,12 +946,15 @@ final class FeedAssociation {
 
     /// T6: whether a restored Edition may be shown for the identity the reader is on. It must belong to that
     /// identity — a foreign filter, preset or search scope is a silent swap, even when the policy versions
-    /// happen to match — and it must have been published under the current selection and eligibility policies.
+    /// happen to match — and it must have been published under the current selection, eligibility *and scoring*
+    /// policies. The scoring version is what makes an edit to a curated recipe a new behaviour: the Edition
+    /// published before the edit ranked by a recipe the reader has since changed, so it is not shown again.
     static func mayShow(_ revision: EditorialRevision, for contextKey: ContextKey,
-        selectionVersion: UInt64, eligibilityVersion: UInt64 = 2) -> Bool {
+        selectionVersion: UInt64, eligibilityVersion: UInt64 = 2, scoringVersion: UInt64 = 1) -> Bool {
         revision.contextKey == contextKey
             && revision.userSelectionVersion == PolicyVersion(rawValue: selectionVersion)
             && revision.eligibilityPolicyVersion == PolicyVersion(rawValue: eligibilityVersion)
+            && revision.scoringPolicyVersion == PolicyVersion(rawValue: max(1, scoringVersion))
     }
 
     static var resources: FeedRunwayDriverResources {
@@ -980,8 +983,11 @@ final class FeedAssociation {
         }
         var saved = try history.restore(backwardCapacity: 8, forwardCapacity: 16, contextKey: contextKey)
         if let restored = saved, !Self.mayShow(restored.edition.editorialRevision, for: contextKey,
-            selectionVersion: selectionVersion) {
+            selectionVersion: selectionVersion, scoringVersion: scoringVersion) {
+            // The position goes with the behaviour: the archived checkpoint of this identity holds an Edition
+            // published under the policy that just changed, and the runtime would install it as the scope.
             try checkpoints.clearActiveCheckpoint()
+            try checkpoints.clearCheckpoint(for: contextKey)
             saved = nil
         }
         let v = PolicyVersion(rawValue: 1)

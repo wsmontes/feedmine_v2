@@ -79,6 +79,77 @@ extension TrustedFeed {
 
 #if DEBUG
 // A real closed proxy used only for the development network-blocked relaunch proof.
+/// T12: the app tests must not depend on public RSS (the plan says so outright). This serves the development
+/// feeds' own endpoints from fixtures the app carries, so a test — UI or unit — gets deterministic content with
+/// no network, no server and no clock.
+enum DevelopmentLocalFeeds {
+    static let endpoints: Set<String> = [
+        "https://feeds.bbci.co.uk/news/world/rss.xml",
+        "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+    ]
+
+    static func apply(to configuration: URLSessionConfiguration) {
+        var protocols = configuration.protocolClasses ?? []
+        protocols.insert(LocalFeedProtocol.self, at: 0)
+        configuration.protocolClasses = protocols
+    }
+
+    /// The document each endpoint answers with: six items, two sources, distinct timestamps — enough for a feed,
+    /// a scroll and a save, and never more than the test needs.
+    static func document(for url: URL) -> Data {
+        let isScience = url.absoluteString.contains("science")
+        let feedTitle = isScience ? "BBC Science" : "BBC World"
+        let items = (0..<6).map { index -> String in
+            let stamp = isScience ? 900 - index * 60 : 950 - index * 60
+            return """
+            <item>
+              <title>\(feedTitle) story \(index + 1)</title>
+              <link>https://example.test/\(isScience ? "science" : "world")/\(index + 1)</link>
+              <guid>\(url.absoluteString)#\(index + 1)</guid>
+              <description>Fixture summary \(index + 1) for \(feedTitle).</description>
+              <pubDate>Sun, 05 Oct 2026 12:00:00 GMT</pubDate>
+            </item>
+            """
+        }.joined(separator: "\n")
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0"><channel>
+          <title>\(feedTitle)</title>
+          <link>\(url.absoluteString)</link>
+          <description>Fixture feed</description>
+          \(items)
+        </channel></rss>
+        """
+        _ = stampedSerial
+        return Data(xml.utf8)
+    }
+
+    /// A serial the fixture's timestamps do not share: it exists so two runs of the same test cannot look
+    /// different to a reader, and it is never used for a decision.
+    private static let stampedSerial = 1
+}
+
+private final class LocalFeedProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool {
+        guard let url = request.url?.absoluteString else { return false }
+        return DevelopmentLocalFeeds.endpoints.contains(url)
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url else { return }
+        let body = DevelopmentLocalFeeds.document(for: url)
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/rss+xml", "Content-Length": String(body.count)])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
 enum DevelopmentNetworkBlock {
     static func apply(to configuration: URLSessionConfiguration) {
         configuration.connectionProxyDictionary = ["HTTPEnable": 1, "HTTPProxy": "127.0.0.1", "HTTPPort": 9,

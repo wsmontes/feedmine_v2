@@ -116,6 +116,16 @@ public struct SessionStore: Sendable {
         }
     }
 
+    /// Drops the saved position of one context identity. Used when the *behaviour* of that identity changed —
+    /// an edited recipe, a new policy — because a position inside an Edition published under the old behaviour
+    /// is not a position in what the reader now reads.
+    public func clearCheckpoint(for key: ContextKey) throws {
+        try database.write { db in
+            try db.execute(sql: "DELETE FROM context_checkpoints WHERE context_identity = ?",
+                arguments: [key.canonicalIdentity])
+        }
+    }
+
     /// The saved position of a context identity, or nil when that identity never had one.
     public func checkpoint(for key: ContextKey) throws -> CheckpointRecord? {
         try database.read { db in
