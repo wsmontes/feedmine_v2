@@ -12,13 +12,15 @@ Written by the session that owns the transfer plan
 | T2 production vs admission (`FeedPresentationAdmission`) | done | `4e304fa` |
 | T3 scroll admits without moving content (native UI test green) | done | `12d4b65` |
 | T4 V1 card layouts + visual system (`Sources/FeedMineUI/Cards/**`, `Appearance/`) | done | `bb8e33e` |
-| T5 shell/header/menu/search | **in progress in the other session** | — |
-| T6–T12 | not started | — |
+| T5 shell/header/menu/search (`Reader/**`, `Feedback/**`, toolbar removed) | done | `6f2e2e5` |
+| T6 filters and context identity | **next for the plan-owner session** | — |
+| T7–T12 | not started | — |
 
-Last verified state at `bb8e33e`: `swift build` clean, `swift test` **861 tests, 0 failures**, iOS
-`xcodebuild … CODE_SIGNING_ALLOWED=NO build` → BUILD SUCCEEDED, and
-`-only-testing:FeedMineUITests/FeedMineUITests/testT3ScrollAdmitsWithoutMovingTheReadingPoint test` → TEST
-SUCCEEDED.
+Last verified state at `6f2e2e5`: `swift build` clean, `swift test` **867 tests, 0 failures**, iOS
+`xcodebuild … CODE_SIGNING_ALLOWED=NO build` → BUILD SUCCEEDED, and the UI tests
+`testT5HeaderChromeAndCardGesturesReachRealFlows`, `testU2SavedListAndInAppReaderPreserveTheSession`,
+`testU3ActiveContextIsVisibleAndClearable` → TEST SUCCEEDED (`testT3ScrollAdmitsWithoutMovingTheReadingPoint`
+passed at `12d4b65`).
 
 ## 2. Claim protocol (this is the point of this file)
 
@@ -37,12 +39,23 @@ SUCCEEDED.
 
 ### Claims
 
-- T5 — claimed by the plan-owner session at 2026-10-09 (shell/header/menu/search, then T6).
-- **Open offer to the parallel session:** take **T10** (settings, locale, import/export). It is the most
-  isolated remaining task: new files in `FeedMineDomain`/`FeedMineComposition`/`FeedMineUI`, its own tests, and
-  only a small `AppComposition` wiring edit. If you are already mid-task, say so in a claim line and keep it;
-  if you would rather stay read-only, take the **T12 review** instead (audit T2–T4 against the plan's Review
-  Focus list, write findings under `docs/reviews/`, change no code).
+- T5 — **done** by the plan-owner session at 2026-10-09 (commit `6f2e2e5`).
+- T6 — claimed by the plan-owner session at 2026-10-09 (filters and context identity). Hot files:
+  `Sources/FeedMineDomain/FeedContext.swift`, `Sources/FeedMinePersistence/ReaderPreferencesStore.swift`,
+  `RuntimeMigrations.swift`, `Sources/FeedMineComposition/CandidateProvider.swift` (or its domain type),
+  `FeedMineApp/FeedMineApp/AppComposition.swift`, `Sources/FeedMineUI/FeedScreen.swift`.
+- **Open offer to the parallel session — two independent tracks, take either (say which in a claim line):**
+  1. **T7** catalog, taxonomy and source management. *This is the one that unblocks T6:* T6's filter criteria
+     (language, content type, mood, taxonomy) are enforced in the supply, and V2's cards/candidates do not carry
+     catalog category metadata yet. T7's own files: `Sources/FeedMineUI/Sources/**`,
+     `Sources/FeedMineComposition/SourceManagementCoordinator.swift`,
+     `Sources/FeedMinePersistence/SourceManagementStore.swift`, the catalog importer and its tests. Mapping rule:
+     V1's `sourceID` is a truncated 32-bit hash — derive stable V2 UUIDs, never reuse the number.
+  2. **T10** settings, locale, import/export. Most isolated: new files in
+     `FeedMineDomain`/`FeedMineComposition`/`FeedMineUI` plus a small `AppComposition` wiring edit. Port V1's
+     `OPMLParser` only if its identity semantics pass V2's vectors.
+  If you prefer read-only, take the **T12 review** instead: audit T2–T6 against the plan's *Review Focus* list
+  and write findings under `docs/reviews/`, changing no code.
 
 ## 3. Contracts you must not break
 
