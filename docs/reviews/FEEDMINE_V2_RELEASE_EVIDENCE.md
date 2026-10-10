@@ -152,3 +152,31 @@ Both tags are local by design; the commits are on `origin/main`.
 - User directive for the next increment: reuse as much of the V1 app's interface/UX solutions as
   possible, where each is genuinely the best solution, while keeping V2's rule that SwiftUI renders
   local projections only.
+
+## 8. Update over V1 — integrity gate, verified
+
+The architect asked for this before distributing V2 as an update to existing users, because V1 and V2
+share the bundle identifier `com.feedmine.app`.
+
+**Verified by code, and encoded as a test** (`testUpdateOverV1NeverSharesTheRuntimeStore`):
+
+| | Store path (relative to the app's Application Support) | Owner |
+|---|---|---|
+| V1 (`feedmine-dev`) | `Feedmine/RuntimeV2/runtime-v2.sqlite` (+ `shadow/`, legacy `user.sqlite` and `feedmine.sqlite`) | `Packages/FeedRuntimeV2/Sources/FeedStorage/RuntimeDatabase.swift` |
+| V2 | `FeedMine/runtime.sqlite` | `Sources/FeedMinePersistence/RuntimeDatabase.swift` |
+
+The directory names differ (`Feedmine` vs `FeedMine`) **and** the depth differs, so the two files
+cannot coincide even on a case-insensitive volume. V2 therefore never opens, and never migrates in
+place, a database written by V1.
+
+**Consequence, stated plainly:** installing V2 over V1 leaves V1's files on disk untouched, but V2
+does not read them. The V1 library — chosen sources, bookmarks, reading history — is not carried
+over; V2 starts from its bundled catalogue and the starter set. The V1 app has never shipped from the
+App Store (its 1.0 sits in `PREPARE_FOR_SUBMISSION`), so today's exposure is limited to testers who
+installed V1's TestFlight builds of the same record.
+
+**Decision needed (not taken here):** either accept a clean start for the first V2 release and say so
+in the TestFlight notes, or build an importer that reads V1's `runtime-v2.sqlite` and legacy
+`user.sqlite` and seeds V2's runtime. The importer is a real migration project (foreign schema, two
+legacy stores), so it is not part of U1–U4; it needs an explicit decision because it changes what
+existing testers keep.

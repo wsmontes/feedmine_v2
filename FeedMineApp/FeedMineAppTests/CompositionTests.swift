@@ -445,4 +445,35 @@ final class CompositionTests: XCTestCase {
         XCTAssertTrue(association.savedArticles().isEmpty)
         await association.close()
     }
+
+    /// Integrity gate for updating over the V1 app (same bundle id `com.feedmine.app`): V2's
+    /// runtime store must never coincide with V1's, because a coincidence would mean V2 opening and
+    /// migrating a foreign schema in place. V1 (feedmine-dev) writes
+    /// `<AppSupport>/Feedmine/RuntimeV2/runtime-v2.sqlite` plus its legacy `user.sqlite`; V2 writes
+    /// `<AppSupport>/FeedMine/runtime.sqlite`. The paths differ in directory name and in depth, so
+    /// they stay distinct even on a case-insensitive volume.
+    ///
+    /// The consequence is recorded, not hidden: installing V2 over V1 leaves V1's files untouched
+    /// but does NOT read them, so the V1 library (chosen sources, bookmarks) is not carried over.
+    /// The V1 app has never shipped from the App Store (its 1.0 is in PREPARE_FOR_SUBMISSION), so the
+    /// exposure today is limited to testers who installed V1's TestFlight builds; carrying that data
+    /// over is a decision, not an accident, and needs an importer that reads V1's stores.
+    @MainActor
+    func testUpdateOverV1NeverSharesTheRuntimeStore() throws {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let v2 = RuntimeDatabaseLocation.applicationSupport(support).directory
+            .appendingPathComponent("runtime.sqlite")
+        let v1 = support
+            .appendingPathComponent("Feedmine", isDirectory: true)
+            .appendingPathComponent("RuntimeV2", isDirectory: true)
+            .appendingPathComponent("runtime-v2.sqlite")
+        XCTAssertEqual(v2.lastPathComponent, "runtime.sqlite")
+        XCTAssertEqual(v2.deletingLastPathComponent().lastPathComponent, "FeedMine")
+        XCTAssertEqual(v1.lastPathComponent, "runtime-v2.sqlite")
+        XCTAssertNotEqual(v1, v2)
+        XCTAssertNotEqual(v1.path.lowercased(), v2.path.lowercased(),
+            "the two stores must stay distinct even if the volume ignores case")
+        // V2 must create its own directory rather than adopt V1's tree.
+        XCTAssertFalse(v2.path.contains("/Feedmine/RuntimeV2/"))
+    }
 }
