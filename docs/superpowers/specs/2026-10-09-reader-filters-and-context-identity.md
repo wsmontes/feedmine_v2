@@ -111,3 +111,37 @@ lifetimes. **Exclusions have no expiry.** Timestamps and pending-expiry status a
   the plan's "apply/cancel/reset" test row becomes apply/dismiss-applies/reset.
 - Delivered V1 inventory beats plan prose whenever they disagree; this is the first such conflict, recorded here
   and in `docs/v1-study/PORT_LOG.md`.
+
+## 6. Persistence migration (next step, concrete)
+
+Landed so far: `ReaderFilter` with its canonical identity text (`47d7c19`) and `ContextKey` as the whole
+request with `canonicalIdentity` + identity-based equality and the legacy-decode path (`4ac3f79`). What remains
+is the durable half, because today the durable identity is *reduced*:
+
+- `SessionStore.contextIdentifier(_:)` builds `main` / `source:<uuid>` / `search:<query>`
+  (`Sources/FeedMinePersistence/SessionStore.swift`), the `context_checkpoints.context_key` column stores that
+  text, and `persistContext` derives it back from the edition's columns with a SQL `CASE`.
+- An Edition therefore has no way to say *which* identity it belongs to beyond its surface.
+
+Steps, in this order (each with its own test, all additive):
+
+1. **`feed_editions.context_identity TEXT NOT NULL DEFAULT ''`**, written from
+   `edition.editorialRevision.contextKey.canonicalIdentity` (`PublicationPersistenceMapping.record(edition:)`).
+   No lookup changes yet.
+2. **`context_checkpoints.context_identity TEXT NOT NULL DEFAULT ''`**, written by `persistContext` by *copying*
+   the edition's column instead of re-deriving the reduced key.
+3. **Backfill in the same migration, in Swift** (not in SQL): for every row with an empty `context_identity`,
+   set it to `ContextKey(request:)`'s canonical text derived from the existing reduced columns — i.e. the
+   default-surface identity for that surface. This is what preserves pre-T6 main/source/search history instead
+   of orphaning it.
+4. **Switch the lookups**: `activateContext` and `checkpoint(for:)` match on `context_identity`; keep
+   `context_key` written as well for one release so an older build reading the same database still works, and
+   record when it can be dropped.
+5. **Tests**: a pre-T6 database (rows with only the reduced key) keeps its checkpoint after migration; two
+   different filters on the same surface get different checkpoints and neither collides with the default one;
+   a reordered-equivalent selection reuses the *same* checkpoint; `FeedEdition` round-trips its
+   `context_identity`; the migration is idempotent (running it twice changes nothing).
+
+Only after step 4 should the reader see filter-driven contexts: until then `ReaderFilter` and the extended
+`ContextKey` are values with identity and tests, not yet durable behaviour.
+
