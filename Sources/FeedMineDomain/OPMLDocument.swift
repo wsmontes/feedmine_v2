@@ -52,7 +52,7 @@ public struct ReaderImportRejection: Hashable, Sendable {
 
 /// What an import would do, before anything is written. `entries` excludes repeats; `repeats` counts how many
 /// outlines the file repeated, so a preview can say "3 already in this file" without listing them twice.
-public struct ReaderImportPreview: Hashable, Sendable {
+public struct ReaderImportPreview: Hashable, Sendable, Identifiable {
     /// The OPML document's own title, when it has one.
     public let name: String?
     public let entries: [ReaderImportEntry]
@@ -65,6 +65,9 @@ public struct ReaderImportPreview: Hashable, Sendable {
     }
 
     public var isEmpty: Bool { entries.isEmpty }
+
+    /// What this preview is, for a surface that presents it: the file's own contents.
+    public var id: String { entries.map(\.id).joined(separator: "|") + "#\(repeats)#\(rejections.count)" }
 }
 
 /// What an import actually did.

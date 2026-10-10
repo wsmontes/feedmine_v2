@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import FeedMineUI
 import FeedMineDomain
 import FeedMineRuntime
@@ -21,6 +22,7 @@ struct FeedMineApp: App {
         case bookmarkBoxes
         case collections
         case settings
+        case export
         case filters
         case reader(URL)
         var id: String {
@@ -29,6 +31,7 @@ struct FeedMineApp: App {
             case .bookmarkBoxes: return "bookmarkBoxes"
             case .collections: return "collections"
             case .settings: return "settings"
+            case .export: return "export"
             case .filters: return "filters"
             case .reader(let url): return "reader:" + url.absoluteString
             }
@@ -52,6 +55,14 @@ struct FeedMineApp: App {
     /// never rebuilds a session.
     @State private var settingsStore: ReaderSettingsStore?
     @State private var appearance: ReaderAppearance = .standard
+    /// T10: the two tools. The export sheet shows a document the host produced; the import shows what a file
+    /// offers before anything is written.
+    @State private var exportRequest: ReaderExportRequest = .init(scope: .selection, format: .opml)
+    @State private var exportText: String?
+    @State private var showsFileImporter = false
+    @State private var importPreview: ReaderImportPreview?
+    @State private var importIsCommitting = false
+    @State private var sharedExport: SharedLink?
     @State private var promptName = ""
 
     /// V1's three library prompts: collect the current sources, save the current context, delete a saved one.
@@ -145,6 +156,7 @@ struct FeedMineApp: App {
                                 SourceManagementView(store: store,
                                     onOpenNode: { sourcesPath.append(.node($0)) },
                                     onOpenCountries: { sourcesPath.append(.countries) },
+                                    onImport: { self.presentation = nil; showsFileImporter = true },
                                     onClose: { self.presentation = nil })
                                     .navigationDestination(for: SourceRoute.self) { route in
                                         switch route {
@@ -161,6 +173,8 @@ struct FeedMineApp: App {
                                 ProgressView("Abrindo o catálogo de fontes")
                             }
                         }
+                    case .export:
+                        exportSheet
                     case .filters:
                         NavigationStack {
                             FilterSheetView(applying: composition.currentFilter,
@@ -238,6 +252,34 @@ struct FeedMineApp: App {
                         EmptyView()
                     }
                 }
+                .sheet(item: $sharedExport) { link in
+                    #if os(iOS)
+                    ActivityView(url: link.url, subject: link.subject)
+                    #else
+                    Text(verbatim: link.url.absoluteString).padding()
+                    #endif
+                }
+                .sheet(item: $importPreview) { preview in
+                    NavigationStack {
+                        ReaderImportPreviewView(preview: preview, isCommitting: importIsCommitting,
+                            onCancel: { importPreview = nil },
+                            onConfirm: {
+                                importIsCommitting = true
+                                Task {
+                                    let result = await composition.commitImport(preview)
+                                    importIsCommitting = false
+                                    importPreview = nil
+                                    if let result {
+                                        associationStoreToast(importSummary(result))
+                                    }
+                                }
+                            })
+                    }
+                }
+                .fileImporter(isPresented: $showsFileImporter,
+                    allowedContentTypes: Self.importableTypes) { result in
+                    Task { await readImportedFile(result) }
+                }
                 .sheet(item: $sharedLink) { link in
                     #if os(iOS)
                     ActivityView(url: link.url, subject: link.subject)
@@ -302,6 +344,10 @@ struct FeedMineApp: App {
                     case .bookmarkBoxes: presentation = .bookmarkBoxes
                     case .collections: presentation = .collections
                     case .settings: presentation = .settings
+                    case .export, .collectionExport, .addFeed:
+                        exportRequest = ReaderExportRequest(scope: .selection, format: .opml)
+                        exportText = composition.exportPreview(exportRequest)
+                        presentation = .export
                     case .collectionFromContextPrompt:
                         promptName = ""
                         libraryPrompt = .collectSources
@@ -318,6 +364,13 @@ struct FeedMineApp: App {
                 if ProcessInfo.processInfo.environment["FEEDMINE_MEDIA_SIMULATION"] == "1" {
                     await composition.startSimulatedPlayback()
                 }
+                // T10 UI evidence: a real import preview over a document built here, so the surface and the
+                // commit are exercised without a file picker the tests cannot drive.
+                if ProcessInfo.processInfo.environment["FEEDMINE_IMPORT_FIXTURE"] == "1",
+                    let data = Self.importFixture.data(using: .utf8),
+                    let preview = try? await composition.previewImport(data) {
+                    importPreview = preview
+                }
                 #endif
             }
             .onChange(of: phase) { _, next in
@@ -332,6 +385,73 @@ struct FeedMineApp: App {
         }
     }
 
+
+    /// T10: the export sheet — V1's scope × format with a preview of the document it would write.
+    @ViewBuilder private var exportSheet: some View {
+        let choices = composition.exportChoices()
+        NavigationStack {
+            ReaderExportView(scopes: choices,
+                initial: choices.first { $0.scope == exportRequest.scope } ?? choices.first
+                    ?? ReaderExportChoice(id: "selection", title: String(localized: "Minhas fontes"),
+                        systemImage: "list.bullet", scope: .selection),
+                initialFormat: exportRequest.format,
+                previewText: exportText,
+                onSelect: { choice, format in
+                    exportRequest = ReaderExportRequest(scope: choice.scope, format: format)
+                    exportText = composition.exportPreview(exportRequest)
+                },
+                onShare: { sharedExport = writtenExport() },
+                onSave: { sharedExport = writtenExport() },
+                onClose: { self.presentation = nil })
+        }
+    }
+
+    /// The exported file, as the platform share surface takes it: "Save to Files" comes with the same sheet.
+    private func writtenExport() -> SharedLink? {
+        guard let url = composition.writeExport(exportRequest) else { return nil }
+        return SharedLink(url: url, subject: url.lastPathComponent)
+    }
+
+    /// A file the reader picked: read it and show what importing it would do. Nothing is written here — the
+    /// preview's own confirmation does that.
+    private func readImportedFile(_ result: Result<URL, any Error>) async {
+        guard case .success(let url) = result else { return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else {
+            associationStoreToast(String(localized: "Não foi possível ler o arquivo"))
+            return
+        }
+        do { importPreview = try await composition.previewImport(data) }
+        catch { associationStoreToast(String(localized: "Não foi possível ler o arquivo")) }
+    }
+
+    /// What an import did, in V1's own words.
+    private func importSummary(_ result: ReaderImportResult) -> String {
+        String(localized: "Importadas \(result.insertedSources) · já suas \(result.alreadySelected) · ignoradas \(result.rejected)")
+    }
+
+    /// A message the reader sees, through the feed's own store (V1's own channel for this).
+    private func associationStoreToast(_ text: String) {
+        composition.association?.store.showToast(text: text, systemImage: "arrow.down.doc")
+    }
+
+    /// The file kinds V1's own Info.plist registered for import.
+    private static var importableTypes: [UTType] {
+        [.xml, UTType(filenameExtension: "opml") ?? .xml]
+    }
+
+    /// T10's UI fixture: a small OPML document with one usable feed, one repeat and one unusable address.
+    private static let importFixture = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <opml version="2.0"><head><title>Fixture</title></head><body>
+      <outline text="Ciência">
+        <outline type="rss" text="Revista" xmlUrl="https://revista.example/feed"/>
+        <outline type="rss" text="Revista de novo" xmlUrl="HTTPS://revista.example/feed/"/>
+        <outline type="rss" text="Quebrado" xmlUrl="example.com/sem-esquema"/>
+      </outline>
+    </body></opml>
+    """
 
     /// The box a library route names, or nil for the all-saved list.
     private static func boxID(_ route: LibraryRoute) -> String? {

@@ -427,6 +427,43 @@ final class AppComposition {
         feeds = sessionFeeds
     }
 
+    /// T10: the two tools, over the reader's own database. An export writes into the app's documents directory,
+    /// which is where a share or a save can find it.
+    func makeImportExportCoordinator() -> ReaderImportExportCoordinator? {
+        guard let database = libraryDatabase() else { return nil }
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Exports", isDirectory: true)
+        return ReaderImportExportCoordinator(database: database, exportDirectory: documents)
+    }
+
+    /// The lists an export can cover right now: the reader's own sources, every collection and every box.
+    func exportChoices() -> [ReaderExportChoice] {
+        makeImportExportCoordinator()?.exportChoices() ?? []
+    }
+
+    /// The export a card or the menu asked for, as the sheet's text: the host produces and hands it over.
+    func exportPreview(_ request: ReaderExportRequest) -> String? {
+        try? makeImportExportCoordinator()?.preview(request)
+    }
+
+    /// Writes the export and returns where it is, for the platform share surface.
+    func writeExport(_ request: ReaderExportRequest) -> URL? {
+        try? makeImportExportCoordinator()?.export(request)
+    }
+
+    /// Reads an OPML file into what importing it would do. Nothing is written until `commitImport`.
+    func previewImport(_ data: Data) async throws -> ReaderImportPreview? {
+        try await makeImportExportCoordinator()?.previewImport(data)
+    }
+
+    /// Writes the preview's feeds and adopts the selection change they imply, so the session acquires them.
+    func commitImport(_ preview: ReaderImportPreview) async -> ReaderImportResult? {
+        guard let coordinator = makeImportExportCoordinator() else { return nil }
+        let result = try? await coordinator.commitImport(preview)
+        await adoptSelectionChange()
+        return result
+    }
+
     /// T10: the settings surface's store, and the appearance the reader's own preferences imply right now.
     func makeReaderSettingsStore() -> ReaderSettingsStore? {
         libraryDatabase().map { ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: $0)) }

@@ -1005,6 +1005,28 @@ the surface store's acceptance discipline); iOS build **SUCCEEDED**; and
 finds V1's sections, writes two preferences and reads them back after closing and reopening the surface —
 **TEST SUCCEEDED**.
 
-**Remaining for T10:** the import and export *surfaces* — V1's file importer driving preview → commit, and the
-export sheet with its scope × format pickers, preview, share and save — all over the coordinators already
-delivered and proven above.
+### T10, third part — the tools' surfaces
+
+- **`ReaderImportPreviewView`** is V1's two-step import on screen: the file's own title, one row per feed (with
+  its category path), the summary line V1 printed ("N fontes · N repetidas · N ignoradas"), and the entries it
+  will not use with their reason. "Importar" is the only thing that writes; "Cancelar" is free, and the package
+  tests prove it: the preview touches neither the selection nor the imported-sources table.
+- **`ReaderExportView`** is V1's `ExportView`: the scopes V2 has (the reader's sources, every collection, every
+  box), V1's formats with its own labels and symbols, a preview of the document the choice would write, and the
+  two actions on it. Sharing carries the **file** (so "Salvar em Arquivos" comes with the same sheet); V1's
+  separate "copy" of the preview is not drawn, and the reason is recorded here rather than left implied.
+- **The app drives both**: the reader's menu opens the export sheet and the sources screen gained V1's own
+  "Importar OPML" row (V1 imported from that very screen), which is a `.fileImporter` over `.xml`/`opml` — the
+  kinds V1's own Info.plist registered — reading the file and showing the preview before anything is written.
+  The scene now says which export it is and keeps the preview text, so a change of scope or format re-produces
+  the document without writing one.
+- **Evidence in the simulator, end to end:** `testImportPreviewCommitsAndExportPreviews` launches with a fixture
+  whose file holds one usable feed, one repeat of it and one unusable address; the preview states exactly that
+  (1 entry, 1 repeat, 1 rejection, "1 fontes · 1 repetidas · 1 ignoradas"), the confirmation **writes it through
+  the real database** and the app states what it did ("Importadas 1 …"), and the export sheet then shows a scope,
+  the share action and a document preview — **TEST SUCCEEDED**.
+
+**T10 is complete** as far as the plan's acceptance goes: preferences are functional (the appearance follows the
+reader's rules and the clock, and never the feed), import produces usable sources with their addresses kept,
+export produces usable files in V1's formats and scopes, and none of it is a monolithic service: each piece is a
+value, a coordinator or a view with its own tests.

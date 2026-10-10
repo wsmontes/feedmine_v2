@@ -218,6 +218,42 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
 
+    /// T10: the import preview states what a file offers before anything is written, its confirmation writes it,
+    /// and the export sheet shows the document it would produce.
+    @MainActor
+    func testImportPreviewCommitsAndExportPreviews() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_IMPORT_FIXTURE"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
+        // The fixture: one usable feed, one repeat of it, one address that cannot be used.
+        XCTAssertTrue(app.navigationBars["Importar OPML"].waitForExistence(timeout: 20))
+        XCTAssertEqual(app.staticTexts.matching(identifier: "import-entry").count, 1)
+        XCTAssertEqual(app.staticTexts.matching(identifier: "import-rejection").count, 1)
+        let summary = app.staticTexts["import-summary"].label
+        XCTAssertTrue(summary.contains("1 fontes"), summary)
+        XCTAssertTrue(summary.contains("1 repetidas"), summary)
+        XCTAssertTrue(summary.contains("1 ignoradas"), summary)
+        // Confirming writes it — in the app, through the real database — and states what it did.
+        app.buttons["import-confirm"].tap()
+        let toast = NSPredicate(format: "label CONTAINS %@", "Importadas 1")
+        let seen = XCTNSPredicateExpectation(predicate: toast, object: app.staticTexts.firstMatch)
+        XCTAssertEqual(XCTWaiter.wait(for: [seen], timeout: 20), .completed,
+            "the import states what it wrote")
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+        // The export sheet, from the reader's own menu, with a preview of the document.
+        openMenu(app)
+        app.buttons["Exportar"].tap()
+        XCTAssertTrue(app.navigationBars["Exportar"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["export-scope-selection"].exists)
+        XCTAssertTrue(app.buttons["export-share"].exists)
+        XCTAssertTrue(app.staticTexts["export-preview"].waitForExistence(timeout: 15))
+        app.buttons["export-done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+    }
+
     @MainActor
     func testNativeSwipeReachesRealRunwayAndReverseNavigation() throws {
         let app = XCUIApplication()

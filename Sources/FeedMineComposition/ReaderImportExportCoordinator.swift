@@ -13,6 +13,7 @@ import Foundation
 import FeedMineDomain
 import FeedMinePersistence
 import FeedMineRuntime
+import FeedMineUI
 
 public enum ReaderImportExportError: Error, Equatable, Sendable {
     case nothingToWrite
@@ -51,6 +52,21 @@ public struct ReaderImportExportCoordinator: Sendable {
 
     // MARK: - Export
 
+    /// The document a request would produce, as text: what the export sheet previews, and what a share or a
+    /// save hands over. An empty scope is reported rather than previewed as nothing.
+    public func preview(_ request: ReaderExportRequest, at date: Date = Date()) throws -> String {
+        let entries = try entries(for: request.scope)
+        guard !entries.isEmpty else { throw ReaderImportExportError.nothingToWrite }
+        return try document(request: request, entries: entries, at: date).contents
+    }
+
+    /// The document's file name, for a share or a save.
+    public func fileName(for request: ReaderExportRequest, at date: Date = Date()) throws -> String {
+        let entries = try entries(for: request.scope)
+        guard !entries.isEmpty else { throw ReaderImportExportError.nothingToWrite }
+        return try document(request: request, entries: entries, at: date).name
+    }
+
     /// Writes a document for the request and returns its local URL. The file is the artifact; showing it or
     /// sharing it belongs to the app.
     public func export(_ request: ReaderExportRequest, at date: Date = Date()) throws -> URL {
@@ -61,6 +77,22 @@ public struct ReaderImportExportCoordinator: Sendable {
         try FileManager.default.createDirectory(at: exportDirectory, withIntermediateDirectories: true)
         try Data(contents.utf8).write(to: url, options: .atomic)
         return url
+    }
+
+    /// The scopes a reader can export right now: their selection, every collection and every box.
+    public func exportChoices() -> [ReaderExportChoice] {
+        var choices = [ReaderExportChoice(id: "selection", title: String(localized: "Minhas fontes"),
+            systemImage: "list.bullet", scope: .selection)]
+        let library = ReaderLibraryStore(database: database)
+        for collection in (try? library.collections()) ?? [] {
+            choices.append(ReaderExportChoice(id: "collection:\(collection.id)", title: collection.name,
+                systemImage: "rectangle.stack.fill", scope: .collection(collection.id)))
+        }
+        for box in (try? library.bookmarkLists()) ?? [] {
+            choices.append(ReaderExportChoice(id: "box:\(box.id)", title: box.name,
+                systemImage: "folder", scope: .bookmarkBox(box.id)))
+        }
+        return choices
     }
 
     /// The entries a scope covers, from the same authorities the surfaces read: the reader's selection, a
@@ -102,7 +134,7 @@ public struct ReaderImportExportCoordinator: Sendable {
 
     /// The file's name and its contents, V1's scopes and formats.
     private func document(request: ReaderExportRequest, entries: [ReaderImportEntry],
-        at date: Date) throws -> (String, String) {
+        at date: Date) throws -> (name: String, contents: String) {
         let title = Self.title(for: request.scope)
         switch request.format {
         case .opml:

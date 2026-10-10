@@ -376,3 +376,21 @@ executed evidence is in `PORT_LOG.md` under T8.
   15-second skips, a scrub and its `m:ss` clock.
 - **Image versus article gesture**: the media area of a playable card emits `openMedia` and the rest of the card
   opens the article — V1's `onImageTap` rule, with the same condition (`primaryActionKind == .mediaPlayback`).
+
+**T10 state (2026-10-10).** Settings, import and export are delivered as surfaces over the values and
+coordinators recorded in `PORT_LOG.md` under T10.
+
+- **Settings** (the reader menu's *Ajustes*): V1's sections — appearance with the text size, "Design circadiano"
+  with the two clock rules plus the palette family and font style, performance with image preloading, reading
+  with night mode, the four-hour rule and the content filters, the library size, and about. **Recorded
+  differences:** no "Language" section (V2 has no catalog of its own yet, and a picker that changes nothing
+  would be a dead control), no "Reading Data"/"Share" sections (V1 stated counts from its own registry and shared
+  a rendered stats card; V2 keeps neither).
+- **Export** (line 91's entry, and "Export collection" from T8): scope × format over the lists V2 has, a preview
+  of the document, and a share/save of the file itself.
+- **Import**: the sources screen's "Importar OPML" (line 200's own row in V1) and the collection importer's
+  entry open a file picker over `.xml`/`opml`; a preview states what the file offers, what it repeats and what it
+  cannot use, and only the confirmation writes — atomically and idempotently.
+- **Still T8/T10's own open item:** "Add Feed to Collection" (V1's `AddFeedToCollectionSheet`, the menu's
+  `addFeed` entry) is not drawn: membership is set from a card's own action, the collection detail's removal,
+  and an import.

@@ -26,15 +26,18 @@ public struct SourceManagementView: View {
     /// The levels below this one belong to the host's navigation, like every other ported surface.
     private let onOpenNode: (CatalogNodeSummary) -> Void
     private let onOpenCountries: () -> Void
+    /// V1 imported OPML from this screen; the file picker is the host's, so the row reports the intent.
+    private let onImport: () -> Void
     private let onClose: () -> Void
 
     public init(store: SourceManagementStore, appearance: ReaderAppearance = .standard,
         onOpenNode: @escaping (CatalogNodeSummary) -> Void, onOpenCountries: @escaping () -> Void,
-        onClose: @escaping () -> Void = {}) {
+        onImport: @escaping () -> Void = {}, onClose: @escaping () -> Void = {}) {
         _store = State(initialValue: store)
         self.appearance = appearance
         self.onOpenNode = onOpenNode
         self.onOpenCountries = onOpenCountries
+        self.onImport = onImport
         self.onClose = onClose
     }
 
@@ -66,6 +69,12 @@ public struct SourceManagementView: View {
         if store.hasCatalog {
             sectionsSection
             countriesSection
+            Section {
+                Button(action: onImport) {
+                    Label(String(localized: "Importar OPML"), systemImage: "doc.badge.plus")
+                }
+                .accessibilityIdentifier("sources-import")
+            }
             selectionSection
         } else {
             Section {
