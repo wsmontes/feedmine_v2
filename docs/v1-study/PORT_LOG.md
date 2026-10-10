@@ -214,3 +214,29 @@ prove that a suspended opportunity cannot touch another context's presentation, 
 `xcodebuild -scheme FeedMine -destination 'platform=iOS Simulator,id=8871DCF5…' CODE_SIGNING_ALLOWED=NO build`
 → **BUILD SUCCEEDED**. Docs updated in the same commit (`RUNTIME_PRESENTATION_CONTRACT`, `FILE_RESPONSIBILITIES`,
 `ACQUISITION_DESIGN`, `IMPLEMENTATION_ORDER`) — no architecture doc mentions the deleted APIs.
+
+## T3 — 2026-10-09 (scroll admits; existing content does not move)
+
+Plan task T3. Consumes the T2 boundary.
+
+**What changed.**
+
+| Area | Change |
+| --- | --- |
+| `Sources/FeedMineUI/Reader/FeedScrollPosition.swift` (new) | The reader's transient visual position: one reference card, the offset inside it (clamped to the card's own height), the placement. UI state only — it decides nothing and is never persisted; the session keeps admission authority. |
+| `FeedMineUI/FeedScreen.swift` | Work feedback moved from a variable `safeAreaInset(edge: .bottom)` (analysis §4: it changed the scroll viewport height while work ran) to an `.overlay(alignment: .bottom)` of the constant `Measurement.workFeedbackHeight` that does not take touches. `FeedVisualCapture.position` exposes the reference card and offset. |
+| `Sources/FeedMineRuntime/FeedPresentationAdmission.swift` | `admitsForwardContent` is now **`.explicitTailApproach` only** — real forward movement *and* the need to extend. A forward scroll inside already-admitted history, a stationary settle, a backward gesture and a layout change never admit. |
+| `FeedSession` | Decoded pixels became bounded **residency**: only cards inside the frozen bounds around the reader keep their bitmap; cards outside release it (`releasingDecodedImage()`) and are re-decoded from the same local asset when the reader returns. Identity, order, layout, aspect ratio, text and action are untouched — the slot's geometry is frozen, so releasing pixels can never move a card, and a card published with an image slot is never redefined as text-only. `releasedImageCards` keeps the release explicit, so a genuinely missing asset is not retried on every observation. |
+| `PresentationCard` | Internal `withDecodedImage(_:)` / `releasingDecodedImage()` and public `isImageBearing`, so residency is a distinct concern from the card's identity. |
+
+**Tests.** New `ScrollAdmissionTests` (3): a layout change cannot admit (and a stale anchor cannot either); backward navigation never exposes an unadmitted card and re-entering admitted history is not a new admission; decoded-image residency is bounded around the reader while layout and aspect ratio stay frozen and returning re-decodes the same asset. New driver test `test25BackwardAndStationaryActivitiesDoNotAdmit` proves the direction gate at the composition boundary. New capture tests `testTS3VisualPositionDescribesTheReferenceCardOnly` and `testTS3ScrollPositionClampsAndRejectsNonFiniteInput`. New iOS UI test `testT3ScrollAdmitsWithoutMovingTheReadingPoint`: real swipes, then the top card's identity and its viewport offset are compared across completed production, a background/foreground cycle and backward navigation, `accuracy: 1`.
+
+**Verification (executed).** `swift build` clean; `swift test` **855 tests, 0 failures**; iOS build succeeded; and
+`xcodebuild … -only-testing:FeedMineUITests/FeedMineUITests/testT3ScrollAdmitsWithoutMovingTheReadingPoint test`
+→ **TEST SUCCEEDED** (33 s on the iPhone 17 Pro Max simulator, iOS 26.5).
+
+**Still open in the media policy (recorded, not silently accepted).** Verified guarantee: releasing pixels never
+changes geometry or identity, and returning re-decodes the same asset. Not verified: zero flicker during an
+arbitrary-speed reverse scroll — a bitmap that is released and not yet re-decoded renders the frozen
+placeholder. Codex's recommendation for that case (rematerialize a historical render window only when its images
+are ready) is the next step if the device measurement in T12 shows it matters.

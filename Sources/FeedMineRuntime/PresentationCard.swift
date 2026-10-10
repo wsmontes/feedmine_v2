@@ -46,6 +46,38 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     /// Slot-sized local image ready to draw; nil renders the layout's frozen placeholder.
     public let image: PresentationImage?
 
+    /// Residency-only reconstruction: identical frozen values with different decoded pixels.
+    /// Internal on purpose — no external snapshot factory crosses the Runtime boundary.
+    init(id: PublicationCardID, title: String?, primaryText: String?, timestamp: PresentationTimestamp?,
+        sourceDisplayName: String?, providerDisplayName: String?, layout: PresentationCardLayout,
+        mediaAspectRatio: Double?, primaryActionKind: PresentationPrimaryActionKind?, image: PresentationImage?) {
+        self.id = id
+        self.title = title
+        self.primaryText = primaryText
+        self.timestamp = timestamp
+        self.sourceDisplayName = sourceDisplayName
+        self.providerDisplayName = providerDisplayName
+        self.layout = layout
+        self.mediaAspectRatio = mediaAspectRatio
+        self.primaryActionKind = primaryActionKind
+        self.image = image
+    }
+
+    /// The same frozen card with different decoded pixels. Identity, layout, aspect ratio, text and the
+    /// action are untouched: decoded pixels are residency, never identity.
+    func withDecodedImage(_ image: PresentationImage?) -> PresentationCard {
+        PresentationCard(id: id, title: title, primaryText: primaryText, timestamp: timestamp,
+            sourceDisplayName: sourceDisplayName, providerDisplayName: providerDisplayName, layout: layout,
+            mediaAspectRatio: mediaAspectRatio, primaryActionKind: primaryActionKind, image: image)
+    }
+
+    /// Releases only the bitmap. The slot keeps its frozen geometry, so nothing moves and the card is
+    /// never "upgraded": the layout decided at publication is what it renders.
+    func releasingDecodedImage() -> PresentationCard { withDecodedImage(nil) }
+
+    /// A layout that was published with an image slot, whatever its residency state is right now.
+    public var isImageBearing: Bool { layout != .textOnly }
+
     init(publishedCard: PublishedCard, decoder: PresentationImageDecoder? = nil) {
         id = publishedCard.id
         title = publishedCard.text.title

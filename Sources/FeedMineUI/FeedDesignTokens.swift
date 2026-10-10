@@ -54,6 +54,9 @@ public enum FeedDesignTokens {
     /// Dimensions that must stay constant across layouts. Reader-scaled ones are resolved with
     /// `@ScaledMetric` at the view, never with a clock.
     public enum Measurement {
+        /// Reserved visual space for work feedback. It is an overlay of this exact height, so the
+        /// reported work state can never change the scroll geometry (T3).
+        public static let workFeedbackHeight: CGFloat = 44
         /// Compact-row thumbnail reference side; the view scales it with the reader's text size.
         public static let compactThumbnailBase: CGFloat = 88
         /// Maximum readable content width; wider displays keep editorial text readable instead of

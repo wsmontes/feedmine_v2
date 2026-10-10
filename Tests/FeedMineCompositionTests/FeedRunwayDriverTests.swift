@@ -358,6 +358,23 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(try PublicationStore(database:f.database).segments(editionID:f.edition).count,3)
         try await assertLegitimateSecondTarget(f, seededLocal: false)
     }
+    /// T3: within one opportunity only a real forward movement at the tail may admit. Backward and
+    /// stationary activities deliver their semantic fact to the runway and never extend the list.
+    func test25BackwardAndStationaryActivitiesDoNotAdmit() async throws {
+        let f = try fixture(), p = try await restore(f)
+        _ = try await tail(f, p) // first gesture publishes the second segment and admits nothing new
+        let currentValue = await f.session.currentPresentation()
+        let current = try XCTUnwrap(currentValue)
+        let anchor = ViewportObservation(anchor: .init(cardID: current.window.anchor.cardID, placement: .center))
+        for activity in [RunwayActivity.backward, .stationary, .forward] {
+            let result = try await f.driver.submitViewport(anchor, activity: activity, resources: resources())
+            XCTAssertEqual(result?.window.items.count, current.window.items.count,
+                "\(activity) must not admit")
+        }
+        let extended = try await f.driver.submitViewport(anchor, activity: .explicitTailApproach, resources: resources())
+        XCTAssertGreaterThan(extended?.window.items.count ?? 0, current.window.items.count,
+            "The explicit tail approach admits the ready prefix")
+    }
     func test24SingleTailOpportunityReachesQuiescence() async throws {
         let f = try fixture(),p = try await restore(f); _ = try await tail(f,p)
         let snap = await f.runway.snapshot(); XCTAssertFalse(snap.localSliceInFlight); XCTAssertNil(snap.outstandingAcquisition)

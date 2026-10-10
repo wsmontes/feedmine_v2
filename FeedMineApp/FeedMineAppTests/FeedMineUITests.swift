@@ -212,6 +212,60 @@ final class FeedMineUITests: XCTestCase {
             .identifier
     }
 
+    /// T3: a native gesture admits prepared cards without moving what the reader is reading. The
+    /// reference card and the offset inside it survive completing production, a background/foreground
+    /// cycle, and backward navigation in the same viewport (tolerance: 1 point).
+    @MainActor
+    func testT3ScrollAdmitsWithoutMovingTheReadingPoint() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        // A real forward gesture that reaches the admitted tail.
+        for _ in 0..<3 { scroll.swipeUp(velocity: .slow) }
+        let delivered = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label MATCHES %@", ".*completed=[1-9][0-9]*.*"), object: proof)
+        XCTAssertEqual(XCTWaiter.wait(for: [delivered], timeout: 25), .completed, "observed: \(proof.label)")
+        let reference = try XCTUnwrap(topmostCard(app: app, scroll: scroll), "a card must be visible")
+        let referenceID = reference.identifier
+        let referenceTop = reference.frame.minY
+        let counters = proof.label
+        // Completing production, backgrounding and returning must not move the reader.
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 20))
+        XCTAssertEqual(proof.label, counters, "returning to the app must not replace the association")
+        let afterForeground = try XCTUnwrap(topmostCard(app: app, scroll: scroll))
+        XCTAssertEqual(afterForeground.identifier, referenceID, "the reference card must survive a foreground")
+        XCTAssertEqual(afterForeground.frame.minY, referenceTop, accuracy: 1,
+            "the offset inside the viewport must survive a foreground")
+        // Backward navigation stays inside the admitted history and records a real backward gesture.
+        scroll.swipeDown(velocity: .slow)
+        let backward = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label MATCHES %@", ".*backward=[1-9][0-9]*.*"), object: proof)
+        XCTAssertEqual(XCTWaiter.wait(for: [backward], timeout: 20), .completed, "observed: \(proof.label)")
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "t3-scroll-admission"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+    }
+
+    /// The element of the card whose top edge sits inside the scroll viewport and is closest to it.
+    @MainActor
+    private func topmostCard(app: XCUIApplication, scroll: XCUIElement) -> XCUIElement? {
+        let cards = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"))
+        let top = scroll.frame.minY
+        return cards.allElementsBoundByIndex
+            .filter { $0.frame.height > 40 && $0.frame.minY >= top - 1 }
+            .min { $0.frame.minY < $1.frame.minY }
+    }
+
     /// U1-P8: one FeedScreen serves iPhone and iPad. Portrait and landscape keep every visible
     /// card inside the viewport (no horizontal overflow) and rotating never fabricates backward
     /// movement.

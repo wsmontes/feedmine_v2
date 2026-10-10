@@ -474,6 +474,38 @@ final class FeedViewportCaptureTests: XCTestCase {
     }
 
 #if os(macOS)
+    /// T3: the transient visual position describes the reference card (and how much of it is above the
+    /// viewport) without deciding anything about admission.
+    func testTS3VisualPositionDescribesTheReferenceCardOnly() throws {
+        var capture = FeedVisualCapture()
+        XCTAssertNil(capture.position, "No proof, no position")
+        let id = PublicationCardID()
+        _ = capture.observe(FeedVisualGeometry(offset: 300, extent: 4_000, height: 800))
+        _ = capture.observe(FeedVisualGeometry(offset: 320, extent: 4_000, height: 800))
+        // The card straddles the reference line (half the viewport) while its top edge is above it.
+        capture.observeCard(FeedVisualCardGeometry(cardID: id,
+            frame: CGRect(x: 0, y: -120, width: 400, height: 600), offset: 420, height: 800), isLast: false)
+        let position = try XCTUnwrap(capture.position)
+        XCTAssertEqual(position.cardID, id)
+        XCTAssertEqual(position.offsetWithinCard, 120, "How much of the card is above the viewport")
+        XCTAssertEqual(position.placement, .center)
+        XCTAssertEqual(position.anchor, PresentationAnchor(cardID: id, placement: .center))
+        capture.invalidateLayout()
+        XCTAssertNil(capture.position, "A layout change clears the transient position")
+    }
+
+    /// T3: the position value clamps inside its own card and refuses non-finite input, so a partly
+    /// visible card can never describe an offset outside itself.
+    func testTS3ScrollPositionClampsAndRejectsNonFiniteInput() throws {
+        let id = PublicationCardID()
+        XCTAssertEqual(try XCTUnwrap(FeedScrollPosition(cardID: id, viewportTop: 0, cardTop: -900,
+            cardHeight: 400)).offsetWithinCard, 400)
+        XCTAssertEqual(try XCTUnwrap(FeedScrollPosition(cardID: id, viewportTop: 0, cardTop: 30,
+            cardHeight: 400)).offsetWithinCard, 0)
+        XCTAssertNil(FeedScrollPosition(cardID: id, viewportTop: 0, cardTop: 0, cardHeight: 0))
+        XCTAssertNil(FeedScrollPosition(cardID: id, offsetWithinCard: .infinity))
+    }
+
     func testNativeHostedLayoutPreservesPositionWithoutInventingReading() async throws {
         guard #available(macOS 15, *) else { return }
         _ = NSApplication.shared

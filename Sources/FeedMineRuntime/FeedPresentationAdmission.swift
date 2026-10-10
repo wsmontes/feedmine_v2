@@ -36,8 +36,10 @@ public enum FeedPresentationAdmission: Hashable, Sendable {
 }
 
 public extension RunwayActivity {
-    /// Real forward movement of the reader. Stationary and backward observations never admit.
+    /// Real forward movement *and* the need to extend the content: the reader has reached the
+    /// admitted tail. A forward scroll inside already-admitted history, a stationary settle, a
+    /// backward gesture and a layout change never admit.
     var admitsForwardContent: Bool {
-        self == .forward || self == .explicitTailApproach
+        self == .explicitTailApproach
     }
 }

@@ -54,7 +54,13 @@ public struct FeedScreen: View {
                     .frame(maxWidth: .infinity)
                 }
                 .modifier(NativeFeedViewport(capture: $capture, store: store))
-                .safeAreaInset(edge: .bottom) { FeedWorkBadge(work: store.state.work) }
+                // T3: work feedback is an overlay of constant height that never takes touches, so the
+                // scroll viewport keeps exactly the geometry the reader was admitted into.
+                .overlay(alignment: .bottom) {
+                    FeedWorkBadge(work: store.state.work)
+                        .frame(height: FeedDesignTokens.Measurement.workFeedbackHeight, alignment: .bottom)
+                        .allowsHitTesting(false)
+                }
             } else {
                 // macOS 14 renders local cards without automatic viewport capture.
                 ScrollView {
@@ -71,7 +77,13 @@ public struct FeedScreen: View {
                     .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
                     .frame(maxWidth: .infinity)
                 }
-                .safeAreaInset(edge: .bottom) { FeedWorkBadge(work: store.state.work) }
+                // T3: work feedback is an overlay of constant height that never takes touches, so the
+                // scroll viewport keeps exactly the geometry the reader was admitted into.
+                .overlay(alignment: .bottom) {
+                    FeedWorkBadge(work: store.state.work)
+                        .frame(height: FeedDesignTokens.Measurement.workFeedbackHeight, alignment: .bottom)
+                        .allowsHitTesting(false)
+                }
             }
         } else {
             FeedLoadingView(work: store.state.work)
@@ -168,6 +180,14 @@ struct FeedVisualCapture {
         #if DEBUG
         Self.trace("native phase active=\(active) velocityUnverified=\(velocityUnverified) vector=\(String(describing: velocity))")
         #endif
+    }
+
+    /// Transient visual position of the reader: one card and how much of it is above the viewport.
+    /// UI state only — it never decides admission (the session does) and is never persisted.
+    var position: FeedScrollPosition? {
+        guard let proof = visibleProof else { return nil }
+        return FeedScrollPosition(cardID: proof.cardID, viewportTop: 0, cardTop: proof.frame.minY,
+            cardHeight: proof.height)
     }
 
     mutating func invalidateLayout() {
