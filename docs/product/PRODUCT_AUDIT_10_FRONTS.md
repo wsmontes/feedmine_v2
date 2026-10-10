@@ -17,10 +17,14 @@ Revisar **dez experiências observáveis**, uma de cada vez, para responder:
 
 As frentes são **fatias da experiência**, não times, módulos Swift nem autorização para dez arquiteturas paralelas. Cada frente pode envolver vários módulos, mas cada responsabilidade continua tendo um dono claro.
 
+## Regra transversal — cobertura progressiva, capacidade relativa
+
+A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o catálogo completo **elegível** continua sendo explorado ao longo de oportunidades reais; prioridade ordena trabalho, não define fontes que jamais serão visitadas. Aquisição, seleção, runway, mídia e armazenamento ajustam volume e custo conforme condições medidas, sem cotas permanentes nem números mágicos. Limites finitos de uma operação são legítimos para segurança e recursos, mas não significam que o universo acabou. A leitura visível continua prioritária. Idiomas escolhidos são restrição determinante. Os gates B01–B06 existentes não são substituídos.
+
 ## As dez frentes, na ordem de investigação
 
 ### F01 — Descoberta automática de fontes e alcance do catálogo
-**Promessa:** escolher interesses e encontrar coisas de fontes desconhecidas, sem configurar RSS.  
+**Promessa:** explorar progressivamente todo o catálogo elegível, encontrando fontes desconhecidas sem configurar RSS; priorização não é uma shortlist permanente.  
 **Jornada/oráculo:** instalação limpa; selecionar assuntos/idiomas/região; observar fontes descobertas, fontes efetivamente contactadas e fontes contribuintes sem seleção manual. Aplicar integralmente B01 do benchmark vigente.  
 **Evidência inicial:** catálogo embarcado com 77.443 fontes; composição atual inicia de uma seleção padrão pequena; a receita curada pontua fontes já resolvidas. O teste do simulador registrou seleção inicial de quatro fontes.  
 **Risco principal:** catálogo como ferramenta manual de administração, em vez de universo editorial abastecido automaticamente.  
@@ -44,14 +48,14 @@ As frentes são **fatias da experiência**, não times, módulos Swift nem autor
 **Aceite:** falha isolada não interrompe fontes saudáveis; nenhuma perda silenciosa de histórias elegíveis e nenhuma publicação inválida.
 
 ### F04 — Curadoria, relevância, variedade e controle editorial
-**Promessa:** histórias pertinentes e surpreendentes, sem monotonia de um único publicador.  
+**Promessa:** histórias pertinentes e surpreendentes, sem monotonia de um único publicador; idioma é filtro rígido e assuntos orientam a exploração sem cotas artificiais, preservando caminhos de descoberta próximos aos interesses.  
 **Jornada/oráculo:** perfis com interesses diferentes sobre corpus rotulado; inspecionar a sequência publicada, diversidade de fontes, assuntos, idiomas, duplicações e edições de artigos. Aplicar B02, PD-1 e PD-4.  
 **Evidência inicial:** SelectionEngine implementa elegibilidade, pesos e alternância, inclusive fronteiras de segmentos; testes demonstram comportamento de componentes.  
 **Risco a verificar:** curadoria atuar apenas como reordenação de uma seleção insuficiente; métricas de ordenação verdes sem relevância percebida; itens elegíveis presos atrás de outros.  
 **Aceite:** o perfil altera a descoberta de modo demonstrável, preservando alternância e relevância sem fabricar diversidade.
 
 ### F05 — Continuidade, antecipação e recuperação do runway
-**Promessa:** o leitor percorre um feed fluido, enquanto o próximo conteúdo é preparado antecipadamente.  
+**Promessa:** o leitor percorre um feed fluido, enquanto o próximo conteúdo é preparado antecipadamente; a preparação e a cobertura futura se ajustam ao consumo e à capacidade real, sem limites fixos de cards nem parar a descoberta só porque o runway está saudável.  
 **Jornada/oráculo:** execução controlada com oferta elegível suficiente, 30 minutos de avanço real e rajadas de consumo; medir reserva publicada/admitida ao longo do tempo, consumo, produção, hitches, sinais de pressão e recuperação após rede lenta. Aplicar B03 integralmente.  
 **Evidência inicial:** RunwayController mede consumo e reposição; FeedSession separa publicado de admitido. O ensaio anterior navegou ~4 minutos/~135 cards antes de esgotar a oferta escolhida; **30 minutos não foram demonstrados**.  
 **Risco principal:** abastecimento insuficiente ou dependente de gesto apesar de catálogo abundante; confundir tempo de app aberto com avanço efetivo.  
@@ -79,14 +83,14 @@ As frentes são **fatias da experiência**, não times, módulos Swift nem autor
 **Aceite:** toda ação oferecida realiza a ação prometida no conteúdo correto, e o leitor retorna ao mesmo ponto.
 
 ### F09 — Persistência local, offline e reabertura
-**Promessa:** o que já foi adquirido pertence à experiência do usuário e está disponível sem rede.  
+**Promessa:** o que já foi adquirido pertence à experiência do usuário e está disponível sem rede; aproveitar espaço disponível para retenção útil e reduzir custo sob pressão medida, sem teto arbitrário de artigos.  
 **Jornada/oráculo:** iniciar com conexão, consumir/salvar, colocar offline, navegar em dados locais, matar/reabrir processo, restaurar contexto/âncora/estado de salvos e depois recuperar a rede. Aplicar B05 (em conjunto com F07/F08).  
 **Evidência inicial:** a V2 implementa SQLite local, checkpoint e restauração antes de HTTP; teste anterior recuperou a mesma identidade de card depois de relançar.  
 **Risco a verificar:** perda silenciosa após troca de contexto, invalidação exagerada, histórico não recuperável, assets que deixam de existir offline, diferenças entre suspensão e encerramento.  
 **Aceite:** valor local tem precedência sobre rede; limites offline genuínos são comunicados, não disfarçados.
 
 ### F10 — Escala, recursos, acessibilidade e prontidão para publicar
-**Promessa:** a experiência continua utilizável em aparelhos e condições reais, não somente no simulador de desenvolvimento.  
+**Promessa:** a experiência continua utilizável em aparelhos e condições reais, não somente no simulador de desenvolvimento; usar orçamento dinâmico em todas as frentes segundo rede, memória, disco, energia, estado térmico e permissão do iOS.  
 **Jornada/oráculo:** reproduzir F05/F06/F09 em iPhones físicos representativos, sob rede rápida/lenta, armazenamento limitado, memória pressionada, Low Power Mode e uso prolongado; verificar VoiceOver, textos ampliados, localidades suportadas, permissões/privacidade, erros visíveis, distribuição de release e crash-free behavior. Aplicar B06 e auditoria de release.  
 **Evidência inicial:** testes de simulador e amostragem de CPU/RSS existem; relatório registra que validação prolongada no aparelho físico **não foi executada**.  
 **Risco a verificar:** crescimento de recursos com milhares de cards, travamentos e consumo de energia, diferenças reais do iOS, acessibilidade ou fluxo de release incompleto.  
