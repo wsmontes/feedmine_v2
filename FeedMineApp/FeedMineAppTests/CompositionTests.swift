@@ -71,6 +71,18 @@ final class CompositionTests: XCTestCase {
         return (root, association)
     }
 
+    /// T2/T3: production and admission are separate, so a test that needs a window wider than the anchor card
+    /// asks for it the way a reader does — production fills the reserve, then an explicit admission installs the
+    /// next prefix. Reading the window right after `launch()` sees the anchor and nothing else, by contract.
+    /// The activity is the discriminating input: `.explicitTailApproach` is the only one
+    /// `RunwayActivity.admitsForwardContent` accepts, so `.forward` observes the position and never extends
+    /// the admitted list. The anchor is the admitted tail, so the append lands after it.
+    private func produceAndAdmit(_ association: FeedAssociation) async throws {
+        _ = try await association.driver.drive(resources: FeedAssociation.resources)
+        guard let anchor = association.store.state.presentation?.window.items.last else { return }
+        await association.viewport(.init(anchor: .init(cardID: anchor.id, placement: .top)), activity: .explicitTailApproach)
+    }
+
     func testDevelopmentProxyBlocksActualRSSTransport() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         DevelopmentNetworkBlock.apply(to: configuration)
@@ -156,6 +168,7 @@ final class CompositionTests: XCTestCase {
         FixtureTransport.releaseScience()
         await launch.value
         let association = try XCTUnwrap(root.association)
+        try await produceAndAdmit(association)
         let cards = try XCTUnwrap(association.store.state.presentation).window.items
         XCTAssertEqual(cards.count, 17, "Anchor plus a sixteen-card idle reserve")
         for (left, right) in zip(cards, cards.dropFirst()) {
@@ -254,6 +267,7 @@ final class CompositionTests: XCTestCase {
         let root = root(directory: directory)
         await root.launch()
         let old = try XCTUnwrap(root.association)
+        try await produceAndAdmit(old)
         let initial = try XCTUnwrap(old.store.state.presentation)
         let card = try XCTUnwrap(initial.window.items.dropFirst().first)
         await old.viewport(.init(anchor: .init(cardID: card.id, placement: .top)), activity: .forward)
@@ -474,6 +488,7 @@ final class CompositionTests: XCTestCase {
 
     func testS1SameSessionStoreAcrossViewportRefreshAndLifecycle() async throws {
         let (root, association) = try await launched()
+        try await produceAndAdmit(association)
         let store = association.store
         let initial = try XCTUnwrap(store.state.presentation)
         let card = try XCTUnwrap(initial.window.items.dropFirst().first)
@@ -488,6 +503,7 @@ final class CompositionTests: XCTestCase {
 
     func testS2DelayedResultAndS7AtomicWorkRejection() async throws {
         let (_, association) = try await launched()
+        try await produceAndAdmit(association)
         let a = try XCTUnwrap(association.store.state.presentation)
         let card = try XCTUnwrap(a.window.items.dropFirst().first)
         let bResult = try await association.session.submitViewport(.init(anchor: .init(cardID: card.id, placement: .top)))
@@ -532,6 +548,7 @@ final class CompositionTests: XCTestCase {
         let root = AppComposition(directory: directory, feeds: TrustedFeed.development, transportConfiguration: configuration)
         await root.launch()
         let old = try XCTUnwrap(root.association)
+        try await produceAndAdmit(old)
         let snapshot = try XCTUnwrap(old.store.state.presentation)
         await old.background()
         await old.close()
@@ -551,6 +568,7 @@ final class CompositionTests: XCTestCase {
 
     func testS6NewerReverseProjectionAccepted() async throws {
         let (_, association) = try await launched()
+        try await produceAndAdmit(association)
         let first = try XCTUnwrap(association.store.state.presentation)
         let later = try XCTUnwrap(first.window.items.dropFirst().first)
         let forwardResult = try await association.session.submitViewport(.init(anchor: .init(cardID: later.id, placement: .top)))

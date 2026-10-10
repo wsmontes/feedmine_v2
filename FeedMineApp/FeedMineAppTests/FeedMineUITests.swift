@@ -789,6 +789,45 @@ final class FeedMineUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    /// T12: the keyboard scenario the plan asks for. Opening the reader's own search surface and **writing a
+    /// query** is not a transition: the reading point and the feed's published counters stay where they were, and
+    /// cancelling the search returns the same reader to the same card. Opening and cancelling without typing is
+    /// already covered by T5; this is the part that involves the keyboard.
+    @MainActor
+    func testT12KeyboardSearchKeepsTheReadingPointAndRestoresIt() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 15))
+        let card = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"))
+            .firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 45), "a real published occurrence must appear")
+        let before = proof.label
+        app.buttons["search-button"].tap()
+        let field = app.textFields["reader-search-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText("ciencia")
+        XCTAssertEqual(field.value as? String, "ciencia", "the field takes what the reader types")
+        XCTAssertEqual(proof.label, before, "writing a query is not an update the reader asked for")
+        app.buttons["reader-search-cancel"].tap()
+        XCTAssertFalse(field.waitForExistence(timeout: 3))
+        XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+        XCTAssertTrue(card.waitForExistence(timeout: 20), "the same card is still there to read")
+        XCTAssertEqual(proof.label, before, "cancelling restores the reader instead of rebuilding the session")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "t12-keyboard-search"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     /// U1-P8 geometry: no card may be wider than the window (that is what a stretched or clipped
     /// card looks like) and none may exceed the tokenised readable column. XCUITest rounds
     /// accessibility frames outward, so the window comparison allows a small tolerance; the real
