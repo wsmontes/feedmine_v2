@@ -1,6 +1,6 @@
 # FeedMine
 
-**Por que existe:** fazer a internet aberta voltar a ser um lugar onde é gostoso descobrir coisas. O objetivo é oferecer descoberta contínua de conteúdo interessante, inclusive de fontes que a pessoa ainda não conhece — sem exigir que ela primeiro configure um leitor RSS. Leia o [norte de produto](docs/product/PRODUCT_NORTH_STAR.md) antes de decidir funcionalidades, prioridades ou mudanças na experiência de leitura.
+**Por que existe:** fazer a internet aberta voltar a ser um lugar onde é gostoso descobrir coisas. O objetivo é oferecer descoberta contínua de conteúdo interessante, inclusive de fontes que a pessoa ainda não conhece — sem exigir que ela primeiro configure um leitor RSS. Leia o [norte de produto](docs/product/PRODUCT_NORTH_STAR.md) antes de decidir funcionalidades, prioridades ou mudanças na experiência de leitura. A [proposta de benchmark independente](docs/product/DISCOVERY_ACCEPTANCE_BENCHMARK_PROPOSAL.md) define cenários de aceitação sem permitir que o agente reduza a exigência para acomodar a implementação; ainda depende de aprovação do product owner.
 
 FeedMine é um feed reader local-first/offline-first, sem servidor próprio. O pacote Swift contém dez módulos; o aplicativo iOS separado usa esses módulos por referência local.
 
