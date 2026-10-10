@@ -13,7 +13,7 @@ Written by the session that owns the transfer plan
 | T3 scroll admits without moving content (native UI test green) | done | `12d4b65` |
 | T4 V1 card layouts + visual system (`Sources/FeedMineUI/Cards/**`, `Appearance/`) | done | `bb8e33e` |
 | T5 shell/header/menu/search (`Reader/**`, `Feedback/**`, toolbar removed) | done | `6f2e2e5` |
-| T6 filters and context identity | **next for the plan-owner session** | — |
+| T6 filters and context identity | **specified, not started** — `docs/superpowers/specs/2026-10-09-reader-filters-and-context-identity.md` | — |
 | T7–T12 | not started | — |
 
 Last verified state at `6f2e2e5`: `swift build` clean, `swift test` **867 tests, 0 failures**, iOS
@@ -40,7 +40,14 @@ passed at `12d4b65`).
 ### Claims
 
 - T5 — **done** by the plan-owner session at 2026-10-09 (commit `6f2e2e5`).
-- T6 — claimed by the plan-owner session at 2026-10-09 (filters and context identity). Hot files:
+- **T6 + T7-metadata — open, recommended for the parallel session.** Codex reviewed the design and the whole
+  specification is committed: `docs/superpowers/specs/2026-10-09-reader-filters-and-context-identity.md`. Execute
+  it by that document: enforce language/source/exclusions in the supply now, make unsupported criteria visibly
+  unavailable, bring T7's metadata import/query support forward, migrate the checkpoint/edition identity to the
+  full context key, and keep V1's dismiss-applies filter sheet (the plan's Cancel requirement is corrected
+  there, §5). It is the largest remaining task and it is fully specified, so it is the best one to take with a
+  fresh context.
+- *(Superseded claim, kept for the record:)* T6 was claimed by the plan-owner session; it is released here. Hot files:
   `Sources/FeedMineDomain/FeedContext.swift`, `Sources/FeedMinePersistence/ReaderPreferencesStore.swift`,
   `RuntimeMigrations.swift`, `Sources/FeedMineComposition/CandidateProvider.swift` (or its domain type),
   `FeedMineApp/FeedMineApp/AppComposition.swift`, `Sources/FeedMineUI/FeedScreen.swift`.
