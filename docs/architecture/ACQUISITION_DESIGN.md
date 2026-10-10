@@ -1,5 +1,11 @@
 # Acquisition contracts and durable target architecture
 
+## Cross-cutting product rule — progressive target coverage and measured budgets (2026-10-10)
+
+The full catalog eligible for the reader's context is the long-term discovery universe, not a fixed subset of acquisition targets. Source relevance and responsiveness determine **priority and revisit frequency**, never permanent starvation. With sufficient permitted opportunities over time, each eligible source should be attempted; a failed, unavailable, or restricted source is reported honestly rather than confused with a source that was never considered. Hard reader restrictions (notably selected languages) define eligibility; topic/region preferences ordinarily define priority unless the user expressly chooses a restricted context.
+
+All acquisition concurrency, batch, byte, timeout, network and exploration budgets should be **relative to observed work cost and system constraints**, and adapt through existing planning and ownership surfaces to network throughput/latency/cost, supply, energy/thermal/storage pressure and OS permissions. A bounded plan protects one execution; it must not impose a permanent discovery quota. Keep first display and runway ahead of exploration. Reconsider fairly on actual opportunities and existing measurements, not a new background polling loop. Platform execution limits and security bounds remain valid. See [PD-8](../product/PRODUCT_DECISIONS_2026-10-09.md) and [INV-16](PRODUCT_INVARIANTS.md). Historical gate descriptions below are records, not exceptions to the product goal. **This paragraph is not evidence that current catalog-to-target coverage already works.**
+
 ## 1. Scope and current state
 
 Phase 3L — complete (design only). Base: Phase 3K4, `b77e8e3324bac7428207bfd9cc7af605c4cbc3b5`. This document chooses future boundaries; Target authority is now implemented by 3M1 as recorded below; Batch and Admission are now implemented by 3M2; Planner is now implemented by 3M3; The bounded Connector and shared Coordinator surfaces are now implemented by 3M4. No Swift, tests, package graph, schema or migration changes are authorized here. Phase 3M1 is now complete; Phase 3M2 is complete; Phase 3M3 is complete; Phase 3M4 is complete; Phase 3M5 is now complete as recorded below. See the completion record below for implemented authority.
