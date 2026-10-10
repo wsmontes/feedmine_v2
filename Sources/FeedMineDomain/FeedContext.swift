@@ -41,11 +41,87 @@ public struct FeedContext: Hashable, Codable, Sendable {
 
 /// Reusable logical request identity, not a session, context instance or publication ID.
 /// Search identity uses the original stored query exactly; no normalization or hashing.
+///
+/// T6: the identity is the *whole* request, not just its surface — the named selection (preset), the
+/// reader's normalized filter and (for a search) what it looks through. Every field has the value that
+/// means "the default surface", so the unfiltered key is exactly the identity this type had before and
+/// existing checkpoints keep matching. Design:
+/// `docs/superpowers/specs/2026-10-09-reader-filters-and-context-identity.md` §2.
 public struct ContextKey: Hashable, Codable, Sendable {
-    public let request: FeedContextRequest
+    /// Bumped only when the identity's *semantics* change; persisted identifiers carry it.
+    public static let currentIdentitySchemaVersion = 1
 
-    public init(request: FeedContextRequest) {
+    public let identitySchemaVersion: Int
+    public let request: FeedContextRequest
+    /// Which named selection the reader is on (V1's `PresetSelector`).
+    public let preset: ReaderPresetID
+    /// The normalized criteria; `.unrestricted` means the plain surface.
+    public let filter: ReaderFilter
+    /// Only meaningful for `.search`; absent (nil) everywhere else, and nil means "both".
+    public let searchScope: ReaderSearchScope?
+
+    public init(request: FeedContextRequest, preset: ReaderPresetID = .everything,
+        filter: ReaderFilter = .unrestricted, searchScope: ReaderSearchScope? = nil,
+        identitySchemaVersion: Int = ContextKey.currentIdentitySchemaVersion) {
+        self.identitySchemaVersion = identitySchemaVersion
         self.request = request
+        self.preset = preset
+        self.filter = filter
+        switch request {
+        case .search:
+            self.searchScope = searchScope ?? .both
+        case .main, .source:
+            // A scope outside a search is not part of any identity: it is dropped, not carried.
+            self.searchScope = nil
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(request: try container.decode(FeedContextRequest.self, forKey: .request),
+            preset: try container.decodeIfPresent(ReaderPresetID.self, forKey: .preset) ?? .everything,
+            filter: try container.decodeIfPresent(ReaderFilter.self, forKey: .filter) ?? .unrestricted,
+            searchScope: try container.decodeIfPresent(ReaderSearchScope.self, forKey: .searchScope),
+            identitySchemaVersion: try container.decodeIfPresent(Int.self, forKey: .identitySchemaVersion)
+                ?? ContextKey.currentIdentitySchemaVersion)
+    }
+
+    /// The surface half of the identity, as the durable checkpoint columns have always stored it.
+    public var surfaceIdentity: String {
+        switch request {
+        case .main: "main"
+        case .source(let source): "source:" + source.rawValue.uuidString
+        case .search(let search): "search:" + search.query
+        }
+    }
+
+    /// Canonical, deterministic identity text: the whole key, in one opaque string, independent of the
+    /// order the reader selected equivalent sets in. This is what durable identifiers must store so that
+    /// returning to an identical context recovers its own history (Codex review, 2026-10-09).
+    public var canonicalIdentity: String {
+        var parts: [String] = ["v\(identitySchemaVersion)", surfaceIdentity]
+        parts.append("preset=" + preset.identityText)
+        parts.append("filter=" + filter.identityText)
+        if let searchScope { parts.append("scope=" + searchScope.rawValue) }
+        return parts.joined(separator: "|")
+    }
+
+    /// True when this key describes the plain, unfiltered surface — the identity every checkpoint written
+    /// before T6 already has.
+    public var isDefaultSurface: Bool {
+        preset == .everything && filter.isUnrestricted
+    }
+
+    /// Equality *is* identity: two keys that describe the same effective request are one key, even when
+    /// their stored values differ in a way that changes nothing (the order of a selected set, exclusions
+    /// enabled with no rules, a scope carried on a non-search surface). Durable identifiers are the
+    /// canonical text, so in-memory identity must agree with it (Codex review, 2026-10-09).
+    public static func == (lhs: ContextKey, rhs: ContextKey) -> Bool {
+        lhs.canonicalIdentity == rhs.canonicalIdentity
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(canonicalIdentity)
     }
 }
 

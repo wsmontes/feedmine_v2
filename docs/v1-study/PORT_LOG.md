@@ -374,6 +374,21 @@ semantics, and a Codable round-trip.
 
 **Verified.** `swift test` **876 tests, 0 failures**.
 
-**Remaining for T6** (fully specified in the spec): the `ContextKey` extension and its persistence migration,
-`ReaderFilterDraft` + the V1 sheet and lens in the UI, supply-side enforcement of the criteria that can be
-answered, the expiry record and the A→B→A/stale-callback tests.
+**Step 2 landed.** `ContextKey` (`Sources/FeedMineDomain/FeedContext.swift`) is now the *whole* request:
+`identitySchemaVersion`, `surface`, `preset` (`ReaderPresetID`), the normalized `filter` and (for a search) its
+`searchScope`. Every field defaults to "the plain surface", so `ContextKey(request:)` is byte-identical to the
+pre-T6 identity and existing checkpoints keep matching; a scope passed on a non-search surface is dropped, not
+carried. `canonicalIdentity` is the deterministic opaque text durable identifiers must store, and **equality is
+identity** — `==`/`hash` compare that text, so a reordered set, an enabled-but-empty exclusion set or a stray
+scope collapse to one key instead of forking the reader's history. `surfaceIdentity` keeps the reduced
+`main|source|query` form the checkpoint columns have always used, for the migration step. New
+`ContextIdentityTests` (7): the default surface matches the pre-filter identity exactly, equivalent filters share
+one identity, every part of the key is load-bearing (including that enabled-with-no-rules is a no-op), a search
+keeps its exact query and its scope, a **legacy key with only a request decodes to the default surface**, the
+full identity round-trips, and `FeedContext.key` stays the default-surface convenience.
+
+**Verified.** `swift test` **883 tests, 0 failures**.
+
+**Remaining for T6** (fully specified in the spec): the persistence migration of checkpoint/edition identifiers to
+`canonicalIdentity`, `ReaderFilterDraft` + the V1 sheet and lens in the UI, supply-side enforcement of the
+criteria that can be answered, the expiry record and the A→B→A/stale-callback tests.
