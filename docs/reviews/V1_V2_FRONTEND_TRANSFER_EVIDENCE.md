@@ -182,6 +182,56 @@ The whole-scheme run then passed: `CompositionTests` **24 tests, 0 failures** an
 0 failures** in one run, with `swift test` at **1017 tests, 0 failures** — the acceptance this document was
 missing for the UI target.
 
+## The architect's verdict on the two remaining items (2026-10-10)
+
+Asked, in the conversation that owns WHAT for this project, whether the two items T12 cannot execute on this
+machine may be satisfied by substitutes. The verdict: **execute both substitutes and close the task with an
+explicit physical-device waiver.** Verbatim conditions it set:
+
+- The soak must measure the **FeedMine process**, not the host's total memory, and record samples, peaks, trend
+  and whether it stabilises after warm-up; CPU per process, plus visible freezes and hitches wherever there is
+  instrumentation ("CPU amostrada isoladamente não comprova ausência de hitches").
+- During the 30 minutes of scrolling there may be **no artificial end, blank screen, freeze, or repeated cards**
+  used to mask a lack of supply.
+- After the soak, integrity is checked: persistence, continuity of the reading point, published identities,
+  duplications, PD-4.
+- No arbitrary MB or CPU limit may be invented to fabricate a PASS; what is required is bounded use without a
+  sustained growth trend, and a soak that grows without stabilising, hangs, or reaches the feed's end while
+  eligible content should still be acquired **fails**.
+- The visual comparison is **semantic and visual, not pixel by pixel** (hierarchy, spacing, typography, colours,
+  affordances, sheet behaviour, legibility, consistency with V1's identity; different RSS content is not a visual
+  regression), and it gains three surfaces beyond the four references: **Salvos**, **Fontes e catálogo**, and
+  **Shell/Ajustes/Exportar**.
+- Closing formula: `T12 — PASS WITH PHYSICAL-DEVICE WAIVER`, listing the package and app counts, the simulator
+  soak, the comparison, and "residual risk retained for physical-device validation before public release".
+
+Its own stated limitation, which this document repeats rather than hides: it could read the connected branch but
+**not** the local commit or the T12 plan file, so the verdict approves the criteria and the substitutes as
+described, and does not certify a read of the local state.
+
+## The review the app channel returned (2026-10-10)
+
+Codex, asked to review `dd63c1a` for real defects rather than style, returned three items; two are fixed and one
+is under test:
+
+- **[P1] "Exportar coleção" exported the general selection** (`FeedMineApp.swift:410`): the destination added to
+  the menu took the same `.selection` request as plain "Exportar". An entry that opens the wrong document is worse
+  than one that is not offered, so it is out of the offered set until a collection's own export exists on the
+  collection's surface (`AppComposition.readerDestinations`).
+- **[P2] the playback bar inside the reader held stale state** (`FeedMineApp.swift`: the host built its
+  `rootView` once and the coordinator skipped updates for the same page). `testT12ReaderKeepsTheLivePlaybackBar`
+  decided it: with the simulated episode playing, the reader is opened from a card and the bar is paused
+  **inside** the reader, where the bar's own label must change from "Pausar" to "Tocar". It failed first
+  (`XCTAssertEqual failed: ("Pausar") is not equal to ("Tocar")`) — the defect was real — and the host now
+  re-renders the presented reader's content in place, with the playback as a token the parent reads, so the same
+  reader keeps its state and updates live. The test passes.
+- **a test guarantee replaced**: `FeedMineUITests.swift` swapped an assertion on `source-choice-*` rows for the
+  shipped surface's own rows and enabled count. The picked rows belonged to `FeedSourcePicker`, which had no
+  caller at all, so the dead view is removed and the value the app does use (`FeedSourceOption`) moved to its own
+  file. The review's other half was satisfied in the scenario itself: the test now walks one level further —
+  country list, a country's rows, then an **individual source's own toggle** (`node-source-toggle-*`) — so the
+  scenario verifies a source choice, not only the levels above it.
+
 ## Not executed, and why
 
 | Plan item | State |

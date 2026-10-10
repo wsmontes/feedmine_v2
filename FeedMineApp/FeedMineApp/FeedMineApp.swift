@@ -296,7 +296,7 @@ struct FeedMineApp: App {
                 }
                 .fullScreenCover(isPresented: $showsOnboarding) { onboardingCover }
                 // U2: the reader's own presentation, above whatever surface asked for it.
-                .background(ReaderHost(page: readerPage,
+                .background(ReaderHost(page: readerPage, playback: composition.mediaState.isPlaying,
                     reader: { page, close in AnyView(readerBody(page, close: close)) },
                     onFinish: { finishReader() }))
                 .sheet(item: $sharedExport) { link in
@@ -456,8 +456,11 @@ struct FeedMineApp: App {
     /// the surface that asked for the reader, so that surface survives the reader and is what the reader
     /// returns to. It draws nothing and takes no touch: it is a place, not a surface.
     private struct ReaderHost: UIViewControllerRepresentable {
-        /// The reader that is up, if any.
+        /// The reader that is up, if any, plus a token that changes while it is up: the reader's content reads
+        /// the live playback state, so the host must re-render it when that state changes instead of keeping the
+        /// view it was presented with (a review measured a bar frozen at whatever it was built with).
         let page: ReaderPage?
+        let playback: Bool
         let reader: (ReaderPage, @escaping () -> Void) -> AnyView
         let onFinish: () -> Void
 
@@ -492,9 +495,16 @@ struct FeedMineApp: App {
             /// so what is cleared is the host's, never the surface the reader was opened from.
             func show(_ page: ReaderPage?) {
                 if let page {
+                    let content = reader(page) { [weak self] in self?.onFinish() }
+                    if shown == page, let host = presented as? UIHostingController<AnyView> {
+                        // The same reader, a newer state: re-render its content in place. Re-presenting would
+                        // take the reader down and back up, which is exactly what the reader must not see.
+                        host.rootView = content
+                        return
+                    }
                     guard shown != page else { return }
                     shown = page
-                    let controller = UIHostingController(rootView: reader(page) { [weak self] in self?.onFinish() })
+                    let controller = UIHostingController(rootView: content)
                     controller.modalPresentationStyle = .fullScreen
                     controller.view.backgroundColor = .systemBackground
                     presented = controller

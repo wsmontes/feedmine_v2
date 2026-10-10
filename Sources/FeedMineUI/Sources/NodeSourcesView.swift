@@ -270,6 +270,11 @@ public struct NodeChildRow: View {
             Toggle("", isOn: Binding(get: { isEnabled }, set: onToggle))
                 .labelsHidden()
                 .tint(.green)
+                // The row's own control states itself, exactly as the country list's does: without an identifier
+                // the toggle was unreachable for a UI test and unlabelled for VoiceOver (found by walking the
+                // source surface in a test).
+                .accessibilityIdentifier("node-child-toggle-\(child.id)")
+                .accessibilityValue(isEnabled ? "selected" : "not selected")
         }
     }
 

@@ -31,6 +31,39 @@ final class FeedMineUITests: XCTestCase {
             "the source surface offers its choices")
         XCTAssertTrue(scrollIntoView(app.staticTexts["sources-enabled-count"], in: app, timeout: 10),
             "the surface states the enabled count")
+        // A review asked this scenario to keep verifying an **individual source's** own control, not only the
+        // levels above it. A country's leaves are not always its sources — the catalogue nests topics under it —
+        // so the walk goes down until a source's own toggle is in the tree, bounded, and comes back out.
+        app.buttons["sources-open-countries"].tap()
+        let countryRow = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH 'country-' AND identifier != 'country-toggle-all'")).firstMatch
+        XCTAssertTrue(scrollIntoView(countryRow, in: app, timeout: 20), "the country list offers its rows")
+        countryRow.tap()
+        // The country's own level lists its sections, each with its control, and the tree continues:
+        // country → section → topics → the sources themselves. Descend, bounded, until a source's own toggle is
+        // in the tree — which is what the review asked this scenario to verify.
+        let sectionToggle = app.switches.matching(NSPredicate(
+            format: "identifier BEGINSWITH 'node-child-toggle-'")).firstMatch
+        XCTAssertTrue(sectionToggle.waitForExistence(timeout: 20), "the country lists its rows, each with its control")
+        var reachedSource = false
+        for _ in 0..<5 {
+            let sourceToggle = app.switches.matching(NSPredicate(
+                format: "identifier BEGINSWITH 'node-source-toggle-'")).firstMatch
+            if sourceToggle.waitForExistence(timeout: 8) { reachedSource = true; break }
+            let child = app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH 'node-child-'")).firstMatch
+            guard child.waitForExistence(timeout: 8) else { break }
+            child.tap()
+        }
+        XCTAssertTrue(reachedSource, "the country's own tree leads to its sources, each with its own control")
+        let sourcesShot = XCTAttachment(screenshot: app.screenshot())
+        sourcesShot.name = "v2-country-sources"
+        sourcesShot.lifetime = .keepAlways
+        add(sourcesShot)
+        for _ in 0..<6 where !app.navigationBars["Fontes"].exists {
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+        }
+        XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 10), "the sheet is still the same one")
         app.buttons["Concluir"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 10))
     }
@@ -51,9 +84,17 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertEqual(title.label, "Nenhuma fonte habilitada", "V1's own words for this state, in the app's language")
         XCTAssertFalse(app.scrollViews.firstMatch.exists, "no feed is drawn for a selection with no sources")
         XCTAssertFalse(app.staticTexts["Preparando"].exists, "nothing is being prepared, so nothing claims it")
+        let emptySelectionShot = XCTAttachment(screenshot: app.screenshot())
+        emptySelectionShot.name = "v2-empty-selection"
+        emptySelectionShot.lifetime = .keepAlways
+        add(emptySelectionShot)
         // The action the surface names is the one the app implements: the empty state's own button.
         app.buttons["feed-empty-action"].tap()
         XCTAssertTrue(app.navigationBars["Fontes"].waitForExistence(timeout: 15))
+        let sourcesSheetShot = XCTAttachment(screenshot: app.screenshot())
+        sourcesSheetShot.name = "v2-sources-sheet"
+        sourcesSheetShot.lifetime = .keepAlways
+        add(sourcesSheetShot)
         app.buttons["Concluir"].tap()
         XCTAssertTrue(title.waitForExistence(timeout: 15), "dismissing the picker leaves the reader where they were")
         // The way back: the ported source surface — the country list is one level in (V1's structure), and
@@ -69,6 +110,10 @@ final class FeedMineUITests: XCTestCase {
         let countryToggle = app.switches.matching(NSPredicate(
             format: "identifier BEGINSWITH 'country-toggle-' AND identifier != 'country-toggle-all'")).firstMatch
         XCTAssertTrue(countryToggle.waitForExistence(timeout: 20), "the country list offers a toggle per country")
+        let countriesShot = XCTAttachment(screenshot: app.screenshot())
+        countriesShot.name = "v2-countries-list"
+        countriesShot.lifetime = .keepAlways
+        add(countriesShot)
         // The row is the switch element; the control inside it is what enables the country.
         countryToggle.switches.firstMatch.tap()
         app.buttons["countries-done"].tap()
@@ -90,6 +135,10 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Caixas de salvos"].waitForExistence(timeout: 15))
         // The default box exists without the reader doing anything, and it is where a save lands.
         XCTAssertTrue(app.staticTexts["Salvos"].waitForExistence(timeout: 10))
+        let boxShot = XCTAttachment(screenshot: app.screenshot())
+        boxShot.name = "v2-saved-boxes"
+        boxShot.lifetime = .keepAlways
+        add(boxShot)
         // Create one, with V1's own flow: the New Box row and the alert.
         app.buttons["bookmarkBoxes.new"].tap()
         let nameField = app.textFields.firstMatch
@@ -100,6 +149,10 @@ final class FeedMineUITests: XCTestCase {
         // Open it: an empty box states that it is empty rather than showing nothing.
         app.staticTexts["Longreads"].tap()
         XCTAssertTrue(app.staticTexts["Nenhum artigo salvo"].waitForExistence(timeout: 15))
+        let emptyBoxShot = XCTAttachment(screenshot: app.screenshot())
+        emptyBoxShot.name = "v2-saved-box-empty"
+        emptyBoxShot.lifetime = .keepAlways
+        add(emptyBoxShot)
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["Longreads"].waitForExistence(timeout: 15))
         // And the box survives the surface being closed and opened again.
@@ -246,6 +299,10 @@ final class FeedMineUITests: XCTestCase {
         app.buttons["Ajustes"].tap()
         XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.switches["settings-night-mode"].value as? String, "1")
+        let settingsShot = XCTAttachment(screenshot: app.screenshot())
+        settingsShot.name = "v2-settings"
+        settingsShot.lifetime = .keepAlways
+        add(settingsShot)
         XCTAssertEqual(app.switches["settings-circadian-palette"].value as? String, "0")
         app.buttons["settings-done"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
@@ -286,6 +343,10 @@ final class FeedMineUITests: XCTestCase {
         // The document's own preview is a section of that sheet's list, so it is scrolled into the tree.
         XCTAssertTrue(scrollIntoView(app.staticTexts["export-preview"], in: app, timeout: 15),
             "the export sheet shows the document it would produce")
+        let exportShot = XCTAttachment(screenshot: app.screenshot())
+        exportShot.name = "v2-export-preview"
+        exportShot.lifetime = .keepAlways
+        add(exportShot)
         app.buttons["export-done"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
@@ -376,6 +437,12 @@ final class FeedMineUITests: XCTestCase {
             object: proof)
         XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 15), .completed,
             "a rotation is not an update the reader asked for: the counters it publishes do not change by it")
+        // T12's visual comparison: the landscape surface, captured at the same moment the counters are proven
+        // unchanged. The run is at Accessibility XL, which the comparison states.
+        let landscape = XCTAttachment(screenshot: app.screenshot())
+        landscape.name = "v2-feed-landscape"
+        landscape.lifetime = .keepAlways
+        add(landscape)
         XCUIDevice.shared.orientation = .portrait
         XCTAssertTrue(scroll.waitForExistence(timeout: 15))
         // Dynamic Type was larger for the whole run, and the feed is still there to read.
@@ -531,6 +598,9 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(scroll.waitForExistence(timeout: 10))
         XCTAssertEqual(proof.label, counters, "an appearance change must not replace the association")
         XCTAssertEqual(topmostCardIdentifier(app: app, scroll: scroll), anchor, "an appearance change must keep the reading point")
+        // The attachment is the settled dark frame: the two assertions above already proved nothing else moved,
+        // and the colour transition is presentation-only, so waiting for it cannot mask a state change.
+        Thread.sleep(forTimeInterval: 1.2)
         let dark = XCTAttachment(screenshot: app.screenshot())
         dark.name = "u1-dark-appearance"
         dark.lifetime = .keepAlways
@@ -707,6 +777,10 @@ final class FeedMineUITests: XCTestCase {
         // The overflow menu offers exactly what this build can present.
         openMenu(app)
         XCTAssertTrue(app.buttons["Fontes"].waitForExistence(timeout: 10))
+        let menuShot = XCTAttachment(screenshot: app.screenshot())
+        menuShot.name = "v2-shell-menu"
+        menuShot.lifetime = .keepAlways
+        add(menuShot)
         // Every surface this build draws is offered, and only those: the settings sheet (T10) is reachable
         // here, while a destination this build cannot present is never offered.
         XCTAssertTrue(app.buttons["Ajustes"].waitForExistence(timeout: 10),
@@ -925,6 +999,43 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertEqual(proof.label, before, "cancelling restores the reader instead of rebuilding the session")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "t12-keyboard-search"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    /// T9/T12: the playback bar the reader keeps visible is the **live** one. A review flagged that the hosted
+    /// reader might hold the state it was built with, so this test changes the state *inside* the reader — where
+    /// a frozen copy would keep reporting the old one.
+    @MainActor
+    func testT12ReaderKeepsTheLivePlaybackBar() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["FEEDMINE_MEDIA_SIMULATION"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let toggle = app.buttons["mini-player-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 20))
+        XCTAssertEqual(toggle.label, "Pausar", "the simulated episode is playing, and the bar says so")
+        // Open the reader from a real card: V1's reader keeps the bar visible while an episode plays.
+        let card = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@",
+                "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"))
+            .firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 45), "a real published occurrence must appear")
+        card.tap()
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "tapping the card opens the reader")
+        XCTAssertTrue(app.buttons["mini-player-toggle"].waitForExistence(timeout: 15),
+            "the reader keeps the playback bar visible")
+        XCTAssertEqual(app.buttons["mini-player-toggle"].label, "Pausar", "and it is the live state, not a copy")
+        app.buttons["mini-player-toggle"].tap()
+        XCTAssertEqual(app.buttons["mini-player-toggle"].label, "Tocar",
+            "pausing inside the reader is what the bar then reports")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "v2-reader-playback-bar"
         shot.lifetime = .keepAlways
         add(shot)
     }

@@ -761,13 +761,15 @@ final class FeedAssociation {
     /// two conditional entries; the app narrows them to the contexts where V1 offered them.
     ///
     /// The settings and tools surfaces (T9/T10) are wired in the host — its `onNavigate` presents
-    /// `.settings` as the settings sheet and `.export`/`.collectionExport` as the export sheet — so they are
-    /// offered here too, and the reader can reach what the build draws. V1's `addFeed` entries and its
-    /// "Importar para a coleção" stay out: this host has no composer for adding a feed and no collection
-    /// import, and an entry that opens the wrong surface is worse than one that is not offered.
+    /// `.settings` as the settings sheet and `.export` as the export sheet — so they are offered here, and the
+    /// reader can reach what the build draws. V1's `addFeed` entries, its "Importar para a coleção" and its
+    /// per-collection export stay out: this host has no composer for adding a feed, no collection import, and
+    /// its export request names the reader's **selection** — offering "Exportar coleção" would open the wrong
+    /// document (a review caught exactly that), and an entry that opens the wrong surface is worse than one
+    /// that is not offered. A collection's own export belongs to the collection's surface.
     static let readerDestinations: Set<ReaderDestination> = [.sources, .bookmarkBoxes, .filters,
         .collections, .collectionFromContextPrompt, .smartFeedPrompt, .smartFeedDeletion,
-        .curatedOnboarding, .curatedInspector, .curatedDeletion, .export, .collectionExport, .settings]
+        .curatedOnboarding, .curatedInspector, .curatedDeletion, .export, .settings]
 
     @ObservationIgnored
     lazy var store: FeedScreenStore = FeedScreenStore(onViewport: { [weak self] observation, activity in
