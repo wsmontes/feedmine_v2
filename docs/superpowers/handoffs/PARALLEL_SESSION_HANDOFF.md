@@ -14,7 +14,8 @@ Written by the session that owns the transfer plan
 | T4 V1 card layouts + visual system (`Sources/FeedMineUI/Cards/**`, `Appearance/`) | done | `bb8e33e` |
 | T5 shell/header/menu/search (`Reader/**`, `Feedback/**`, toolbar removed) | done | `6f2e2e5` |
 | T6 filters and context identity | **specified + identity, migration, supply enforcement, persisted selection and applying path landed** (`ReaderFilter`, `ContextKey`, `ReaderFilterDraft`, `reader-context-identity-v1` with backfill and identity-keyed lookups, `ReaderFilterEligibility` applied by `CandidateProvider`); sheet/lens + coordinator + expiry remain, all specified — `docs/superpowers/specs/2026-10-09-reader-filters-and-context-identity.md` | `8dc7fe8`, `47d7c19`, `4ac3f79`, `ef7330c`, `7ec9fd1`, `1860ed1` |
-| T7–T12 | not started | — |
+| T7 catalog/taxonomy/sources | **data side landed** (`LegacyCatalogReader` metadata: languages, tree, countries, node sources; `SourceManagementCoordinator`: values + selection + bulk enable) — the views and the health check remain | `5bb0e73`, `7fb210d`, `ea387cd` |
+| T8–T12 | not started | — |
 
 Last verified state at `6f2e2e5`: `swift build` clean, `swift test` **867 tests, 0 failures**, iOS
 `xcodebuild … CODE_SIGNING_ALLOWED=NO build` → BUILD SUCCEEDED, and the UI tests
@@ -66,7 +67,12 @@ passed at `12d4b65`).
   `RuntimeMigrations.swift`, `Sources/FeedMineComposition/CandidateProvider.swift` (or its domain type),
   `FeedMineApp/FeedMineApp/AppComposition.swift`, `Sources/FeedMineUI/FeedScreen.swift`.
 - **Open offer to the parallel session — two independent tracks, take either (say which in a claim line):**
-  1. **T7** catalog, taxonomy and source management. *This is the one that unblocks T6:* T6's filter criteria
+  1. **T7 views** — bind V1's `SourceManagementView`/`CatalogExploreView`/`TaxonomyBrowseView` and the country/region
+     screens to `SourceManagementCoordinator` (values in, intents out), including the **zero selected sources**
+     empty state that lets the "at least one source" rule be relaxed (see the PORT_LOG §T7 note), plus the catalog
+     health check. The reader queries and the coordinator are already in and tested; brief:
+     `docs/superpowers/specs/2026-10-10-t7-catalog-metadata-queries.md`.
+     *The original T7 offer, for context:* T6's filter criteria
      (language, content type, mood, taxonomy) are enforced in the supply, and V2's cards/candidates do not carry
      catalog category metadata yet. T7's own files: `Sources/FeedMineUI/Sources/**`,
      `Sources/FeedMineComposition/SourceManagementCoordinator.swift`,
