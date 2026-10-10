@@ -53,6 +53,8 @@ Busca, fontes seguidas, bookmarks, coleções, filtros e feeds curados são mane
 
 **Internet aberta, execução local.** A ausência de servidor próprio de conteúdo, o uso do catálogo local e a operação offline-first sustentam privacidade, autonomia e resiliência. São características estruturais que tornam a promessa possível; não substituem a experiência que a pessoa veio buscar.
 
+**Catálogo público colaborativo como autoridade, com operação local.** O catálogo gerenciado tem fonte da verdade no repositório público [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository), criado para receber contribuições, correções e remoções da comunidade e crescer para centenas de milhares de feeds ou mais. Cada release embarca um snapshot da revisão pública mais recente validada à época do build; o aplicativo o usa imediatamente e consulta revisões futuras discretamente em background (quando houver oportunidade, aproximadamente uma vez ao dia), sem atrasar a leitura. O GitHub distribui **metadados de fontes**, não serve os artigos, não controla as bibliotecas pessoais e não é dependência operacional para uso offline. Atualizações do catálogo afetam futuras descobertas, não o histórico apresentado. Esse comportamento é **obrigatório para release**, conforme PD-10 e INV-18; sua implementação na V2 ainda precisa ser comprovada.
+
 **Múltiplos formatos sem contaminar a experiência.** O conteúdo pode vir de diferentes protocolos e, ao longo da evolução do produto, diferentes mídias. O leitor não deveria precisar entender conectores para descobrir algo interessante.
 
 ## Princípio transversal — exploração progressiva e capacidade relativa
@@ -133,7 +135,7 @@ A experiência será validada no aplicativo real (simulador e dispositivo), com 
 Este documento define o **porquê** e a experiência desejada. Ele não substitui contratos técnicos nem reabre decisões já tomadas.
 
 - [Benchmark de aceitação vigente](DISCOVERY_ACCEPTANCE_BENCHMARK.md): provas obrigatórias de experiência e execução autônoma; nenhum agente pode reduzir os critérios para acomodar sua implementação.
-- [Decisões de produto](PRODUCT_DECISIONS_2026-10-09.md): regras vinculantes e escolhas concretas (primeira abertura, alternância, mídia etc.).
+- [Decisões de produto](PRODUCT_DECISIONS_2026-10-09.md): regras vinculantes e escolhas concretas (primeira abertura, alternância, mídia e **PD-10: autoridade e atualização do catálogo público**).
 - [Invariantes de produto](../architecture/PRODUCT_INVARIANTS.md): comportamentos obrigatórios e fronteiras arquiteturais.
 - [Arquitetura](../architecture/ARCHITECTURE.md): como a implementação sustenta a apresentação local, o runway adaptativo e a separação de responsabilidades.
 - [Inventário de transferência V1 → V2](../v1-study/UI_TRANSFER_MATRIX.md): quais controles e interações estão sendo preservados ou deliberadamente alterados.
