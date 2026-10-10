@@ -279,14 +279,19 @@ database's content counts. Raw samples: `/tmp/soak-samples.csv`, `/tmp/soak-cont
 | Integrity after | `duplicate_revisions_in_a_segment = 0`, `duplicate_card_ids = 0`, 135 cards over 57 distinct origins, 70 origins / 70 media candidates / 70 supply rows, and — across a terminate + relaunch — the **same checkpoint card id** (`a4df60f5…`), with preferences and the reader's own rows intact: nothing was discarded. |
 
 **Deviations, stated rather than hidden.** (1) The architect asked for 30 minutes of *continuous scrolling*; the
-app's available supply (135 cards from the two development feeds) is consumed in ~4 minutes, so the moving part
-of the scroll is that long and the remaining gesture time ran at the feed's genuine end. A richer selection was
-attempted and measured: a 152-source subtree and an 11-feed BBC selection were written into the app's own
-preferences and the app did not resolve them (it published nothing), while its default path resolves a handful of
-feeds — so the supply here is what this build actually serves, not a truncated test. (2) The session contains two
-app relaunches (pid changes) from that same source experiment, which is why the first/second-half medians differ
-while the last 20 minutes are flat. (3) Unlike the physical-device item, this is a **simulator** measurement and
-is reported as such.
+app's available supply is consumed in ~4 minutes, so the moving part of the scroll is that long and the remaining
+gesture time ran at the feed's genuine end. The supply is small because of what the app actually selects: its
+default starter selection is **four feeds** (BBC news and science, NPR, and The Guardian's world feed — read from
+`reader_preferences`), a deliberate reader selection, not a defect; the catalogue holds 77 443 sources and the
+reader enlarges the selection through the Fontes surface. (2) Enlarging it for this soak was attempted three
+ways and measured: writing a 152-source subtree and an 11-feed BBC selection into `reader_preferences` (the app
+did not resolve either — keys are resolved against the feeds the composition passes, so foreign keys are dropped
+and nothing publishes), and driving the Fontes surface by clicks on the simulator window, where two attempts
+landed on the onboarding cover instead of the sources sheet. The T5 test asserts that menu → Fontes opens the
+sources sheet, so that is a mis-aimed click in this driving method, not a product finding. (3) The session
+contains two app relaunches (pid changes) from the same source experiment, which is why the first/second-half
+medians differ while the last 20 minutes are flat. (4) Unlike the physical-device item, this is a **simulator**
+measurement and is reported as such — and its 30-minute requirement is **not met**.
 
 ## Not executed, and why
 
