@@ -132,7 +132,8 @@ public struct SelectionEngine: Sendable {
             case .recencyAlternatingSources:
                 alternated = SourceAlternation.apply(ordered, after: neighbor)
             case .recencyAlternatingSourcesBySupplyShare:
-                alternated = SourceAlternation.applyBySupplyShare(ordered, after: neighbor, countingSources: countedSources)
+                alternated = SourceAlternation.applyBySupplyShare(ordered, after: neighbor,
+                    countingSources: countedSources, weights: weights)
             case .recencyDescending:
                 alternated = (ordered, [])
             }

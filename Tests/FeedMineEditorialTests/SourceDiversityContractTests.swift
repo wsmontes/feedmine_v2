@@ -105,7 +105,7 @@ final class SourceDiversityContractTests: XCTestCase {
     }
 
     /// P5: the v3 rule holds across a segment boundary too — the first card of the new segment must not
-    /// share a source with the Edition's tail, and the least-used accounting starts from that window.
+    /// share a source with the Edition's tail, and the supply-share accounting starts from that window.
     func testV3HoldsAcrossTheSegmentBoundary() throws {
         let plan = try plan()
         let tail = SelectionNeighbor(sourceIDs: [SourceID(rawValue: uuid(1001))], providerID: nil)
@@ -158,6 +158,58 @@ final class SourceDiversityContractTests: XCTestCase {
         XCTAssertEqual(try run(extraMembership: true).count, 6, "every candidate in this window is placeable")
     }
 
+    /// R2 review, the point the architect raised: diversity must not neutralize the reader's curation.
+    /// Three sources with **equal supply** and weights from `FeedRecipeResolution`'s real scale (it clamps
+    /// the multiplier to 0.42…3.0): the recipe's preference must shape the distribution, and the sequencer
+    /// must still never starve a source or shorten the feed against the rule it replaced.
+    func testACuratedWeightShapesTheDistributionWithoutStarvingASource() throws {
+        let plan = try plan()
+        let labels = [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3]
+        func published(weights: [SourceID: Double]) throws -> [Int] {
+            let candidates = labels.enumerated().map { index, source in
+                Candidate(originRecordID: OriginRecordID(rawValue: uuid(index + 1)),
+                    originRevisionID: OriginRevisionID(rawValue: uuid(index + 1)),
+                    headline: "h\(index)", summary: nil,
+                    timestamp: CandidateTimestamp(value: Date(timeIntervalSince1970: 1_000_000 - Double(index)), kind: .authored),
+                    language: "pt-BR", providerID: nil,
+                    sourceIDs: [SourceID(rawValue: uuid(1000 + source))])
+            }
+            let p = alternating(plan.revision)
+            let policy = ResolvedSelectionPolicy(contextKey: p.contextKey, userSelectionVersion: p.userSelectionVersion,
+                eligibilityPolicyVersion: p.eligibilityPolicyVersion, scoringPolicyVersion: p.scoringPolicyVersion,
+                sequencingPolicyVersion: p.sequencingPolicyVersion, exposurePolicyVersion: p.exposurePolicyVersion,
+                selectionSchemaVersion: p.selectionSchemaVersion, eligibility: .structuralOnly,
+                scoring: weights.isEmpty ? .equal : .weighted(weights),
+                sequencing: .recencyAlternatingSourcesBySupplyShare, exposure: .none)
+            let result = try SelectionEngine().select(plan: plan, policy: policy,
+                window: CandidateSupplyWindow(candidates: candidates, examinedCount: candidates.count, nextCursor: nil, exhausted: true),
+                exposure: nil, after: nil)
+            return result.orderedCandidates.map { candidate in
+                Int(candidate.sourceIDs.first!.rawValue.uuidString.suffix(12), radix: 16)! - 1000
+            }
+        }
+        let weights: [SourceID: Double] = [SourceID(rawValue: uuid(1001)): 3.0,
+                                           SourceID(rawValue: uuid(1002)): 1.0,
+                                           SourceID(rawValue: uuid(1003)): 0.42]
+        let equal = try published(weights: [:])
+        let curated = try published(weights: weights)
+        let equalCounts = Dictionary(grouping: equal.prefix(9), by: { $0 }).mapValues(\.count)
+        let curatedCounts = Dictionary(grouping: curated.prefix(9), by: { $0 }).mapValues(\.count)
+        XCTAssertEqual(equalCounts[1], 3, "an unweighted policy splits the first nine evenly; counts=\(equalCounts)")
+        XCTAssertGreaterThan(curatedCounts[1] ?? 0, curatedCounts[3] ?? 0,
+            "the favoured source must outrank the disfavoured one; counts=\(curatedCounts)")
+        XCTAssertNotEqual(equal, curated, "a substantial weight must change the published order, not only break ties")
+        for source in [1, 2, 3] {
+            XCTAssertTrue(curated.contains(source), "no source is starved; sequence=\(curated)")
+        }
+        // Measured, and stated rather than hidden: the weighted rule places 16 of this window's 18 cards and
+        // the unweighted one places 18 — the two held cards are the *disfavoured* source's surplus, deferred
+        // to the next window by the cursor, not the reader's preferred content. What the rule may never do is
+        // place fewer cards than the greedy rule it replaced (13 of 18 on this same window).
+        XCTAssertGreaterThanOrEqual(curated.count, 16,
+            "curation must not fall behind the rule it replaces: curated \(curated.count), greedy 13, unweighted 18")
+    }
+
     /// Compatibility of the change itself: an Edition published under sequencing v2 keeps the behavior
     /// its revision names. Same window, same engine, only the policy version differs — and v2 must still
     /// produce the greedy order the run was published with.
@@ -199,8 +251,8 @@ final class SourceDiversityContractTests: XCTestCase {
     }
 
     /// Relative balance, bounded by supply: with three sources offering the same six candidates each,
-    /// the first twelve cards owe them counts within one of each other. Today: 6, 6, 0.
-    func testEqualSupplyIsPublishedInEqualShare() throws {
+    /// the first twelve cards owe them counts within one of each other. The greedy rule produced 6, 6, 0.
+    func testEqualSupplyIsServedInAnEvenShare() throws {
         let sequence = try published([1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3])
         let counts = Dictionary(grouping: sequence, by: { $0 }).mapValues(\.count)
         let values = [1, 2, 3].map { counts[$0] ?? 0 }
@@ -220,7 +272,7 @@ final class SourceDiversityContractTests: XCTestCase {
     /// reading of this window on 2026-10-10 (R2-D1): spending B and C early to reach 10/10/10 leaves the
     /// 60 A candidates without the separators PD-4 needs. What this window must show is R2-D1's objective
     /// — no starvation, and no material loss of reachable candidates. Measured: v3 places 84 of 102 (the
-    /// greedy rule 85, equal share 75) and every source appears in the first thirty.
+    /// greedy rule 85, the rejected equal-share variant 75) and every source appears in the first thirty.
     private static let measuredWideWindow: [Int] = [
         1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 1, 2, 1, 2, 3, 2, 1, 1, 1, 1, 2, 3, 3, 3, 3, 3, 1,
         1, 2, 1, 2, 2, 2, 1, 1, 1, 2, 3, 2, 3, 3, 2, 1, 1, 1, 2, 1, 1, 2, 2, 1, 1, 2, 2, 2, 1, 2, 2, 1, 1, 1,
@@ -234,7 +286,7 @@ final class SourceDiversityContractTests: XCTestCase {
         // Length: measured 84 of 102 for this rule, 85 for the greedy rule. The bound keeps the loss from
         // growing rather than pinning the exact number.
         XCTAssertGreaterThanOrEqual(sequence.count, 83,
-            "placed \(sequence.count) of \(Self.measuredWideWindow.count); greedy places 85, equal share 75")
+            "placed \(sequence.count) of \(Self.measuredWideWindow.count); greedy places 85, the rejected equal-share variant 75")
     }
 
     /// The 256-candidate window the hidden-tail maintenance examined at the same moment (production

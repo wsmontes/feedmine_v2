@@ -201,7 +201,7 @@ final class SelectionEngineTests: XCTestCase {
     func testPD4NoTwoAdjacentCardsShareASourceWhileAlternativesExist() throws {
         let plan = try plan()
         // Sequencing v2 keeps the order it was published with: recency order, earliest compatible
-        // candidate. A1 B4 A2 C5 A3 — the shape R2 replaced with least-used, retained for restored
+        // candidate. A1 B4 A2 C5 A3 — the shape R2 replaced with proportional sourcing, retained for restored
         // Editions that name v2.
         let input = [sourced(1, time: 10, 1), sourced(2, time: 9, 1), sourced(3, time: 8, 1), sourced(4, time: 7, 2), sourced(5, time: 6, 3)]
         let result = try SelectionEngine().select(plan: plan, policy: alternating(plan.revision), window: window(input), exposure: nil, after: nil)
