@@ -1,5 +1,9 @@
 # Media and publication preparation architecture
 
+## Transversal product contract — measured media capacity (2026-10-10)
+
+Media preparation, downloads, local asset retention and eviction must adapt to available disk, memory, network throughput/cost, thermal and power conditions, and the reader's current runway. Spare resources enable richer preparation and more useful local retention; resource pressure reduces speculative work without disturbing visible cards or discarding protected content. Operational per-request bounds and decoding safeguards remain necessary, but no fixed asset-count quota, universal image target, or polling cadence should define the product strategy. Use existing owners and actual system/throughput signals, not a parallel resource-control mechanism. See [PD-6/PD-8](../product/PRODUCT_DECISIONS_2026-10-09.md) and [INV-16](PRODUCT_INVARIANTS.md).
+
 ## 1. Scope
 
 Phase 3H closes the Media/publication preparation architecture gate after completed Phase 3G2. Phase 3H was design only. Phase 3I1 implemented canonical MediaCandidate facts, and Phase 3I2 implements durable local assets and image-container inspection. Phase 3I3 completes single-candidate local preparation and the pure Runtime publication-preparation value boundary. FeedSession/Runway orchestration and remote acquisition remain deferred. The first consumer is local visual card preparation, with text-only remaining independently publishable.
