@@ -120,7 +120,7 @@ public actor FeedRunwayDriver {
 
     private func executeAcquisition(_ intent: RunwayAcquisitionIntent, resources: FeedRunwayDriverResources) async throws -> Bool {
         let targets = try acquisition.eligibleTargets(for: plan.context)
-        let outcome = try await acquisitionCycle.run(intent, eligibleTargets: targets, resources: resources.acquisition)
+        let outcome = try await acquisitionCycle.run(intent, eligibleTargets: targets, resources: resources.acquisition, preferUnattempted: selectedSourceCoverage != nil)
         return outcome.selectableSupplyChanged
     }
 

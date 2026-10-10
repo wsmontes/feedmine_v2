@@ -30,12 +30,14 @@ public struct RunwayAcquisitionCycle: Sendable {
     }
 
     public func run(_ intent: RunwayAcquisitionIntent, eligibleTargets: [AcquisitionTarget],
-        resources: AcquisitionPlanningResources) async throws -> RunwayAcquisitionCycleOutcome {
+        resources: AcquisitionPlanningResources, preferUnattempted: Bool = false) async throws -> RunwayAcquisitionCycleOutcome {
         let snapshot = await runway.snapshot()
         guard snapshot.outstandingAcquisition == intent else { throw RunwayAcquisitionCycleError.staleIntent }
-        let planning = try await coordinator.selectionOpportunity { position, active, cooling in
-            try AcquisitionPlanner.plan(demand: intent.demand,
-                eligibleTargets: eligibleTargets.filter { !cooling.contains($0.id) },
+        let planning = try await coordinator.selectionOpportunity { position, active, cooling, settled in
+            let available = eligibleTargets.filter { !cooling.contains($0.id) }
+            let uncovered = available.filter { settled[$0.id] != $0.generation }
+            return try AcquisitionPlanner.plan(demand: intent.demand,
+                eligibleTargets: preferUnattempted && !uncovered.isEmpty ? uncovered : available,
                 activeExecutions: active, resources: resources, selectionAfter: position)
         }
         switch planning {

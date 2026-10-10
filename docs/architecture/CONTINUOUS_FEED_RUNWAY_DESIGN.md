@@ -326,3 +326,14 @@ provides more than reserve 16. Stationary measured depth is healthy, yet connect
 and terminal journal contain only targets 1/2. Regression failed with three coverage
 assertions; the same regression passes with all four actual pulls/terminals after D1.
 Evidence: `~/Documents/feedmine-evidence/2026-10-09/d1/red.txt` and `green-initial.txt`.
+
+D1 proof expansion: 11 deterministic tests cover stationary coverage and quiescence,
+304/up-to-date, empty checkpoint-bearing feed, duplicate payload, operational failure/backoff,
+shared-target Source memberships, zero capacity/recovery, competing drive/scope replacement,
+deactivation and revoked-generation rejection. Depth demand in the opted-in composition also
+prefers unattempted eligible targets before a replay, while retaining the planner's rotation.
+The production `recencyAlternatingSources` policy is used, including segment-boundary assertions.
+A second BASE checkout confirms the same three RED assertions with that exact policy
+(`red-pd4-base.txt`); the final focused run is `proofs-green.txt`, 11 tests / 0 failures.
+A changed context may reject old-driver reconsideration with the existing typed mismatch fence;
+legitimate admitted canonical data remains reusable, and neither Edition/checkpoint is rewritten.
