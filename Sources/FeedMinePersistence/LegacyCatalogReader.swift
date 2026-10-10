@@ -83,6 +83,29 @@ public struct LegacyCatalogNodeRecord: Hashable, Sendable {
     public var hasChildren: Bool { childCount > 0 }
 }
 
+public struct LegacyCatalogSourcePage: Hashable, Sendable {
+    public let records: [LegacyCatalogSourceRecord]
+    /// Last placement position of this page: `(sort_order, source_id)`.
+    public let nextCursor: (sortOrder: Int64, sourceID: Int64)?
+    public let exhausted: Bool
+
+    public init(records: [LegacyCatalogSourceRecord], nextCursor: (sortOrder: Int64, sourceID: Int64)?,
+        exhausted: Bool) {
+        self.records = records; self.nextCursor = nextCursor; self.exhausted = exhausted
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.records == rhs.records && lhs.exhausted == rhs.exhausted
+            && lhs.nextCursor?.sortOrder == rhs.nextCursor?.sortOrder
+            && lhs.nextCursor?.sourceID == rhs.nextCursor?.sourceID
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(records); hasher.combine(exhausted)
+        hasher.combine(nextCursor?.sortOrder); hasher.combine(nextCursor?.sourceID)
+    }
+}
+
 public struct LegacyCatalogNodePage: Hashable, Sendable {
     public let nodes: [LegacyCatalogNodeRecord]
     public let nextCursor: Int64?
@@ -146,6 +169,58 @@ public struct LegacyCatalogReader: Sendable {
                 }
             }
         }
+    }
+
+    /// One page of the sources placed in a taxonomy node, in the catalogue's own order for that node
+    /// (`idx_catalog_placement_node_order`: sort_order, source_id). The cursor is the last (sortOrder, sourceID)
+    /// of the previous page, so a page never depends on a global id that a catalog rebuild could change.
+    public func sources(inNode nodeID: Int64, after: (sortOrder: Int64, sourceID: Int64)? = nil,
+        limit: Int) throws -> LegacyCatalogSourcePage {
+        guard limit > 0 else { return LegacyCatalogSourcePage(records: [], nextCursor: nil, exhausted: true) }
+        return try Self.wrap { try queue.read { db in
+            var sql = """
+                SELECT s.id, s.key, s.title, s.request_url, s.site_url, s.language, s.media_kind,
+                    s.quality_score, s.default_enabled, p.sort_order
+                FROM catalog_placement p JOIN catalog_source s ON s.id = p.source_id
+                WHERE p.node_id = ?
+                """
+            var arguments: [DatabaseValueConvertible] = [nodeID]
+            if let after {
+                sql += " AND (p.sort_order > ? OR (p.sort_order = ? AND p.source_id > ?))"
+                arguments.append(after.sortOrder); arguments.append(after.sortOrder); arguments.append(after.sourceID)
+            }
+            sql += " ORDER BY p.sort_order, p.source_id LIMIT ?"
+            arguments.append(limit + 1)
+            let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+            let page = try rows.prefix(limit).map { row -> LegacyCatalogSourceRecord in
+                let id: Int64 = row["id"]
+                let nodes = try String.fetchAll(db, sql: """
+                    SELECT DISTINCT n.key FROM catalog_placement p JOIN catalog_node n ON n.id = p.node_id
+                    WHERE p.source_id = ? ORDER BY n.key
+                    """, arguments: [id])
+                return LegacyCatalogSourceRecord(key: row["key"], title: row["title"], requestURL: row["request_url"],
+                    siteURL: row["site_url"], language: row["language"], mediaKind: row["media_kind"],
+                    qualityScore: row["quality_score"], defaultEnabled: (row["default_enabled"] as Int64? ?? 0) != 0,
+                    nodeKeys: nodes)
+            }
+            let exhausted = rows.count <= limit
+            let last = rows.prefix(limit).last
+            let nextCursor: (sortOrder: Int64, sourceID: Int64)? = exhausted ? nil : last.map {
+                (sortOrder: $0["sort_order"] as Int64? ?? 0, sourceID: $0["id"] as Int64? ?? 0)
+            }
+            return LegacyCatalogSourcePage(records: page, nextCursor: nextCursor, exhausted: exhausted)
+        } }
+    }
+
+    /// Every source key placed in a node, for a bulk enable/disable. Bounded by the caller's own ceiling.
+    public func sourceKeys(inNode nodeID: Int64, ceiling: Int = 5_000) throws -> [String] {
+        guard ceiling > 0 else { return [] }
+        return try Self.wrap { try queue.read { db in
+            try String.fetchAll(db, sql: """
+                SELECT s.key FROM catalog_placement p JOIN catalog_source s ON s.id = p.source_id
+                WHERE p.node_id = ? ORDER BY p.sort_order, p.source_id LIMIT ?
+                """, arguments: [nodeID, ceiling])
+        } }
     }
 
     /// Exact canonical identity lookup; fetching still uses the separate requestURL.

@@ -514,8 +514,24 @@ version that fences restore, so reordering the same set is not a new selection).
 `SourceManagementCoordinatorTests` (2): values-only plus the typed absence plus the undeclared-language label;
 and selection persistence with the version semantics.
 
-**Still open in T7**: the source-management/exploration/browse **views** bound to this coordinator (V1's
-`SourceManagementView`, `CatalogExploreView`, `TaxonomyBrowseView`, country/region screens), the catalog health
-check (`testHealth`, which needs the acquisition transport and its own slice), and the offline/scale UI tests.
+Third slice: the data a country/region screen needs. `LegacyCatalogReader.sources(inNode:after:limit:)` pages a
+node's placed sources in the catalogue's own order for that node (`idx_catalog_placement_node_order`) with a
+`(sort_order, source_id)` cursor — not a global row id a catalog rebuild could move — plus a truthful `exhausted`
+via the same one-row lookahead; `sourceKeys(inNode:ceiling:)` returns a node's keys for a bulk change. The
+coordinator exposes both as values (`CatalogPage<CatalogSourceSummary, CatalogSourceCursor>`, its page cursor now
+generic) and gained `setEnabled(nodeID:enabled:)`, which merges a node's keys into the reader's own selection
+through `ReaderPreferencesStore` and returns the new version (V1's "whole region on/off"). `nodeByKey(_:)` lets a
+caller navigate by stable key.
 
-**Verified.** `swift test` **912 tests, 0 failures**.
+New tests extend `SourceManagementCoordinatorTests` (3 total): a node's sources keep the catalogue's order and page
+by placement position; a bulk enable merges and versions, re-enabling is not a new version, a bulk disable removes
+exactly the node's sources and keeps the reader's others. **Open parity item recorded:** V1 allowed *zero* selected
+sources and said so with its own empty state; V2 requires at least one (`ReaderPreferencesStore.validate`), so the
+bulk disable refuses to empty the selection until the empty-state UI is ported — relax both together, not before.
+
+**Still open in T7**: the source-management/exploration/browse **views** bound to this coordinator (V1's
+`SourceManagementView`, `CatalogExploreView`, `TaxonomyBrowseView`, country/region screens) — including that
+empty state — the catalog health check (`testHealth`, which needs the acquisition transport and its own slice), and
+the offline/scale UI tests.
+
+**Verified.** `swift test` **913 tests, 0 failures**.

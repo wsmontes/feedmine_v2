@@ -40,11 +40,27 @@ public struct CatalogNodeSummary: Hashable, Sendable, Identifiable {
     public let hasChildren: Bool
 }
 
-/// One page of catalog values: bounded, with a cursor and a truthful exhaustion flag.
-public struct CatalogPage<Value: Hashable & Sendable>: Hashable, Sendable {
+/// One page of catalog values: bounded, with a cursor and a truthful exhaustion flag. The cursor is the
+/// catalogue's own position type (a node id, a placement position), never a global row number.
+public struct CatalogPage<Value: Hashable & Sendable, Cursor: Hashable & Sendable>: Hashable, Sendable {
     public let values: [Value]
-    public let nextCursor: Int64?
+    public let nextCursor: Cursor?
     public let exhausted: Bool
+
+    public init(values: [Value], nextCursor: Cursor?, exhausted: Bool) {
+        self.values = values; self.nextCursor = nextCursor; self.exhausted = exhausted
+    }
+}
+
+/// Placement cursor for a node's sources: `(sort_order, source_id)` in the catalogue's own order.
+public struct CatalogSourceCursor: Hashable, Sendable {
+    public let sortOrder: Int64
+    public let sourceID: Int64
+
+    public init(sortOrder: Int64, sourceID: Int64) {
+        self.sortOrder = sortOrder
+        self.sourceID = sourceID
+    }
 }
 
 /// One source the catalog offers, as a row in source management shows it.
@@ -88,13 +104,13 @@ public struct SourceManagementCoordinator: Sendable {
         return try catalog.sectionNodes().map(Self.summary)
     }
 
-    public func countries(after: Int64? = nil, limit: Int = 50) throws -> CatalogPage<CatalogNodeSummary> {
+    public func countries(after: Int64? = nil, limit: Int = 50) throws -> CatalogPage<CatalogNodeSummary, Int64> {
         guard let catalog else { throw SourceManagementError.catalogUnavailable }
         let page = try catalog.countries(after: after, limit: limit)
         return CatalogPage(values: page.nodes.map(Self.summary), nextCursor: page.nextCursor, exhausted: page.exhausted)
     }
 
-    public func nodes(parentID: Int64, after: Int64? = nil, limit: Int = 50) throws -> CatalogPage<CatalogNodeSummary> {
+    public func nodes(parentID: Int64, after: Int64? = nil, limit: Int = 50) throws -> CatalogPage<CatalogNodeSummary, Int64> {
         guard let catalog else { throw SourceManagementError.catalogUnavailable }
         let page = try catalog.nodes(parentID: parentID, after: after, limit: limit)
         return CatalogPage(values: page.nodes.map(Self.summary), nextCursor: page.nextCursor, exhausted: page.exhausted)
@@ -105,12 +121,52 @@ public struct SourceManagementCoordinator: Sendable {
         return try catalog.ancestors(ofNodeID: id).map(Self.summary)
     }
 
+    /// A node's catalog id by its stable key, for a caller that navigated by key.
+    public func nodeByKey(_ key: String) throws -> Int64? {
+        guard let catalog else { throw SourceManagementError.catalogUnavailable }
+        return try catalog.node(key: key)?.id
+    }
+
     public func searchSources(_ query: String, limit: Int = 50) throws -> [CatalogSourceSummary] {
         guard let catalog else { throw SourceManagementError.catalogUnavailable }
         return try catalog.matchingSources(query: query, limit: limit).map { record in
             CatalogSourceSummary(id: record.key, title: record.title, language: record.language,
                 mediaKind: record.mediaKind, defaultEnabled: record.defaultEnabled)
         }
+    }
+
+    /// One page of a node's sources, in the catalogue's own order for that node.
+    public func sources(inNode nodeID: Int64, after: CatalogSourceCursor? = nil, limit: Int = 50)
+        throws -> CatalogPage<CatalogSourceSummary, CatalogSourceCursor> {
+        guard let catalog else { throw SourceManagementError.catalogUnavailable }
+        let page = try catalog.sources(inNode: nodeID,
+            after: after.map { (sortOrder: $0.sortOrder, sourceID: $0.sourceID) }, limit: limit)
+        return CatalogPage(values: page.records.map(Self.summary),
+            nextCursor: page.nextCursor.map { CatalogSourceCursor(sortOrder: $0.sortOrder, sourceID: $0.sourceID) },
+            exhausted: page.exhausted)
+    }
+
+    /// Enables or disables every source placed in a node — V1's "whole region on/off" — by merging the node's
+    /// keys into the reader's own selection. Returns the new selection version.
+    @discardableResult
+    public func setEnabled(nodeID: Int64, enabled: Bool, ceiling: Int = 500) throws -> UInt64 {
+        guard let catalog, let preferences else { throw SourceManagementError.catalogUnavailable }
+        guard let record = try preferences.load() else { throw SourceManagementError.catalogUnavailable }
+        let keys = try catalog.sourceKeys(inNode: nodeID, ceiling: ceiling)
+        guard !keys.isEmpty else { throw SourceManagementError.invalidSelection }
+        var selection = record.sourceKeys
+        if enabled {
+            let present = Set(selection)
+            selection.append(contentsOf: keys.filter { !present.contains($0) })
+        } else {
+            let removing = Set(keys)
+            selection.removeAll { removing.contains($0) }
+            // V2 requires at least one selected source (`ReaderPreferencesStore.validate`). V1 allowed zero and
+            // said so with its own empty state; T7 must relax this *together with* that state, not before it.
+            guard !selection.isEmpty else { throw SourceManagementError.invalidSelection }
+        }
+        do { return try preferences.updateSources(selection).selectionVersion }
+        catch { throw SourceManagementError.invalidSelection }
     }
 
     /// Persists a selection change and returns the new version, so the caller can fence a restore on it.
@@ -135,6 +191,11 @@ public struct SourceManagementCoordinator: Sendable {
         let primary = String(trimmed.prefix(while: { $0 != "-" && $0 != "_" })).lowercased()
         if primary == "und" { return String(localized: "Idioma não declarado") }
         return Locale.current.localizedString(forLanguageCode: primary)?.capitalized ?? code
+    }
+
+    private static func summary(_ record: LegacyCatalogSourceRecord) -> CatalogSourceSummary {
+        CatalogSourceSummary(id: record.key, title: record.title, language: record.language,
+            mediaKind: record.mediaKind, defaultEnabled: record.defaultEnabled)
     }
 
     private static func summary(_ node: LegacyCatalogNodeRecord) -> CatalogNodeSummary {

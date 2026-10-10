@@ -32,6 +32,8 @@ final class SourceManagementCoordinatorTests: XCTestCase {
                 INSERT INTO catalog_source (id, key, title, declared_url, request_url, media_kind, language, default_enabled) VALUES
                     (100, 'https://a.example/feed', 'Alpha Feed', 'https://a.example/feed', 'https://a.example/feed', 'text', 'pt-BR', 1),
                     (101, 'https://b.example/feed', 'Beta Feed', 'https://b.example/feed', 'https://b.example/feed', 'audio', 'und', 1);
+                INSERT INTO catalog_placement (id, source_id, node_id, node_name, opml_file, sort_order) VALUES
+                    (1, 100, 10, 'Brazil', 'br.opml', 0), (2, 101, 10, 'Brazil', 'br.opml', 1);
                 """)
         }
         return url
@@ -67,12 +69,22 @@ final class SourceManagementCoordinatorTests: XCTestCase {
         XCTAssertTrue(countries.exhausted)
         let brazil = try XCTUnwrap(countries.values.first)
         XCTAssertEqual(try coordinator.breadcrumb(ofNodeID: brazil.id).map(\.name), ["Root", "Countries"])
+        XCTAssertEqual(try coordinator.nodeByKey("countries/br"), brazil.id)
         let nodes = try coordinator.nodes(parentID: brazil.id, limit: 10)
         XCTAssertTrue(nodes.values.isEmpty, "a country with no children pages empty, not nil")
         XCTAssertTrue(nodes.exhausted)
         let sources = try coordinator.searchSources("alpha")
         XCTAssertEqual(sources.map(\.title), ["Alpha Feed"])
         XCTAssertEqual(sources.first?.id, "https://a.example/feed", "identity is the catalog key, not the integer")
+        // A node's sources keep the catalogue's own order for that node, and page by placement position.
+        let placed = try coordinator.sources(inNode: brazil.id, limit: 1)
+        XCTAssertEqual(placed.values.map(\.title), ["Alpha Feed"])
+        XCTAssertEqual(placed.values.first?.id, "https://a.example/feed")
+        XCTAssertFalse(placed.exhausted)
+        let rest = try coordinator.sources(inNode: brazil.id, after: placed.nextCursor, limit: 5)
+        XCTAssertEqual(rest.values.map(\.title), ["Beta Feed"])
+        XCTAssertTrue(rest.exhausted)
+        XCTAssertTrue(try coordinator.sources(inNode: 999, limit: 5).values.isEmpty)
     }
 
     /// A selection change persists through the reader's preferences and bumps the version that fences restore.
@@ -88,6 +100,34 @@ final class SourceManagementCoordinatorTests: XCTestCase {
         XCTAssertEqual(try coordinator.setSelection(["https://b.example/feed", "https://a.example/feed"]), version,
             "reordering the same set is not a new selection (V2 fences restore on this)")
         XCTAssertThrowsError(try coordinator.setSelection([])) {
+            XCTAssertEqual($0 as? SourceManagementError, .invalidSelection)
+        }
+    }
+
+    /// V1's "whole region on/off": enabling a node merges its placed sources into the selection; disabling it
+    /// removes them, and never leaves an empty selection.
+    func testBulkNodeEnableAndDisablePersistThroughPreferences() throws {
+        let database = try database()
+        let preferences = ReaderPreferencesStore(database: database)
+        // One source inside the node's subtree and one outside it, so a bulk change has something to keep.
+        _ = try preferences.initialize(sourceKeys: ["https://a.example/feed", "https://other.example/feed"])
+        let coordinator = SourceManagementCoordinator(catalogURL: try catalog(), database: database)
+        let brazil = try XCTUnwrap(try coordinator.nodeByKey("countries/br"))
+        let enabled = try coordinator.setEnabled(nodeID: brazil, enabled: true)
+        XCTAssertEqual(enabled, 3, "adding a key is a new selection version")
+        XCTAssertEqual(Set(try coordinator.selection()),
+            ["https://a.example/feed", "https://b.example/feed", "https://other.example/feed"])
+        // Enabling again is not a new selection: the set did not change.
+        XCTAssertEqual(try coordinator.setEnabled(nodeID: brazil, enabled: true), enabled)
+        // Disabling the node removes exactly its sources and keeps the reader's others.
+        XCTAssertEqual(try coordinator.setEnabled(nodeID: brazil, enabled: false), enabled + 1)
+        XCTAssertEqual(try coordinator.selection(), ["https://other.example/feed"])
+        XCTAssertEqual(try coordinator.setEnabled(nodeID: brazil, enabled: false), enabled + 1,
+            "its sources are already absent, so nothing changes")
+        // Emptying the reader's whole selection is refused: V2 requires one source, and V1's "zero sources"
+        // state has to arrive together with its empty-state UI (recorded as T7's open parity item).
+        _ = try coordinator.setSelection(["https://a.example/feed"])
+        XCTAssertThrowsError(try coordinator.setEnabled(nodeID: brazil, enabled: false)) {
             XCTAssertEqual($0 as? SourceManagementError, .invalidSelection)
         }
     }
