@@ -389,6 +389,20 @@ full identity round-trips, and `FeedContext.key` stays the default-surface conve
 
 **Verified.** `swift test` **883 tests, 0 failures**.
 
-**Remaining for T6** (fully specified in the spec): the persistence migration of checkpoint/edition identifiers to
-`canonicalIdentity`, `ReaderFilterDraft` + the V1 sheet and lens in the UI, supply-side enforcement of the
-criteria that can be answered, the expiry record and the A→B→A/stale-callback tests.
+**Step 2b landed.** `Sources/FeedMineUI/Filters/ReaderFilterDraft.swift`: the selection the reader is editing,
+kept apart from the applied one, with V1's exact editing rules (toggling a language, selecting the current
+content type or mood clears it, preset and overlay criteria are independent), a `base`/`basePreset` pair that
+detects a *stale* draft when the applied context moved beneath it, `revert()` (hydrate again) and `clearAll()`
+(V1's "Clear All Filters", which clears this sheet's criteria and the region/taxonomy selections it reaches but
+**not** content exclusions — those live on their own surface and never expire). `availableCriteria` is the T6
+honesty gate: a criterion the supply cannot enforce is refused by the draft instead of being accepted and
+silently ignored. New `ReaderFilterDraftTests` (6): a hydrated draft is clean and keeps untouched criteria;
+editing is what makes `applied` differ; revert and clear-all are distinct and exclusions survive; unavailable
+criteria are refused while the available one applies; a draft whose applied selection moved is stale; preset and
+criteria stay independent.
+
+**Verified.** `swift test` **889 tests, 0 failures**.
+
+**Remaining for T6** (fully specified in the spec): the persistence migration of checkpoint/edition identifiers
+(§6 steps 1–5), the sheet and lens in the UI wired to the draft, supply-side enforcement of the criteria that can
+be answered, the expiry record and the A→B→A/stale-callback tests.
