@@ -529,9 +529,18 @@ exactly the node's sources and keeps the reader's others. **Open parity item rec
 sources and said so with its own empty state; V2 requires at least one (`ReaderPreferencesStore.validate`), so the
 bulk disable refuses to empty the selection until the empty-state UI is ported — relax both together, not before.
 
+Fourth slice: the surface the T7 views bind to. The catalog **values moved to Runtime** (`CatalogValues.swift`) —
+UI imports Runtime and must never import Composition, so values cannot live next to the coordinator that produces
+them. New `SourceManagementStore` (UI) is observable values plus intents over a `SourceManagementBackend`
+protocol the composition implements: `load()` (languages, sections, countries, selection), `open(_:)` (a node's
+level, breadcrumb and own sources), `search(_:)`/`clearSearch()`, `toggle(_:)` and `setEnabled(_:enabled:)`. A
+missing catalog is a **stated state**, not an empty tree, and a refused change never leaves an optimistic
+selection on screen — the shown selection is always the one the backend accepted. New
+`SourceManagementStoreTests` (4) with a recording backend that can be told to fail.
+
 **Still open in T7**: the source-management/exploration/browse **views** bound to this coordinator (V1's
 `SourceManagementView`, `CatalogExploreView`, `TaxonomyBrowseView`, country/region screens) — including that
 empty state — the catalog health check (`testHealth`, which needs the acquisition transport and its own slice), and
 the offline/scale UI tests.
 
-**Verified.** `swift test` **913 tests, 0 failures**.
+**Verified.** `swift test` **917 tests, 0 failures**.
