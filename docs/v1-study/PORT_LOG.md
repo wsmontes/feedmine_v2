@@ -458,6 +458,17 @@ equivalent-selection case, the search scope, and the legacy row.
 
 **Verified.** `swift test` **900 tests, 0 failures**.
 
+**Step 7 landed — the sheet itself.** `Sources/FeedMineUI/Filters/FilterSheetView.swift` copies V1's
+`FilterSheetView` order and controls: Clear All, the preset picker (V1's "Everything"/"Last clicked" plus whatever
+named presets the host offers; T8 brings collections/smart/curated), the Countries link, content-type buttons, the
+topic link with its selection count, the language list with the declared enabled counts, the mood buttons, and
+Done. `languageRows` is a value so the list is testable without a store, and the draft's `availableCriteria`
+decides **which sections are drawn at all** — a criterion this build cannot enforce is not offered and then
+ignored. Two recorded differences from V1: the language row shows no flag (V1's `LanguageInfo` carried one from
+its own table; the catalog has only codes, and a two-letter *language* code is not a country — the first attempt
+here rendered 🇪🇳 for "en", which is exactly the invented data the rule forbids), and closing the sheet is still
+the apply (V1's `onDisappear`, exercised by the store's `dismiss()`).
+
 **Step 6 landed — one moment turns a draft into the applied selection.** New `ReaderFilterStore` (UI): it holds
 the applied selection and the draft, forwards the sheet's edits, and has exactly one applying path.
 `dismiss()` is that path (V1: the sheet has no Cancel, it commits the dirty parts when it goes away);
@@ -566,4 +577,4 @@ writes state swallows the tap.
 empty state — the catalog health check (`testHealth`, which needs the acquisition transport and its own slice), and
 the offline/scale UI tests.
 
-**Verified.** `swift test` **919 tests, 0 failures**.
+**Verified.** `swift test` **920 tests, 0 failures**.

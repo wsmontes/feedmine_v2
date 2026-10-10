@@ -104,6 +104,39 @@ final class ReaderFilterStoreTests: XCTestCase {
             "a selected topic is part of the filter's identity")
     }
 
+    /// T6 sheet: the language rows carry the declared counts and the undeclared bucket's own label, and the
+    /// draft's criteria are what the sheet's controls flip — dismissal is the apply, as in V1.
+    func testSheetLanguageRowsAndDraftControls() async throws {
+        let languages: [CatalogLanguageSummary] = [
+            .init(code: "en", displayName: "English", enabledSources: 15_820, totalSources: 17_962,
+                isUndeclared: false),
+            .init(code: "en-US", displayName: "English (US)", enabledSources: 6_592, totalSources: 7_028,
+                isUndeclared: false),
+            .init(code: "und", displayName: "Idioma não declarado", enabledSources: 26_644, totalSources: 27_741,
+                isUndeclared: true)
+        ]
+        let rows = FilterSheetView.languageRows(languages, selected: ["en-US"])
+        XCTAssertEqual(rows.map(\.code), ["en", "en-US", "und"], "the sheet follows the catalog's own order")
+        XCTAssertEqual(rows.map(\.isSelected), [false, true, false])
+        XCTAssertEqual(rows.map(\.enabledSources), [15_820, 6_592, 26_644])
+        XCTAssertEqual(rows.last?.name, "Idioma não declarado",
+            "the undeclared bucket states itself instead of pretending to be a language")
+
+        var applied: [ReaderFilter] = []
+        let subject = store(onApply: { filter, _ in applied.append(filter) })
+        subject.select(contentType: .audio)
+        subject.select(mood: .fun)
+        subject.toggleLanguage("en-US")
+        XCTAssertTrue(subject.isDirty)
+        let closed = try await subject.dismiss()
+        XCTAssertEqual(closed, true, "closing the sheet is the apply (V1's onDisappear)")
+        XCTAssertEqual(applied.count, 1)
+        XCTAssertEqual(applied.first?.contentType, .audio)
+        XCTAssertEqual(applied.first?.mood, .fun)
+        XCTAssertEqual(applied.first?.languages, ["en-US"])
+        XCTAssertFalse(subject.isDirty)
+    }
+
     /// A criterion this build cannot enforce is refused by the draft inside the store too, and hydrating a
     /// clean draft follows a selection that changed elsewhere.
     func testUnavailableCriteriaAreRefusedAndHydrationFollows() async throws {
