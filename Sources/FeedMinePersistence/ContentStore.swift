@@ -143,7 +143,10 @@ public struct ContentStore: Sendable {
                         providerID: try p.optionalUUID("provider_id").map { ProviderID(rawValue: $0) },
                         sourceIDs: try String.fetchAll(db, sql: "SELECT source_id FROM source_memberships WHERE origin_record_id = ? ORDER BY source_id COLLATE BINARY ASC",
                             arguments: [key]).map { SourceID(rawValue: try PersistenceValueCoding.uuid($0, field: "source_memberships.source_id")) },
-                        primaryMediaLocator: try String.fetchOne(db, sql: "SELECT remote_locator FROM media_candidates WHERE origin_revision_id = ? AND ordinal = 0",
+                        primaryMediaLocator: try String.fetchOne(db, sql: """
+                            SELECT remote_locator FROM media_candidates WHERE origin_revision_id = ? AND ordinal = 0
+                                AND media_class = 'image'
+                            """,
                             arguments: [Self.key(revision.rawValue)]),
                         primaryLink: try p.optionalString("primary_link").flatMap { URL(string: $0) }))
                 }

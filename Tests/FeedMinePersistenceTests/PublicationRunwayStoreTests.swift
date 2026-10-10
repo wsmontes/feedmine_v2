@@ -11,9 +11,17 @@ final class PublicationRunwayStoreTests: XCTestCase {
     /// their columns, never by their SQL text, in both before/after sets.
     static func normalizeRebuiltDefinitions(_ entries: [String]) -> Set<String> {
         Set(entries.map { entry in
-            // reader_preferences also gained columns in T6 (the filter expiry record).
+            // reader_preferences gained columns in T6 and T8, and media_candidates was rebuilt in T9 (a card
+            // can carry a playable payload as well as its visual), so their definitions are the ones that
+            // changed alongside the migration that did it.
             for name in ["context_checkpoints", "feed_editions", "reader_preferences"]
                 where entry.hasPrefix(name + ":") { return name }
+            // T9 rebuilt media_candidates (a card can carry a playable payload as well as its visual). A rebuilt
+            // table keeps its constraint index only under a new internal name, and its definition is compared
+            // by its own test (`MediaCandidateSchemaTests`), so both collapse to stable tokens here.
+            if entry.hasPrefix("sqlite_autoindex_media_candidates") { return "media_candidates_constraints" }
+            if entry.hasPrefix("media_candidates:") { return "media_candidates" }
+            if entry.hasPrefix("media_candidates_one_playback") { return "media_candidates_one_playback" }
             return entry
         })
     }
@@ -214,7 +222,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
             let schema = try String.fetchAll(db, sql: "SELECT name || ':' || COALESCE(sql, '') FROM sqlite_master WHERE name != 'published_cards_origin_revision_segment' ORDER BY name")
             XCTAssertTrue(Self.normalizeRebuiltDefinitions(oldSchema).isSubset(of: try Self.schemaBeforeAvailability(schema, in: db))) // Only the explicitly checked additive columns change an old definition.
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('published_cards_origin_revision_segment') ORDER BY seqno"), ["origin_revision_id","segment_id"])
-            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1","reader-library-v1","reader-preferred-box-v1"])
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1","reader-library-v1","reader-preferred-box-v1","media-playback-candidate-v1"])
         }
     }
 
@@ -358,8 +366,15 @@ extension PublicationRunwayStoreTests {
                 "reader_presets", "sqlite_autoindex_reader_presets_1"])
             let contextual = Set(priorDefinitions.filter { addedNames.contains(String($0.split(separator: ":", maxSplits: 1)[0])) })
             XCTAssertEqual(contextual.count, addedNames.count)
-            XCTAssertEqual(priorDefinitions.subtracting(normalizedBefore), Set([originIndex, authorityTable, authorityIndex]).union(contextual))
-            XCTAssertEqual(Self.normalizeRebuiltDefinitions(schemaAfter).subtracting(normalizedBefore), Set([originIndex, originDefinition, authorityTable, authorityIndex]).union(contextual))
+            // T9's rebuild of media_candidates is the other altered definition (plus the one playback index it
+            // adds), so it is part of what the upgrade changed.
+            // The rebuilt table's own definition is compared by `MediaCandidateSchemaTests`; what this test
+            // sees of it is the one index it added.
+            let mediaRebuild: Set<String> = ["media_candidates_one_playback"]
+            XCTAssertEqual(priorDefinitions.subtracting(normalizedBefore),
+                Set([originIndex, authorityTable, authorityIndex]).union(contextual).union(mediaRebuild))
+            XCTAssertEqual(Self.normalizeRebuiltDefinitions(schemaAfter).subtracting(normalizedBefore),
+                Set([originIndex, originDefinition, authorityTable, authorityIndex]).union(contextual).union(mediaRebuild))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }

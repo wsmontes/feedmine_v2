@@ -211,7 +211,7 @@ public struct PublicationStore: Sendable {
 
     /// Ordinal-0 canonical media locator of a revision; immutable, so both sides agree.
     static func primaryMediaLocator(_ revision: OriginRevisionID, in db: Database) throws -> String? {
-        try String.fetchOne(db, sql: "SELECT remote_locator FROM media_candidates WHERE origin_revision_id = ? AND ordinal = 0",
+        try String.fetchOne(db, sql: "SELECT remote_locator FROM media_candidates WHERE origin_revision_id = ? AND ordinal = 0 AND media_class = 'image'",
             arguments: [PersistenceValueCoding.uuid(revision.rawValue)])
     }
 
@@ -365,7 +365,7 @@ public struct PublicationStore: Sendable {
                 let rows = try Row.fetchAll(db, sql: """
                     SELECT c.origin_record_id, c.title, c.primary_text, m.remote_locator AS primary_media
                     FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
-                    LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0
+                    LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0 AND m.media_class = 'image'
                     WHERE s.edition_id = ? AND (s.ordinal, c.ordinal) <= (?, ?) AND c.origin_record_id IN (\(parameters))
                     """, arguments: StatementArguments([key as DatabaseValueConvertible, Int64(high.segmentOrdinal), Int64(high.cardOrdinal)] + group.map { $0 as DatabaseValueConvertible }))
                 for row in rows {
@@ -385,7 +385,7 @@ public struct PublicationStore: Sendable {
         try database.read { db in
             let row = try Row.fetchOne(db, sql: """
                 SELECT m.remote_locator AS locator FROM published_cards c
-                LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0
+                LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0 AND m.media_class = 'image'
                 WHERE c.id = ?
                 """, arguments: [PersistenceValueCoding.uuid(cardID.rawValue)])
             return row?["locator"] as String?
@@ -660,7 +660,7 @@ public struct PublicationStore: Sendable {
             let rows = try Row.fetchAll(db, sql: """
                 SELECT c.origin_record_id, c.title, c.primary_text, m.remote_locator AS primary_media FROM published_cards c
                 JOIN feed_segments s ON s.id = c.segment_id
-                LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0
+                LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0 AND m.media_class = 'image'
                 WHERE c.origin_record_id IN (\(placeholders)) AND s.edition_id = ?
                 """, arguments: StatementArguments(group + [PersistenceValueCoding.uuid(editionID.rawValue)]))
             for row in rows {

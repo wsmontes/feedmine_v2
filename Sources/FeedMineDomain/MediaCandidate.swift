@@ -4,11 +4,28 @@
 import Foundation
 
 public enum MediaCandidateRole: String, Hashable, Codable, Sendable {
+    /// The card's own visual (V1's image).
     case cardVisual
+    /// What the card plays (V1's enclosure for an audio or video episode). One per revision at most: a card
+    /// has one primary action, and offering two playable targets would be a choice nobody made.
+    case playback
 }
 
 public enum MediaCandidateClass: String, Hashable, Codable, Sendable {
     case image
+    case audio
+    case video
+
+    /// The role a class belongs to, stated once so the storage check and the translator cannot disagree.
+    public var role: MediaCandidateRole {
+        switch self {
+        case .image: return .cardVisual
+        case .audio, .video: return .playback
+        }
+    }
+
+    /// Whether a player can take this class (T9).
+    public var isPlayable: Bool { self != .image }
 }
 
 public struct MediaCandidate: Hashable, Sendable {

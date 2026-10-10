@@ -445,6 +445,44 @@ public enum RuntimeMigrations {
             // *preference*, not identity: changing it must never move the reader to another surface.
             try db.execute(sql: "ALTER TABLE reader_preferences ADD COLUMN preferred_bookmark_list TEXT")
         }
+        migrator.registerMigration("media-playback-candidate-v1") { db in
+            // T9: a card can carry a *playable* payload as well as its visual (V1's enclosure for an audio or
+            // video episode). The table's own vocabulary said "card visual / image" only, and SQLite cannot
+            // relax a CHECK in place, so the table is rebuilt with the full vocabulary and a pairing rule: an
+            // image is the card's visual, a playable class is its playback, and a row cannot claim a role its
+            // class cannot serve. At most one playback per revision — a card has one primary action.
+            try db.execute(sql: """
+                CREATE TABLE media_candidates_v2 (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    origin_revision_id TEXT NOT NULL,
+                    ordinal INTEGER NOT NULL,
+                    role TEXT COLLATE BINARY NOT NULL,
+                    media_class TEXT COLLATE BINARY NOT NULL,
+                    remote_locator TEXT COLLATE BINARY NOT NULL,
+                    declared_mime_type TEXT COLLATE BINARY,
+                    declared_pixel_width INTEGER,
+                    declared_pixel_height INTEGER,
+                    FOREIGN KEY (origin_revision_id) REFERENCES origin_revisions(id)
+                        ON UPDATE NO ACTION ON DELETE NO ACTION,
+                    UNIQUE (origin_revision_id, ordinal),
+                    CHECK (ordinal >= 0),
+                    CHECK (role IN ('cardVisual', 'playback')),
+                    CHECK (media_class IN ('image', 'audio', 'video')),
+                    CHECK ((media_class = 'image' AND role = 'cardVisual')
+                        OR (media_class <> 'image' AND role = 'playback')),
+                    CHECK (
+                        (declared_pixel_width IS NULL AND declared_pixel_height IS NULL)
+                        OR (declared_pixel_width IS NOT NULL AND declared_pixel_height IS NOT NULL
+                            AND declared_pixel_width > 0 AND declared_pixel_height > 0)
+                    )
+                );
+                INSERT INTO media_candidates_v2 SELECT * FROM media_candidates;
+                DROP TABLE media_candidates;
+                ALTER TABLE media_candidates_v2 RENAME TO media_candidates;
+                CREATE UNIQUE INDEX media_candidates_one_playback
+                    ON media_candidates(origin_revision_id) WHERE role = 'playback';
+                """)
+        }
         return migrator
     }
 

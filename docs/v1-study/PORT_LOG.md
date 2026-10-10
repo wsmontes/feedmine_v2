@@ -831,3 +831,31 @@ exists in this build instead of opening a player on nothing.
 **Verified.** `swift test` **956 tests, 0 failures**; iOS build **SUCCEEDED**; and
 `testCardCopiesItsOwnLinkAndStatesIt` (real simulator) opens a card's own menu, taps *Copiar link*, and sees the
 reader told that the link is on the clipboard — the whole chain, renderer → app → coordinator → pasteboard.
+
+### T9, second part — the storage a playable payload needs
+
+V2 could not carry audio or video at all: `media_candidates` said `role = 'cardVisual'` and
+`media_class = 'image'` in its own CHECK constraints, and the syndication translator kept image enclosures only.
+So V1's `mediaPlayback` action had nothing to resolve. This step gives the pipeline the vocabulary and the
+storage; the translator claim, the player and the surfaces are the next ones.
+
+- `MediaCandidateRole` gained `playback` and `MediaCandidateClass` gained `audio`/`video`, with the pairing
+  stated once (`image → cardVisual`, `audio`/`video` → `playback`) so the storage check and the translator
+  cannot disagree.
+- Migration `media-playback-candidate-v1` rebuilds `media_candidates` (SQLite cannot relax a CHECK in place)
+  with that vocabulary, the same ordinal/dimension rules, and a **partial unique index** that allows at most one
+  playable payload per revision — a card has one primary action, and two playable targets would be a choice
+  nobody made.
+- Every read that means "the card's visual" now says so (`media_class = 'image'`): `PublicationStore`'s
+  primary-locator read and its three joins, and `ContentStore`'s material-identity read — the material key is
+  about the image, so a playable row can never change what makes a card material.
+- A rebuilt table keeps its constraint index only under a new internal name (SQLite does not rename
+  autoindexes), which the historical schema test now states rather than tripping over, and
+  `MediaCandidateSchemaTests` checks the new partial index's own shape instead of an index count.
+
+**Verified.** `swift test` **956 tests, 0 failures**; iOS build **SUCCEEDED**.
+
+**Remaining for T9:** the syndication claim for an audio/video enclosure, the readiness/read path that carries
+the playable locator to the card, the app's `prepare` choosing `.mediaPlayback` for it (V1's tap-to-play
+precedence), the player (a platform adapter, AVFoundation, outside the package), the mini player with its
+reserved area, and their surfaces and tests.

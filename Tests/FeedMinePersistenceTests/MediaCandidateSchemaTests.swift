@@ -45,8 +45,13 @@ final class MediaCandidateSchemaTests: XCTestCase {
             XCTAssertTrue(try db.tableExists("media_candidates"))
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations WHERE identifier = 'canonical-media-candidates-v1'"), ["canonical-media-candidates-v1"])
             let indexes = try Row.fetchAll(db, sql: "PRAGMA index_list('media_candidates')")
-            XCTAssertEqual(indexes.count, 2)
-            XCTAssertEqual(Set(indexes.map { $0["origin"] as String }), ["pk", "u"])
+            XCTAssertEqual(indexes.count, 3)
+            XCTAssertEqual(Set(indexes.map { $0["origin"] as String }), ["pk", "u", "c"], "the third is the playback index")
+            // T9: at most one playable payload per revision, and the index says so itself.
+            let playback = try XCTUnwrap(indexes.first { ($0["name"] as String) == "media_candidates_one_playback" })
+            XCTAssertEqual(playback["partial"] as Int, 1)
+            XCTAssertEqual(try Row.fetchAll(db, sql: "PRAGMA index_info('media_candidates_one_playback')")
+                .map { $0["name"] as String }, ["origin_revision_id"])
             let orderedIndex = try XCTUnwrap(indexes.first { ($0["origin"] as String) == "u" })
             let name: String = orderedIndex["name"]
             let fields = try Row.fetchAll(db, sql: "PRAGMA index_info('\(name)')").map { $0["name"] as String }
