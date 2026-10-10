@@ -8,6 +8,10 @@
 
 Este benchmark é deliberadamente **mais exigente que a validação técnica de componentes**. Seu objetivo é detectar quando uma implementação satisfaz testes locais mas deixa de entregar a promessa do produto.
 
+## Nota transversal sobre capacidade adaptativa e cobertura do catálogo (2026-10-10)
+
+[PD-8](PRODUCT_DECISIONS_2026-10-09.md) exige exploração progressiva de todas as fontes elegíveis ao longo de oportunidades reais, sem cotas permanentes, e orçamentos adaptados a consumo, rede, memória, disco, energia e condições do sistema. **Os números de B01–B06 são condições fixas de avaliação, não tamanhos de lote, limites do feed ou quotas do runtime.** Como diagnóstico complementar, a equipe deve registrar progressão de fontes elegíveis/contatadas ao longo de oportunidades, comportamento sob condições ricas e pressionadas e aproveitamento de armazenamento local. Essa observação **não altera, substitui, enfraquece ou declara aprovados** os gates congelados abaixo. Uma execução finita não prova cobertura eventual de todas as fontes; evidenciar tendência e ausência de exclusão estrutural, sem prometer recursos ilimitados do iOS.
+
 ## 1. Regra de autoridade: o agente implementa; não redefine o sucesso
 
 - **Autonomia é obrigatória.** O agente deve tratar os critérios já escritos como contrato de trabalho: planejar, implementar, construir o avaliador, executar, corrigir e reavaliar por iniciativa própria, sem perguntar se pode começar, continuar, alterar código ou rodar um teste. Não há etapa de aprovação intermediária nem espera pela resposta do product owner.
