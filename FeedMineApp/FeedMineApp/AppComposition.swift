@@ -220,20 +220,33 @@ final class FeedAssociation {
     private let transport: URLSession
     private(set) var active = true
     private var launching = false
+    /// Available actions are what this host can execute today: opening the frozen target and saving.
+    /// The remaining V1 controls appear as their deliveries land (T5 shell/feedback, T9 reader/media),
+    /// so a rendered control is never a dead one.
+    @ObservationIgnored
+    static let readerCardActions: Set<ReaderCardAction> = [.open, .save]
+
     @ObservationIgnored
     lazy var store: FeedScreenStore = FeedScreenStore(onViewport: { [weak self] observation, activity in
         guard let self else { return }
         Task { await self.viewport(observation, activity: activity) }
-    }, onOpen: { [weak self] cardID in
-        self?.open(cardID)
-    }, onBookmark: { [weak self] cardID in
+    }, availableActions: Self.readerCardActions, onAction: { [weak self] event in
         guard let self, self.active else { return }
-        do {
-            let publication = PublicationStore(database: self.database)
-            try publication.toggleBookmark(cardID: cardID, at: Date())
-            self.store.installBookmarks(try publication.bookmarkedCardIDs())
-        } catch { self.reportFailure(error) }
+        switch event.action {
+        case .open: self.open(event.cardID)
+        case .save: self.toggleBookmark(event.cardID)
+        default: break
+        }
     })
+
+    /// Saving is the reader's own durable state (U2); the occurrence must already be admitted.
+    private func toggleBookmark(_ cardID: PublicationCardID) {
+        do {
+            let publication = PublicationStore(database: database)
+            try publication.toggleBookmark(cardID: cardID, at: Date())
+            store.installBookmarks(try publication.bookmarkedCardIDs())
+        } catch { reportFailure(error) }
+    }
 
     /// U2: the app host owns presentation. The composition resolves the frozen target; it never
     /// opens a URL itself and never lets one cross the UI boundary.

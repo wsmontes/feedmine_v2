@@ -109,34 +109,48 @@ final class FeedScreenRenderingTests: XCTestCase {
         return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
     }
 
+    /// The ported V1 card, rendered with the reader's standard appearance and no action handler: the
+    /// delivery is visual-only here, and no interaction is fabricated by the test.
+    private func rendered(_ card: PresentationCard) -> FeedItemCardView {
+        FeedItemCardView(card: card, appearance: .standard, onAction: { _ in })
+    }
+
     func testU1TextOnlyCardActuallyRendersLocalFields() throws {
         let published = try card()
-        let text = try renderedText(FeedCardView(card: published))
+        let text = try renderedText(rendered(published))
         XCTAssertTrue(text.contains("Local headline"), text.description)
         XCTAssertTrue(text.contains("Published local text"), text.description)
         XCTAssertTrue(text.contains("Local source"), text.description)
-        XCTAssertTrue(text.contains("Local provider"), text.description)
+        // V1's card never showed the provider line; the field survives in the projection for the
+        // surfaces that do (recorded difference, T4).
+        XCTAssertFalse(text.contains("Local provider"), text.description)
     }
 
     func testU2AbsentOptionalContentRendersWithoutInventedText() throws {
         let empty = try card(title: nil, text: nil, metadata: false)
-        XCTAssertEqual(try renderedText(FeedCardView(card: empty)), [])
+        XCTAssertEqual(try renderedText(rendered(empty)), [])
     }
 
     func testU3HeroAndThumbnailWithoutExposedAssetRemainTextual() throws {
         for layout in [PublishedCardLayout.hero, .thumbnail] {
             let local = try card(layout: layout)
-            let text = try renderedText(FeedCardView(card: local))
+            let text = try renderedText(rendered(local))
             XCTAssertTrue(text.contains("Local headline"), text.description)
             XCTAssertTrue(text.contains("Published local text"), text.description)
-            XCTAssertEqual(text.filter { $0.contains("Local") || $0.contains("Published") }.count, 4)
+            // Source row, title and summary: the V1 card draws no invented image caption.
+            XCTAssertEqual(text.filter { $0.contains("Local") || $0.contains("Published") }.count, 3)
         }
     }
 
     func testTimestampMeaningIsNotChangedToAuthorship() throws {
-        for (kind, expected) in [(PublishedTimestampKind.authored, "Autoria"), (.modified, "Modificado"), (.observed, "Observado")] {
-            let text = try renderedText(FeedCardView(card: card(timestampKind: kind)))
-            XCTAssertTrue(text.contains { $0.contains(expected) && $0.contains("2023") }, text.description)
+        // V1 shows the published date without re-labelling its kind. The card must not invent an
+        // authorship claim for a timestamp that has another meaning (T4 difference, recorded).
+        for kind in [PublishedTimestampKind.authored, .modified, .observed] {
+            let text = try renderedText(rendered(card(timestampKind: kind))).joined(separator: " ")
+            XCTAssertTrue(text.contains("2023"), text.description)
+            for claim in ["Autoria", "Modificado", "Observado"] {
+                XCTAssertFalse(text.contains(claim), "the card must not label the timestamp: " + claim)
+            }
         }
     }
 
@@ -252,7 +266,7 @@ final class FeedScreenRenderingTests: XCTestCase {
         let store = FeedScreenStore { _, _ in XCTFail("Unrequested execution") }
         try store.install(try FeedPresentationHandoff.receive(snapshot: first, into: store.state))
         _ = try renderedText(FeedScreen(store: store).frame(height: 900))
-        _ = try renderedText(FeedCardView(card: XCTUnwrap(first.window.items.first)))
+        _ = try renderedText(rendered(XCTUnwrap(first.window.items.first)))
         XCTAssertEqual(try history.restore(backwardCapacity: 0, forwardCapacity: 0), before)
         XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.editionID), segments)
         let current = await f.session.currentPresentation()
@@ -269,7 +283,8 @@ final class FeedScreenRenderingTests: XCTestCase {
                 XCTAssertFalse(imports.contains("import " + forbidden), file.lastPathComponent + ": " + forbidden)
             }
         }
-        for file in ["FeedScreen.swift", "FeedCardView.swift", "FeedLoadingView.swift"] {
+        for file in ["FeedScreen.swift", "Cards/FeedItemCardView.swift", "Cards/FeedItemView.swift",
+            "Cards/FeedItemRowView.swift", "FeedLoadingView.swift"] {
             let source = try String(contentsOf: ui.appendingPathComponent(file), encoding: .utf8)
             for forbidden in ["URLSession", "AsyncImage", "ContentStore", "RuntimeDatabase", "AcquisitionCoordinator", "SelectionEngine",
                 "PublicationCoordinator", "PublicationStore", "Task", ".task", ".onAppear", ".onDisappear", "Timer", "sleep",
@@ -308,7 +323,7 @@ final class FeedScreenRenderingTests: XCTestCase {
 
     func testCardAdaptsToNarrowAvailableWidth() throws {
         let published = try card(title: "Local headline with additional words that must wrap", text: "Published local text")
-        let text = try renderedText(host(FeedCardView(card: published), width: 320))
+        let text = try renderedText(host(rendered(published), width: 320))
         XCTAssertTrue(text.joined(separator: " ").contains("Local headline with additional words that must wrap"), text.description)
         XCTAssertTrue(text.contains("Published local text"), text.description)
         XCTAssertTrue(text.contains("Local source"), text.description)

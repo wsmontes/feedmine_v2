@@ -11,26 +11,24 @@ public final class FeedScreenStore {
     @ObservationIgnored
     private let onViewport: @MainActor (ViewportObservation, RunwayActivity) -> Void
     public private(set) var bookmarkedIDs: Set<PublicationCardID> = []
-    @ObservationIgnored private let onBookmark: @MainActor (PublicationCardID) -> Void
-    @ObservationIgnored
-    private let onOpen: @MainActor (PublicationCardID) -> Void
+    /// What this host can actually execute. A card renders only these controls, so a menu item can
+    /// never be a dead control while its delivery (T5–T11) has not landed yet.
+    public let availableActions: Set<ReaderCardAction>
+    @ObservationIgnored private let onAction: @MainActor (ReaderCardActionEvent) -> Void
 
-    /// `onOpen` receives a semantic open intent (review F10). The action target itself never
-    /// crosses into UI; external composition resolves it from published history.
+    /// `onAction` receives one semantic request per user interaction (review F10): the occurrence and
+    /// what the reader asked for. No URL, player, pasteboard or sheet crosses into UI; external
+    /// composition resolves them from published history.
     public init(onViewport: @escaping @MainActor (ViewportObservation, RunwayActivity) -> Void,
-        onOpen: @escaping @MainActor (PublicationCardID) -> Void = { _ in },
-        onBookmark: @escaping @MainActor (PublicationCardID) -> Void = { _ in }) {
+        availableActions: Set<ReaderCardAction> = Set(ReaderCardAction.allCases),
+        onAction: @escaping @MainActor (ReaderCardActionEvent) -> Void = { _ in }) {
         state = FeedPresentationState(presentation: nil)
         self.onViewport = onViewport
-        self.onOpen = onOpen
-        self.onBookmark = onBookmark
+        self.availableActions = availableActions
+        self.onAction = onAction
     }
 
     public func installBookmarks(_ ids: Set<PublicationCardID>) { bookmarkedIDs = ids }
-    public func bookmark(_ card: PresentationCard) {
-        guard state.presentation?.window.items.contains(where: { $0.id == card.id }) == true else { return }
-        onBookmark(card.id)
-    }
 
     /// Receives the value computed by external composition using the existing handoff.
     /// Reception delegates identity rules to the state contract; absence retains visible content.
@@ -50,9 +48,11 @@ public final class FeedScreenStore {
         onViewport(observation, activity)
     }
 
-    /// The reader asked to open a card that offers a primary action.
-    public func open(_ card: PresentationCard) {
-        guard card.primaryActionKind != nil, state.presentation?.window.items.contains(where: { $0.id == card.id }) == true else { return }
-        onOpen(card.id)
+    /// One semantic request from one admitted card. Only an admitted occurrence may act, and the
+    /// external consumer decides how to execute it.
+    public func perform(_ event: ReaderCardActionEvent) {
+        guard state.presentation?.window.items.contains(where: { $0.id == event.cardID }) == true else { return }
+        guard availableActions.contains(event.action) else { return }
+        onAction(event)
     }
 }

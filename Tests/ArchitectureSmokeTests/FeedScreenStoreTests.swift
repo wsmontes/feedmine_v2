@@ -243,7 +243,7 @@ final class FeedScreenStoreTests: XCTestCase {
             XCTAssertFalse(field.value is PresentationAnchor)
             XCTAssertFalse(field.value is PublicationCardID)
         }
-        XCTAssertEqual(Set(fields.compactMap(\.label)), ["_state", "onViewport", "onOpen", "onBookmark", "_bookmarkedIDs", "_$observationRegistrar"])
+        XCTAssertEqual(Set(fields.compactMap(\.label)), ["_state", "onViewport", "onAction", "availableActions", "_bookmarkedIDs", "_$observationRegistrar"])
     }
 
     func testS12ModuleBoundaryAndNoExecutionMechanisms() throws {
@@ -290,16 +290,27 @@ final class FeedScreenStoreTests: XCTestCase {
 }
 
 extension FeedScreenStoreTests {
-    /// Review F10: tapping a card forwards only its identity, and only when it offers an action.
+    /// Review F10/T4: a card request forwards only the occurrence and the requested action, only for an
+    /// admitted card and only for an action this host declares it can execute.
     @MainActor
-    func testOpenForwardsCardIdentityOnlyForActionableCards() throws {
-        var opened: [PublicationCardID] = []
-        let store = FeedScreenStore(onViewport: { _, _ in }, onOpen: { opened.append($0) })
+    func testPerformForwardsOnlyAdmittedCardsAndAvailableActions() async throws {
+        let f = try fixture(), first = try await snapshot(f)
+        var events: [ReaderCardActionEvent] = []
+        let store = FeedScreenStore(onViewport: { _, _ in }, availableActions: [.open, .save],
+            onAction: { events.append($0) })
         let source = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources/FeedMineUI/FeedScreenStore.swift"), encoding: .utf8)
         XCTAssertFalse(source.contains("URL("), "action targets never cross the UI boundary")
-        XCTAssertTrue(source.contains("guard card.primaryActionKind != nil"))
-        XCTAssertTrue(opened.isEmpty)
-        _ = store
+        XCTAssertTrue(source.contains("guard availableActions.contains(event.action)"))
+        store.perform(.init(action: .open, cardID: f.cardIDs[0]))
+        XCTAssertTrue(events.isEmpty, "an occurrence that was never admitted cannot act")
+        try store.install(try FeedPresentationHandoff.receive(snapshot: first, into: store.state))
+        store.perform(.init(action: .share, cardID: f.cardIDs[0]))
+        XCTAssertTrue(events.isEmpty, "an action this host cannot execute is never forwarded")
+        store.perform(.init(action: .save, cardID: f.cardIDs[0]))
+        XCTAssertEqual(events.map(\.action), [.save])
+        XCTAssertEqual(events.last?.cardID, f.cardIDs[0])
+        store.perform(.init(action: .save, cardID: PublicationCardID()))
+        XCTAssertEqual(events.map(\.action), [.save], "an unknown occurrence is inert")
     }
 }

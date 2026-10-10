@@ -240,3 +240,53 @@ changes geometry or identity, and returning re-decodes the same asset. Not verif
 arbitrary-speed reverse scroll — a bitmap that is released and not yet re-decoded renders the frozen
 placeholder. Codex's recommendation for that case (rematerialize a historical render window only when its images
 are ready) is the next step if the device measurement in T12 shows it matters.
+
+## T4 — 2026-10-09 (V1 card layouts and visual system)
+
+Plan task T4. First visual transfer of the plan: the reader's card composition and its appearance now come from
+V1's code, not from an approximation.
+
+**What was copied.**
+
+| V1 source | V2 destination | Notes |
+| --- | --- | --- |
+| `Services/DesignTokens.swift` + the pure values of `Services/CircadianEngine.swift` | `Sources/FeedMineUI/Appearance/ReaderAppearance.swift` | `ReaderPeriod` (palette period), `ReaderPaletteFamily`, `ReaderFontStyle`, `ReaderFontRole`, `ReaderTypeScale` and one immutable `ReaderAppearance`. Palette accents and page tints are V1's exact hex strings, exposed by `accentHex(for:)`/`pageTintHex(for:)` so the copied values are assertable; metrics (padding 14–22, gap 10–18, radius 10–16), the HIG tracking table and the per-role sizes are V1's. **Not copied:** the hourly timer and the `@Observable` singleton — an appearance change is now an explicit host input, never a clock. |
+| `Views/FeedItemCardView.swift` | `Sources/FeedMineUI/Cards/FeedItemCardView.swift` | Portrait card (hero slot → source row → title → excerpt → date), the landscape band, the left accent bar, the bookmark in the slot / inline on text-only cards, the code-drawn audio placeholder, the media overlay, the badges, the relative/short date rule and the `.ultraThinMaterial` overlay bookmark. |
+| `Views/FeedItemView.swift`, `Views/FeedItemRowView.swift` | `Sources/FeedMineUI/Cards/FeedItemView.swift`, `FeedItemRowView.swift` | Card/row selection by size class (`ReaderItemLayout` also allows forcing one), the compact row, and the tap that opens the occurrence. |
+| `UIPasteboard` / `UIActivityViewController` / `UIApplication.open` / `BookmarkBoxContextMenu` inside V1's card | **not copied** | They leave as one `ReaderCardActionEvent` (`ReaderCardAction`: open, save, viewSource, addSourceToCollection, copyLink, share, openMedia) and are executed outside UI (T5/T9). |
+| `Views/FeedScreen.swift` card region | `Sources/FeedMineUI/FeedScreen.swift` | `FeedCardView` is **deleted**; the screen renders `FeedItemView` and forwards `store.perform(_:)`. |
+
+**Action gating (new).** `FeedScreenStore` has no `onOpen`/`onBookmark` pair any more: it has
+`availableActions` plus one `onAction`. The card renders only actions the host declares it can execute, so a
+transferred control can never be a dead one while T5–T11 land. Today `AppComposition.readerCardActions =
+[.open, .save]` — the app host’s two working flows.
+
+**Differences from V1, recorded, not hidden.**
+1. `providerDisplayName` and the timestamp-kind label (`Autoria`/`Modificado`/`Observado`) are **not** drawn: V1's
+   card shows the date alone. The fields stay in `PresentationCard` for the surfaces that use them.
+2. The left accent bar uses the palette accent. V1 tinted it per *catalog category*, which V2 does not carry on a
+   card yet (T7 brings the taxonomy).
+3. Badges are limited to `Podcast` (derived from `primaryActionKind == .mediaPlayback`); V1 also had `Video`,
+   `New` and a duration label, which need semantic fields the V2 projection does not have yet. Adding them is a
+   **T4 remainder**, explicitly not faked.
+4. The hero placeholder uses the asset names that exist in the bundle (`Placeholder-Article`). V1 looked up a
+   palette-suffixed name (`Placeholder-Article-amber`) that no asset catalog in the checkout defines — which is
+   why its hero slots render blank, visible in the T1 reference screenshots.
+5. No `GeometryReader`: the slot is a frozen-aspect `Rectangle` mold with the image as an overlay, so the card's
+   height never depends on what the slot holds.
+
+**Tests.** New `FeedCardTransferTests` (6): the copied palette/metrics/typography/tracking values; period-driven
+weight and spacing; a card renders its frozen fields and invents nothing; an image slot keeps its geometry when
+pixels are released; read/saved change chrome only; every menu action is gated on `availableActions` and the
+renderer contains no `URLSession`/`UIImage`/`UIPasteboard`/`UIActivityViewController`. `FeedScreenRenderingTests`
+U1–U3/timestamp/narrow-width were migrated to the ported card (provider and timestamp-kind assertions inverted
+on purpose); U14's boundary list now covers the new card files; `FeedScreenStoreTests` migrated the store's
+"forwards identity only" test to `perform(_:)` and the new stored-property set.
+
+**Verification (executed).** `swift build` clean; `swift test` **861 tests, 0 failures**; iOS build
+`xcodebuild … build` → **BUILD SUCCEEDED**; the app installed and launched on the iPhone 17 Pro Max simulator,
+and `docs/evidence/v1-ui/t4-v2-ported-card.png` shows the ported card with real content (source row, two-line
+title, `2 days ago`, accent bar, slot-sized placeholder, overlay bookmark). Caveat recorded honestly: that capture
+is veiled/dimmed by the current simulator display state, so it is **structural** evidence — a colour-fidelity
+side-by-side against `feed-portrait-light.png` is still owed, and is now part of T4's remainder together with the
+badge/category fields.

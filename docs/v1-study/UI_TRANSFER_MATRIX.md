@@ -143,7 +143,12 @@ Section totals: **shell 24 rows**, 0 started.
 | Card media contract | `Models/PreparedFeedCard.swift`, `Models/FeedCardPresentation.swift` (deprecated bridge) | `PlaceholderKind`, `ResolvedImageAsset`, `RenderReadyMedia`, `PreparedCardLayout`, `PreparedFeedCard` | — (values) | frozen slot geometry + resolved asset | `Sources/FeedMineRuntime/PresentationCard.swift` (exists) + `Cards/**` (**T4**) | src | inventariado |
 | Item model helpers | `Models/FeedItem.swift` (481) | `bestImageURL`, `youTubeThumbnailURL`, `canResolveArticleImage`, `hasPotentialImage`, `audioPlaybackURL`, `isPodcast`, `isTimeless`, `durationFormatted` | URL/audio resolution used by cards and player | item metadata | `FeedMineDomain`/`Runtime` values as needed (**T4/T9**) | src | inventariado |
 
-Section totals: **5 rows**, 0 started. **Rule carried into T4:** the card renderer never
+Section totals: **5 rows**, 4 `em transferência` (T4 ported the composition, the row and the wrapper to
+`Sources/FeedMineUI/Cards/`; the action executions stay in T9). Transferred in `4e304fa`…`12d4b65` line of work,
+see `PORT_LOG.md` §T4. Still open on these rows: the semantic fields V1 badges/category need (T4 remainder, T7
+taxonomy) and the colour-fidelity comparison.
+
+**Rule carried into T4:** the card renderer never
 downloads or decodes (V1 already had no download inside the card; only
 `ShareCardImageView`, `MiniPlayerBar/FullPlayerView`, `StoryDuelCard` and
 `SourceFeedView`/`SourceCollectionFeedView` did, i.e. §6/§8).
@@ -269,7 +274,9 @@ Section totals: **9 rows**, 0 started; 4 orphans recorded.
 | Assets / fonts / localization | V1 app bundle (`feedmine_brand_assets/`, `Resources/`) | assets, font files, localized strings | — | V2 app resources (**T4/T10**); check names and platform availability | src | inventariado |
 | Night mode | `Services/AppSettings.swift` `Keys.nightMode`; `FeedScreen` overlay 1121–1123 | black 0.35 overlay, ignores safe area, no hit testing | — | `Appearance/**` (**T10**) | shot `night-portrait.png` | inventariado |
 
-Section totals: **4 rows**, 0 started.
+Section totals: **4 rows**, 3 `em transferência` (T4 ported the tokens, the palette/typography values and the
+metrics into `Sources/FeedMineUI/Appearance/ReaderAppearance.swift`; the singleton and its hourly timer are not
+copied). The asset/font/locale copy and the night-mode behaviour remain for T10.
 
 ---
 

@@ -9,10 +9,14 @@ import FeedMineRuntime
 @MainActor
 public struct FeedScreen: View {
     private let store: FeedScreenStore
+    /// The frozen visual system for this session. It is an immutable host input, never internal
+    /// observable state: an appearance change is an explicit decision, not an effect of this view.
+    private let appearance: ReaderAppearance
     @State private var capture = FeedVisualCapture()
 
-    public init(store: FeedScreenStore) {
+    public init(store: FeedScreenStore, appearance: ReaderAppearance = .standard) {
         self.store = store
+        self.appearance = appearance
     }
 
     public var body: some View {
@@ -21,11 +25,10 @@ public struct FeedScreen: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
                         ForEach(presentation.window.items) { card in
-                            FeedCardView(card: card, onOpen: { store.open(card) })
-                                .contextMenu {
-                                    Button(store.bookmarkedIDs.contains(card.id) ? "Remover dos salvos" : "Salvar artigo",
-                                        systemImage: store.bookmarkedIDs.contains(card.id) ? "bookmark.fill" : "bookmark") { store.bookmark(card) }
-                                }
+                            FeedItemView(card: card, appearance: appearance,
+                                isBookmarked: store.bookmarkedIDs.contains(card.id),
+                                availableActions: store.availableActions,
+                                onAction: { store.perform($0) })
                                 .onGeometryChange(for: FeedVisualCardGeometry?.self, of: { proxy in
                                     guard let bounds = proxy.bounds(of: .scrollView(axis: .vertical)) else { return nil }
                                     let frame = proxy.frame(in: .scrollView(axis: .vertical))
@@ -66,11 +69,10 @@ public struct FeedScreen: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
                         ForEach(presentation.window.items) { card in
-                            FeedCardView(card: card, onOpen: { store.open(card) })
-                                .contextMenu {
-                                    Button(store.bookmarkedIDs.contains(card.id) ? "Remover dos salvos" : "Salvar artigo",
-                                        systemImage: store.bookmarkedIDs.contains(card.id) ? "bookmark.fill" : "bookmark") { store.bookmark(card) }
-                                }
+                            FeedItemView(card: card, appearance: appearance,
+                                isBookmarked: store.bookmarkedIDs.contains(card.id),
+                                availableActions: store.availableActions,
+                                onAction: { store.perform($0) })
                         }
                     }
                     .padding(FeedDesignTokens.Spacing.page)
