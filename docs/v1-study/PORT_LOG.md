@@ -339,3 +339,41 @@ container now uses `accessibilityElement(children: .contain)` with no identifier
 **Verification (executed).** `swift build` clean; `swift test` **867 tests, 0 failures**; iOS build
 **BUILD SUCCEEDED**; `-only-testing:…/testT5HeaderChromeAndCardGesturesReachRealFlows` → **TEST SUCCEEDED**;
 the three migrated UI tests → **TEST SUCCEEDED**.
+
+## T6 — 2026-10-09 (filters and context identity): design approved, first step landed
+
+Plan task T6. Codex reviewed the four open design questions and the answers are committed as the
+specification the implementation follows: `docs/superpowers/specs/2026-10-09-reader-filters-and-context-identity.md`.
+
+**Decisions taken (Codex review, 2026-10-09).**
+1. **Honest intermediate delivery**: enforce in the supply what canonical data already answers — language,
+   source membership and keyword exclusions — and make every unsupported criterion (region, taxonomy, content
+   type, and mood *until its rule lands*) **visibly unavailable** rather than accepted and silently ignored. A
+   filter may never apply to drawn cards only. T7's *metadata import/query* support is pulled forward; full T7
+   need not precede T6.
+2. **V1's dismiss-applies sheet wins.** V1 has no Cancel: the sheet hydrates a draft on appear and commits the
+   dirty parts on `onDisappear` (`Views/FilterSheetView.swift:220-297`, `presetIsDirty`/`overlayFiltersAreDirty`
+   separate). The plan's "apply/cancel/reset" row is corrected in place, with the reason and evidence.
+3. Filters live in the **context identity**, so each combination keeps its own checkpoint and A→B→A recovers
+   A's position; canonical persistence must migrate from the reduced `main|source|query` key to the full key
+   (evidence in the spec: `SessionStore.swift:125`, `:133`).
+4. Expiry is a *pending* fact in persisted preferences; a clock check never changes the active plan or the
+   presentation, and an explicit transition resolves it (`AppComposition.swift:358` is where revision
+   compatibility is checked today).
+
+**Landed in this step.** `Sources/FeedMineDomain/ReaderFilter.swift`: `ReaderFilter` (regions, taxonomy nodes,
+languages, content type, mood, exclusions) with canonical, order-independent identity text; `ReaderContentType`
+and `ReaderMood` with V1's raw values, icons and — for mood — V1's exact keyword rule
+(`FeedLoader.MoodFilter.matches`, 286–305), which is what makes mood honestly enforceable without catalog
+metadata; `ReaderContentExclusions` (normalized, never expires; enabled-with-no-rules is a preference and does
+not change identity, so a no-op action cannot force a context transition); `ReaderSearchScope`; `ReaderPresetID`.
+New `ReaderFilterTests` (9): equivalent selections share one identity and one encoded form, the default filter is
+unrestricted and stable, every criterion changes identity, the mood rule reproduces V1, the content-type and mood
+vocabularies match V1, exclusions normalize and carry no expiry, preset identity is payload-free, search scope
+semantics, and a Codable round-trip.
+
+**Verified.** `swift test` **876 tests, 0 failures**.
+
+**Remaining for T6** (fully specified in the spec): the `ContextKey` extension and its persistence migration,
+`ReaderFilterDraft` + the V1 sheet and lens in the UI, supply-side enforcement of the criteria that can be
+answered, the expiry record and the A→B→A/stale-callback tests.
