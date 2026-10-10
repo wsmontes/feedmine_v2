@@ -13,7 +13,7 @@ Written by the session that owns the transfer plan
 | T3 scroll admits without moving content (native UI test green) | done | `12d4b65` |
 | T4 V1 card layouts + visual system (`Sources/FeedMineUI/Cards/**`, `Appearance/`) | done | `bb8e33e` |
 | T5 shell/header/menu/search (`Reader/**`, `Feedback/**`, toolbar removed) | done | `6f2e2e5` |
-| T6 filters and context identity | **specified, not started** — `docs/superpowers/specs/2026-10-09-reader-filters-and-context-identity.md` | — |
+| T6 filters and context identity | **specified + first step landed** (`ReaderFilter` value and its identity tests); the rest is specified — `docs/superpowers/specs/2026-10-09-reader-filters-and-context-identity.md` | `8dc7fe8`, `47d7c19` |
 | T7–T12 | not started | — |
 
 Last verified state at `6f2e2e5`: `swift build` clean, `swift test` **867 tests, 0 failures**, iOS
@@ -40,7 +40,10 @@ passed at `12d4b65`).
 ### Claims
 
 - T5 — **done** by the plan-owner session at 2026-10-09 (commit `6f2e2e5`).
-- **T6 + T7-metadata — open, recommended for the parallel session.** Codex reviewed the design and the whole
+- **T6 + T7-metadata — open, recommended for the parallel session.** Step 1 is already in: `ReaderFilter`
+  (`Sources/FeedMineDomain/ReaderFilter.swift`, V1's criterion vocabulary and the canonical identity text) with
+  `Tests/FeedMineDomainTests/ReaderFilterTests.swift` green. Start from step 2 of the spec (ContextKey +
+  persistence migration, draft/sheet/lens, supply enforcement, expiry record). Codex reviewed the design and the whole
   specification is committed: `docs/superpowers/specs/2026-10-09-reader-filters-and-context-identity.md`. Execute
   it by that document: enforce language/source/exclusions in the supply now, make unsupported criteria visibly
   unavailable, bring T7's metadata import/query support forward, migrate the checkpoint/edition identity to the
