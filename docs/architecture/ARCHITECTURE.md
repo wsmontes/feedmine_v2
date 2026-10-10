@@ -4,6 +4,14 @@
 
 FeedMine é local-first/offline-first, sem servidor próprio de conteúdo. Sistemas externos repõem supply em runtime. Quando o usuário move o dedo, ele navega conteúdo local já publicado; ele não pilota a internet.
 
+## Global adaptive operating policy
+
+O FeedMine explora progressivamente **todo o catálogo elegível** e aproveita folga real de rede, armazenamento, memória e capacidade do dispositivo. Limites de uma operação protegem recursos; não encerram a exploração nem impõem quantidade permanente de conteúdo local. O feed visível e seu runway têm prioridade sobre trabalho especulativo.
+
+**Sem números mágicos em decisões de volume, velocidade ou retenção:** descoberta, Acquisition, Editorial, Media, Runtime, Persistence e apresentação usam fatos observados do contexto, do sistema operacional e do próprio pipeline para priorizar e ajustar trabalho. Reavaliar em oportunidades legítimas, sem sondagem excessiva, sem prometer background ilimitado e sem criar um segundo mecanismo de coordenação. Limites numéricos são permitidos quando necessários para segurança, recursos físicos, protocolos ou testes de aceitação; não servem como estratégia para restringir o universo editorial. Idiomas explicitamente escolhidos são elegibilidade rígida, não peso.
+
+Autoridade normativa: [norte de produto](../product/PRODUCT_NORTH_STAR.md) e [INV-16](PRODUCT_INVARIANTS.md). As descrições de fases históricas abaixo não revogam esta política de produto.
+
 ## Canonical pipeline
 
 ```text
