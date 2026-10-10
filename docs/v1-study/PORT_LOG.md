@@ -1030,3 +1030,54 @@ finds V1's sections, writes two preferences and reads them back after closing an
 reader's rules and the clock, and never the feed), import produces usable sources with their addresses kept,
 export produces usable files in V1's formats and scopes, and none of it is a monolithic service: each piece is a
 value, a coordinator or a view with its own tests.
+
+## T11 — 2026-10-10 (onboarding, curadoria e preparação): first part, o que o V1 é de fato
+
+**O reconhecimento corrigiu o próprio plano.** O texto do T11 pede "welcome→escolhas→duelos→salvar", mas o
+checkout do V1 tem um onboarding de **dois estágios** (Welcome → Composer) e o código dos duelos
+(`StoryDuelScene`, `CuratedOnboardingSession`, `OnboardingSeed`, `applyOnboardingTopics`,
+`curatedOnboardingCandidates`) está **sem callers de produção**. Portar os duelos seria portar código morto — e a
+paridade que o plano exige ("progressão/valores iguais ao V1 para as mesmas escolhas") é a do fluxo vivo. Decisão
+registrada: **Welcome → Composer**, sem duelos.
+
+**A receita é um valor de V2, com as chaves do V1.** `FeedRecipeDefinition` (Domain) traz idiomas (subtag
+primária, minúscula, ordenada), `discoveryLevel` 0…1 com `neutral` em 0.55, preferências de tópico e de
+editorial, os tipos de mídia, `adjustFromOpens` e `modelVersion` — e o vocabulário de chaves que o V1 usa
+(`topic:…`, `region:…`, `media:…`, `editorial:…`, `nature:…`), que é o que faz uma receita guardada continuar
+significando o mesmo. Duas assimetrias do V1 estão preservadas e testadas: uma resposta pesa **±1,5** e "normal"
+pesa **zero**; e um tipo de mídia que o leitor **removeu** pesa **−3**, enquanto os tipos que ele manteve não
+pesam nada. `CuratedFeedSummary` é o "capô" como valor: as respostas que o leitor realmente deu, mais fortes
+primeiro.
+
+**A preparação já estava entregue — e é honesta.** `FeedPreparationView` (PD-3) mostra fontes contatadas, fontes
+que trouxeram novidades, **manchetes realmente admitidas** e cards preparados, com o movimento vindo desses fatos
+e desligado sob Reduce Motion; `PreparationProgressTests` cobre os fatos. O V1 faz o mesmo (contadores e nomes de
+fontes reais, sem manchete fabricada). E a auditoria das views portadas confirma a regra da T11 por construção:
+**nenhum** `URLSession`, `Data(contentsOf:)`, `AsyncImage` ou `ImageLoader` em `Sources/FeedMineUI` — o único
+"placeholder" é o desenho de áudio do V1, sem headline.
+
+**Decisões que o reconhecimento obrigou, registradas antes de escrever código:**
+- **Um artefato, não dois.** O V1 persiste `definition_json` (perfil efetivo, aprendido) **e** `recipe_json`
+  (explícito) e os mescla no ranqueamento. O V2 não aprende de duelos (ver acima) nem de aberturas ainda, então
+  o perfil efetivo *é* a receita: um artefato por preset curado. `adjustFromOpens` fica como a promessa que ele é,
+  não como comportamento fingido.
+- **`editorial:*` precisa de dois campos do catálogo.** O V1 deriva as chaves editoriais de uma heurística de
+  texto/domínio (`editorialAssessment(for:)`) sobre título, descrição, tags e host da fonte. O registro do
+  catálogo do V2 hoje expõe chave, título, `request_url`, `site_url`, idioma, tipo de mídia, qualidade, default e
+  nós — **não** descrição, tags nem host. As colunas existem na tabela; a leitura é que não as traz. Sem elas o
+  controle "Source balance" do Composer seria um peso que nunca casa com nada — um controle morto. Acrescentar os
+  dois campos ao registro é o primeiro passo da próxima fatia.
+- **Codificação de mídia**: mantida a do resolvedor do V1 (`media:text`/`media:audio`/`media:video`, exclusão em
+  −3, sem peso na inclusão).
+- **Alvo de primeira tela**: o V1 não inventa um alvo no lane do runtime e o V2 também não; a preparação do V2
+  afirma apenas o que mediu.
+
+**Verified.** `swift test` **1000 tests, 0 failures**, exit 0; a nova suíte: receita **8/8** (normalização de
+idiomas, clamp de discovery, conjunto vazio de mídia como "todos", as duas assimetrias de peso, os critérios de
+filtro, o resumo ordenado, envelope parcial e round trip).
+
+**Remaining for T11:** os dois campos do catálogo na leitura; `FeedRecipeResolution` (Editorial, puro): a
+fórmula do V1 — `exp(Σ peso·(0.25+confiança·0.75) · 0.19 · (1 − discovery·0.42)) · qualidade`, clampada em
+0.42…3 — resolvida para os multiplicadores por fonte e ligada ao `ResolvedSelectionPolicy` da sessão; o
+`CuratedFeedCoordinator` (`save`/`inspect`/`update`) com a receita persistida ao lado do preset; e as duas cenas
+(Welcome e Composer) com o capô, portadas com os rótulos e badges do V1.
