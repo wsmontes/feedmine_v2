@@ -13,6 +13,9 @@ public struct ReaderPreferencesStore: Sendable {
         /// JSON and a legacy payload (a bare `FeedContextRequest`) decodes into the key's default surface, so
         /// no migration is needed and a pre-T6 row keeps working.
         public let activeContextKey: ContextKey
+        /// T10: the reader's preferences as one value. The four-hour filter rule lives in its own column (T6
+        /// wrote it first) and is composed into this value on read, so the fact has one home.
+        public let settings: ReaderSettings
         /// V1's `preferredBookmarkListID`: where a new bookmark lands when the reader does not choose a box.
         /// Nil means the default box, which is what the migration-created library has.
         public let preferredBookmarkListID: String?
@@ -31,7 +34,7 @@ public struct ReaderPreferencesStore: Sendable {
         return try database.write { db in
             if let current = try Self.read(db) { return current }
             let initial = Record(sourceKeys: sourceKeys, selectionVersion: 2,
-                activeContextKey: ContextKey(request: .main), preferredBookmarkListID: nil,
+                activeContextKey: ContextKey(request: .main), settings: .standard, preferredBookmarkListID: nil,
                 // V1 shipped auto-expiry on; a fresh database says so explicitly rather than relying on the
                 // column default.
                 filterExpiry: ReaderFilterExpiry(isEnabled: true, startsAt: nil))
@@ -48,8 +51,23 @@ public struct ReaderPreferencesStore: Sendable {
             if Set(keys) == Set(current.sourceKeys) { return current }
             guard current.selectionVersion < UInt64(Int64.max) else { throw ReaderPreferencesError.versionOverflow }
             let updated = Record(sourceKeys: keys, selectionVersion: current.selectionVersion + 1,
-                activeContextKey: current.activeContextKey,
+                activeContextKey: current.activeContextKey, settings: current.settings,
                 preferredBookmarkListID: current.preferredBookmarkListID, filterExpiry: current.filterExpiry)
+            try Self.save(updated, in: db)
+            return updated
+        }
+    }
+
+    /// T10: writes the reader's preferences. The four-hour filter rule keeps its own column — T6 wrote it first,
+    /// and the read composes it back into the value — so this write keeps both in step.
+    public func setSettings(_ settings: ReaderSettings) throws -> Record {
+        try database.write { db in
+            guard let current = try Self.read(db) else { throw ReaderPreferencesError.missingPreferences }
+            let updated = Record(sourceKeys: current.sourceKeys, selectionVersion: current.selectionVersion,
+                activeContextKey: current.activeContextKey, settings: settings,
+                preferredBookmarkListID: current.preferredBookmarkListID,
+                filterExpiry: ReaderFilterExpiry(isEnabled: settings.filterAutoExpires,
+                    startsAt: current.filterExpiry.startsAt))
             try Self.save(updated, in: db)
             return updated
         }
@@ -67,8 +85,8 @@ public struct ReaderPreferencesStore: Sendable {
                 resolved = id
             } else { resolved = nil }
             let updated = Record(sourceKeys: current.sourceKeys, selectionVersion: current.selectionVersion,
-                activeContextKey: current.activeContextKey, preferredBookmarkListID: resolved,
-                filterExpiry: current.filterExpiry)
+                activeContextKey: current.activeContextKey, settings: current.settings,
+                preferredBookmarkListID: resolved, filterExpiry: current.filterExpiry)
             try Self.save(updated, in: db)
             return updated
         }
@@ -79,7 +97,7 @@ public struct ReaderPreferencesStore: Sendable {
         try database.write { db in
             guard let current = try Self.read(db) else { throw ReaderPreferencesError.missingPreferences }
             let updated = Record(sourceKeys: current.sourceKeys, selectionVersion: current.selectionVersion,
-                activeContextKey: current.activeContextKey,
+                activeContextKey: current.activeContextKey, settings: current.settings,
                 preferredBookmarkListID: current.preferredBookmarkListID, filterExpiry: expiry)
             try Self.save(updated, in: db)
             return updated
@@ -91,8 +109,8 @@ public struct ReaderPreferencesStore: Sendable {
         try database.write { db in
             guard let current = try Self.read(db) else { throw ReaderPreferencesError.missingPreferences }
             let updated = Record(sourceKeys: current.sourceKeys, selectionVersion: current.selectionVersion,
-                activeContextKey: key, preferredBookmarkListID: current.preferredBookmarkListID,
-                filterExpiry: current.filterExpiry)
+                activeContextKey: key, settings: current.settings,
+                preferredBookmarkListID: current.preferredBookmarkListID, filterExpiry: current.filterExpiry)
             try Self.save(updated, in: db)
             return updated
         }
@@ -124,21 +142,30 @@ public struct ReaderPreferencesStore: Sendable {
         try validate(keys)
         let autoExpire: Int64 = row["filter_auto_expire"] as Int64? ?? 1
         let setAt: Double? = row["filter_set_at"]
+        // The stored envelope, when there is one; V1's defaults otherwise. The filter rule is composed from its
+        // own column so the two can never disagree.
+        var settings = (row["settings_json"] as Data?)
+            .flatMap { try? JSONDecoder().decode(ReaderSettings.self, from: $0) } ?? .standard
+        settings.filterAutoExpires = autoExpire != 0
         return Record(sourceKeys: keys, selectionVersion: UInt64(version), activeContextKey: context,
-            preferredBookmarkListID: row["preferred_bookmark_list"] as String?,
+            settings: settings, preferredBookmarkListID: row["preferred_bookmark_list"] as String?,
             filterExpiry: ReaderFilterExpiry(isEnabled: autoExpire != 0,
                 startsAt: setAt.map(Date.init(timeIntervalSince1970:))))
     }
     private static func save(_ value: Record, in db: Database) throws {
         try db.execute(sql: """
             INSERT INTO reader_preferences (singleton_id, source_keys, selection_version, active_context,
-                preferred_bookmark_list, filter_auto_expire, filter_set_at) VALUES (1, ?, ?, ?, ?, ?, ?)
+                settings_json, preferred_bookmark_list, filter_auto_expire, filter_set_at)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(singleton_id) DO UPDATE SET source_keys = excluded.source_keys,
                 selection_version = excluded.selection_version, active_context = excluded.active_context,
+                settings_json = excluded.settings_json,
                 preferred_bookmark_list = excluded.preferred_bookmark_list,
                 filter_auto_expire = excluded.filter_auto_expire, filter_set_at = excluded.filter_set_at
             """, arguments: [try JSONEncoder().encode(value.sourceKeys), Int64(value.selectionVersion),
-                try JSONEncoder().encode(value.activeContextKey), value.preferredBookmarkListID,
+                try JSONEncoder().encode(value.activeContextKey),
+                try JSONEncoder().encode(value.settings),
+                value.preferredBookmarkListID,
                 value.filterExpiry.isEnabled ? 1 : 0, value.filterExpiry.startsAt?.timeIntervalSince1970])
     }
 }

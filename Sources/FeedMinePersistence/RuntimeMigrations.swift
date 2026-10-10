@@ -483,6 +483,24 @@ public enum RuntimeMigrations {
                     ON media_candidates(origin_revision_id) WHERE role = 'playback';
                 """)
         }
+        migrator.registerMigration("reader-settings-v1") { db in
+            // T10: the reader's preferences as one versioned value. The column is nullable on purpose: a row
+            // written before this migration reads as V1's own defaults, and the flag T6 already stores (the
+            // four-hour filter rule) keeps its own column as the single truth for that fact.
+            try db.execute(sql: "ALTER TABLE reader_preferences ADD COLUMN settings_json BLOB")
+        }
+        migrator.registerMigration("reader-imported-sources-v1") { db in
+            // T10: an imported feed is not in the shipped catalog, so its address lives here — the identity it
+            // was imported under (what the reader's selection stores) and the address to fetch.
+            try db.execute(sql: """
+                CREATE TABLE reader_imported_sources (
+                    key TEXT PRIMARY KEY NOT NULL,
+                    request_url TEXT COLLATE BINARY NOT NULL,
+                    title TEXT COLLATE BINARY NOT NULL,
+                    imported_at REAL NOT NULL
+                );
+                """)
+        }
         return migrator
     }
 

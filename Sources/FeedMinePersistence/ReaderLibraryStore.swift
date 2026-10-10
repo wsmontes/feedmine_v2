@@ -191,6 +191,51 @@ public struct ReaderLibraryStore: Sendable {
         try Int.fetchOne(db, sql: "SELECT COALESCE(MAX(position) + 1, 0) FROM reader_bookmark_lists") ?? 0
     }
 
+    // MARK: - Imported sources (T10)
+
+    /// Writes an imported file's feeds and selects them, in **one** transaction. The feed's identity is the
+    /// primary key, so running the same import twice adds nothing; the selection is versioned exactly as any
+    /// other selection change is, so a session that fences on the version sees it.
+    public func commitImport(_ entries: [ReaderImportEntry], rejected: Int, at date: Date) throws -> ReaderImportResult {
+        let time = try PersistenceValueCoding.date(date, field: "imported_at")
+        return try database.write { db in
+            var inserted = 0
+            for entry in entries {
+                try db.execute(sql: """
+                    INSERT INTO reader_imported_sources (key, request_url, title, imported_at) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(key) DO NOTHING
+                    """, arguments: [entry.id, entry.requestURL, entry.title, time])
+                inserted += db.changesCount
+            }
+            guard let row = try Row.fetchOne(db, sql: "SELECT source_keys, selection_version FROM reader_preferences WHERE singleton_id = 1") else {
+                throw ReaderLibraryError.missingLibraryItem
+            }
+            let current = Set(try JSONDecoder().decode([String].self, from: row["source_keys"] as Data))
+            let selected = current.union(entries.map(\.id))
+            let alreadySelected = entries.filter { current.contains($0.id) }.count
+            if selected != current {
+                let version: Int64 = row["selection_version"]
+                guard version < Int64.max else { throw ReaderLibraryError.missingLibraryItem }
+                try db.execute(sql: "UPDATE reader_preferences SET source_keys = ?, selection_version = ? WHERE singleton_id = 1",
+                    arguments: [try JSONEncoder().encode(selected.sorted()), version + 1])
+            }
+            return ReaderImportResult(insertedSources: inserted, alreadySelected: alreadySelected, rejected: rejected)
+        }
+    }
+
+    /// Every feed this app imported from a file. The shipped catalog is not consulted: an imported feed is only
+    /// here.
+    public func importedSources() throws -> [ReaderImportEntry] {
+        try database.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT key, request_url, title FROM reader_imported_sources ORDER BY imported_at, key
+                """).map { row in
+                ReaderImportEntry(id: row["key"], title: row["title"], requestURL: row["request_url"],
+                    categoryPath: [])
+            }
+        }
+    }
+
     // MARK: - Source collections
 
     public func collections() throws -> [ReaderCollection] {

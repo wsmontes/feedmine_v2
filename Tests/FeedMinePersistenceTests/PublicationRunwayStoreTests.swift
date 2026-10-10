@@ -222,7 +222,8 @@ final class PublicationRunwayStoreTests: XCTestCase {
             let schema = try String.fetchAll(db, sql: "SELECT name || ':' || COALESCE(sql, '') FROM sqlite_master WHERE name != 'published_cards_origin_revision_segment' ORDER BY name")
             XCTAssertTrue(Self.normalizeRebuiltDefinitions(oldSchema).isSubset(of: try Self.schemaBeforeAvailability(schema, in: db))) // Only the explicitly checked additive columns change an old definition.
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('published_cards_origin_revision_segment') ORDER BY seqno"), ["origin_revision_id","segment_id"])
-            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1","reader-library-v1","reader-preferred-box-v1","media-playback-candidate-v1"])
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1","reader-library-v1","reader-preferred-box-v1","media-playback-candidate-v1",
+                "reader-settings-v1","reader-imported-sources-v1"])
         }
     }
 
@@ -363,7 +364,10 @@ extension PublicationRunwayStoreTests {
                 "reader_bookmark_memberships_by_card",
                 "reader_collections", "sqlite_autoindex_reader_collections_1",
                 "reader_collection_memberships", "sqlite_autoindex_reader_collection_memberships_1",
-                "reader_presets", "sqlite_autoindex_reader_presets_1"])
+                "reader_presets", "sqlite_autoindex_reader_presets_1",
+                // T10: the reader's preferences gained the settings envelope (a column, not a table) and an
+                // imported feed's address found a home of its own.
+                "reader_imported_sources", "sqlite_autoindex_reader_imported_sources_1"])
             let contextual = Set(priorDefinitions.filter { addedNames.contains(String($0.split(separator: ":", maxSplits: 1)[0])) })
             XCTAssertEqual(contextual.count, addedNames.count)
             // T9's rebuild of media_candidates is the other altered definition (plus the one playback index it

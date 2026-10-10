@@ -917,3 +917,52 @@ passed`, exit 0.
 **Remaining for T9:** nothing of its acceptance — the reader, the media and the share flows are ported and
 proven. The DEBUG-only catalog explorer stays ordered into T12, and the two recorded differences above (V1's
 Safari link/loading bar; a box as a reading surface needs T9's presentation source, still open from T8).
+
+## T10 — 2026-10-10 (preferences, addresses, import and export): first part, the values and the tools
+
+**The reader's preferences as one value.** `ReaderSettings` (Domain) is a versioned envelope of every preference
+V1 kept in `UserDefaults` that this build honours: the appearance (`circadianPaletteOn`, `paletteFamily`,
+`circadianTypographyOn`, `fontStyle`, `fontSize`, `nightMode`) and the behaviour (`prefetchImages`,
+`contentFiltersEnabled`, `filterAutoExpire`), plus `hasSeenOnboarding` for T11 — each with V1's own default. The
+migration (`ReaderSettingsMigration.fromLegacy`) maps V1's keys by name and **carries every key it does not
+understand verbatim** (`carriedLegacyKeys`), including V1's own keys that belong to another delivery, which are
+named in `ReaderSettingsLegacyKey.notPorted` so the migration is honest about what it leaves alone.
+Storage is one nullable column (`reader-settings-v1`): a row written before it reads as V1's defaults, and the
+four-hour filter rule keeps the column T6 gave it — the read composes it back into the value, so that fact has
+one home and the two can never disagree.
+
+**A feed's two addresses.** `FeedAddress` copies V1's `OPMLParser.normalizeURL` / `requestURL` rules (which are
+also what built the shipped catalog's keys): entities repaired, host validated before the port and lowercased
+with `www.` stripped, identity always `https`, default ports dropped, **every** trailing slash removed, and the
+query **filtered** — `utm_*`, `fbclid`, `token`, `signature`, `x-amz-*` and the rest of V1's list name a visit,
+not a feed. The request address keeps the original scheme, `www.`, ports, slashes and the whole query, because
+that is what makes a signed feed fetchable. `FeedAddressTests` states each of those, including that two
+spellings of one feed collapse to one identity.
+
+**OPML as a value.** `OPMLDocument` parses a file into a preview (V1's rules: an outline with `xmlUrl` is a feed,
+one without is a category that may nest, the first occurrence wins a duplicate and the address it carried is kept
+verbatim) and writes one back. It reports what it will not import — an outline with no address, a category that
+leads nowhere — instead of shrinking the file in silence, and a file that is not XML is an error, not an empty
+preview. `OPMLDocumentTests` covers nesting, repeats, unicode titles and addresses, malformed input and a full
+round trip.
+
+**Import is two steps, and its commit is atomic.** `ReaderImportExportCoordinator.previewImport` writes nothing
+(proven: the selection and the imported-sources table are untouched), and `commitImport` writes the feeds, their
+addresses and the reader's selection in **one transaction**, keyed by identity — so the same file twice adds
+nothing and the selection only gains a version when it actually changed. An imported feed is not in the shipped
+catalog, so its address lives in `reader_imported_sources` (migration `reader-imported-sources-v1`), which is
+where a session can find what to fetch.
+
+**Export writes a local file.** V1's scopes reduced to what V2 actually has — the reader's selection, a
+collection, a saved box (the sources its cards came from) — and V1's formats: OPML, JSON, CSV, Markdown, HTML,
+plain text, share link and social card, with V1's own labels and symbols. An empty scope is reported rather than
+written as an empty file.
+
+**Verified.** `swift test` **987 tests, 0 failures**, exit 0 (the four earlier failures were the schema
+catalogues, which now list the two migrations); the new suites: settings migration **6/6**, feed address **8/8**,
+OPML document **5/5**, import/export **6/6**.
+
+**Remaining for T10:** the settings *surface* (V1's `SettingsSheetView` sections: appearance, idioma,
+circadian, desempenho, leitura, armazenamento, sobre), the app deriving `ReaderAppearance` from the settings and
+the clock (today it passes the default and the hour never moves the palette), V1's String Catalog, and the UI
+wiring for import (file importer → preview → commit) and export (scope × format → share/save).
