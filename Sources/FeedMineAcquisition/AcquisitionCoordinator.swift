@@ -86,6 +86,30 @@ public actor AcquisitionCoordinator {
         })
     }
 
+    /// What the runtime has observed about a target's own reachability this launch: how many consecutive
+    /// attempts failed and, when it is cooling, when it may be tried again. It is a statement of measured work,
+    /// never a prediction (T7's health column reads exactly this).
+    public struct TargetHealth: Hashable, Sendable {
+        public let consecutiveFailures: Int
+        /// The monotonic deadline of the current cooling window, nil when the target is not cooling.
+        public let coolingUntil: Double?
+        public init(consecutiveFailures: Int, coolingUntil: Double?) {
+            self.consecutiveFailures = consecutiveFailures
+            self.coolingUntil = coolingUntil
+        }
+    }
+
+    /// The health the coordinator can state right now for every target it has attempted. Targets never tried
+    /// are absent — not reported as healthy.
+    public func healthSnapshot() -> [AcquisitionTargetID: TargetHealth] {
+        let now = monotonicSeconds()
+        return failures.mapValues { failure in
+            let deadline = backoff.map { failure.at + $0.delay(afterConsecutiveFailures: failure.consecutive) }
+            let cooling = deadline.map { $0 > now } ?? false
+            return TargetHealth(consecutiveFailures: failure.consecutive, coolingUntil: cooling ? deadline : nil)
+        }
+    }
+
     /// Review F08: the earliest monotonic time at which a cooling target becomes eligible again.
     public func nextCoolingExpiry() -> Double? {
         guard let backoff else { return nil }

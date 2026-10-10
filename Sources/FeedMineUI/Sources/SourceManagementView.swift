@@ -129,6 +129,16 @@ public struct SourceManagementView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("sources-enabled-count")
             }
+            if !store.health.isEmpty {
+                // V1's health summary ("N/M sources responding"), stated from what the runtime observed.
+                HStack {
+                    Text(verbatim: String(localized: "Fontes com falha"))
+                    Spacer()
+                    Text(verbatim: "\(store.failingSourceCount)/\(store.health.count)")
+                        .foregroundStyle(store.failingSourceCount > 0 ? .red : .secondary)
+                        .accessibilityIdentifier("sources-failing-count")
+                }
+            }
         } footer: {
             Text(verbatim: Self.selectionFooter)
                 .font(.caption)

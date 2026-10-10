@@ -268,7 +268,24 @@ final class AppComposition {
         let catalogURL = Bundle.main.url(forResource: "catalog", withExtension: "sqlite")
         let database = try? RuntimeDatabase(location: RuntimeDatabaseLocation(directory: directory))
         return SourceManagementStore(backend: SourceCatalogBackend(
-            coordinator: SourceManagementCoordinator(catalogURL: catalogURL, database: database)))
+            coordinator: SourceManagementCoordinator(catalogURL: catalogURL, database: database),
+            healthProvider: { await self.sourceHealth() }))
+    }
+
+    /// T7: what the runtime observed about each source this launch, keyed by the catalog key the surface
+    /// knows. A source it never attempted is absent from the map, so no row claims a state nobody measured.
+    func sourceHealth() async -> [String: CatalogSourceHealth] {
+        guard let association else { return [:] }
+        let observed = await association.coordinator.healthSnapshot()
+        guard !observed.isEmpty else { return [:] }
+        var health: [String: CatalogSourceHealth] = [:]
+        for feed in feeds {
+            guard let target = observed[feed.targetID] else { continue }
+            health[feed.principal] = CatalogSourceHealth(state: target.consecutiveFailures > 0
+                ? .failing(consecutive: target.consecutiveFailures)
+                : .responding)
+        }
+        return health
     }
 
     /// T7: the source surface writes the selection through the coordinator, so the app re-reads the persisted

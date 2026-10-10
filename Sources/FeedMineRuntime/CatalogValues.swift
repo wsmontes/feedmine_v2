@@ -72,6 +72,27 @@ public struct CatalogSourceCursor: Hashable, Sendable {
 }
 
 /// One source the catalog offers, as a row in source management shows it.
+/// What the runtime observed about one source's own reachability this launch. V1 stated the same column per
+/// source (`loader.healthFor`); V2 states the acquisition coordinator's own measured record instead of a
+/// second probe of its own.
+public struct CatalogSourceHealth: Hashable, Sendable {
+    public enum State: Hashable, Sendable {
+        /// The last attempt settled without an operational failure.
+        case responding
+        /// Consecutive failures, and the source is being retried after its backoff window (or is about to be).
+        case failing(consecutive: Int)
+    }
+
+    public let state: State
+
+    public init(state: State) { self.state = state }
+
+    public var failures: Int {
+        if case .failing(let consecutive) = state { return consecutive }
+        return 0
+    }
+}
+
 public struct CatalogSourceSummary: Hashable, Sendable, Identifiable {
     public let id: String
     public let title: String

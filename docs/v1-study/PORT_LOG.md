@@ -655,6 +655,26 @@ surface; V2 refused at `ReaderPreferencesStore.validate`. Both moved together:
   → *Fontes* (shell, enabled count) → *Todos os países* → a country's toggle → the sheet closing → **the feed
   back**.
 
+**Ninth slice — the health column** (matrix row 200's health check).
+
+- `AcquisitionCoordinator.healthSnapshot()` states what the runtime measured per target: the consecutive failure
+  count and, while it is cooling, the monotonic deadline of that window. A target never attempted is **absent**,
+  never reported healthy — that is the whole reason the read returns a dictionary instead of a default state.
+  Tested in `testHealthSnapshotStatesFailuresAndCoolingDeadlines` (absence, first failure and its deadline, the
+  failure surviving its own window, the doubling on the second).
+- The value crosses the boundary as `CatalogSourceHealth` (Runtime), the store carries it per catalog key, and
+  V1's own badge is drawn beside the source's title (`N falhas`, in red) — only for sources the runtime
+  attempted. The shell states V1's summary ("N/M sources responding") as the failing count over what was
+  observed.
+- **Two deliberate differences from V1, recorded.** (1) V1 probed every URL with its own `URLSession` from the
+  view and drew a staleness badge from its registry's observation age. V2 reads the acquisition coordinator's own
+  record — a source is probed by acquisition, so a probe button would be a control that changes nothing, and the
+  health column states only what was measured. "Test All Sources" is therefore **not ported**; the reader's
+  equivalent is the refresh the feed already performs. (2) V1's staleness badge has no V2 counterpart in this
+  slice: the per-target last-observation read does not exist yet, and a column that never fires is worse than
+  none.
+- Evidence: `swift test` **931 tests, 0 failures**; iOS build **SUCCEEDED**.
+
 Fourth slice: the surface the T7 views bind to. The catalog **values moved to Runtime** (`CatalogValues.swift`) —
 UI imports Runtime and must never import Composition, so values cannot live next to the coordinator that produces
 them. New `SourceManagementStore` (UI) is observable values plus intents over a `SourceManagementBackend`

@@ -26,9 +26,13 @@ public struct NodeSourceRow: Hashable, Sendable, Identifiable {
     public let title: String
     public let detail: String
     public let isSelected: Bool
+    /// Nil when the runtime has not attempted this source yet: the row states nothing it did not observe.
+    public let health: CatalogSourceHealth?
 
-    public init(id: String, title: String, detail: String, isSelected: Bool) {
+    public init(id: String, title: String, detail: String, isSelected: Bool,
+        health: CatalogSourceHealth? = nil) {
         self.id = id; self.title = title; self.detail = detail; self.isSelected = isSelected
+        self.health = health
     }
 }
 
@@ -62,7 +66,8 @@ public struct NodeSourcesView: View {
     /// The sections the node's own sources are drawn in: audio, then video, then text, then anything the
     /// catalog states that this delivery does not know — a fixed order, so the same list always draws the
     /// same way. Empty sections are not drawn, so a node with only feeds never states a heading it cannot fill.
-    public static func sections(sources: [CatalogSourceSummary], selection: Set<String>) -> [NodeSourceSection] {
+    public static func sections(sources: [CatalogSourceSummary], selection: Set<String>,
+        health: [String: CatalogSourceHealth] = [:]) -> [NodeSourceSection] {
         var grouped: [String: [CatalogSourceSummary]] = [:]
         for source in sources { grouped[source.mediaKind, default: []].append(source) }
         let rank: (String) -> Int = { kind in
@@ -83,7 +88,7 @@ public struct NodeSourcesView: View {
                 icon: Self.icon(kind),
                 rows: (grouped[kind] ?? []).map { source in
                     NodeSourceRow(id: source.id, title: source.title, detail: source.id,
-                        isSelected: selection.contains(source.id))
+                        isSelected: selection.contains(source.id), health: health[source.id])
                 })
         }
     }
@@ -210,12 +215,25 @@ public struct NodeSourceRowView: View {
 
     private var title: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(verbatim: row.title).font(.subheadline)
+            HStack(spacing: 4) {
+                Text(verbatim: row.title).font(.subheadline)
+                // V1's own badge: the consecutive failure count beside the source's own title.
+                if let failures = row.health?.failures, failures > 0 {
+                    Text(verbatim: Self.failureText(failures))
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
+            }
             Text(verbatim: row.detail)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
+    }
+
+    /// V1's words for the same fact ("N fails").
+    static func failureText(_ count: Int) -> String {
+        String(localized: "\(count) falhas")
     }
 }
 

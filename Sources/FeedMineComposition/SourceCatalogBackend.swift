@@ -17,10 +17,15 @@ public struct SourceCatalogBackend: SourceManagementBackend {
     /// One page per level is enough for a reader's list; the coordinator's own cursor stays available for a
     /// paging surface that needs it (this one states what fits on screen).
     private let limit: Int
+    /// What the runtime observed per source. The catalog does not know it; the acquisition coordinator does,
+    /// so the app supplies it. The default states nothing — never "healthy".
+    private let healthProvider: @Sendable () async -> [String: CatalogSourceHealth]
 
-    public init(coordinator: SourceManagementCoordinator, limit: Int = 500) {
+    public init(coordinator: SourceManagementCoordinator, limit: Int = 500,
+        healthProvider: @escaping @Sendable () async -> [String: CatalogSourceHealth] = { [:] }) {
         self.coordinator = coordinator
         self.limit = limit
+        self.healthProvider = healthProvider
     }
 
     public func languages() async throws -> [CatalogLanguageSummary] { try coordinator.languages() }
@@ -52,6 +57,8 @@ public struct SourceCatalogBackend: SourceManagementBackend {
     public func childKeys(of node: CatalogNodeSummary) async throws -> [Int64: Set<String>] {
         try coordinator.keysByParent(nodeID: node.id)
     }
+
+    public func health() async throws -> [String: CatalogSourceHealth] { await healthProvider() }
 
     public func selection() async throws -> [String] { try coordinator.selection() }
 

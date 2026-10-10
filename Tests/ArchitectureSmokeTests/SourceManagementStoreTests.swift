@@ -47,6 +47,8 @@ final class SourceManagementStoreTests: XCTestCase {
         func childKeys(of node: CatalogNodeSummary) async throws -> [Int64: Set<String>] {
             try guardFailure(); return childKeysByNode[node.id] ?? [:]
         }
+        var healthByKey: [String: CatalogSourceHealth] = [:]
+        func health() async throws -> [String: CatalogSourceHealth] { try guardFailure(); return healthByKey }
         func selection() async throws -> [String] { try guardFailure(); return selection }
         func setSelection(_ keys: [String]) async throws {
             try guardFailure(); if failSetSelection { throw SourceManagementErrorDouble.invalid }; selection = keys
@@ -194,6 +196,27 @@ final class SourceManagementStoreTests: XCTestCase {
         XCTAssertFalse(store.isNodeEnabled(saoPaulo), "one of its own sources is not selected")
         // A node the catalog placed nothing under is never reported as enabled.
         XCTAssertFalse(store.isNodeEnabled(node(99, "Empty")))
+    }
+
+    /// T7's health column: only what the runtime observed reaches a row, and the summary counts exactly those.
+    func testHealthReachesTheRowsAndTheSummary() async {
+        let backend = Backend()
+        let brazil = node(10, "Brazil", kind: .country)
+        backend.countries = [brazil]
+        backend.sourcesByNode = [10: [
+            .init(id: "a", title: "Alpha", language: nil, mediaKind: "text", defaultEnabled: true),
+            .init(id: "b", title: "Beta", language: nil, mediaKind: "text", defaultEnabled: true),
+        ]]
+        backend.healthByKey = ["a": .init(state: .failing(consecutive: 3))]
+        let store = SourceManagementStore(backend: backend)
+        await store.load()
+        await store.open(brazil)
+        XCTAssertEqual(store.health.count, 1, "a source never attempted carries no state")
+        XCTAssertEqual(store.failingSourceCount, 1)
+        let rows = try? XCTUnwrap(store.nodeSections.first?.rows)
+        XCTAssertEqual(rows?.map(\.id), ["a", "b"])
+        XCTAssertEqual(rows?.first?.health?.failures, 3)
+        XCTAssertNil(rows?.last?.health, "the second source was never attempted")
     }
 
     func testSearchTrimsAndClears() async {

@@ -21,6 +21,8 @@ public protocol SourceManagementBackend: Sendable {
     func countryKeys() async throws -> [Int64: Set<String>]
     /// Each child of a node with its own keys: one call per level, never one per row.
     func childKeys(of node: CatalogNodeSummary) async throws -> [Int64: Set<String>]
+    /// What the runtime observed per source (by catalog key). Absent means never attempted — never "healthy".
+    func health() async throws -> [String: CatalogSourceHealth]
     func selection() async throws -> [String]
     func setSelection(_ keys: [String]) async throws
     func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws
@@ -44,6 +46,8 @@ public final class SourceManagementStore {
     public private(set) var countryKeys: [Int64: Set<String>] = [:]
     /// The keys of the open node's children, read with the level so a sub-node row can state its own state.
     public private(set) var nodeChildKeys: [Int64: Set<String>] = [:]
+    /// The runtime's own health record per catalog key, as the last read saw it.
+    public private(set) var health: [String: CatalogSourceHealth] = [:]
     public private(set) var query = ""
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
@@ -64,6 +68,7 @@ public final class SourceManagementStore {
             countries = try await backend.countries()
             countryKeys = try await backend.countryKeys()
             selection = Set(try await backend.selection())
+            health = try await backend.health()
             hasCatalog = true
             errorMessage = nil
         } catch {
@@ -96,6 +101,7 @@ public final class SourceManagementStore {
             breadcrumb = try await backend.breadcrumb(of: node)
             sources = try await backend.sources(in: node)
             nodeChildKeys = children.isEmpty ? [:] : try await backend.childKeys(of: node)
+            health = try await backend.health()
             errorMessage = nil
         } catch { errorMessage = String(localized: "Não foi possível abrir esta parte do catálogo.") }
     }
@@ -129,8 +135,12 @@ public final class SourceManagementStore {
     /// The sections the open node's own sources are drawn in: V1's grouped list, by the catalog's own
     /// media kind (it has no category column), with the layout as a value.
     public var nodeSections: [NodeSourceSection] {
-        NodeSourcesView.sections(sources: sources, selection: selection)
+        NodeSourcesView.sections(sources: sources, selection: selection, health: health)
     }
+
+    /// How many of the sources the runtime attempted are failing right now — V1's "N/M sources responding",
+    /// stated only from what was actually observed.
+    public var failingSourceCount: Int { health.values.filter { $0.failures > 0 }.count }
 
     /// Whether a node is enabled: it has sources and every one of them is selected. A node the catalog placed
     /// no source under is never reported as enabled (V1's `isRegionEnabled` had the same rule by accident of

@@ -80,6 +80,29 @@ final class AcquisitionBackoffConcurrencyTests: XCTestCase {
         time.now = 40; cooling = await coordinator.coolingTargetIDs(); XCTAssertTrue(cooling.isEmpty)
     }
 
+    /// T7's health column reads this: the count of consecutive failures and the cooling deadline, per target,
+    /// and nothing at all for a target never attempted.
+    func testHealthSnapshotStatesFailuresAndCoolingDeadlines() async throws {
+        let db = try database(), target = try targets(1, in: db)[0], time = Time()
+        let coordinator = AcquisitionCoordinator(database: db,
+            connectorForTarget: { _ in FailingConnector() as any FeedConnector },
+            backoff: AcquisitionBackoffPolicy(baseSeconds: 10, ceilingSeconds: 100), monotonicSeconds: { time.now })
+        var health = await coordinator.healthSnapshot()
+        XCTAssertTrue(health.isEmpty, "a target never attempted is absent, never reported healthy")
+        _ = try await coordinator.execute(Self.start(target))
+        health = await coordinator.healthSnapshot()
+        XCTAssertEqual(health[target.id]?.consecutiveFailures, 1)
+        XCTAssertEqual(health[target.id]?.coolingUntil, 10, "the first backoff window closes at t+10")
+        time.now = 10
+        health = await coordinator.healthSnapshot()
+        XCTAssertEqual(health[target.id]?.consecutiveFailures, 1, "the failure is still counted after the window")
+        XCTAssertNil(health[target.id]?.coolingUntil, "and no longer cooling")
+        _ = try await coordinator.execute(Self.start(target))
+        health = await coordinator.healthSnapshot()
+        XCTAssertEqual(health[target.id]?.consecutiveFailures, 2, "the second failure doubles the delay")
+        XCTAssertEqual(health[target.id]?.coolingUntil, 30)
+    }
+
     func testPlanningSkipsCoolingTargetsAtomically() async throws {
         let db = try database(), all = try targets(2, in: db), time = Time()
         let coordinator = AcquisitionCoordinator(database: db, connectorForTarget: { $0.id == all[0].id ? FailingConnector() as any FeedConnector : FinishedConnector() },

@@ -80,6 +80,22 @@ final class SourceCatalogBackendTests: XCTestCase {
         XCTAssertEqual(selected, ["https://a.example/feed"])
     }
 
+    /// The health the surface reads is the app's own observation, passed through untouched (the catalog knows
+    /// nothing about reachability), and an app that has observed nothing states nothing.
+    func testHealthComesFromTheCallerAndDefaultsToNothingObserved() async throws {
+        let (silent, _) = try backend()
+        let none = try await silent.health()
+        XCTAssertTrue(none.isEmpty, "nothing observed is not a health claim")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let database = try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))
+        let backend = SourceCatalogBackend(
+            coordinator: SourceManagementCoordinator(catalogURL: try catalog(), database: database),
+            healthProvider: { ["https://a.example/feed": .init(state: .failing(consecutive: 2))] })
+        let observed = try await backend.health()
+        XCTAssertEqual(observed["https://a.example/feed"]?.failures, 2)
+    }
+
     /// Writes: a whole-node change and a direct selection both reach the reader's own preferences, and the
     /// version the store reads back is the one the app fences its session on.
     func testWritesReachTheReaderSelection() async throws {
