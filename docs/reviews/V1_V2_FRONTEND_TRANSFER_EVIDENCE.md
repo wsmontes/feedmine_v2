@@ -169,13 +169,25 @@ Two further defects surfaced the same way — by running the flows the plan clai
   set; the browser now reports its own close (`onFinish`) and the host clears that state. Together with
   presenting the reader from the surface the reader is on, this is what makes "close the article, return to your
   saved list" the same behaviour V1 had.
+- **A saved row was only tappable on its text.** A tap at the row's centre landed between the drawn lines, so
+  the label's own hit region (the text) missed it and the row's action never ran; the label now declares the
+  row's shape, exactly as the working card already did.
+- **A country is a region tree, not a node.** V1's `SourceRegistry` cascaded a region toggle down the tree, and
+  the shipped catalogue nests each country's sources under its topic leaves
+  (`90_countries/algeria/sports/football`), so toggling the country's own placement enabled almost nothing. The
+  catalogue backend now answers subtree queries for the country, its children and the toggle itself; the
+  measured effect on the fixture catalogue was a country toggle writing 537 source keys.
+
+The whole-scheme run then passed: `CompositionTests` **24 tests, 0 failures** and `FeedMineUITests` **21 tests,
+0 failures** in one run, with `swift test` at **1017 tests, 0 failures** — the acceptance this document was
+missing for the UI target.
 
 ## Not executed, and why
 
 | Plan item | State |
 |---|---|
 | `CompositionTests` as one run (24 tests) | **24 tests, 0 failures** (2026-10-10, whole-scheme run). The six cases that failed here before failed on the harness's activity, not on the app: `.forward` observes and never admits, so the window held the anchor card alone. Each one now produces once and admits with `.explicitTailApproach`, the activity the real shell sends when the reader moves forward and the tail is visible. |
-| `FeedMineUITests` as one run (21 tests) | **13 of 21 pass** (2026-10-10, whole-target run after the repairs below; 16 failed before them). The cause is *not* shared simulator state: the app keeps no `UserDefaults` and every test already launches with its own `FEEDMINE_RUNTIME_NAMESPACE`. It is `.accessibilityIdentifier` on a SwiftUI *container* overriding its children's identifiers on this toolchain (iOS 26.5 / Xcode 26.6) — a defect the repository had already met and fixed once, for the search bar (`Sources/FeedMineUI/Reader/ReaderShell.swift:102`) — plus the destinations the menu was not offering. Those two are repaired. Of the eight remaining cases none is a runtime defect, and both candidate explanations were measured and **disproved**: `FeedScreen` already re-anchors its capture state and the app already recreates the screen per association (`.onChange` on `editionID`/`contextKey`; `.id(ObjectIdentifier(association))`), and a new session does produce through `launch()` — `FeedAssociation.launch()` (line 1149) admits a restored presentation or runs the cold bootstrap, which is covered by the green `testSourceSelectionSurvivesRelaunchAndFiltersCanonicalSupply`. What remains is interaction (a toggle that has to be driven through its inner control, lists that need their own scroll, a composer row covered by its footer, an export preview computed on a later pass) and one filter-semantics case: a language criterion is answered from the document's **channel** language (`Sources/FeedMineSyndication/SyndicationTranslator.swift:91`) and a missing language fails it by decision (`Sources/FeedMineEditorial/ReaderFilterEligibility.swift:8`), so the fixture that declares no `<language>` is what the test has to satisfy. One green whole-target run is the acceptance. |
+| `FeedMineUITests` as one run (21 tests) | **21 tests, 0 failures** (2026-10-10, whole-scheme run — the acceptance this round was aiming at; it was 16 failing before the repairs). The cause of the earlier failures was *not* shared simulator state: the app keeps no `UserDefaults` and every test already launches with its own `FEEDMINE_RUNTIME_NAMESPACE`. It was `.accessibilityIdentifier` on a SwiftUI *container* overriding its children's identifiers on this toolchain (iOS 26.5 / Xcode 26.6) — a defect the repository had already met and fixed once, for the search bar (`Sources/FeedMineUI/Reader/ReaderShell.swift:102`) — plus the destinations the menu was not offering, and the interaction and product defects listed below. |
 | Physical iPhone: 10 minutes idle + 30 minutes of scrolling, memory/CPU/hitches and media budget | **Not executed.** No physical device is attached to this machine (`xcrun devicectl list devices`, 2026-10-10: two iPhones known, both `unavailable`); the plan's own validation section asks for a simulator UUID for everything else. Needs the reader's device. |
 | Visual comparison by screenshots, surface by surface | **Not executed as a screenshot diff.** The UI tests assert structure, identifiers, labels and one geometry (the mini player's 56 pt); no pixel comparison was made. |
 | 30-minute scroll budget on heterogeneous networks | **Not executed.** The deterministic, short-horizon scenario is the substitute that was run; long-horizon behaviour is the physical-device item above. |

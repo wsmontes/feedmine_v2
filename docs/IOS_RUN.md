@@ -238,6 +238,14 @@ o alvo inteiro só é confiável depois que os casos passam isoladamente; (2) o 
 `xcodebuild` morre com "No space left on device" antes de qualquer diagnóstico útil, então limpe `/tmp/fm-*` e
 `~/Library/Developer/Xcode/DerivedData` antes de uma corrida longa.
 
-O registro superfície por superfície desta rodada está em
-`docs/reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md`, e o inventário de controles com prova por linha em
+Resultado da corrida completa em 2026-10-10 (árvore congelada, commit `dd63c1a`): `** TEST SUCCEEDED **`,
+`CompositionTests` **24 testes, 0 falhas**, `FeedMineUITests` **21 testes, 0 falhas**, e `swift test` **1017
+testes, 0 falhas**. O que a rodada encontrou e corrigiu — destinos do menu que o app já roteava mas não
+oferecia, identificadores de container engolindo os dos filhos, a conexão de biblioteca recriada por ação com a
+falha engolida, o fechamento do leitor derrubando a superfície que o apresentou, a linha salva tocável só no
+texto, e país como árvore de região no catálogo — está registrado superfície por superfície em
+`docs/reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md`, com o inventário de controles e a prova de cada linha em
 `docs/v1-study/UI_TRANSFER_MATRIX.md`.
+
+O que **não** foi executado: o soak em iPhone físico (nenhum aparelho disponível — dois conhecidos, ambos
+`unavailable`) e a comparação visual por screenshots (nenhum diff de pixel foi feito).
