@@ -153,3 +153,24 @@ Steps, in this order (each with its own test, all additive):
 Only after step 4 should the reader see filter-driven contexts: until then `ReaderFilter` and the extended
 `ContextKey` are values with identity and tests, not yet durable behaviour.
 
+## 7. What T6's remaining UI is waiting for
+
+Landed: the value, the identity, the migration, the supply enforcement, the persisted selection and one applying
+path (`ReaderFilterStore`). What is left of T6 is the **sheet and the lens bound to that store**, and it is not
+blocked on more T6 work but on **metadata the UI must show** — so it is the first consumer of T7, not a T6
+leftover:
+
+| V1 control | What the sheet needs | Owner |
+| --- | --- | --- |
+| Content type buttons (Articles/Videos/Podcasts/Forums) | derivable today from the publication's media and action kind | T6 (with the sheet) |
+| Mood buttons | V1's keyword rule, already ported and enforced | T6 (with the sheet) |
+| Language list | the *available* languages with their feed counts (V1 `loader.availableLanguages`) | **T7** (catalog metadata) |
+| Topics (`TaxonomyBrowseView`) | taxonomy nodes and their selection state | **T7** |
+| Countries / regions | region ids and counts | **T7** |
+| Preset picker (editorial, collections, smart, curated) | the preset values and their identities | **T8** |
+| "Clear All Filters" + Done | nothing extra | T6 |
+
+Transferring the sheet before those exist would render controls whose flow cannot work, which the plan forbids
+("Uma superfície só é transferida quando seu fluxo funciona"). The honest order is therefore: **T7's metadata
+import/query first, then the sheet**, exactly as §1 decided for enforcement.
+

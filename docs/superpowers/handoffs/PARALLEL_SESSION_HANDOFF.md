@@ -13,7 +13,7 @@ Written by the session that owns the transfer plan
 | T3 scroll admits without moving content (native UI test green) | done | `12d4b65` |
 | T4 V1 card layouts + visual system (`Sources/FeedMineUI/Cards/**`, `Appearance/`) | done | `bb8e33e` |
 | T5 shell/header/menu/search (`Reader/**`, `Feedback/**`, toolbar removed) | done | `6f2e2e5` |
-| T6 filters and context identity | **specified + identity, migration and supply enforcement landed** (`ReaderFilter`, `ContextKey`, `ReaderFilterDraft`, `reader-context-identity-v1` with backfill and identity-keyed lookups, `ReaderFilterEligibility` applied by `CandidateProvider`); sheet/lens + coordinator + expiry remain, all specified — `docs/superpowers/specs/2026-10-09-reader-filters-and-context-identity.md` | `8dc7fe8`, `47d7c19`, `4ac3f79`, `ef7330c`, `7ec9fd1`, `1860ed1` |
+| T6 filters and context identity | **specified + identity, migration, supply enforcement, persisted selection and applying path landed** (`ReaderFilter`, `ContextKey`, `ReaderFilterDraft`, `reader-context-identity-v1` with backfill and identity-keyed lookups, `ReaderFilterEligibility` applied by `CandidateProvider`); sheet/lens + coordinator + expiry remain, all specified — `docs/superpowers/specs/2026-10-09-reader-filters-and-context-identity.md` | `8dc7fe8`, `47d7c19`, `4ac3f79`, `ef7330c`, `7ec9fd1`, `1860ed1` |
 | T7–T12 | not started | — |
 
 Last verified state at `6f2e2e5`: `swift build` clean, `swift test` **867 tests, 0 failures**, iOS
@@ -46,10 +46,12 @@ passed at `12d4b65`).
   draft the sheet edits (`Sources/FeedMineUI/Filters/ReaderFilterDraft.swift` + its tests). **Start at §6 of the
   spec** — the migration (`7ec9fd1`) and the supply enforcement (`1860ed1`) are **done**: `context_identity` + reversible `context_key_json` on
   editions, checkpoints rebuilt and keyed by identity, Swift backfill for pre-T6 rows, lookups switched). What is
-  left: the filter sheet + lens in the UI wired to `ReaderFilterDraft`, the coordinator that persists the
-  applied selection and activates its context, the expiry record (a pending fact resolved on an explicit
-  transition — never a timer that changes the presentation), the `EditorialRevision` compatibility widening for
-  the new key, and the A→B→A / stale-callback tests. Watch out: `EditorialRevision` compatibility checking (`AppComposition.swift:358`)
+  left: the filter sheet + lens bound to `ReaderFilterStore`, the composition coordinator that implements its
+  `onApply` (persist through `ReaderPreferencesStore.setContext(_ key:)`, then activate that context), the expiry
+  record (a pending fact resolved on an explicit transition — never a timer that changes the presentation), the
+  `EditorialRevision` compatibility widening for the new key, and the A→B→A / stale-callback tests. **The sheet
+  itself needs T7's metadata** (available languages with counts, taxonomy nodes, regions) and T8's preset values —
+  see spec §7; the honest order is T7 metadata first, then the sheet. Watch out: `EditorialRevision` compatibility checking (`AppComposition.swift:358`)
   must widen to the new key, and the schema-catalogue tests (`AvailabilityPrecedenceTests`,
   `PublicationRunwayStoreTests`, `MediaCandidateSchemaTests`) pin the migration list — they are already updated
   for the current migration count. Codex reviewed the design and the whole
