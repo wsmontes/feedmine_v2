@@ -520,12 +520,31 @@ its own, a swipe that reports a dismissal instead of deciding it, and no bar at 
 also asserts the end-to-end chip: apply a language, the chip appears, tapping it clears that criterion and the
 reader survives.
 
-**Verified.** `swift test` **924 tests, 0 failures**; iOS build **SUCCEEDED**; the T6 UI test → **TEST
-SUCCEEDED**; the app-level T6 transition test → **TEST SUCCEEDED**.
+**Step 11 landed — expiry.** `ReaderFilterExpiry` (Domain) is V1's `filterAutoExpire` + `filterSetAt` as one
+value: a four-hour window, `expiresAt()`, `isExpired(at:)` (a *pending* fact, not an action) and
+`resolving(_:at:)`, which drops the overlay groups (region, taxonomy, language, content type, mood) while
+**content exclusions survive** — exactly the set V1's rule covered and the one it left alone. `renewed(at:)`
+restarts the window without changing whether the rule is on. Persisted with the reader's preferences
+(migration `reader-filter-expiry-v1`: two columns beside `active_context`; a fresh row is on and has nothing
+set); **not** part of the context identity, because a deadline is not identity. `AppComposition.applyFilter`
+renews the record when an overlay selection is applied and keeps `startsAt = nil` for a selection that only
+excludes, and `resolvedFilter(at:)` is consulted by `selectContext` and by the transition path — only an
+explicit transition can apply a pending expiry, and no clock ever touches the active presentation.
 
-**Remaining for T6**: the expiry record (a pending fact applied on an explicit transition — never a timer that
-changes the presentation), the `EditorialRevision` compatibility widening for the new key
-(`AppComposition.swift:358`) and the full preset picker, which needs T8's named presets.
+**Step 12 landed — the compatibility predicate.** `FeedAssociation.mayShow(_:for:selectionVersion:)` is now the
+single decision before a restored Edition is reused, and it asks for the **whole identity first** (the
+revision's `contextKey` must equal the key the reader is on) before the selection and eligibility policy
+versions. Before this, a checkpoint filed under a different filter but with matching versions would have been
+shown — the silent swap the review named. Tested by `testT6RevisionCompatibilityRequiresTheWholeIdentity`: a
+foreign filter refused, the plain identity refused for a filtered one, older selection/eligibility versions
+refused, and an *equivalent* selection accepted as the same identity.
+
+**Verified.** `swift test` **924 tests, 0 failures**; iOS build **SUCCEEDED**; the T6 UI test → **TEST
+SUCCEEDED**; the app-level T6 transition and revision tests → **TEST SUCCEEDED**.
+
+**Remaining for T6**: the full preset picker, which needs T8's named presets.
+
+
 
 ## T7 — 2026-10-09 (catalog metadata: the values T6's sheet and T7's source management need)
 

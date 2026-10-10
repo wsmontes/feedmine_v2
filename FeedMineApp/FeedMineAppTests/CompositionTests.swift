@@ -339,6 +339,34 @@ final class CompositionTests: XCTestCase {
         await back.close()
     }
 
+    /// T6: the compatibility predicate is the whole decision — identity first, then the policy versions that
+    /// make a restored Edition reusable. A foreign identity is refused even when everything else matches.
+    func testT6RevisionCompatibilityRequiresTheWholeIdentity() throws {
+        let key = ContextKey(request: .main, filter: ReaderFilter(languages: ["pt"]))
+        let foreign = ContextKey(request: .main, filter: ReaderFilter(languages: ["en"]))
+        func revision(_ contextKey: ContextKey, selection: UInt64 = 7, eligibility: UInt64 = 2) -> EditorialRevision {
+            .init(id: EditorialRevisionID(), contextKey: contextKey, catalogGeneration: .init(rawValue: 1),
+                userSelectionVersion: PolicyVersion(rawValue: selection),
+                eligibilityPolicyVersion: PolicyVersion(rawValue: eligibility),
+                scoringPolicyVersion: PolicyVersion(rawValue: 1),
+                sequencingPolicyVersion: PolicyVersion(rawValue: 2),
+                exposurePolicyVersion: PolicyVersion(rawValue: 2),
+                selectionSchemaVersion: .init(rawValue: 1))
+        }
+        XCTAssertTrue(FeedAssociation.mayShow(revision(key), for: key, selectionVersion: 7))
+        XCTAssertFalse(FeedAssociation.mayShow(revision(foreign), for: key, selectionVersion: 7),
+            "an edition from another filter is never shown")
+        XCTAssertFalse(FeedAssociation.mayShow(revision(ContextKey(request: .main)), for: key, selectionVersion: 7),
+            "the plain identity is not the filtered one either")
+        XCTAssertFalse(FeedAssociation.mayShow(revision(key, selection: 6), for: key, selectionVersion: 7),
+            "an older selection version is refused")
+        XCTAssertFalse(FeedAssociation.mayShow(revision(key, eligibility: 1), for: key, selectionVersion: 7),
+            "an older eligibility policy is refused")
+        // Equivalent selections are the same identity, so they are compatible.
+        let equivalent = ContextKey(request: .main, filter: ReaderFilter(languages: ["pt"], mood: .all))
+        XCTAssertTrue(FeedAssociation.mayShow(revision(equivalent), for: key, selectionVersion: 7))
+    }
+
     func testS1SameSessionStoreAcrossViewportRefreshAndLifecycle() async throws {
         let (root, association) = try await launched()
         let store = association.store

@@ -388,6 +388,16 @@ final class FeedAssociation {
         .init(backwardCapacity: 8, forwardCapacity: 16, contextKey: contextKey)
     }
 
+    /// T6: whether a restored Edition may be shown for the identity the reader is on. It must belong to that
+    /// identity — a foreign filter, preset or search scope is a silent swap, even when the policy versions
+    /// happen to match — and it must have been published under the current selection and eligibility policies.
+    static func mayShow(_ revision: EditorialRevision, for contextKey: ContextKey,
+        selectionVersion: UInt64, eligibilityVersion: UInt64 = 2) -> Bool {
+        revision.contextKey == contextKey
+            && revision.userSelectionVersion == PolicyVersion(rawValue: selectionVersion)
+            && revision.eligibilityPolicyVersion == PolicyVersion(rawValue: eligibilityVersion)
+    }
+
     static var resources: FeedRunwayDriverResources {
         .init(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 32,
             readyProbeBound: 32, readyProbeCeiling: 256, forwardAdvanceProbeBound: 256,
@@ -409,8 +419,8 @@ final class FeedAssociation {
             try PublicationStore(database: db).setVisibility(editionID: active.editionID, visible: true)
         }
         var saved = try history.restore(backwardCapacity: 8, forwardCapacity: 16, contextKey: contextKey)
-        if let restored = saved, restored.edition.editorialRevision.userSelectionVersion != PolicyVersion(rawValue: selectionVersion)
-            || restored.edition.editorialRevision.eligibilityPolicyVersion != PolicyVersion(rawValue: 2) {
+        if let restored = saved, !Self.mayShow(restored.edition.editorialRevision, for: contextKey,
+            selectionVersion: selectionVersion) {
             try checkpoints.clearActiveCheckpoint()
             saved = nil
         }
