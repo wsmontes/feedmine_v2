@@ -40,6 +40,59 @@ public struct LegacyCatalogSourceRecord: Hashable, Sendable {
     }
 }
 
+/// One language as the catalogue declares it, with the counts T6's sheet must show. `und`/empty is a real
+/// bucket in this data (27,741 of 77,443 sources) and is never presented as a language a reader can pick.
+public struct LegacyCatalogLanguageRecord: Hashable, Sendable {
+    public let code: String
+    public let enabledSources: Int
+    public let totalSources: Int
+
+    public init(code: String, enabledSources: Int, totalSources: Int) {
+        self.code = code; self.enabledSources = enabledSources; self.totalSources = totalSources
+    }
+
+    /// V1 compared the primary subtag when a feed declared "pt-BR" and the reader selected "pt".
+    public var primarySubtag: String {
+        String(code.prefix(while: { $0 != "-" && $0 != "_" })).lowercased()
+    }
+    public var isUndeclared: Bool { code.isEmpty || primarySubtag == "und" }
+}
+
+/// One taxonomy node. `kind` is the catalogue's own discriminator, measured on the bundled snapshot
+/// (2026-10-09, 6,450 nodes): 0 = section under the root, 1 = country, 3 = topic leaf.
+public struct LegacyCatalogNodeRecord: Hashable, Sendable {
+    public static let sectionKind = 0
+    public static let countryKind = 1
+    public static let topicKind = 3
+
+    public let id: Int64
+    public let key: String
+    public let name: String
+    public let kind: Int
+    public let parentID: Int64?
+    public let sourceCount: Int
+    public let childCount: Int
+
+    public init(id: Int64, key: String, name: String, kind: Int, parentID: Int64?, sourceCount: Int, childCount: Int) {
+        self.id = id; self.key = key; self.name = name; self.kind = kind; self.parentID = parentID
+        self.sourceCount = sourceCount; self.childCount = childCount
+    }
+
+    public var isCountry: Bool { kind == Self.countryKind }
+    public var isSection: Bool { kind == Self.sectionKind }
+    public var hasChildren: Bool { childCount > 0 }
+}
+
+public struct LegacyCatalogNodePage: Hashable, Sendable {
+    public let nodes: [LegacyCatalogNodeRecord]
+    public let nextCursor: Int64?
+    public let exhausted: Bool
+
+    public init(nodes: [LegacyCatalogNodeRecord], nextCursor: Int64?, exhausted: Bool) {
+        self.nodes = nodes; self.nextCursor = nextCursor; self.exhausted = exhausted
+    }
+}
+
 public struct LegacyCatalogReader: Sendable {
     private let queue: DatabaseQueue
 
@@ -127,6 +180,125 @@ public struct LegacyCatalogReader: Sendable {
                 """, arguments: ["%" + escaped + "%", "%" + escaped + "%", escaped + "%", min(limit, 100)])
         } }
         return try keys.compactMap { try source(key: $0) }
+    }
+
+    // MARK: - Metadata (T6's sheet, T7's taxonomy and regions)
+
+    /// Every language the catalogue declares, biggest enabled set first, with `und`/empty last. One pass over the
+    /// whole table: the caller caches it, because nothing changes under a shipped asset.
+    public func languages() throws -> [LegacyCatalogLanguageRecord] {
+        try Self.wrap { try queue.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT COALESCE(language, '') AS code, COUNT(*) AS total, SUM(default_enabled) AS enabled
+                FROM catalog_source GROUP BY COALESCE(language, '')
+                ORDER BY (COALESCE(language, '') = '' OR language = 'und') ASC, enabled DESC, code COLLATE NOCASE
+                """).map { row in
+                LegacyCatalogLanguageRecord(code: row["code"], enabledSources: Int(row["enabled"] as Int64? ?? 0),
+                    totalSources: Int(row["total"] as Int64? ?? 0))
+            }
+        } }
+    }
+
+    /// One bounded page of a node's children, ordered the way the index is (`parent_id, name COLLATE NOCASE`).
+    /// `after` is the last node id of the previous page.
+    public func nodes(parentID: Int64, after: Int64? = nil, limit: Int) throws -> LegacyCatalogNodePage {
+        guard limit > 0 else { return LegacyCatalogNodePage(nodes: [], nextCursor: nil, exhausted: true) }
+        return try Self.wrap { try queue.read { db in
+            var sql = """
+                SELECT id, key, name, kind, parent_id, source_count, child_count FROM catalog_node
+                WHERE parent_id = ?
+                """
+            var arguments: [DatabaseValueConvertible] = [parentID]
+            if let after { sql += " AND id > ?"; arguments.append(after) }
+            sql += " ORDER BY name COLLATE NOCASE, id LIMIT ?"
+            arguments.append(limit + 1)
+            let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+            let records = try rows.prefix(limit).map { try Self.node($0) }
+            let exhausted = rows.count <= limit
+            return LegacyCatalogNodePage(nodes: records, nextCursor: exhausted ? nil : records.last?.id,
+                exhausted: exhausted)
+        } }
+    }
+
+    /// The sections that sit directly under the root (`parent_id = 0`).
+    public func sectionNodes(limit: Int = 100) throws -> [LegacyCatalogNodeRecord] {
+        try nodes(parentID: 0, limit: limit).nodes
+    }
+
+    /// The countries the catalogue places sources in — the 101 `kind = 1` nodes of the bundled snapshot.
+    public func countries(after: Int64? = nil, limit: Int) throws -> LegacyCatalogNodePage {
+        guard limit > 0 else { return LegacyCatalogNodePage(nodes: [], nextCursor: nil, exhausted: true) }
+        return try Self.wrap { try queue.read { db in
+            var sql = "SELECT id, key, name, kind, parent_id, source_count, child_count FROM catalog_node WHERE kind = ?"
+            var arguments: [DatabaseValueConvertible] = [LegacyCatalogNodeRecord.countryKind]
+            if let after { sql += " AND id > ?"; arguments.append(after) }
+            sql += " ORDER BY name COLLATE NOCASE, id LIMIT ?"
+            arguments.append(limit + 1)
+            let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+            let records = try rows.prefix(limit).map { try Self.node($0) }
+            let exhausted = rows.count <= limit
+            return LegacyCatalogNodePage(nodes: records, nextCursor: exhausted ? nil : records.last?.id,
+                exhausted: exhausted)
+        } }
+    }
+
+    public func node(id: Int64) throws -> LegacyCatalogNodeRecord? {
+        try Self.wrap { try queue.read { db in
+            try Row.fetchOne(db, sql: "SELECT id, key, name, kind, parent_id, source_count, child_count FROM catalog_node WHERE id = ?",
+                arguments: [id]).map { try Self.node($0) }
+        } }
+    }
+
+    public func node(key: String) throws -> LegacyCatalogNodeRecord? {
+        try Self.wrap { try queue.read { db in
+            try Row.fetchOne(db, sql: "SELECT id, key, name, kind, parent_id, source_count, child_count FROM catalog_node WHERE key = ?",
+                arguments: [key]).map { try Self.node($0) }
+        } }
+    }
+
+    /// The path from the root down to (but not including) this node, for a breadcrumb.
+    public func ancestors(ofNodeID id: Int64, ceiling: Int = 16) throws -> [LegacyCatalogNodeRecord] {
+        try Self.wrap { try queue.read { db in
+            var path: [LegacyCatalogNodeRecord] = []
+            var current = try Self.nodeRecord(db, id: id)
+            while let node = current, let parentID = node.parentID, path.count < ceiling {
+                guard let parent = try Self.nodeRecord(db, id: parentID) else { break }
+                path.insert(parent, at: 0)
+                current = parent
+            }
+            return path
+        } }
+    }
+
+    private static func nodeRecord(_ db: Database, id: Int64) throws -> LegacyCatalogNodeRecord? {
+        try Row.fetchOne(db, sql: "SELECT id, key, name, kind, parent_id, source_count, child_count FROM catalog_node WHERE id = ?",
+            arguments: [id]).map { try Self.node($0) }
+    }
+
+    /// Bounded literal name/key lookup; values never become SQL syntax.
+    public func matchingNodes(query: String, limit: Int) throws -> [LegacyCatalogNodeRecord] {
+        guard limit > 0 else { return [] }
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return [] }
+        let escaped = text.replacingOccurrences(of: "!", with: "!!").replacingOccurrences(of: "%", with: "!%")
+            .replacingOccurrences(of: "_", with: "!_")
+        return try Self.wrap { try queue.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT id, key, name, kind, parent_id, source_count, child_count FROM catalog_node
+                WHERE name LIKE ? ESCAPE '!' OR key LIKE ? ESCAPE '!'
+                ORDER BY (name LIKE ? ESCAPE '!') DESC, name COLLATE NOCASE, id LIMIT ?
+                """, arguments: ["%" + escaped + "%", "%" + escaped + "%", escaped + "%", limit]).map { try Self.node($0) }
+        } }
+    }
+
+    private static func node(_ row: Row) throws -> LegacyCatalogNodeRecord {
+        let id: Int64 = row["id"]
+        let kind: Int64 = row["kind"]
+        let sourceCount: Int64 = row["source_count"] ?? 0
+        let childCount: Int64 = row["child_count"] ?? 0
+        let parentID: Int64? = row["parent_id"]
+        return LegacyCatalogNodeRecord(id: id, key: row["key"], name: row["name"], kind: Int(kind),
+            parentID: parentID, sourceCount: Int(sourceCount), childCount: Int(childCount))
     }
 
     private static func wrap<T>(_ body: () throws -> T) throws -> T {

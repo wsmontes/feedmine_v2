@@ -475,3 +475,31 @@ coordinator that implements `onApply` (persist the selection through `ReaderPref
 and then activate that context), the expiry record (pending fact, applied on an explicit transition), the
 `EditorialRevision` compatibility widening for the new key (`AppComposition.swift:358`), and the A→B→A /
 stale-callback tests.
+
+## T7 — 2026-10-09 (catalog metadata: the values T6's sheet and T7's source management need)
+
+First slice of T7, done from the *measured* bundled snapshot rather than from the plan's prose; brief and the
+schema facts are in `docs/superpowers/specs/2026-10-10-t7-catalog-metadata-queries.md`.
+
+`LegacyCatalogReader` (read-only, one connection per call, never migrated or written) gained the three metadata
+families as values — no GRDB types leave Persistence:
+
+- **`languages()`** → `LegacyCatalogLanguageRecord` (code, enabled, total, `primarySubtag`, `isUndeclared`), ordered
+  by enabled count descending with the undeclared bucket **last**. Measured on the shipped asset: 257 distinct
+  codes, `und` 26,644 enabled / 27,741 total, `en` 15,820 / 17,962. This is exactly what T6's sheet needs for its
+  language list, and it confirms the primary-subtag rule the eligibility check already applies.
+- **`nodes(parentID:after:limit:)`** → `LegacyCatalogNodePage` (nodes, `nextCursor`, `exhausted`), ordered by the
+  index the catalogue ships (`parent_id, name COLLATE NOCASE, id`) and paged with a **one-row lookahead**, so
+  `exhausted` is truthful instead of "the page was full".
+- **`sectionNodes()`**, **`countries(after:limit:)`**, **`node(id:)`/`node(key:)`**, **`ancestors(ofNodeID:)`** and
+  **`matchingNodes(query:limit:)`** (literal, escaped, indexed). Measured shape: 18 root sections (the 19th `kind = 0`
+  node is the root itself), 101 countries (`kind = 1`), 6,330 topic leaves (`kind = 3`), so countries are a real
+  subtree and no second region source is invented.
+
+New `LegacyCatalogMetadataTests` (5): the language list's order and counts plus the undeclared buckets; the tree
+walk section → country → topic; stable paging with a truthful `exhausted`; the breadcrumb and literal search
+(`%` is a literal, never a pattern); and the **real 117 MB asset**, where the measured counts, the 18 sections, the
+101 countries, the 257 codes and `und`'s 26,644 enabled sources are asserted directly (the test skips with a clear
+message if the release asset is absent).
+
+**Verified.** `swift test` **910 tests, 0 failures**, including the assertions against the bundled catalogue.

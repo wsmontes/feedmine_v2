@@ -20,11 +20,12 @@ Indexes already present: `idx_catalog_source_title(title COLLATE NOCASE, id)`,
 
 Measured samples that the queries must respect:
 
-- Language is **declared, dirty and primary-subtag mixed**: `und` 27,741, `en` 17,962, `en-US` 7,028, `es` 3,982,
-  `fr` 1,171, `pt` 1,125, `en-GB` 1,013. A language filter must compare the primary subtag (as T6's
+- Language is **declared, dirty and primary-subtag mixed**: 257 distinct codes; `und` 26,644 enabled / 27,741
+  total, `en` 15,820 / 17,962, `en-US` 6,592 / 7,028, `es` 3,397 / 3,982, `de` 1,072 / 1,156, `pt` 1,028 / 1,125. A language filter must compare the primary subtag (as T6's
   `ReaderFilterEligibility` already does) and the UI must not pretend `und` is a language a reader can pick.
 - The node tree is rooted at `id = 0, key = 0, name = "Root"`, and `kind` **is** the discriminator (measured over
-  all 6,450 nodes): `kind = 0` are the 19 sections that sit under the root (`Arts & Culture`, `Business &
+  all 6,450 nodes): `kind = 0` are the **18** sections that sit under the root (the 19th kind-0 node is the root
+  itself) (`Arts & Culture`, `Business &
   Industry`, `Countries`, `Education & Knowledge`, …), `kind = 1` are the **101 countries** (children of the
   `Countries` section, which alone carries 63,894 sources), and `kind = 3` are the 6,330 topic leaves. So
   "countries" is a real subtree, not a separate table, and no second region source is needed.
