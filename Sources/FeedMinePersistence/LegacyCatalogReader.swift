@@ -31,12 +31,24 @@ public struct LegacyCatalogSourceRecord: Hashable, Sendable {
     public let defaultEnabled: Bool
     /// Taxonomy node keys (slash-joined paths) this source is placed under.
     public let nodeKeys: [String]
+    /// The catalogue's own description, and the host its feed lives on. T11 needs both: V1's editorial
+    /// assessment reads a source's description and its host, and a curated feed's "source balance" cannot weigh
+    /// anything without them.
+    public let sourceDescription: String?
+    public let displayHost: String?
+    public let tags: [String]
+    public let nature: String?
+    /// How busy the catalogue says the source is: V1's editorial assessment weighs it (prolific…dormant).
+    public let activity: String?
 
     public init(key: String, title: String, requestURL: String, siteURL: String?, language: String?, mediaKind: String,
-        qualityScore: Int?, defaultEnabled: Bool, nodeKeys: [String]) {
+        qualityScore: Int?, defaultEnabled: Bool, nodeKeys: [String], sourceDescription: String? = nil,
+        displayHost: String? = nil, tags: [String] = [], nature: String? = nil, activity: String? = nil) {
         self.key = key; self.title = title; self.requestURL = requestURL; self.siteURL = siteURL
         self.language = language; self.mediaKind = mediaKind; self.qualityScore = qualityScore
         self.defaultEnabled = defaultEnabled; self.nodeKeys = nodeKeys
+        self.sourceDescription = sourceDescription; self.displayHost = displayHost
+        self.tags = tags; self.nature = nature; self.activity = activity
     }
 }
 
@@ -152,7 +164,7 @@ public struct LegacyCatalogReader: Sendable {
                 let whereClause = conditions.isEmpty ? "" : "WHERE " + conditions.joined(separator: " AND ")
                 let rows = try Row.fetchAll(db, sql: """
                     SELECT s.id, s.key, s.title, s.request_url, s.site_url, s.language, s.media_kind,
-                        s.quality_score, s.default_enabled
+                        s.quality_score, s.default_enabled, s.description, s.display_host, s.tags, s.nature, s.activity
                     FROM catalog_source s \(whereClause)
                     ORDER BY s.key LIMIT ?
                     """, arguments: StatementArguments(arguments))
@@ -162,10 +174,14 @@ public struct LegacyCatalogReader: Sendable {
                         SELECT DISTINCT n.key FROM catalog_placement p JOIN catalog_node n ON n.id = p.node_id
                         WHERE p.source_id = ? ORDER BY n.key
                         """, arguments: [id])
+                    let tags = (row["tags"] as String?).map { value in
+                        value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                    } ?? []
                     return LegacyCatalogSourceRecord(key: row["key"], title: row["title"], requestURL: row["request_url"],
                         siteURL: row["site_url"], language: row["language"], mediaKind: row["media_kind"],
                         qualityScore: row["quality_score"], defaultEnabled: (row["default_enabled"] as Int64? ?? 0) != 0,
-                        nodeKeys: nodes)
+                        nodeKeys: nodes, sourceDescription: row["description"], displayHost: row["display_host"],
+                        tags: tags, nature: row["nature"], activity: row["activity"])
                 }
             }
         }

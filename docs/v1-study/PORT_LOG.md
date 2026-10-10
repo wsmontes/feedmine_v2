@@ -1076,8 +1076,28 @@ fontes reais, sem manchete fabricada). E a auditoria das views portadas confirma
 idiomas, clamp de discovery, conjunto vazio de mídia como "todos", as duas assimetrias de peso, os critérios de
 filtro, o resumo ordenado, envelope parcial e round trip).
 
-**Remaining for T11:** os dois campos do catálogo na leitura; `FeedRecipeResolution` (Editorial, puro): a
-fórmula do V1 — `exp(Σ peso·(0.25+confiança·0.75) · 0.19 · (1 − discovery·0.42)) · qualidade`, clampada em
-0.42…3 — resolvida para os multiplicadores por fonte e ligada ao `ResolvedSelectionPolicy` da sessão; o
-`CuratedFeedCoordinator` (`save`/`inspect`/`update`) com a receita persistida ao lado do preset; e as duas cenas
-(Welcome e Composer) com o capô, portadas com os rótulos e badges do V1.
+### T11, second part — o catálogo dá os fatos, o Editorial resolve a receita
+
+- **Os dois (agora três) campos que faltavam.** O registro do catálogo passou a expor descrição, host de
+  exibição, tags, `nature` e `activity`. Sem eles a avaliação editorial do V1 não teria o que ler e o controle
+  "Source balance" seria um peso que nunca casa.
+- **`FeedEditorialAssessment` (Editorial)** é o `editorialAssessment(for:)` do V1: as mesmas listas de sinais
+  (mastheads reconhecidos, institucional, especialista, comercial, agregador, títulos/hosts genéricos — dados de
+  curadoria do V1, copiados verbatim), a mesma fórmula
+  `qualidade·0.30 + autoridade·0.42 + atividade·0.18 + direto·0.10`, o mesmo piso de evidência por classe, e as
+  mesmas chaves (`editorial:reference|specialist|distinctive`). Lê os fatos do catálogo do V2, não os do V1.
+- **`FeedRecipeResolution` (Editorial, puro)** é o `sourceMultiplier` do V1:
+  `exp(Σ peso·(0.25+confiança·0.75)·scopeScale · 0.19 · (1 − discovery·0.42)) · (0.9 + qualidade/100·0.2)`,
+  clampado em 0.42…3. As chaves de uma fonte saem do que o catálogo diz: suas colocações (`topic:`/`region:`),
+  seu tipo de mídia, suas naturezas editoriais, sua `nature` e seu escopo — e `scope:` entra pela metade, como no
+  V1. **O guard do V1 está preservado:** uma fonte que a taxonomia não coloca em lugar nenhum pesa exatamente 1,
+  sem nem o ajuste de qualidade, porque a receita não tem o que dizer sobre ela. Sem evidência aprendida a
+  confiança é zero e o peso mantém o piso de 0.25 — quando o V2 aprender com aberturas, é esse termo que cresce.
+- **Testes determinísticos** (`FeedRecipeResolutionTests`, 7): os valores calculados à mão (1.1002 para `.more`,
+  0.9831 para `.less`), o achatamento por discovery, o tipo removido caindo abaixo do centro, a janela de
+  qualidade, o meio peso do escopo regional, o guard da fonte sem colocação, o filtro que a receita declara e a
+  regra de nomear do V1.
+
+**Remaining for T11:** o `CuratedFeedCoordinator` (`save`/`inspect`/`update`) com a receita persistida ao lado do
+preset e os multiplicadores ligados ao `ResolvedSelectionPolicy` da sessão; as duas cenas (Welcome e Composer,
+com o preview de cards reais e os controles exatos do V1) e o capô; e a evidência de UI.
