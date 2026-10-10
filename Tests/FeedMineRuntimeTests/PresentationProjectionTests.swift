@@ -126,7 +126,7 @@ final class PresentationProjectionTests: XCTestCase {
             let history = PublicationHistory(database: db)
             try history.saveCursor(restored.cursor, updatedAt: edition.createdAt)
             let session = FeedSession(publicationHistory: history)
-            let projected = try await session.restoreLocalPresentation(backwardCapacity: 1, forwardCapacity: 1)
+            let projected = try await session.admitPresentation(.restore(.init(backwardCapacity: 1, forwardCapacity: 1)))
             let snapshot = try XCTUnwrap(projected)
             XCTAssertEqual(snapshot.contextKey, edition.contextKey)
             XCTAssertEqual(snapshot.editionID, edition.id)

@@ -51,7 +51,7 @@ final class PresentationProjectionOrderingTests: XCTestCase {
     }
 
     private func snapshot(_ f: Fixture, backward: Int = 1, forward: Int = 1) async throws -> FeedPresentationSnapshot {
-        let restored = try await f.session.restoreLocalPresentation(backwardCapacity: backward, forwardCapacity: forward)
+        let restored = try await f.session.admitPresentation(.restore(.init(backwardCapacity: backward, forwardCapacity: forward)))
         return try XCTUnwrap(restored)
     }
 
@@ -104,9 +104,8 @@ final class PresentationProjectionOrderingTests: XCTestCase {
         let read = await f.session.currentPresentation()
         _ = await f.session.currentRunwayScope()
         _ = try await f.session.checkpointCurrentPosition(at: Date())
-        let refresh = try await f.session.refreshCurrentPresentation()
-        let restore = try await f.session.restoreLocalPresentation(backwardCapacity: 1, forwardCapacity: 1)
-        for result in [noop, unknown, read, refresh, restore] { XCTAssertEqual(result, a) }
+        let restore = try await f.session.admitPresentation(.restore(.init(backwardCapacity: 1, forwardCapacity: 1)))
+        for result in [noop, unknown, read, restore] { XCTAssertEqual(result, a) }
         let store = FeedScreenStore { _, _ in }
         try store.install(.init(presentation: a).reporting(.pending))
         try store.install(.init(presentation: a).reporting(.failed(message: "chosen failure")))
@@ -153,7 +152,7 @@ final class PresentationProjectionOrderingTests: XCTestCase {
         let moved = try await f.session.submitViewport(.init(anchor: .init(cardID: f.cardIDs[1], placement: .center)))
         let b = try XCTUnwrap(moved)
         let other = FeedSession(publicationHistory: .init(database: f.database))
-        let restored = try await other.restoreLocalPresentation(backwardCapacity: 1, forwardCapacity: 1)
+        let restored = try await other.admitPresentation(.restore(.init(backwardCapacity: 1, forwardCapacity: 1)))
         let foreign = try XCTUnwrap(restored)
         XCTAssertEqual(foreign.provenance.position, 1)
         XCTAssertNotEqual(a.provenance.sequenceID, foreign.provenance.sequenceID)
@@ -171,7 +170,9 @@ final class PresentationProjectionOrderingTests: XCTestCase {
         XCTAssertEqual(explicitlyNewStore.state.presentation, foreign)
     }
 
-    func testO12CommittedPublicationRefreshAdvancesExactlyOnce() async throws {
+    /// The inverse of the removed defect pin: committed publication never advances the admitted list
+    /// by itself; a real forward scroll at the boundary admits the ready prefix exactly once.
+    func testO12CommittedPublicationWaitsForForwardScrollAdmission() async throws {
         let f = try fixture(), a = try await snapshot(f, backward: 1, forward: 8)
         let history = PublicationHistory(database: f.database)
         let restored = try XCTUnwrap(history.restore(backwardCapacity: 1, forwardCapacity: 8))
@@ -185,14 +186,26 @@ final class PresentationProjectionOrderingTests: XCTestCase {
         _ = try PublicationCoordinator(database: f.database).append(.init(selection: selection,
             drafts: PublicationPreparation.drafts(selection: selection, inputs: [input]), editionID: f.editionID,
             segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date(), cardIDs: [PublicationCardID()]))
-        let refreshed = try await f.session.refreshCurrentPresentation()
-        let b = try XCTUnwrap(refreshed)
-        XCTAssertEqual(b.provenance.sequenceID, a.provenance.sequenceID)
-        XCTAssertEqual(b.provenance.position, a.provenance.position + 1)
-        XCTAssertEqual(b.window.anchor, a.window.anchor)
-        XCTAssertEqual(b.window.items.count, a.window.items.count + 1)
-        let again = try await f.session.refreshCurrentPresentation()
-        XCTAssertEqual(again, b)
+        // The publication exists in history, and the reader is stationary: the admitted list is identical.
+        let ready = try history.readyAhead(editionID: f.editionID, anchorCardID: f.cardIDs[3], probeBound: 8)
+        guard case .exact(let ahead) = ready.amount else { return XCTFail("Expected an exact ready-ahead count") }
+        XCTAssertEqual(ahead, 1)
+        let stationary = await f.session.currentPresentation()
+        XCTAssertEqual(stationary, a)
+        // A real forward scroll at the boundary admits the ready prefix once, appending at the tail.
+        let tail = try XCTUnwrap(a.window.items.last)
+        let observation = ViewportObservation(anchor: .init(cardID: tail.id, placement: .center))
+        // Record the reader's position first (what the driver does), then admit behind it.
+        _ = try await f.session.submitViewport(observation)
+        let admission = try await f.session.admitPresentation(.forwardScroll(observation))
+        let admitted = try XCTUnwrap(admission)
+        XCTAssertEqual(admitted.provenance.sequenceID, a.provenance.sequenceID)
+        XCTAssertEqual(admitted.window.items.count, a.window.items.count + 1)
+        XCTAssertEqual(Array(admitted.window.items.prefix(a.window.items.count)), a.window.items)
+        XCTAssertGreaterThan(admitted.provenance.position, a.provenance.position)
+        // Nothing new is published now, so a repeat admission adds nothing.
+        let again = try await f.session.admitPresentation(.forwardScroll(.init(anchor: .init(cardID: tail.id, placement: .center))))
+        XCTAssertEqual(again, admitted)
     }
 
     private func persistAndClose() async throws -> (RuntimeDatabaseLocation, FeedPresentationSnapshot) {
@@ -207,9 +220,12 @@ final class PresentationProjectionOrderingTests: XCTestCase {
         let (location, old) = try await persistAndClose()
         let db = try RuntimeDatabase(location: location)
         let session = FeedSession(publicationHistory: .init(database: db))
-        let restored = try await session.restoreLocalPresentation(backwardCapacity: 1, forwardCapacity: 1)
+        let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 1, forwardCapacity: 1)))
         let new = try XCTUnwrap(restored)
-        XCTAssertEqual(new.window, old.window)
+        // A reopen materializes the checkpoint window; the in-memory admitted list is not durable.
+        XCTAssertEqual(new.window.anchor, old.window.anchor)
+        XCTAssertEqual(new.window.items.count, old.window.items.count + 1)
+        XCTAssertEqual(Array(new.window.items.prefix(old.window.items.count)), old.window.items)
         XCTAssertEqual(new.editionID, old.editionID)
         XCTAssertNotEqual(new.provenance.sequenceID, old.provenance.sequenceID)
         XCTAssertEqual(new.provenance.position, 1)

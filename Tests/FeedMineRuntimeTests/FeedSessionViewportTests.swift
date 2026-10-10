@@ -50,7 +50,7 @@ final class FeedSessionViewportTests: XCTestCase {
         let database = try RuntimeDatabase(location: location)
         let history = PublicationHistory(database: database)
         let session = FeedSession(publicationHistory: history)
-        let restored = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 2)
+        let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
         let initial = try XCTUnwrap(restored)
         XCTAssertEqual(initial.window.items.map(\.id), Array(cards[2...6]).map(\.id))
         let installed = await session.currentPresentation()
@@ -59,7 +59,8 @@ final class FeedSessionViewportTests: XCTestCase {
         let shifted = try XCTUnwrap(result)
         XCTAssertEqual(shifted.contextKey, edition.contextKey)
         XCTAssertEqual(shifted.editionID, edition.id)
-        XCTAssertEqual(shifted.window.items.map(\.id), Array(cards[(index - 2)...(index + 2)]).map(\.id))
+        // Recording an observation moves the logical anchor; the admitted prefix is untouched (T2).
+        XCTAssertEqual(shifted.window.items.map(\.id), Array(cards[2...6]).map(\.id))
         XCTAssertEqual(shifted.window.anchor, PresentationAnchor(cardID: cards[index].id, placement: placement))
         let current = await session.currentPresentation()
         XCTAssertEqual(current, shifted)
@@ -81,7 +82,7 @@ final class FeedSessionViewportTests: XCTestCase {
             try await shiftAndClose(location: location, edition: edition, cards: cards, index: 6, placement: .center)
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            let result = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 2)
+            let result = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
             let snapshot = try XCTUnwrap(result)
             XCTAssertEqual(snapshot.window.anchor, PresentationAnchor(cardID: cards[4].id, placement: .center))
             XCTAssertEqual(snapshot.window.items.map(\.id), Array(cards[2...6]).map(\.id))
@@ -98,7 +99,7 @@ final class FeedSessionViewportTests: XCTestCase {
             try await shiftAndClose(location: location, edition: edition, cards: cards, index: 5, placement: .top)
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            let result = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 2)
+            let result = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
             XCTAssertEqual(result?.window.anchor, PresentationAnchor(cardID: cards[4].id, placement: .center))
         }
     }
@@ -110,7 +111,7 @@ final class FeedSessionViewportTests: XCTestCase {
             try persist(edition, cards: cards, location: location)
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            let initial = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 2)
+            let initial = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
             let before = try XCTUnwrap(SessionStore(database: database).checkpoint())
             for index in [9, 4] {
                 let returned = try await session.submitViewport(observation(cards[index]))
@@ -129,7 +130,7 @@ final class FeedSessionViewportTests: XCTestCase {
             try persist(edition, cards: cards, location: location)
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            let initial = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 2)
+            let initial = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
             let top = try await session.submitViewport(observation(cards[4], placement: .top))
             XCTAssertEqual(top?.window.items, initial?.window.items)
             XCTAssertEqual(top?.window.anchor, PresentationAnchor(cardID: cards[4].id, placement: .top))
@@ -140,9 +141,17 @@ final class FeedSessionViewportTests: XCTestCase {
             XCTAssertEqual(checkpoint.anchorPlacement, "center")
             XCTAssertEqual(checkpoint.updatedAt, initialTime)
             let shifted = try await session.submitViewport(observation(cards[6]))
-            XCTAssertEqual(shifted?.window.items.map(\.id), Array(cards[4...8]).map(\.id))
+            XCTAssertEqual(shifted?.window.items.map(\.id), Array(cards[2...6]).map(\.id))
+            XCTAssertEqual(shifted?.window.anchor, PresentationAnchor(cardID: cards[6].id, placement: .center))
             let current = await session.currentPresentation()
             XCTAssertEqual(current, shifted)
+            // Only a real gesture admits the next ready prefix, and it appends after the admitted tail.
+            let admitted = try await session.admitPresentation(.forwardScroll(observation(cards[6])))
+            XCTAssertEqual(admitted?.window.items.map(\.id), Array(cards[2...8]).map(\.id))
+            let settled = await session.currentPresentation()
+            XCTAssertEqual(settled, admitted)
+            XCTAssertEqual(Array(try XCTUnwrap(admitted).window.items.prefix(5)), shifted?.window.items,
+                "Previously admitted cards keep identity, order and value")
         }
     }
 
@@ -167,7 +176,7 @@ final class FeedSessionViewportTests: XCTestCase {
             try persist(edition, cards: cards, location: location)
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            let initial = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 2)
+            let initial = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
             let before = try SessionStore(database: database).checkpoint()
             try database.write { db in
                 try db.execute(sql: "ALTER TABLE published_cards RENAME TO unavailable_cards")

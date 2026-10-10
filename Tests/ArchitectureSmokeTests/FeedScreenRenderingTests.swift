@@ -54,7 +54,7 @@ final class FeedScreenRenderingTests: XCTestCase {
     }
 
     private func snapshot(_ f: Fixture, backward: Int = 1, forward: Int = 1) async throws -> FeedPresentationSnapshot {
-        let restored = try await f.session.restoreLocalPresentation(backwardCapacity: backward, forwardCapacity: forward)
+        let restored = try await f.session.admitPresentation(.restore(.init(backwardCapacity: backward, forwardCapacity: forward)))
         return try XCTUnwrap(restored)
     }
 
@@ -221,7 +221,9 @@ final class FeedScreenRenderingTests: XCTestCase {
         try store.install(try FeedPresentationHandoff.receive(snapshot: first, into: store.state))
         let screen = FeedScreen(store: store)
         XCTAssertEqual(try renderedText(screen.frame(height: 900)).filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline"])
-        let moved = try await f.session.submitViewport(.init(anchor: .init(cardID: f.cardIDs[1], placement: .center)))
+        let observation = ViewportObservation(anchor: .init(cardID: f.cardIDs[1], placement: .center))
+        _ = try await f.session.submitViewport(observation)
+        let moved = try await f.session.admitPresentation(.forwardScroll(observation))
         let next = try XCTUnwrap(moved)
         try store.install(try FeedPresentationHandoff.receive(snapshot: next, into: store.state))
         XCTAssertEqual(try renderedText(screen.frame(height: 900)).filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline", "River headline"])
@@ -297,7 +299,9 @@ final class FeedScreenRenderingTests: XCTestCase {
         XCTAssertEqual(try renderedText(hosted).filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline"])
         try store.install(FeedPresentationHandoff.report(.pending, into: store.state))
         XCTAssertEqual(try renderedText(hosted).filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline"])
-        let moved = try await f.session.submitViewport(.init(anchor: .init(cardID: f.cardIDs[1], placement: .center)))
+        let observation = ViewportObservation(anchor: .init(cardID: f.cardIDs[1], placement: .center))
+        _ = try await f.session.submitViewport(observation)
+        let moved = try await f.session.admitPresentation(.forwardScroll(observation))
         try store.install(try FeedPresentationHandoff.receive(snapshot: moved, into: store.state))
         XCTAssertEqual(try renderedText(hosted).filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline", "River headline"])
     }

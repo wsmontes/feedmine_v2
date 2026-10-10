@@ -90,7 +90,9 @@ public actor FeedRunwayDriver {
 
     public func restoreAndActivate(backwardCapacity: Int, forwardCapacity: Int,
         resources: FeedRunwayDriverResources) async throws -> FeedPresentationSnapshot? {
-        guard try await session.restoreLocalPresentation(backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity) != nil else {
+        let bounds = FeedPresentationBounds(backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
+            contextKey: plan.context.key)
+        guard try await session.admitPresentation(.restore(bounds)) != nil else {
             await runway.deactivate(); return nil
         }
         return try await activateCurrentPresentation(resources: resources)
@@ -106,15 +108,23 @@ public actor FeedRunwayDriver {
         return try await drive(resources: resources)
     }
 
+    /// Records one real observation and lets the runway produce. The admitted list changes only
+    /// through `FeedPresentationAdmission.forwardScroll`, and only when the movement was forward.
     public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,
         resources: FeedRunwayDriverResources) async throws -> FeedPresentationSnapshot? {
-        guard let presentation = try await session.submitViewport(observation) else {
+        guard let recorded = try await session.submitViewport(observation) else {
             await runway.deactivate(); return nil
         }
-        guard presentation.window.anchor == observation.anchor else { return presentation }
+        // An unknown anchor is inert: the session kept its current anchor and no observation is claimed.
+        guard recorded.window.anchor == observation.anchor else { return recorded }
         _ = try await validateCurrentScope()
-        try await runway.submitObservation(.init(editionID: presentation.editionID,
-            anchorCardID: presentation.window.anchor.cardID, sampledAt: monotonicNow(), activity: activity))
+        try await runway.submitObservation(.init(editionID: recorded.editionID,
+            anchorCardID: recorded.window.anchor.cardID, sampledAt: monotonicNow(), activity: activity))
+        if activity.admitsForwardContent {
+            // The gesture reveals the prefix that was already ready; cards produced by this very
+            // opportunity wait for the next genuine scroll observation.
+            _ = try await session.admitPresentation(.forwardScroll(observation))
+        }
         return try await drive(resources: resources)
     }
 
@@ -214,9 +224,8 @@ public actor FeedRunwayDriver {
                         readerAnchorCardID: await session.currentPresentation()?.window.anchor.cardID)
                     let outcome = try localProductionSlice.run(request, prepare: prepare)
                     try await runway.completeLocalSlice(intent, outcome: outcome, at: monotonicNow())
-                    if case .published = outcome, await session.currentRunwayScope() == scope {
-                        _ = try await session.refreshCurrentPresentation()
-                    }
+                    // Publication extends the reserve only. Installing a different admitted list here
+                    // was the defect this task removes (analysis §2): no gesture, new cards on screen.
                 } catch {
                     try await runway.failLocalSlice(intent, failure: error is CancellationError ? .cancelled : .failed, at: monotonicNow())
                     throw error

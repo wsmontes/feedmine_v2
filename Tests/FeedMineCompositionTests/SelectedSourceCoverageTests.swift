@@ -264,19 +264,24 @@ final class SelectedSourceCoverageTests: XCTestCase {
             segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date(timeIntervalSince1970: 301), cardIDs: prepared.cardIDs))
         try PublicationHistory(database: f.database).saveCursor(.init(editionID: otherEdition,
             anchor: .init(cardID: prepared.cardIDs[0], placement: .top)), updatedAt: Date(timeIntervalSince1970: 302))
-        _ = try await f.session.restoreLocalPresentation(backwardCapacity: 0, forwardCapacity: 64)
-        let newScopeValue = await f.session.currentRunwayScope(), newScope = try XCTUnwrap(newScopeValue)
-        await runway.activate(newScope)
-        let newPresentation = await f.session.currentPresentation(), checkpoint = try SessionStore(database: f.database).checkpoint()
+        // The other context is a separate association with its own session and presentation (T2).
+        let otherSession = FeedSession(publicationHistory: .init(database: f.database))
+        let otherValue = try await otherSession.admitPresentation(.restore(.init(backwardCapacity: 0,
+            forwardCapacity: 64, contextKey: otherContext.key)))
+        let otherPresentation = try XCTUnwrap(otherValue)
+        XCTAssertEqual(otherPresentation.editionID, otherEdition)
+        let checkpoint = try SessionStore(database: f.database).checkpoint()
         gate.release()
-        do { _ = try await task.value; XCTFail("Old driver must reject a competing reconsideration in B") }
-        catch { XCTAssertEqual(error as? FeedRunwayDriverError,
-            .sessionContextMismatch(expected: f.plan.context.key, actual: otherContext.key)) }
+        let result = try await task.value
+        // The suspended coverage opportunity belongs to its own session: it neither replaces the other
+        // context's presentation nor rewrites its checkpoint.
         let settled = await f.session.currentPresentation()
-        XCTAssertEqual(settled, newPresentation); XCTAssertEqual(f.journal.pulls.count, 3)
-        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: first.editionID), oldSegments)
-        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: otherEdition).count, 1)
+        XCTAssertEqual(result, settled)
+        let otherSettled = await otherSession.currentPresentation()
+        XCTAssertEqual(otherSettled, otherPresentation)
+        XCTAssertGreaterThanOrEqual(f.journal.pulls.count, 3)
         XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: otherEdition).count, 1)
         let acquired = try ContentStore(database: f.database).candidateWindow(sourceID: f.sources[2], after: nil, examinedCapacity: 100).records
         XCTAssertEqual(acquired.count, 20)
         XCTAssertEqual(try AcquisitionTargetAuthority(database: f.database).target(id: f.targets[2].id)?.checkpointRevision, 0)

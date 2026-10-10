@@ -510,7 +510,7 @@ final class FeedViewportCaptureTests: XCTestCase {
             try history.saveCursor(.init(editionID: editionID, anchor: .init(cardID: published[4].id, placement: .top)), updatedAt: Date())
         }
         try persist(edition, cards)
-        let restored = try await session.restoreLocalPresentation(backwardCapacity: 4, forwardCapacity: 5)
+        let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 4, forwardCapacity: 5)))
         let snapshot = try XCTUnwrap(restored)
         var events: [(ViewportObservation, RunwayActivity)] = []
         let store = FeedScreenStore { events.append(($0, $1)) }
@@ -527,14 +527,14 @@ final class FeedViewportCaptureTests: XCTestCase {
         XCTAssertTrue(events.isEmpty)
         let scroll = try XCTUnwrap(scrollView(hosting))
         let before = scroll.contentView.bounds.origin.y
-        let extended = try await session.restoreLocalPresentation(backwardCapacity: 4, forwardCapacity: 7)
+        let extended = try await session.admitPresentation(.restore(.init(backwardCapacity: 4, forwardCapacity: 7)))
         try store.install(.init(presentation: try XCTUnwrap(extended)))
         for _ in 0..<40 { hosting.layoutSubtreeIfNeeded(); await Task.yield() }
         XCTAssertEqual(scroll.contentView.bounds.origin.y, before, accuracy: 1, "Tail extension must preserve position")
         let oldHeight = try XCTUnwrap(scroll.documentView).frame.height
         XCTAssertGreaterThan(before, 0, "Restore the provided interior publication anchor")
         XCTAssertTrue(events.isEmpty, "Programmatic layout is not user input")
-        _ = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 7)
+        _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 7)))
         let recentered = try await session.submitViewport(.init(anchor: .init(cardID: ids[4], placement: .center)))
         try store.install(.init(presentation: try XCTUnwrap(recentered)))
         for _ in 0..<40 { hosting.layoutSubtreeIfNeeded(); await Task.yield() }
@@ -551,7 +551,7 @@ final class FeedViewportCaptureTests: XCTestCase {
         }
         try persist(newEdition, replacement)
         let nextSession = FeedSession(publicationHistory: history)
-        let nextSnapshot = try await nextSession.restoreLocalPresentation(backwardCapacity: 4, forwardCapacity: 7)
+        let nextSnapshot = try await nextSession.admitPresentation(.restore(.init(backwardCapacity: 4, forwardCapacity: 7)))
         var replacementCalls = 0
         let nextStore = FeedScreenStore { _, _ in replacementCalls += 1 }
         try nextStore.install(.init(presentation: try XCTUnwrap(nextSnapshot)))

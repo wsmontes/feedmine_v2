@@ -155,7 +155,9 @@ final class FeedPresentationHandoffTests: XCTestCase {
         XCTAssertEqual(updated.presentation?.editionID, f.editionID)
         XCTAssertEqual(updated.presentation?.window.anchor, observation.anchor)
         XCTAssertEqual(updated.work, .pending)
-        XCTAssertEqual(updated.presentation?.window.items.count, 2)
+        // The gesture admitted what was ready before it; the cards it produced await the next scroll.
+        XCTAssertEqual(updated.presentation?.window.items.count, 1)
+        XCTAssertGreaterThan(try PublicationStore(database: f.database).segments(editionID: f.editionID).count, 1)
         XCTAssertEqual(FeedPresentationHandoff.report(.idle, into: updated).work, .idle)
     }
     func testH4RealDeferredAndUnavailableKeepPresentationDistinct() async throws {
@@ -202,13 +204,18 @@ final class FeedPresentationHandoffTests: XCTestCase {
     func testH6ViewportForwardingUsesDriverSnapshotAndExactIdentity() async throws {
         let f = try fixture(), state = try await warm(f)
         let observation = ViewportObservation(anchor: .init(cardID: f.cardIDs[1], placement: .center))
-        let updated = try await FeedPresentationHandoff.submitViewport(observation, activity: .stationary,
+        let stationary = try await FeedPresentationHandoff.submitViewport(observation, activity: .stationary,
             resources: resources(), driver: f.driver, into: state)
         let current = await f.session.currentPresentation()
-        XCTAssertEqual(updated.presentation, current)
-        XCTAssertEqual(updated.presentation?.window.anchor, observation.anchor)
-        XCTAssertEqual(updated.presentation?.editionID, f.editionID)
-        XCTAssertEqual(updated.presentation?.window.items.map(\.id), Array(f.cardIDs.prefix(3)))
+        XCTAssertEqual(stationary.presentation, current)
+        XCTAssertEqual(stationary.presentation?.window.anchor, observation.anchor)
+        XCTAssertEqual(stationary.presentation?.editionID, f.editionID)
+        // A stationary observation moves the anchor only: the two admitted cards stay.
+        XCTAssertEqual(stationary.presentation?.window.items.map(\.id), Array(f.cardIDs.prefix(2)))
+        // The explicit forward movement is what admits the next ready prefix.
+        let forward = try await FeedPresentationHandoff.submitViewport(observation, activity: .explicitTailApproach,
+            resources: resources(), driver: f.driver, into: state)
+        XCTAssertEqual(forward.presentation?.window.items.map(\.id), Array(f.cardIDs.prefix(3)))
         XCTAssertEqual(f.http.calls, 0)
     }
     func testH7NoImplicitEditionOrContextSwap() async throws {
@@ -232,7 +239,7 @@ final class FeedPresentationHandoffTests: XCTestCase {
         let f = try fixture(), state = try await warm(f)
         let last = try XCTUnwrap(state.presentation?.window.items.last)
         let updated = try await FeedPresentationHandoff.submitViewport(.init(anchor: .init(cardID: last.id, placement: .top)),
-            activity: .stationary, resources: resources(), driver: f.driver, into: state)
+            activity: .explicitTailApproach, resources: resources(), driver: f.driver, into: state)
         XCTAssertEqual(updated.work, .idle)
         XCTAssertEqual(updated.presentation?.window.items.last?.id, f.cardIDs[2])
         XCTAssertEqual(updated.presentation?.editionID, f.editionID); XCTAssertEqual(f.http.calls, 0)

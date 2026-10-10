@@ -59,7 +59,7 @@ final class FeedSessionCheckpointTests: XCTestCase {
             let (edition, cards) = try persist(location: location)
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            let restored = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 2)
+            let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
             let saved = try await session.checkpointCurrentPosition(at: milestoneTime)
             XCTAssertTrue(saved)
             let checkpoint = try XCTUnwrap(SessionStore(database: database).checkpoint())
@@ -78,7 +78,7 @@ final class FeedSessionCheckpointTests: XCTestCase {
         let database = try RuntimeDatabase(location: location)
         let history = PublicationHistory(database: database)
         let session = FeedSession(publicationHistory: history)
-        let restored = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 2)
+        let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
         XCTAssertEqual(restored?.window.items.map(\.id), Array(cards[2...6]).map(\.id))
         let before = try XCTUnwrap(SessionStore(database: database).checkpoint())
         let shifted = try await session.submitViewport(ViewportObservation(
@@ -104,7 +104,7 @@ final class FeedSessionCheckpointTests: XCTestCase {
             try await shiftCheckpointAndClose(location: location, edition: edition, cards: cards, index: 6, placement: .center)
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            let restored = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 2)
+            let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
             XCTAssertEqual(restored?.window.anchor, PresentationAnchor(cardID: cards[6].id, placement: .center))
             XCTAssertEqual(restored?.window.items.map(\.id), Array(cards[4...8]).map(\.id))
             XCTAssertEqual(restored?.contextKey, edition.contextKey)
@@ -118,7 +118,7 @@ final class FeedSessionCheckpointTests: XCTestCase {
             try await shiftCheckpointAndClose(location: location, edition: edition, cards: cards, index: 5, placement: .top)
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            let restored = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 2)
+            let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
             XCTAssertEqual(restored?.window.anchor, PresentationAnchor(cardID: cards[5].id, placement: .top))
         }
     }
@@ -128,7 +128,7 @@ final class FeedSessionCheckpointTests: XCTestCase {
             let (_, cards) = try persist(location: location)
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            _ = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 2)
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
             let shifted = try await session.submitViewport(ViewportObservation(
                 anchor: PresentationAnchor(cardID: cards[6].id, placement: .center)))
             let before = try XCTUnwrap(SessionStore(database: database).checkpoint())
@@ -160,7 +160,7 @@ final class FeedSessionCheckpointTests: XCTestCase {
             let (_, cards) = try persist(location: location)
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            _ = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 2)
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
             let shifted = try await session.submitViewport(ViewportObservation(
                 anchor: PresentationAnchor(cardID: cards[6].id, placement: .center)))
             let before = try SessionStore(database: database).checkpoint()

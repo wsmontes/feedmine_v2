@@ -52,7 +52,7 @@ final class FeedScreenStoreTests: XCTestCase {
     }
 
     private func snapshot(_ f: Fixture, backward: Int = 1, forward: Int = 1) async throws -> FeedPresentationSnapshot {
-        let restored = try await f.session.restoreLocalPresentation(backwardCapacity: backward, forwardCapacity: forward)
+        let restored = try await f.session.admitPresentation(.restore(.init(backwardCapacity: backward, forwardCapacity: forward)))
         return try XCTUnwrap(restored)
     }
 
@@ -120,7 +120,9 @@ final class FeedScreenStoreTests: XCTestCase {
         let store = FeedScreenStore { _, _ in }
         try store.install(try FeedPresentationHandoff.receive(snapshot: first, into: store.state))
         let observation = ViewportObservation(anchor: .init(cardID: f.cardIDs[1], placement: .center))
-        let moved = try await f.session.submitViewport(observation)
+        // Position first, then the gesture that admits the next ready prefix (T2 boundary).
+        _ = try await f.session.submitViewport(observation)
+        let moved = try await f.session.admitPresentation(.forwardScroll(observation))
         let next = try XCTUnwrap(moved)
         try store.install(try FeedPresentationHandoff.receive(snapshot: next, into: store.state))
         XCTAssertEqual(store.state.presentation, next)
@@ -195,7 +197,8 @@ final class FeedScreenStoreTests: XCTestCase {
         store.submitViewport(observation, activity: .forward)
         XCTAssertEqual(store.state.presentation, first)
         // External consumer simulates the driver result using a real Runtime viewport projection.
-        let returned = try await f.session.submitViewport(XCTUnwrap(intent))
+        _ = try await f.session.submitViewport(XCTUnwrap(intent))
+        let returned = try await f.session.admitPresentation(.forwardScroll(XCTUnwrap(intent)))
         let delivered = try FeedPresentationHandoff.receive(snapshot: returned, into: store.state)
         let changes = Changes()
         withObservationTracking { _ = store.state } onChange: {

@@ -28,6 +28,8 @@ public struct FeedProjectionProvenance: Hashable, Sendable {
 
 public enum FeedSessionError: Error, Equatable, Sendable {
     case projectionOrderExhausted
+    /// A presentation cannot be installed with negative materialization bounds.
+    case invalidMaterializationBounds
 }
 
 public enum PresentationAnchorPlacement: String, Hashable, Sendable {

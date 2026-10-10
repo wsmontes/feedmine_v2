@@ -36,7 +36,7 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
         try await withLocation { location in
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            let restored = try await session.restoreLocalPresentation(backwardCapacity: 4, forwardCapacity: 1)
+            let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 4, forwardCapacity: 1)))
             let current = await session.currentPresentation()
             XCTAssertNil(restored)
             XCTAssertNil(current)
@@ -51,7 +51,7 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
             let savedCheckpoint = try XCTUnwrap(SessionStore(database: database).checkpoint())
-            let restored = try await session.restoreLocalPresentation(backwardCapacity: 4, forwardCapacity: 1)
+            let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 4, forwardCapacity: 1)))
             let snapshot = try XCTUnwrap(restored)
             let current = await session.currentPresentation()
             XCTAssertEqual(current, snapshot)
@@ -83,7 +83,7 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
             let store = SessionStore(database: database)
             let before = try XCTUnwrap(store.checkpoint())
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
-            let restored = try await session.restoreLocalPresentation(backwardCapacity: 0, forwardCapacity: 0)
+            let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 0, forwardCapacity: 0)))
             let snapshot = try XCTUnwrap(restored)
             let current = await session.currentPresentation()
             XCTAssertEqual(current, snapshot)
@@ -105,21 +105,20 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
             for capacities in [(-1, 0), (0, -1)] {
                 do {
-                    _ = try await session.restoreLocalPresentation(
-                        backwardCapacity: capacities.0, forwardCapacity: capacities.1)
+                    _ = try await session.admitPresentation(.restore(.init(backwardCapacity: capacities.0, forwardCapacity: capacities.1)))
                     XCTFail("Expected invalid capacity")
                 } catch {
-                    XCTAssertEqual(error as? PublicationStoreError, .invalidCapacity)
+                    XCTAssertEqual(error as? FeedSessionError, .invalidMaterializationBounds)
                 }
                 let current = await session.currentPresentation()
                 XCTAssertNil(current)
             }
-            let restored = try await session.restoreLocalPresentation(backwardCapacity: 2, forwardCapacity: 1)
+            let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 1)))
             do {
-                _ = try await session.restoreLocalPresentation(backwardCapacity: -1, forwardCapacity: 1)
+                _ = try await session.admitPresentation(.restore(.init(backwardCapacity: -1, forwardCapacity: 1)))
                 XCTFail("Expected invalid capacity")
             } catch {
-                XCTAssertEqual(error as? PublicationStoreError, .invalidCapacity)
+                XCTAssertEqual(error as? FeedSessionError, .invalidMaterializationBounds)
             }
             let current = await session.currentPresentation()
             XCTAssertEqual(current, restored)

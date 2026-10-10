@@ -209,6 +209,8 @@ final class FeedAssociation {
     @ObservationIgnored private let tidy: MediaTidy
     @ObservationIgnored private let tidyWaitSeconds: Double
     let acquisition: SyndicationAcquisitionSnapshot
+    /// Structural bounds of this association's admitted presentation (plan T2/T3).
+    let bounds: FeedPresentationBounds
     @ObservationIgnored private let maintainTail: @Sendable (PublicationStore.HiddenTailLease) async throws -> PublicationStore.TailSuccessionResult
     private let cold: ColdFeedBootstrap
     @ObservationIgnored private let relay: EvidenceRelay
@@ -292,6 +294,12 @@ final class FeedAssociation {
     private(set) var viewportCompleted = 0
     private(set) var backwardCompleted = 0
     #endif
+
+    /// Structural bounds for this association's admitted presentation: a readable prefix and the
+    /// reserve the reader may walk into. Frozen when the presentation is installed (plan T2/T3).
+    static func presentationBounds(_ contextKey: ContextKey) -> FeedPresentationBounds {
+        .init(backwardCapacity: 8, forwardCapacity: 16, contextKey: contextKey)
+    }
 
     static var resources: FeedRunwayDriverResources {
         .init(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 32,
@@ -385,6 +393,7 @@ final class FeedAssociation {
         let session = FeedSession(publicationHistory: history, imageDecoder: PresentationImageDecoder(
             assetDirectory: assetDirectory, heroMaxPixel: device.heroPixelWidth, thumbnailMaxPixel: device.thumbnailPixelWidth))
         self.session = session
+        bounds = Self.presentationBounds(context.key)
         let names = Dictionary(uniqueKeysWithValues: feeds.map { ($0.sourceID, $0.displayName) })
         let prepare: @Sendable (SelectionResult) -> LocalPreparedPublication = { Self.prepare($0, readiness: readiness, names: names) }
         // Bounded wait for media of the supply head: what the runway can afford (one request timeout).
@@ -454,7 +463,7 @@ final class FeedAssociation {
         guard active, !launching else { return }
         launching = true
         defer { launching = false }
-        let restored = try await session.restoreLocalPresentation(backwardCapacity: 8, forwardCapacity: 16)
+        let restored = try await session.admitPresentation(.initial(bounds))
         if let restored {
             try install(FeedPresentationHandoff.receive(snapshot: restored, into: store.state))
             Self.log("local restore before HTTP")
@@ -574,12 +583,16 @@ final class FeedAssociation {
                 try PublicationStore(database: database).setVisibility(editionID: edition, visible: true)
             }
             guard active, !launching else { return }
-            if let refreshed = try await session.refreshCurrentPresentation() {
-                try install(FeedPresentationHandoff.receive(snapshot: refreshed, into: store.state))
-            }
             if await session.currentPresentation() == nil {
-                try await launch() // A new explicit foreground opportunity, without replacing the session/store.
-                return
+                // Recovery without replacing the association; a presentation that already exists is
+                // never extended here — returning to the app shows exactly what the reader left.
+                if let restored = try await session.admitPresentation(.restore(bounds)) {
+                    try install(FeedPresentationHandoff.receive(snapshot: restored, into: store.state))
+                }
+                if await session.currentPresentation() == nil {
+                    try await launch()
+                    return
+                }
             }
             let snapshot = try await driver.drive(resources: Self.resources)
             try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))

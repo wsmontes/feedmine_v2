@@ -197,8 +197,9 @@ public struct ColdFeedBootstrap: Sendable {
 
     /// One initial-slice attempt over current supply. Reuses the exact request: each initial slice
     /// starts selection at the canonical head, and the durable first Edition is created at most once.
-    private func attemptFirstPublication(_ request: InitialProductionSlice.Request, identity: ColdFeedPublicationIdentity,
-        backwardCapacity: Int, forwardCapacity: Int) async throws -> PublicationAttempt {
+    private func attemptFirstPublication(_ request: InitialProductionSlice.Request,
+        identity: ColdFeedPublicationIdentity, backwardCapacity: Int,
+        forwardCapacity: Int) async throws -> PublicationAttempt {
         // PD-5/PD-6: give fresh supply a bounded chance to arrive with real images before the first
         // screen; whatever is not ready is published as a designed text-only card.
         if prepareMedia != nil { await evidence?(.preparingMedia) }
@@ -228,10 +229,12 @@ public struct ColdFeedBootstrap: Sendable {
             anchorPlacement: identity.anchorPlacement, checkpointedAt: identity.checkpointedAt)
     }
 
-    private func installedPublication(identity: ColdFeedPublicationIdentity,
-        backwardCapacity: Int, forwardCapacity: Int) async throws -> ColdFeedBootstrapOutcome {
-        guard let snapshot = try await session.restoreLocalPresentation(backwardCapacity: backwardCapacity,
-            forwardCapacity: forwardCapacity, contextKey: plan.context.key), snapshot.editionID == identity.editionID else {
+    private func installedPublication(identity: ColdFeedPublicationIdentity, backwardCapacity: Int,
+        forwardCapacity: Int) async throws -> ColdFeedBootstrapOutcome {
+        let bounds = FeedPresentationBounds(backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
+            contextKey: plan.context.key)
+        guard let snapshot = try await session.admitPresentation(.initial(bounds)),
+            snapshot.editionID == identity.editionID else {
             throw ColdFeedBootstrapError.inconsistentPublishedRestore
         }
         return .published(snapshot)

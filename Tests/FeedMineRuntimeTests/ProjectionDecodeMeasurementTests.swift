@@ -48,13 +48,19 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
         let counter = Counter()
         let session = FeedSession(publicationHistory: .init(database: database), imageDecoder: .init(assetDirectory: directory.appendingPathComponent("Media"),
             heroMaxPixel: 300, thumbnailMaxPixel: 88, onDecode: { counter.increment() }))
-        let restored = try await session.restoreLocalPresentation(backwardCapacity: 8, forwardCapacity: 16)
+        let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 8, forwardCapacity: 16)))
         let initial = try XCTUnwrap(restored)
         XCTAssertEqual(initial.window.items[0].image?.cgImage.width, 300)
+        let anchor = ViewportObservation(anchor: initial.window.anchor)
         var before = rusage(), after = rusage()
         getrusage(RUSAGE_SELF, &before)
         let started = ProcessInfo.processInfo.systemUptime
-        for _ in 0..<100 { _ = try await session.refreshCurrentPresentation() }
+        // Only the admitted list can change; repeated observations and repeat admission attempts with
+        // nothing new published must neither re-project nor re-decode the visible card.
+        for _ in 0..<100 {
+            _ = try await session.submitViewport(anchor)
+            _ = try await session.admitPresentation(.forwardScroll(anchor))
+        }
         getrusage(RUSAGE_SELF, &after)
         let userCPU = Double(after.ru_utime.tv_sec - before.ru_utime.tv_sec) + Double(after.ru_utime.tv_usec - before.ru_utime.tv_usec) / 1_000_000
         let systemCPU = Double(after.ru_stime.tv_sec - before.ru_stime.tv_sec) + Double(after.ru_stime.tv_usec - before.ru_stime.tv_usec) / 1_000_000
@@ -62,10 +68,10 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
         print("T7 projection 100 refresh: ms=\((ProcessInfo.processInfo.systemUptime - started) * 1000), decode=\(counter.value), decodedBytes=\(300 * 200 * 4)")
         XCTAssertEqual(counter.value, 1, "Unchanged visible card must reuse its prepared image")
         try FileManager.default.removeItem(at: assets.appendingPathComponent(digest))
-        let retained = try await session.refreshCurrentPresentation()
+        let retained = try await session.admitPresentation(.forwardScroll(anchor))
         XCTAssertEqual(retained?.window.items[0].image, initial.window.items[0].image, "Visible projection stays frozen")
         let reopened = FeedSession(publicationHistory: .init(database: database), imageDecoder: .init(assetDirectory: directory.appendingPathComponent("Media"), heroMaxPixel: 300, thumbnailMaxPixel: 88))
-        let missing = try await reopened.restoreLocalPresentation(backwardCapacity: 8, forwardCapacity: 16)
+        let missing = try await reopened.admitPresentation(.restore(.init(backwardCapacity: 8, forwardCapacity: 16)))
         XCTAssertNil(missing?.window.items[0].image)
         XCTAssertEqual(missing?.window.items[0].mediaAspectRatio, initial.window.items[0].mediaAspectRatio)
         XCTAssertEqual(missing?.window.items[0].id, initial.window.items[0].id)

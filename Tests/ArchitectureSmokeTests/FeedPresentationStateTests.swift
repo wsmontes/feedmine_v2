@@ -50,7 +50,7 @@ final class FeedPresentationStateTests: XCTestCase {
     }
 
     private func snapshot(_ f: Fixture, backward: Int = 1, forward: Int = 1) async throws -> FeedPresentationSnapshot {
-        let restored = try await f.session.restoreLocalPresentation(backwardCapacity: backward, forwardCapacity: forward)
+        let restored = try await f.session.admitPresentation(.restore(.init(backwardCapacity: backward, forwardCapacity: forward)))
         return try XCTUnwrap(restored)
     }
 
@@ -117,7 +117,8 @@ final class FeedPresentationStateTests: XCTestCase {
         let updated = try state.receiving(next)
         XCTAssertEqual(updated.presentation, next)
         XCTAssertEqual(updated.presentation?.editionID, first.editionID)
-        XCTAssertEqual(updated.presentation?.window.items.map(\.id), Array(f.cardIDs.prefix(3)))
+        // A stationary observation moves the logical anchor; the admitted prefix is unchanged.
+        XCTAssertEqual(updated.presentation?.window.items.map(\.id), Array(f.cardIDs.prefix(2)))
         XCTAssertEqual(updated.presentation?.window.anchor, observation.anchor)
         // Receiving a new projection does not claim external work has settled.
         XCTAssertEqual(updated.work, .pending)
@@ -132,9 +133,13 @@ final class FeedPresentationStateTests: XCTestCase {
         let moved = try await f.session.submitViewport(.init(anchor: .init(cardID: lastMaterialized.id, placement: .top)))
         let next = try XCTUnwrap(moved), updated = try state.receiving(next)
         XCTAssertEqual(state.work, .idle); XCTAssertEqual(updated.work, .idle)
-        XCTAssertEqual(updated.presentation?.window.items.last?.id, f.cardIDs[2])
+        XCTAssertEqual(updated.presentation?.window.items.last?.id, f.cardIDs[1])
         XCTAssertEqual(updated.presentation?.editionID, first.editionID)
-        let anchorOnly = try await snapshot(f, backward: 0, forward: 0)
+        // A second session is the only way to install different structural bounds (T2).
+        let anchorOnlySession = FeedSession(publicationHistory: .init(database: f.database))
+        let anchorOnlyValue = try await anchorOnlySession.admitPresentation(
+            .restore(.init(backwardCapacity: 0, forwardCapacity: 0)))
+        let anchorOnly = try XCTUnwrap(anchorOnlyValue)
         let finite = FeedPresentationState(presentation: anchorOnly)
         XCTAssertEqual(finite.presentation?.window.items.count, 1)
         XCTAssertEqual(finite.work, .idle)

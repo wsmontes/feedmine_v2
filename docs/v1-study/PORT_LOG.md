@@ -167,3 +167,50 @@ Plan: `docs/superpowers/plans/2026-10-09-transferencia-frontend-v1-v2.md` (T1 of
   inside the Simulator window and are deferred to the V2 UI tests of T5/T6.
 - **No code changed by T1.** No row is `validado`; every row is `inventariado` until a delivery proves the
   flow.
+
+## T2 — 2026-10-09 (production separated from admission)
+
+Plan task T2. Codex reviewed the design before the commit (`Replicate stable Feedmine 1 UI` thread) and
+three of its findings changed the implementation.
+
+**The defect, measured.** At `372f4c5` the reader's list could change with no gesture:
+`FeedRunwayDriver.driveCausalEffects` called `session.refreshCurrentPresentation()` after a published local
+slice, and `AppComposition.foreground()` called it on every return to the app. Pre-change evidence: with the
+T2 working tree stashed, `swift test --filter FeedSessionRunwayTests` passed **including**
+`test03RefreshAppendsLocalViewPreservingAnchorAndCapacities` — a test that asserts a stationary reader's
+presented window grows from 2 to 3 cards after production. That test is gone; the behavior it pinned is the
+behavior this task removes.
+
+**What changed.**
+
+| Area | Change |
+| --- | --- |
+| `Sources/FeedMineRuntime/FeedPresentationAdmission.swift` (new) | `FeedPresentationBounds` (backward/forward capacity + optional context key) and the three admissions `.initial(bounds)`, `.forwardScroll(ViewportObservation)`, `.restore(bounds)`; `RunwayActivity.admitsForwardContent` = `forward` \| `explicitTailApproach` |
+| `FeedSession` | `admitPresentation(_:)` is the only path that changes the admitted list. `.initial` installs once per session (`hasAdmittedInitial`), `.restore` only when no presentation exists, `.forwardScroll` appends published cards after the admitted tail, bounded by the frozen forward capacity, and refuses an observation that is no longer the reader's current anchor. Bounds are validated at installation and frozen in `FeedSessionState` (negative capacities throw `FeedSessionError.invalidMaterializationBounds` before any state is read). `submitViewport` now only records: `markSeen` plus an anchor move inside the admitted items, no window read. `refreshCurrentPresentation` and the capacity parameters of `restoreLocalPresentation` are deleted (no callers remain). |
+| `FeedRunwayDriver` | The published branch of `.runLocalSlice` no longer refreshes. `submitViewport` records, submits the runway observation, admits only for a forward activity, then drives. `restoreAndActivate` restores with the plan's **own** context key instead of a global checkpoint. |
+| `ColdFeedBootstrap` | Installs the first presentation through `.initial(bounds)` for the plan's context; no capacity parameters left in its API. |
+| `AppComposition` | `FeedAssociation` holds frozen `bounds`; `launch()` admits `.initial`, `foreground()` drives production only and admits `.restore` only when no presentation exists. |
+| `FeedPresentationSnapshot` | `FeedSessionError.invalidMaterializationBounds`. |
+
+**Codex review, applied.** (a) An old forward event could admit after production finished, installing a
+stale anchor — fixed by the anchor-currency guard plus admitting *before* awaiting production, so a gesture
+reveals only what was already ready and the cards it produces wait for the next genuine scroll. (b)
+`forwardCapacity / 4` was a demand heuristic in the wrong layer — removed; the UI reports genuine movement,
+the session enforces currency, append-only order and batch size. (c) Decoded-image residency still grows
+with the admitted list — `PresentationCard` strongly owns its `CGImage`; that policy belongs to T3 and is
+recorded there, not silently accepted. Codex found no cold-bootstrap widening path and no other production
+path that can change the list.
+
+**Tests.** New `FeedPresentationAdmissionTests` (7 cases): stationary preparation does not extend the list
+while the reserve grows; retry/recovery/repeat-initial are inert; the initial admission is not repeated; a
+forward scroll admits only the ready prefix in order; a stationary observation moves the anchor without
+changing items; a backward observation does not admit; recovery without a checkpoint installs nothing.
+~20 existing tests that pinned the removed "production rematerializes the window" physics were migrated to
+the new contract, keeping their original subject; the two that encoded a session-level context switch
+(`testR15`, `testP6`) were rewritten to the model the app actually uses — one session per context — and now
+prove that a suspended opportunity cannot touch another context's presentation, edition or checkpoint.
+
+**Verification.** `swift build` clean; `swift test` **849 tests, 0 failures**; iOS build
+`xcodebuild -scheme FeedMine -destination 'platform=iOS Simulator,id=8871DCF5…' CODE_SIGNING_ALLOWED=NO build`
+→ **BUILD SUCCEEDED**. Docs updated in the same commit (`RUNTIME_PRESENTATION_CONTRACT`, `FILE_RESPONSIBILITIES`,
+`ACQUISITION_DESIGN`, `IMPLEMENTATION_ORDER`) — no architecture doc mentions the deleted APIs.

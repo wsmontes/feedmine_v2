@@ -10,13 +10,13 @@ Prove the warm/offline vertical slice from retained local publication to an immu
 runtime.sqlite
         ↓ PublicationHistory.restore()
 RestoredPublication
-        ↓ FeedSession.restoreLocalPresentation()
+        ↓ FeedSession.admitPresentation(.restore(bounds))
 FeedPresentationSnapshot
         ↓ FeedWindowSnapshot
 PresentationCard[]
 ```
 
-No checkpoint returns nil, without a fake empty snapshot. Errors propagate. Restore is synchronous and read-only: no checkpoint timestamp update, selection, network, catalog, canonical supply or media bytes. FeedSession is now an actor owning explicit current local state through one optional internal FeedSessionState. Its only other stored property is the immutable PublicationHistory dependency. Local history operations remain synchronous; external callers use await for actor isolation, without an async wrapper. Successful restore installs the snapshot and supplied capacities; no checkpoint clears state; a failed restore preserves prior state. currentPresentation returns the installed snapshot without I/O.
+No checkpoint returns nil, without a fake empty snapshot. Errors propagate. Restore is synchronous and read-only: no checkpoint timestamp update, selection, network, catalog, canonical supply or media bytes. FeedSession is now an actor owning explicit current local state through one optional internal FeedSessionState. Its only other stored property is the immutable PublicationHistory dependency. Local history operations remain synchronous; external callers use await for actor isolation, without an async wrapper. Successful restore installs the snapshot and the supplied bounds, frozen for the life of that presentation; no checkpoint clears state; a failed restore preserves prior state. currentPresentation returns the installed snapshot without I/O.
 
 backwardCapacity / forwardCapacity are finite materialization bounds, not page size, feed size or runway strategy. They are explicit caller inputs with no defaults; zero/zero restores the anchor alone. Published order and the exact anchor occurrence/placement remain unchanged.
 
@@ -54,17 +54,17 @@ FeedSessionUI, AsyncStream, reducer/effects, intents, runway, refresh, context s
 
 FeedMineUI consumes only FeedMineDomain, FeedMineRuntime and Foundation types. PresentationCard, FeedWindowSnapshot and FeedPresentationSnapshot expose no Publication, Persistence or Media types. Their Publication projection initializers are internal.
 
-The explicitly approved composition exception is `FeedSession.init(publicationHistory:)`: this public initializer accepts PublicationHistory so composition can supply the semantic boundary. It exposes a Publication type only at construction; `restoreLocalPresentation` returns solely Runtime presentation values. FeedSession does not accept RuntimeDatabase or mechanical stores. UI does not construct this dependency or import Publication.
+The explicitly approved composition exception is `FeedSession.init(publicationHistory:)`: this public initializer accepts PublicationHistory so composition can supply the semantic boundary. It exposes a Publication type only at construction; `admitPresentation` returns solely Runtime presentation values. FeedSession does not accept RuntimeDatabase or mechanical stores. UI does not construct this dependency or import Publication.
 
 ## 8. Local viewport movement
 
 ViewportObservation contains only a logical PresentationAnchor, with a non-failable initializer and no timestamp or telemetry. No viewport observation performs acquisition.
 
-Without state, submitViewport returns nil without I/O. Stale observations whose card is absent from the current window are ignored. An identical anchor is a no-op, with no read or mutation. Placement-only changes are valid.
+Without state, submitViewport returns nil without I/O. Observations whose card is absent from the admitted items are ignored. An identical anchor is a no-op, with no read or mutation. Placement-only changes are valid and allocate a new projection only for the anchor.
 
-An accepted observation moves the finite window within one immutable Edition using the capacities supplied at restore. It materializes retained local history, projects a new snapshot, and installs in-memory state only after successful materialization. A materialization failure propagates and preserves the previous presentation. ContextKey and EditionID stay unchanged, and published history is never modified or deleted. At local history boundaries the window contains only what exists.
+An accepted observation records exposure and moves the logical anchor inside the admitted items; it never materializes a new window. Only `admitPresentation(.forwardScroll(observation))` extends the admitted list, and only after the observation is still the reader's current anchor: it appends already-published cards that follow the admitted tail, bounded by the frozen forward capacity, so nothing is inserted above the reader and no admitted card changes. At local history boundaries the append adds nothing and the screen is preserved. ContextKey and EditionID stay unchanged, and published history is never modified or deleted.
 
-FeedSessionState contains exactly presentation, backwardCapacity and forwardCapacity; it does not duplicate context, Edition or anchor. Actor isolation establishes one mutable state owner without locks, detached tasks or queues.
+FeedSessionState contains exactly editorialRevisionID, presentation and the frozen FeedPresentationBounds; it does not duplicate context, Edition or anchor. Actor isolation establishes one mutable state owner without locks, detached tasks or queues.
 
 Viewport movement updates the actor-owned current local session state but does not itself durably checkpoint that state. After moving from a saved P4/center to a current P6/center, reopening restores P4/center because ordinary scroll never writes the SQLite checkpoint. Placement-only changes are also memory-local.
 
@@ -112,7 +112,7 @@ FeedPresentationStateTests lives in ArchitectureSmokeTests because Package.swift
 
 ## 12. Explicit presentation handoff and viewport bridge — Phase 3Q3
 
-Discovery found no executable presentation bridge in Composition. FeedSession exposes currentPresentation, restoreLocalPresentation, refreshCurrentPresentation and submitViewport; ColdFeedBootstrap.run returns its finite typed outcome; FeedRunwayDriver exposes restoreAndActivate, activateCurrentPresentation, submitViewport and drive. Their snapshots already satisfy the immutable UI contract. FeedScreenStore/FeedScreen and the environment/object-graph scaffolds remain unimplemented. The gap is typed result interpretation and explicit continuous viewport forwarding, not snapshot projection or a second runtime.
+Discovery found no executable presentation bridge in Composition. FeedSession exposes currentPresentation, admitPresentation and submitViewport; ColdFeedBootstrap.run returns its finite typed outcome; FeedRunwayDriver exposes restoreAndActivate, activateCurrentPresentation, submitViewport and drive. Their snapshots already satisfy the immutable UI contract. FeedScreenStore/FeedScreen and the environment/object-graph scaffolds remain unimplemented. The gap is typed result interpretation and explicit continuous viewport forwarding, not snapshot projection or a second runtime.
 
 FeedPresentationHandoff is a stateless namespace of composition functions. It stores no dependencies, current UI state, cards, Edition, anchor, cursor, checkpoint, supply or Runway intent. Each caller provides the existing FeedPresentationState; functions return the next value by its unchanged receiving(_) and reporting(_) APIs. No initializer, additional actor, subscription, task or automatic execution exists.
 
@@ -129,7 +129,7 @@ FeedPresentationHandoff is a stateless namespace of composition functions. It st
 
 The caller explicitly invokes warm restore or cold/continuous work, then hands off the result. Raw snapshots do not settle work automatically: the caller reports completion when appropriate. Work facts refer to the explicit opportunity, not a claim about global feed availability or all concurrent work. Error messages remain an explicit external choice; underlying operation and identity errors propagate. The caller retains its prior value on failure and may report failed(message:) without clearing it. No error recovery, fallback or repeat opportunity is introduced.
 
-submitViewport(_:activity:resources:driver:into:) forwards the exact ViewportObservation, semantic RunwayActivity and physical resources once to the existing FeedRunwayDriver.submitViewport. Only the returned snapshot is handed off. FeedSession still owns the logical movement and retained-window capacities; Runway still owns production intents. The bridge creates no second cursor, scroll algorithm, HTTP operation or window-end inference. PublicationCardID, top/center placement, published order, Edition/context and anchor are all retained from Runtime. receiving(_) still rejects implicit Edition/context replacement.
+submitViewport(_:activity:resources:driver:into:) forwards the exact ViewportObservation, semantic RunwayActivity and physical resources once to the existing FeedRunwayDriver.submitViewport. Only the returned snapshot is handed off. FeedSession still owns the logical movement and the frozen bounds; Runway still owns production intents. The bridge creates no second cursor, scroll algorithm, HTTP operation or window-end inference. PublicationCardID, top/center placement, published order, Edition/context and anchor are all retained from Runtime. receiving(_) still rejects implicit Edition/context replacement.
 
 External composition continues to supply one shared AcquisitionCoordinator to cold and continuous consumers over the same database. The bridge never constructs or stores a coordinator, queries a store, runs Selection/Publication, writes a checkpoint or retains history. Receiving/reporting starts no work. Only the explicit viewport call delegates an opportunity to the existing driver.
 

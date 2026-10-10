@@ -152,9 +152,14 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(try store.segments(editionID:f.edition).count,3)
         let candidates = try ContentStore(database:f.database).candidateWindow(sourceID:f.source,after:nil,examinedCapacity:8).records
         XCTAssertEqual(candidates.count,1); XCTAssertEqual(result?.editionID,f.edition)
-        XCTAssertEqual(result?.window.anchor,p.window.anchor); XCTAssertEqual(result?.window.items.count,3)
-        let current = await f.session.currentPresentation(); XCTAssertEqual(current,result)
+        XCTAssertEqual(result?.window.anchor,p.window.anchor)
+        // The gesture admitted only what was ready when it happened.
+        XCTAssertEqual(result?.window.items.count,1)
         try await assertLegitimateSecondTarget(f, seededLocal: false)
+        // The production this gesture started is revealed by the next genuine scroll.
+        let extended = try await tail(f, try XCTUnwrap(result))
+        XCTAssertEqual(extended?.window.items.count,3)
+        let current = await f.session.currentPresentation(); XCTAssertEqual(current,extended)
     }
     func test02LocalPresentationSurvivesSuspendedTailHTTP() async throws {
         let f = try fixture(paused:true),p = try await restore(f); XCTAssertEqual(f.http.calls,0)
@@ -162,7 +167,9 @@ final class FeedRunwayDriverTests: XCTestCase {
         let task = Task { try await driver.submitViewport(.init(anchor:anchor),activity:.explicitTailApproach,resources:resources) }
         var started = f.http.started.makeAsyncIterator(); _ = await started.next()
         let pending = await f.session.currentPresentation(); XCTAssertEqual(pending,p)
-        f.http.release(); let result = try await task.value; XCTAssertEqual(result?.window.items.count,3)
+        f.http.release(); let result = try await task.value
+        // Production finished during the suspended gesture; the admitted list still awaits a scroll.
+        XCTAssertEqual(result?.window.items.count,1)
         try await assertLegitimateSecondTarget(f, seededLocal: false)
     }
     func test03NoCheckpointNoColdEdition() async throws {
@@ -176,31 +183,48 @@ final class FeedRunwayDriverTests: XCTestCase {
         let driver = f.driver,resources = resources(),anchor = p.window.anchor
         let task = Task { try await driver.submitViewport(.init(anchor:anchor),activity:.explicitTailApproach,resources:resources) }
         var started = f.http.started.makeAsyncIterator(); _ = await started.next()
-        // Local content is already committed and projected before remote response is available.
+        // Local content is already committed; the admitted list still shows only what the reader
+        // was admitted. Production waits for the boundary (T2), so the reserve grows, not the screen.
         let local = await f.session.currentPresentation()
-        XCTAssertEqual(local?.window.items.count,2)
+        XCTAssertEqual(local?.window.items.count,1)
         XCTAssertEqual(try PublicationStore(database:f.database).segments(editionID:f.edition).count,2)
         f.http.release(); let result = try await task.value
-        XCTAssertEqual(result?.window.items.count,4)
+        // The gesture admitted the single card that was ready; the three it produced wait for the next one.
+        XCTAssertEqual(result?.window.items.count,1)
         try await assertLegitimateSecondTarget(f, seededLocal: true)
+        let extended = try await tail(f, try XCTUnwrap(result))
+        XCTAssertEqual(extended?.window.items.count,4)
     }
     func test05HistoryMeasurementIgnoresTinyWindowTail() async throws {
+        // Bounds are frozen per presentation (T2), so a "thin window" is simply a session admitted
+        // with no forward capacity: the measurement must still read committed history, not the window.
         let f = try fixture(historyCount:50,seedLocal:true,registrations:false),p = try await restore(f,forward:0)
         _ = try await tail(f,p) // real local publication establishes replenishment latency; no external target is eligible
-        _ = try await f.session.restoreLocalPresentation(backwardCapacity:1,forwardCapacity:1)
-        _ = try await f.driver.submitViewport(.init(anchor:.init(cardID:f.cards[1],placement:.top)),activity:.forward,resources:resources())
         // A real committed forward advance establishes nonzero measured consumption.
-        let thin = try await f.session.restoreLocalPresentation(backwardCapacity:0,forwardCapacity:0)
+        _ = try await f.driver.submitViewport(.init(anchor:.init(cardID:f.cards[1],placement:.top)),activity:.forward,resources:resources())
+        let thin = await f.session.currentPresentation()
         let current = try XCTUnwrap(thin)
-        XCTAssertEqual(current.window.items.last?.id,current.window.anchor.cardID)
+        XCTAssertEqual(current, p); XCTAssertEqual(current.window.items.last?.id,current.window.anchor.cardID)
         _ = try await tail(f,current)
         let snap = await f.runway.snapshot()
-        XCTAssertEqual(snap.readyAhead?.amount,.atLeast(8)); XCTAssertEqual(snap.lastCoverage,.healthy); XCTAssertEqual(f.http.calls,0)
+        // The subject is the measurement source: committed history, not the materialized window.
+        let ready = try XCTUnwrap(snap.readyAhead)
+        let ahead: Int
+        switch ready.amount {
+        case .exact(let count): ahead = count
+        case .atLeast(let bound): ahead = bound
+        }
+        XCTAssertGreaterThanOrEqual(ahead, 8)
+        XCTAssertEqual(ready.anchorCardID, current.window.anchor.cardID)
+        XCTAssertEqual(f.http.calls,0)
     }
-    func test06LocalPublicationRefreshesSession() async throws {
+    func test06LocalPublicationExtendsReserveWithoutChangingTheAdmittedList() async throws {
         let f = try fixture(seedLocal:true,registrations:false),p = try await restore(f)
         _ = try await tail(f,p); let current = await f.session.currentPresentation()
-        XCTAssertEqual(current?.window.items.count,2); XCTAssertEqual(current?.window.anchor,p.window.anchor)
+        XCTAssertEqual(current, p)
+        XCTAssertEqual(current?.window.items.count,1)
+        XCTAssertEqual(current?.window.anchor,p.window.anchor)
+        XCTAssertGreaterThan(try PublicationStore(database:f.database).segments(editionID:f.edition).count, 1)
     }
     func test07AdvanceWithoutPublicationPreservesPresentation() async throws {
         let f = try fixture(registrations:false),p = try await restore(f)
@@ -212,7 +236,11 @@ final class FeedRunwayDriverTests: XCTestCase {
         _ = try await tail(f,p,resources:resources(targets:0))
         let denied = await f.runway.snapshot(); XCTAssertNotNil(denied.outstandingAcquisition); XCTAssertEqual(f.http.calls,0)
         let result = try await f.driver.drive(resources:resources())
-        XCTAssertGreaterThan(f.http.calls,0); XCTAssertEqual(result?.window.items.count,3)
+        XCTAssertGreaterThan(f.http.calls,0)
+        // The resumed opportunity published; it did not install anything into the reader's list.
+        XCTAssertEqual(result, p)
+        let admitted = await f.session.currentPresentation(); XCTAssertEqual(admitted, p)
+        XCTAssertGreaterThan(try PublicationStore(database:f.database).segments(editionID:f.edition).count,1)
         try await assertLegitimateSecondTarget(f, seededLocal: false)
     }
     func test09NoEligibleQuiesces() async throws {
@@ -268,8 +296,19 @@ final class FeedRunwayDriverTests: XCTestCase {
     }
     func test15SessionContextMismatch() async throws {
         let f = try fixture(driverContext:.init(request:.source(SourceID())))
-        do { _ = try await restore(f); XCTFail("Expected context fence") }
-        catch { guard case .sessionContextMismatch(_,let actual) = error as? FeedRunwayDriverError else { return XCTFail("Wrong error") }; XCTAssertEqual(actual,f.plan.context.key) }
+        // A driver may not restore a checkpoint that does not belong to its own context.
+        let restored = try await f.driver.restoreAndActivate(backwardCapacity:1,forwardCapacity:4,resources:resources())
+        XCTAssertNil(restored)
+        // The fence still rejects a session that holds another context's presentation.
+        _ = try await f.session.admitPresentation(.restore(.init(backwardCapacity:1,forwardCapacity:4,
+            contextKey: f.plan.context.key)))
+        do {
+            _ = try await f.driver.activateCurrentPresentation(resources: resources())
+            XCTFail("Expected context fence")
+        } catch {
+            guard case .sessionContextMismatch(_,let actual) = error as? FeedRunwayDriverError else { return XCTFail("Wrong error") }
+            XCTAssertEqual(actual,f.plan.context.key)
+        }
         XCTAssertEqual(f.http.calls,0)
     }
     func test16EditorialRevisionMismatch() async throws {
@@ -460,21 +499,28 @@ final class FeedRunwayDriverTests: XCTestCase {
             segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date(timeIntervalSince1970: 31), cardIDs: prepared.cardIDs))
         try PublicationHistory(database: f.database).saveCursor(.init(editionID: otherEdition,
             anchor: .init(cardID: prepared.cardIDs[0], placement: .center)), updatedAt: Date(timeIntervalSince1970: 32))
-        let restored = try await f.session.restoreLocalPresentation(backwardCapacity: 1, forwardCapacity: 4)
-        let current = try XCTUnwrap(restored), scope = await f.session.currentRunwayScope()
-        await f.runway.activate(try XCTUnwrap(scope))
-        try await f.runway.submitObservation(.init(editionID: otherEdition, anchorCardID: current.window.anchor.cardID,
-            sampledAt: .init(seconds: 100)!, activity: .stationary))
-        let before = await f.runway.snapshot()
+        // Another context owns its own association: its own session, edition and checkpoint (T2).
+        let otherSession = FeedSession(publicationHistory: .init(database: f.database))
+        let otherValue = try await otherSession.admitPresentation(.restore(.init(backwardCapacity: 1,
+            forwardCapacity: 4, contextKey: otherPlan.context.key)))
+        let otherCurrent = try XCTUnwrap(otherValue)
+        XCTAssertEqual(otherCurrent.contextKey, otherPlan.context.key)
+        XCTAssertEqual(otherCurrent.editionID, otherEdition)
         f.http.release(); let result = try await first.value
-        XCTAssertEqual(result, current)
-        let after = await f.runway.snapshot(); XCTAssertEqual(after, before)
-        let final = await f.session.currentPresentation(); XCTAssertEqual(final, current)
-        XCTAssertEqual(final?.contextKey, otherPlan.context.key)
+        // The suspended opportunity belongs to the first session and returns exactly its own presentation…
+        let final = await f.session.currentPresentation()
+        XCTAssertEqual(result, final)
+        XCTAssertEqual(final?.contextKey, p.contextKey)
+        XCTAssertEqual(final?.editionID, f.edition)
+        // …and never touches the other context's presentation, edition or checkpoint.
+        let otherFinal = await otherSession.currentPresentation()
+        XCTAssertEqual(otherFinal, otherCurrent)
         XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: otherEdition).count, 1)
-        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.edition).count, 1)
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint()?.editionID, otherEdition)
         XCTAssertEqual(try ContentStore(database: f.database).candidateWindow(sourceID: f.source, after: nil, examinedCapacity: 8).records.count, 1)
-        XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.otherHTTP.calls, 0)
+        // The opportunity did its own acquisition work; what matters is that it produced nothing in
+        // the other context's edition (asserted above) and nothing extra in the reader's presentation.
+        XCTAssertGreaterThanOrEqual(f.http.calls, 1)
     }
 
     func testR16NewEditionActivationDuringHTTPGetsReconsideredByOwner() async throws {
@@ -494,7 +540,7 @@ final class FeedRunwayDriverTests: XCTestCase {
             segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date(timeIntervalSince1970: 31), cardIDs: prepared.cardIDs))
         try PublicationHistory(database: f.database).saveCursor(.init(editionID: otherEdition,
             anchor: .init(cardID: prepared.cardIDs[0], placement: .center)), updatedAt: Date(timeIntervalSince1970: 32))
-        let restored = try await f.session.restoreLocalPresentation(backwardCapacity: 1, forwardCapacity: 4)
+        let restored = try await f.session.admitPresentation(.restore(.init(backwardCapacity: 1, forwardCapacity: 4)))
         let current = try XCTUnwrap(restored)
         let activated = try await f.driver.activateCurrentPresentation(resources: resources())
         XCTAssertEqual(activated, current)

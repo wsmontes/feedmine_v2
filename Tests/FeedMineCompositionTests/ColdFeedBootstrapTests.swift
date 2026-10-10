@@ -415,7 +415,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
         let f = try fixture(), id = identity()
         try Self.seed(f.database, source: f.source)
         let existing = try installDurable(f)
-        let installed = try await f.session.restoreLocalPresentation(backwardCapacity: 0, forwardCapacity: 1)
+        let installed = try await f.session.admitPresentation(.restore(.init(backwardCapacity: 0, forwardCapacity: 1)))
         let checkpoint = try SessionStore(database: f.database).checkpoint()
         let bootstrap = try owner(f, prepare: { _ in XCTFail("Memory precondition must precede preparation"); throw Failure.preparation })
         do { _ = try await bootstrap.run(identity: id, resources: resources(), backwardCapacity: 0, forwardCapacity: 1); XCTFail("Expected memory fence") }
@@ -444,7 +444,9 @@ final class ColdFeedBootstrapTests: XCTestCase {
         let segment = try XCTUnwrap(PublicationStore(database: f.database).segments(editionID: id.editionID).first)
         XCTAssertEqual(snapshot.window.items.map(\.id), Array(segment.cardIDs.prefix(2)))
         let moved = try await f.session.submitViewport(.init(anchor: .init(cardID: segment.cardIDs[1], placement: .top)))
-        XCTAssertEqual(moved?.window.items.map(\.id), Array(segment.cardIDs.prefix(3)))
+        // Recording an observation moves the logical anchor; it does not rebuild the installed window.
+        XCTAssertEqual(moved?.window.items.map(\.id), Array(segment.cardIDs.prefix(2)))
+        XCTAssertEqual(moved?.window.anchor.cardID, segment.cardIDs[1])
         XCTAssertEqual(try SessionStore(database: f.database).checkpoint()?.cardID, segment.cardIDs[0])
         XCTAssertEqual(try SessionStore(database: f.database).checkpoint()?.updatedAt, id.checkpointedAt)
     }
