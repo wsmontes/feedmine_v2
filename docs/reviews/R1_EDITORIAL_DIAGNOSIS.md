@@ -604,6 +604,43 @@ identity key); Persistence, Publication, Runtime, Acquisition, Media and UI were
 **Not done, and deliberately:** the first-publication extent (R2-D3 says out of scope) and any code for
 DUP-3 (R2-D4 authorizes the dataset only, delivered in `R1_DUP3_EXAMPLES.md`).
 
+## Appendix C — R3: the first screen's timing, measured in production
+
+R3 asked whether acquisition can anticipate alternative sources without delaying the first visible
+content. Measured on the current build in the simulator (Debug, real RSS, fresh namespace), with a
+temporary DEBUG hook on the cold-feed evidence that was removed after the run:
+
+| t (uptime) | event |
+|---|---|
+| +0.000 s | `contacting` two targets — the first two registrations, both BBC News feeds |
+| +0.326 s | `settled C84D43B2 changed=true` — the **first** target delivered content |
+| +0.402 s | `preparingMedia` — the bounded PD-5/PD-6 media window starts |
+| **+0.791 s** | **`published`** — the first Edition is installed; the second target is still in flight |
+| +0.933 s | `settled 37658631 changed=true` — the **second** target, 142 ms *after* the first screen |
+
+What the run settles:
+
+- **The publication trigger is the first result, not the batch.** `ColdFeedBootstrap` attempts the
+  first publication inside the per-result callback (`guard result.selectableSupplyChanged,
+  first.snapshot == nil`), so a diversified first batch would not change the first screen: the fastest
+  responder still publishes, and the other publisher's content arrives afterwards. The registration
+  order is therefore *not* the first screen's lever; the trigger is.
+- **The wait would be real if the product wanted one.** The second *publisher* settled 1.3 s behind the
+  first in the soak run; the media window measured 0.39 s. Delaying the first publication until a
+  second publisher settles would cost that latency and contradict PD-3 ("publish the first valid prefix
+  as soon as it is ready").
+- **The reader's distance to the second publisher is about three screens.** The first segment holds 17
+  cards, all one publisher (9 thumbnail + 8 text-only, no hero ≈ 0.18 screen each ≈ 3.1 screens), and
+  105 candidates from four sources were already admitted and waiting behind it. The lever for that
+  distance is the first segment's extent (R2-D3, out of scope), not acquisition.
+- **`published` is the right proxy for "content visible":** `receive(.published)` installs the
+  presentation into the store, and the `.preparing` report that follows preserves it
+  (`FeedPresentationState.reporting(_:)` — *"Work reports never remove or modify an available local
+  presentation"*). The pixel follows one render frame after the install.
+
+Conclusion recommended for R3: change nothing in acquisition. The measured facts are recorded here so
+the next cycle can decide on the first segment's extent with them in hand.
+
 ## Appendix B — how widespread DUP-3 is at supply scale
 
 Measured after the report was sent, on the same database: all 22,183 supply candidates with a
