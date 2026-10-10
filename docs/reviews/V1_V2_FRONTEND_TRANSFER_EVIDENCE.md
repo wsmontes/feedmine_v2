@@ -254,6 +254,31 @@ is under test:
   country list, a country's rows, then an **individual source's own toggle** (`node-source-toggle-*`) — so the
   scenario verifies a source choice, not only the levels above it.
 
+## The simulator soak (T12, architect's substitute (a))
+
+Run on the iPhone 17 Pro Max simulator (`8871DCF5…`, iOS 26.5), the app's **own release build** from the tree the
+gate validated, launched on the development feeds (the configuration that resolves its sources), sampled every
+30 s from the host: the **FeedMine process's** RSS and CPU (`ps`, resolved by executable path) and the runtime
+database's content counts. Raw samples: `/tmp/soak-samples.csv`, `/tmp/soak-content.csv`.
+
+| Window | What was measured |
+|---|---|
+| Idle, 13:31:03 → 13:36:39 | RSS 293 MB at the post-launch peak, **falling back to 159 MB** as the launch burst settled (bounded use with recovery); CPU 88.9 % at launch, 0.0 % at rest. Content: 17 cards / 60 origins — the reserve filled and stopped. |
+| Gestures, from 13:47 | Continuous fast swipes on the fed screen: 10 swipes produced **29 viewport observations** (`received=29 completed=29`), and the reader advanced with images decoding as it went. |
+| Feed's genuine end | The two development feeds hold ~135 cards; the reader reached their end after ~4 minutes, after which further swipes produced no observation and no change — the app sat stable at the end of a feed it had genuinely exhausted. |
+| Last 20 minutes | RSS 302 MB → **302 MB** (min 277, max 347): **no monotonic growth**, CPU median 0.1 %. |
+| Integrity after | `duplicate_revisions_in_a_segment = 0`, `duplicate_card_ids = 0`, 135 cards over 57 distinct origins, 70 origins / 70 media candidates / 70 supply rows, and — across a terminate + relaunch — the **same checkpoint card id** (`a4df60f5…`), with preferences and the reader's own rows intact: nothing was discarded. |
+
+**Deviations, stated rather than hidden.** (1) The architect asked for 30 minutes of *continuous scrolling*; the
+app's available supply (135 cards from the two development feeds) is consumed in ~4 minutes, so the moving part
+of the scroll is that long and the remaining gesture time ran at the feed's genuine end. A richer selection was
+attempted and measured: a 152-source subtree and an 11-feed BBC selection were written into the app's own
+preferences and the app did not resolve them (it published nothing), while its default path resolves a handful of
+feeds — so the supply here is what this build actually serves, not a truncated test. (2) The session contains two
+app relaunches (pid changes) from that same source experiment, which is why the first/second-half medians differ
+while the last 20 minutes are flat. (3) Unlike the physical-device item, this is a **simulator** measurement and
+is reported as such.
+
 ## Not executed, and why
 
 | Plan item | State |

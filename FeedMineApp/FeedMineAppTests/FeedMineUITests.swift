@@ -600,7 +600,7 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertEqual(topmostCardIdentifier(app: app, scroll: scroll), anchor, "an appearance change must keep the reading point")
         // The attachment is the settled dark frame: the two assertions above already proved nothing else moved,
         // and the colour transition is presentation-only, so waiting for it cannot mask a state change.
-        Thread.sleep(forTimeInterval: 1.2)
+        Thread.sleep(forTimeInterval: 3.0)
         let dark = XCTAttachment(screenshot: app.screenshot())
         dark.name = "u1-dark-appearance"
         dark.lifetime = .keepAlways
