@@ -28,6 +28,7 @@ As frentes são **fatias da experiência**, não times, módulos Swift nem autor
 **Situação:** **diagnóstico inicial feito; correção e teste B01 ainda não comprovados**.
 
 ### F02 — Primeira abertura, onboarding e tempo até a primeira descoberta
+**Especificação de produto vigente:** [F02 — O feed que apresenta a internet e conhece o leitor](F02_DISCOVERY_FEED_ONBOARDING_PRD.md). A interface inicial é o próprio feed, com intervenções editoriais e preferências explícitas opcionais; Welcome → Composer não é uma barreira obrigatória.
 **Promessa:** uma pessoa que não conhece RSS escolhe seus interesses, vê preparação honesta e começa a explorar.  
 **Jornada/oráculo:** instalação limpa sem dados locais; Welcome → Composer → interesses → primeiro conteúdo real; comparar diferentes idiomas, rede lenta, fontes vazias e retorno após falha. Medir tempo até o primeiro card legível, utilidade dos primeiros cards e proveniência real de toda informação mostrada na preparação.  
 **Evidência inicial:** existe onboarding em duas etapas, ColdFeedBootstrap e tela de progresso baseada em fatos do pipeline; testes validaram componentes e o fluxo básico.  
