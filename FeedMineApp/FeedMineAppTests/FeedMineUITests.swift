@@ -126,6 +126,58 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertEqual(proof.label, counters, "returning to the light appearance must not replace the association")
     }
 
+    /// U2-P1/P3/P4: saving from the feed, finding the article in the saved list and reading it
+    /// in-app must all keep the same association and the same reading point.
+    @MainActor
+    func testU2SavedListAndInAppReaderPreserveTheSession() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        let cards = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"))
+        let card = cards.firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 45), "a real published occurrence must appear")
+        let counters = proof.label
+        card.press(forDuration: 1.2)
+        let save = app.buttons["Salvar artigo"]
+        XCTAssertTrue(save.waitForExistence(timeout: 10), "the card menu must offer saving")
+        save.tap()
+        app.buttons["reader-saved"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'saved-article-'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "the saved article must be listed")
+        let list = XCTAttachment(screenshot: app.screenshot())
+        list.name = "u2-saved-list"
+        list.lifetime = .keepAlways
+        add(list)
+        row.tap()
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "the reader must open inside the app")
+        let reader = XCTAttachment(screenshot: app.screenshot())
+        reader.name = "u2-in-app-reader"
+        reader.lifetime = .keepAlways
+        add(reader)
+        // SafariServices owns the reader's close control; try its localized titles, then the
+        // standard sheet dismissal, and keep the hierarchy for diagnosis if neither works.
+        var dismissed = false
+        for label in ["Close", "Done", "Fechar", "Concluído"] {
+            let button = app.buttons[label].firstMatch
+            if button.waitForExistence(timeout: 3) { button.tap(); dismissed = true; break }
+        }
+        if !dismissed {
+            app.swipeDown(velocity: .fast)
+        }
+        // Closing the reader returns to the saved list (the feed is behind the pushed screen, so
+        // its scroll view is not in the tree yet), and going back restores the same session.
+        XCTAssertTrue(row.waitForExistence(timeout: 15), "closing the reader must return to the saved list")
+        app.navigationBars.buttons["BackButton"].tap()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15), "returning to the feed must restore it")
+        XCTAssertEqual(proof.label, counters, "reading a saved article must not rebuild the association")
+    }
+
     /// The card whose top edge sits inside the scroll viewport and is closest to it.
     @MainActor
     private func topmostCardIdentifier(app: XCUIApplication, scroll: XCUIElement) -> String? {

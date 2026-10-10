@@ -41,7 +41,7 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
         respond()
     }
     private func respond() {
-        let items = (1...24).map { "<item><guid>fixture-\($0)</guid><title>Published fixture \($0)</title><description>Readable local story \($0)</description></item>" }.joined()
+        let items = (1...24).map { "<item><guid>fixture-\($0)</guid><title>Published fixture \($0)</title><link>https://fixture.invalid/story-\($0)</link><description>Readable local story \($0)</description></item>" }.joined()
         let data = Data("<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Trusted fixture</title><link>https://fixture.invalid/</link><description>Integration</description>\(items)</channel></rss>".utf8)
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/rss+xml"])!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
@@ -416,5 +416,33 @@ final class CompositionTests: XCTestCase {
         // than from a darkening overlay.
         XCTAssertNotEqual(resolved(.primary, light), resolved(.primary, dark))
         XCTAssertNotEqual(resolved(FeedDesignTokens.Palette.accent, light), resolved(FeedDesignTokens.Palette.accent, dark))
+    }
+
+    /// U2: saved articles come from the existing bookmark authority (no second store, no schema
+    /// change) and a saved article resolves its frozen action even though it is not in the
+    /// presented window — while the feed's own open guard stays exactly as it was.
+    @MainActor
+    func testU2SavedArticlesUseTheBookmarkAuthorityAndOpenOutsideTheWindow() async throws {
+        let (root, association) = try await launched()
+        let publication = PublicationStore(database: association.database)
+        let window = try XCTUnwrap(association.store.state.presentation?.window.items)
+        let linked = try XCTUnwrap(window.first { item in
+            (try? publication.card(id: item.id))?.primaryActionKind == "externalURL"
+        }, "a real published card must carry an external action")
+        try publication.toggleBookmark(cardID: linked.id, at: Date())
+        let saved = association.savedArticles()
+        XCTAssertEqual(saved.map(\.id), [linked.id])
+        XCTAssertEqual(saved.first?.title, linked.title)
+        XCTAssertEqual(saved.first?.source, linked.sourceDisplayName)
+        // The composition resolves the URL and hands it to the host; the UI never sees a URL.
+        var opened: URL?
+        root.onExternalURL = { opened = $0 }
+        association.openSaved(linked.id)
+        let record = try XCTUnwrap(publication.card(id: linked.id))
+        XCTAssertEqual(opened?.absoluteString, record.primaryActionReference)
+        // Removing the bookmark removes the row.
+        try publication.toggleBookmark(cardID: linked.id, at: Date())
+        XCTAssertTrue(association.savedArticles().isEmpty)
+        await association.close()
     }
 }

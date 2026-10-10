@@ -30,6 +30,13 @@ final class AppComposition {
     @ObservationIgnored private var sourceSearchID = UUID()
     @ObservationIgnored private var sourceChoices: [SourceID: TrustedFeed] = [:]
     private let transportConfiguration: URLSessionConfiguration
+    /// U2: set once by the app host; every association receives it so the reader stays in-app.
+    var onExternalURL: ((URL) -> Void)?
+
+    private func connecting(_ association: FeedAssociation) -> FeedAssociation {
+        association.onExternalURL = { [weak self] url in self?.onExternalURL?(url) }
+        return association
+    }
 
     init(directory: URL? = nil, feeds: [TrustedFeed] = TrustedFeed.catalogOrDevelopment(limit: 64),
         transportConfiguration: URLSessionConfiguration? = nil) {
@@ -76,7 +83,7 @@ final class AppComposition {
         guard !replacingSession, association == nil, startupFailure == nil else { return }
         let current: FeedAssociation
         do {
-            current = try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration, contextRequest: currentContext, selectionVersion: selectionVersion)
+            current = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration, contextRequest: currentContext, selectionVersion: selectionVersion))
         } catch {
             startupFailure = "Não foi possível abrir o feed local: \(String(describing: error))"
             return
@@ -143,8 +150,8 @@ final class AppComposition {
         let request: FeedContextRequest = next.count == 1 ? .source(next[0].sourceID) : .main
         _ = try preferences.setContext(request)
         currentContext = request
-        let nextAssociation = try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration,
-            contextRequest: request, selectionVersion: selectionVersion)
+        let nextAssociation = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration,
+            contextRequest: request, selectionVersion: selectionVersion))
         association = nextAssociation
         startupFailure = nil
         try await nextAssociation.launch()
@@ -166,8 +173,8 @@ final class AppComposition {
         association = nil
         _ = try preferences?.setContext(request)
         currentContext = request
-        let next = try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration,
-            contextRequest: request, selectionVersion: selectionVersion)
+        let next = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration,
+            contextRequest: request, selectionVersion: selectionVersion))
         association = next
         startupFailure = nil
         try await next.launch()
@@ -184,7 +191,7 @@ final class AppComposition {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
             await retired.close()
         }
-        let next = try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration, contextRequest: currentContext, selectionVersion: selectionVersion)
+        let next = connecting(try FeedAssociation(directory: directory, feeds: feeds, configuration: transportConfiguration, contextRequest: currentContext, selectionVersion: selectionVersion))
         association = next
         startupFailure = nil
         try await next.launch()
@@ -226,17 +233,58 @@ final class FeedAssociation {
         } catch { self.reportFailure(error) }
     })
 
+    /// U2: the app host owns presentation. The composition resolves the frozen target; it never
+    /// opens a URL itself and never lets one cross the UI boundary.
+    @ObservationIgnored var onExternalURL: ((URL) -> Void)?
+
     /// Review F10: resolve the frozen action target from published history and open it.
     /// The URL never crosses the UI boundary; only the card identity does.
     private func open(_ cardID: PublicationCardID) {
         guard active, visible, store.state.presentation?.window.items.contains(where: { $0.id == cardID }) == true else { return }
+        guard let url = resolvedExternalURL(cardID) else { return }
+        present(url, cardID)
+    }
+
+    /// U2: a saved article may sit outside the presented window, so it resolves straight from
+    /// published history. The window guard above is unchanged for feed cards.
+    func openSaved(_ cardID: PublicationCardID) {
+        guard active, let url = resolvedExternalURL(cardID) else { return }
+        present(url, cardID)
+    }
+
+    private func resolvedExternalURL(_ cardID: PublicationCardID) -> URL? {
         guard let card = try? PublicationStore(database: database).card(id: cardID),
             card.primaryActionKind == "externalURL", let reference = card.primaryActionReference,
-            let url = URL(string: reference) else { return }
-        #if canImport(UIKit)
-        UIApplication.shared.open(url)
-        #endif
+            let url = URL(string: reference) else { return nil }
+        return url
+    }
+
+    private func present(_ url: URL, _ cardID: PublicationCardID) {
+        onExternalURL?(url)
         Self.log("opened card=\(cardID.rawValue)")
+    }
+
+    /// U2: bounded read of the existing bookmark authority for the app host. No second bookmark
+    /// store, no schema change: ids come from `bookmarkedCardIDs()` and each row from `card(id:)`.
+    func savedArticles(limit: Int = 200) -> [FeedSavedArticle] {
+        guard let publication = try? PublicationStore(database: database),
+            let ids = try? publication.bookmarkedCardIDs() else { return [] }
+        return ids
+            .compactMap { id -> FeedSavedArticle? in
+                guard let card = try? publication.card(id: id) else { return nil }
+                let title = card.title ?? card.primaryText ?? ""
+                guard !title.isEmpty else { return nil }
+                return FeedSavedArticle(id: card.id, title: title, source: card.sourceDisplayName,
+                    timestamp: card.timestampValue)
+            }
+            .sorted { left, right in
+                let leftDate = left.timestamp ?? .distantPast
+                let rightDate = right.timestamp ?? .distantPast
+                if leftDate != rightDate { return leftDate > rightDate }
+                return left.id.rawValue.uuidString < right.id.rawValue.uuidString
+            }
+            .prefix(limit)
+            .map { $0 }
     }
 
     #if DEBUG
