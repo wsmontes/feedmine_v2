@@ -338,7 +338,7 @@ public struct PublicationStore: Sendable {
             }
             let suffixSQL = "SELECT c.id FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id WHERE s.edition_id = ? AND (s.ordinal, c.ordinal) > (?, ?)"
             let args: StatementArguments = [key, Int64(high.segmentOrdinal), Int64(high.cardOrdinal)]
-            guard try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM publication_bookmarks WHERE card_id IN (" + suffixSQL + ")", arguments: args) == 0,
+            guard try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM reader_bookmark_memberships WHERE card_id IN (" + suffixSQL + ")", arguments: args) == 0,
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM publication_card_usage WHERE card_id IN (" + suffixSQL + ")", arguments: args) == 0 else { return .ineligible }
             // Archival happens before deletion and shares its transaction. Duplicate identities abort.
             try db.execute(sql: "INSERT INTO retired_published_cards SELECT * FROM published_cards WHERE id IN (" + suffixSQL + ")", arguments: args)
@@ -385,7 +385,7 @@ public struct PublicationStore: Sendable {
     }
     public func bookmarkedCardIDs() throws -> Set<PublicationCardID> {
         try database.read { db in
-            Set(try String.fetchAll(db, sql: "SELECT card_id FROM publication_bookmarks").map {
+            Set(try String.fetchAll(db, sql: "SELECT DISTINCT card_id FROM reader_bookmark_memberships").map {
                 PublicationCardID(rawValue: try PublicationValueCoding.uuid($0, field: "card_id"))
             })
         }
@@ -397,9 +397,14 @@ public struct PublicationStore: Sendable {
             guard try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM published_cards WHERE id = ?)", arguments: [key]) == true else {
                 throw PublicationStoreError.cardIdentityMismatch
             }
-            if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM publication_bookmarks WHERE card_id = ?)", arguments: [key]) == true {
-                try db.execute(sql: "DELETE FROM publication_bookmarks WHERE card_id = ?", arguments: [key])
-            } else { try db.execute(sql: "INSERT INTO publication_bookmarks VALUES (?, ?)", arguments: [key, time]) }
+            if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_bookmark_memberships WHERE list_id = ? AND card_id = ?)",
+                arguments: [ReaderBookmarkList.defaultID, key]) == true {
+                try db.execute(sql: "DELETE FROM reader_bookmark_memberships WHERE list_id = ? AND card_id = ?",
+                    arguments: [ReaderBookmarkList.defaultID, key])
+            } else {
+                try db.execute(sql: "INSERT INTO reader_bookmark_memberships (list_id, card_id, added_at) VALUES (?, ?, ?)",
+                    arguments: [ReaderBookmarkList.defaultID, key, time])
+            }
         }
     }
     public func mediaUsage() throws -> [String: MediaUsage] {
@@ -407,7 +412,7 @@ public struct PublicationStore: Sendable {
             let rows = try Row.fetchAll(db, sql: """
                 SELECT c.media_key, MAX(u.last_seen_at) AS seen_at, MAX(b.card_id IS NOT NULL) AS bookmarked
                 FROM published_cards c LEFT JOIN publication_card_usage u ON u.card_id = c.id
-                LEFT JOIN publication_bookmarks b ON b.card_id = c.id
+                LEFT JOIN reader_bookmark_memberships b ON b.card_id = c.id
                 WHERE c.media_key IS NOT NULL GROUP BY c.media_key
                 """)
             return Dictionary(uniqueKeysWithValues: rows.map { row in

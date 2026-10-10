@@ -394,6 +394,52 @@ public enum RuntimeMigrations {
                 ALTER TABLE reader_preferences ADD COLUMN filter_set_at REAL;
                 """)
         }
+        migrator.registerMigration("reader-library-v1") { db in
+            // T8: the reader's own library. V1 had named bookmark boxes, source collections and saved presets;
+            // V2 had one implicit bookmarked set (`publication_bookmarks`), which is folded into the default
+            // box here so nothing the reader saved is lost. Membership stays per published *occurrence*: a
+            // bookmark marks a card, and a card id is never replaced by a catalog integer.
+            try db.execute(sql: """
+                CREATE TABLE reader_bookmark_lists (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    name TEXT COLLATE BINARY NOT NULL,
+                    position INTEGER NOT NULL
+                );
+                CREATE TABLE reader_bookmark_memberships (
+                    list_id TEXT NOT NULL REFERENCES reader_bookmark_lists(id) ON DELETE CASCADE,
+                    card_id TEXT NOT NULL REFERENCES published_cards(id),
+                    added_at REAL NOT NULL,
+                    PRIMARY KEY (list_id, card_id)
+                );
+                CREATE INDEX reader_bookmark_memberships_by_card ON reader_bookmark_memberships(card_id);
+                CREATE TABLE reader_collections (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    name TEXT COLLATE BINARY NOT NULL,
+                    position INTEGER NOT NULL
+                );
+                CREATE TABLE reader_collection_memberships (
+                    collection_id TEXT NOT NULL REFERENCES reader_collections(id) ON DELETE CASCADE,
+                    source_key TEXT COLLATE BINARY NOT NULL,
+                    added_at REAL NOT NULL,
+                    PRIMARY KEY (collection_id, source_key)
+                );
+                CREATE TABLE reader_presets (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    name TEXT COLLATE BINARY NOT NULL,
+                    kind TEXT COLLATE BINARY NOT NULL CHECK (kind IN ('smartBookmark', 'curatedFeed')),
+                    position INTEGER NOT NULL,
+                    context_key BLOB NOT NULL
+                );
+                """)
+            // V1's own default box, so the control on a card has somewhere to put a bookmark from the first tap.
+            try db.execute(sql: "INSERT INTO reader_bookmark_lists (id, name, position) VALUES (?, ?, 0)",
+                arguments: [ReaderBookmarkList.defaultID, ReaderBookmarkList.defaultList().name])
+            try db.execute(sql: """
+                INSERT INTO reader_bookmark_memberships (list_id, card_id, added_at)
+                SELECT ?, card_id, bookmarked_at FROM publication_bookmarks
+                """, arguments: [ReaderBookmarkList.defaultID])
+            try db.execute(sql: "DROP TABLE publication_bookmarks")
+        }
         return migrator
     }
 

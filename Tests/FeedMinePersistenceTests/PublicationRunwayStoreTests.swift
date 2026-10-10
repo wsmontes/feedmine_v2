@@ -214,7 +214,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
             let schema = try String.fetchAll(db, sql: "SELECT name || ':' || COALESCE(sql, '') FROM sqlite_master WHERE name != 'published_cards_origin_revision_segment' ORDER BY name")
             XCTAssertTrue(Self.normalizeRebuiltDefinitions(oldSchema).isSubset(of: try Self.schemaBeforeAvailability(schema, in: db))) // Only the explicitly checked additive columns change an old definition.
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('published_cards_origin_revision_segment') ORDER BY seqno"), ["origin_revision_id","segment_id"])
-            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1"])
+            XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1","reader-library-v1"])
         }
     }
 
@@ -348,7 +348,14 @@ extension PublicationRunwayStoreTests {
             let addedNames = Set(["reader_preferences", "context_checkpoints", "sqlite_autoindex_context_checkpoints_1",
                 "edition_reading_state", "sqlite_autoindex_edition_reading_state_1", "retired_published_cards", "retired_published_cards_id",
                 "retired_feed_segments", "retired_feed_segments_id", "publication_card_usage", "sqlite_autoindex_publication_card_usage_1",
-                "publication_bookmarks", "sqlite_autoindex_publication_bookmarks_1"])
+                // T8: the one implicit bookmarked set became the default box of the reader's library, and
+                // the old table is dropped by the same migration that created the boxes.
+                "reader_bookmark_lists", "sqlite_autoindex_reader_bookmark_lists_1",
+                "reader_bookmark_memberships", "sqlite_autoindex_reader_bookmark_memberships_1",
+                "reader_bookmark_memberships_by_card",
+                "reader_collections", "sqlite_autoindex_reader_collections_1",
+                "reader_collection_memberships", "sqlite_autoindex_reader_collection_memberships_1",
+                "reader_presets", "sqlite_autoindex_reader_presets_1"])
             let contextual = Set(priorDefinitions.filter { addedNames.contains(String($0.split(separator: ":", maxSplits: 1)[0])) })
             XCTAssertEqual(contextual.count, addedNames.count)
             XCTAssertEqual(priorDefinitions.subtracting(normalizedBefore), Set([originIndex, authorityTable, authorityIndex]).union(contextual))
