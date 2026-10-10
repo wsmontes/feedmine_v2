@@ -171,6 +171,14 @@ Não criar abstração porque ela poderá ser útil futuramente.
 
 Criar abstração somente quando existe responsabilidade real atual.
 
+## INV-17 — Pending candidates leave the publication queue, not the eligible supply
+
+Se uma história não pode produzir **agora** uma apresentação válida por imagem, link, texto, mídia ou outra dependência, ela **sai imediatamente da fila de publicação atual**. Não ocupa posição, não reserva ordinal, não bloqueia a cabeça da fila e não impede progressão de cursor, seleção, aquisição ou publicação de outras histórias prontas. Permanecer "pendente" dentro da fila e esperar um timeout seria violação desta regra.
+
+A identidade e o trabalho válido permanecem recuperáveis no supply e nas responsabilidades já existentes de preparação/diagnóstico. Quando houver nova evidência de prontidão ou alternativa legítima, a história é reavaliada pela seleção editorial corrente e **não** readquire sua antiga posição. Falha temporária não equivale a exclusão permanente; falha definitiva não autoriza publicar um link morto. Card de texto é escolha editorial consciente ou degradação respaldada por evidência, nunca saída automática de um número fixo de tentativas. Trabalho concorrente é limitado por recursos observados e não requer fila, scheduler, contador ou state machine paralelos.
+
+A partir da publicação, conteúdo e contrato visual da ocorrência são imutáveis, inclusive se ela ainda não foi vista. Após admissão à leitura, também ficam protegidas sua ordem e geometria visível. Ver [PD-5 e PD-9](../product/PRODUCT_DECISIONS_2026-10-09.md).
+
 ## INV-16 — Universal measured adaptation, progressive coverage, no magic quotas
 
 A regra adaptativa não pertence somente ao runway. **Todo subsistema que decide quantidade, ritmo, prioridade operacional ou retenção** (catálogo, descoberta, aquisição, Editorial, preparação, mídia, runway, memória, disco, persistência e limpeza) deve responder a capacidade, custo, demanda e restrições efetivamente observáveis. Bons recursos permitem mais exploração e preservação local; pressão real reduz trabalho especulativo. A sessão visível e sua continuidade têm precedência.
