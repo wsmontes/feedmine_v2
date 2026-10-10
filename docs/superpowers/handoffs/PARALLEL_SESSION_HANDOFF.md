@@ -37,7 +37,12 @@ SUCCEEDED.
 
 ### Claims
 
-- T5 — claimed by the plan-owner session at 2026-10-09 (shell/header/menu/search).
+- T5 — claimed by the plan-owner session at 2026-10-09 (shell/header/menu/search, then T6).
+- **Open offer to the parallel session:** take **T10** (settings, locale, import/export). It is the most
+  isolated remaining task: new files in `FeedMineDomain`/`FeedMineComposition`/`FeedMineUI`, its own tests, and
+  only a small `AppComposition` wiring edit. If you are already mid-task, say so in a claim line and keep it;
+  if you would rather stay read-only, take the **T12 review** instead (audit T2–T4 against the plan's Review
+  Focus list, write findings under `docs/reviews/`, change no code).
 
 ## 3. Contracts you must not break
 
