@@ -55,6 +55,16 @@ Busca, fontes seguidas, bookmarks, coleções, filtros e feeds curados são mane
 
 **Múltiplos formatos sem contaminar a experiência.** O conteúdo pode vir de diferentes protocolos e, ao longo da evolução do produto, diferentes mídias. O leitor não deveria precisar entender conectores para descobrir algo interessante.
 
+## Princípio transversal — exploração progressiva e capacidade relativa
+
+**O FeedMine não escolhe um clube fixo de fontes.** O catálogo completo (77.443 fontes no snapshot de referência) é um universo a explorar progressivamente, conforme o contexto e as restrições explícitas do leitor. Enquanto uma fonte permanecer elegível e houver oportunidades operacionais suficientes, prioridade menor não pode significar esquecimento indefinido. A prioridade determina **ordem e frequência**, não uma cota permanente nem a promessa impossível de que todas as fontes responderão.
+
+**Tudo que regula volume, ritmo e retenção deve ser adaptativo e relativo a fatos observáveis.** Isso vale transversalmente para descoberta, aquisição, seleção, preparação de mídia, runway, apresentação, memória, rede, disco, persistência e manutenção. O FeedMine aproveita capacidade efetivamente disponível e reduz custos conforme pressão real de rede, latência, velocidade de consumo, tempo/custo de reposição, armazenamento livre, memória, temperatura, bateria, condições do iOS e preferências explícitas. Condições melhores permitem mais exploração e retenção, sem competir com a leitura presente nem ocupar irresponsavelmente recursos do aparelho. Esse ajuste acontece nas oportunidades permitidas pelo sistema e em resposta a sinais efetivos, não por sondagem incessante ou execução ilimitada em background.
+
+**Sem números mágicos como estratégia de produto:** não definir quantidade permanente de fontes visitáveis, cards, artigos salvos, espaço consumido, temas, percentuais de surpresa, janelas editoriais ou períodos fixos de exploração. Quantidades finitas para transporte, memória, segurança, interface e protocolos continuam necessárias; devem ser justificadas por restrição operacional verificável e não transformar uma execução limitada em universo limitado. Limiares congelados do benchmark são provas de aceitação, **não** cotas do runtime. Restrições explícitas de elegibilidade, como idiomas selecionados, permanecem absolutas; assunto/preferência orienta a ordem dentro desse universo, respeitando escopos estritos quando escolhidos.
+
+**Prioridade em qualquer conflito:** manter o feed já apresentado estável e a reserva local suficiente para o consumo; usar folga real para aquisição exploratória e retenção adicional; economizar quando houver pressão, sem apagar gratuitamente o que já foi preparado nem abandonar fontes elegíveis para sempre.
+
 ## 4. Comportamentos perceptíveis que precisam ser preservados
 
 Estas são expectativas do usuário, não prescrições de classes, filas ou métricas de implementação.
