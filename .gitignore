@@ -22,3 +22,6 @@ FeedMineApp/FeedMineApp/Resources/catalog.sqlite.download
 
 # Local agent-tooling state (spec-driven-development workspace), never release content.
 .superpowers/
+
+# V1 reference screenshots (T1): local evidence, kept out of Git on purpose.
+docs/evidence/

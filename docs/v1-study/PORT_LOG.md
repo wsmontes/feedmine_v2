@@ -142,3 +142,28 @@ Answers `docs/reviews/OMP_ROUND4_VERIFICATION_2026-10-09.md`:
   - FTS5 search is optional; the measured gain is in the report.
 - **R15** (ChatGPT review `FeedMine_V1_vs_V2_Code_Review_Comparativo`), commit `555a656`. `NetworkHostPolicy` refuses loopback, LAN, link-local, metadata and numeric-shorthand hosts at media admission, before each fetch, on every redirect and on the final URL. Tests added. A DNS name that resolves to a private address is not covered.
 - **ChatGPT review, other open items.** R01 overlaps D1. R16 (AppComposition size) is a refactor that needs a compiler. R09 (estimate quality) and test-only gaps are R04, R06–R08, R11 and R13.
+
+## T1 — 2026-10-09 (V1 frontend transfer, inventory only)
+
+Plan: `docs/superpowers/plans/2026-10-09-transferencia-frontend-v1-v2.md` (T1 of T1–T12).
+
+- **New:** [`UI_TRANSFER_MATRIX.md`](UI_TRANSFER_MATRIX.md) — every V1 surface/control with the symbol that
+  implements it, the service it touches, its V2 destination and the delivery (T4–T11) that carries it.
+  Sections: shell/header/menu/search (24 rows), cards (5), filters (5), sources/catalog (8), collections/
+  bookmarks (5), reader/media/share (5), settings/import-export (8), onboarding (9 + 4 orphans), appearance (4).
+  V1 orphans (`StoryDuelScene`, `StoryDuelCard`, `ChoiceFeedbackOverlay`, `ConfidenceProgressView`,
+  `FeedScreen.SourceSearchDetailView`) are recorded as **not** transferred; the only DEBUG-only control is the
+  catalog-explore button plus `CompactDebugInfo`.
+- **New:** [`../reviews/V1_UI_REFERENCE.md`](../reviews/V1_UI_REFERENCE.md) — checkout revisions (V1 `712a6ba`
+  + the comment-only dirty `Views/FeedScreen.swift`; V2 `372f4c5`), the V1 build command that succeeded
+  (Xcode 26.6, iPhone 17 Pro Max simulator), the observed conditions (viewport, locale, launch args, data
+  origin) and four recorded limitations.
+- **Evidence:** `docs/evidence/v1-ui/` (git-ignored, reproducible) — feed portrait light, feed landscape,
+  in-app article reader, `nightMode` state.
+- **Limitations recorded, not hidden:** V1's `TestConfiguration` fixture vocabulary (`-fixture-profile`,
+  `-fixed-theme`, `-network-profile`) is parsed but never read by the app, so the reference content is
+  persisted real content, not an injected fixture; system dark appearance does not drive V1's palette
+  (`CircadianEngine` + `nightMode` do); menu/filter/lens screenshots could not be taken by pointer automation
+  inside the Simulator window and are deferred to the V2 UI tests of T5/T6.
+- **No code changed by T1.** No row is `validado`; every row is `inventariado` until a delivery proves the
+  flow.
