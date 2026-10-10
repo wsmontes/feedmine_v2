@@ -196,13 +196,22 @@ what is compared is hierarchy, spacing, typography, colour, affordances and legi
 | Night, portrait | V1's night palette, white accent bars | the dark palette, amber accent bars | **Explained, not a divergence**: V2's palette follows the clock (`ReaderPeriod.from(hour:)` and the circadian setting; V1 had the same setting), so a capture taken at 6:29 shows the morning palette while the V1 reference was taken at 9:15. The frame landed mid-transition, which the sheet records; re-capturing it settled is pending. |
 | Article reader | V1's raw WebKit reader with its own three-control bar | `SFSafariViewController` (the accepted difference) over the fixture URL | Both keep the reader inside the app; the chrome is Safari's own by decision, and the fixture's URL does not resolve, which the frame shows. The playback bar V1 kept visible is covered by `reader-playback-bar.png` (the T12 test that also proves the bar is live inside the reader). |
 
-The three surfaces the architect added have their own captures and were verified functionally by the tests that
-produce them: `saved-list.png`, `saved-boxes.png`, `saved-box-empty.png` (the boxes screen, a populated list, and
-an empty box that states it is empty); `sources-sheet.png`, `countries-list.png`, `country-sources.png`,
-`empty-selection.png` (the shipped source surface, one level in, its sources with their own controls, and the
-selection-with-no-sources state); `shell-menu.png`, `settings.png`, `export-preview.png` (the header menu, the
-settings surface, and the export document preview). No V1 reference image exists for these three, so their sheet
-is the V2 capture plus the test that proves the flow — the plan's `shot` class is V1-reference-only by design.
+The three surfaces the architect added now have **V1 references of their own**, captured by running the V1 app on
+the second simulator (iPhone 16, iOS 26.5, portrait, light, no onboarding) and driven by clicks on its window —
+`docs/evidence/v1-ui/saved-boxes.png`, `sources-countries.png`, `sources-list.png`, `settings.png`,
+`export-sheet.png` — and the sheets that pair them with the V2 captures are `compare-saved-boxes.png`,
+`compare-sources-countries.png`, `compare-sources-list.png`, `compare-settings.png`, `compare-export.png`.
+
+| Surface | V1 | V2 | Verdict |
+|---|---|---|---|
+| Salvos (boxes) | the Bookmark Boxes sheet: All Articles, Favorites (0), New Box | the boxes screen with the default box and the New Box row | Same structure and same vocabulary; the V2 capture also has an empty box that says it is empty. |
+| Fontes: countries | "Countries" with All Countries on, and per country a **flag**, its name, its feed count, a **drill-in chevron** and a toggle | "Países" with Todos os países, then per country a **uniform globe icon**, its name, its count and a toggle | The counts agree exactly (537 Algeria, 326 Angola, 1 411 Argentina, 263 Armenia) as does the hierarchy. Two accepted differences: V1's **flags** are not ported (a single globe icon stands for the row), and V1's **drill-in chevron** is not drawn — the row still opens the country, the affordance is simply absent. |
+| Fontes: a country's sources | Algeria's sources grouped by category with the source's title, its feed address and its toggle | the same walk, one level further in, with each source's own toggle | The lists correspond; the V2 walk was reached by a test, so the same rows are also asserted rather than only photographed. |
+| Shell / Ajustes | the Settings sheet at its medium detent: Appearance → Font Size (Small/Medium/Large), Language → English, Circadian Design → Adaptive Palette (on) and Palette Family → Warm Earth | "Ajustes": Aparência → Tamanho do texto (Médio), Design circadiano → Paleta adaptativa, Família de paleta (Terra quente) and Tipografia adaptativa, then Desempenho and Leitura | The visible options correspond (the V1 sheet shows only its first detent, so its lower sections are not comparable from this frame). V2 adds performance and reading sections and does not draw V1's Language row — the accepted difference the T10 evidence records. |
+| Shell / Exportar | the Export sheet: Scope = All Sources, Sources = 77 443 feeds, Format = OPML (checked) / JSON Backup / CSV / Plain Text | the export sheet with its scope and its document preview | Same shape and the same catalogue breadth behind it (the app's own catalogue counts 77 443 sources); V1 offers four formats, V2 documents OPML for the reader's selection — which is also why "Exportar coleção" was removed from the menu until a collection's own export exists. |
+
+The V2 captures come from the same tests that prove the flows, so each image has a test beside it rather than
+standing alone.
 
 ## The architect's verdict on the two remaining items (2026-10-10)
 
