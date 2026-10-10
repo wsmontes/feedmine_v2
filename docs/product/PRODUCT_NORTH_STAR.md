@@ -122,6 +122,7 @@ A experiência será validada no aplicativo real (simulador e dispositivo), com 
 
 Este documento define o **porquê** e a experiência desejada. Ele não substitui contratos técnicos nem reabre decisões já tomadas.
 
+- [Benchmark de aceitação vigente](DISCOVERY_ACCEPTANCE_BENCHMARK.md): provas obrigatórias de experiência e execução autônoma; nenhum agente pode reduzir os critérios para acomodar sua implementação.
 - [Decisões de produto](PRODUCT_DECISIONS_2026-10-09.md): regras vinculantes e escolhas concretas (primeira abertura, alternância, mídia etc.).
 - [Invariantes de produto](../architecture/PRODUCT_INVARIANTS.md): comportamentos obrigatórios e fronteiras arquiteturais.
 - [Arquitetura](../architecture/ARCHITECTURE.md): como a implementação sustenta a apresentação local, o runway adaptativo e a separação de responsabilidades.
