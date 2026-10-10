@@ -24,12 +24,12 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 ## As dez frentes, na ordem de investigação
 
 ### F01 — Descoberta automática de fontes e alcance do catálogo
-**Promessa:** explorar progressivamente todo o catálogo elegível, encontrando fontes desconhecidas sem configurar RSS; priorização não é uma shortlist permanente.  
-**Jornada/oráculo:** instalação limpa; selecionar assuntos/idiomas/região; observar fontes descobertas, fontes efetivamente contactadas e fontes contribuintes sem seleção manual. Aplicar integralmente B01 do benchmark vigente.  
+**Promessa:** explorar progressivamente todo o catálogo elegível, encontrando fontes desconhecidas sem configurar RSS; priorização não é uma shortlist permanente. O catálogo gerenciado tem autoridade pública versionada em [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository), com snapshot local embarcado em cada release.  
+**Jornada/oráculo:** instalação limpa com snapshot empacotado da última revisão pública validada; selecionar assuntos/idiomas/região; observar fontes descobertas, fontes efetivamente contactadas e fontes contribuintes sem seleção manual. Simular revisão pública maior com inclusão, remoção, URL e metadados alterados, verificando efeito em elegibilidade e exploração futuras, não em cards publicados. Aplicar integralmente B01 do benchmark vigente e PD-10.  
 **Evidência inicial:** catálogo embarcado com 77.443 fontes; composição atual inicia de uma seleção padrão pequena; a receita curada pontua fontes já resolvidas. O teste do simulador registrou seleção inicial de quatro fontes.  
-**Risco principal:** catálogo como ferramenta manual de administração, em vez de universo editorial abastecido automaticamente.  
-**Direção da correção:** resolver elegibilidade e expansão de fontes a partir do catálogo/contexto no caminho existente de aquisição; não portar o scheduler da V1 nem criar um segundo selecionador.  
-**Situação:** **diagnóstico inicial feito; correção e teste B01 ainda não comprovados**.
+**Risco principal:** catálogo como ferramenta manual de administração, em vez de universo editorial abastecido automaticamente; operar eternamente com cópia congelada ignorando adições, correções e remoções do repositório público.  
+**Direção da correção:** resolver elegibilidade e expansão de fontes a partir do catálogo/contexto no caminho existente de aquisição; reconciliar periodicamente em background o snapshot público através dos owners existentes, sem bloquear a primeira apresentação; não portar o scheduler da V1 nem criar um segundo selecionador.  
+**Situação:** **diagnóstico inicial feito; correção, integração com o repositório público e teste B01 ainda não comprovados**. O snapshot V2 atual vem da V1, não do fluxo de publicação da Wawasoft.
 
 ### F02 — Primeira abertura, onboarding e tempo até a primeira descoberta
 **Especificação de produto vigente:** [F02 — O feed que apresenta a internet e conhece o leitor](F02_DISCOVERY_FEED_ONBOARDING_PRD.md). A interface inicial é o próprio feed, com intervenções editoriais e preferências explícitas opcionais; Welcome → Composer não é uma barreira obrigatória.
@@ -85,18 +85,18 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 **Aceite:** toda ação oferecida realiza a ação prometida no conteúdo correto, e o leitor retorna ao mesmo ponto.
 
 ### F09 — Persistência local, offline e reabertura
-**Promessa:** o que já foi adquirido pertence à experiência do usuário e está disponível sem rede; aproveitar espaço disponível para retenção útil e reduzir custo sob pressão medida, sem teto arbitrário de artigos.  
-**Jornada/oráculo:** iniciar com conexão, consumir/salvar, colocar offline, navegar em dados locais, matar/reabrir processo, restaurar contexto/âncora/estado de salvos e depois recuperar a rede. Aplicar B05 (em conjunto com F07/F08).  
+**Promessa:** o que já foi adquirido pertence à experiência do usuário e está disponível sem rede; aproveitar espaço disponível para retenção útil e reduzir custo sob pressão medida, sem teto arbitrário de artigos. O catálogo gerenciado também inicia localmente, recebe revisões públicas verificadas em background e nunca apaga estado pessoal quando uma fonte pública desaparece.  
+**Jornada/oráculo:** iniciar com conexão, consumir/salvar, colocar offline, navegar em dados locais, matar/reabrir processo, restaurar contexto/âncora/estado de salvos e depois recuperar a rede. Verificar consulta de manifesto vencido (~24h) na oportunidade de execução, revisão igual sem download de tudo, delta adição/remoção/edição, falhas de checksum/esquema/rede, ativação atômica e preservação do snapshot anterior e do estado pessoal. Aplicar B05 (em conjunto com F07/F08) e PD-10.  
 **Evidência inicial:** a V2 implementa SQLite local, checkpoint e restauração antes de HTTP; teste anterior recuperou a mesma identidade de card depois de relançar.  
-**Risco a verificar:** perda silenciosa após troca de contexto, invalidação exagerada, histórico não recuperável, assets que deixam de existir offline, diferenças entre suspensão e encerramento.  
-**Aceite:** valor local tem precedência sobre rede; limites offline genuínos são comunicados, não disfarçados.
+**Risco a verificar:** perda silenciosa após troca de contexto, invalidação exagerada, histórico não recuperável, assets que deixam de existir offline, diferenças entre suspensão e encerramento; atualização do catálogo que bloqueia o feed ou elimina imports/salvos/histórico.  
+**Aceite:** valor local tem precedência sobre rede; limites offline genuínos são comunicados, não disfarçados. Revisões públicas novas entram apenas depois de validação integral, sem alterar histórico publicado ou dados pessoais; offline e falha de atualização preservam o último snapshot válido.
 
 ### F10 — Escala, recursos, acessibilidade e prontidão para publicar
 **Promessa:** a experiência continua utilizável em aparelhos e condições reais, não somente no simulador de desenvolvimento; usar orçamento dinâmico em todas as frentes segundo rede, memória, disco, energia, estado térmico e permissão do iOS.  
 **Jornada/oráculo:** reproduzir F05/F06/F09 em iPhones físicos representativos, sob rede rápida/lenta, armazenamento limitado, memória pressionada, Low Power Mode e uso prolongado; verificar VoiceOver, textos ampliados, localidades suportadas, permissões/privacidade, erros visíveis, distribuição de release e crash-free behavior. Aplicar B06 e auditoria de release.  
 **Evidência inicial:** testes de simulador e amostragem de CPU/RSS existem; relatório registra que validação prolongada no aparelho físico **não foi executada**.  
 **Risco a verificar:** crescimento de recursos com milhares de cards, travamentos e consumo de energia, diferenças reais do iOS, acessibilidade ou fluxo de release incompleto.  
-**Aceite:** nenhum release PASS sem evidência física exigida pelo benchmark; BLOCKED/NOT_RUN são relatados sem interromper as demais frentes.
+**Aceite:** nenhum release PASS sem evidência física exigida pelo benchmark **e** sem prova do contrato de atualização pública de PD-10: snapshot embarcado atual/rastreável, consulta não bloqueante, atualização atômica, remoções/edições e preservação offline. BLOCKED/NOT_RUN são relatados sem interromper as demais frentes.
 
 ## Como executar, uma frente por vez
 
@@ -113,9 +113,10 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 
 ## Linha de base e transparência (2026-10-10)
 
-- **F01:** já existe um diagnóstico inicial e um benchmark; falta prova de implementação corrigida.
+- **F01:** já existe um diagnóstico inicial e um benchmark; faltam a correção da descoberta e a integração comprovada com a autoridade pública do catálogo (PD-10).
 - **F02–F04, F06–F09:** existem componentes e testes parciais; auditorias de produto completas destas frentes **ainda não foram executadas nesta matriz**.
 - **F05:** execução anterior insuficiente para o critério de 30 minutos; **não é PASS**.
+- **F09/F10 (catálogo público):** verificação/sincronização obrigatória de PD-10 ainda **NOT_RUN**; não considerar release pronto enquanto não houver implementação e evidência.
 - **F10:** ensaio obrigatório em iPhone físico ainda **NOT_RUN**.
 
 Fontes primárias para iniciar: [matriz de transferência V1/V2](../v1-study/UI_TRANSFER_MATRIX.md), [registro de evidências](../reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md), [decisões PD-1..7](PRODUCT_DECISIONS_2026-10-09.md), [invariantes](../architecture/PRODUCT_INVARIANTS.md), [arquitetura](../architecture/ARCHITECTURE.md).
