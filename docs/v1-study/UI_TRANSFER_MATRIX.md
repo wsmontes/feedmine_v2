@@ -329,3 +329,29 @@ Everything else in sections 1–9 is assigned to a delivery.
 - **This matrix is a location/provenance artifact, not a visual approval.** No row
   becomes `validado` without a V2 test (`test`/`uitest`) proving the flow plus, for
   visual surfaces, a V2 screenshot compared against the V1 reference.
+
+**T8 state (2026-10-09).** The library rows are delivered as surfaces over the reader's own storage; the
+executed evidence is in `PORT_LOG.md` under T8.
+
+- **Bookmark boxes** (line 66): `ReaderHeader` draws the box control with V1's `bookmark`/`bookmark.fill` and
+  opens `BookmarkBoxesView` — the all-saved row, one row per box with its count, the preferred box bold and
+  checked, swipe actions (Padrão / Renomear / Apagar), drag reorder, the New Box alert and the Reorder mode.
+  The box's own contents open as a saved list. **Deliberate difference:** V1's row tap made the feed show that
+  box (its `lastClicked` preset over `selectedBookmarkListID`); a box *as a reading surface* waits for T9's
+  presentation source over the publication store.
+- **Save as Smart Bookmark** (line 85): the entry exists, is offered only inside a committed search (V1's own
+  condition), asks for a name, stores the current `ContextKey` under it with the key naming its own preset, and
+  **switches to it** — V1's `setActivePreset(.smartFeed)` + `closeSearch()`.
+- **Collect these sources** (line 86): the entry exists, is offered inside a search or with ≥2 applied criteria,
+  and creates a collection holding the sources the reader's context is over, in one transaction.
+- **Delete Smart Bookmark** (line 90): the entry exists and is offered only when the reader is on one of their
+  own presets; deleting returns the surface to the plain one.
+- **Source Collections** (line 93): `CollectionsView` + its detail port V1's list and `SourceCollectionDetailView`
+  — V1's empty state, create/rename/delete/reorder, the footer stating that deleting removes only the playlist,
+  member removal, and "Abrir o feed da coleção", which runs a session over exactly those sources without
+  touching the reader's selection.
+- **Saved presets in the filter sheet** (line 67's `FilterSheetView`): the preset picker receives V1's two plain
+  entries plus the reader's curated presets, collections and smart bookmarks, in V1's picker order; choosing a
+  saved one activates its stored key.
+- **Still T10's:** export/import a collection (lines 88, 89, 91) and "Add Feed" (line 92) — the entries exist in
+  `ReaderMenuEntry.standard` and are not offered until those deliveries land, so no dead control is drawn.
