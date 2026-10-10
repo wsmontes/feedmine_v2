@@ -293,14 +293,53 @@ contains two app relaunches (pid changes) from the same source experiment, which
 medians differ while the last 20 minutes are flat. (4) Unlike the physical-device item, this is a **simulator**
 measurement and is reported as such — and its 30-minute requirement is **not met**.
 
+## The architect's acceptance (2026-10-10)
+
+The verdict on the two substitutes, quoted as given, with the one correction the record needs: it was written from
+the numbers in the first report, where the UI target had 21 cases; the target now has **22**, the extra one being
+`testT12ReaderKeepsTheLivePlaybackBar` added by the review round.
+
+> **T12 — ACCEPTED WITH DOCUMENTED EXCEPTIONS**
+>
+> Frontend V1→V2 transfer accepted for the internal milestone.
+>
+> Package: 1017/0. CompositionTests: 24/0. FeedMineUITests: 21/0.
+>
+> Visual comparison completed against V1 reference screens, including Saved, Sources/Countries, Settings and
+> Export. Country counts verified: Algeria 537, Angola 326, Argentina 1411. Differences in country flags and
+> disclosure chevrons accepted as non-blocking.
+>
+> Simulator performance: approximately 4 minutes of real feed scrolling; 10 swipes generated 29 viewport
+> observations. RSS peaked at 347 MB during the measured workload and stabilized at 302 MB over the final 20
+> minutes. No sustained growth was observed during that final interval, but this does not establish 30-minute
+> continuous-scroll stability.
+>
+> Publication identity and checkpoint integrity checks passed. The same checkpoint card was restored after
+> relaunch.
+>
+> Exceptions: physical-device validation unavailable; 30-minute continuous-scroll soak incomplete due to finite
+> supply from four selected feeds.
+>
+> Neither exception blocks T12 integration. Both remain open as explicit performance-validation obligations
+> before public release. No additional T12 implementation is authorized solely to satisfy the original duration
+> target.
+
+It also ruled the two country-list differences acceptable as **one low-priority cosmetic observation** (no gate),
+preferring V1's chevron in principle while not blocking on it, and it **declined** the routes this session
+measured and rejected — repeating cards, writing the database directly, or inventing configurations that do not
+represent the product — naming instead the form a pre-publication performance gate should take: a broad source
+set selected **through the app's own flow**, a persistent test namespace, real Runtime, and a long scroll
+measured for runway, memory, hitches, CPU, continuity and duplicate-freedom, with any legitimate exhaustion of
+content recorded separately.
+
 ## Not executed, and why
 
 | Plan item | State |
 |---|---|
 | `CompositionTests` as one run (24 tests) | **24 tests, 0 failures** (2026-10-10, whole-scheme run). The six cases that failed here before failed on the harness's activity, not on the app: `.forward` observes and never admits, so the window held the anchor card alone. Each one now produces once and admits with `.explicitTailApproach`, the activity the real shell sends when the reader moves forward and the tail is visible. |
 | `FeedMineUITests` as one run (21 tests) | **21 tests, 0 failures** (2026-10-10, whole-scheme run — the acceptance this round was aiming at; it was 16 failing before the repairs). The cause of the earlier failures was *not* shared simulator state: the app keeps no `UserDefaults` and every test already launches with its own `FEEDMINE_RUNTIME_NAMESPACE`. It was `.accessibilityIdentifier` on a SwiftUI *container* overriding its children's identifiers on this toolchain (iOS 26.5 / Xcode 26.6) — a defect the repository had already met and fixed once, for the search bar (`Sources/FeedMineUI/Reader/ReaderShell.swift:102`) — plus the destinations the menu was not offering, and the interaction and product defects listed below. |
-| Physical iPhone: 10 minutes idle + 30 minutes of scrolling, memory/CPU/hitches and media budget | **Not executed.** No physical device is attached to this machine (`xcrun devicectl list devices`, 2026-10-10: two iPhones known, both `unavailable`); the plan's own validation section asks for a simulator UUID for everything else. Needs the reader's device. |
+| Physical iPhone: 10 minutes idle + 30 minutes of scrolling, memory/CPU/hitches and media budget | **Not executed — accepted as a documented exception by the architect.** No physical device is attached to this machine (`xcrun devicectl list devices`, 2026-10-10: two iPhones known, both `unavailable`); the plan's own validation section asks for a simulator UUID for everything else. Needs the reader's device. |
 | Visual comparison by screenshots, surface by surface | **Not executed as a screenshot diff.** The UI tests assert structure, identifiers, labels and one geometry (the mini player's 56 pt); no pixel comparison was made. |
-| 30-minute scroll budget on heterogeneous networks | **Not executed.** The deterministic, short-horizon scenario is the substitute that was run; long-horizon behaviour is the physical-device item above. |
+| 30-minute scroll budget on heterogeneous networks | **Not executed — accepted as a documented exception by the architect; the pre-publication obligation its verdict names.** The deterministic, short-horizon scenario is the substitute that was run; long-horizon behaviour is the physical-device item above. |
 
 Anything not listed as executed above has no claim attached to it.

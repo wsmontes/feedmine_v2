@@ -1143,3 +1143,23 @@ app-level curated-session test also **TEST SUCCEEDED**.
 V2's shows the reader's own cards in their published order (no preview pipeline is invented for it). V1's
 "Re-watch intro" setting is not drawn — the gate is reachable through the menu's own "Criar feed curado", which
 is V1's other entry point.
+
+## Aceite do T12 — 2026-10-10
+
+O arquiteto aceitou a transferência V1 → V2 para o marco interno: **`T12 — ACCEPTED WITH DOCUMENTED EXCEPTIONS`**.
+Portão medido: pacote **1017/0**; `CompositionTests` **24/0**; `FeedMineUITests` **22/0** numa corrida do scheme
+(o texto do arquiteto cita 21 porque foi escrito antes do vigésimo segundo teste, o do bar de playback vivo).
+Comparação visual completa: as quatro referências do V1 e as três superfícies que ele acrescentou, estas contra
+capturas do **próprio V1** feitas no segundo simulador — contagens conferidas (Argélia 537, Angola 326,
+Argentina 1411). Soak no simulador medido: ~4 min de scroll real, pico de RSS 347 MB e estável em 302 MB nos
+últimos 20 min, com o mesmo card de checkpoint antes e depois de terminar + relançar.
+
+Ressalvas documentadas, **nenhuma delas bloqueante**: validação em aparelho físico indisponível (os dois iPhones
+conhecidos estão `unavailable`) e o soak de 30 min incompleto pela oferta finita da seleção inicial de quatro
+feeds. As duas diferenças cosméticas da lista de países — bandeiras do V1 trocadas por um ícone de globo e o
+chevron de "entrar" não desenhado — foram aceitas como observação de baixa prioridade, sem gate.
+
+O trabalho de desempenho e escala com muitas fontes fica como **obrigação pré-publicação**, e o arquiteto fixou
+a forma dele: conjunto amplo selecionado **pelo fluxo legítimo do aplicativo** (a cascata de países já
+comprovada), namespace persistente de teste, Runtime real, scroll prolongado medindo runway, memória, hitches,
+CPU, continuidade e ausência de duplicações, registrando à parte qualquer esgotamento legítimo de conteúdo.
