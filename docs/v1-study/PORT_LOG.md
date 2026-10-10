@@ -504,12 +504,16 @@ than thrown away silently). New `ReaderFilterStoreTests` (5).
 
 **Verified.** `swift test` **905 tests, 0 failures**.
 
-**Remaining for T6**: the sheet and lens views themselves (V1's `FilterSheetView` layout: preset picker, countries
-link, content type, topics, language, mood, "Clear All Filters", toolbar Done) bound to this store, the composition
-coordinator that implements `onApply` (persist the selection through `ReaderPreferencesStore.setContext(_ key:)`
-and then activate that context), the expiry record (pending fact, applied on an explicit transition), the
-`EditorialRevision` compatibility widening for the new key (`AppComposition.swift:358`), and the A→B→A /
-stale-callback tests.
+**Everything above is now landed and measured**: the sheet (step 7), the reachable transition through
+`applyFilter` (step 8) and the A→B→A / stale-callback behaviour (step 9, app-level test
+`testT6FilterTransitionKeepsContextsSeparateAndStaleCallbackInert`: A advances and checkpoints, a filter builds B
+with its own association and edition, returning to A **offline** recovers A's edition *and* its anchor, and the
+retired association cannot install into the active store — `.projectionSequenceMismatch`).
+
+**Remaining for T6**: the expiry record (a pending fact applied on an explicit transition — never a timer that
+changes the presentation), the `EditorialRevision` compatibility widening for the new key
+(`AppComposition.swift:358`), the filter lens bar (`TaxonomyChipBar`, the chips that remove one active criterion)
+and the full preset picker, which needs T8's named presets.
 
 ## T7 — 2026-10-09 (catalog metadata: the values T6's sheet and T7's source management need)
 
