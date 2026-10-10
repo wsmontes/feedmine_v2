@@ -1,270 +1,296 @@
-# F02 — Primeiro contato: o feed que apresenta a internet e conhece o leitor
-## Especificação de produto e experiência (PRD)
+# F02 — Primeiro contato: conhecer o mundo, descobrir a internet, descobrir o próprio gosto
+## Especificação de produto e experiência (PRD) — revisão 2, 2026-10-10
 
-**Status:** especificação de produto vigente para orientar execução autônoma.  
-**Data:** 2026-10-10. **Frente:** F02 — primeira abertura, onboarding e tempo até a primeira descoberta.  
-**Natureza:** define **o que a pessoa vê, entende, escolhe e recebe**. Não é desenho de arquitetura, plano de tarefas técnicas nem autorização para simplificar expectativas de produto.  
-**Alinhamento obrigatório:** [Norte de produto](PRODUCT_NORTH_STAR.md), [Benchmark de aceitação](DISCOVERY_ACCEPTANCE_BENCHMARK.md), [Mapa de dez frentes](PRODUCT_AUDIT_10_FRONTS.md), [Decisões de produto](PRODUCT_DECISIONS_2026-10-09.md).
+**Estado:** especificação vigente de **experiência de produto**, refinada com as decisões expressas pelo product owner e a verificação direta da V1. **Não** é especificação de implementação, plano de classes, instrução para transplantar código da V1 ou alegação de que a V2 já passou nos testes.
 
-> **Visão:** o usuário não preenche um questionário para depois usar o FeedMine. Ele **entra no feed**. O próprio feed apresenta, com histórias reais, a variedade de coisas que a internet aberta oferece e convida a pessoa a dizer, de forma explícita e opcional, **“quero mais disso”** ou **“não é minha praia”**. Descobrir conteúdo e descobrir seus interesses são a mesma experiência contínua.
+**Autoridade:** [Norte de produto](PRODUCT_NORTH_STAR.md), [decisões de produto](PRODUCT_DECISIONS_2026-10-09.md), [benchmark de aceitação](DISCOVERY_ACCEPTANCE_BENCHMARK.md), [dez frentes](PRODUCT_AUDIT_10_FRONTS.md). Os critérios B01–B06 não são reduzidos por esta revisão. A execução é autônoma: nenhuma aprovação humana intermediária deve bloquear investigação, implementação, medição ou correção.
 
-### 1. Problema de produto que estamos resolvendo
+> **A experiência em uma frase:** a pessoa responde duas perguntas simples — **em quais idiomas quer ler** e **quais lugares quer acompanhar** — e entra imediatamente em um **feed de conteúdo real, excelente e variado**. O próprio FeedMine, às vezes com humor, mostra as possibilidades da internet e pergunta, sem interromper o scroll, se ela quer explorar mais ou menos cada universo.
 
-A primeira experiência não deve pressupor que a pessoa entende RSS, escolheu fontes, tem uma lista de assinaturas ou sabe descrever precisamente seus interesses. O produto deve despertar curiosidade **antes** de solicitar trabalho.
+## 1. Intenção do produto
 
-Um onboarding convencional que exibe um Composer de idiomas, assuntos, equilíbrio editorial, intensidade de exploração e formatos exige escolhas abstratas sem antes demonstrar o resultado. O leitor tem de imaginar o que o FeedMine poderia oferecer. Pior: uma configuração pode parecer personalizada, mas continuar limitada às poucas fontes inicialmente cadastradas.
+A primeira abertura tem duas obrigações, nessa ordem de confiança:
 
-**Não basta copiar o onboarding da V1 ou reproduzir seus controles.** O requisito é que a pessoa experimente o diferencial do FeedMine imediatamente: descobrir algo que desconhecia, oriundo de uma fonte que provavelmente não procuraria sozinha.
+1. **Demonstrar que o FeedMine apresenta a internet de verdade.** A pessoa reconhece que está diante de excelentes reportagens, histórias, publicações e fontes legítimas — inclusive nomes conhecidos —, não de uma coleção de blogs obscuros, conteúdo antigo, feeds quebrados ou uma “internet secreta”.
+2. **Transformar curiosidade em descoberta pessoal.** A pessoa experimenta assuntos diferentes e pode orientar a próxima exploração sem conhecer RSS, procurar feeds, assinar provedores ou preencher um formulário de interesses.
 
-### 2. Promessa e resultado esperado
+A qualidade e a confiança da **primeira impressão** têm prioridade sobre exibir o assunto mais específico possível. Diversidade, independência e surpresa continuam essenciais, mas **dentro de um padrão alto de qualidade**, não como desculpa para expor conteúdo ruim.
 
-Ao abrir o aplicativo pela primeira vez, a pessoa deve poder dizer: **“Já estou explorando a internet. O FeedMine me mostrou assuntos e fontes diferentes; quando demonstrei interesse, comecei a receber mais descobertas nessa direção. Não precisei configurar um leitor.”**
+**Não posicionar o produto como “a internet que escondem de você”, “conteúdo proibido” ou alternativa conspiratória às publicações tradicionais.** A promessa é abrir a internet existente e ampliar os caminhos para explorá-la.
 
-A experiência deve cumprir simultaneamente:
+## 2. Jornada: duas perguntas curtas, depois o feed de verdade
 
-- **Descoberta imediatamente compreensível:** histórias reais, atraentes, de assuntos variados e fontes identificadas.
-- **Aprendizado declarado pelo leitor:** controles explícitos e compreensíveis, integrados ao próprio feed.
-- **Sem obrigação de configurar:** é possível rolar, abrir histórias e continuar sem responder nada.
-- **Surpresa preservada:** preferências orientam a exploração sem aprisionar o leitor numa bolha.
-- **Controle e confiança:** a pessoa sabe o que um voto significa, pode rever preferências e não perde a posição.
-- **Um único produto:** após as primeiras interações, a experiência continua sendo o mesmo feed, sem trocar para outro modo de navegação.
+### 2.1. Tela inicial de orientação
 
-**O scroll vertical permanece o gesto principal. Não é Tinder, quiz, carrossel de escolhas nem sequência de telas obrigatórias.**
+**Mensagem de abertura, curta:** “A internet tem muito mais para oferecer. O FeedMine ajuda você a descobrir.”
 
-### 3. Público e estados de entrada
+O primeiro acesso apresenta somente dois grupos de escolhas simples, na mesma tela ou em dois passos curtos. **Não perguntar assuntos, temas favoritos, fontes, peso editorial, nível de descoberta ou formatos de mídia nesse momento.**
 
-**P01 — Leitor novo e curioso:** não conhece RSS, não segue nenhuma fonte e quer começar sem configuração. Deve entrar no feed exploratório sem barreira.
+**Pergunta A — “Em quais idiomas você quer ler?”**
 
-**P02 — Leitor com interesse claro:** ao encontrar um assunto específico, declara preferência por mais ou menos. O conteúdo futuro responde a isso, mas continua oferecendo novidades fora do tema.
+- Seleção de **vários idiomas ao mesmo tempo**; por exemplo, **Português** e **Inglês**.
+- A sugestão inicial vem dos idiomas do aparelho quando possível, claramente editável. O idioma da **interface** não é obrigatoriamente o idioma de todas as histórias.
+- Mostrar nomes de idiomas escritos para pessoas, nunca códigos técnicos; permitir encontrar outro idioma sem percorrer uma lista interminável.
+- Não presumir que falar português significa querer somente notícias do Brasil, nem que morar no Canadá significa querer somente notícias em inglês.
 
-**P03 — Leitor que não quer ser interrogado:** ignora todos os convites, rola e lê normalmente. O produto não interpreta silêncio nem scroll rápido como rejeição.
+**Pergunta B — “Quais lugares você gostaria de acompanhar?”**
 
-**P04 — Leitor que já usa FeedMine:** ao reabrir, recupera seu feed e suas preferências. Não volta ao tour, exceto por escolha explícita; ainda pode ajustar interesses a qualquer momento.
+- Seleção de **vários países ou regiões de interesse**; por exemplo, **Canadá**, **Brasil** e **China**.
+- Explicação curta: “Para encontrar histórias sobre esses lugares — e continuar descobrindo o resto do mundo.”
+- **Lugar de interesse** não é sinônimo de idioma, localização física atual, nacionalidade ou país onde fica o servidor da fonte. Uma matéria **sobre a China publicada em inglês** deve continuar sendo uma possibilidade válida para alguém que escolheu China e inglês.
+- Não exigir GPS, acesso à localização, conta, cidadania nem adivinhar países a partir de dados privados. O idioma ou a região do aparelho podem sugerir opções, nunca impor escolha.
+- **“Mundo todo”** é um estado compreensível quando não há lugar específico escolhido; escolher lugares aumenta a prioridade desses destinos, sem eliminar a descoberta global.
+- Quando o FeedMine **não consegue distinguir com evidência** o lugar tratado por uma história do local do publicador, não deve afirmar que encontrou “notícias sobre a China” só porque a fonte foi catalogada naquele país. Preferir informação verdadeira e variedade a precisão geográfica fingida.
 
-**P05 — Pessoa sem conexão ou com rede lenta:** vê o melhor conteúdo local disponível antes de depender da internet; quando não há material local, recebe uma espera honesta e acionável. O FeedMine não finge possuir histórias.
+**Ação principal:** **“Começar a explorar”**. A pessoa pode aceitar as sugestões ou alterá-las. Não precisa escolher quantidade mínima de países, nem assunto algum. Se nenhuma seleção geográfica for feita, começa com “Mundo todo”; para idiomas, oferecer uma sugestão inicial utilizável que pode ser trocada a qualquer momento.
 
-### 4. Conceito: um feed normal, com uma voz editorial
+**Tempo de atenção exigido:** somente o necessário para responder/confirmar essas duas perguntas. Não adicionar tela obrigatória de boas-vindas após elas, tour longo nem segunda etapa de preferências.
 
-O aplicativo possui uma **voz editorial** que pontua histórias verdadeiras e comunica as possibilidades de descoberta, sem substituir essas histórias por publicidade sobre o próprio app.
+### 2.2. Preparação honesta, se necessária
 
-A pessoa pode encontrar, ao longo do mesmo feed:
+Assim que a orientação acaba, a pessoa vai **direto ao feed vertical normal** do FeedMine. Se não houver histórias locais prontas, mostrar uma preparação breve **baseada em fatos reais**: fontes efetivamente consultadas, títulos reais chegando e cards realmente preparados. Não usar porcentagem fictícia, títulos fabricados nem promessas de segundos.
 
-- Uma reportagem de ciência: **“A internet tem descobertas que parecem ficção. Quer encontrar mais coisas assim?”**
-- Uma notícia de celebridades: **“Sim, também tem fofoca. Não vamos fingir que todo mundo só lê ciência.”**
-- Um artigo de nicho sobre restauração de relógios: **“Tem uma comunidade inteira fascinada por isso. Você entraria nesse universo?”**
-- Uma reportagem internacional: **“O que está acontecendo do outro lado do mundo também pode surpreender você.”**
-- Fotografia, quadrinhos, cultura, arte, tecnologia, gastronomia, natureza ou outros campos — sempre acompanhados de **conteúdo efetivamente existente**, não de uma promessa vazia.
+Assim que houver uma sequência inicial apresentável e diversificada, publicar para leitura. A descoberta e a preparação de mais histórias **continuam durante o scroll**; não esperar terminar uma exploração completa do catálogo. O trabalho posterior não altera os cards já apresentados.
 
-Esses textos são **exemplos de tom e intenção editorial**, não headlines de artigos, não catálogo fechado de assuntos e não permissão para inventar fatos. Cada intervenção deve ser pertinente ao assunto do material associado. A voz pode ser divertida, curiosa, inteligente e levemente irreverente, **nunca debochada com tragédias, sofrimento, grupos sociais ou pessoas vulneráveis**.
+### 2.3. O primeiro feed é uma demonstração editorial, não uma pesquisa
 
-A primeira amostra precisa mostrar variedade real. Não pode apresentar apenas quatro publicadores conhecidos e chamar isso de universo da internet aberta. Notícias, fofocas, especialidades e descobertas inesperadas são **possibilidades**, não uma ordem rígida, uma proporção fixa ou dez cards obrigatórios.
+O feed inicial apresenta excelentes histórias de universos diferentes: notícias e análises, ciência, cultura, entretenimento, tecnologia, esporte, sociedade, artes, natureza, curiosidades e eventualmente um nicho fascinante. As possibilidades reais variam de acordo com conteúdo disponível, idiomas e lugares escolhidos. **Não há ordem fixa de categorias, quotas, páginas temáticas, número obrigatório de cards por assunto nem lista fechada de publicadores.**
 
-### 5. Jornada principal — do primeiro toque à leitura cotidiana
+A pessoa deve encontrar **alguns nomes reconhecíveis** como sinais legítimos de familiaridade e confiança, ao lado de veículos especializados ou independentes **igualmente bons**. Um grande veículo não ganha direito de dominar o feed; uma excelente fonte pequena não é punida por não ser famosa.
 
-#### 5.1. Primeira abertura
+A sequência é **intercalada naturalmente** no scroll, sem blocos de dez notícias de um assunto seguidos por dez de outro. Não é um catálogo visual de categorias: é um feed genuinamente interessante **mesmo se ninguém responder aos convites**.
 
-1. A pessoa abre o FeedMine; vê a identidade do produto e uma mensagem breve que a situa: **“A internet é muito maior que os lugares que você costuma visitar. Vamos explorar?”**
-2. O **próprio feed** é o destino principal, já com a rolagem e os controles comuns do aplicativo. Não há formulário, obrigação de escolher um assunto nem explicação longa bloqueando a navegação.
-3. O idioma de apresentação parte da preferência do aparelho, com possibilidade de alteração compreensível; a pessoa não precisa conhecer códigos de idioma.
-4. O FeedMine apresenta histórias reais de diferentes campos conforme ficam prontas. Se precisar preparar a primeira sequência, a espera mostra indícios reais: nomes de fontes, manchetes efetivamente obtidas, conteúdo preparado — nunca percentuais inventados nem promessas de duração.
-5. A primeira história já pode ser aberta, salva ou compartilhada como qualquer outra. A pessoa não precisa “terminar o onboarding” antes de usar o produto.
+## 3. Política editorial da primeira impressão
 
-#### 5.2. Convites contextuais dentro do feed
+### 3.1. Três qualidades distintas
 
-Quando uma história ilustra um universo de interesse, aparece **um comentário curto do FeedMine**, ligado visualmente àquela história ou ao pequeno conjunto editorial imediatamente associado.
+**A. Evidência prévia sobre a fonte.** Aproveitar a pesquisa e a classificação já presentes no catálogo: descrição, tags extraídas da análise de conteúdo, assuntos, idioma, formato, atividade, natureza, data da última publicação conhecida, sinal de habilitação para descoberta e pontuação de qualidade.
 
-A estrutura de cada convite é:
+**B. Credibilidade/editorialidade.** Tratar separadamente reputação editorial, vínculo institucional ou científico, especialização, clareza de autoria/publicador, utilidade pública e independência editorial. Veículos conhecidos podem facilitar a confiança inicial, mas fama não é sinônimo de precisão, neutralidade ou qualidade.
 
-1. **Possibilidade descoberta** — frase de personalidade que apresenta o universo.
-2. **História real** — card com título, fonte, conteúdo e mídia reais quando disponíveis.
-3. **Ação opcional e explícita** — dois botões do mesmo nível de hierarquia: **“Quero mais disso”** e **“Não é minha praia”**.
-4. **Continuação natural** — rolar continua funcionando, com ou sem escolha.
+**C. Qualidade da história atual.** O artigo que chega agora precisa ter conteúdo real, título compreensível, origem rastreável, link utilizável, apresentação íntegra, relevância e temporalidade apropriada. Uma boa fonte pode publicar um item fraco; uma fonte menos conhecida pode publicar uma história excelente.
 
-O convite nunca encobre o artigo, exige resposta, bloqueia o scroll, dispara um modal ou sequestra um gesto lateral. Se o usuário escolher uma ação, a confirmação é discreta e a leitura continua exatamente onde estava.
+**Regra de honestidade:** a pontuação numérica do catálogo **não comprova credibilidade, verificação factual nem boa experiência em todos os artigos**. Não chamar um artigo de “verificado” ou um publicador de “confiável” apenas porque um algoritmo reconheceu palavras no nome ou porque o score técnico é alto.
 
-**Distinção visual obrigatória:** o comentário é claramente uma intervenção editorial do FeedMine, separado do título e da autoria do publicador. Não pode parecer que o site escreveu a frase do aplicativo.
+### 3.2. O que merece aparecer primeiro
 
-#### 5.3. Aprendizado ao longo da experiência
+Na primeira impressão, privilegiar histórias que:
 
-- **“Quero mais disso”** significa: *explore mais histórias e outras fontes relacionadas a esse universo*. Não é uma assinatura do publicador e não equivale a curtir publicamente uma postagem.
-- **“Não é minha praia”** significa: *dê menos prioridade a esse tipo de conteúdo*. É um sinal de preferência, **não um bloqueio permanente**, não uma rejeição do autor e não uma exclusão automática de tudo que tenha palavras parecidas.
-- **Não responder** significa **nenhuma preferência declarada**; o FeedMine continua oferecendo variedade.
-- **Abrir, ler, salvar ou compartilhar** continuam ações normais sobre a história. Não devem ser disfarçadas de voto explícito nem convertidas em rejeição se não acontecerem.
-- Se o leitor tocar por engano, há uma opção simples de **“Desfazer”** junto à confirmação.
-- Respostas devem produzir diferença perceptível na descoberta **futura**: mais ou menos histórias pertinentes, inclusive de fontes novas que a pessoa ainda não conhece. Não basta trocar uma etiqueta ou apenas reordenar uma lista fixa de assinaturas.
+- Venham de fontes elegíveis, com histórico editorial ou especialização identificável e atividade compatível com seu tipo de conteúdo.
+- Sejam genuinamente **boas de ler ou consumir**, não apenas coletadas com sucesso; tenham link funcional, título informativo, texto/descrição suficiente e autoria/origem transparente.
+- Respeitem idioma escolhido e considerem os lugares de interesse, sem reduzir a internet ao país de residência da pessoa.
+- Equilibrem atualidade com conteúdo atemporal de valor. **Notícias antigas apresentadas como atuais são inadequadas**; um excelente ensaio histórico ou arquivo evergreen pode ser apropriado, com contexto e data honestos.
+- Ofereçam assuntos e perspectivas diversos, sem repetição excessiva de fonte, tema, artigo ou formato.
+- Evitem clickbait enganoso, agregadores que obscurecem a origem, spam comercial, anúncios disfarçados de artigos, links quebrados e relatos sensacionalistas escolhidos apenas para provocar reação.
 
-Se o card puder representar mais de um tema, a interface deve deixar claro **qual universo** está sendo escolhido. Ex.: “Mais **astronomia**”, não um “mais disso” cujo significado só o aplicativo conhece. O título curto dos botões pode permanecer genérico se o texto/contexto tornar inequívoco o assunto.
+**Não transformar uma imagem em condição de qualidade.** Histórias com imagem real bem preparada podem causar ótima primeira impressão, mas um artigo excelente sem imagem deve receber **card text-only intencional e elegante**. Imagem ausente ou tardia não pode quebrar o layout. Não inventar ilustração, manchete ou publicação para preencher uma categoria.
 
-#### 5.4. A transição para o uso habitual
+**Conteúdo sensível:** assuntos graves podem aparecer quando relevantes, mas o onboarding não deve privilegiar material gráfico ou explorar tragédias para obter votos. A linguagem editorial, se existir, permanece respeitosa.
 
-O aprendizado inicial **não possui número mínimo de votos nem botão obrigatório de conclusão**. A pessoa já está usando o FeedMine.
+### 3.3. Como apresentar amplitude sem perder credibilidade
 
-Conforme o usuário se familiariza, os comentários didáticos tornam-se menos presentes **sem interromper o feed nem mudar a navegação**. Preferências continuam acessíveis e editáveis; uma pessoa que gosta dos convites pode optar por receber sugestões de novos universos de exploração.
+A primeira curadoria procura conscientemente **fontes e assuntos diferentes**: tradicionais e independentes, abrangentes e especialistas, locais e internacionais, atuais e atemporais, populares e surpreendentes. Deve ser uma amostra **convincente da internet real**, não um desfile de fontes raras só para parecer diferente.
 
-Há sempre uma forma clara de **“Ocultar dicas de descoberta”** — oculta as intervenções de onboarding, **não** restringe o conteúdo e não reinicia a experiência. As dicas não voltam de forma intrusiva após reiniciar o app. Uma opção **“Conhecer o FeedMine”** permite reencontrá-las voluntariamente.
+**A primeira aquisição não pode ser determinada apenas por quais feeds responderam mais rápido.** A experiência deve buscar qualidade e diversidade de contribuintes enquanto mantém um primeiro conteúdo utilizável tão cedo quanto possível.
 
-Os controles avançados — equilíbrio editorial, alcance da exploração, filtros de idioma e tipos de mídia — permanecem disponíveis após o primeiro contato em **Preferências de descoberta**. Não são exigidos para começar. Toda opção oferecida deve produzir o comportamento correspondente; caso não possa ser honrada, não deve aparecer como funcional.
+Quando a pessoa expressa um interesse, a exploração do catálogo passa a procurar **novas fontes** relacionadas, e não apenas reordenar as poucas fontes já consultadas. A qualidade da apresentação continua protegida quando o assunto se torna especializado.
 
-### 6. Composição visual e hierarquia
+**Escassez real:** se o conteúdo qualificado para um idioma/lugar não existe ou está temporariamente indisponível, não relaxar silenciosamente para spam e links ruins. Usar histórias boas de outras partes do universo permitido, indicar limites com honestidade e continuar a busca. Nunca prometer cobertura geográfica que o conteúdo não comprova.
 
-**A tela principal continua sendo o feed vertical do FeedMine.** Não criar uma experiência visual separada que depois descarte a posição e carregue um segundo feed.
+## 4. A voz do FeedMine dentro do feed
 
-**Cabeçalho:** identidade FeedMine e acesso discreto a interesses/preferências, busca e outras ações pertinentes. Um sinal inicial não intrusivo pode indicar **“Descobrindo sua internet”**, sem simular análise pessoal ou progresso fictício.
+O FeedMine apresenta possibilidades enquanto a pessoa rola. A **história real vem primeiro**; comentários curtos e ocasionais funcionam como intervenções editoriais distinguíveis do texto do publicador.
 
-**Card editorial:** mantém a identidade do conteúdo: título da publicação, nome da fonte, data/contexto, imagem real quando disponível ou layout intencional de texto, e ação normal de leitura. A intervenção do FeedMine é distinguível por rótulo ou tratamento tipográfico próprio, sem parecer uma notícia independente.
+Exemplos de **tom** — **não manchetes inventadas nem sequências obrigatórias**:
 
-**Pergunta contextual:** breve, em linguagem natural, associada ao assunto real do card. Não excede visualmente o peso da história. As ações **“Quero mais disso” / “Não é minha praia”** devem ser legíveis e acionáveis por toque, teclado e tecnologia assistiva. Não utilizar exclusivamente ícones de coração ou polegar para uma decisão que afeta **assuntos futuros**, não a postagem atual.
+- Ciência: **“É impressionante o que a gente descobre quando olha um pouco mais longe.”**
+- Cultura: **“A internet também é feita de histórias que você nem sabia que queria ler.”**
+- Entretenimento: **“Sim, também tem fofoca. A curiosidade não exige diploma.”**
+- Nichos: **“Existe um universo inteiro dedicado a isso. Quer explorar?”**
+- Geografia: **“O que acontece do outro lado do mundo pode ter muito a ver com você.”**
+- Notícias graves: **“Uma reportagem importante sobre este assunto. Quer acompanhar mais?”** — ou simplesmente nenhum comentário.
 
-**Feedback do voto:** discreto e imediato. Ex.: **“Entendido. Vamos explorar mais astronomia.”** ou **“Entendido. Menos fofocas, mais espaço para outras descobertas.”** com **“Desfazer”**. Não aumentar pontuações, inventar estatísticas de aprendizagem nem celebrar desinteresse.
+**Tom:** curioso, inteligente, acessível e levemente irreverente, não infantil, sarcástico com o leitor, moralizante nem conspiratório. O FeedMine não sugere que alguém “esconde” notícias ou que oferece uma internet alternativa. **“A internet tem muito mais para oferecer”** é o enquadramento do produto.
 
-**Ausência de resposta:** nenhuma alteração visual obrigatória; o card não fica “pendente”, não reaparece como cobrança e não ocupa o lugar de outra história.
+### 4.1. Composição da intervenção
 
-**Ritmo editorial:** convites são ocasionais, contextualizados e úteis; o feed não pode virar uma sequência de perguntas a cada card. Não impor contagem fixa ou cronograma artificial. O valor primário de cada tela é **descobrir e consumir conteúdo**.
+1. Card verdadeiro: título, fonte, história, data e mídia real se houver.
+2. Pequena intervenção visualmente identificada como **“FeedMine sugere”** (ou tratamento equivalente).
+3. Pergunta ocasional sobre o universo **identificável** do conteúdo: **“Quer descobrir mais sobre astronomia?”**
+4. Duas ações claramente rotuladas: **“Quero mais disso”** e **“Não é minha praia”**.
+5. Scroll prossegue mesmo que não haja escolha; não transformar cada card em questionário.
 
-**Privacidade da apresentação:** mostrar o motivo compreensível de uma sugestão quando útil (ex.: **“Você pediu mais ciência”**). Não afirmar que a pessoa “ama” um tema por ter passado por um card.
+**Se a história abordar vários temas, explicitar qual assunto o voto altera** (por exemplo, “Mais astronomia” em vez de um “mais disso” ambíguo). Pode não haver convite quando o assunto é ambíguo ou sensível.
 
-**Mídia:** nunca mostrar uma miniatura falsa ou reserva visual quebrada para promover uma categoria. Falta de imagem resulta em um card de texto bem composto. Uma imagem tardia não altera a geometria de conteúdo que já está sendo lido.
+A fala editorial jamais pode ser confundida com citação, opinião ou manchete atribuída ao veículo de origem. Comentário e botões não escondem o artigo, não exigem resposta, não abrem modal e não sequestram o gesto de scroll.
 
-### 7. Linguagem, personalidade e texto de interface
+## 5. Aprender com respostas declaradas, nunca com adivinhação
 
-**Voz:** curiosa, próxima, culta sem ser acadêmica, leve sem virar piada o tempo todo. O FeedMine é um guia de exploração, **não** um influenciador, uma autoridade que julga gostos ou um algoritmo que diz conhecer a pessoa melhor do que ela.
+- **“Quero mais disso”**: aumentar o interesse editorial em **histórias e fontes novas relacionadas a esse universo**.
+- **“Não é minha praia”**: diminuir a prioridade **futura** desse universo, **sem bloquear definitivamente** o assunto, o site ou o continente.
+- **Não tocar em nada**: não há voto. Rolar, passar rápido ou não abrir um artigo **não significa desgostar**.
+- **Abrir, ler, salvar, compartilhar**: continuam ações sobre a história; não são votos explícitos de personalização.
+- **“Desfazer”**: reverte uma resposta feita por engano, sem penalidade nem reinício do feed.
+- **Persistência:** “Meus interesses” mostra as preferências que a pessoa declarou e permite alterar ou retirar respostas. Não exibir score secreto como se fosse uma verdade psicológica.
+- **Assuntos ≠ assinaturas:** gostar de astronomia **não inscreve o usuário em centenas de sites**. Seguir uma fonte individualmente é uma escolha consciente, separada e reversível.
+- **Mudança futura, não retroativa:** novas respostas orientam **o próximo conteúdo adquirido, escolhido e preparado**. Não apagam nem reorganizam cards já publicados, não deslocam o scroll e não invalidam trabalho local que ainda pode ser útil.
 
-**Regras de redação:**
-- Preferir palavras comuns: **assuntos, histórias, fontes, descobrir, explorar**. Evitar RSS, crawler, ingestão, pesos, modelo, algoritmo, embeddings, assinatura como requisito técnico.
-- Convites em primeira pessoa do plural podem funcionar com parcimônia: **“Olha o que encontramos”**; evitar personificação invasiva como **“Estou te observando”**.
-- Ser explícito na consequência: **“Mais histórias desse assunto”**, **“Menos desse assunto”**. Evitar “Curtir” sem explicar o impacto sobre a descoberta.
-- Não sugerir que uma preferência é definitiva. A pessoa muda de opinião sem punição.
-- Humor permitido com fofocas, hobbies e descobertas curiosas; **tom factual e respeitoso** com violência, morte, calamidade, saúde e temas vulneráveis. Nesses casos pode não haver comentário brincalhão.
-- Não confundir conteúdo editorial do FeedMine com texto do publicador nem inventar citações, manchetes, fontes ou exemplos em forma de notícia.
-- Os textos precisam ser localizáveis no idioma da interface; exemplos em português não significam forçar português a quem usa inglês. Manter sentido, intenção e tom, não traduções literais de piadas.
+Um voto positivo deve produzir diferença **perceptível e verificável** em relação a uma sessão equivalente sem aquele voto. Essa diferença deve alcançar o universo de **fontes exploradas**, não ser só um badge, uma cor de botão ou um novo sort dentro das mesmas quatro fontes.
 
-**Vocabulário-base proposto (português):**
+Mesmo após vários votos, o FeedMine preserva descoberta fora das preferências; o usuário não fica preso a uma bolha. **Quem nunca votar também merece um ótimo feed.**
 
-| Ocasião | Texto |
+## 6. Experiência visual e controles
+
+**Antes do feed:** a orientação de idiomas e lugares é limpa, breve e acessível: texto curto, sugestões pré-selecionáveis, múltipla escolha, indicativo claro do que será acompanhado e botão principal **“Começar a explorar”**. Não mostrar percentuais de personalização, ranking, scores de fontes ou “taxa de aprendizado”.
+
+**No feed:** interface vertical normal. Títulos e fontes reais são protagonistas. Cards sem imagem são completos e bem desenhados. A intervenção editorial é discreta e claramente própria do FeedMine; botões de voto aparecem apenas quando existe um assunto identificável e uma pergunta útil.
+
+**Depois de um voto:** confirmação pequena, próxima ao card: **“Entendido. Vamos procurar mais sobre {assunto}.”**, ou **“Entendido. Menos {assunto} nas próximas descobertas.”**, com **“Desfazer”**. Não afirmar que o próximo card já será daquele tema; a descoberta leva o tempo real necessário.
+
+**Uso habitual:** o primeiro contato não tem número mínimo de votos, tutorial para “concluir” nem troca para uma segunda interface. Intervenções didáticas ficam menos frequentes sem interromper o feed. **“Ocultar dicas de descoberta”** deve ser possível sem desativar histórias ou escolhas já registradas; **“Conhecer o FeedMine”** permite revisitá-las voluntariamente.
+
+**Preferências posteriores:** entradas compreensíveis para **“Idiomas e lugares”**, **“Meus interesses”** e, quando disponíveis e verdadeiramente funcionais, filtros e ajustes editoriais avançados. Não exibir controle cujo efeito prometido o aplicativo não pode cumprir.
+
+**Acessibilidade e localização:** todos os controles funcionam com VoiceOver, Dynamic Type, contraste adequado e alvos de toque confortáveis. Idiomas de interface e conteúdo permanecem independentes. Textos e humor são localizáveis pelo sentido, não pela tradução literal.
+
+## 7. Linguagem de interface — texto de referência
+
+| Momento | Texto |
 | --- | --- |
-| Primeira orientação | **“A internet é muito maior do que parece. Vamos explorar?”** |
-| Convite à escolha | **“Quer encontrar mais histórias desse tipo?”** |
-| Preferência positiva | **“Quero mais disso”** |
-| Preferência negativa | **“Não é minha praia”** |
-| Esclarecimento | **“Isso muda o que o FeedMine vai procurar daqui para a frente.”** |
-| Confirmação positiva | **“Boa! Vamos buscar mais sobre {assunto}.”** |
-| Confirmação negativa | **“Entendido. Vamos mostrar menos {assunto}.”** |
+| Introdução | **“A internet tem muito mais para oferecer. O FeedMine ajuda você a descobrir.”** |
+| Pergunta de idiomas | **“Em quais idiomas você quer ler?”** |
+| Pergunta de lugares | **“Quais lugares você gostaria de acompanhar?”** |
+| Ajuda geográfica | “Mais histórias sobre esses lugares, sem deixar de explorar o mundo.” |
+| Sem preferência geográfica | **“Mundo todo”** |
+| Ação de entrada | **“Começar a explorar”** |
+| Preparação | **“Indo atrás de histórias para você”** |
+| Contexto de convite | **“Quer descobrir mais sobre {assunto}?”** |
+| Ação positiva | **“Quero mais disso”** |
+| Ação negativa | **“Não é minha praia”** |
+| Explicação de consequência | “Sua resposta orienta as próximas descobertas.” |
+| Confirmação positiva | “Vamos procurar mais sobre {assunto}.” |
+| Confirmação negativa | “Vamos mostrar menos {assunto} daqui para a frente.” |
 | Reversão | **“Desfazer”** |
-| Ajuste posterior | **“Meus interesses”** |
-| Suprimir intervenções | **“Ocultar dicas de descoberta”** |
-| Revisitar o guia | **“Conhecer o FeedMine”** |
-| Aguardando conteúdo real | **“Indo atrás de histórias para você”** |
-| Sem rede nem conteúdo local | **“Ainda não temos histórias salvas aqui. Conecte-se para começar a explorar.”** |
+| Revisão | **“Meus interesses”** / **“Idiomas e lugares”** |
+| Ocultar guia editorial | **“Ocultar dicas de descoberta”** |
+| Revisitar guia | **“Conhecer o FeedMine”** |
+| Sem rede e sem histórias locais | “Ainda não temos histórias salvas aqui. Conecte-se para começar a explorar.” |
 
-**Amostras de tom (não slogans obrigatórios):**
-- Ciência: *“Uma descoberta dessas faz a gente querer saber o que mais existe por aí.”*
-- Fofoca: *“Também temos fofoca. A curiosidade humana não vem com manual.”*
-- Nicho: *“Um universo inteiro dedicado a esse detalhe. A internet é maravilhosa por isso.”*
-- Viagem/cultura: *“Outros lugares, outras histórias. Quer explorar mais desse lado do mundo?”*
-- Temas graves: sem brincadeira — *“Uma reportagem importante sobre {assunto}. Quer acompanhar mais desse tema?”*
+Evitar no texto público: RSS como requisito de entrada, “crawler”, “modelo”, “algoritmo secreto”, “fontes que não querem que você conheça”, “sua internet foi desbloqueada”, “já sabemos tudo sobre você” e alegações falsas de qualidade verificada.
 
-### 8. Relevância, surpresa e descoberta: comportamento prometido
+## 8. Estados e limites que o produto precisa explicar
 
-A seleção inicial deve representar **amplitude verdadeira**, não apenas fontes convencionais de notícias. O FeedMine apresenta universos acessíveis e nichos inesperados, contextualizados ao idioma do usuário e às possibilidades reais de conteúdo.
-
-As preferências explícitas **orientam a descoberta contínua**: quando a pessoa pede mais astronomia, devem surgir histórias pertinentes também de fontes antes desconhecidas. Pedir menos notícias de celebridades deve reduzir sua participação futura, sem virar bloqueio irrevogável, e sem apagar conteúdos já publicados.
-
-A exploração mantém uma parcela perceptível de surpresa fora das preferências declaradas. O FeedMine não deve exagerar uma única resposta até monopolizar o feed. A relevância e a diversidade obedecem aos critérios globais [B01/B02](DISCOVERY_ACCEPTANCE_BENCHMARK.md) e às decisões de alternância existentes; este documento não autoriza enfraquecê-las.
-
-**Importante:** demonstrar um interesse **não** adiciona uma fonte à lista de assinaturas. Seguir um publicador deve ser uma ação distinta, consciente e reversível, disponível quando a pessoa quiser.
-
-### 9. Estados difíceis e resposta ao usuário
-
-| Situação real | Comportamento exigido |
+| Situação | Experiência exigida |
 | --- | --- |
-| Há material local | Mostrá-lo imediatamente, sem aguardar atualização remota. |
-| Instalação realmente vazia | Preparação com fatos reais de fontes/histórias chegando; primeira história disponível assim que pronta. |
-| Rede lenta | Não inventar promessa de “pronto em X segundos”; permitir leitura dos itens já preparados. |
-| Sem conexão e sem cache | Explicação clara, sem tela falsa de feed, com caminho para tentar novamente quando houver rede. |
-| Pouca variedade disponível | Expor histórias reais, reduzir intervenções que prometam variedade inexistente e continuar procurando; escassez honesta ao esgotar. |
-| Uma fonte falha | Não transformar a falha isolada em erro genérico do produto se outras histórias estão disponíveis. |
-| O usuário rejeita um tema | Não remover, mover ou redimensionar cards já visíveis; não interpretar isso como bloqueio de um publicador. |
-| O usuário erra o toque | Oferecer “Desfazer” e reverter a preferência declarada. |
-| O usuário não vota | Scroll e leitura intactos; nenhuma conclusão negativa inferida de silêncio. |
-| O usuário fecha e volta | Recuperar posição, histórias e escolhas; não reiniciar o guia obrigatório. |
-| Um artigo toca em múltiplos temas | Deixar identificável sobre qual assunto a resposta age; não esconder ambiguidades atrás de ícones. |
-| Tema sensível | Frase respeitosa ou nenhum comentário, sem humor deslocado ou coerção emocional. |
-| Conteúdo sem imagem | Card text-only completo e legível, nunca notícia ou ilustração inventada. |
-| Idioma do conteúdo indisponível | Não fingir ter opções no idioma escolhido; oferecer ajuste claro sem falsificar metadados. |
+| Instalação limpa | Duas perguntas básicas → feed; sem seleção manual de fontes, OPML ou interesses temáticos obrigatórios. |
+| Dois idiomas e três lugares | Todos permanecem válidos simultaneamente; China pode aparecer em inglês e Brasil em português; países não implicam idiomas. |
+| País escolhido sem conteúdo diretamente verificável | Não inventar cobertura “sobre o país” baseada só na localização do publicador; buscar alternativas reais e comunicar disponibilidade. |
+| “Mundo todo” | Descoberta geográfica ampla, não apenas veículos locais ou fontes nacionais do aparelho. |
+| Sem voto | Feed interessante e variado; nenhuma inferência negativa a partir do scroll. |
+| Muitos votos positivos no mesmo tema | Mais foco futuro **e** persistência de variedade; não monopolizar o feed. |
+| Voto negativo / desfazer | Menos foco futuro / preferência revertida; histórico e cards visíveis preservados. |
+| Um site grande domina resultados rápidos | Preservar variedade editorial e alternância de fontes; velocidade de rede não concede monopólio. |
+| Artigo excelente, sem imagem | Card de texto completo, legível e estável; não excluir automaticamente por ser text-only. |
+| Fonte de score alto, artigo ruim ou link quebrado | Não promovê-lo só pelo score; manter padrão de integridade da primeira impressão. |
+| Fonte pequena excelente | Pode aparecer no primeiro feed junto às fontes conhecidas; fama não é condição de entrada. |
+| Artigo antigo | Data/contexto claros; conteúdo evergreen pode ser valioso, notícia antiga não é apresentada como atual. |
+| Sem rede, com conteúdo local | Mostrar primeiro a leitura local existente, sem reiniciar onboarding. |
+| Sem rede, sem conteúdo local | Explicar a situação; não fabricar cards de exemplo. |
+| Falha isolada de uma fonte | Continuar com outras fontes saudáveis; sem degradar a tela inteira se ainda há oferta. |
+| Retorno ao app | Recuperar escolhas, contexto, leitura, posição e preferências, sem novo questionário obrigatório. |
+| Conteúdo sensível | Tom respeitoso ou nenhum comentário lúdico; nada de humor com tragédia. |
+| Idioma escolhido sem oferta suficiente | Ser honesto sobre escassez; permitir ajustar a seleção, não inventar histórias no idioma. |
 
-### 10. Interesses e transparência após o primeiro uso
+## 9. Critérios de aceitação observáveis — histórias do usuário
 
-**Meus interesses** é um lugar simples para a pessoa revisar aquilo que **ela declarou**: assuntos com preferência por mais ou menos, sem score secreto exibido como verdade. Deve poder desfazer ou mudar escolhas. A interface distingue **“assunto que quero explorar”** de **“fonte que escolhi seguir”**; uma não substitui a outra.
+**US-01 — Orientação mínima.** Em instalação limpa, aparecem somente **idiomas** e **lugares** como decisões iniciais. A pessoa consegue combinar idiomas e locais e começar, sem configurar assuntos ou fontes.
 
-Ajustes mais granulares são **progressive disclosure**: encontram-se quando o usuário os procurar, e não são o preço de entrada no produto. O FeedMine pode oferecer explicações simples de por que está mostrando um tipo de história, sem insinuar análise de personalidade ou perfis compartilhados.
+**US-02 — Independência geográfica e linguística.** Selecionando português+inglês e Canadá+Brasil+China, a experiência não confunde idioma com país: mostra, quando disponível e comprovado, conteúdo sobre cada lugar nos idiomas permitidos, inclusive sobre a China em inglês. Não usa país da fonte como prova automática do assunto da notícia.
 
-A experiência deve funcionar **localmente e sem criar uma conta**. O produto não exige rede social, login nem concessão de rastreamento externo para a pessoa expressar gostos.
+**US-03 — Primeiro feed real e editorialmente convincente.** Com corpus rico, a primeira sequência contém histórias legítimas, legíveis, acessíveis e com fontes identificadas; combina veículos reconhecidos e boas fontes especializadas/independentes. Não depende apenas das quatro fontes padrão.
 
-### 11. O que o produto NÃO deve virar
+**US-04 — Qualidade não é um número.** Uma fonte com score técnico máximo, mas conteúdo promocional, link inválido ou artigo inadequado, não recebe privilégio indevido. Uma fonte boa de score técnico moderado e um artigo text-only excelente permanecem possíveis.
 
-- Formulário de interesses obrigatório antes do feed.
-- Tinder de cards, deck de swipe para aceitar/rejeitar ou tela de quiz.
-- Tour que termina em uma **mudança de aplicativo ou de modelo de navegação**.
-- Série de cards inventados, comentários sem histórias reais ou falsos títulos para representar categorias.
-- Feed de quatro fontes antigas com novos rótulos de personalização.
-- Sistema que considera rolagem rápida um **“não gostei”**.
-- Sistema que exige número mínimo de votos, retenção ou tempo de uso para “aprender”.
-- Votação que **reordena a lista visível** ou muda tamanho de cards já apresentados.
-- Likes públicos, contagem social, perfis de engajamento ou gamificação de respostas.
-- Controle “somente podcasts” / “sem vídeo” que não consegue cumprir literalmente sua promessa.
-- IA generativa obrigatória para escrever frases de onboarding: o produto precisa de **mensagens editoriais verdadeiras**, não de geração on-line nem de uma camada de tecnologia específica.
+**US-05 — Atualidade com contexto.** Notícias ultrapassadas não são apresentadas como novidades; excelentes textos atemporais podem aparecer com datas e descrição honestas.
 
-### 12. Histórias de usuário e critérios de aceitação observáveis
+**US-06 — Diversidade sem quotas do produto.** O usuário encontra assuntos, fontes e perspectivas variados na ordem natural do scroll; nenhum grupo monopoliza a abertura por ser rápido de buscar ou famoso.
 
-**US-01 — Começar sem configurar.** Dada instalação limpa, quando a pessoa abre o FeedMine, então entra em uma experiência de feed com conteúdo real ou preparação honesta; não precisa conhecer fontes, tocar em configurações ou responder perguntas.
+**US-07 — Sem obrigações após começar.** O primeiro feed funciona sem votos; histórias podem ser abertas, salvas e compartilhadas imediatamente; não existe gate para “concluir” onboarding.
 
-**US-02 — Mostrar amplitude.** Com oferta elegível ampla e variada, a pessoa encontra histórias de temas e publicadores distintos que demonstram a pluralidade prometida, sem depender exclusivamente de quatro feeds iniciais. A prova global de fontes elegíveis/contribuintes é o B01.
+**US-08 — Convites verdadeiros.** Comentários editoriais aparecem ligados a artigos reais, deixam a autoria clara e não fabricam manchetes ou imagens.
 
-**US-03 — Preferência positiva tem consequência.** Ao selecionar “Quero mais disso” em um assunto identificável, depois de continuar explorando, a pessoa recebe maior presença de histórias pertinentes, inclusive de fontes novas, comparada a uma execução equivalente sem essa preferência.
+**US-09 — Preferência positiva efetiva.** Ao declarar “mais astronomia”, a exploração futura passa a consultar fontes pertinentes adicionais e a produzir mais histórias relacionadas do que uma execução equivalente sem resposta.
 
-**US-04 — Preferência negativa tem consequência.** Ao selecionar “Não é minha praia”, a presença futura do assunto diminui em comparação ao mesmo cenário sem voto, sem apagar o passado nem proibir toda surpresa.
+**US-10 — Preferência negativa efetiva.** Declarando “menos celebridades”, a frequência futura desse universo diminui, sem bloqueio irrevogável nem perda das histórias já publicadas.
 
-**US-05 — Não participar é válido.** Uma pessoa pode percorrer e consumir o feed sem votar uma vez sequer, e nunca recebe solicitação obrigatória para prosseguir.
+**US-11 — Não resposta não significa rejeição.** Ignorar convites, passar um card ou não abri-lo não cria uma preferência negativa em “Meus interesses”.
 
-**US-06 — Escolher não desloca a leitura.** Depois de responder, baixar mídia ou receber novas histórias, a posição e a geometria do card que está sendo lido permanecem estáveis; obedecer B04.
+**US-12 — Reversão e controle.** Um voto pode ser desfeito e ajustado depois; idioma e lugares podem ser alterados sem reinstalar e sem apagar conteúdo útil.
 
-**US-07 — Reverter é simples.** Um voto feito por engano pode ser desfeito, e a preferência efetiva acompanha a reversão.
+**US-13 — Scroll estável.** Votar, atualizar fontes, preparar mídia ou alterar preferências não move/reordena/redimensiona cards já apresentados; obedecer B04.
 
-**US-08 — O sistema não atribui falsamente preferências.** Rolar, passar um card sem abrir ou voltar ao app não aparece como voto negativo em “Meus interesses”.
+**US-14 — Persistência local.** Ao encerrar e reabrir, o usuário conserva lugar na leitura, dados salvos, idiomas, locais, votos e dicas ocultadas; obedecer B05.
 
-**US-09 — O comentário é editorial, não a notícia.** A interface e as opções de acessibilidade distinguem perfeitamente voz do FeedMine, autoria da publicação e botão de preferência.
+**US-15 — Preparação honesta.** Sem conteúdo local, só aparecem fatos reais de aquisição/preparação, não percentuais, notícias ou imagens inventadas.
 
-**US-10 — Retornar não reinicia a conversa.** Após fechar e reabrir o app, o usuário retoma a leitura e suas escolhas; dicas ocultadas não reaparecem como imposição; obedecer B05.
+**US-16 — Descoberta contínua.** Mesmo após a primeira impressão, o feed mantém descoberta real de fontes e histórias conforme B01, B02 e B03; uma seleção inicial bem feita não pode mascarar um feed que termina.
 
-**US-11 — Controles avançados são verdadeiros.** Toda opção oferecida na interface de personalização deve produzir exatamente o efeito que seu texto promete, ou não ser oferecida.
+**US-17 — Tom, sensibilidade e acessibilidade.** Textos são compreensíveis no idioma da interface, decisões são acessíveis e não há humor inadequado com violência, morte ou vulnerabilidade.
 
-**US-12 — O conteúdo continua chegando.** A experiência inicial não termina em uma seleção finita disfarçada. Sob oferta elegível suficiente, o feed mantém continuidade conforme B03, independentemente de quantos votos forem feitos.
+**US-18 — Ajustes cumprem a promessa.** Nenhum controle de idioma, lugar, assunto, formato ou foco editorial pode aparentar funcionar se sua consequência real não existe.
 
-**US-13 — A linguagem respeita contexto.** As frases são compreensíveis no idioma da interface, acessíveis por VoiceOver e não brincam com tragédias ou sofrimento.
+## 10. Prova de produto, sem prescrever implementação
 
-**US-14 — Sem histórias, sem invenções.** Se falta rede e conteúdo local, a experiência informa o limite; não injeta histórias demonstrativas no feed para cumprir o tour.
+A avaliação percorre **a jornada real no aplicativo**, não uma simulação de botões:
 
-### 13. Como avaliar e o que significa sucesso
+1. **Perfil A (exploração neutra):** instalação limpa, dois idiomas, múltiplos lugares, **nenhum voto temático**; verificar a excelência do primeiro contato, fontes reconhecíveis, amplitude, integridade de links, datas e cards text-only.
+2. **Perfil B (preferências declaradas):** mesmos idiomas e lugares, depois votos positivos em **dois assuntos apresentados no próprio feed**, mais uma resposta negativa e uma reversão; comparar fontes realmente consultadas e a pertinência do conteúdo futuro com o perfil A, sem alterar o que já estava visível.
+3. **Perfil C (independência de contexto):** mudar idiomas/lugares, inclusive país diferente do idioma; confirmar seleção e ausência de pressupostos geográficos falsos.
+4. **Condições adversas:** rede lenta/ausente, fontes falhas, mídia ausente, artigo antigo, grande volume de fontes, retorno e VoiceOver.
 
-**Avaliação de produto, não de compilação:** testar duas pessoas fictícias ou perfis distintos com a mesma disponibilidade de conteúdo, um votando explicitamente em alguns assuntos e outro apenas rolando. Verificar diferenças **reais e futuras** no conteúdo/fontes; não basta checar se o controle mudou de cor ou se a receita foi gravada.
+**Avaliação qualitativa do primeiro contato:** inspetores devem abrir as histórias e verificar se conteúdo, origem, atualidade e acabamento são realmente bons. O score do catálogo **é entrada de curadoria, não oráculo de sucesso**. Registrar amostras aceitas/rejeitadas e motivos; não substituir inspeção de experiência por contagem de funções verdes.
 
-Observar também uma pessoa que escolhe repetidamente “menos”, uma que desfaz votos, uma com mídia indisponível, alguém com VoiceOver/texto grande e alguém que entra e sai durante o primeiro carregamento.
+**Critérios transversais:** B01 (fontes realmente descobertas), B02 (relevância/diversidade), B03 (30 min de consumo), B04 (feed visível estável), B05 (restauração/offline), B06 (iPhone real) permanecem obrigatórios **com seus limiares e duração originais**. A diferença de cenário é explícita: os **dois interesses temáticos** cobrados na prova de personalização são declarados **dentro do feed**, não como formulário inicial. Isso aumenta a fidelidade ao produto; não dispensa o teste de relevância.
 
-Os requisitos B01–B06 do benchmark geral continuam em vigor, sem redução de duração, diversidade ou estabilidade. Se a fonte real não permite uma prova, usar cenário externo de aceitação fiel ao produto; **não** substituir a experiência pela aprovação de funções internas.
+**Estado:** estes são requisitos e provas a executar, não resultados já medidos na V2. Relatar PASS, FAIL, NOT_RUN ou BLOCKED honestamente; avançar autonomamente sem solicitar aprovação intermediária nem alterar a régua diante de uma falha.
 
-A Frente F02 recebe **PASS** somente quando as histórias US-01 a US-14 pertinentes forem demonstradas no aplicativo real e registradas com evidência reproduzível. Falha, recurso ausente ou teste não executado recebe seu status real. **Não existe aprovação intermediária humana para continuar a implementação; os agentes executam autonomamente de acordo com esta especificação.**
+## 11. Evidência histórica: o que a V1 já demonstrou — e o que NÃO se transfere
 
-### 14. Limites e relação com as outras frentes
+A V1 foi inspecionada diretamente em [wawasoft/feedmine](https://github.com/wawasoft/feedmine), e o [catálogo público](https://github.com/wawasoft/feed-repository) também foi consultado. Referências **de origem e comportamento**, não tarefas para copiar classes:
 
-- **F01 — descoberta automática de fontes:** garante que existe diversidade de fontes reais para cumprir esta experiência. F02 define o que o usuário vê e escolhe; não define como F01 organiza suas responsabilidades internas.
-- **F04 — curadoria:** garante relevância e diversidade de histórias resultantes das escolhas.
-- **F05 — continuidade:** garante que a leitura iniciada durante o onboarding não pare ao esgotar um estoque arbitrário.
-- **F06 — interface:** garante cards, mídia, geometria e acessibilidade.
-- **F07 — busca e filtros:** garante que preferências e contextos continuem ajustáveis.
-- **F09 — offline e persistência:** garante que escolhas e história sobrevivam à reabertura.
+- [Curadoria do OPML](https://github.com/wawasoft/feedmine/blob/main/scripts/curate_opml_catalog.py): a pontuação chamada quality_score usa principalmente **descrição, tags, artigos analisados e nível de atividade**. Ela não certifica reputação editorial, precisão factual nem sucesso atual de HTTP. A curadoria separa conteúdo *current-sensitive* de *evergreen* e identifica fontes dormantes.
+- [CuratedPreferenceEngine](https://github.com/wawasoft/feedmine/blob/main/feedmine/Services/CuratedPreferenceEngine.swift): avaliação editorial independente por sinais de publicação reconhecida, instituição, especialidade e propósitos editoriais; exclusões de agregação/promoção; repertório de veículos de referência para a apresentação inicial; diversidade por idioma, assunto, papel editorial, geografia e mídia. **Esses sinais são heurísticos**, não auditoria jornalística conclusiva.
+- [FeedStore — seleção inicial](https://github.com/wawasoft/feedmine/blob/main/feedmine/Services/FeedStore.swift): o primeiro carregamento chama uma seleção de fontes do catálogo local e prepara conteúdo real. A presença de código e testes na V1 **não comprova** que a experiência completa satisfaz os novos requisitos da F02.
+- [Catalog README](https://github.com/wawasoft/feedmine/blob/main/editorial/feed-curation/README.md): o snapshot reconciliado publicado tem **77.443 fontes canônicas** e trilha de proveniência/quarentena. O README geral da V1 menciona **88.084 fontes analisadas**, mas o [manifesto público verificado](https://github.com/wawasoft/feed-repository/blob/main/manifest.json) declara **77.443** no canal publicado. Não pressupor que os dois números representam o mesmo conjunto, ou que a V2 já embute um inventário maior sem verificar.
 
-**Esta é uma mudança intencional de direção de produto em relação ao Welcome → Composer obrigatório que a V2 transferiu da V1.** Preservar o que funciona nessa experiência não significa manter a obrigação de configurar antes de descobrir. Não há exigência de preservar o Composer como porta de entrada; os ajustes avançados permanecem disponíveis por escolha.
+**Regra de aproveitamento:** recuperar **conhecimento editorial, taxonomia, evidências e contratos observáveis**, não importar os schedulers, caches, cotas de primeira página, estados ou caminhos paralelos acumulados na V1. A especificação não escolhe componentes, algoritmos, armazenamento ou etapas de execução.
 
----
+## 12. O que não queremos construir
 
-**Definição de sucesso em uma frase:** a pessoa começa a rolar um feed genuinamente interessante, descobre a variedade da internet aberta, diz com naturalidade onde quer explorar mais ou menos, e percebe o FeedMine responder — **sem deixar de ser um feed em nenhum momento**.
+- Longo onboarding em que o usuário escolhe temas antes de poder descobrir uma história.
+- Feed disfarçado de formulário, Tinder de cards, swipes binários ou quiz com respostas obrigatórias.
+- “Internet alternativa”, promessa conspiratória ou seleção que parece uma coleção de links obscuros.
+- Primeira impressão definida só por velocidade do feed, score técnico ou presença de imagem.
+- Só grandes veículos, só fontes desconhecidas ou só notícias de última hora.
+- País da fonte confundido com país sobre o qual a matéria fala; idioma confundido com residência.
+- Lista fixa de publishers com uma fachada de personalização; novos votos só mudando cores e ordenação das mesmas fontes.
+- Cards inventados para preencher categorias; links quebrados; informação velha passada como nova.
+- Votos inferidos de silêncio/scroll; preferências irreversíveis ou que apagam trabalho visível.
+- Um segundo motor de onboarding que entrega um feed diferente ao “terminar” a experiência.
+- Exigência de IA generativa, conta, geolocalização ou serviço proprietário para curadoria.
+- Metas artificiais de cards, fontes ou minutos **na implementação**; os limiares do **benchmark independente** continuam sendo verificações, não receitas de execução.
+
+## 13. Fronteiras com as demais frentes
+
+- **F01** deve encontrar e expandir fontes de verdade a partir do catálogo, também após preferências explicitadas.
+- **F03** garante artigo utilizável, integridade da fonte e atualização apropriada.
+- **F04** mantém qualidade, relevância, alternância e diversidade.
+- **F05** mantém o runway adaptativo preparado enquanto o usuário consome.
+- **F06** entrega cards bons, inclusive sem imagem, e posição estável.
+- **F07** trata interesses/idiomas/lugares como preferências compreensíveis e ajustáveis.
+- **F09** preserva material local, escolhas e reabertura.
+- **F10** demonstra que a experiência funciona no dispositivo físico.
+
+### Definição final de sucesso
+
+> “Escolhi ler em português e inglês, acompanhar Canadá, Brasil e China e comecei a ver ótimas histórias de fontes reais — algumas conhecidas, outras novas. Fui dizendo do que queria mais ou menos, e o FeedMine começou a explorar novos caminhos, sem me tirar do meu feed e sem precisar aprender o que é RSS.”
