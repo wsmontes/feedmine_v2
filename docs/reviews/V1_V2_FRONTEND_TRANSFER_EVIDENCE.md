@@ -182,6 +182,28 @@ The whole-scheme run then passed: `CompositionTests` **24 tests, 0 failures** an
 0 failures** in one run, with `swift test` at **1017 tests, 0 failures** — the acceptance this document was
 missing for the UI target.
 
+## The visual comparison (T12, architect's substitute (b))
+
+Captures are in `docs/evidence/v2-ui/` (V2) and `docs/evidence/v1-ui/` (the V1 references), with the sheets that
+put each pair side by side in `compare-<surface>.png`. The comparison is semantic, as the architect asked, not
+pixel by pixel — content differs by construction (the fixture's text-only items against V1's captured feed), so
+what is compared is hierarchy, spacing, typography, colour, affordances and legibility.
+
+| Surface | V1 | V2 | Verdict |
+|---|---|---|---|
+| Feed, portrait, light | loading state with placeholder image blocks and the legacy store's stale headlines | settled text-only feed: source, headline, summary, relative time, save control | Same chrome (wordmark + the four header controls), same card composition (accent bar, source, headline, summary, timestamp, save), same list rhythm. Content differs by construction; the DEBUG delivery counters appear in the V2 capture only. |
+| Feed, landscape | same loading state, landscape | the rotated capture, at Accessibility XL (the run's setting) | Layout holds in landscape (the card column re-reads its width); the capture carries EXIF orientation 8 and letterboxing, so the sheet shows it transposed. The rotation is asserted functionally by the test whose counters must not move. |
+| Night, portrait | V1's night palette, white accent bars | the dark palette, amber accent bars | **Explained, not a divergence**: V2's palette follows the clock (`ReaderPeriod.from(hour:)` and the circadian setting; V1 had the same setting), so a capture taken at 6:29 shows the morning palette while the V1 reference was taken at 9:15. The frame landed mid-transition, which the sheet records; re-capturing it settled is pending. |
+| Article reader | V1's raw WebKit reader with its own three-control bar | `SFSafariViewController` (the accepted difference) over the fixture URL | Both keep the reader inside the app; the chrome is Safari's own by decision, and the fixture's URL does not resolve, which the frame shows. The playback bar V1 kept visible is covered by `reader-playback-bar.png` (the T12 test that also proves the bar is live inside the reader). |
+
+The three surfaces the architect added have their own captures and were verified functionally by the tests that
+produce them: `saved-list.png`, `saved-boxes.png`, `saved-box-empty.png` (the boxes screen, a populated list, and
+an empty box that states it is empty); `sources-sheet.png`, `countries-list.png`, `country-sources.png`,
+`empty-selection.png` (the shipped source surface, one level in, its sources with their own controls, and the
+selection-with-no-sources state); `shell-menu.png`, `settings.png`, `export-preview.png` (the header menu, the
+settings surface, and the export document preview). No V1 reference image exists for these three, so their sheet
+is the V2 capture plus the test that proves the flow — the plan's `shot` class is V1-reference-only by design.
+
 ## The architect's verdict on the two remaining items (2026-10-10)
 
 Asked, in the conversation that owns WHAT for this project, whether the two items T12 cannot execute on this
