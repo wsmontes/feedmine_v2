@@ -46,6 +46,9 @@ final class AppComposition {
     var onExternalURL: ((URL) -> Void)?
     /// T9: the share sheet a card's share action opens, presented by the app host.
     var onShare: ((SharedLink) -> Void)?
+    /// T9: the reader's playback, app-wide: an episode keeps playing across a context change, a sheet or the
+    /// reader closing, which is what V1's singleton did and what a per-association player could not.
+    @ObservationIgnored let mediaAdapter = MediaPlaybackAdapter()
     /// T5: set once by the app host; the reader's chrome reports a destination, the host presents it.
     var onNavigate: ((ReaderDestination) -> Void)?
 
@@ -63,6 +66,11 @@ final class AppComposition {
         association.onNavigate = { [weak self] destination in self?.onNavigate?(destination) }
         association.onSearch = { [weak self] term in self?.submitSearch(term) }
         association.onShare = { [weak self] link in self?.onShare?(link) }
+        // T9: a card's media action is resolved and played through the app-wide player.
+        association.onMedia = { [weak self] cardID in
+            guard let self else { return }
+            Task { await self.media?.toggle(cardID: cardID) }
+        }
 
         return association
     }
@@ -419,6 +427,56 @@ final class AppComposition {
         feeds = sessionFeeds
     }
 
+    /// The reader's playback state, as the shell draws it.
+    var mediaState: ReaderMediaState { mediaAdapter.state }
+
+    /// T9: the four intents the surfaces issue. They are the coordinator's, wrapped so the shell never holds it.
+    func toggleMedia(cardID: PublicationCardID? = nil) async {
+        guard let media else { return }
+        if let cardID { await media.toggle(cardID: cardID) }
+        else if media.state.isPlaying { await media.pause() } else { await media.resume() }
+    }
+
+    func skipMedia(by seconds: TimeInterval) async { await media?.skip(by: seconds) }
+
+    func seekMedia(to seconds: TimeInterval) async { await media?.seek(to: seconds) }
+
+    func stopMedia() async { await media?.stop() }
+
+    #if DEBUG
+    /// T9 UI evidence: a real, playable episode without a network or a bundled asset. The hook writes a silent
+    /// WAV to the app's own temporary directory and plays it through the same adapter a card would use — the bar,
+    /// the state machine and AVFoundation are all the real ones.
+    func startSimulatedPlayback() async {
+        guard let url = try? Self.writeSilentWavefile(seconds: 30) else { return }
+        try? await mediaAdapter.play(.init(cardID: PublicationCardID(), url: url,
+            title: String(localized: "Episódio de teste"), mimeType: "audio/wav"))
+    }
+
+    private static func writeSilentWavefile(seconds: Int) throws -> URL {
+        let sampleRate = 8_000, samples = sampleRate * seconds
+        var data = Data()
+        func append<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+        data.append(contentsOf: Array("RIFF".utf8)); append(UInt32(36 + samples))
+        data.append(contentsOf: Array("WAVEfmt ".utf8)); append(UInt32(16)); append(UInt16(1)); append(UInt16(1))
+        append(UInt32(sampleRate)); append(UInt32(sampleRate)); append(UInt16(1)); append(UInt16(8))
+        data.append(contentsOf: Array("data".utf8)); append(UInt32(samples))
+        data.append(contentsOf: [UInt8](repeating: 128, count: samples))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("feedmine-simulated.wav")
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+    #endif
+
+    /// The media coordinator, over the same database file every other surface opens. When the composition
+    /// itself failed to open one, the media surface says so instead of pretending to play.
+    private var media: ReaderMediaCoordinator? {
+        guard let database = try? RuntimeDatabase(location: RuntimeDatabaseLocation(directory: directory)) else {
+            return nil
+        }
+        return ReaderMediaCoordinator(database: database, player: mediaAdapter)
+    }
+
     /// T7: the source surface's store, over the catalog coordinator. One store per presentation, so its
     /// levels and the reader's selection are one consistent picture while it is open.
     func makeSourceManagementStore() -> SourceManagementStore {
@@ -510,7 +568,8 @@ final class FeedAssociation {
     /// The remaining V1 controls appear as their deliveries land (T5 shell/feedback, T9 reader/media),
     /// so a rendered control is never a dead one.
     @ObservationIgnored
-    static let readerCardActions: Set<ReaderCardAction> = [.open, .save, .copyLink, .share, .viewSource]
+    static let readerCardActions: Set<ReaderCardAction> = [.open, .save, .copyLink, .share, .viewSource,
+        .openMedia]
 
     /// Destinations this build can present today: the source sheet and the saved list (V1's bookmark
     /// boxes arrive in T8). The header menu renders exactly these — never a dead item.
@@ -622,6 +681,8 @@ final class FeedAssociation {
     @ObservationIgnored var onExternalURL: ((URL) -> Void)?
     /// T8: where a save lands, resolved when the reader saves rather than when the session was built.
     @ObservationIgnored var preferredBookmarkListID: () -> String = { ReaderBookmarkList.defaultID }
+    /// T9: a card's media action. The app owns the player, so the association only reports the occurrence.
+    @ObservationIgnored var onMedia: ((PublicationCardID) -> Void)?
     /// The identity this session is on. It does not change for the life of the association.
     let contextKey: ContextKey
     /// The feeds this session was built over: a card's source id names one of them, and its principal is the
@@ -809,7 +870,17 @@ final class FeedAssociation {
         self.session = session
         bounds = Self.presentationBounds(context.key)
         let names = Dictionary(uniqueKeysWithValues: feeds.map { ($0.sourceID, $0.displayName) })
-        let prepare: @Sendable (SelectionResult) -> LocalPreparedPublication = { Self.prepare($0, readiness: readiness, names: names) }
+        // T9: the playable payload a card's tap should use, read from the candidate the feed declared.
+        let playback: @Sendable (OriginRevisionID) -> URL? = { revision in
+            // `try?` flattens the store's own optional: a nil here means "no playable payload declared".
+            guard let playable = try? ContentStore(database: db).playbackCandidate(originRevisionID: revision) else {
+                return nil
+            }
+            return playable.remoteURL
+        }
+        let prepare: @Sendable (SelectionResult) -> LocalPreparedPublication = {
+            Self.prepare($0, readiness: readiness, names: names, playback: playback)
+        }
         // Bounded wait for media of the supply head: what the runway can afford (one request timeout).
         let mediaWait = configuration.timeoutIntervalForRequest / 4
         maintainTail = { lease in
@@ -850,7 +921,7 @@ final class FeedAssociation {
     /// PD-5: each card is drawn with a prepared image or designed text-only — never "missing" one.
     /// Attribution (source id/name) is frozen into the card, which also feeds PD-4 adjacency.
     nonisolated private static func prepare(_ selection: SelectionResult, readiness: MediaReadiness,
-        names: [SourceID: String]) -> LocalPreparedPublication {
+        names: [SourceID: String], playback: (OriginRevisionID) -> URL? = { _ in nil }) -> LocalPreparedPublication {
         .init(inputs: selection.orderedCandidates.map { candidate in
             let source = candidate.sourceIDs.sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }.first { names[$0] != nil }
                 ?? candidate.sourceIDs.first
@@ -858,8 +929,10 @@ final class FeedAssociation {
                 sourceID: source, providerID: candidate.providerID, sourceDisplayName: source.flatMap { names[$0] },
                 providerDisplayName: nil),
                 contentEntityID: nil, contentClusterID: nil,
-                // F10: the card opens its article.
-                primaryAction: candidate.primaryLink.map { .externalURL($0) },
+                // F10/T9: V1's precedence, stated once — an episode plays from the enclosure its feed
+                // declared, and every other card opens its article.
+                primaryAction: playback(candidate.originRevisionID).map { .mediaPlayback($0) }
+                    ?? candidate.primaryLink.map { .externalURL($0) },
                 presentation: readiness.presentation(for: candidate.originRevisionID))
         }, cardIDs: selection.orderedCandidates.map { _ in PublicationCardID() })
     }

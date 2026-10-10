@@ -26,6 +26,15 @@ public enum MediaCandidateClass: String, Hashable, Codable, Sendable {
 
     /// Whether a player can take this class (T9).
     public var isPlayable: Bool { self != .image }
+
+    /// The class a declared MIME type names, when it is one a card can play. The translator asks this, so a
+    /// feed says what its enclosure *is* instead of a guess about the file name.
+    public static func playback(forMIME type: String) -> MediaCandidateClass? {
+        let lower = type.lowercased()
+        if lower.hasPrefix("audio/") { return .audio }
+        if lower.hasPrefix("video/") { return .video }
+        return nil
+    }
 }
 
 public struct MediaCandidate: Hashable, Sendable {

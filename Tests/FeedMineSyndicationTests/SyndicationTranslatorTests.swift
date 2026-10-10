@@ -273,13 +273,46 @@ final class SyndicationTranslatorTests: XCTestCase {
         let a = try item(atom("<entry><id>a</id><link href=\"https://site.example/a\"/>"
             + "<link rel=\"enclosure\" type=\"image/jpeg\" href=\"/enc.jpg\"/><link rel=\"enclosure\" type=\"audio/mpeg\" href=\"/a.mp3\"/>"
             + "<content type=\"html\">&lt;img src=\"https://example.test/body.jpg\"&gt;</content></entry>"))
-        XCTAssertEqual(a.mediaCandidates.map(\.remoteURL.absoluteString), ["https://site.example/enc.jpg","https://example.test/body.jpg"])
+        // T9: the audio enclosure is the entry's own playable payload, so it is a candidate too — after the
+        // visuals, never in their place.
+        XCTAssertEqual(a.mediaCandidates.map(\.remoteURL.absoluteString), ["https://site.example/enc.jpg",
+            "https://example.test/body.jpg", "https://site.example/a.mp3"],
+            "the enclosure resolves against the entry's own link")
+        XCTAssertEqual(a.mediaCandidates.last?.role, .playback)
+        XCTAssertEqual(a.mediaCandidates.last?.mediaClass, .audio)
         let j = try item(json("{\"id\":\"j\",\"url\":\"https://site.example/j\",\"attachments\":[{\"url\":\"https://example.test/att.webp\",\"mime_type\":\"image/webp\"},"
             + "{\"url\":\"https://example.test/ep.mp3\",\"mime_type\":\"audio/mpeg\"}],\"content_html\":\"<img src='/inline.jpg'>\"}"))
-        XCTAssertEqual(j.mediaCandidates.map(\.remoteURL.absoluteString), ["https://example.test/att.webp","https://site.example/inline.jpg"])
+        XCTAssertEqual(j.mediaCandidates.map(\.remoteURL.absoluteString), ["https://example.test/att.webp",
+            "https://site.example/inline.jpg", "https://example.test/ep.mp3"])
+        XCTAssertEqual(j.mediaCandidates.last?.role, .playback)
     }
 /// PD-1: an edit under an unchanged `updated` date is a new version; identical replay and
     /// whitespace churn are the same version.
+    /// T9: a podcast item's own enclosure is carried as the episode's playable payload, after the cover the
+    /// entry also declares — RSS exposes one enclosure per item (the episode itself), and the cover comes from
+    /// `itunes:image`. A payload the reader cannot play (a PDF) is not a playable claim at all.
+    func test31bPlayableEnclosureIsCarriedAfterTheVisuals() throws {
+        let podcast = try item(rss("<item><guid>g</guid><link>https://site.example/ep</link>"
+            + "<itunes:image href=\"https://example.test/cover.jpg\"/>"
+            + "<enclosure url=\"https://example.test/ep.mp3\" type=\"audio/mpeg\" length=\"2\"/></item>"))
+        XCTAssertEqual(podcast.mediaCandidates.map(\.remoteURL.absoluteString),
+            ["https://example.test/cover.jpg", "https://example.test/ep.mp3"])
+        XCTAssertEqual(podcast.mediaCandidates.first?.role, .cardVisual)
+        XCTAssertEqual(podcast.mediaCandidates.last?.role, .playback)
+        XCTAssertEqual(podcast.mediaCandidates.last?.mediaClass, .audio)
+        XCTAssertEqual(podcast.mediaCandidates.last?.declaredPixelWidth, nil,
+            "a playable payload has no pixel dimensions")
+        // A video episode is a playable payload too.
+        let video = try item(rss("<item><guid>v</guid><link>https://site.example/v</link>"
+            + "<enclosure url=\"https://example.test/clip.mp4\" type=\"video/mp4\" length=\"3\"/></item>"))
+        XCTAssertEqual(video.mediaCandidates.map(\.remoteURL.absoluteString), ["https://example.test/clip.mp4"])
+        XCTAssertEqual(video.mediaCandidates.last?.mediaClass, .video)
+        // An enclosure the reader cannot play is neither a visual nor a payload.
+        let document = try item(rss("<item><guid>d</guid><link>https://site.example/d</link>"
+            + "<enclosure url=\"https://example.test/doc.pdf\" type=\"application/pdf\" length=\"1\"/></item>"))
+        XCTAssertTrue(document.mediaCandidates.isEmpty, "a PDF is neither a visual nor something a player can take")
+    }
+
     func test32MaterialEditUnderUnchangedDateIsANewVersion() throws {
         func entry(_ summary: String) throws -> AcquisitionObservation {
             try item(atom("<entry><id>a</id><updated>2020-01-02T00:00:00Z</updated><summary type=\"text\">\(summary)</summary></entry>"))

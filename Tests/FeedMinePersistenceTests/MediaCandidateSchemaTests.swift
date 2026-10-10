@@ -70,6 +70,30 @@ final class MediaCandidateSchemaTests: XCTestCase {
         }
     }
 
+    /// T9: a revision can carry one playable payload beside its visual, the pairing rule holds, and at most one
+    /// playable payload exists per revision (the partial index says so, not the caller's discipline).
+    func testAPlayablePayloadLivesBesideTheVisualAndOnlyOnce() throws {
+        let database = try StorageFixture.database(self), revision = try insertRevision(database)
+        try insertCandidate(database, revision: revision, ordinal: 0)
+        try insertCandidate(database, revision: revision, ordinal: 1, role: "playback", mediaClass: "audio")
+        let store = ContentStore(database: database)
+        let playable = try XCTUnwrap(try store.playbackCandidate(originRevisionID: OriginRevisionID(rawValue: try XCTUnwrap(UUID(uuidString: revision)))))
+        XCTAssertEqual(playable.role, .playback)
+        XCTAssertEqual(playable.mediaClass, .audio)
+        XCTAssertEqual(try store.mediaCandidates(originRevisionID: OriginRevisionID(rawValue: try XCTUnwrap(UUID(uuidString: revision))))?.count, 2,
+            "the visual and the payload are both there, and the payload is not the visual")
+        // A second playable payload for the same revision is refused by the index itself.
+        constraint({ try insertCandidate(database, revision: revision, ordinal: 2, role: "playback", mediaClass: "video") },
+            kind: "UNIQUE")
+        // A class cannot claim a role it cannot serve.
+        constraint({ try insertCandidate(database, revision: revision, ordinal: 3, role: "cardVisual", mediaClass: "audio") },
+            kind: "CHECK")
+        constraint({ try insertCandidate(database, revision: revision, ordinal: 4, role: "playback", mediaClass: "image") },
+            kind: "CHECK")
+        constraint({ try insertCandidate(database, revision: revision, ordinal: 5, role: "playback", mediaClass: "pdf") },
+            kind: "CHECK")
+    }
+
     func testRevisionForeignKeyOrdinalBaselineAndDimensionsAreEnforced() throws {
         let database = try StorageFixture.database(self), revision = try insertRevision(database)
         constraint({ try insertCandidate(database, revision: key()) }, kind: "FOREIGN KEY")

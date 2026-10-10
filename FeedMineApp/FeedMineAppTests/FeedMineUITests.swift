@@ -148,6 +148,41 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Não foi possível abrir a fonte"].exists)
     }
 
+    /// T9: the mini player draws real playback, its height never depends on what it states, and the full
+    /// player is one tap away. The episode is the hook's silent WAV, played by the same AVFoundation adapter a
+    /// card would use.
+    @MainActor
+    func testMiniPlayerStatesPlaybackWithoutMovingTheFeed() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_MEDIA_SIMULATION"] = "1"
+        app.launch()
+        let bar = app.otherElements["mini-player"]
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        XCTAssertTrue(bar.waitForExistence(timeout: 20))
+        XCTAssertEqual(bar.frame.height, 56, accuracy: 1,
+            "the bar reserves a constant height, so playing an episode cannot move a card")
+        XCTAssertEqual(app.staticTexts["mini-player-title"].label, "Episódio de teste")
+        // Playing: the toggle pauses, and the bar does not move when it does.
+        let frameWhilePlaying = bar.frame
+        app.buttons["mini-player-toggle"].tap()
+        XCTAssertTrue(app.buttons["mini-player-toggle"].waitForExistence(timeout: 10))
+        XCTAssertEqual(bar.frame.height, 56, accuracy: 1, "the bar is the same height paused")
+        XCTAssertEqual(bar.frame.origin.y, frameWhilePlaying.origin.y, accuracy: 1)
+        XCTAssertTrue(scroll.exists, "the feed is still there, and never grew")
+        // The full player carries V1's two skips and its scrub, and closing returns to the feed.
+        bar.tap()
+        XCTAssertTrue(app.otherElements["full-player"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["full-player-back15"].exists)
+        XCTAssertTrue(app.buttons["full-player-forward15"].exists)
+        app.buttons["full-player-toggle"].tap()
+        app.buttons["full-player-close"].tap()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+        XCTAssertTrue(bar.exists, "the bar is still there after the full player closes")
+    }
+
     @MainActor
     func testNativeSwipeReachesRealRunwayAndReverseNavigation() throws {
         let app = XCUIApplication()

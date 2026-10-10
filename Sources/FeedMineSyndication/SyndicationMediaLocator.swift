@@ -11,7 +11,10 @@ import FeedMineDomain
 
 enum SyndicationMediaLocator {
     /// Resolves and admits one raw locator, or returns nil when it cannot be a card image.
-    static func resolve(_ raw: String?, base: URL?) -> URL? {
+    /// `allowingPlayableMedia` states what the caller is resolving: the rule below rejects audio/video containers
+    /// because they cannot be raster *card visuals* (T9), and a card's own playable payload is exactly such a
+    /// container. Every other check — routability, scheme, decoration, malformed nesting — applies to both.
+    static func resolve(_ raw: String?, base: URL?, allowingPlayableMedia: Bool = false) -> URL? {
         guard var text = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
         // Entity-escaped ampersands are common in attribute values copied from HTML.
         for escaped in ["&amp;", "&#038;", "&#38;"] { text = text.replacingOccurrences(of: escaped, with: "&") }
@@ -30,7 +33,8 @@ enum SyndicationMediaLocator {
         guard let url = absolute, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
             let host = url.host, !host.isEmpty, url.user == nil, url.password == nil,
             NetworkHostPolicy.isPubliclyRoutable(host), // review R15: no loopback/LAN/metadata targets
-            !isMalformedNestedScheme(lower), !isUnsupported(url), !isDecorative(url.absoluteString) else { return nil }
+            !isMalformedNestedScheme(lower), allowingPlayableMedia || !isUnsupported(url),
+            !isDecorative(url.absoluteString) else { return nil }
         return url
     }
 

@@ -355,3 +355,24 @@ executed evidence is in `PORT_LOG.md` under T8.
   saved one activates its stored key.
 - **Still T10's:** export/import a collection (lines 88, 89, 91) and "Add Feed" (line 92) — the entries exist in
   `ReaderMenuEntry.standard` and are not offered until those deliveries land, so no dead control is drawn.
+
+**T9 state (2026-10-09).** The reader, the media and the share flows are ported; the executed evidence is in
+`PORT_LOG.md` under T9.
+
+- **Article reading**: V2 opens the card's own frozen target in `SFSafariViewController` (U2's decision, no web
+  engine of our own), which covers V1's close control, reader mode and share. **Recorded difference:** V1's
+  `ArticleReaderView` also drew a loading bar and an explicit `safari` link; those have no counterpart in that
+  controller. V1's own detail — the reader keeps the playback bar visible — is ported.
+- **Card actions**: `ReaderActionCoordinator` resolves open / view source / copy link / share / media **from the
+  occurrence's own frozen fields**, proven against an article re-published under a new revision (the earlier
+  card keeps its own target), and an action a card does not carry is reported rather than replaced. "View
+  source" opens the card's *source* — resolved through the catalog — not the article's URL.
+- **Share**: V1 shared the link itself (`ShareLink(item: URL)`), and so does V2; the image-specific share
+  (`renderCardAsImage` + `UIActivityViewController`, "share as image") is **not** ported: V2's cards draw decoded
+  locals and have no rendered-card artifact to share, so no control is offered for it.
+- **Playback**: a feed's audio/video enclosure is carried as the occurrence's own payload, the card states
+  `mediaPlayback`, and tapping it plays through V1's own card behaviour (same card toggles, another starts). The
+  mini player reserves a **constant** 56 pt and draws position/length/errors; the full player carries V1's two
+  15-second skips, a scrub and its `m:ss` clock.
+- **Image versus article gesture**: the media area of a playable card emits `openMedia` and the rest of the card
+  opens the article — V1's `onImageTap` rule, with the same condition (`primaryActionKind == .mediaPlayback`).

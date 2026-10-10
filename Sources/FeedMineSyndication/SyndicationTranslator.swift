@@ -78,6 +78,10 @@ public struct SyndicationTranslator: Sendable {
             if let enclosure = item.enclosure?.attributes, SyndicationMediaLocator.isImageMIMEType(enclosure.type),
                 let image = Self.media(enclosure.url, base: base, mimeType: enclosure.type) { media.append(image) }
             if let image = Self.htmlImage(item.content?.encoded ?? item.description, base: base) { media.append(image) }
+            if let enclosure = item.enclosure?.attributes,
+                let playable = Self.playback(enclosure.url, base: base, mimeType: enclosure.type) {
+                media.append(playable)
+            }
             return observation(object, title: item.title, summary: item.description, authored: item.pubDate,
                 language: language, link: item.link, media: Self.unique(media))
         }
@@ -109,6 +113,10 @@ public struct SyndicationTranslator: Sendable {
                     }
                 }
                 if let image = Self.htmlImage(item.content?.text ?? item.summary?.text, base: base) { media.append(image) }
+                for enclosure in item.links ?? [] where enclosure.attributes?.rel?.lowercased() == "enclosure" {
+                    if let playable = Self.playback(enclosure.attributes?.href, base: base,
+                        mimeType: enclosure.attributes?.type) { media.append(playable) }
+                }
                 return observation(object, version: version, title: item.title, summary: item.summary?.text,
                     authored: item.published, modified: item.updated, link: link, media: Self.unique(media))
             }
@@ -123,6 +131,11 @@ public struct SyndicationTranslator: Sendable {
                     if let image = Self.media(attachment.url, base: base, mimeType: attachment.mimeType) { media.append(image) }
                 }
                 if let image = Self.htmlImage(item.contentHtml, base: base) { media.append(image) }
+                for attachment in item.attachments ?? [] {
+                    if let playable = Self.playback(attachment.url, base: base, mimeType: attachment.mimeType) {
+                        media.append(playable)
+                    }
+                }
                 return observation(object, version: version, title: item.title, summary: item.summary, body: item.contentText,
                     authored: item.datePublished, modified: item.dateModified, language: item.language,
                     link: link, media: Self.unique(media))
@@ -173,6 +186,18 @@ public struct SyndicationTranslator: Sendable {
         return .init(role: .cardVisual, mediaClass: .image, remoteURL: url, declaredMimeType: mimeType,
             declaredPixelWidth: dimensions.0, declaredPixelHeight: dimensions.1)
     }
+    /// V1's enclosure for an audio or video episode: the one playable payload an item can carry. The store
+    /// enforces the same rule (at most one per revision), and it is appended *after* the visuals so it never
+    /// takes the card's own ordinal 0.
+    private static func playback(_ text: String?, base: URL? = nil, mimeType: String?) -> AcquisitionMediaCandidateClaim? {
+        guard let declared = mimeType, let klass = MediaCandidateClass.playback(forMIME: declared),
+            let url = SyndicationMediaLocator.resolve(text, base: base, allowingPlayableMedia: true) else {
+            return nil
+        }
+        return .init(role: klass.role, mediaClass: klass, remoteURL: url, declaredMimeType: declared,
+            declaredPixelWidth: nil, declaredPixelHeight: nil)
+    }
+
     private static func thumbnails(_ values: [MediaThumbnail]?, base: URL?) -> [AcquisitionMediaCandidateClaim] {
         (values ?? []).compactMap { value in
             media(value.attributes?.url, base: base, width: value.attributes?.width.flatMap(Int.init),

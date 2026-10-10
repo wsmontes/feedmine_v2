@@ -379,6 +379,12 @@ public struct ContentStore: Sendable {
         try database.read { db in try Self.coding { try Self.revision(id, in: db) } }
     }
     /// Exact immutable historical collection. Missing revision differs from an admitted empty collection.
+    /// T9: the one playable candidate of a revision, when the feed declared an audio or video enclosure. A
+    /// revision has at most one (the store's own index says so), so this is the card's own playable payload.
+    public func playbackCandidate(originRevisionID: OriginRevisionID) throws -> MediaCandidate? {
+        (try mediaCandidates(originRevisionID: originRevisionID))?.first { $0.role == .playback }
+    }
+
     public func mediaCandidates(originRevisionID: OriginRevisionID) throws -> [MediaCandidate]? {
         try database.read { db in
             try Self.coding {

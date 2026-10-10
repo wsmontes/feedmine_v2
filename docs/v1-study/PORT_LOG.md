@@ -859,3 +859,61 @@ storage; the translator claim, the player and the surfaces are the next ones.
 the playable locator to the card, the app's `prepare` choosing `.mediaPlayback` for it (V1's tap-to-play
 precedence), the player (a platform adapter, AVFoundation, outside the package), the mini player with its
 reserved area, and their surfaces and tests.
+
+### T9, third part — playback: the payload, the player and the bar
+
+- **The pipeline carries it end to end.** The syndication translator now keeps a feed's audio/video enclosure as
+  the occurrence's own `playback` claim (RSS/RDF via `itunes:image` + the single enclosure a podcast item has,
+  Atom and JSON Feed via their enclosure links/attachments), after the visuals so it never takes the card's
+  ordinal 0. `ContentStore.playbackCandidate(revision:)` reads it back, and the app's `prepare` states V1's
+  precedence in one line: an episode plays from the enclosure its feed declared, every other card opens its
+  article. `MediaCandidateClass.playback(forMIME:)` is the one place that decides what a MIME type *is*, so the
+  translator, the storage check and the player cannot disagree.
+  A subtlety worth recording: `SyndicationMediaLocator.resolve` refuses audio/video containers because they
+  cannot be raster *card visuals*. That rule is right for a visual and wrong for a payload, so the resolver now
+  takes `allowingPlayableMedia:` — the default keeps V1's card-visual rule exactly, and only the playback claim
+  passes true.
+- **The player is a protocol, the framework is an adapter.** `ReaderMediaPlaying` (Runtime) states what the
+  composition may ask of a player; `MediaPlaybackAdapter` (app) is the only file in the app that imports
+  AVFoundation (`AVPlayer`, a periodic time observer, the item's own failure status, iOS's playback session so
+  an episode survives the silent switch). The app-wide player is deliberate: V1 kept playing across a context
+  change, a sheet and the reader closing, and a per-association player could not.
+- **The bar.** `MiniPlayerBar` draws `ReaderMediaState` in a **constant** 56 pt height whatever it states —
+  playing, paused, loading or failed — so reporting playback can never move a card (T3's rule, restated for
+  media). It is hosted in the app's shell as a bottom `safeAreaInset` and, as V1 did, inside the reader so an
+  episode stays controllable while reading. `FullPlayerView` carries V1's two 15-second skips, a scrub with
+  V1's own `m:ss` clock, and the error, when there is one, in the reader's words.
+- **V1's card tap behaviour, in one place:** tapping the card that is playing pauses it, tapping it again
+  resumes, and tapping another starts that one. Tapping the media area of a playable card already emitted
+  `openMedia` (the UI's `isAudio == .mediaPlayback` port), and a card without a payload is *reported* — the
+  coordinator asks the player to state the refusal, so the message lives where V1's `lastPlaybackError` did.
+- **Deliberate difference from V1's reader, recorded.** V1 read articles in a raw `WKWebView` with its own
+  loading bar and an explicit "open in Safari" link. V2 reads with `SFSafariViewController` (U2's decision: no
+  web engine of our own to maintain), whose close control, reader mode and share sheet cover V1's close button
+  and its share; the explicit Safari link and the loading bar have no counterpart there, and the playback bar
+  V1 drew inside the reader is ported into the same place.
+
+**Verified.** The suites that carry this work, each run green in isolation: syndication translator **34/34**
+(including the new podcast/video/PDF cases), media candidate storage **4/4** (round-trip, one-playback-per-
+revision by index, the pairing rules), action coordinator **4/4**, media coordinator **4/4** (toggle semantics,
+a card with nothing to play, the surface intents, progress and the clock). Simulator: `testCardCopiesItsOwnLink
+AndStatesIt` and `testMiniPlayerStatesPlaybackWithoutMovingTheFeed` (the hook plays a real silent WAV through
+the real AVFoundation adapter; the bar measures 56 pt playing and paused, the feed never grows, the full player
+carries both skips and closing returns) — both **TEST SUCCEEDED**.
+
+**A note on the machine, recorded because it cost real time — and because it found a real defect.** The *whole*
+package suite began exiting non-zero with `signal code 11` in the test bundle while every individual suite passed
+alone, and the crashing test *differed between runs* (first `FeedMineRuntimeTests.LocalProductionSliceTests`,
+then `FeedMineMediaTests.MediaPolicyResolverTests`). Zero assertions failed in any of those runs; the machine was
+out of resources (`/System/Volumes/Data` at **100%**, swap at 5.8 GB of 7 GB), which is what a bundle dying in
+allocation looks like.
+
+Clearing the build cache to test that explanation exposed something the cache had been hiding:
+`Tests/FeedMinePersistenceTests/ContextIdentityPersistenceTests.swift` imports `FeedMinePublication` while the
+target never declared it, so a clean checkout could not build the test bundle at all. `Package.swift` now
+declares it, and the suite was re-run from a clean build: **962 tests, 0 failures**, `Test Suite 'All tests'
+passed`, exit 0.
+
+**Remaining for T9:** nothing of its acceptance — the reader, the media and the share flows are ported and
+proven. The DEBUG-only catalog explorer stays ordered into T12, and the two recorded differences above (V1's
+Safari link/loading bar; a box as a reading surface needs T9's presentation source, still open from T8).

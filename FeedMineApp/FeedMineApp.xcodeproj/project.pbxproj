@@ -8,8 +8,10 @@
 0000000000000000000000C6 = { isa = PBXBuildFile; fileRef = 0000000000000000000000C5; };
 0000000000000000000000C8 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppBrowser.swift; sourceTree = "<group>"; };
 0000000000000000000000F3 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformSurfaces.swift; sourceTree = "<group>"; };
+0000000000000000000000F5 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPlaybackAdapter.swift; sourceTree = "<group>"; };
 0000000000000000000000C9 = { isa = PBXBuildFile; fileRef = 0000000000000000000000C8; };
 0000000000000000000000F4 = { isa = PBXBuildFile; fileRef = 0000000000000000000000F3; };
+0000000000000000000000F6 = { isa = PBXBuildFile; fileRef = 0000000000000000000000F5; };
 000000000000000000000001 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMineApp.swift; sourceTree = "<group>"; };
 000000000000000000000002 = { isa = PBXBuildFile; fileRef = 000000000000000000000001; };
 000000000000000000000003 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppComposition.swift; sourceTree = "<group>"; };
@@ -17,7 +19,7 @@
 000000000000000000000005 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustedFeeds.swift; sourceTree = "<group>"; };
 000000000000000000000006 = { isa = PBXBuildFile; fileRef = 000000000000000000000005; };
 000000000000000000000007 = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-000000000000000000000008 = { isa = PBXGroup; children = (000000000000000000000001,000000000000000000000003,000000000000000000000005,000000000000000000000007,0000000000000000000000C3,0000000000000000000000C5,0000000000000000000000C8,0000000000000000000000F3,0000000000000000000000C1,); path = FeedMineApp; sourceTree = "<group>"; };
+000000000000000000000008 = { isa = PBXGroup; children = (000000000000000000000001,000000000000000000000003,000000000000000000000005,000000000000000000000007,0000000000000000000000C3,0000000000000000000000C5,0000000000000000000000C8,0000000000000000000000F3,0000000000000000000000C1,0000000000000000000000F5,); path = FeedMineApp; sourceTree = "<group>"; };
 000000000000000000000009 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionTests.swift; sourceTree = "<group>"; };
 00000000000000000000000A = { isa = PBXBuildFile; fileRef = 000000000000000000000009; };
 00000000000000000000000B = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMineUITests.swift; sourceTree = "<group>"; };
@@ -50,7 +52,7 @@
 000000000000000000000024 = { isa = XCBuildConfiguration; buildSettings = { IPHONEOS_DEPLOYMENT_TARGET = 18.0; SWIFT_VERSION = 6.0; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; TARGETED_DEVICE_FAMILY = "1,2"; CLANG_ENABLE_MODULES = YES;  SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)"; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; ONLY_ACTIVE_ARCH = YES; ENABLE_TESTABILITY = YES; }; name = Debug; };
 000000000000000000000025 = { isa = XCBuildConfiguration; buildSettings = { IPHONEOS_DEPLOYMENT_TARGET = 18.0; SWIFT_VERSION = 6.0; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; TARGETED_DEVICE_FAMILY = "1,2"; CLANG_ENABLE_MODULES = YES;  }; name = Release; };
 000000000000000000000026 = { isa = XCConfigurationList; buildConfigurations = (000000000000000000000024,000000000000000000000025,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-000000000000000000000027 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000002,000000000000000000000004,000000000000000000000006,0000000000000000000000C9,0000000000000000000000F4,); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000027 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000002,000000000000000000000004,000000000000000000000006,0000000000000000000000C9,0000000000000000000000F4,0000000000000000000000F6,); runOnlyForDeploymentPostprocessing = 0; };
 000000000000000000000028 = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000001C,00000000000000000000001D,00000000000000000000001E,00000000000000000000001F,000000000000000000000020,000000000000000000000021,000000000000000000000022,000000000000000000000023,0000000000000000000000F2,); runOnlyForDeploymentPostprocessing = 0; };
 000000000000000000000029 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (0000000000000000000000C2,0000000000000000000000C4,0000000000000000000000C6,); runOnlyForDeploymentPostprocessing = 0; };
 0000000000000000000000C7 = { isa = PBXShellScriptBuildPhase; alwaysOutOfDate = 1; buildActionMask = 2147483647; files = (); inputFileListPaths = (); inputPaths = (); name = "Stamp build identity"; outputFileListPaths = (); outputPaths = (); runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "bash \"${PROJECT_DIR}/../scripts/generate_build_info.sh\" \"${BUILT_PRODUCTS_DIR}/${INFOPLIST_PATH}\"\n"; };

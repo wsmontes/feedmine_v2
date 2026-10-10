@@ -42,8 +42,9 @@ struct FeedMineApp: App {
     /// T8: the collections surface, and the three library prompts V1 asked with an alert.
     @State private var collectionsStore: CollectionsStore?
     @State private var libraryPrompt: LibraryPrompt?
-    /// T9: the link a card asked to share, presented by the platform surface.
+    /// T9: the link a card asked to share, presented by the platform surface, and the full player.
     @State private var sharedLink: SharedLink?
+    @State private var showsPlayer = false
     @State private var promptName = ""
 
     /// V1's three library prompts: collect the current sources, save the current context, delete a saved one.
@@ -106,6 +107,22 @@ struct FeedMineApp: App {
                 }
                 // T5: the reader draws its own floating header; the navigation bar exists only for
                 // pushed destinations, so it stays out of the reading surface.
+                // T9: the reader's playback is reported under the feed, in a bar whose height never depends on
+                // what it states, so playing an episode cannot move a card.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if composition.mediaState.item != nil {
+                        MiniPlayerBar(state: composition.mediaState,
+                            onToggle: { Task { await composition.toggleMedia() } },
+                            onOpen: { showsPlayer = true })
+                    }
+                }
+                .sheet(isPresented: $showsPlayer) {
+                    FullPlayerView(state: composition.mediaState,
+                        onToggle: { Task { await composition.toggleMedia() } },
+                        onSkip: { seconds in Task { await composition.skipMedia(by: seconds) } },
+                        onSeek: { position in Task { await composition.seekMedia(to: position) } },
+                        onClose: { showsPlayer = false })
+                }
                 .toolbar(.hidden, for: .navigationBar)
                 .sheet(item: $presentation, onDismiss: {
                     // A selection made in the source surface is adopted when it closes, never mid-list.
@@ -177,7 +194,17 @@ struct FeedMineApp: App {
                             }
                         }
                     case .reader(let url):
-                        InAppBrowser(url: url)
+                        // T9 (V1's own reader): the playback bar stays visible while the reader is open, so an
+                        // episode started from a card is still controllable inside the article.
+                        VStack(spacing: 0) {
+                            InAppBrowser(url: url)
+                            if composition.mediaState.item != nil {
+                                MiniPlayerBar(state: composition.mediaState,
+                                    onToggle: { Task { await composition.toggleMedia() } },
+                                    onOpen: { showsPlayer = true })
+                                    .background(.ultraThinMaterial)
+                            }
+                        }
                     }
                 }
                 .navigationDestination(for: ReaderDestination.self) { destination in
@@ -262,6 +289,12 @@ struct FeedMineApp: App {
                     }
                 }
                 await composition.launch()
+                #if DEBUG
+                // T9 UI evidence: the hook plays a real, silent episode through the real adapter.
+                if ProcessInfo.processInfo.environment["FEEDMINE_MEDIA_SIMULATION"] == "1" {
+                    await composition.startSimulatedPlayback()
+                }
+                #endif
             }
             .onChange(of: phase) { _, next in
                 if next == .background { Task { await composition.background() } }
