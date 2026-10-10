@@ -62,6 +62,7 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 **Aceite:** sem fim artificial, cards repetidos, interrupções indevidas ou retrocesso de posição sob oferta comprovadamente disponível.
 
 ### F06 — Cards, mídia, estabilidade visual e legibilidade
+**Especificação de produto vigente:** [F06 — O feed é sagrado](F06_SACRED_FEED_CARD_READINESS_PRD.md). O candidato pendente sai imediatamente da fila pronta, sem reservar posição; retorna apenas quando elegível para uma apresentação válida. A sequência publicada permanece imutável, e B04 requer prova de estabilidade física.
 **Promessa:** a apresentação é boa o bastante para querer continuar lendo; o feed não pula sozinho.  
 **Jornada/oráculo:** cards com imagem válida, imagem ausente, texto longo, mídia lenta, atualizações de fonte, fontes extremas, Dynamic Type, retrato/paisagem e leitura parada por 10 minutos. Conferir identidade, ordenação, geometria física, deslocamento visual, contraste e acessibilidade; aplicar B04 e PD-5/PD-6.  
 **Evidência inicial:** houve transferência de componentes da V1 e comparações visuais sem equivalência pixel a pixel; mídia preparada e layout text-only existem.  
