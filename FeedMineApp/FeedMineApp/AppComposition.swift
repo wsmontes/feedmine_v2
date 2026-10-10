@@ -977,12 +977,14 @@ final class FeedAssociation {
     }
 
     /// The exact behavior each sequencing policy version names. Explicit, never a threshold: a version this
-    /// build does not know must not be silently treated as v3 (R2 review, 2026-10-10). Version 1 and any
-    /// unknown version keep the recency order the earliest revisions were published under.
+    /// build does not know must not be silently treated as a later one (R2 review, 2026-10-10). Version 1 and
+    /// any unknown version keep the recency order the earliest revisions were published under; v3 is the
+    /// unweighted proportional rule and v4 the same rule shaped by the reader's weights.
     static func sequencingBehavior(for version: PolicyVersion) -> ResolvedSelectionPolicy.SequencingBehavior {
         switch version.rawValue {
         case 2: return .recencyAlternatingSources
         case 3: return .recencyAlternatingSourcesBySupplyShare
+        case 4: return .recencyAlternatingSourcesByWeightedSupplyShare
         default: return .recencyDescending
         }
     }
@@ -1024,12 +1026,17 @@ final class FeedAssociation {
         // T11: a curated feed's ranking is part of the behavior the Edition was published under, so an edit to
         // the recipe (which keeps the identity) is a new revision and never reuses an older checkpoint.
         let scoringPolicy = PolicyVersion(rawValue: max(1, scoringVersion))
-        // Sequencing v2 = PD-4 source alternation; v3 = the same rule plus least-used fairness inside the
-        // examined window (R2, 2026-10-10); exposure v2 = PD-1 edited articles reappear.
-        // A behavior change is a new EditorialRevision, and a restored Edition keeps the behavior its own
-        // revision names — so v2 and v3 resolve to different cases, never to a re-defined one.
+        // Sequencing v3 = the unweighted proportional rule; v4 = the same rule shaped by the reader's
+        // weights, declared only when the session actually carries a recipe. Keeping them apart is what lets
+        // an Edition published under v3 keep the meaning it was given. Exposure v2 = PD-1 edited articles
+        // reappear. A behavior change is a new EditorialRevision, and a restored Edition keeps the behavior
+        // its own revision names.
         let alternating = PolicyVersion(rawValue: 2)
-        let sequencingVersion = PolicyVersion(rawValue: 3)
+        let sequencingVersion: PolicyVersion
+        switch scoring {
+        case .equal: sequencingVersion = PolicyVersion(rawValue: 3)
+        case .weighted(let weights): sequencingVersion = weights.isEmpty ? PolicyVersion(rawValue: 3) : PolicyVersion(rawValue: 4)
+        }
         let revision = try saved?.edition.editorialRevision ?? EditorialRevision(
             // The revision identity carries every version that changes what an Edition was published
             // under. `PublicationStore.insertEditionAndFirstSegment` rejects a second Edition whose

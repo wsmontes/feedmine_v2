@@ -59,31 +59,41 @@ enum SourceAlternation {
     /// them — counted only over the sources this context selected. A candidate may carry memberships the
     /// reader never selected; those must not invent representativeness (R2 review, 2026-10-10). PD-4 keeps
     /// using the candidate's full source set: every source it carries still constrains adjacency.
-    ///
-    /// The share is divided by the reader's own weight for the candidate (R2 review: a curated recipe must
-    /// still shape the distribution). A source the recipe favours tolerates a larger consumed share before
-    /// the sequencer defers it, so preference decides the *rate* while PD-4 and the observed supply decide
-    /// the ceiling. With an unweighted policy every weight is 1 and this is exactly the plain share.
     /// A candidate carrying several counted sources is judged by the mean of their fractions, and placing it
     /// is accounted to each of them — one candidate is placed once and never duplicated. Counts belong to
     /// this call only: the window, not the Edition, is the unit.
     private static func supplyShare(_ candidate: Candidate, counted: Set<SourceID>?, served: [SourceID: Int],
-        offered: [SourceID: Int], servedUnknown: Int, offeredUnknown: Int, weights: [SourceID: Double]) -> Double {
-        let sourceSet: Set<SourceID>
-        if let counted {
-            sourceSet = candidate.sourceIDs.intersection(counted)
-            guard !sourceSet.isEmpty else { return offeredUnknown == 0 ? 0 : Double(servedUnknown) / Double(offeredUnknown) }
-        } else {
-            guard !candidate.sourceIDs.isEmpty else {
-                return offeredUnknown == 0 ? 0 : Double(servedUnknown) / Double(offeredUnknown)
-            }
-            sourceSet = candidate.sourceIDs
+        offered: [SourceID: Int], servedUnknown: Int, offeredUnknown: Int) -> Double {
+        guard let sources = countedSources(of: candidate, counted: counted, servedUnknown: servedUnknown, offeredUnknown: offeredUnknown) else {
+            return offeredUnknown == 0 ? 0 : Double(servedUnknown) / Double(offeredUnknown)
         }
-        let share = meanShare(of: sourceSet, served: served, offered: offered)
-        guard !weights.isEmpty else { return share }
+        return meanShare(of: sources, served: served, offered: offered)
+    }
+
+    /// The same, but prospective and weighted: `(served + 1) / offered / weight`. Counting the *next* card
+    /// rather than the served ones is what lets a weight act from the first choice — with `served` alone every
+    /// source is tied at zero and the weight could only break ties (R2 review). `nil` means the candidate has
+    /// no counted source and the window's own unknown count applies.
+    private static func weightedSupplyShare(_ candidate: Candidate, counted: Set<SourceID>?, served: [SourceID: Int],
+        offered: [SourceID: Int], weights: [SourceID: Double]) -> Double? {
+        guard let sources = countedSources(of: candidate, counted: counted, servedUnknown: 0, offeredUnknown: 0) else { return nil }
+        let mean = sources.reduce(0.0) { partial, source in
+            let available = offered[source] ?? 0
+            guard available > 0 else { return partial }
+            return partial + Double((served[source] ?? 0) + 1) / Double(available)
+        } / Double(sources.count)
+        guard !weights.isEmpty else { return mean }
         // The same "strongest of its sources" rule the engine's own ranking uses.
-        let weight = sourceSet.compactMap { weights[$0] }.max() ?? 1
-        return weight > 0 ? share / weight : share
+        let weight = sources.compactMap { weights[$0] }.max() ?? 1
+        return weight > 0 ? mean / weight : mean
+    }
+
+    /// The sources of a candidate that participate in the accounting, or `nil` when there are none.
+    private static func countedSources(of candidate: Candidate, counted: Set<SourceID>?,
+        servedUnknown: Int, offeredUnknown: Int) -> Set<SourceID>? {
+        guard let counted else { return candidate.sourceIDs.isEmpty ? nil : candidate.sourceIDs }
+        let sources = candidate.sourceIDs.intersection(counted)
+        return sources.isEmpty ? nil : sources
     }
 
     private static func meanShare(of sources: Set<SourceID>, served: [SourceID: Int], offered: [SourceID: Int]) -> Double {
@@ -106,10 +116,22 @@ enum SourceAlternation {
     ///
     /// `countingSources` is the context's selected-source set: only those participate in the share
     /// accounting. `nil` means the window is unconstrained and every source it carries counts.
-    /// `weights` is the policy's own scoring map: a source the recipe favours is served at a
-    /// proportionally higher rate. An empty map is the unweighted policy, where every source weighs 1.
     static func applyBySupplyShare(_ ordered: [Candidate], after neighbor: SelectionNeighbor?,
+        countingSources: Set<SourceID>? = nil) -> (placed: [Candidate], held: [Candidate]) {
+        alternation(ordered, after: neighbor, countingSources: countingSources, weights: [:])
+    }
+
+    /// Sequencing v4 (R2 review): the same alternation, with the reader's weights shaping it from the first
+    /// choice — the priority is prospective, `(served + 1) / offered / weight`, so a favoured source is
+    /// served sooner and a disfavoured one later instead of being tied at zero with everyone else. PD-4 is
+    /// still a hard constraint, no source is starved, and recency still breaks every tie.
+    static func applyByWeightedSupplyShare(_ ordered: [Candidate], after neighbor: SelectionNeighbor?,
         countingSources: Set<SourceID>? = nil, weights: [SourceID: Double] = [:]) -> (placed: [Candidate], held: [Candidate]) {
+        alternation(ordered, after: neighbor, countingSources: countingSources, weights: weights)
+    }
+
+    private static func alternation(_ ordered: [Candidate], after neighbor: SelectionNeighbor?,
+        countingSources: Set<SourceID>?, weights: [SourceID: Double]) -> (placed: [Candidate], held: [Candidate]) {
         var remaining = ordered
         var placed: [Candidate] = []
         var previous = neighbor
@@ -127,15 +149,22 @@ enum SourceAlternation {
         }
         while true {
             var chosen: Int?
-            var chosenShare = Double.infinity
+            var chosenPriority = Double.infinity
             for index in remaining.indices {
                 let candidate = remaining[index]
                 guard compatible(previous, candidate) else { continue }
-                let share = supplyShare(candidate, counted: countingSources, served: servedBySource,
-                    offered: offeredBySource, servedUnknown: servedUnknown, offeredUnknown: offeredUnknown, weights: weights)
-                if share < chosenShare {
+                let priority: Double
+                if weights.isEmpty {
+                    priority = supplyShare(candidate, counted: countingSources, served: servedBySource,
+                        offered: offeredBySource, servedUnknown: servedUnknown, offeredUnknown: offeredUnknown)
+                } else {
+                    priority = weightedSupplyShare(candidate, counted: countingSources, served: servedBySource,
+                        offered: offeredBySource, weights: weights)
+                        ?? (offeredUnknown == 0 ? 0 : Double(servedUnknown) / Double(offeredUnknown))
+                }
+                if priority < chosenPriority {
                     chosen = index
-                    chosenShare = share
+                    chosenPriority = priority
                 }
             }
             guard let index = chosen else { break }

@@ -23,8 +23,16 @@ public struct ResolvedSelectionPolicy: Hashable, Sendable {
         /// consumed the smallest share of what this window offers it (recency breaks the tie). PD-4 alone
         /// produced `A B A C A` on a real window holding twelve sources; measured, this rule meets every
         /// source in the window before repeating one, keeps a reserve of the scarce sources PD-4 needs to
-        /// keep publishing, and places as many cards as the greedy rule did.
+        /// keep publishing, and places as many cards as the greedy rule did. This is the behavior for a
+        /// policy that is not weighting anything (`.equal`).
         case recencyAlternatingSourcesBySupplyShare
+        /// Sequencing v4 (R2 review): the same rule, with the reader's own weights shaping it — the
+        /// prospective priority is `(served + 1) / offered / weight`, so a source the recipe favours is
+        /// served sooner and a source it disfavours later, from the first choice on. Weights come from
+        /// `FeedRecipeResolution` (clamped to 0.42…3.0), so this is a gradual preference, never an absolute
+        /// precedence: PD-4 still binds every adjacent pair and no source is starved. Kept as its own
+        /// version so the unweighted v3 keeps the meaning the Editions published under it were given.
+        case recencyAlternatingSourcesByWeightedSupplyShare
     }
     public enum ExposureBehavior: Hashable, Sendable {
         case none

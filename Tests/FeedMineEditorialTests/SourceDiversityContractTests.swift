@@ -180,7 +180,8 @@ final class SourceDiversityContractTests: XCTestCase {
                 sequencingPolicyVersion: p.sequencingPolicyVersion, exposurePolicyVersion: p.exposurePolicyVersion,
                 selectionSchemaVersion: p.selectionSchemaVersion, eligibility: .structuralOnly,
                 scoring: weights.isEmpty ? .equal : .weighted(weights),
-                sequencing: .recencyAlternatingSourcesBySupplyShare, exposure: .none)
+                sequencing: weights.isEmpty ? .recencyAlternatingSourcesBySupplyShare : .recencyAlternatingSourcesByWeightedSupplyShare,
+                exposure: .none)
             let result = try SelectionEngine().select(plan: plan, policy: policy,
                 window: CandidateSupplyWindow(candidates: candidates, examinedCount: candidates.count, nextCursor: nil, exhausted: true),
                 exposure: nil, after: nil)
@@ -208,6 +209,119 @@ final class SourceDiversityContractTests: XCTestCase {
         // place fewer cards than the greedy rule it replaced (13 of 18 on this same window).
         XCTAssertGreaterThanOrEqual(curated.count, 16,
             "curation must not fall behind the rule it replaces: curated \(curated.count), greedy 13, unweighted 18")
+    }
+
+    /// R2 review: the comparative table the architect asked for — greedy v2, proportional v3 and the
+    /// prospective weighted v4 over the same windows, with the properties that must hold together.
+    func testWeightedSequencingTableAcrossScenarios() throws {
+        let plan = try plan()
+        enum Rule: String { case v2, v3, v4 }
+        func published(_ labels: [Int], weights: [SourceID: Double], rule: Rule,
+            sourceOf: (Int) -> Set<Int> = { [$0] }) throws -> [Int] {
+            let candidates = labels.enumerated().map { index, source in
+                Candidate(originRecordID: OriginRecordID(rawValue: uuid(index + 1)),
+                    originRevisionID: OriginRevisionID(rawValue: uuid(index + 1)),
+                    headline: "h\(index)", summary: nil,
+                    timestamp: CandidateTimestamp(value: Date(timeIntervalSince1970: 1_000_000 - Double(index)), kind: .authored),
+                    language: "pt-BR", providerID: nil,
+                    sourceIDs: Set(sourceOf(source).map { SourceID(rawValue: uuid(1000 + $0)) }))
+            }
+            let p = alternating(plan.revision)
+            let sequencing: ResolvedSelectionPolicy.SequencingBehavior = switch rule {
+            case .v2: .recencyAlternatingSources
+            case .v3: .recencyAlternatingSourcesBySupplyShare
+            case .v4: .recencyAlternatingSourcesByWeightedSupplyShare
+            }
+            let policy = ResolvedSelectionPolicy(contextKey: p.contextKey, userSelectionVersion: p.userSelectionVersion,
+                eligibilityPolicyVersion: p.eligibilityPolicyVersion, scoringPolicyVersion: p.scoringPolicyVersion,
+                sequencingPolicyVersion: p.sequencingPolicyVersion, exposurePolicyVersion: p.exposurePolicyVersion,
+                selectionSchemaVersion: p.selectionSchemaVersion, eligibility: .structuralOnly,
+                scoring: weights.isEmpty ? .equal : .weighted(weights), sequencing: sequencing, exposure: .none)
+            let result = try SelectionEngine().select(plan: plan, policy: policy,
+                window: CandidateSupplyWindow(candidates: candidates, examinedCount: candidates.count, nextCursor: nil, exhausted: true),
+                exposure: nil, after: nil)
+            return result.orderedCandidates.map { candidate in
+                let values = candidate.sourceIDs.map { Int($0.rawValue.uuidString.suffix(12), radix: 16)! - 1000 }
+                return values.filter { $0 < 900 }.min() ?? 999
+            }
+        }
+        let w = { [self] (one: Double, two: Double, three: Double) -> [SourceID: Double] in
+            [SourceID(rawValue: uuid(1001)): one, SourceID(rawValue: uuid(1002)): two, SourceID(rawValue: uuid(1003)): three]
+        }
+        let weighted = { [self] (map: [Int: Double]) -> [SourceID: Double] in
+            Dictionary(uniqueKeysWithValues: map.map { (SourceID(rawValue: uuid(1000 + $0.key)), $0.value) })
+        }
+        let tailWindowLabels = Array(Self.measuredTailWindow)
+        let realWindowWeights = weighted([2: 3.0, 6: 2.0])
+        let scenarios: [(String, [Int], [SourceID: Double], Int)] = [
+            ("equal supply x6, weights 3.0/1.0/0.42", [1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3], w(3.0, 1.0, 0.42), 9),
+            ("unequal supply 12/6/3, weights 3.0/1.0/0.42", [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3], w(3.0, 1.0, 0.42), 9),
+            ("close weights 1.05/1.0/0.95", [1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3], w(1.05, 1.0, 0.95), 9),
+            ("preferred source scarce: 2/8/8, weights 3.0/1.0/1.0", [1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3], w(3.0, 1.0, 1.0), 9),
+            ("real 32-candidate window, weights 2:3.0 6:2.0", Self.measuredWindow, realWindowWeights, 12),
+            ("real 256-candidate tail window, weights 2:3.0 6:2.0", tailWindowLabels, realWindowWeights, 12),
+        ]
+        for (name, labels, weights, prefix) in scenarios {
+            let v2 = try published(labels, weights: weights, rule: .v2)
+            let v3 = try published(labels, weights: weights, rule: .v3)
+            let v4 = try published(labels, weights: weights, rule: .v4)
+            let counts = { (seq: [Int]) in Dictionary(grouping: seq.prefix(prefix), by: { $0 }).mapValues(\.count) }
+            print("TABLE \(name)")
+            print("   v2 first\(prefix) \(counts(v2)) placed \(v2.count)/\(labels.count)")
+            print("   v3 first\(prefix) \(counts(v3)) placed \(v3.count)/\(labels.count)")
+            print("   v4 first\(prefix) \(counts(v4)) placed \(v4.count)/\(labels.count)")
+            // P-a the preference is visible; P-b close weights do not build a hierarchy
+            if name.hasPrefix("close") {
+                XCTAssertEqual(v4, v3, "weights within five percent must not reorder the feed")
+            } else {
+                XCTAssertNotEqual(v4, v3, "a substantial weight must shape the distribution")
+            }
+            // P-c PD-4 holds; P-d nothing is starved; P-e the runway never shortens against the rule replaced
+            for (a, b) in zip(v4, v4.dropFirst()) { XCTAssertNotEqual(a, b, "PD-4 in \(name)") }
+            for source in Set(labels) { XCTAssertTrue(v4.contains(source), "source \(source) starved in \(name)") }
+            XCTAssertGreaterThanOrEqual(v4.count, v2.count, "runway regressed in \(name)")
+            // P-f determinism and recency: the same window gives the same answer twice
+            XCTAssertEqual(v4, try published(labels, weights: weights, rule: .v4), "not deterministic in \(name)")
+        }
+    }
+
+    /// Multi-membership under the weighted rule: the same containment rule as v3 — an unselected membership
+    /// never enters the accounting, and a candidate is still placed once.
+    func testWeightedSequencingKeepsUnselectedMembershipsOutOfTheAccounting() throws {
+        let plan = try plan()
+        let selected = Set([1, 2, 3].map { SourceID(rawValue: uuid(1000 + $0)) })
+        let unselected = SourceID(rawValue: uuid(1999))
+        func run(extraMembership: Bool) throws -> [Int] {
+            let candidates = (0..<9).map { index -> Candidate in
+                var sources = Set([SourceID(rawValue: uuid(1001 + (index % 3)))])
+                if extraMembership, index == 4 { sources.insert(unselected) }
+                return Candidate(originRecordID: OriginRecordID(rawValue: uuid(index + 1)),
+                    originRevisionID: OriginRevisionID(rawValue: uuid(index + 1)),
+                    headline: "h\(index)", summary: nil,
+                    timestamp: CandidateTimestamp(value: Date(timeIntervalSince1970: 1_000_000 - Double(index)), kind: .authored),
+                    language: "pt-BR", providerID: nil, sourceIDs: sources)
+            }
+            let p = alternating(plan.revision)
+            let weights: [SourceID: Double] = [SourceID(rawValue: uuid(1001)): 3.0,
+                                               SourceID(rawValue: uuid(1002)): 1.0,
+                                               SourceID(rawValue: uuid(1003)): 0.42]
+            let policy = ResolvedSelectionPolicy(contextKey: p.contextKey, userSelectionVersion: p.userSelectionVersion,
+                eligibilityPolicyVersion: p.eligibilityPolicyVersion, scoringPolicyVersion: p.scoringPolicyVersion,
+                sequencingPolicyVersion: p.sequencingPolicyVersion, exposurePolicyVersion: p.exposurePolicyVersion,
+                selectionSchemaVersion: p.selectionSchemaVersion, eligibility: .selectedSources(selected),
+                scoring: .weighted(weights), sequencing: .recencyAlternatingSourcesByWeightedSupplyShare, exposure: .none)
+            let result = try SelectionEngine().select(plan: plan, policy: policy,
+                window: CandidateSupplyWindow(candidates: candidates, examinedCount: candidates.count, nextCursor: nil, exhausted: true),
+                exposure: nil, after: nil)
+            return result.orderedCandidates.map { candidate in
+                let values = candidate.sourceIDs.map { Int($0.rawValue.uuidString.suffix(12), radix: 16)! - 1000 }
+                return values.filter { selected.contains(SourceID(rawValue: uuid(1000 + $0))) }.min() ?? 999
+            }
+        }
+        let plain = try run(extraMembership: false)
+        let shared = try run(extraMembership: true)
+        XCTAssertGreaterThanOrEqual(plain.count, 8, "the window must publish the great majority of its cards")
+        XCTAssertEqual(plain, shared, "an unselected membership must not enter the share accounting")
     }
 
     /// Compatibility of the change itself: an Edition published under sequencing v2 keeps the behavior

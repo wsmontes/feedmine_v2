@@ -99,7 +99,8 @@ public struct SelectionEngine: Sendable {
         }
         let ordered: [Candidate]
         switch policy.sequencing {
-        case .recencyDescending, .recencyAlternatingSources, .recencyAlternatingSourcesBySupplyShare:
+        case .recencyDescending, .recencyAlternatingSources, .recencyAlternatingSourcesBySupplyShare,
+             .recencyAlternatingSourcesByWeightedSupplyShare:
             ordered = eligible.sorted { left, right in
                 let leftWeight = weight(left), rightWeight = weight(right)
                 if leftWeight != rightWeight { return leftWeight > rightWeight }
@@ -133,6 +134,9 @@ public struct SelectionEngine: Sendable {
                 alternated = SourceAlternation.apply(ordered, after: neighbor)
             case .recencyAlternatingSourcesBySupplyShare:
                 alternated = SourceAlternation.applyBySupplyShare(ordered, after: neighbor,
+                    countingSources: countedSources)
+            case .recencyAlternatingSourcesByWeightedSupplyShare:
+                alternated = SourceAlternation.applyByWeightedSupplyShare(ordered, after: neighbor,
                     countingSources: countedSources, weights: weights)
             case .recencyDescending:
                 alternated = (ordered, [])
