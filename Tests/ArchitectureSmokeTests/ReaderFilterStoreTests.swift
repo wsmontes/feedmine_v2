@@ -1,5 +1,6 @@
 import XCTest
 import FeedMineDomain
+import FeedMineRuntime
 import FeedMineUI
 
 /// T6: one moment turns a draft into the applied selection, and V1's dismissal is that moment.
@@ -77,6 +78,30 @@ final class ReaderFilterStoreTests: XCTestCase {
         XCTAssertTrue(subject.isDirty, "the edits survive a failed apply")
         XCTAssertFalse(subject.isApplying)
         XCTAssertTrue(subject.applied.isUnrestricted, "the applied selection never moved")
+    }
+
+    /// T7/T6 boundary: the topic browser selects *filter criteria* (V1's `toggleNode`), keyed by the catalog
+    /// key, and the rows the browser draws are values independent of any store.
+    func testTaxonomyRowsAreValuesAndSelectionIsFilterState() async throws {
+        let subject = store()
+        let tech = CatalogNodeSummary(id: 42, key: "technology", name: "Technology", kind: .topic,
+            sourceCount: 900, hasChildren: true)
+        let music = CatalogNodeSummary(id: 43, key: "music", name: "Music", kind: .topic,
+            sourceCount: 300, hasChildren: false)
+        let rows = TaxonomyBrowseView.rows(nodes: [tech, music], selected: ["technology"],
+            breadcrumbs: [42: ["Arts & Culture", "Technology"]])
+        XCTAssertEqual(rows.map(\.name), ["Technology", "Music"])
+        XCTAssertEqual(rows.map(\.feedCount), [900, 300])
+        XCTAssertEqual(rows.map(\.isSelected), [true, false])
+        XCTAssertTrue(rows[0].hasChildren)
+        XCTAssertEqual(rows[0].breadcrumb, "Arts & Culture › Technology")
+        XCTAssertEqual(rows[0].key, "technology", "the draft stores catalog keys, not renumberable ids")
+        // The draft's selection is what the browser shows and what a context identity later carries.
+        subject.select(taxonomyNodeIDs: ["technology", "music"])
+        XCTAssertEqual(subject.draft.taxonomyNodeIDs, ["technology", "music"])
+        XCTAssertTrue(subject.isDirty)
+        XCTAssertNotEqual(subject.draft.applied.identityText, ReaderFilter().identityText,
+            "a selected topic is part of the filter's identity")
     }
 
     /// A criterion this build cannot enforce is refused by the draft inside the store too, and hydrating a

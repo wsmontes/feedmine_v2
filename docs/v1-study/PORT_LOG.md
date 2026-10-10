@@ -548,9 +548,22 @@ to the store's *accepted* selection (V1 flipped optimistically and deferred the 
 `DispatchQueue.main.async`), and the flag is derived from the catalog's own `countries/<code>` key shape with a
 globe fallback (a two-letter slug outside that shape is not claimed to be a country).
 
-**Still open in T7**: the remaining source-management/exploration/browse views (V1's
+Sixth slice — the topic browser, which turned out to belong to **T6's sheet, not to source management**: V1's
+`TaxonomyBrowseView` called `loader.toggleNode`, i.e. it selected a *filter criterion*, while `SourceManagementView`
+toggled sources. Ported as `Sources/FeedMineUI/Filters/TaxonomyBrowseView.swift` from
+`Views/TaxonomyBrowseView.swift`: per-level drill-down with checkmarks, the "All in <category>" row, a root-level
+search with V1's 300 ms courtesy delay and a breadcrumb under each hit, and a `done` control whose value states
+how many topics are selected. It binds to `ReaderFilterStore` (`select(taxonomyNodeIDs:)`), so a chosen topic is
+part of the filter's identity, and to a new `TaxonomyTreeBackend` protocol for the tree (values only). Rows are
+`TaxonomyNodeRow` values carrying the **catalog key** — the draft stores keys, so a selected topic survives a
+catalog rebuild that renumbers node ids — with `TaxonomyBrowseView.rows(nodes:selected:breadcrumbs:)` testable
+without a store. One deliberate difference from V1: a row with children both selects and opens in V1 (a
+`NavigationLink` wrapping a toggle); here the row selects and a chevron opens the level, because a link that also
+writes state swallows the tap.
+
+**Still open in T7**: the remaining source-management/exploration views (V1's
 `SourceManagementView`, `CatalogExploreView`, `TaxonomyBrowseView`, country/region screens) — including that
 empty state — the catalog health check (`testHealth`, which needs the acquisition transport and its own slice), and
 the offline/scale UI tests.
 
-**Verified.** `swift test` **918 tests, 0 failures**.
+**Verified.** `swift test` **919 tests, 0 failures**.
