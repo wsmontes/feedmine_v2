@@ -19,3 +19,6 @@ Thumbs.db
 # V1 catalog: release asset fetched by scripts/fetch-catalog.sh (review F02), not Git/LFS content.
 FeedMineApp/FeedMineApp/Resources/catalog.sqlite
 FeedMineApp/FeedMineApp/Resources/catalog.sqlite.download
+
+# Local agent-tooling state (spec-driven-development workspace), never release content.
+.superpowers/
