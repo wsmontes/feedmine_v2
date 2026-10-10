@@ -156,6 +156,20 @@ Verification so far, run by the person integrating the work rather than by the a
 `testT12KeyboardSearchKeepsTheReadingPointAndRestoresIt` → **4/4 passed**. The remaining UI tests are being
 repaired one at a time, with the whole-target run as the acceptance.
 
+Two further defects surfaced the same way — by running the flows the plan claims, not by reading them:
+
+- **The library was reopened, and a failure to open was swallowed.** Every library action built a fresh
+  `RuntimeDatabase` (a new pool, the migrations again, contended with the session's own connections) and the
+  failure was taken by `try?`; the export then reported "nothing to export" with no error anywhere. The
+  composition now memoizes one connection for every library surface
+  (`FeedMineApp/FeedMineApp/AppComposition.swift`), and a failed open is not remembered, so the next action tries
+  again.
+- **Closing the reader dismissed the surface that presented it.** `InAppBrowser` called SwiftUI's `dismiss()`
+  while the host still held the state the sheet was presented from, leaving a presentation whose item was still
+  set; the browser now reports its own close (`onFinish`) and the host clears that state. Together with
+  presenting the reader from the surface the reader is on, this is what makes "close the article, return to your
+  saved list" the same behaviour V1 had.
+
 ## Not executed, and why
 
 | Plan item | State |
