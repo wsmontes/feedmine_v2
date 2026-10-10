@@ -52,6 +52,8 @@ Assim que a orientação acaba, a pessoa vai **direto ao feed vertical normal** 
 
 Assim que houver uma sequência inicial apresentável e diversificada, publicar para leitura. A descoberta e a preparação de mais histórias **continuam durante o scroll**; não esperar terminar uma exploração completa do catálogo. O trabalho posterior não altera os cards já apresentados.
 
+**Cobertura progressiva (PD-8):** publicar a primeira sequência encerra somente a espera inicial, não a exploração. Fontes elegíveis do catálogo inteiro continuam tendo oportunidades ao longo do uso conforme capacidade e prioridades reais. Idiomas selecionados são filtro determinante e não são relaxados para gerar surpresa. Lugares e interesses orientam a exploração sem transformar o catálogo em shortlist fixa. Todos os orçamentos de aquisição e preparação são relativos às condições observadas, sem cotas numéricas permanentes; o feed visível conserva prioridade.
+
 ### 2.3. O primeiro feed é uma demonstração editorial, não uma pesquisa
 
 O feed inicial apresenta excelentes histórias de universos diferentes: notícias e análises, ciência, cultura, entretenimento, tecnologia, esporte, sociedade, artes, natureza, curiosidades e eventualmente um nicho fascinante. As possibilidades reais variam de acordo com conteúdo disponível, idiomas e lugares escolhidos. **Não há ordem fixa de categorias, quotas, páginas temáticas, número obrigatório de cards por assunto nem lista fechada de publicadores.**
