@@ -546,7 +546,33 @@ are already diverse.
 - The lever is the coverage ramp, not the segment extent; the extent only decides how long the reader
   stays inside one window's composition — and that is a publication-policy decision, not Editorial's.
 
-### A6. Known defects recorded by this round, not fixed here
+### A6. Curation is a rate, not a tie-break (R2 review, 2026-10-10)
+
+The architect's second required correction: `applyBySupplyShare` chose by consumed fraction alone, so a
+curated recipe's weights could only break ties — with three equally supplied sources and very different
+weights, the published distribution was identical to the unweighted policy.
+
+Measured with `FeedRecipeResolution`'s real scale (its multiplier clamps to 0.42…3.0), three sources
+with six candidates each, weights 3.0 / 1.0 / 0.42:
+
+| rule | first nine | window total | placed |
+|---|---|---|---|
+| greedy v2 (replay of the same window) | 6 / 6 / 0 | 6 / 6 / 1 | 13 |
+| v3 unweighted | 3 / 3 / 3 | 6 / 6 / 6 | 18 |
+| **v3 with curation** | **5 / 3 / 1** | 6 / 6 / 4 | **16** |
+
+The landed term is `consumed / (offered × weight)`: the fraction the rule equalizes is weighted, so a
+source the recipe favours tolerates a larger consumption before being deferred. PD-4 stays hard,
+diversity still prevents concentration, determinism is unchanged (same comparison, same positional
+tie-break), and the `.equal` policy is untouched — an empty weight map means every source weighs 1.
+The favoured source keeps everything it has; the *disfavoured* one is trimmed, and its two held cards
+are deferred by the cursor rather than the reader's preferred content. Against the rule it replaced
+(greedy, 13 of 18) the curated rule is longer, not shorter.
+
+Proven live: with the weight term disabled the three sources return to 3/3/3 and
+`testACuratedWeightShapesTheDistributionWithoutStarvingASource` fails on exactly that assertion.
+
+### A7. Known defects recorded by this round, not fixed here
 
 - **`testOnboardingWelcomeComposerAndSave` (XCUI) fails on the baseline.** Reproduced with the R2
   changes stashed and the new test file removed: the same three assertions fail without this patch, so
@@ -561,7 +587,7 @@ are already diverse.
   the two earlier v2 Editions and their cards are untouched. Any future soak inherits that selection
   until the section is switched off again.
 
-### A7. Scope, as granted
+### A8. Scope, as granted
 
 R2's allowlist was `SourceAlternation.swift`, `SelectionEngine.swift`, `EditorialPolicy.swift`,
 `SourceDiversityContractTests.swift`, `SelectionEngineTests.swift`, plus `AppComposition.swift`
