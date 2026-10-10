@@ -546,31 +546,35 @@ are already diverse.
 - The lever is the coverage ramp, not the segment extent; the extent only decides how long the reader
   stays inside one window's composition — and that is a publication-policy decision, not Editorial's.
 
-### A6. Curation is a rate, not a tie-break (R2 review, 2026-10-10)
+### A6. Curation is its own version: sequencing v4 (R2 review, 2026-10-10)
 
-The architect's second required correction: `applyBySupplyShare` chose by consumed fraction alone, so a
-curated recipe's weights could only break ties — with three equally supplied sources and very different
-weights, the published distribution was identical to the unweighted policy.
+The architect's decision after reviewing the first attempt: keep v3 for the **unweighted** rule — the
+meaning the Editions published under it were given — and carry the curated modality as an explicit
+**v4**, `(served + 1) / offered / weight`: a prospective priority, so a recipe's weight acts from the
+first choice instead of only breaking ties. PD-4 stays a hard constraint, no source is starved, and
+recency still breaks every tie. A session declares v4 only when it actually carries weights.
 
-Measured with `FeedRecipeResolution`'s real scale (its multiplier clamps to 0.42…3.0), three sources
-with six candidates each, weights 3.0 / 1.0 / 0.42:
+Measured (Swift, same windows, weights inside `FeedRecipeResolution`'s real 0.42…3.0 range):
 
-| rule | first nine | window total | placed |
+| scenario | v2 greedy | v3 unweighted | v4 weighted |
 |---|---|---|---|
-| greedy v2 (replay of the same window) | 6 / 6 / 0 | 6 / 6 / 1 | 13 |
-| v3 unweighted | 3 / 3 / 3 | 6 / 6 / 6 | 18 |
-| **v3 with curation** | **5 / 3 / 1** | 6 / 6 / 4 | **16** |
+| three sources × 6, weights 3.0 / 1.0 / 0.42 | first 9: 5/4/0, 13/18 placed | 3/3/3, 18/18 | **5/3/1, 16/18** |
+| unequal 12/6/3, same weights | 5/4/0, 19/21 | 4/3/2, 18/21 | **5/4/0, 19/21** |
+| close weights 1.05 / 1.00 / 0.95 | 5/4/0, 13/18 | 3/3/3, 18/18 | **3/3/3, 18/18** (identical) |
+| preferred source scarce (2/8/8, 3/1/1) | 2/4/3, 17/18 | 1/4/4, 18/18 | **2/4/3, 18/18** |
+| **real 32-candidate window**, weights 2:3.0, 6:2.0 | first 12: 6/6, 32/32 | 12 distinct sources, 32/32 | **2:6, 6:5, 7:1, 32/32** |
+| **real 256-candidate tail**, same weights | 6/6, 256/256 | 12 distinct, 255/256 | **6:6, 2:4, 12:1, 5:1, 256/256** |
 
-The landed term is `consumed / (offered × weight)`: the fraction the rule equalizes is weighted, so a
-source the recipe favours tolerates a larger consumption before being deferred. PD-4 stays hard,
-diversity still prevents concentration, determinism is unchanged (same comparison, same positional
-tie-break), and the `.equal` policy is untouched — an empty weight map means every source weighs 1.
-The favoured source keeps everything it has; the *disfavoured* one is trimmed, and its two held cards
-are deferred by the cursor rather than the reader's preferred content. Against the rule it replaced
-(greedy, 13 of 18) the curated rule is longer, not shorter.
+What the table settles: the preference is visible from the first choice; weights within five percent
+produce the *same* order as the unweighted rule (no absolute hierarchy from noise); PD-4 holds pair by
+pair; every source still appears; v4 never places fewer cards than the greedy rule it replaces (and
+matches v2's totals on the real windows). Its cost, stated plainly: on a curated feed's real window the
+first screen becomes the reader's preference's stage (2:6, 6:5, 7:1) where v3 showed twelve distinct
+sources — the window totals are unchanged, but the *front* is preferred, not diverse.
 
-Proven live: with the weight term disabled the three sources return to 3/3/3 and
-`testACuratedWeightShapesTheDistributionWithoutStarvingASource` fails on exactly that assertion.
+`testWeightedSequencingTableAcrossScenarios` builds every row above over the real windows verbatim and
+asserts each property; `testWeightedSequencingKeepsUnselectedMembershipsOutOfTheAccounting` proves an
+unselected membership never enters the accounting.
 
 ### A7. Known defects recorded by this round, not fixed here
 
