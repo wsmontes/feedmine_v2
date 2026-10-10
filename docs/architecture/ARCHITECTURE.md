@@ -12,6 +12,31 @@ O FeedMine explora progressivamente **todo o catálogo elegível** e aproveita f
 
 Autoridade normativa: [norte de produto](../product/PRODUCT_NORTH_STAR.md) e [INV-16](PRODUCT_INVARIANTS.md). As descrições de fases históricas abaixo não revogam esta política de produto.
 
+## Catálogo público: autoridade, bootstrap e reconciliação
+
+**Autoridade editorial única:** [`wawasoft/feed-repository`](https://github.com/wawasoft/feed-repository) é o canal público versionado do catálogo *gerenciado*. O app busca **histórias diretamente das fontes externas**, nunca desse GitHub. O repositório público publica OPMLs e `manifest.json` com revisão monotônica, inventário, tamanho e hashes; não é backend de conteúdo nem recebe estado de leitura ou preferências pessoais.
+
+**Cadeia de distribuição sem dependência na abertura:**
+
+```text
+wawasoft/feed-repository (catálogo gerenciado autoritativo)
+    ├─ pipeline de release → snapshot local validado no bundle do app
+    └─ atualização opcional de rede → verificação de manifest em background
+                                      → download de revisão nova + validação
+                                      → snapshot local staged → ativação atômica
+snapshot local ativo + catálogo pessoal do usuário
+    → descoberta/eligibilidade → registro gradual de targets → aquisição externa
+    → supply local → seleção → preparação → publicação
+```
+
+- **Release:** empacotar a última revisão pública validada disponível durante o build; registrar revisão, procedência e integridade. O executável sempre começa com o snapshot local e deve operar sem rede. Na V2 atual, o asset `catalog.sqlite` vem da V1 e é buscado de uma *release do repositório do código V2*, não do canal público da Wawasoft: **essa reconciliação ainda precisa ser implementada e validada**, não pode ser declarada pronta só por ter 77.443 entradas.
+- **Runtime:** na primeira oportunidade de launch/foreground com rede, se a última verificação bem-sucedida tiver aproximadamente 24 horas, consultar somente o manifesto em trabalho de background oportunista. Se uma sessão continuar ativa após o prazo, aproveitar uma oportunidade legítima; sem busy loop, timer arbitrário nem novo scheduler. Repetidos launches dentro da janela não baixam tudo; revisão igual é no-op. iOS offline/suspenso/encerrado adia para a próxima oportunidade, sem promessas irreais de execução fora do app.
+- **Troca do catálogo:** se `revision` avançar, preparar somente uma cópia candidata completa e validá-la contra inventário, SHA-256, tamanho, formato/esquema e consistência. A entrada do catálogo público ainda não prova assinatura criptográfica; não confundir revisão manifestada, hashes e autenticação de origem. Falha preserva a última cópia válida, e a ativação deve permitir recuperação de interrupção, sem tocar `runtime.sqlite`.
+- **Semântica de diff:** inserções, remoções, mudanças de URL, taxonomia, idioma, qualidade e metadados mudam descoberta/registro de aquisição **para o futuro**. Remover uma fonte gerenciada não reescreve cards publicados nem remove fontes importadas pelo usuário, salvos, históricos, coleções ou conteúdo local; a identidade estável e chaves alteradas exigem migração/reconciliação explícita. Reavaliar elegibilidade e alvos pelos donos existentes, preservando posição e runway.
+- **Ownership:** leitura/staging/troca do catálogo junto da fronteira de Persistence/catálogo; decisão de disparo e composição junto do ciclo existente em Composition; descoberta e aquisição usam o fluxo normal. Não introduzir servidor, segundo catálogo editorial, segundo acquisition scheduler ou sincronizador paralelo. O catálogo público é autoridade das **fontes gerenciadas**, nunca da publicação já congelada nem do estado pessoal local.
+
+**Gate:** testes end-to-end de snapshot empacotado, revisão igual, delta com adição/remoção/edição, falha de integridade/rede, upgrade, preservação de dados e lançamento local sem bloqueio. Requisito vinculante [PD-10](../product/PRODUCT_DECISIONS_2026-10-09.md), [INV-18](PRODUCT_INVARIANTS.md); frentes F01/F09/F10 e invariantes F05/F06. Não confundir contrato aqui descrito com implementação já entregue.
+
 ## Canonical pipeline
 
 ```text
