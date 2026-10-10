@@ -92,6 +92,12 @@ app terminated and relaunched **with the network blocked**; the feed the reader 
 list opens, and the filter is still applied. The state that survives there is the reader's own: preferences,
 selection, library and published history.
 
+An interrupted import discards nothing: `ReaderLibraryStore.commitImport` performs the entries **and** the
+updated selection inside one `database.write` (`Sources/FeedMinePersistence/ReaderLibraryStore.swift:203`), so
+SQLite either commits the whole import or leaves the previous state, and a malformed document throws before any
+write at all (`OPMLDocumentTests.testMalformedInputThrows`). There is no fault-injection test for a killed
+process; the atomicity above is the mechanism that makes one unnecessary.
+
 ## The DEBUG-only catalogue explorer, and why it is not ported
 
 V1 drew a paginated developer browser (`Views/CatalogExploreView.swift`, 369 lines) behind `#if DEBUG` — its
@@ -124,12 +130,38 @@ Command → result:
   S3/S4 replacement — all **SUCCEEDED**.
 - `swift test` → **1017 tests, 0 failures**.
 
+## What the 2026-10-10 re-run found and repaired
+
+Two defects made UI tests fail that this document had recorded as passing, and neither was the test's fault:
+
+- **Destinations that were never offered.** `FeedMineApp/FeedMineApp/FeedMineApp.swift` already routes
+  `.settings` (line 214) and `.export` (line 183) in its presentation switch, and
+  `Sources/FeedMineUI/Reader/ReaderNavigation.swift` already declares the "Ajustes" and "Exportar" entries
+  (lines 87 and 81) — but `AppComposition.readerDestinations` did not carry them, and the header menu renders
+  exactly that set. T9's export and T10's settings were therefore unreachable for the reader. The set now
+  includes `.export`, `.collectionExport` and `.settings`; V1's "add feed" and collection-import entries stay out
+  because this host has no composer for either (an entry that opens the wrong surface is worse than one that is
+  not offered). `testT5HeaderChromeAndCardGesturesReachRealFlows` had asserted the *opposite*
+  (`XCTAssertFalse(app.buttons["Ajustes"].exists)`) — that assertion described the interim state, and it is
+  replaced by the contract the build now meets.
+- **Container identifiers swallowing their children.** On this toolchain (iOS 26.5 / Xcode 26.6),
+  `.accessibilityIdentifier` on a SwiftUI *container* replaces the identifiers of everything inside it, so the
+  onboarding surface, the mini player, the empty-selection state, the cards and the toast all reported the
+  container's name. `Sources/FeedMineUI/Reader/ReaderShell.swift:102` already documents this and fixed it for the
+  search bar; the same remedy (`.accessibilityElement(children: .contain)`) is applied to the other containers.
+
+Verification so far, run by the person integrating the work rather than by the agent that made it: `swift test` →
+**1017 tests, 0 failures**; and `testSettingsReachTheirControlsAndSurviveReopening`,
+`testMiniPlayerStatesPlaybackWithoutMovingTheFeed`, `testU1iPadLayoutPortraitAndLandscape` and
+`testT12KeyboardSearchKeepsTheReadingPointAndRestoresIt` → **4/4 passed**. The remaining UI tests are being
+repaired one at a time, with the whole-target run as the acceptance.
+
 ## Not executed, and why
 
 | Plan item | State |
 |---|---|
 | `CompositionTests` as one run (24 tests) | **24 tests, 0 failures** (2026-10-10, whole-scheme run). The six cases that failed here before failed on the harness's activity, not on the app: `.forward` observes and never admits, so the window held the anchor card alone. Each one now produces once and admits with `.explicitTailApproach`, the activity the real shell sends when the reader moves forward and the tail is visible. |
-| `FeedMineUITests` as one run (21 tests) | **93 failures in a single whole-target pass** (2026-10-10), while every one of them passes under its own `-only-testing:` invocation — which is how this document's UI rows were produced. Measured cause: launches share the simulator's persisted reader state (onboarding answered, settings, context), and the tests only vary `FEEDMINE_RUNTIME_NAMESPACE`, which namespaces the runtime database and not `UserDefaults`. A DEBUG-only reset switch and its use by the tests is the fix under way. |
+| `FeedMineUITests` as one run (21 tests) | **Not a supported gate as it stands** (measured 2026-10-10): a single whole-target pass fails on many tests while each passes under its own `-only-testing:` invocation — which is how this document's UI rows were produced. The cause is *not* shared simulator state: the app keeps no `UserDefaults` at all and every test already launches with its own `FEEDMINE_RUNTIME_NAMESPACE`. It is `.accessibilityIdentifier` on a SwiftUI *container* overriding its children's identifiers on this toolchain (iOS 26.5 / Xcode 26.6) — a defect the repository had already met and fixed once, for the search bar (`Sources/FeedMineUI/Reader/ReaderShell.swift:102`). The repair and its verification are in the section below; the goal is one green whole-target run. |
 | Physical iPhone: 10 minutes idle + 30 minutes of scrolling, memory/CPU/hitches and media budget | **Not executed.** No physical device is attached to this machine (`xcrun devicectl list devices`, 2026-10-10: two iPhones known, both `unavailable`); the plan's own validation section asks for a simulator UUID for everything else. Needs the reader's device. |
 | Visual comparison by screenshots, surface by surface | **Not executed as a screenshot diff.** The UI tests assert structure, identifiers, labels and one geometry (the mini player's 56 pt); no pixel comparison was made. |
 | 30-minute scroll budget on heterogeneous networks | **Not executed.** The deterministic, short-horizon scenario is the substitute that was run; long-horizon behaviour is the physical-device item above. |
