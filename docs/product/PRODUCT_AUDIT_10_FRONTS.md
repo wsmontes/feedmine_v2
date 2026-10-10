@@ -36,7 +36,8 @@ As frentes são **fatias da experiência**, não times, módulos Swift nem autor
 **Aceite:** feed inicial já útil sem configuração manual, variedade real, preferências explícitas com efeito futuro, silêncio permitido, correção reversível, sem conteúdo inventado, sem deslocar leitura; critérios B01–B06 preservados.
 
 ### F03 — Aquisição, frescor e integridade das histórias
-**Promessa:** o conteúdo de diferentes sites realmente chega, é recente, é legível e pode ser aberto.  
+**Especificação de produto vigente:** [F03 — Aquisição, atualidade e integridade das histórias](F03_ACQUISITION_FRESHNESS_STORY_INTEGRITY_PRD.md). Decisões aprovadas: idade sempre conta com intensidade contextual; prioridade forte para leitura realmente acessível e sem paywall; nenhum card sem experiência de consumo válida; republicações da mesma obra não se multiplicam, mas perspectivas independentes são preservadas. **Requisitos documentados não representam prova de implementação.**
+**Promessa:** o conteúdo de diferentes sites realmente chega, mantém relevância temporal contextual, é legível e pode ser consumido.  
 **Jornada/oráculo:** corpus externo de feeds RSS, Atom e JSON Feed com redirects, charset, HTML em resumo, datas estranhas, documentos grandes, falhas, feeds lentos, atualizações materiais e múltiplos links para o mesmo artigo. Rastrear ingestão → identidade → texto → publicação → link aberto.  
 **Evidência inicial:** o código contém Syndication/Acquisition, tradução para Candidate, proteção de identidade, texto legível e casos de integração; isso não prova cobertura da heterogeneidade das dezenas de milhares de fontes.  
 **Risco a verificar:** fontes selecionadas que nunca contribuem, bloqueio por fontes defeituosas, cards ilegíveis/obsoletos, artigos não abríveis e duplicações canônicas.  
