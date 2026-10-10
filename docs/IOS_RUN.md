@@ -210,3 +210,34 @@ realmente suportados, pull-to-refresh com transição segura de Edition (o arqui
 e indicadores honestos de offline — hoje o fato de rede existe na composição apenas para a política de
 mídia (`NetworkPathObserver.shared.current` em `DeviceMediaConditions`), então expô-lo à UI exige
 decisão sobre o estado apresentado.
+
+## Rodada 2026-10-10 — transferência V1 → V2, execução do portão
+
+Simulador usado nesta máquina: `8871DCF5-0C06-4C7C-88D2-7B3DC36E8284` (iOS 26.5, Xcode 26.6). Nada de DerivedData
+fica no repositório.
+
+```sh
+swift test                                   # 1017 testes, 0 falhas
+swift build                                  # pacote (dez módulos)
+git diff --check
+
+# Um caso por vez — é assim que a evidência de cada superfície é produzida:
+xcodebuild -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine \
+  -destination "platform=iOS Simulator,id=8871DCF5-0C06-4C7C-88D2-7B3DC36E8284" \
+  -derivedDataPath /tmp/fm-derived -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO \
+  -only-testing:FeedMineUITests/FeedMineUITests/<nome> test
+
+# Portão final — o scheme inteiro:
+xcodebuild -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine \
+  -destination "platform=iOS Simulator,id=8871DCF5-0C06-4C7C-88D2-7B3DC36E8284" \
+  -derivedDataPath /tmp/fm-derived -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test
+```
+
+Duas lições operacionais desta rodada, ambas medidas: (1) um teste de UI por vez é o que dá resultado estável —
+o alvo inteiro só é confiável depois que os casos passam isoladamente; (2) o disco desta máquina é apertado, e um
+`xcodebuild` morre com "No space left on device" antes de qualquer diagnóstico útil, então limpe `/tmp/fm-*` e
+`~/Library/Developer/Xcode/DerivedData` antes de uma corrida longa.
+
+O registro superfície por superfície desta rodada está em
+`docs/reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md`, e o inventário de controles com prova por linha em
+`docs/v1-study/UI_TRANSFER_MATRIX.md`.

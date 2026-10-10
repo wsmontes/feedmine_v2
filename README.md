@@ -8,6 +8,8 @@ O aplicativo restaura publicação local antes de qualquer aquisição. Sem hist
 
 Antes de compilar um clone, execute `scripts/fetch-catalog.sh`. Ele baixa `catalog.sqlite` da release `catalog-v1`, confere tamanho e SHA-256 e instala em `FeedMineApp/FeedMineApp/Resources/` (arquivo ignorado pelo Git). Sem ele, o build falha em Copy Bundle Resources. Git LFS não é mais usado.
 
-A rodada atual é verificada localmente, sem CI hospedada. Resultados e limitações ficam em [validação OMP/Codex](docs/reviews/OMP_VALIDATION_2026-10-09.md).
+A rodada atual é verificada localmente, sem CI hospedada. Resultados e limitações ficam em [validação OMP/Codex](docs/reviews/OMP_VALIDATION_2026-10-09.md); a transferência do frontend V1 → V2 tem o seu próprio registro, superfície por superfície, em [evidência da transferência](docs/reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md), com o inventário de controles em `docs/v1-study/UI_TRANSFER_MATRIX.md`.
 
-Veja [execução iOS](docs/IOS_RUN.md) e [arquitetura](docs/architecture/ARCHITECTURE.md). Verificação do pacote: `swift package describe`, `swift build`, `swift test`, `git diff --check`.
+Verificação do pacote: `swift package describe`, `swift build`, `swift test`, `git diff --check`. A suíte do app roda no simulador pelo scheme **FeedMine**; os testes de UI de um caso por vez com `-only-testing:FeedMineUITests/FeedMineUITests/<nome>` (é assim que a evidência de cada superfície foi produzida), e a corrida completa do scheme é o portão final.
+
+Veja [execução iOS](docs/IOS_RUN.md) e [arquitetura](docs/architecture/ARCHITECTURE.md).
