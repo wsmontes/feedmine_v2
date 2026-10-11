@@ -148,3 +148,7 @@ Quando uma proposta parece tecnicamente correta mas piora a descoberta, **o dese
 **Frase para qualquer pessoa — inclusive um agente de código — lembrar:**
 
 > *O FeedMine não existe para gerenciar feeds. Ele existe para fazer a internet aberta voltar a ser um lugar onde é gostoso descobrir coisas.*
+
+## Ganchos para a segunda onda de UX
+
+O norte de produto continua sendo descoberta antes de assinatura, leitura contínua e autonomia local. As [frentes F11–F20](PRODUCT_AUDIT_FRONTS_11_20.md) detalham **como a pessoa pesquisa, navega, controla, lê, escuta, organiza, localiza, compartilha e retorna** sem transformar o aplicativo em trabalho de administrar feeds. O [mapa de impactos e benchmarks UX11–UX20](PRODUCT_SPEC_DEPENDENCIES_F11_F20.md) identifica fronteiras com F01–F10, bem como o significado verificável de **portabilidade** (interoperabilidade de fontes ≠ backup integral dos dados do leitor). Este documento continua sendo a autoridade do **porquê**; os PRDs são os contratos específicos, e B01–B06 mantêm a autoridade de release.
