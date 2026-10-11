@@ -1,5 +1,8 @@
 # Media and publication preparation architecture
 
+> **DOC CORRECTION — apresentação sem mídia não é timeout automático (2026-10-10).** Este desenho registra a implementação por fases. A regra vinculante posterior [PD-5/PD-9](../product/PRODUCT_DECISIONS_2026-10-09.md), [INV-17](PRODUCT_INVARIANTS.md) e [F06](../product/F06_SACRED_FEED_CARD_READINESS_PRD.md) esclarece qualquer ambiguidade da seção "Text-only and failure semantics": **mídia apenas pendente, desconhecida ou com falha transitória não autoriza publicar um card text-only por deadline fixo**. O candidato sai imediatamente da oportunidade de publicação, continua recuperável no supply e só retorna quando houver apresentação válida. Ausência definitiva de imagem pode justificar texto puro por decisão consciente; link morto não publica. A publicação/admissão já congelada não é reconstruída por mídia tardia. Não criar uma fila/scheduler alternativo de mídia.
+
+
 ## Transversal product contract — measured media capacity (2026-10-10)
 
 Media preparation, downloads, local asset retention and eviction must adapt to available disk, memory, network throughput/cost, thermal and power conditions, and the reader's current runway. Spare resources enable richer preparation and more useful local retention; resource pressure reduces speculative work without disturbing visible cards or discarding protected content. Operational per-request bounds and decoding safeguards remain necessary, but no fixed asset-count quota, universal image target, or polling cadence should define the product strategy. Use existing owners and actual system/throughput signals, not a parallel resource-control mechanism. See [PD-6/PD-8](../product/PRODUCT_DECISIONS_2026-10-09.md) and [INV-16](PRODUCT_INVARIANTS.md).
