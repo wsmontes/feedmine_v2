@@ -1,5 +1,8 @@
 # Handoff — parallel OMP session in `feedmine_v2`
 
+> **DOC CORRECTION — handoff datado, não mecanismo de locks atual (2026-10-10).** Claims, hot files, status T5–T7 e branches abaixo representam a sessão paralela de 2026-10-09, **não direitos permanentes de edição**, limites de produto ou tarefas ainda necessariamente abertas. Agentes em curso devem reler `main`/HEAD e usar SHA atualizado antes de escrever. A documentação normativa agora inclui [PD-10](../../product/PRODUCT_DECISIONS_2026-10-09.md), [INV-18](../../architecture/PRODUCT_INVARIANTS.md) e a [matriz das dez frentes](../../product/PRODUCT_AUDIT_10_FRONTS.md). O repositório público da Wawasoft é a autoridade do catálogo gerenciado; consulta em background e atualização atômica são requisitos de release ainda não comprovados.
+
+
 Written by the session that owns the transfer plan
 (`docs/superpowers/plans/2026-10-09-transferencia-frontend-v1-v2.md`) on 2026-10-09.
 **Read this before editing anything in this repository.**
