@@ -13,7 +13,7 @@ Persistent content is a local-first asset, not a fixed-size feed cache. With saf
 - `runtime.sqlite`: non-replaceable semantic runtime state, including durable user state.
 - Asset filesystem: media bytes, with durable metadata intended for runtime storage later.
 
-Phase 2A implements runtime lifecycle; Phase 2E adds the first publication/session storage slice; Phase 3B1 completes the approved four-table canonical supply schema; Phase 3B2 implements atomic canonical ContentStore changes and exact reads. Catalog and asset storage remain unimplemented. No code or schema from the historical project is copied.
+Phase 2A implements runtime lifecycle; Phase 2E adds the first publication/session storage slice; Phase 3B1 completes the approved four-table canonical supply schema; Phase 3B2 implements atomic canonical ContentStore changes and exact reads. **Na baseline dessas fases**, catalog and asset storage were not yet implemented. This sentence is a historical phase boundary, not current V2 status: `LegacyCatalogReader` and `AssetStore` have since landed; the public managed-catalog updater required by PD-10/INV-18 has not been demonstrated. No legacy monolithic runtime is copied.
 
 ## 2. Runtime database lifecycle
 
@@ -187,7 +187,7 @@ The revision FK uses NO ACTION, ordinals are nonnegative/unique per revision and
 
 Phase 3L — complete (design only): [ACQUISITION_DESIGN.md](ACQUISITION_DESIGN.md). No acquisition schema is implemented by 3L; no source catalog tables are authorized by 3L.
 
-Preserve physical topology: catalog.sqlite is replaceable/read-mostly future catalog; runtime.sqlite is nonreplaceable semantic runtime plus future acquisition target/checkpoint authority. Catalog remains unimplemented. Current runtime publication/session, canonical supply and media candidate tables remain unchanged.
+Preserve physical topology: catalog.sqlite is replaceable/read-mostly future catalog; runtime.sqlite is nonreplaceable semantic runtime plus future acquisition target/checkpoint authority. At the **Phase 3L design base**, catalog integration remained unimplemented. In current V2, `LegacyCatalogReader` reads the bundled snapshot; managed public-repository sync is still pending under PD-10/INV-18. The historical 3L runtime publication/session, canonical supply and media candidate table contracts were unchanged by that design phase.
 
 Future 3M1 direction is one acquisition_targets row per nominal FeedMine UUID target ID, connector kind, generation, enabled/revoked state, checkpoint revision and optional opaque checkpoint envelope (blob/schema/connector version). No generic URL/host/endpoint/configuration columns, source/provider/binding registry, fetching/failed/finished state, lease epoch, batch ledger or SupplyGeneration. Target sharing is independent of Source/Binding identity. Config/authorization changes fence old work by advancing target generation; checkpoint changes use their own monotonic CAS revision. Final SQL/types/migration are a later reviewed gate.
 
