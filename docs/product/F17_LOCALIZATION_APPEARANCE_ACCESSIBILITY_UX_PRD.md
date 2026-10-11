@@ -65,3 +65,9 @@ Estas referências complementam o PRD e não alteram seus critérios de aceitaç
 - [Accessibility audits](https://developer.apple.com/documentation/accessibility/performing-accessibility-audits-for-your-app) — Testes automatizados.
 
 **Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.
+
+## Pesquisa Apple transversal — F17 (2026-10-10)
+
+Cenários de plataforma complementares: [F21](F21_IOS_SCENE_SESSION_CONTINUITY_PRD.md) · [F25](F25_SWIFTUI_PRESENTATION_STABILITY_UX_PRD.md) · [F27](F27_DEVICE_PRESSURE_PERFORMANCE_EVIDENCE_PRD.md). Fonte primária: [Apple — SwiftUI performance](https://developer.apple.com/documentation/xcode/understanding-and-improving-swiftui-performance). Consultar [matriz Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice de documentação Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
+
+Estas referências não modificam este PRD, não autorizam outro engine/store e não comprovam os benchmarks B01–B06.

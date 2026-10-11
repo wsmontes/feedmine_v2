@@ -204,3 +204,7 @@ Este mapa de investigação está conectado ao [mapa de impactos, gargalos e ben
 - [F20 — Retorno, novidades e ciclo de vida](F20_RETURN_FRESHNESS_LIFECYCLE_PRD.md)
 
 **Nota:** os dez PRDs de especificação estão criados; suas **provas de UX ainda não foram executadas**. O contrato B01–B06 continua inalterado.
+
+## Terceira onda: especialização Apple F21–F27
+
+O [mapa F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) detalha os limites iOS de scenes, rede/offline, background, file protection, apresentação SwiftUI, integrações e energia. Consulte [documentação Apple pesquisada](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md). Nenhuma regra de F11–F20 ou B01–B06 é reduzida por este material.

@@ -67,3 +67,9 @@ Estas referências complementam o PRD e não alteram seus critérios de aceitaç
 - [SwiftUI File importer/exporter](https://developer.apple.com/documentation/swiftui/view-presentation) — UI nativa para arquivos.
 
 **Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.
+
+## Pesquisa Apple transversal — F18 (2026-10-10)
+
+Cenários de plataforma complementares: [F24](F24_IOS_STORAGE_PROTECTION_RECOVERY_PRD.md) · [F26](F26_IOS_SYSTEM_INTEGRATIONS_PRD.md). Fonte primária: [Apple — Uniform Type Identifiers](https://developer.apple.com/documentation/uniformtypeidentifiers/). Consultar [matriz Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice de documentação Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
+
+Estas referências não modificam este PRD, não autorizam outro engine/store e não comprovam os benchmarks B01–B06.

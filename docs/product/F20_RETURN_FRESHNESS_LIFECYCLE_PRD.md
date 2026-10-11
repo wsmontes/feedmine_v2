@@ -67,3 +67,9 @@ Estas referências complementam o PRD e não alteram seus critérios de aceitaç
 - [HIG Feedback](https://developer.apple.com/design/human-interface-guidelines/feedback) — Novidade real sem deslocar feed.
 
 **Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.
+
+## Pesquisa Apple transversal — F20 (2026-10-10)
+
+Cenários de plataforma complementares: [F21](F21_IOS_SCENE_SESSION_CONTINUITY_PRD.md) · [F23](F23_BACKGROUND_EXECUTION_TRANSFERS_PRD.md) · [F27](F27_DEVICE_PRESSURE_PERFORMANCE_EVIDENCE_PRD.md). Fonte primária: [Apple — Choosing Background Strategies](https://developer.apple.com/documentation/backgroundtasks/choosing-background-strategies-for-your-app). Consultar [matriz Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice de documentação Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
+
+Estas referências não modificam este PRD, não autorizam outro engine/store e não comprovam os benchmarks B01–B06.

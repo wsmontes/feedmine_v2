@@ -215,3 +215,7 @@ Fontes primárias incluem Apple, SQLite, GitHub, RSS/Atom/JSON Feed e OPML. Os a
 ## Prioridade de leitura sugerida
 
 F01 → F05 → F06 → F03 → F04 para a promessa de descoberta contínua; F09 → F10 para durabilidade/release; F02 → F07 → F11–F14 para experiência de exploração; F08 e F15–F20 para jornadas complementares. Essa é uma ordem de investigação, não uma ordem mandatória de código.
+
+## Aprofundamento Apple (F21–F27)
+
+Para API e documentação Apple sobre estabilidade SwiftUI, background, estado offline, rede, armazenamento, sistema e energia, consultar [Pesquisa Apple específica](APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md) e [Mapa F21–F27](../product/PRODUCT_AUDIT_APPLE_FRONTS_21_27.md).

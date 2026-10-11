@@ -152,3 +152,7 @@ Quando uma proposta parece tecnicamente correta mas piora a descoberta, **o dese
 ## Ganchos para a segunda onda de UX
 
 O norte de produto continua sendo descoberta antes de assinatura, leitura contínua e autonomia local. As [frentes F11–F20](PRODUCT_AUDIT_FRONTS_11_20.md) detalham **como a pessoa pesquisa, navega, controla, lê, escuta, organiza, localiza, compartilha e retorna** sem transformar o aplicativo em trabalho de administrar feeds. O [mapa de impactos e benchmarks UX11–UX20](PRODUCT_SPEC_DEPENDENCIES_F11_F20.md) identifica fronteiras com F01–F10, bem como o significado verificável de **portabilidade** (interoperabilidade de fontes ≠ backup integral dos dados do leitor). Este documento continua sendo a autoridade do **porquê**; os PRDs são os contratos específicos, e B01–B06 mantêm a autoridade de release.
+
+## Pesquisa de confiabilidade da plataforma iOS
+
+A continuidade proposta por este North Star também depende de reconhecer as restrições do iOS: cenas podem perder foco, apps podem ser suspensos ou terminados, e trabalho de rede/background não é garantido. O [mapa Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e as [referências oficiais](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md) aprofundam tais restrições sem adicionar outra visão de produto.

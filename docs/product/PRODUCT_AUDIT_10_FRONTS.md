@@ -42,6 +42,8 @@ Autoridade do catálogo público, expansão de fontes elegíveis e atualização
 
 Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
 
+**Pesquisa Apple (plataforma e confiabilidade):** [F22](F22_NETWORK_OFFLINE_CONSTRAINED_UX_PRD.md) · [F23](F23_BACKGROUND_EXECUTION_TRANSFERS_PRD.md) · [F24](F24_IOS_STORAGE_PROTECTION_RECOVERY_PRD.md) · [Apple — BGAppRefreshTask](https://developer.apple.com/documentation/backgroundtasks/bgapprefreshtask). Pesquisa complementar, sem alterar o aceite desta frente.
+
 ### F02 — Primeira abertura, onboarding e tempo até a primeira descoberta
 **Especificação de produto vigente:** [F02 — O feed que apresenta a internet e conhece o leitor](F02_DISCOVERY_FEED_ONBOARDING_PRD.md). A interface inicial é o próprio feed, com intervenções editoriais e preferências explícitas opcionais; Welcome → Composer não é uma barreira obrigatória.
 **Promessa:** a pessoa já começa explorando um feed real, com diversidade, comentários editoriais interessantes e respostas opcionais “Quero mais disso” / “Não é minha praia”; suas escolhas orientam descobertas futuras sem interromper o scroll.  
@@ -59,6 +61,8 @@ Começar pelo feed real, com escolhas opcionais e evidências honestas de prepar
 - [HIG Feedback](https://developer.apple.com/design/human-interface-guidelines/feedback) — Comunicar progresso real, não inventado.
 
 Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+
+**Pesquisa Apple (plataforma e confiabilidade):** [F25](F25_SWIFTUI_PRESENTATION_STABILITY_UX_PRD.md) · [F27](F27_DEVICE_PRESSURE_PERFORMANCE_EVIDENCE_PRD.md) · [Apple — HIG Progress Indicators](https://developer.apple.com/design/human-interface-guidelines/progress-indicators). Pesquisa complementar, sem alterar o aceite desta frente.
 
 ### F03 — Aquisição, frescor e integridade das histórias
 **Especificação de produto vigente:** [F03 — Aquisição, atualidade e integridade das histórias](F03_ACQUISITION_FRESHNESS_STORY_INTEGRITY_PRD.md). Decisões aprovadas: idade sempre conta com intensidade contextual; prioridade forte para leitura realmente acessível e sem paywall; nenhum card sem experiência de consumo válida; republicações da mesma obra não se multiplicam, mas perspectivas independentes são preservadas. **Requisitos documentados não representam prova de implementação.**
@@ -79,6 +83,8 @@ Suportar variações de feed, revisões e identidades de origem.
 
 Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
 
+**Pesquisa Apple (plataforma e confiabilidade):** [F22](F22_NETWORK_OFFLINE_CONSTRAINED_UX_PRD.md) · [F23](F23_BACKGROUND_EXECUTION_TRANSFERS_PRD.md) · [F24](F24_IOS_STORAGE_PROTECTION_RECOVERY_PRD.md) · [Apple — URLSessionConfiguration](https://developer.apple.com/documentation/foundation/urlsessionconfiguration). Pesquisa complementar, sem alterar o aceite desta frente.
+
 ### F04 — Curadoria, relevância, variedade e controle editorial
 **Promessa:** histórias pertinentes e surpreendentes, sem monotonia de um único publicador; idioma é filtro rígido e assuntos orientam a exploração sem cotas artificiais, preservando caminhos de descoberta próximos aos interesses.  
 **Jornada/oráculo:** perfis com interesses diferentes sobre corpus rotulado; inspecionar a sequência publicada, diversidade de fontes, assuntos, idiomas, duplicações e edições de artigos. Aplicar B02, PD-1 e PD-4.  
@@ -95,6 +101,8 @@ Equilibrar diversidade de Provider e conteúdo, relevância e novidade.
 - [SQLite FTS5](https://www.sqlite.org/fts5.html) — BM25 para busca lexical; não confundir com ranking editorial.
 
 Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+
+**Pesquisa Apple (plataforma e confiabilidade):** [F27](F27_DEVICE_PRESSURE_PERFORMANCE_EVIDENCE_PRD.md) · [Apple — MetricKit](https://developer.apple.com/documentation/metrickit/monitoring-app-performance-with-metrickit). Pesquisa complementar, sem alterar o aceite desta frente.
 
 ### F05 — Continuidade, antecipação e recuperação do runway
 **Especificação vigente:** [F05 — Continuidade do feed e exploração progressiva](F05_CONTINUOUS_RUNWAY_PRODUCT_PRD.md). Exige runway relativo ao consumo, aquisição progressiva com folga, saída imediata do candidato pendente da fila pronta e invariância do feed admitido. Os cenários F05-01..09 complementam, mas **não substituem B03/B04 nem significam PASS**.
@@ -113,6 +121,8 @@ Estimar demanda a partir de consumo real, latência e recursos; evitar fim artif
 - [URLSession Low Data Mode](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/allowsconstrainednetworkaccess) — Adaptar especulação à restrição de rede.
 
 Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+
+**Pesquisa Apple (plataforma e confiabilidade):** [F22](F22_NETWORK_OFFLINE_CONSTRAINED_UX_PRD.md) · [F23](F23_BACKGROUND_EXECUTION_TRANSFERS_PRD.md) · [F25](F25_SWIFTUI_PRESENTATION_STABILITY_UX_PRD.md) · [F27](F27_DEVICE_PRESSURE_PERFORMANCE_EVIDENCE_PRD.md) · [Apple — ScrollGeometry](https://developer.apple.com/documentation/swiftui/scrollgeometry). Pesquisa complementar, sem alterar o aceite desta frente.
 
 ### F06 — Cards, mídia, estabilidade visual e legibilidade
 **Especificação de produto vigente:** [F06 — O feed é sagrado](F06_SACRED_FEED_CARD_READINESS_PRD.md). O candidato pendente sai imediatamente da fila pronta, sem reservar posição; retorna apenas quando elegível para uma apresentação válida. A sequência publicada permanece imutável, e B04 requer prova de estabilidade física.
@@ -133,6 +143,8 @@ Preparar representação antes da publicação e preservar geometria e âncora.
 
 Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
 
+**Pesquisa Apple (plataforma e confiabilidade):** [F21](F21_IOS_SCENE_SESSION_CONTINUITY_PRD.md) · [F25](F25_SWIFTUI_PRESENTATION_STABILITY_UX_PRD.md) · [F27](F27_DEVICE_PRESSURE_PERFORMANCE_EVIDENCE_PRD.md) · [Apple — ScrollPosition](https://developer.apple.com/documentation/swiftui/scrollposition). Pesquisa complementar, sem alterar o aceite desta frente.
+
 ### F07 — Busca, filtros, assuntos e troca de contexto
 **Promessa:** mudar a curiosidade rapidamente sem perder o que já estava preparado ou sendo lido.  
 **Jornada/oráculo:** pesquisar, combinar filtros, salvar preset, alternar A → B → A e alterar idioma/região; verificar conteúdos específicos, identidade dos contextos, posição, reaproveitamento do trabalho, ausência de callbacks cruzados e ação de desfazer/limpar.  
@@ -149,6 +161,8 @@ Busca indexada e A→B→A com contexto e posição preservados.
 - [NavigationStack](https://developer.apple.com/documentation/swiftui/navigationstack) — Retornar ao contexto de leitura.
 
 Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+
+**Pesquisa Apple (plataforma e confiabilidade):** [F21](F21_IOS_SCENE_SESSION_CONTINUITY_PRD.md) · [F25](F25_SWIFTUI_PRESENTATION_STABILITY_UX_PRD.md) · [Apple — SceneStorage](https://developer.apple.com/documentation/swiftui/scenestorage). Pesquisa complementar, sem alterar o aceite desta frente.
 
 ### F08 — Leitura, ações e biblioteca pessoal
 **Promessa:** descobrir é só o começo: abrir a história, voltar, salvar e reencontrar devem funcionar.  
@@ -167,6 +181,8 @@ Ações sobre card e estado durável sem duplicar seleção.
 
 Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
 
+**Pesquisa Apple (plataforma e confiabilidade):** [F24](F24_IOS_STORAGE_PROTECTION_RECOVERY_PRD.md) · [F26](F26_IOS_SYSTEM_INTEGRATIONS_PRD.md) · [Apple — SFSafariViewController](https://developer.apple.com/documentation/safariservices/sfsafariviewcontroller/). Pesquisa complementar, sem alterar o aceite desta frente.
+
 ### F09 — Persistência local, offline e reabertura
 **Promessa:** o que já foi adquirido pertence à experiência do usuário e está disponível sem rede; aproveitar espaço disponível para retenção útil e reduzir custo sob pressão medida, sem teto arbitrário de artigos. O catálogo gerenciado também inicia localmente, recebe revisões públicas verificadas em background e nunca apaga estado pessoal quando uma fonte pública desaparece.  
 **Jornada/oráculo:** iniciar com conexão, consumir/salvar, colocar offline, navegar em dados locais, matar/reabrir processo, restaurar contexto/âncora/estado de salvos e depois recuperar a rede. Verificar consulta de manifesto vencido (~24h) na oportunidade de execução, revisão igual sem download de tudo, delta adição/remoção/edição, falhas de checksum/esquema/rede, ativação atômica e preservação do snapshot anterior e do estado pessoal. Aplicar B05 (em conjunto com F07/F08) e PD-10.  
@@ -184,12 +200,16 @@ Restauração local, atualização de catálogo e sobrevivência de dados duráv
 
 Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
 
+**Pesquisa Apple (plataforma e confiabilidade):** [F21](F21_IOS_SCENE_SESSION_CONTINUITY_PRD.md) · [F23](F23_BACKGROUND_EXECUTION_TRANSFERS_PRD.md) · [F24](F24_IOS_STORAGE_PROTECTION_RECOVERY_PRD.md) · [F27](F27_DEVICE_PRESSURE_PERFORMANCE_EVIDENCE_PRD.md) · [Apple — Using the File System Effectively](https://developer.apple.com/documentation/foundation/using-the-file-system-effectively). Pesquisa complementar, sem alterar o aceite desta frente.
+
 ### F10 — Escala, recursos, acessibilidade e prontidão para publicar
 **Promessa:** a experiência continua utilizável em aparelhos e condições reais, não somente no simulador de desenvolvimento; usar orçamento dinâmico em todas as frentes segundo rede, memória, disco, energia, estado térmico e permissão do iOS.  
 **Jornada/oráculo:** reproduzir F05/F06/F09 em iPhones físicos representativos, sob rede rápida/lenta, armazenamento limitado, memória pressionada, Low Power Mode e uso prolongado; verificar VoiceOver, textos ampliados, localidades suportadas, permissões/privacidade, erros visíveis, distribuição de release e crash-free behavior. Aplicar B06 e auditoria de release.  
 **Evidência inicial:** testes de simulador e amostragem de CPU/RSS existem; relatório registra que validação prolongada no aparelho físico **não foi executada**.  
 **Risco a verificar:** crescimento de recursos com milhares de cards, travamentos e consumo de energia, diferenças reais do iOS, acessibilidade ou fluxo de release incompleto.  
 **Aceite:** nenhum release PASS sem evidência física exigida pelo benchmark **e** sem prova do contrato de atualização pública de PD-10: snapshot embarcado atual/rastreável, consulta não bloqueante, atualização atômica, remoções/edições e preservação offline. BLOCKED/NOT_RUN são relatados sem interromper as demais frentes.
+
+**Pesquisa Apple (plataforma e confiabilidade):** [F23](F23_BACKGROUND_EXECUTION_TRANSFERS_PRD.md) · [F25](F25_SWIFTUI_PRESENTATION_STABILITY_UX_PRD.md) · [F27](F27_DEVICE_PRESSURE_PERFORMANCE_EVIDENCE_PRD.md) · [Apple — Reducing Terminations](https://developer.apple.com/documentation/xcode/reduce-terminations-in-your-app). Pesquisa complementar, sem alterar o aceite desta frente.
 
 ## Como executar, uma frente por vez
 

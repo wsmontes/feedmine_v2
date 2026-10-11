@@ -105,3 +105,7 @@ Esta tabela indica **onde a definição de produto exige compatibilidade com a a
 | F20 | [Runway](../architecture/CONTINUOUS_FEED_RUNWAY_DESIGN.md), [Restore](../architecture/PUBLICATION_RESTORE_CONTRACT.md), [Publication](../architecture/PUBLICATION_DESIGN.md) | Retorno e novidades preservam a Edition existente até gesto/transição editorial explícitos? |
 
 **Gatilho documental:** quando um PRD UX descobrir contradição com esses documentos, registrar **o comportamento pretendido**, o contrato existente e o conflito, sem inventar um mecanismo de resolução. A arbitragem continua com as decisões de produto, invariantes e gates vigentes.
+
+## 7. Dependências Apple de confiabilidade
+
+Os oráculos F11–F20 são complementados pelas [frentes F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md): scene/restore, rede/offline, execução oportunista em background, storage/proteção, estabilidade SwiftUI, integrações e pressão de recursos. [Fontes oficiais Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md). A matriz é transversal, **não** segunda implementação da seleção, do runway ou da Session.
