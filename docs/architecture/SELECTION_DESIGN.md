@@ -1,5 +1,8 @@
 # Selection architecture design
 
+> **DOC CORRECTION — design histórico, não política editorial completa (2026-10-10).** Esta baseline descreve decisões do início da V2; não revoga [PD-1](../product/PRODUCT_DECISIONS_2026-10-09.md) (edições materiais como novas ocorrências), [PD-4](../product/PRODUCT_DECISIONS_2026-10-09.md) (alternância de fonte na sequência publicada), [PD-8](../product/PRODUCT_DECISIONS_2026-10-09.md) (exploração progressiva de fontes elegíveis) ou [PD-9/INV-17](../product/PRODUCT_DECISIONS_2026-10-09.md) (pendente não reserva posição nem pode ser perdido pelo cursor). O fornecimento de candidatos precisa alcançar progressivamente o catálogo gerenciado público Wawasoft, usado por snapshot local. O texto abaixo continua útil para boundaries e princípios puros, mas limites e exclusões daquela fase não são regras atuais de produto.
+
+
 ## 1. Scope
 
 Phase 3D is a design-only gate for the pure Editorial selection boundary. Phase 3C already provides Main + Source structural canonical candidates through one bounded ContentStore window per CandidateProvider call. Search remains explicitly unavailable pending canonical FTS.
