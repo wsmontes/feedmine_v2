@@ -1,5 +1,8 @@
 # Acquisition contracts and durable target architecture
 
+**DOC CORRECTION — catálogo público e estado atual (2026-10-10):** O trecho abaixo que diz `catalog.sqlite is not implemented` descreve a base histórica 3L, **não a V2 atual**: `LegacyCatalogReader` já lê o snapshot local. A fonte da verdade do catálogo gerenciado é [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository), não o starter set nem o `catalog.sqlite` de uma release V1. Sincronizar atualizações do `manifest.json` oportunisticamente (~24h), em background e com validação/ativação atômica é **obrigação ainda pendente para release** [PD-10](../product/PRODUCT_DECISIONS_2026-10-09.md)/[INV-18](PRODUCT_INVARIANTS.md); exclusões e mudanças de fonte devem revogar/atualizar elegibilidade e targets para futuras aquisições, com fencing de trabalho obsoleto e preservação de state pessoal/publicação. Não inserir um segundo scheduler ou fazer a atualização de catálogo participar da aquisição de histórias nem do primeiro paint.
+
+
 ## Cross-cutting product rule — progressive target coverage and measured budgets (2026-10-10)
 
 The full catalog eligible for the reader's context is the long-term discovery universe, not a fixed subset of acquisition targets. Source relevance and responsiveness determine **priority and revisit frequency**, never permanent starvation. With sufficient permitted opportunities over time, each eligible source should be attempted; a failed, unavailable, or restricted source is reported honestly rather than confused with a source that was never considered. Hard reader restrictions (notably selected languages) define eligibility; topic/region preferences ordinarily define priority unless the user expressly chooses a restricted context.
