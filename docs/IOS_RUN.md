@@ -1,5 +1,8 @@
 # FeedMine iOS — Phase 3R10
 
+> **DOC CORRECTION — manual de execução com histórico de fases (2026-10-10).** As instruções iniciais registram a baseline 3R10 e NÃO descrevem o estado integral atual: mídia já foi implementada após 3R11; o `catalog.sqlite` vindo de `scripts/fetch-catalog.sh` é apenas o snapshot local da V1, **não** a sincronização autoritativa do [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository). `project.pbxproj` hoje usa `com.feedmine.development` em Debug e **`com.feedmine.app` em Release**, com `DEVELOPMENT_TEAM = 955573A4YH` versionado; a frase antiga "sem Team ID" refere-se a outra época. O relatório "COMPLETE" abaixo vale para os gates técnicos pontuais, não para [F01–F10](product/PRODUCT_AUDIT_10_FRONTS.md)/[B01–B06](product/DISCOVERY_ACCEPTANCE_BENCHMARK.md). iPhone físico B06 e sync público PD-10 são requisitos de release ainda não comprovados. As medições históricas permanecem preservadas.
+
+
 Implementation plan (original 3R10 plus session/store resumption contract):
 
 1. Build a versioned standalone iOS 18/Swift 6 Xcode project, referencing the parent local package. Keep root Package.swift/Package.resolved and Sources untouched.
