@@ -1,5 +1,8 @@
 # FeedMine V2 — Plano completo de correção e implementação
 
+> **DOC CORRECTION — plano histórico, não ordem de execução vigente (2026-10-10).** Este plano de 2026-10-09 preserva propostas de classes, T1–T12 e decisões daquele dia. Não use seus arquivos propostos, checklist ou sua exigência de "revisar decisões com o usuário" para substituir os contratos de produto posteriores: [norte](../../product/PRODUCT_NORTH_STAR.md), [10 frentes](../../product/PRODUCT_AUDIT_10_FRONTS.md), [decisões PD-8/PD-9/PD-10](../../product/PRODUCT_DECISIONS_2026-10-09.md), [INV-16/17/18](../../architecture/PRODUCT_INVARIANTS.md) e benchmark B01–B06. Em especial, **o repositório público da Wawasoft é autoridade de catálogo e sua sincronização é gate de release**, enquanto a V2 atual traz um snapshot local derivado da V1. O feed da primeira abertura deve seguir F02; scripts/classes inventariados aqui não autorizam novo pipeline ou rewrites. Todo PASS de fase é histórico e não equivale a aprovação do produto.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Delegação exige autorização explícita do usuário. Este documento autoriza planejamento; sua execução é uma etapa posterior.
 
 **Goal:** Fechar o fluxo adquirir → preparar → publicar → manter reserva adaptativa → apresentar localmente → observar consumo → adaptar produção, com mídia, diversidade, contextos reutilizáveis e evidência integrada de operação no iPhone.
