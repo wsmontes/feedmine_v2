@@ -1,5 +1,8 @@
 # FeedMine Persistence Discovery
 
+**DOC CORRECTION — autoridade editorial versus armazenamento local (2026-10-10):** Este é um estudo de descobertas e opções de persistência, não o plano de execução atual. Aqui, `catalog.sqlite` como **autoridade física local de consulta** não significa fonte editorial da verdade: o catálogo público gerenciado é o [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository) ([PD-10](../product/PRODUCT_DECISIONS_2026-10-09.md), [INV-18](PRODUCT_INVARIANTS.md)). Cada release deve embarcar o snapshot público validado mais recente disponível no build; execução usa a cópia local e reconcilia revisões em background oportunista sem bloquear a UI. Inclusões, remoções e mudanças de metadados só afetam trabalho futuro, enquanto dados pessoais e história publicada ficam em ciclo durável independente. Referências a um serviço remoto da V1 são **evidência histórica de desenho**, não prova de que o sincronizador V2 já existe.
+
+
 Research baseline:
 - New repository: wsmontes/feedmine_v2
 - New base: main at 109dec35884cb6a1a2f0f11da031bfb80a21ebd4
