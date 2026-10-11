@@ -86,3 +86,22 @@ A seleção de casos UX não substitui cenários obrigatórios B01–B06; execut
 - [Matriz V1→V2](../v1-study/UI_TRANSFER_MATRIX.md) é comparação/registro e não deve ganhar poder sobre as decisões de produto.
 
 **Se houver conflito:** registrar conflito pelo nome, autoridade que o resolve e efeito na aceitação. Não corrigir silenciosamente especificações anteriores nem transformar uma preferência de UX num novo requisito arquitetural.
+
+## 6. Referências de contratos V2 afetados (sem prescrição de implementação)
+
+Esta tabela indica **onde a definição de produto exige compatibilidade com a arquitetura documentada**. O tema continua sendo comportamento; os links **não determinam uma alteração técnica**, tampouco autorizam reabrir premissas da V2.
+
+| Frente | Contratos/documentos da V2 a consultar na avaliação | Pergunta de compatibilidade de produto |
+| --- | --- | --- |
+| F11 | [Runtime ↔ Presentation](../architecture/RUNTIME_PRESENTATION_CONTRACT.md), [Selection](../architecture/SELECTION_DESIGN.md), [Reader filters](../superpowers/specs/2026-10-09-reader-filters-and-context-identity.md) | Resultado de busca representa a mesma identidade editorial/contextual que o leitor navega? |
+| F12 | [Domínio](../architecture/DOMAIN_MODEL.md), [Canonical Supply](../architecture/CANONICAL_SUPPLY_DESIGN.md), [Acquisition](../architecture/ACQUISITION_DESIGN.md) | Source, Provider, localidade e taxonomia são apresentados sem virar endpoint ou supor URL? |
+| F13 | [Selection](../architecture/SELECTION_DESIGN.md), [Invariantes](../architecture/PRODUCT_INVARIANTS.md), [Filtros/contextos](../superpowers/specs/2026-10-09-reader-filters-and-context-identity.md) | Exclusão durável e preferência editorial afetam só oportunidades legítimas, sem mutar história? |
+| F14 | [Contrato de apresentação](../architecture/RUNTIME_PRESENTATION_CONTRACT.md), [Publication](../architecture/PUBLICATION_DESIGN.md), [Restore](../architecture/PUBLICATION_RESTORE_CONTRACT.md) | Action publicada e retorno conduzem ao card correto preservando o cursor? |
+| F15 | [Mídia](../architecture/MEDIA_DESIGN.md), [Presentation](../architecture/RUNTIME_PRESENTATION_CONTRACT.md), [Persistência](../architecture/PERSISTENCE_DESIGN.md) | Áudio explicitamente tocado possui estado independente de materialização visual/scroll? |
+| F16 | [Persistência](../architecture/PERSISTENCE_DESIGN.md), [Restore](../architecture/PUBLICATION_RESTORE_CONTRACT.md), [Contextos](../superpowers/specs/2026-10-09-reader-contexts.md) | Bookmark, coleção e Smart Feed preservam a identidade correta entre reaberturas? |
+| F17 | [Presentation](../architecture/RUNTIME_PRESENTATION_CONTRACT.md), [Mídia](../architecture/MEDIA_DESIGN.md), [Invariantes](../architecture/PRODUCT_INVARIANTS.md) | Mudança visual ou de idioma da UI é distinta de troca editorial/contextual? |
+| F18 | [Persistência](../architecture/PERSISTENCE_DESIGN.md), [Domínio](../architecture/DOMAIN_MODEL.md), [Canonical Supply](../architecture/CANONICAL_SUPPLY_DESIGN.md), [Descoberta/persistência](../architecture/PERSISTENCE_DISCOVERY.md) | Quais dados pertencem ao usuário e podem atravessar instalação sem depender do catálogo substituível? |
+| F19 | [Publication](../architecture/PUBLICATION_DESIGN.md), [Presentation](../architecture/RUNTIME_PRESENTATION_CONTRACT.md), [Invariantes](../architecture/PRODUCT_INVARIANTS.md) | A representação compartilhada corresponde ao conteúdo/atribuição efetivamente publicados? |
+| F20 | [Runway](../architecture/CONTINUOUS_FEED_RUNWAY_DESIGN.md), [Restore](../architecture/PUBLICATION_RESTORE_CONTRACT.md), [Publication](../architecture/PUBLICATION_DESIGN.md) | Retorno e novidades preservam a Edition existente até gesto/transição editorial explícitos? |
+
+**Gatilho documental:** quando um PRD UX descobrir contradição com esses documentos, registrar **o comportamento pretendido**, o contrato existente e o conflito, sem inventar um mecanismo de resolução. A arbitragem continua com as decisões de produto, invariantes e gates vigentes.
