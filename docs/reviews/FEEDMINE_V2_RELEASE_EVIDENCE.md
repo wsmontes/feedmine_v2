@@ -1,5 +1,8 @@
 # FeedMine V2 — evidence for the TestFlight milestone (2026-10-09)
 
+> **DOC CORRECTION — marco TestFlight não é aprovação de release (2026-10-10).** Os PASS abaixo pertencem à **build e aos testes específicos de 2026-10-09**. Desde então, o produto adotou [10 frentes](../product/PRODUCT_AUDIT_10_FRONTS.md), [benchmark B01–B06](../product/DISCOVERY_ACCEPTANCE_BENCHMARK.md) e [PD-10](../product/PRODUCT_DECISIONS_2026-10-09.md)/[INV-18](../architecture/PRODUCT_INVARIANTS.md). **Release pública NÃO está certificada**: testes integrais B01–B06 não têm PASS, B06 exige aparelho físico; atualização do catálogo via [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository) é obrigatória e não foi implementada/provada só com o download `catalog-v1`. Preservar os resultados históricos, mas não interpretar "TestFlight milestone" como o gate de produto concluído.
+
+
 Executed on this machine; every number below comes from a command run in this session, not from
 earlier reports. Machine: macOS 26.3, arm64, Xcode 26.6 (17F113), Swift 6.3.3, iPhone 16 simulator
 with iOS 26.5.
