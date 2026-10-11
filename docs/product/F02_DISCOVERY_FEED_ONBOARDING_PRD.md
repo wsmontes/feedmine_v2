@@ -313,3 +313,8 @@ Começar pelo feed real, com escolhas opcionais e evidências honestas de prepar
 
 Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
 
+## Pesquisa Apple transversal — F02 (2026-10-10)
+
+Cenários complementares iOS sobre estabilidade, background, offline, integrações e recursos: [F25](F25_SWIFTUI_PRESENTATION_STABILITY_UX_PRD.md) · [F27](F27_DEVICE_PRESSURE_PERFORMANCE_EVIDENCE_PRD.md). Referência direta: [Apple — HIG: Progress Indicators](https://developer.apple.com/design/human-interface-guidelines/progress-indicators). Visão geral: [Frentes Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
+
+**Precedência:** esta pesquisa não substitui o PRD, decisões de produto, owners existentes ou B01–B06; referências de APIs não comprovam implementação ou teste.

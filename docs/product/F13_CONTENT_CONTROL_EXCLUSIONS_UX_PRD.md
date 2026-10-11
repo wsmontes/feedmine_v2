@@ -65,3 +65,9 @@ Estas referências complementam o PRD e não alteram seus critérios de aceitaç
 - [HIG Feedback](https://developer.apple.com/design/human-interface-guidelines/feedback) — Explicar efeitos e estados vazios.
 
 **Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.
+
+## Pesquisa Apple transversal — F13 (2026-10-10)
+
+Cenários complementares iOS sobre estabilidade, background, offline, integrações e recursos: [F22](F22_NETWORK_OFFLINE_CONSTRAINED_UX_PRD.md) · [F24](F24_IOS_STORAGE_PROTECTION_RECOVERY_PRD.md). Referência direta: [Apple — Accessing cached data](https://developer.apple.com/documentation/foundation/accessing-cached-data). Visão geral: [Frentes Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
+
+**Precedência:** esta pesquisa não substitui o PRD, decisões de produto, owners existentes ou B01–B06; referências de APIs não comprovam implementação ou teste.
