@@ -1,5 +1,8 @@
 # UI transfer matrix — V1 frontend → V2
 
+> **DOC CORRECTION — matriz visual histórica, não especificação atual de onboarding (2026-10-10).** Esta matriz é válida como evidência de diferenças V1→V2, mas os estados `validado` dos fluxos Welcome→Composer, controles de curated feeds e seus XCUITests **não** tornam esse onboarding a experiência aprovada. A decisão posterior do product owner em [F02](../product/F02_DISCOVERY_FEED_ONBOARDING_PRD.md) exige somente idiomas/lugares na abertura, seguidos do **feed real** com convites editoriais opcionais no scroll. Também valem [PD-8/9/10](../product/PRODUCT_DECISIONS_2026-10-09.md), [F05](../product/F05_CONTINUOUS_RUNWAY_PRODUCT_PRD.md) e [F06](../product/F06_SACRED_FEED_CARD_READINESS_PRD.md). Um PASS de transferência de componentes não substitui B01–B06.
+
+
 Task T1 of `docs/superpowers/plans/2026-10-09-transferencia-frontend-v1-v2.md`.
 Spec: `docs/reviews/2026-10-09-v1-ui-and-scroll-barrier-analysis.md`,
 `docs/product/PRODUCT_DECISIONS_2026-10-09.md`.
