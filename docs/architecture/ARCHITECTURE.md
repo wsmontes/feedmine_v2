@@ -82,7 +82,7 @@ FeedMineUI -> FeedMineDomain, FeedMineRuntime
 FeedMineComposition -> FeedMineDomain, FeedMinePersistence, FeedMineAcquisition, FeedMineSyndication, FeedMineEditorial, FeedMineMedia, FeedMinePublication, FeedMineRuntime, FeedMineUI
 ```
 
-Há exatamente dez targets de produção e dois targets de testes: ArchitectureSmokeTests e FeedMineDomainTests. Um único Swift Package usa Swift tools 6.0, sem dependências externas. Phase 1A implementa somente os value models canônicos em FeedIdentifiers.swift, Source.swift e Content.swift; os outros arquivos permanecem scaffolds. FeedMineDomain may depend on Swift standard library and Foundation value types. It does not depend on another FeedMine module. Veja [Domain model](DOMAIN_MODEL.md).
+O pacote atual contém dez targets de produção e **vários** targets de testes (ver `Package.swift` vigente; a contagem inicial de dois é histórica). Utiliza Swift tools 6.0 com dependências externas **GRDB 7.11.1 somente em Persistence e FeedKit 10.9.4 somente em Syndication**, conforme `Package.swift` e `Package.resolved`. Os modelos Domain deixaram de ser o único código implementado: a V2 já tem persistência, aquisição, seleção, mídia, publicação, runtime, UI e composição. FeedMineDomain pode depender apenas de Swift standard library/Foundation, sem dependência de outro módulo FeedMine. O grafo acima continua sendo a fronteira normativa de dependências entre módulos. Veja [Domain model](DOMAIN_MODEL.md).
 
 ## Local presentation and immutable publication
 
@@ -128,7 +128,7 @@ FeedMinePublication owns publication semantics: PublishedCard, FeedEdition and F
 
 FeedMinePersistence owns storage mechanics and local durability. Persistence must not create a parallel publication domain.
 
-A representação concreta para armazenar a história publicada permanece intencionalmente não resolvida na Phase 0. Nenhuma API ou representação de PublicationStore pode ser implementada antes da escolha explícita de uma estratégia compatível com as dependências. O [phase gate](DEPENDENCY_RULES.md#publicationpersistence-boundary-gate) proíbe DTOs de publicação, repository protocols, novas arestas e movimentação de modelos entre módulos. Não há mudança no grafo nesta correção.
+**Histórico (Phase 0):** a representação de publicação ainda estava em aberto e não podia ser criada sem resolver a fronteira. **Estado atual:** a decisão foi implementada em `PublicationStore`/`PublicationHistory` com semântica em FeedMinePublication e persistência mecânica em FeedMinePersistence. A restrição que permanece válida é não introduzir domínio paralelo de publicação, DTOs substitutos, protocolos genéricos desnecessários nem novas dependências circulares. Ver [Dependency rules](DEPENDENCY_RULES.md) e [Publication/Restore](PUBLICATION_RESTORE_CONTRACT.md).
 
 ## Adaptive runway
 
@@ -136,15 +136,15 @@ Scroll emite ViewportObservation, nunca loadMore ou fetchNextPage. RunwayControl
 
 ## Confined connectors
 
-FeedConnector pertence a Acquisition. FeedMineSyndication será sua primeira implementação concreta, confinando RSS, Atom, JSON Feed e HTTP específico. A tradução/admission encerra representações específicas de protocolo; Selection, Publication, Session e UI recebem conceitos canônicos. Selection não busca candidatos remotamente: supply insuficiente gera demanda upstream. Publication não resolve mídia remota. A UI consome a superfície Runtime e não importa Publication para renderizar presentation cards.
+FeedConnector pertence a Acquisition. FeedMineSyndication **já implementa** o conector concreto de RSS, Atom, JSON Feed e HTTP específico. A tradução/admission encerra representações específicas de protocolo; Selection, Publication, Session e UI recebem conceitos canônicos. Selection não busca candidatos remotamente: supply insuficiente gera demanda upstream. Publication não resolve mídia remota. A UI consome a superfície Runtime e não importa Publication para renderizar presentation cards.
 
 ## Composition root
 
-FeedMineComposition é o único composition root e o único lugar que conhece o conjunto das implementações concretas. FeedMineEnvironment fará composição explícita por initializer. FeedMineBootstrap construirá database → stores → connector → acquisition → editorial → media → publication → runtime/session → screen store. Não existe framework de DI, container dinâmico ou service locator global. Nenhum módulo depende de Composition.
+FeedMineComposition é o único composition root e o único lugar que conhece o conjunto das implementações concretas. `FeedMineEnvironment`/`FeedMineBootstrap` registram a composição por initializer e a aplicação faz seu wiring concreto também em `AppComposition.swift`: database → stores → connector → acquisition → editorial → media → publication → runtime/session → screen store. Não existe framework de DI, container dinâmico ou service locator global. Nenhum módulo depende de Composition.
 
 ## Clean rewrite and simplicity
 
-Existe apenas FeedMine nos nomes de produção. O projeto histórico não é base arquitetural; nenhum código foi copiado. Não há runtime de compatibilidade, caminhos alternativos ou pipeline de background separado. Cada responsabilidade possui um único owner. Não criar FeedStore, FeedRuntime monolítico, event bus, registries, managers genéricos ou protocols por testability. FeedConnector é a única boundary de protocol autorizada, ainda sem declaração de API nesta phase.
+Existe apenas FeedMine nos nomes de produção. O projeto histórico não é base arquitetural; nenhum código foi copiado. Não há runtime de compatibilidade, caminhos alternativos ou pipeline de background separado. Cada responsabilidade possui um único owner. Não criar FeedStore, FeedRuntime monolítico, event bus, registries, managers genéricos ou protocols por testability. FeedConnector é a boundary de protocolo intencional para conectores de aquisição, já implementada e tipada. Não criar interfaces de serviços genéricos adicionais só para testabilidade.
 
 Alarmes de tamanho futuros: FeedSession idealmente < 300 LOC; FeedSessionReducer < 500; SelectionEngine < 400; PublicationCoordinator < 400; RunwayController < 300. São sinais para revisar ownership, não limites mecânicos nem justificativa para divisão artificial.
 
