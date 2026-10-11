@@ -32,6 +32,19 @@ Planos de fases, estudos de transferência da V1 e relatórios antigos **não** 
 
 **Regra prática:** esgote o que pode ser construído, visto e provado autonomamente no simulador e no repositório antes de classificar qualquer trabalho como bloqueado por aparelho físico. Preserve a régua B01–B06 integralmente.
 
+## Entrega ao dono do produto: TestFlight durante o desenvolvimento
+
+**O dono do produto precisa instalar e experimentar a V2 no próprio iPhone pelo TestFlight. Publicar builds internas de avaliação é parte do trabalho do agente, não uma etapa a deixar para depois de B01–B06.** O agente não tem iPhone físico à disposição, mas o dono tem; TestFlight é o canal para receber observações reais de produto e reproduzir problemas invisíveis no simulador.
+
+- **Ação concreta:** verificar primeiro o estado real de assinatura, provisioning, bundle ID, Apple Developer/App Store Connect, scheme/archive e grupo de testers. Se a configuração já permitir, gerar um archive de distribuição com Xcode, validar e enviar uma build **TestFlight de teste interno** pelo caminho existente, sem introduzir outra pipeline só para isso. Não supor que um build de simulador possa ser enviado.
+- **Quando enviar:** disponibilizar a primeira build instalável assim que compilar, abrir e permitir explorar as jornadas principais sem uma falha impeditiva conhecida; depois, enviar novas builds em marcos funcionais significativos (descoberta, runway, cards/mídia, continuidade), não uma build a cada commit. Não esperar B06 ou certificação pública para que o dono experimente o app.
+- **Comunicação de cada build:** entregar número da versão e build, commit SHA exato, data, status de processamento/disponibilidade do TestFlight, grupo/convidados ou acesso já configurado, principais mudanças visíveis, fluxos prioritários para testar e defeitos conhecidos. Dizer expressamente quando uma build foi apenas enviada e ainda está processando; não afirmar que está instalável sem confirmação.
+- **Feedback real:** tratar a avaliação do dono no iPhone como insumo para reproduzir e corrigir defeitos de experiência. Um teste informal via TestFlight **não substitui** o B06 controlado nem autoriza um PASS sem seus artefatos; também não exige travar os demais gates até receber feedback.
+- **Se falta acesso ou credencial Apple:** esgotar o diagnóstico que pode ser feito autonomamente (configuração, scripts existentes, logs, erro de archive/upload) e registrar **qual autorização, papel, sessão ou assinatura especificamente impede o envio**. Somente nesse caso solicitar a intervenção mínima do dono para habilitar o TestFlight. Não tentar contornar controles de assinatura ou declarar publicação fictícia; continuar o restante da engenharia.
+- **Não confundir canais:** TestFlight interno para inspeção e feedback pode conter pendências documentadas; release pública continua condicionada a B01–B06 PASS e PD-10. O objetivo imediato é colocar o aplicativo real nas mãos do dono para ele **ver e sentir a V2**, não substituir o benchmark por opinião.
+
+**Resultado exigido:** build TestFlight acessível ao dono do produto, ou bloqueador de distribuição Apple exato e reproduzível. Commits e testes locais sozinhos não cumprem esta entrega.
+
 ## Estado inicial que deve ser verificado, não presumido
 
 **Repositório:** wsmontes/feedmine_v2, branch main. O último HEAD observado nesta consulta foi d55fa6f (documentação, 2026-10-10); **releia o HEAD ao iniciar**. Os últimos commits observados tratam principalmente de documentação de produto e estudos V1, não de correção funcional do feed.
