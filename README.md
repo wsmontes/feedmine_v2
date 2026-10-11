@@ -22,3 +22,7 @@ Veja [execução iOS](docs/IOS_RUN.md) e [arquitetura](docs/architecture/ARCHITE
 ## Pesquisa Apple — UI/UX, offline e confiabilidade
 
 Documentação primária Apple com limites iOS e cenários verificáveis: [índice de pesquisa Apple](docs/research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md). A terceira onda de [F21–F27](docs/product/PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) complementa F01–F20 em scene lifecycle, rede/offline, background, integridade local, SwiftUI, integrações e recursos; não altera B01–B06 ou o status de release.
+
+## Ouro escondido da V1 — backlog de produto para V2
+
+Análise de 15 oportunidades da V1 com código/linhas como evidência, V2 atual inspecionada e critérios de aceitação: [Garimpo V1: 15 oportunidades com prova no código](docs/v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md). Para executar sem copiar o runtime legado: [Briefs de implementação por jornada](docs/product/V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md). Armadilhas arquiteturais que não devem ser trazidas: [Lista do que não portar](docs/v1-study/V1_GOLD_DO_NOT_PORT_2026-10-10.md). **Não há código novo nem certificação B01–B06 nesses documentos.**

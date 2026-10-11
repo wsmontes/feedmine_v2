@@ -423,3 +423,7 @@ coordinators recorded in `PORT_LOG.md` under T10.
 - **Still T8/T10's own open item:** "Add Feed to Collection" (V1's `AddFeedToCollectionSheet`, the menu's
   `addFeed` entry) is not drawn: membership is set from a card's own action, the collection detail's removal,
   and an import.
+
+## Quarta rodada: V1 hidden gems — decisão de produto antes de copiar
+
+A matriz histórica de transferência documenta superfícies, mas não estabelece valor de produto ou critérios atuais. Consulte [Garimpo V1: 15 oportunidades com prova no código](V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md), [Briefs de implementação por jornada](../product/V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) e [Lista do que não portar](V1_GOLD_DO_NOT_PORT_2026-10-10.md) para 15 achados e suas decisões de **adaptar / provar / rejeitar**. **Não mudar os status históricos desta matriz por causa desses links**; provas de comportamento continuam independentes.

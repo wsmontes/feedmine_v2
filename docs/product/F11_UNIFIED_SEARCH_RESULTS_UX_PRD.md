@@ -71,3 +71,7 @@ Estas referências complementam o PRD e não alteram seus critérios de aceitaç
 Cenários complementares iOS sobre estabilidade, background, offline, integrações e recursos: [F21](F21_IOS_SCENE_SESSION_CONTINUITY_PRD.md) · [F25](F25_SWIFTUI_PRESENTATION_STABILITY_UX_PRD.md). Referência direta: [Apple — ScrollPosition](https://developer.apple.com/documentation/swiftui/scrollposition). Visão geral: [Frentes Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
 
 **Precedência:** esta pesquisa não substitui o PRD, decisões de produto, owners existentes ou B01–B06; referências de APIs não comprovam implementação ou teste.
+
+## Ouro V1 relacionado — termos positivos/negativos e Smart Bookmarks (G05/G06)
+
+O [Garimpo V1: 15 oportunidades com prova no código](../v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md) documenta `SearchTerm`/`SearchExpression`, `-termo`, substituição de polaridade e escopos. Os [Briefs de implementação por jornada](V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) (S2) exigem resultados Sources/Salvos/Locais e salvar busca reproduzível sem segundo SearchEngine. Não tomar placeholder de texto atual por semântica completa implementada.

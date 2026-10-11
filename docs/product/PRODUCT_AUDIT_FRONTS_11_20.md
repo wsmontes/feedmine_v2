@@ -208,3 +208,7 @@ Este mapa de investigação está conectado ao [mapa de impactos, gargalos e ben
 ## Terceira onda: especialização Apple F21–F27
 
 O [mapa F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) detalha os limites iOS de scenes, rede/offline, background, file protection, apresentação SwiftUI, integrações e energia. Consulte [documentação Apple pesquisada](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md). Nenhuma regra de F11–F20 ou B01–B06 é reduzida por este material.
+
+## Recursos V1 redescobertos — relação com F11–F20
+
+[Garimpo V1: 15 oportunidades com prova no código](../v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md) e [Briefs de implementação por jornada](V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) aprofundam F11 (G05), F12 (G01/G08), F13 (G07/G14), F14 (G01/G08), F15 (sem nova cópia de AudioPlayerManager), F16 (G03/G06/G08), F17 (G13), F18 (catálogo e portabilidade conforme contratos atuais), F19 (G11/G12) e F20 (G15). Decisões de não-cópia: [Lista do que não portar](../v1-study/V1_GOLD_DO_NOT_PORT_2026-10-10.md). Status `validado` de componente V1→V2 não substitui prova das jornadas UX11–UX20.

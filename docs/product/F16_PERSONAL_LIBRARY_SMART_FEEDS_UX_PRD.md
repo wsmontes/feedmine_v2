@@ -69,3 +69,7 @@ Estas referências complementam o PRD e não alteram seus critérios de aceitaç
 Cenários complementares iOS sobre estabilidade, background, offline, integrações e recursos: [F24](F24_IOS_STORAGE_PROTECTION_RECOVERY_PRD.md) · [F26](F26_IOS_SYSTEM_INTEGRATIONS_PRD.md). Referência direta: [Apple — File System Effectiveness](https://developer.apple.com/documentation/foundation/using-the-file-system-effectively). Visão geral: [Frentes Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
 
 **Precedência:** esta pesquisa não substitui o PRD, decisões de produto, owners existentes ou B01–B06; referências de APIs não comprovam implementação ou teste.
+
+## Ouro V1 relacionado — busca salva e preferências explicáveis (G03/G06/G08)
+
+O [Garimpo V1: 15 oportunidades com prova no código](../v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md) detalha receitas Smart Bookmark, escolhas explícitas e capô do feed curado. [Briefs de implementação por jornada](V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) (S2/S3/S4) define como acessar, desfazer e persistir com as entidades V2 existentes. O inspector V2 atualmente resume a receita, mas não deve afirmar que já dispõe de evidência de aprendizado que não persiste.

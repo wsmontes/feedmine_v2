@@ -71,3 +71,7 @@ Estas referências complementam o PRD e não alteram seus critérios de aceitaç
 Cenários complementares iOS sobre estabilidade, background, offline, integrações e recursos: [F21](F21_IOS_SCENE_SESSION_CONTINUITY_PRD.md) · [F26](F26_IOS_SYSTEM_INTEGRATIONS_PRD.md). Referência direta: [Apple — SwiftUI State Restoration](https://developer.apple.com/documentation/swiftui/restoring-your-app-s-state-with-swiftui). Visão geral: [Frentes Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
 
 **Precedência:** esta pesquisa não substitui o PRD, decisões de produto, owners existentes ou B01–B06; referências de APIs não comprovam implementação ou teste.
+
+## Ouro V1 relacionado — abrir uma Source, não só ativar um toggle (G01/G08/G09)
+
+No [Garimpo V1: 15 oportunidades com prova no código](../v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md) há evidência de acesso explícito a Source dormente, sua história local, contrato de arquivo limitado do RSS e ações do menu do card. Os [Briefs de implementação por jornada](V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) (S1) definem a navegação e retorno, sem criar loader de imagens na View ou ativar a Source automaticamente. Catálogo/editorial segue no repo público e na PD-10.

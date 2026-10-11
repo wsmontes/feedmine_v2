@@ -156,3 +156,7 @@ O norte de produto continua sendo descoberta antes de assinatura, leitura contí
 ## Pesquisa de confiabilidade da plataforma iOS
 
 A continuidade proposta por este North Star também depende de reconhecer as restrições do iOS: cenas podem perder foco, apps podem ser suspensos ou terminados, e trabalho de rede/background não é garantido. O [mapa Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e as [referências oficiais](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md) aprofundam tais restrições sem adicionar outra visão de produto.
+
+## Aproveitamento de funcionalidades V1 — sem comprometer o North Star
+
+O [Garimpo V1: 15 oportunidades com prova no código](../v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md) seleciona ideias e comportamentos úteis da V1, incluindo Source View real, busca por restrições, curação explícita e contextos visíveis. É uma fonte de **oportunidades**, não exigência de paridade nem permissão para copiar FeedStore/Reservoir/WhatsNewManager. Os [Briefs de implementação por jornada](V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) definem jornadas candidatas a implementar sem bloquear feed local contínuo.

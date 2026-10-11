@@ -73,3 +73,7 @@ Estas referências complementam o PRD e não alteram seus critérios de aceitaç
 Cenários de plataforma complementares: [F21](F21_IOS_SCENE_SESSION_CONTINUITY_PRD.md) · [F23](F23_BACKGROUND_EXECUTION_TRANSFERS_PRD.md) · [F27](F27_DEVICE_PRESSURE_PERFORMANCE_EVIDENCE_PRD.md). Fonte primária: [Apple — Choosing Background Strategies](https://developer.apple.com/documentation/backgroundtasks/choosing-background-strategies-for-your-app). Consultar [matriz Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice de documentação Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
 
 Estas referências não modificam este PRD, não autorizam outro engine/store e não comprovam os benchmarks B01–B06.
+
+## Ouro V1 relacionado — novidades honestas sem `WhatsNewManager` (G15)
+
+[Garimpo V1: 15 oportunidades com prova no código](../v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md) registra baseline de novidades da V1 e separa seu valor de produto do pool/booster. [Briefs de implementação por jornada](V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) (S6) exige indicação de novidades já prontas, por gesto explícito, preservando Edition e âncora; [Lista do que não portar](../v1-study/V1_GOLD_DO_NOT_PORT_2026-10-10.md) lista o carrossel concorrente que não se deve portar.

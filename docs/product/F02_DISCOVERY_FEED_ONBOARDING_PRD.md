@@ -318,3 +318,7 @@ Começar pelo feed real, com escolhas opcionais e evidências honestas de prepar
 Cenários complementares iOS sobre estabilidade, background, offline, integrações e recursos: [F25](F25_SWIFTUI_PRESENTATION_STABILITY_UX_PRD.md) · [F27](F27_DEVICE_PRESSURE_PERFORMANCE_EVIDENCE_PRD.md). Referência direta: [Apple — HIG: Progress Indicators](https://developer.apple.com/design/human-interface-guidelines/progress-indicators). Visão geral: [Frentes Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
 
 **Precedência:** esta pesquisa não substitui o PRD, decisões de produto, owners existentes ou B01–B06; referências de APIs não comprovam implementação ou teste.
+
+## Resgate V1 sem ressuscitar onboarding obrigatório (G02/G03)
+
+O [Garimpo V1: 15 oportunidades com prova no código](../v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md) documenta comparações entre histórias reais e Undo de escolha, com [Briefs de implementação por jornada](V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) (S3). A V2 deve usar esses sinais **somente como interação opcional com o feed já funcionando**, jamais restaurar Welcome→Composer obrigatório; passividade/scroll não ensinam, e não se pode inventar histórico de evidências. Ver [Lista do que não portar](../v1-study/V1_GOLD_DO_NOT_PORT_2026-10-10.md).

@@ -69,3 +69,7 @@ Estas referências complementam o PRD e não alteram seus critérios de aceitaç
 Cenários de plataforma complementares: [F26](F26_IOS_SYSTEM_INTEGRATIONS_PRD.md). Fonte primária: [Apple — ShareLink](https://developer.apple.com/documentation/swiftui/sharelink). Consultar [matriz Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice de documentação Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
 
 Estas referências não modificam este PRD, não autorizam outro engine/store e não comprovam os benchmarks B01–B06.
+
+## Ouro V1 relacionado — card visual e estatísticas voluntárias (G11/G12)
+
+[Garimpo V1: 15 oportunidades com prova no código](../v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md) diferencia o ShareLink já existente de `ShareCardImageView` e `StatsShareCard` da V1. São extensões **P2 opcionais**, não itens já comprometidos para release; o [Briefs de implementação por jornada](V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) (S6) exige usar somente conteúdo **publicado**/asset local, sem request no render nem coleta remota de estatísticas.

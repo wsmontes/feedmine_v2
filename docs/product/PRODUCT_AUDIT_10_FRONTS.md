@@ -258,3 +258,7 @@ As dez frentes acima continuam donas dos contratos **macro**. Para evitar duplic
 - **F05/F07/F09 →** [F20 novidades/retorno](F20_RETURN_FRESHNESS_LIFECYCLE_PRD.md).
 
 Os benchmarks adicionais UX11–UX20 são oráculos específicos das funcionalidades oferecidas, **não substituem B01–B06**, e não autorizam declarar uma release PASS sem os gates P0 vigentes.
+
+## Evidência de funcionalidades V1 que vale recuperar
+
+O [Garimpo V1: 15 oportunidades com prova no código](../v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md) compara 15 achados com a V2 e identifica risco de copiar comportamento antigo. Aplicações diretas: **F01/G09–G10** (catálogo/proveniência), **F02/G02–G03** (preferência explícita opcional), **F03/G01/G09** (integridade/origem), **F04/G03–G04** (aprendizado/variedade), **F05/G01/G15** (runway sem pool paralelo), **F06/G11/G13** (mídia/identidade), **F07/G05/G07/G14** (lentes e filtros), **F08/G08/G12** (ações/biblioteca), **F09/G09/G14** (durabilidade), **F10** (testes black-box e dispositivo real). Consultar [Briefs de implementação por jornada](V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) e [Lista do que não portar](../v1-study/V1_GOLD_DO_NOT_PORT_2026-10-10.md) antes de tocar código. Isso **não altera B01–B06**.

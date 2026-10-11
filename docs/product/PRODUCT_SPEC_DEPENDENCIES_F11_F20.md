@@ -109,3 +109,7 @@ Esta tabela indica **onde a definição de produto exige compatibilidade com a a
 ## 7. Dependências Apple de confiabilidade
 
 Os oráculos F11–F20 são complementados pelas [frentes F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md): scene/restore, rede/offline, execução oportunista em background, storage/proteção, estabilidade SwiftUI, integrações e pressão de recursos. [Fontes oficiais Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md). A matriz é transversal, **não** segunda implementação da seleção, do runway ou da Session.
+
+## 8. Provas reaproveitáveis do garimpo V1
+
+O [Garimpo V1: 15 oportunidades com prova no código](../v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md) e os [Briefs de implementação por jornada](V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) geram S1–S6 (Source, busca/Smart Bookmark, curação, biblioteca, catálogo e delight) como cenários complementares. Cada Gxx aponta para um owner existente e para proibições concretas da [Lista do que não portar](../v1-study/V1_GOLD_DO_NOT_PORT_2026-10-10.md). Eles não constituem novos gates de release, não alteram B01–B06 e não exigem migrar architecture/SDK da V1.
