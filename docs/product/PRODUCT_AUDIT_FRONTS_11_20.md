@@ -48,7 +48,7 @@ Prioridade é de **investigação e documentação**, não compromisso de implem
 
 **Fronteira:** F07 continua dono da semântica de `ContextKey`/filtros; F11 decide a experiência humana de **resultados e navegação**. Não criar segundo search engine.
 
-**Documento a produzir:** `F11_UNIFIED_SEARCH_RESULTS_UX_PRD.md`.
+**PRD de especificação:** [PRD F11](F11_UNIFIED_SEARCH_RESULTS_UX_PRD.md).
 
 ## F12 — Explorar fonte, país, região e taxonomia [UI/UX]
 
@@ -62,7 +62,7 @@ Prioridade é de **investigação e documentação**, não compromisso de implem
 
 **Fronteira:** F01 é **cobertura automática do catálogo**; F12 é **orientação e manipulação da descoberta pela pessoa**. Não reintroduzir o browser DEBUG-only da V1 por conveniência.
 
-**Documento:** `F12_SOURCE_TAXONOMY_NAVIGATION_UX_PRD.md`.
+**PRD de especificação:** [PRD F12](F12_SOURCE_TAXONOMY_NAVIGATION_UX_PRD.md).
 
 ## F13 — Exclusões explícitas, bloqueios e editor de filtros [UI/UX]
 
@@ -76,7 +76,7 @@ Prioridade é de **investigação e documentação**, não compromisso de implem
 
 **Fronteira:** F07 define filtros e identidade editorial; F13 define **controle negativo compreensível** e seu editor. Evitar duas engines de exclusão.
 
-**Documento:** `F13_CONTENT_CONTROL_EXCLUSIONS_UX_PRD.md`.
+**PRD de especificação:** [PRD F13](F13_CONTENT_CONTROL_EXCLUSIONS_UX_PRD.md).
 
 ## F14 — Experiência de ler, abrir e retornar [UI/UX]
 
@@ -90,7 +90,7 @@ Prioridade é de **investigação e documentação**, não compromisso de implem
 
 **Fronteira:** F03 verifica a **validade do conteúdo/destino** e F08 as ações; F14 verifica **reader/navigation UX**.
 
-**Documento:** `F14_READER_LINK_NAVIGATION_UX_PRD.md`.
+**PRD de especificação:** [PRD F14](F14_READER_LINK_NAVIGATION_UX_PRD.md).
 
 ## F15 — Podcasts e consumo de áudio contínuo [UI/UX]
 
@@ -104,7 +104,7 @@ Prioridade é de **investigação e documentação**, não compromisso de implem
 
 **Fronteira:** F06 decide prontidão e geometria do card; F15 decide **reprodução explícita** e continuidade de experiência.
 
-**Documento:** `F15_PODCAST_PLAYBACK_CONTINUITY_UX_PRD.md`.
+**PRD de especificação:** [PRD F15](F15_PODCAST_PLAYBACK_CONTINUITY_UX_PRD.md).
 
 ## F16 — Organização pessoal, caixas e feeds salvos [UI/UX]
 
@@ -118,7 +118,7 @@ Prioridade é de **investigação e documentação**, não compromisso de implem
 
 **Fronteira:** F08 garante *ações* e estado durável; F16 garante **navegação e modelo mental da biblioteca pessoal**.
 
-**Documento:** `F16_PERSONAL_LIBRARY_SMART_FEEDS_UX_PRD.md`.
+**PRD de especificação:** [PRD F16](F16_PERSONAL_LIBRARY_SMART_FEEDS_UX_PRD.md).
 
 ## F17 — Idioma da interface, aparência e leitura inclusiva [UI/UX]
 
@@ -132,7 +132,7 @@ Prioridade é de **investigação e documentação**, não compromisso de implem
 
 **Fronteira:** F10 valida acessibilidade/recursos para release; F17 especifica a **experiência de apresentação e linguagem**. Não copiar timer circadiano/singleton da V1.
 
-**Documento:** `F17_LOCALIZATION_APPEARANCE_ACCESSIBILITY_UX_PRD.md`.
+**PRD de especificação:** [PRD F17](F17_LOCALIZATION_APPEARANCE_ACCESSIBILITY_UX_PRD.md).
 
 ## F18 — Entrada manual de fontes e portabilidade [UI/UX + interoperabilidade]
 
@@ -146,7 +146,7 @@ Prioridade é de **investigação e documentação**, não compromisso de implem
 
 **Fronteira:** F01 é fonte gerenciada automaticamente; F18 é **interoperabilidade por iniciativa do usuário**; F09 protege durabilidade. Não exigir importação antes de primeiro feed.
 
-**Documento:** `F18_ADD_FEED_CLIPBOARD_OPML_PORTABILITY_PRD.md`.
+**PRD de especificação:** [PRD F18](F18_ADD_FEED_CLIPBOARD_OPML_PORTABILITY_PRD.md).
 
 ## F19 — Compartilhar descobertas com contexto [UI/UX]
 
@@ -160,7 +160,7 @@ Prioridade é de **investigação e documentação**, não compromisso de implem
 
 **Fronteira:** F08 garante roteamento básico das ações; F19 decide a **qualidade e o alcance do compartilhamento**.
 
-**Documento:** `F19_SHARING_DISCOVERY_UX_PRD.md`.
+**PRD de especificação:** [PRD F19](F19_SHARING_DISCOVERY_UX_PRD.md).
 
 ## F20 — Retorno, novidades e transições de ciclo de vida [Produto + UX/runtime]
 
@@ -174,7 +174,7 @@ Prioridade é de **investigação e documentação**, não compromisso de implem
 
 **Fronteira:** F05 garante runway durante consumo e F09 restore técnico; F20 define **a experiência de voltar e perceber novidade**. **Não portar** `whatsNewThreshold=10`, booster `prefix(30)`, timers ou segunda seleção da V1: eram mecanismos antigos, não invariantes de produto.
 
-**Documento:** `F20_RETURN_FRESHNESS_LIFECYCLE_PRD.md`.
+**PRD de especificação:** [PRD F20](F20_RETURN_FRESHNESS_LIFECYCLE_PRD.md).
 
 ---
 
@@ -203,4 +203,4 @@ Este mapa de investigação está conectado ao [mapa de impactos, gargalos e ben
 - [F19 — Compartilhar descobertas](F19_SHARING_DISCOVERY_UX_PRD.md)
 - [F20 — Retorno, novidades e ciclo de vida](F20_RETURN_FRESHNESS_LIFECYCLE_PRD.md)
 
-**Nota:** a frase «Documento a produzir» nas descrições históricas acima é superada por este índice; os PRDs estão criados, suas **provas de UX ainda não foram executadas**. O contrato B01–B06 continua inalterado.
+**Nota:** os dez PRDs de especificação estão criados; suas **provas de UX ainda não foram executadas**. O contrato B01–B06 continua inalterado.
