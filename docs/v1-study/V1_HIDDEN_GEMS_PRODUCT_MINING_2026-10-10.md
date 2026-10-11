@@ -36,6 +36,8 @@
 
 ## Achados, provas e decisão
 
+<a id="g01"></a>
+
 ### G01 — Abrir a fonte de verdade, mesmo dormente
 
 **Prioridade:** P0/P1. **Frentes atuais:** F01, F03, F05, F12, F14, F21. **Tipo:** Implementar jornada existente.
@@ -53,6 +55,8 @@
 **Oráculo de produto G01:** Abrir Source desabilitada/dormente de um card, offline e online; verificar posts do endpoint + retenção local, sem indicar arquivo completo inexistente. Voltar ao mesmo PublicationCardID; verificar não mudança da seleção automática nem download em View.
 
 **Não copiar:** Não transportar SourceFeedView com query SQLite e `CachedAsyncImage` direto na tela nem criar segundo runtime ou nova política de retenção baseada em 30 dias fixos.
+
+<a id="g02"></a>
 
 ### G02 — Duelo opcional com histórias reais: gosto explícito e desfazer
 
@@ -72,6 +76,8 @@
 
 **Não copiar:** Não copiar minimumAnswers/maximumAnswers, progresso de ‘confiança’ fabricado, prompts que interrompem scroll nem cards escolhidos antes da barreira de mídia.
 
+<a id="g03"></a>
+
 ### G03 — Capô explicável: aprendizado verificável e controle de aprender
 
 **Prioridade:** P1. **Frentes atuais:** F02, F04, F16, F17. **Tipo:** Lacuna específica comprovada.
@@ -89,6 +95,8 @@
 **Oráculo de produto G03:** Scroll de 50 cards sem abrir nenhum não muda perfil; abrir uma história muda somente o perfil que autorizou aprendizado; desligar aprender congela pesos; reabrir offline exibe evidência disponível; editar a receita não reordena conteúdo já publicado.
 
 **Não copiar:** Não migrar pontuações arbitrárias da V1 nem reconstruir o engine de duelos; não criar histórico artificial para justificativas. Qualquer proposta de sinais automáticos exige decisão explícita.
+
+<a id="g04"></a>
 
 ### G04 — Mistura editorial de tipos de fontes sem confundir qualidade de fetch
 
@@ -108,6 +116,8 @@
 
 **Não copiar:** Não copiar lista rígida de ‘marcas confiáveis’, blacklist editorial opaca, score global novo, nem usar saúde HTTP como qualidade intelectual.
 
+<a id="g05"></a>
+
 ### G05 — Busca por chips positivos e negativos, com escopos legíveis
 
 **Prioridade:** P1. **Frentes atuais:** F07, F11, F13. **Tipo:** Concluir UI + semântica, não novo engine.
@@ -125,6 +135,8 @@
 **Oráculo de produto G05:** Pesquisar `astronomia`, acrescentar `-astrologia`, substituir por positivo, remover chip; resultados anteriores não ‘vazam’; query só negativa não provoca aquisição indiscriminada; abrir Source/salvo e voltar à busca sem perder anchor.
 
 **Não copiar:** Não criar SearchEngine paralelo, polling de rede por digitação, nem afirmar resultados remotos que nunca foram buscados.
+
+<a id="g06"></a>
 
 ### G06 — Smart Bookmark de uma pesquisa realmente reproduzível
 
@@ -144,6 +156,8 @@
 
 **Não copiar:** Não copiar as tabelas/caches `smart_feed_item` V1 nem refrescar todos os Smart Feeds como jobs independentes.
 
+<a id="g07"></a>
+
 ### G07 — Lentes visíveis que explicam e deixam desfazer cada filtro
 
 **Prioridade:** P1. **Frentes atuais:** F07, F13, F17, F25. **Tipo:** UX microinteração de alto valor.
@@ -161,6 +175,8 @@
 **Oráculo de produto G07:** Combinar região+idioma+termo+tipo; dispensar barra e verificar filtro idêntico; remover só termo, ir A→B→A e restaurar; VoiceOver lê escopo/estado; nenhuma inserção da barra move o card central.
 
 **Não copiar:** Não copiar timer de quatro segundos, assinatura persistente de dismiss sem necessidade nem .padding de FeedScreen que desloca cards durante leitura.
+
+<a id="g08"></a>
 
 ### G08 — Atalho contextual: fonte, coleção e cópia a partir do card
 
@@ -180,6 +196,8 @@
 
 **Não copiar:** Não usar `UIApplication.shared.connectedScenes.first` aleatoriamente, criar action handlers em cada View ou copiar URL fallback fictícia.
 
+<a id="g09"></a>
+
 ### G09 — Um catálogo com proveniência, quarentena e uma casa editorial
 
 **Prioridade:** P0. **Frentes atuais:** F01, F03, F09, F12. **Tipo:** Recuperar disciplina de publicação externa.
@@ -197,6 +215,8 @@
 **Oráculo de produto G09:** Corpus contendo alias válido, URL HTML escaped, redirect semântico, Source sem membership; rejeições determinísticas e comprovadas antes da publicação. A V2 conserva catálogo anterior se manifest inválido e mostra facetas sem duplicar Source.
 
 **Não copiar:** Não importar 77.443 linhas como autoridade atual sem revision/hash da fonte pública; não rodar scripts Python/curadoria dentro do app nem misturar catálogo e bookmarks.
+
+<a id="g10"></a>
 
 ### G10 — Descoberta geográfica multifuente na cadeia de curadoria
 
@@ -216,6 +236,8 @@
 
 **Não copiar:** Não copiar APIs pagas, scrapers bloqueados, prioridades hardcoded por país ou profiles adaptativos como segundo governor do runtime.
 
+<a id="g11"></a>
+
 ### G11 — Compartilhar um card visual preparado e fiel
 
 **Prioridade:** P2. **Frentes atuais:** F06, F19, F26. **Tipo:** Produto opcional, paridade visual não automática.
@@ -233,6 +255,8 @@
 **Oráculo de produto G11:** Compartilhar offline duas vezes o mesmo card, comparar texto, source e imagens; zero URLSession triggered pelo render; content length/attribution acessíveis; falha de mídia produz fallback honesto.
 
 **Não copiar:** Não transformar imagem em substituto da URL nem compartilhar texto alterado após publicação; não atrasar scroll/render para montar share.
+
+<a id="g12"></a>
 
 ### G12 — Estatísticas pessoais locais compartilháveis
 
@@ -252,6 +276,8 @@
 
 **Não copiar:** Não medir streak compulsório, instrumentar servidor, compartilhar fonte lida sem consentimento ou usar o painel para justificar mais um banco.
 
+<a id="g13"></a>
+
 ### G13 — Design com personalidade, mas geometria invariável
 
 **Prioridade:** P2. **Frentes atuais:** F06, F17, F25. **Tipo:** Portar expressão visual com limite.
@@ -270,6 +296,8 @@
 
 **Não copiar:** Não copiar timer de hora cheia, calendário paralelos ou densidade circadiana que cause shifts enquanto o usuário lê.
 
+<a id="g14"></a>
+
 ### G14 — Preferências negativas: distinguir bloqueio durável de lente casual
 
 **Prioridade:** P1. **Frentes atuais:** F07, F13, F20. **Tipo:** Refinar UX existente.
@@ -287,6 +315,8 @@
 **Oráculo de produto G14:** Criar exclusão persistente e lente local, fechar e reabrir offline; verificar o que persiste segundo contrato. Desfazer altera só próxima seleção, nunca pula card visível.
 
 **Não copiar:** Não copiar TTL de quatro horas como comportamento oculto, nem rotina que limpa filtros no scenePhase.
+
+<a id="g15"></a>
 
 ### G15 — Sinais honestos de retorno e novidade, sem feed paralelo
 
