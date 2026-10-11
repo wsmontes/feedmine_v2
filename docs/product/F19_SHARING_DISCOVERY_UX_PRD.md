@@ -49,3 +49,17 @@ Executar com dados/versão/dispositivo identificados, evidências de gestos reai
 ## 6. Estado e conflitos em aberto
 
 **Jornada UX19 integral: NOT_RUN.** O que existe nos componentes/testes do repositório é evidência de capacidade, não certificação desta promessa. Diferenças deliberadas da V1 devem ser aceitas ou revertidas **por decisão de produto explícita** e não por presunção de paridade.
+
+---
+
+## Referências técnicas externas — F19
+
+Estas referências complementam o PRD e não alteram seus critérios de aceitação, nem comprovam funcionalidade já implementada.
+
+**Aplicação:** Compartilhar texto, link e atribuição da publicação congelada.
+
+- [ShareLink](https://developer.apple.com/documentation/swiftui/sharelink) — Compartilhamento do sistema.
+- [LPLinkMetadata](https://developer.apple.com/documentation/linkpresentation/lplinkmetadata) — Rich preview local.
+- [HIG Feedback](https://developer.apple.com/design/human-interface-guidelines/feedback) — Confirmações discretas e acessíveis.
+
+**Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.

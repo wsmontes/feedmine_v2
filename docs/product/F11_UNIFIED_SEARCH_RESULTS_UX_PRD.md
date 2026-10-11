@@ -51,3 +51,17 @@ Documentos relacionados: [F01 descoberta e catálogo](PRODUCT_AUDIT_10_FRONTS.md
 ## 6. Pendências de escopo e evidências
 
 A especificação fixa comportamento verificável, mas **não afirma que a UI V2 já o entrega**. A execução deve registrar implementação efetiva, lacunas, falhas e risco residual sem alterar a régua. Se uma diferença aceita na antiga transferência V1→V2 não atende a promessa atual, registrar a decisão de produto de forma explícita, em vez de presumir paridade.
+
+---
+
+## Referências técnicas externas — F11
+
+Estas referências complementam o PRD e não alteram seus critérios de aceitação, nem comprovam funcionalidade já implementada.
+
+**Aplicação:** Interface de resultados por tipo com volta à query e ao feed.
+
+- [HIG Searching](https://developer.apple.com/design/human-interface-guidelines/searching) — Busca compreensível e escopos claros.
+- [Scoping a search operation](https://developer.apple.com/documentation/swiftui/scoping-a-search-operation) — Escopos de fontes, artigos e salvos.
+- [SQLite FTS5](https://www.sqlite.org/fts5.html) — Snippet/highlight/ranking local.
+
+**Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.

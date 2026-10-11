@@ -49,3 +49,18 @@ Registre vídeo/captura, identidade do conteúdo, estado anterior e posterior, v
 ## 6. Estado de aceitação
 
 **NOT_RUN** como jornada UX15 integral. Relatórios de código/testes da matriz V1→V2 são evidência preliminar, não um PASS de produto. Toda divergência de escopo deve ser registrada explicitamente antes de ofertar o controle ao usuário.
+
+---
+
+## Referências técnicas externas — F15
+
+Estas referências complementam o PRD e não alteram seus critérios de aceitação, nem comprovam funcionalidade já implementada.
+
+**Aplicação:** Player com posição durável e retomada após interrupção.
+
+- [AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer) — Streaming, seek e playback.
+- [Monitoring playback progress](https://developer.apple.com/documentation/avfoundation/monitoring-playback-progress-in-your-app) — Persistir posição de reprodução.
+- [Handling audio interruptions](https://developer.apple.com/documentation/avfaudio/handling-audio-interruptions) — Retomar após interrupção.
+- [MPRemoteCommandCenter](https://developer.apple.com/documentation/mediaplayer/mpremotecommandcenter) — Comandos remotos.
+
+**Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.

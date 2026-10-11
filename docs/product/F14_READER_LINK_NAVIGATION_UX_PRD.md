@@ -49,3 +49,17 @@ Registre vídeo/captura, identidade do conteúdo, estado anterior e posterior, v
 ## 6. Estado de aceitação
 
 **NOT_RUN** como jornada UX14 integral. Relatórios de código/testes da matriz V1→V2 são evidência preliminar, não um PASS de produto. Toda divergência de escopo deve ser registrada explicitamente antes de ofertar o controle ao usuário.
+
+---
+
+## Referências técnicas externas — F14
+
+Estas referências complementam o PRD e não alteram seus critérios de aceitação, nem comprovam funcionalidade já implementada.
+
+**Aplicação:** Abrir destino certo e retornar à mesma história sem perda da posição.
+
+- [SFSafariViewController](https://developer.apple.com/documentation/safariservices/sfsafariviewcontroller/) — Navegação web in-app.
+- [WKWebView](https://developer.apple.com/documentation/webkit/wkwebview) — Controle explícito quando necessário.
+- [NavigationStack](https://developer.apple.com/documentation/swiftui/navigationstack) — Histórico de navegação.
+
+**Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.

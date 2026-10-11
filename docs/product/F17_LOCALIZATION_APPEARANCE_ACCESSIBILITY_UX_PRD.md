@@ -50,3 +50,18 @@ Executar com dados/versão/dispositivo identificados, evidências de gestos reai
 ## 6. Estado e conflitos em aberto
 
 **Jornada UX17 integral: NOT_RUN.** O que existe nos componentes/testes do repositório é evidência de capacidade, não certificação desta promessa. Diferenças deliberadas da V1 devem ser aceitas ou revertidas **por decisão de produto explícita** e não por presunção de paridade.
+
+---
+
+## Referências técnicas externas — F17
+
+Estas referências complementam o PRD e não alteram seus critérios de aceitação, nem comprovam funcionalidade já implementada.
+
+**Aplicação:** Idioma de UI separado de idioma editorial; rematerialização sem nova Edition.
+
+- [Xcode String Catalog](https://developer.apple.com/documentation/xcode/localizing-and-varying-text-with-a-string-catalog) — Localização, pluralização e variantes.
+- [HIG Right-to-left](https://developer.apple.com/design/human-interface-guidelines/right-to-left) — RTL correto.
+- [HIG Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility) — Dynamic Type e contraste.
+- [Accessibility audits](https://developer.apple.com/documentation/accessibility/performing-accessibility-audits-for-your-app) — Testes automatizados.
+
+**Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.

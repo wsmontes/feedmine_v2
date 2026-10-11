@@ -49,3 +49,17 @@ Registre vídeo/captura, identidade do conteúdo, estado anterior e posterior, v
 ## 6. Estado de aceitação
 
 **NOT_RUN** como jornada UX16 integral. Relatórios de código/testes da matriz V1→V2 são evidência preliminar, não um PASS de produto. Toda divergência de escopo deve ser registrada explicitamente antes de ofertar o controle ao usuário.
+
+---
+
+## Referências técnicas externas — F16
+
+Estas referências complementam o PRD e não alteram seus critérios de aceitação, nem comprovam funcionalidade já implementada.
+
+**Aplicação:** Navegação pessoal offline, sem segundo runtime de seleção.
+
+- [HIG Lists and tables](https://developer.apple.com/design/human-interface-guidelines/lists-and-tables) — Organização e edição.
+- [NavigationStack](https://developer.apple.com/documentation/swiftui/navigationstack) — Navegação contextual.
+- [SQLite FTS5](https://www.sqlite.org/fts5.html) — Consulta de salvos.
+
+**Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.

@@ -51,3 +51,17 @@ Documentos relacionados: [F01 fontes/catálogo](PRODUCT_AUDIT_10_FRONTS.md); [F0
 ## 6. Pendências de escopo e evidências
 
 A especificação fixa comportamento verificável, mas **não afirma que a UI V2 já o entrega**. A execução deve registrar implementação efetiva, lacunas, falhas e risco residual sem alterar a régua. Se uma diferença aceita na antiga transferência V1→V2 não atende a promessa atual, registrar a decisão de produto de forma explícita, em vez de presumir paridade.
+
+---
+
+## Referências técnicas externas — F12
+
+Estas referências complementam o PRD e não alteram seus critérios de aceitação, nem comprovam funcionalidade já implementada.
+
+**Aplicação:** Navegação card→Source→país/taxonomia com retorno correto.
+
+- [HIG Lists and tables](https://developer.apple.com/design/human-interface-guidelines/lists-and-tables) — Hierarquia legível.
+- [Understanding NavigationStack](https://developer.apple.com/documentation/swiftui/understanding-the-navigation-stack) — Rotas estáveis.
+- [HIG Collections](https://developer.apple.com/design/human-interface-guidelines/collections) — Quando usar visualização em grade.
+
+**Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.

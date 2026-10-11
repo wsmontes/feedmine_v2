@@ -52,3 +52,18 @@ Executar com dados/versão/dispositivo identificados, evidências de gestos reai
 ## 6. Estado e conflitos em aberto
 
 **Jornada UX18 integral: NOT_RUN.** O que existe nos componentes/testes do repositório é evidência de capacidade, não certificação desta promessa. Diferenças deliberadas da V1 devem ser aceitas ou revertidas **por decisão de produto explícita** e não por presunção de paridade.
+
+---
+
+## Referências técnicas externas — F18
+
+Estas referências complementam o PRD e não alteram seus critérios de aceitação, nem comprovam funcionalidade já implementada.
+
+**Aplicação:** Import/export de fontes com distinção explícita entre OPML e backup de dados pessoais.
+
+- [OPML 2.0](https://opml.org/spec2.opml) — Interoperabilidade de fontes.
+- [UIPasteboard](https://developer.apple.com/documentation/uikit/uipasteboard) — Colar links por ação explícita.
+- [Uniform Type Identifiers](https://developer.apple.com/documentation/uniformtypeidentifiers/) — Tipos dos arquivos importados.
+- [SwiftUI File importer/exporter](https://developer.apple.com/documentation/swiftui/view-presentation) — UI nativa para arquivos.
+
+**Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.

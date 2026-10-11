@@ -51,3 +51,17 @@ Documentos relacionados: [F02 votos no próprio feed](F02_DISCOVERY_FEED_ONBOARD
 ## 6. Pendências de escopo e evidências
 
 A especificação fixa comportamento verificável, mas **não afirma que a UI V2 já o entrega**. A execução deve registrar implementação efetiva, lacunas, falhas e risco residual sem alterar a régua. Se uma diferença aceita na antiga transferência V1→V2 não atende a promessa atual, registrar a decisão de produto de forma explícita, em vez de presumir paridade.
+
+---
+
+## Referências técnicas externas — F13
+
+Estas referências complementam o PRD e não alteram seus critérios de aceitação, nem comprovam funcionalidade já implementada.
+
+**Aplicação:** Controle negativo durável, reversível e explicável.
+
+- [HIG Search fields](https://developer.apple.com/design/human-interface-guidelines/search-fields) — Tokens e escopos de restrição.
+- [HIG Undo and redo](https://developer.apple.com/design/human-interface-guidelines/undo-and-redo) — Desfazer exclusões.
+- [HIG Feedback](https://developer.apple.com/design/human-interface-guidelines/feedback) — Explicar efeitos e estados vazios.
+
+**Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.

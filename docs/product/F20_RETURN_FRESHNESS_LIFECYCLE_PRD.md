@@ -52,3 +52,18 @@ Executar com dados/versão/dispositivo identificados, evidências de gestos reai
 ## 6. Estado e conflitos em aberto
 
 **Jornada UX20 integral: NOT_RUN.** O que existe nos componentes/testes do repositório é evidência de capacidade, não certificação desta promessa. Diferenças deliberadas da V1 devem ser aceitas ou revertidas **por decisão de produto explícita** e não por presunção de paridade.
+
+---
+
+## Referências técnicas externas — F20
+
+Estas referências complementam o PRD e não alteram seus critérios de aceitação, nem comprovam funcionalidade já implementada.
+
+**Aplicação:** Retomar Edition/cursor local antes de rede, mostrar novidades sem mutação silenciosa.
+
+- [ScenePhase](https://developer.apple.com/documentation/swiftui/scenephase) — Transições app ativo/inativo.
+- [Choosing Background Strategies](https://developer.apple.com/documentation/backgroundtasks/choosing-background-strategies-for-your-app) — Trabalho oportunista de background.
+- [MetricKit](https://developer.apple.com/documentation/metrickit/monitoring-app-performance-with-metrickit) — Medir experiência de retorno.
+- [HIG Feedback](https://developer.apple.com/design/human-interface-guidelines/feedback) — Novidade real sem deslocar feed.
+
+**Índice integral:** [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). Usar os responsáveis/pipelines já existentes; não criar um mecanismo concorrente por causa de uma API ou padrão de interface.
