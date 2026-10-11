@@ -122,3 +122,15 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 Fontes primárias para iniciar: [matriz de transferência V1/V2](../v1-study/UI_TRANSFER_MATRIX.md), [registro de evidências](../reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md), [decisões PD-1..7](PRODUCT_DECISIONS_2026-10-09.md), [invariantes](../architecture/PRODUCT_INVARIANTS.md), [arquitetura](../architecture/ARCHITECTURE.md).
 
 > **Regra final:** cada frente deve melhorar uma experiência que o usuário percebe. Se o resultado for apenas mais testes verdes sem uma jornada melhor, a frente não está aprovada.
+
+## Segunda onda: F11–F20 (especificações de experiência)
+
+As dez frentes acima continuam donas dos contratos **macro**. Para evitar duplicação de escopo, a [segunda onda F11–F20](PRODUCT_AUDIT_FRONTS_11_20.md) investiga experiências específicas herdadas/ausentes da V1, com [matriz de impactos](PRODUCT_SPEC_DEPENDENCIES_F11_F20.md) e PRDs próprios. Principais cruzamentos:
+
+- **F01/F02/F04/F07 →** [F11 busca](F11_UNIFIED_SEARCH_RESULTS_UX_PRD.md), [F12 navegação editorial](F12_SOURCE_TAXONOMY_NAVIGATION_UX_PRD.md), [F13 controle negativo](F13_CONTENT_CONTROL_EXCLUSIONS_UX_PRD.md).
+- **F03/F06/F08 →** [F14 leitura e retorno](F14_READER_LINK_NAVIGATION_UX_PRD.md), [F15 podcasts](F15_PODCAST_PLAYBACK_CONTINUITY_UX_PRD.md), [F19 compartilhamento](F19_SHARING_DISCOVERY_UX_PRD.md).
+- **F07/F08/F09 →** [F16 biblioteca/Smart Feeds](F16_PERSONAL_LIBRARY_SMART_FEEDS_UX_PRD.md), [F18 portabilidade/backup](F18_ADD_FEED_CLIPBOARD_OPML_PORTABILITY_PRD.md).
+- **F02/F06/F10 →** [F17 idioma/aparência/acessibilidade](F17_LOCALIZATION_APPEARANCE_ACCESSIBILITY_UX_PRD.md).
+- **F05/F07/F09 →** [F20 novidades/retorno](F20_RETURN_FRESHNESS_LIFECYCLE_PRD.md).
+
+Os benchmarks adicionais UX11–UX20 são oráculos específicos das funcionalidades oferecidas, **não substituem B01–B06**, e não autorizam declarar uma release PASS sem os gates P0 vigentes.
