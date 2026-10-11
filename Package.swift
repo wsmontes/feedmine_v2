@@ -22,7 +22,10 @@
 //   The ten FeedMine library modules; no runtime API is declared here.
 //
 // Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
+//   Production package manifest: the ten modules and their test targets are implemented.
+//   Historical Phase 0 scaffold comment corrected 2026-10-10; verify exact state in code/tests.
+//   Product authority: docs/product/PRODUCT_DECISIONS_2026-10-09.md (PD-10),
+//   docs/architecture/PRODUCT_INVARIANTS.md (INV-18), not this manifest.
 //
 
 import PackageDescription
