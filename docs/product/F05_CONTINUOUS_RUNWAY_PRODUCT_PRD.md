@@ -77,3 +77,7 @@ Os responsáveis existentes devem preservar estas distinções. Proibir soluçõ
 5. **Executar B03 e B04 integralmente** em condições apropriadas, inclusive aparelho físico, registrando FAIL/NOT_RUN/BLOCKED conforme evidência real. Não declarar PASS apenas por testes unitários verdes.
 
 **Critério de saída:** feed que acompanha consumo prolongado sem fim artificial ou perturbação visual, alimentado por aquisição progressiva de fontes elegíveis e preparação independente por card, demonstrado pelo benchmark congelado. **Estado atual: ainda não comprovado.**
+
+## 6. Ganchos de jornada para a segunda onda
+
+A continuidade do runway é necessária também quando a pessoa usa [busca F11](F11_UNIFIED_SEARCH_RESULTS_UX_PRD.md), [biblioteca e contextos F16](F16_PERSONAL_LIBRARY_SMART_FEEDS_UX_PRD.md) e [volta/novidades F20](F20_RETURN_FRESHNESS_LIFECYCLE_PRD.md). A experiência de [podcast F15](F15_PODCAST_PLAYBACK_CONTINUITY_UX_PRD.md) não deve disputar o scroll nem exigir bytes completos de áudio para admitir cards. O [mapa de impacto F11–F20](PRODUCT_SPEC_DEPENDENCIES_F11_F20.md) define provas adicionais sem mudar o teste B03 de 30 minutos ou os invariantes da fila publicada.
