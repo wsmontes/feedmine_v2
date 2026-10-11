@@ -187,3 +187,20 @@ Cada PRD F11–F20 deverá conter a mesma estrutura da primeira onda: `PROMESSA`
 **Tratamento de evidência:** há três níveis a registrar separadamente: (a) interface/serviço existe; (b) teste automatizado executou um cenário específico; (c) pessoa percorreu a jornada real e observou o resultado. Nos documentos atuais, `validado` da matriz de transferência frequentemente significa (a) ou (b), **não** necessariamente (c). O corpus e a revisão do GitHub mudam; verificar `main` atual no início de cada frente.
 
 **Não-objetivos transversais:** transferir órfãos conhecidos da V1 (`StoryDuelScene`, `SourceSearchDetailView`), recriar `FeedStore`/bus de eventos, acrescentar network ao renderer, reproduzir cotas mágicas de novos cards, reabrir o onboarding obrigatório ou declarar PASS por screenshots sem interação verificável.
+
+## Índice dos dez PRDs — especificações de produto/UX
+
+Este mapa de investigação está conectado ao [mapa de impactos, gargalos e benchmarks UX11–UX20](PRODUCT_SPEC_DEPENDENCIES_F11_F20.md). Cada frente agora possui seu **PRD de comportamento observável**, separado da implementação:
+
+- [F11 — Busca unificada e resultados](F11_UNIFIED_SEARCH_RESULTS_UX_PRD.md)
+- [F12 — Explorar fontes, regiões e assuntos](F12_SOURCE_TAXONOMY_NAVIGATION_UX_PRD.md)
+- [F13 — Filtros de conteúdo e exclusões](F13_CONTENT_CONTROL_EXCLUSIONS_UX_PRD.md)
+- [F14 — Leitor integrado e retorno](F14_READER_LINK_NAVIGATION_UX_PRD.md)
+- [F15 — Podcasts e áudio](F15_PODCAST_PLAYBACK_CONTINUITY_UX_PRD.md)
+- [F16 — Biblioteca pessoal e Smart Feeds](F16_PERSONAL_LIBRARY_SMART_FEEDS_UX_PRD.md)
+- [F17 — Idioma, aparência e acessibilidade](F17_LOCALIZATION_APPEARANCE_ACCESSIBILITY_UX_PRD.md)
+- [F18 — Adicionar fontes e portabilidade](F18_ADD_FEED_CLIPBOARD_OPML_PORTABILITY_PRD.md)
+- [F19 — Compartilhar descobertas](F19_SHARING_DISCOVERY_UX_PRD.md)
+- [F20 — Retorno, novidades e ciclo de vida](F20_RETURN_FRESHNESS_LIFECYCLE_PRD.md)
+
+**Nota:** a frase «Documento a produzir» nas descrições históricas acima é superada por este índice; os PRDs estão criados, suas **provas de UX ainda não foram executadas**. O contrato B01–B06 continua inalterado.
