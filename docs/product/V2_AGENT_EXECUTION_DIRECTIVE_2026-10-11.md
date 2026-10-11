@@ -19,6 +19,19 @@
 
 Planos de fases, estudos de transferência da V1 e relatórios antigos **não** revogam essa hierarquia. O backlog de “ouro da V1” não substitui a resolução da experiência central.
 
+## Condição operacional: você está sozinho, mas não sem instrumentos
+
+**Você é o agente executor autônomo. Não há uma equipe humana aguardando para programar, depurar, medir ou revisar por você. Neste momento você NÃO dispõe de um iPhone físico para testes, mas dispõe de um Mac com o simulador iOS/Xcode, do Codex e do próprio ChatGPT acessível pelo navegador. Use esses recursos de modo ativo — não como motivo para parar nem como promessa de que outro agente terminará o trabalho.**
+
+- **Simulador/Xcode:** principal laboratório de execução agora. Faça builds, testes de integração e XCUI, instalações limpas e relaunch, fluxos completos de scroll e navegação, falhas de rede reproduzíveis, capturas de tela/vídeo, logs, traces e xcresult. Automatize o benchmark externo fiel sempre que o ambiente permitir. Inspecione o app funcionando, não apenas o resultado de testes de componentes. Não atribua ao simulador medidas de bateria, térmica ou comportamento de memória que exigem aparelho físico.
+- **Codex:** use como apoio concreto de implementação, revisão independente de diffs, elaboração/inspeção de testes e identificação de concorrência, regressões e simplificações. Delegar uma análise não transfere responsabilidade: examine as alterações, integre conscientemente e execute as provas. Evite que dois agentes criem correções paralelas para a mesma responsabilidade.
+- **ChatGPT pelo navegador:** use quando uma segunda análise ajudar a destravar decisões de arquitetura, interpretação dos invariantes, causa-raiz ou revisão crítica do comportamento. Forneça contexto, trechos de código e evidências concretas; peça objeções e alternativas mínimas, não mais um plano abstrato. Uma resposta do ChatGPT não constitui teste nem aprovação de produto.
+- **Autonomia de ponta a ponta:** decida o próximo defeito de maior impacto, investigue, edite, teste, corrija, registre a evidência e faça commit/push. Não pare para solicitar ao dono do produto autorização, recursos, revisão de implementação ou escolha entre alternativas técnicas que já cabem no contrato vigente. Não produza apenas relatórios enquanto ainda há defeitos reproduzíveis corrigíveis.
+- **Limite factual do hardware:** marque **B06 NOT_RUN** quanto à validação obrigatória em iPhone físico e registre exatamente quais medidas faltam. **Isso não autoriza declarar B06 PASS nem release aprovada.** Também não justifica bloquear B01–B05, builds, correções de produto, long-run no simulador, preparação da instrumentação ou quaisquer outras provas possíveis. Quando só a etapa física restar, entregue tudo que é verificável e documente o bloqueio específico em vez de ficar inativo.
+- **Se uma ferramenta falhar:** use os demais recursos disponíveis e continue no menor fluxo verificável; reporte impedimentos concretos e reproduzíveis sem presumir que outro participante vai executá-los. A falta de iPhone físico é uma restrição conhecida, não uma solicitação recorrente ao usuário.
+
+**Regra prática:** esgote o que pode ser construído, visto e provado autonomamente no simulador e no repositório antes de classificar qualquer trabalho como bloqueado por aparelho físico. Preserve a régua B01–B06 integralmente.
+
 ## Estado inicial que deve ser verificado, não presumido
 
 **Repositório:** wsmontes/feedmine_v2, branch main. O último HEAD observado nesta consulta foi d55fa6f (documentação, 2026-10-10); **releia o HEAD ao iniciar**. Os últimos commits observados tratam principalmente de documentação de produto e estudos V1, não de correção funcional do feed.
