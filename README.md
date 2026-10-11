@@ -1,5 +1,8 @@
 # FeedMine
 
+**INSTRUÇÃO ATUAL PARA AGENTES (2026-10-11):** [Diretriz de execução V2 após checkpoint B05](docs/product/V2_AGENT_EXECUTION_DIRECTIVE_2026-10-11.md). Leia antes de iniciar novas correções ou mais documentação; preservar a evidência canônica de B05 e atacar descoberta real, runway e os gates restantes sem alterar a régua.
+
+
 **Status documental (2026-10-10):** O catálogo público gerenciado é mantido em [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository) e é a **fonte da verdade** (decisão vinculante [PD-10](docs/product/PRODUCT_DECISIONS_2026-10-09.md), [INV-18](docs/architecture/PRODUCT_INVARIANTS.md)). O arquivo `catalog.sqlite` atualmente instalado via `scripts/fetch-catalog.sh` é um snapshot de desenvolvimento originado da V1, **não prova** de atualização a partir da revisão pública. Antes de qualquer release, a V2 deve empacotar a revisão pública mais recente validada e verificar periodicamente o `manifest.json` em background (~24 h por oportunidade permitida pelo iOS), sem bloquear a primeira apresentação; atualização inválida conserva o snapshot anterior e não remove dados pessoais. **Isso ainda não está implementado/comprovado na V2.** A régua de lançamento é [B01–B06](docs/product/DISCOVERY_ACCEPTANCE_BENCHMARK.md), incluindo o contrato do catálogo público; relatórios de fases e testes antigos não são aprovação atual de produto. **Agentes em paralelo: consultem antes de implementar o [DOC CORRECTION — auditoria de 63 documentos](docs/reviews/DOCUMENTATION_CONSISTENCY_AUDIT_2026-10-10.md)**, que separa requisitos atuais de planos de fases ultrapassados.
 
 
