@@ -1,5 +1,8 @@
 # FeedMine — revisão comparativa de código: `feedmine-dev` × `feedmine_v2`
 
+> **DOC CORRECTION — achados fixados no commit, decisões posteriores vinculantes (2026-10-10).** Esta comparação mantém o diagnóstico em suas revisões históricas. A entrada "atualização remota de catálogo não portado; decidir atualização" está **decidida**, não mais aberta: [PD-10](../product/PRODUCT_DECISIONS_2026-10-09.md)/[INV-18](../architecture/PRODUCT_INVARIANTS.md) tornam [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository) a autoridade pública gerenciada, exigem snapshot embarcado da última revisão validada em cada release e verificação não bloqueante (~24h) com atualização atômica. No código V2 inspecionado, essa integração ainda não foi comprovada. Os números ~88 mil e 77.443 são de versões do catálogo, não cotas; frentes F01–F10 e B01–B06 exigem verificação própria. Não interpretar comparações de paridade e status de commits antigos como contratos atuais.
+
+
 **Data de referência:** 9 de outubro de 2026.  
 **V1:** [`wsmontes/feedmine-dev`](https://github.com/wsmontes/feedmine-dev/tree/b5c2f59c55babb672c81dd978d201f98c5909934), `main@b5c2f59c55babb672c81dd978d201f98c5909934` (18 set. 2026).  
 **V2:** [`wsmontes/feedmine_v2`](https://github.com/wsmontes/feedmine_v2/tree/880191fc9a7156ad4e5c89da1012da67d9e9a151), `main@880191fc9a7156ad4e5c89da1012da67d9e9a151` (9 out. 2026).  
