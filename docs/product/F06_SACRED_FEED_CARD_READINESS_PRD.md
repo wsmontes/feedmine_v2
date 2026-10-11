@@ -38,3 +38,17 @@ O código já possui `PublishedCard` e `RenderContract` imutáveis, `FeedSession
 ## Conexões com as novas experiências de UI/UX
 
 O card publicado e a posição de leitura são protegidos também enquanto o usuário [abre artigo e retorna (F14)](F14_READER_LINK_NAVIGATION_UX_PRD.md), [controla podcast (F15)](F15_PODCAST_PLAYBACK_CONTINUITY_UX_PRD.md), [muda idioma/aparência (F17)](F17_LOCALIZATION_APPEARANCE_ACCESSIBILITY_UX_PRD.md), [compartilha história (F19)](F19_SHARING_DISCOVERY_UX_PRD.md) ou [retorna ao app (F20)](F20_RETURN_FRESHNESS_LIFECYCLE_PRD.md). Esses contratos acrescentam cenários de usuário, **não exceções** a PD-5, PD-9, INV-08/09 ou B04. Ver [matriz de impactos](PRODUCT_SPEC_DEPENDENCIES_F11_F20.md).
+
+---
+
+## Referências externas de apoio — F06 (complementares, sem alterar os critérios de aceite):
+
+Preparar representação antes da publicação e preservar geometria e âncora.
+
+- [Image I/O thumbnail](https://developer.apple.com/documentation/imageio/cgimagesourcecreatethumbnailatindex%28_%3A_%3A_%3A%29) — Downsampling local fora do MainActor.
+- [HIG Collections](https://developer.apple.com/design/human-interface-guidelines/collections) — Layout legível e consistente.
+- [HIG Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility) — Dynamic Type, contraste e VoiceOver.
+- [SwiftUI ScrollGeometry](https://developer.apple.com/documentation/swiftui/scrollgeometry) — Evidência física de âncora.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+

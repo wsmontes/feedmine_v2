@@ -31,6 +31,17 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 **Direção da correção:** resolver elegibilidade e expansão de fontes a partir do catálogo/contexto no caminho existente de aquisição; reconciliar periodicamente em background o snapshot público através dos owners existentes, sem bloquear a primeira apresentação; não portar o scheduler da V1 nem criar um segundo selecionador.  
 **Situação:** **diagnóstico inicial feito; correção, integração com o repositório público e teste B01 ainda não comprovados**. O snapshot V2 atual vem da V1, não do fluxo de publicação da Wawasoft.
 
+**Referências externas de apoio (F01)** (complementares, sem alterar os critérios de aceite):
+
+Autoridade do catálogo público, expansão de fontes elegíveis e atualização sem bloquear a apresentação.
+
+- [Catálogo público](https://github.com/wawasoft/feed-repository) — Verificar revisão pública e metadados.
+- [GitHub Releases REST](https://docs.github.com/en/rest/releases) — Inspecionar releases e assets versionados.
+- [BGAppRefreshTask](https://developer.apple.com/documentation/backgroundtasks/bgapprefreshtask) — Verificação oportunista do manifesto.
+- [FileManager](https://developer.apple.com/documentation/foundation/filemanager) — Staging e substituição segura de arquivos.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+
 ### F02 — Primeira abertura, onboarding e tempo até a primeira descoberta
 **Especificação de produto vigente:** [F02 — O feed que apresenta a internet e conhece o leitor](F02_DISCOVERY_FEED_ONBOARDING_PRD.md). A interface inicial é o próprio feed, com intervenções editoriais e preferências explícitas opcionais; Welcome → Composer não é uma barreira obrigatória.
 **Promessa:** a pessoa já começa explorando um feed real, com diversidade, comentários editoriais interessantes e respostas opcionais “Quero mais disso” / “Não é minha praia”; suas escolhas orientam descobertas futuras sem interromper o scroll.  
@@ -38,6 +49,16 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 **Evidência inicial:** a V2 atual possui Welcome → Composer, progresso de preparação, receitas e testes de fluxo; isso demonstra transferência da interface da V1, **não** aprovação da nova experiência F02.  
 **Risco a verificar:** preferências só reordenarem fontes predefinidas; controles sem efeito real; comentários sem histórias; bloqueio do feed por configuração ou erro mascarado.  
 **Aceite:** feed inicial já útil sem configuração manual, variedade real, preferências explícitas com efeito futuro, silêncio permitido, correção reversível, sem conteúdo inventado, sem deslocar leitura; critérios B01–B06 preservados.
+
+**Referências externas de apoio (F02)** (complementares, sem alterar os critérios de aceite):
+
+Começar pelo feed real, com escolhas opcionais e evidências honestas de preparação.
+
+- [HIG Onboarding](https://developer.apple.com/design/human-interface-guidelines/onboarding) — Evitar gate obrigatório de configuração.
+- [HIG Disclosure controls](https://developer.apple.com/design/human-interface-guidelines/disclosure-controls) — Mostrar preferências no contexto de uso.
+- [HIG Feedback](https://developer.apple.com/design/human-interface-guidelines/feedback) — Comunicar progresso real, não inventado.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
 
 ### F03 — Aquisição, frescor e integridade das histórias
 **Especificação de produto vigente:** [F03 — Aquisição, atualidade e integridade das histórias](F03_ACQUISITION_FRESHNESS_STORY_INTEGRITY_PRD.md). Decisões aprovadas: idade sempre conta com intensidade contextual; prioridade forte para leitura realmente acessível e sem paywall; nenhum card sem experiência de consumo válida; republicações da mesma obra não se multiplicam, mas perspectivas independentes são preservadas. **Requisitos documentados não representam prova de implementação.**
@@ -47,12 +68,33 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 **Risco a verificar:** fontes selecionadas que nunca contribuem, bloqueio por fontes defeituosas, cards ilegíveis/obsoletos, artigos não abríveis e duplicações canônicas.  
 **Aceite:** falha isolada não interrompe fontes saudáveis; nenhuma perda silenciosa de histórias elegíveis e nenhuma publicação inválida.
 
+**Referências externas de apoio (F03)** (complementares, sem alterar os critérios de aceite):
+
+Suportar variações de feed, revisões e identidades de origem.
+
+- [RSS 2.0](https://www.rssboard.org/rss-specification) — GUID, datas, enclosures e parsing.
+- [Atom RFC 4287](https://www.rfc-editor.org/info/rfc4287/) — ID, links e atualização Atom.
+- [JSON Feed 1.1](https://www.jsonfeed.org/version/1.1/) — IDs, HTML/texto e timestamps.
+- [HTTP RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) — Conditional requests e semântica de HTTP.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+
 ### F04 — Curadoria, relevância, variedade e controle editorial
 **Promessa:** histórias pertinentes e surpreendentes, sem monotonia de um único publicador; idioma é filtro rígido e assuntos orientam a exploração sem cotas artificiais, preservando caminhos de descoberta próximos aos interesses.  
 **Jornada/oráculo:** perfis com interesses diferentes sobre corpus rotulado; inspecionar a sequência publicada, diversidade de fontes, assuntos, idiomas, duplicações e edições de artigos. Aplicar B02, PD-1 e PD-4.  
 **Evidência inicial:** SelectionEngine implementa elegibilidade, pesos e alternância, inclusive fronteiras de segmentos; testes demonstram comportamento de componentes.  
 **Risco a verificar:** curadoria atuar apenas como reordenação de uma seleção insuficiente; métricas de ordenação verdes sem relevância percebida; itens elegíveis presos atrás de outros.  
 **Aceite:** o perfil altera a descoberta de modo demonstrável, preservando alternância e relevância sem fabricar diversidade.
+
+**Referências externas de apoio (F04)** (complementares, sem alterar os critérios de aceite):
+
+Equilibrar diversidade de Provider e conteúdo, relevância e novidade.
+
+- [MMR — Carbonell e Goldstein](https://doi.org/10.1145/290941.291025) — Diversidade e relevância na ordenação.
+- [Topic Diversification — Ziegler et al.](https://doi.org/10.1145/1060745.1060754) — Diversidade intralista e satisfação.
+- [SQLite FTS5](https://www.sqlite.org/fts5.html) — BM25 para busca lexical; não confundir com ranking editorial.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
 
 ### F05 — Continuidade, antecipação e recuperação do runway
 **Especificação vigente:** [F05 — Continuidade do feed e exploração progressiva](F05_CONTINUOUS_RUNWAY_PRODUCT_PRD.md). Exige runway relativo ao consumo, aquisição progressiva com folga, saída imediata do candidato pendente da fila pronta e invariância do feed admitido. Os cenários F05-01..09 complementam, mas **não substituem B03/B04 nem significam PASS**.
@@ -62,6 +104,16 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 **Risco principal:** abastecimento insuficiente ou dependente de gesto apesar de catálogo abundante; confundir tempo de app aberto com avanço efetivo.  
 **Aceite:** sem fim artificial, cards repetidos, interrupções indevidas ou retrocesso de posição sob oferta comprovadamente disponível.
 
+**Referências externas de apoio (F05)** (complementares, sem alterar os critérios de aceite):
+
+Estimar demanda a partir de consumo real, latência e recursos; evitar fim artificial.
+
+- [SwiftUI ScrollGeometry](https://developer.apple.com/documentation/swiftui/scrollgeometry) — Observar deslocamento e distância real à cauda.
+- [MetricKit](https://developer.apple.com/documentation/metrickit/monitoring-app-performance-with-metrickit) — Medir hitches, launch e recursos.
+- [URLSession Low Data Mode](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/allowsconstrainednetworkaccess) — Adaptar especulação à restrição de rede.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+
 ### F06 — Cards, mídia, estabilidade visual e legibilidade
 **Especificação de produto vigente:** [F06 — O feed é sagrado](F06_SACRED_FEED_CARD_READINESS_PRD.md). O candidato pendente sai imediatamente da fila pronta, sem reservar posição; retorna apenas quando elegível para uma apresentação válida. A sequência publicada permanece imutável, e B04 requer prova de estabilidade física.
 **Promessa:** a apresentação é boa o bastante para querer continuar lendo; o feed não pula sozinho.  
@@ -70,12 +122,33 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 **Risco a verificar:** jitter, salto de scroll, decode/memória durante uso prolongado, telas coerentes em teste mas pouco legíveis no aparelho.  
 **Aceite:** nenhum efeito de background muda o que já foi apresentado; cards permanecem legíveis sem depender de imagem.
 
+**Referências externas de apoio (F06)** (complementares, sem alterar os critérios de aceite):
+
+Preparar representação antes da publicação e preservar geometria e âncora.
+
+- [Image I/O thumbnail](https://developer.apple.com/documentation/imageio/cgimagesourcecreatethumbnailatindex%28_%3A_%3A_%3A%29) — Downsampling local fora do MainActor.
+- [HIG Collections](https://developer.apple.com/design/human-interface-guidelines/collections) — Layout legível e consistente.
+- [HIG Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility) — Dynamic Type, contraste e VoiceOver.
+- [SwiftUI ScrollGeometry](https://developer.apple.com/documentation/swiftui/scrollgeometry) — Evidência física de âncora.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+
 ### F07 — Busca, filtros, assuntos e troca de contexto
 **Promessa:** mudar a curiosidade rapidamente sem perder o que já estava preparado ou sendo lido.  
 **Jornada/oráculo:** pesquisar, combinar filtros, salvar preset, alternar A → B → A e alterar idioma/região; verificar conteúdos específicos, identidade dos contextos, posição, reaproveitamento do trabalho, ausência de callbacks cruzados e ação de desfazer/limpar.  
 **Evidência inicial:** há filtros, ContextKey, presets, pesquisa e testes de navegação/contextos; a experiência ponta a ponta de troca rápida sob aquisição lenta ainda precisa ser observada.  
 **Risco a verificar:** reconstrução desnecessária, sessão destruída quando muda um filtro, filtros sem efeito real na aquisição, resultados de contexto anterior contaminando o atual.  
 **Aceite:** contexto muda prioridade do trabalho futuro, não destrói gratuitamente estado local útil.
+
+**Referências externas de apoio (F07)** (complementares, sem alterar os critérios de aceite):
+
+Busca indexada e A→B→A com contexto e posição preservados.
+
+- [SwiftUI Search](https://developer.apple.com/documentation/swiftui/search) — Pesquisa, tokens e sugestões.
+- [SQLite FTS5](https://www.sqlite.org/fts5.html) — Pesquisa local em corpus admitido.
+- [NavigationStack](https://developer.apple.com/documentation/swiftui/navigationstack) — Retornar ao contexto de leitura.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
 
 ### F08 — Leitura, ações e biblioteca pessoal
 **Promessa:** descobrir é só o começo: abrir a história, voltar, salvar e reencontrar devem funcionar.  
@@ -84,12 +157,32 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 **Risco a verificar:** controle visual que abre destino diferente do esperado, mídia declarada sem reprodução efetiva, saved/library que não recupera o artigo correto, leitura interrompida ao voltar.  
 **Aceite:** toda ação oferecida realiza a ação prometida no conteúdo correto, e o leitor retorna ao mesmo ponto.
 
+**Referências externas de apoio (F08)** (complementares, sem alterar os critérios de aceite):
+
+Ações sobre card e estado durável sem duplicar seleção.
+
+- [SFSafariViewController](https://developer.apple.com/documentation/safariservices/sfsafariviewcontroller/) — Abrir links in-app e retornar.
+- [ShareLink](https://developer.apple.com/documentation/swiftui/sharelink) — Compartilhamento explícito nativo.
+- [Apple File System](https://developer.apple.com/documentation/foundation/using-the-file-system-effectively) — Distinguir estado pessoal de cache reconstruível.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+
 ### F09 — Persistência local, offline e reabertura
 **Promessa:** o que já foi adquirido pertence à experiência do usuário e está disponível sem rede; aproveitar espaço disponível para retenção útil e reduzir custo sob pressão medida, sem teto arbitrário de artigos. O catálogo gerenciado também inicia localmente, recebe revisões públicas verificadas em background e nunca apaga estado pessoal quando uma fonte pública desaparece.  
 **Jornada/oráculo:** iniciar com conexão, consumir/salvar, colocar offline, navegar em dados locais, matar/reabrir processo, restaurar contexto/âncora/estado de salvos e depois recuperar a rede. Verificar consulta de manifesto vencido (~24h) na oportunidade de execução, revisão igual sem download de tudo, delta adição/remoção/edição, falhas de checksum/esquema/rede, ativação atômica e preservação do snapshot anterior e do estado pessoal. Aplicar B05 (em conjunto com F07/F08) e PD-10.  
 **Evidência inicial:** a V2 implementa SQLite local, checkpoint e restauração antes de HTTP; teste anterior recuperou a mesma identidade de card depois de relançar.  
 **Risco a verificar:** perda silenciosa após troca de contexto, invalidação exagerada, histórico não recuperável, assets que deixam de existir offline, diferenças entre suspensão e encerramento; atualização do catálogo que bloqueia o feed ou elimina imports/salvos/histórico.  
 **Aceite:** valor local tem precedência sobre rede; limites offline genuínos são comunicados, não disfarçados. Revisões públicas novas entram apenas depois de validação integral, sem alterar histórico publicado ou dados pessoais; offline e falha de atualização preservam o último snapshot válido.
+
+**Referências externas de apoio (F09)** (complementares, sem alterar os critérios de aceite):
+
+Restauração local, atualização de catálogo e sobrevivência de dados duráveis.
+
+- [SQLite WAL](https://www.sqlite.org/wal.html) — Transações e recuperação.
+- [Apple File System](https://developer.apple.com/documentation/foundation/using-the-file-system-effectively) — Retenção de dados vs. cache.
+- [FileManager](https://developer.apple.com/documentation/foundation/filemanager) — Substituição validada de snapshots.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
 
 ### F10 — Escala, recursos, acessibilidade e prontidão para publicar
 **Promessa:** a experiência continua utilizável em aparelhos e condições reais, não somente no simulador de desenvolvimento; usar orçamento dinâmico em todas as frentes segundo rede, memória, disco, energia, estado térmico e permissão do iOS.  
@@ -122,6 +215,17 @@ A decisão [PD-8](PRODUCT_DECISIONS_2026-10-09.md) vale para todas as frentes: o
 Fontes primárias para iniciar: [matriz de transferência V1/V2](../v1-study/UI_TRANSFER_MATRIX.md), [registro de evidências](../reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md), [decisões PD-1..7](PRODUCT_DECISIONS_2026-10-09.md), [invariantes](../architecture/PRODUCT_INVARIANTS.md), [arquitetura](../architecture/ARCHITECTURE.md).
 
 > **Regra final:** cada frente deve melhorar uma experiência que o usuário percebe. Se o resultado for apenas mais testes verdes sem uma jornada melhor, a frente não está aprovada.
+
+**Referências externas de apoio (F10)** (complementares, sem alterar os critérios de aceite):
+
+Prova em dispositivo real, recursos sob pressão e gates B01–B06.
+
+- [MetricKit](https://developer.apple.com/documentation/metrickit/monitoring-app-performance-with-metrickit) — Métricas reais de performance.
+- [Accessibility audits](https://developer.apple.com/documentation/accessibility/performing-accessibility-audits-for-your-app) — Auditoria automatizada e manual.
+- [URLSession Low Data Mode](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/allowsconstrainednetworkaccess) — Rede restrita.
+- [App Store Guidelines](https://developer.apple.com/app-store/guidelines/) — Restrições externas do lançamento.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
 
 ## Segunda onda: F11–F20 (especificações de experiência)
 

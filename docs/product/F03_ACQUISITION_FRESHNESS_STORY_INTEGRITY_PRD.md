@@ -127,3 +127,17 @@ A Frente 03 estará pronta do ponto de vista do produto quando uma pessoa conseg
 ## 10. Ganchos para a experiência de consumo (F11–F20)
 
 A F03 define quando um artigo, link e mídia são **conteúdo legítimo e consumível**. A experiência de **abrir/fechar e voltar sem perda** pertence à [F14](F14_READER_LINK_NAVIGATION_UX_PRD.md); reprodução explícita de áudio e posição de episódio pertencem à [F15](F15_PODCAST_PLAYBACK_CONTINUITY_UX_PRD.md); compartilhar o destino e atribuição sem falsificar origem pertence à [F19](F19_SHARING_DISCOVERY_UX_PRD.md). Todos devem respeitar F03, [F06](F06_SACRED_FEED_CARD_READINESS_PRD.md), B04 e B05. A dependência completa aparece na [matriz de impacto](PRODUCT_SPEC_DEPENDENCIES_F11_F20.md).
+
+---
+
+## Referências externas de apoio — F03 (complementares, sem alterar os critérios de aceite):
+
+Suportar variações de feed, revisões e identidades de origem.
+
+- [RSS 2.0](https://www.rssboard.org/rss-specification) — GUID, datas, enclosures e parsing.
+- [Atom RFC 4287](https://www.rfc-editor.org/info/rfc4287/) — ID, links e atualização Atom.
+- [JSON Feed 1.1](https://www.jsonfeed.org/version/1.1/) — IDs, HTML/texto e timestamps.
+- [HTTP RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) — Conditional requests e semântica de HTTP.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+
