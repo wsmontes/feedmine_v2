@@ -296,3 +296,7 @@ A V1 foi inspecionada diretamente em [wawasoft/feedmine](https://github.com/wawa
 ### Definição final de sucesso
 
 > “Escolhi ler em português e inglês, acompanhar Canadá, Brasil e China e comecei a ver ótimas histórias de fontes reais — algumas conhecidas, outras novas. Fui dizendo do que queria mais ou menos, e o FeedMine começou a explorar novos caminhos, sem me tirar do meu feed e sem precisar aprender o que é RSS.”
+
+## 14. Especificações derivadas de UX (F11–F20)
+
+O primeiro feed não exige gestão de Sources ou OPML. Após o primeiro contato, a exploração por [fonte/região/assunto F12](F12_SOURCE_TAXONOMY_NAVIGATION_UX_PRD.md) é opcional; os votos «mais/menos» continuam preferências leves, distintos de [regras duráveis de exclusão F13](F13_CONTENT_CONTROL_EXCLUSIONS_UX_PRD.md); idiomas de conteúdo do onboarding não são a mesma coisa que [idioma dos controles F17](F17_LOCALIZATION_APPEARANCE_ACCESSIBILITY_UX_PRD.md); e retorno/novidades são descritos na [F20](F20_RETURN_FRESHNESS_LIFECYCLE_PRD.md). Consulte o [mapa de impactos](PRODUCT_SPEC_DEPENDENCIES_F11_F20.md). Os casos US-01..US-18 e B01–B06 não são alterados por estes links.
