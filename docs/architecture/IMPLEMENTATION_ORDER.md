@@ -1,5 +1,8 @@
 # Implementation order
 
+> **DOC CORRECTION — guia de leitura da ordem histórica (2026-10-10).** As Phases 0–16 e os registros 3X abaixo documentam implementação incremental; **não** são a ordem de prioridade atual nem significam que cada jornada do usuário passou. A autoridade de produto é [norte](../product/PRODUCT_NORTH_STAR.md), [10 frentes](../product/PRODUCT_AUDIT_10_FRONTS.md), [decisões PD-1–PD-10](../product/PRODUCT_DECISIONS_2026-10-09.md), [invariantes](PRODUCT_INVARIANTS.md) e [benchmark B01–B06](../product/DISCOVERY_ACCEPTANCE_BENCHMARK.md). Em especial: **PD-10/INV-18** exigem catálogo público Wawasoft como autoridade, snapshot validado por release e sincronização não bloqueante; **PD-8/INV-16** proíbem shortlist permanente e cotas fixas de runway; **PD-9/INV-17** proíbem que candidatos pendentes ocupem a fila de publicação. Relatórios de fase completa não autorizam release PASS sem provas de produto.
+
+
 ```text
 Phase 0 — Architecture scaffold
 Phase 1 — Domain models
