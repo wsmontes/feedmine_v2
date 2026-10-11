@@ -123,3 +123,7 @@ A ingestão pode recusar dados inválidos ou perigosos; o produto não pode trat
 ## 9. Critério de conclusão
 
 A Frente 03 estará pronta do ponto de vista do produto quando uma pessoa conseguir descobrir, abrir e consumir histórias verdadeiras de fontes diferentes, com frescor contextual honesto, forte preferência por acesso aberto, sem republicações repetitivas nem supressão de perspectivas independentes, e quando itens elegíveis não sumirem sem razão identificável. **A prova deve acompanhar a história de ponta a ponta: fonte → aquisição → identidade → conteúdo → decisão editorial → card → consumo efetivo.**
+
+## 10. Ganchos para a experiência de consumo (F11–F20)
+
+A F03 define quando um artigo, link e mídia são **conteúdo legítimo e consumível**. A experiência de **abrir/fechar e voltar sem perda** pertence à [F14](F14_READER_LINK_NAVIGATION_UX_PRD.md); reprodução explícita de áudio e posição de episódio pertencem à [F15](F15_PODCAST_PLAYBACK_CONTINUITY_UX_PRD.md); compartilhar o destino e atribuição sem falsificar origem pertence à [F19](F19_SHARING_DISCOVERY_UX_PRD.md). Todos devem respeitar F03, [F06](F06_SACRED_FEED_CARD_READINESS_PRD.md), B04 e B05. A dependência completa aparece na [matriz de impacto](PRODUCT_SPEC_DEPENDENCIES_F11_F20.md).
