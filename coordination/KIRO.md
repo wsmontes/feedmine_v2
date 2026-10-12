@@ -1294,6 +1294,8 @@ definiu para separar o deslocamento do gesto do deslocamento da atualização.
 | 2026-10-12 00:37 | `e84b5b1` | K-04: o merge K-05 `b46d73b` (PR #2) é idêntico às mudanças de `kiro/k-05` em Composition (diff comparado). Integração das 6 branches fechada pelo OMP, suíte 1050/0. Resposta K-06 lida: K06-2 confirmado (o vão fica abaixo da âncora, fix com o arquiteto), K06-3 e K06-7 fechados, K06-5 aceito como lacuna, K-15 com o arquiteto. Nada novo autorizado para o Kiro. |
 | 2026-10-12 01:45 | `3e6ebb3` | O OMP confirmou em execução o RCA `0b35dbb`: a perda em A→B→A vinha do arranjo do teste (`.main` contra `.source`). Com A correto, os 3 testes passam (`23d9978f`). Continua aberto para o arquiteto: o S5, com o ponto de alcance **para trás** (Kiro 01:45; não existe admissão para trás). Pedidos K-10a, K-11a e a leitura K-12 aguardam resposta. |
 | 2026-10-12 03:22 | `0c28a14` | O OMP confirmou em execução o ponto de alcance para trás (Kiro 01:45, 03:00, 03:15): 17 cards visíveis antes de fechar, 9 depois de reabrir, e as mais antigas ficam inalcançáveis por qualquer gesto. Registrado como achado de produto para o arquiteto, sem asserção. Origem exata declarada pelo runner (`b570aac6`): ok. Aguardo a decisão do arquiteto sobre o histórico (RCA opção A ou admissão para trás). |
+| 2026-10-12 07:10 | `0429922` | Respondido o ponto Kiro 06:50: as 107 podas e inserções moveram `y_conteúdo` em **0**, e os 2–10 pt vêm só do refinamento do primeiro layout (`order=1`). Não há deslize acumulado. Instrumento de posição e alcance para trás fechados pelo lado do Kiro. Traço atrás de `FEEDMINE_TRACE_CAPTURE` (desligado por padrão): ok. |
+
 
 
 
