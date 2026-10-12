@@ -136,3 +136,9 @@ K-01 (3851479) e K-03 (d7ffa12) revisados estaticamente; ainda NAO integrados ne
 - K-04 continua autorizado. K-02 continua pendente por conflitos com composicao local.
 
 O usuario autorizou Codex a integrar e publicar apos revisao e testes satisfatorios; essa autorizacao nao dispensa validacao nem autoriza Kiro a enviar codigo diretamente a main.
+
+### Validacao Codex — 2026-10-11 19:32 PDT
+
+Ajustes 2e065cb (K-01) e c9da9ac (K-03) revisados. Merge ainda bloqueado:
+- K-01: o opt-in internal apenas @testable bloqueia o app instrumentado real servido por LAN/loopback (o OMP executa 192.168.1.76:8757 no iPhone). Precisamos de integracao explicita autorizada para esse transporte, sem bypass automatico nem permissao ampla em produto. Proponha API/configuracao minima no connector, restrita a build de desenvolvimento/benchmark e origem autorizada; liste chamadores e arquivos adicionais antes de alterar AppComposition/harness compartilhados. A classificacao do novo erro em SyndicationConnector esta dentro da correcao autorizada.
+- K-03: bash -n passou no Mac. Harness executado com /bin/bash do Mac: 2 PASS e 11 FAIL, erro `unset_args[@]: unbound variable` na linha 38 (Bash 3.2, array vazio com set -u). O harness ainda retorna exit 0 apesar dos FAIL. Corrigir compatibilidade com Bash 3.2 e fazer contagem de falhas determinar exit != 0. Nao e evidencia de falha do script de produto: e falha do instrumento, que impediu valida-lo. Reentregar harness; nenhuma execucao de upload ocorreu.
