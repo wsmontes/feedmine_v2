@@ -193,27 +193,17 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         // visível, e medir o frame dela **sem nenhum gesto** enquanto a atualização da janela chega. Como a admissão
         // é assíncrona, qualquer mudança nesse trecho parado só pode ter vindo da atualização.
 
-        // Arrasto **por coordenadas** e **auto-calibrado**: a distância de um swipe é do sistema e variava, e uma
-        // quantidade fixa de arrastos também não bastou (2750 pt deram ~8 cartas, e o corte exige mais de
-        // `backwardCapacity` = 8). Aqui o teste arrasta até a âncora ter passado por 12 cartas distintas — por
-        // construção além do limite. Sem isso o teste media uma janela que ainda tinha espaço e não exercitava nada.
+        // 1. Avançar com gestos que o app REALMENTE processa. O log do dispositivo mostrou que os arrastos por
+        //    coordenadas (`press(thenDragTo:)`) não produzem nenhuma emissão — zero `viewport forwarded` na corrida
+        //    inteira —, então a janela nunca mudava e a medida comprovava repouso sem nada acontecendo. Com estes
+        //    swipes o app emite (é o que os logs das primeiras corridas mostram) e a admissão acontece.
         var distinct: Set<String> = []
-        func advance(until target: Int) {
-            let area = app.scrollViews.firstMatch
-            var guardCount = 0
-            while distinct.count < target, guardCount < 40 {
-                let from = area.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-                let to = area.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
-                from.press(forDuration: 0.05, thenDragTo: to)
-                guardCount += 1
-                if let element = anchor(app), element.frame != .zero { distinct.insert(element.identifier) }
-            }
+        var guardCount = 0
+        while distinct.count < 12, guardCount < 20 {
+            app.scrollViews.firstMatch.swipeUp(velocity: .slow)
+            guardCount += 1
+            if let element = anchor(app), element.frame != .zero { distinct.insert(element.identifier) }
         }
-        // 1. Avançar para que a admissão seguinte tenha trabalho a fazer. Gestos são permitidos aqui; a medida vem
-        //    depois, com o leitor parado. A exigência de distância saiu: o arquiteto pediu "poda OU insere", e o que
-        //    a medida precisa é de uma atualização chegando com o leitor parado — não de um número de cartas que os
-        //    arrastos rendem de forma variável (medido: 2 numa corrida, 12 em outra). O quanto andou fica no anexo.
-        advance(until: 12)
         XCTAssertGreaterThanOrEqual(distinct.count, 2,
             "o avanço tem de mover o leitor para haver uma admissão pendente (\(distinct.count) cartas distintas)")
 
@@ -433,3 +423,4 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         attach(app, "10-after-removal")
     }
 }
+
