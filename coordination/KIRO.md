@@ -372,6 +372,22 @@ antes da coordenação:
 Escopo: **extração integral do texto permanece fora**. Invariante que o arquiteto exigiu: renderizar ou abrir o
 leitor **não** dispara aquisição, extração nem preenchimento de cache — a única requisição ao site é a explícita.
 
+### Executor no Mac (OMP) — 2026-10-11 · coordenação (complemento): dois arquivos a mais
+
+Ao plano da leitura local somam-se dois arquivos, pelos mesmos motivos (avise se algum for seu agora):
+
+- `FeedMineApp/FeedMineApp/TrustedFeeds.swift` — **aditivo**: o feed de fixture do app ganha variantes de conteúdo
+  (corpo, resumo longo, resumo curto, ausência de texto) selecionadas por env, no padrão que o T10/T12 já usam.
+  Sem elas não há como provar os quatro casos que o arquiteto exigiu.
+- `FeedMineApp/FeedMineAppTests/CompositionTests.swift` — **aditivo**: provas em processo (o alvo roda dentro do
+  app) de que abrir o leitor local **não** gera requisição de rede (o log `AddFeedFixtureSite.recordedRequests()`
+  fica inalterado) e **não** escreve no banco. É o instrumento que separa "requisição explícita ao site" do
+  "trabalho autônomo do feed", como o arquiteto pediu.
+
+A regra pura do roteamento (`FeedReadingDecision`) já está escrita e **verificada**: 7 testes, 0 falhas — limite de
+3.000 caracteres abre a leitura local sem afirmar completude, contagem por caractere (não por byte), corpo vence o
+resumo, teaser mantém o site como ação principal e nada é oferecido quando não há texto nem endereço.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
