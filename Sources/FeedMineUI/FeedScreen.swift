@@ -245,6 +245,11 @@ struct FeedVisualCapture {
     /// medida, sem estimar alturas; em memória, transitório. Quando a carta volta, a medida dela é devolvida ao
     /// espaçador — é a mesma, então a soma fecha em zero.
     private var measuredHeights: [PublicationCardID: CGFloat] = [:]
+    /// Exatamente as cartas que o espaçador representa: podadas por cima do leitor e **ainda não devolvidas**.
+    /// Descontar a altura de *qualquer* carta readmitida estava errado — na mesma transição em que uma carta sai por
+    /// cima, outra entra por baixo, e o contador voltava a zero. Medido no log do dispositivo: `pruned=1 readmitted=1
+    /// height=141,33 count=0`, e o espaçador nunca renderizava por causa do zero.
+    private var spacerCards: Set<PublicationCardID> = []
     private(set) var prunedAboveHeight: CGFloat = 0
     private(set) var prunedAboveCount: Int = 0
     // Each stream contributes its own latest direction; endpoints are not synchronized.
@@ -334,16 +339,24 @@ struct FeedVisualCapture {
     mutating func reconcileWindow(from old: [PublicationCardID], to new: [PublicationCardID]) {
         let newSet = Set(new), oldSet = Set(old)
         let pruned = old.filter { !newSet.contains($0) }
-        for id in pruned {
+        let readmitted = new.filter { !oldSet.contains($0) }
+        for id in pruned where !spacerCards.contains(id) {
             prunedAboveHeight += measuredHeights[id] ?? 0
-            prunedAboveCount += 1
+            spacerCards.insert(id)
         }
-        for id in new where !oldSet.contains(id) {
+        for id in readmitted where spacerCards.contains(id) {
             prunedAboveHeight = max(0, prunedAboveHeight - (measuredHeights[id] ?? 0))
-            prunedAboveCount = max(0, prunedAboveCount - 1)
+            spacerCards.remove(id)
         }
+        prunedAboveCount = spacerCards.count
         // O que o espaçador representa continua guardado; o resto sai.
-        let kept = newSet.union(pruned)
+        #if DEBUG
+        if Self.tracesCapture, !pruned.isEmpty || !readmitted.isEmpty {
+            Self.trace("reconcile pruned=\(pruned.count) readmitted=\(readmitted.count) "
+                + "height=\(prunedAboveHeight) count=\(prunedAboveCount) known=\(measuredHeights.count)")
+        }
+        #endif
+        let kept = newSet.union(spacerCards)
         measuredHeights = measuredHeights.filter { kept.contains($0.key) }
     }
 

@@ -220,9 +220,11 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         while rounds < 40, !removed {
             app.scrollViews.firstMatch.swipeUp(velocity: .slow)
             rounds += 1
-            // Espera a rolagem parar: três leituras iguais do topo visível.
+            // Espera a rolagem parar: três leituras iguais do topo visível. Orçamento curto de propósito — a versão
+            // anterior esperava 8 s por rodada e quarenta rodadas davam mais de cinco minutos, com o teste caindo
+            // por tempo e não por medida.
             var still: [CGFloat] = []
-            let settleUntil = Date().addingTimeInterval(8)
+            let settleUntil = Date().addingTimeInterval(3.5)
             while Date() < settleUntil, still.count < 3 {
                 if let element = anchor(app), element.frame != .zero {
                     if still.last == element.frame.minY { still.append(element.frame.minY) } else { still = [element.frame.minY] }
