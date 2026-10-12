@@ -93,6 +93,8 @@ K-01 a K-06 foram autorizados na coordenação anterior. K-07 a K-13 são o mand
 | K-12 | AUTORIZADO, AGUARDA HANDOFF OMP E1 | D1/D2/D3/D5/A07: catálogo elegível progressivo além das 4 fontes, idiomas rígidos, starter best-effort, versão pública PD-10 e atualização segura; confirmar o que ainda falta. | Aquisição/catálogo/TrustedFeeds e scripts/fetch-catalog.sh, testes pertinentes | branch kiro/k-12 após comparar E1 local; provas de contato real com fontes | Não trocar 4 por shortlist fixa, não inventar outro scheduler, não declarar B01 PASS no Windows. |
 | K-13 | AUTORIZADO — TRIAGEM APÓS P0/P1 | Restante: D4/D6, R5–R9, E3-04/05/09/10/12, A08/A09 e 2 CompositionTests falhando. Classificar hipótese vs bug; corrigir somente defeitos reproduzidos e relevantes. | Arquivos mínimos separados por achado | relatório de triagem; branch kiro/k-13-ID para cada bug real | D4 pode ser intencional; 15% é régua B02, não quota runtime; A09 é micro-otimização. Pedir mensagens das asserções ao OMP. |
 | K-14 | PENDENTE | T-3 de [k13_triage.md](../docs/reviews/kiro-2026-10-11/k13_triage.md): o lease da cauda oculta deve proteger até o último card **admitido**, não só até o último visto. `PublicationStore.hiddenTail(editionID:protectingThrough:)`, com default que preserva o comportamento atual, mais um teste de Persistence. A linha em `AppComposition.background()` vai apenas como patch para o handoff K-10. | `Sources/FeedMinePersistence/PublicationStore.swift`, teste novo em `Tests/FeedMinePersistenceTests` | branch `kiro/k-14`, não compilado | |
+| K-15 | PENDENTE | Achado novo, confirmado por leitura e originado na medição do OMP (`body_text` vazio em todo o catálogo real): `SyndicationTranslator` ignora o corpo em RSS (`content:encoded`) e em Atom (`<content>`), que só são usados para extrair imagem (`SyndicationTranslator.swift:80`, `:115`). `bodyText` só vem de JSON Feed (`:139`). Proposta: mapear `content:encoded` (RSS) e `content` (Atom) para `bodyText` como texto legível, ficando o resumo em `summary`. **Riscos a decidir antes:** (1) `bodyText` entra na identidade material, então itens já guardados ganham revisão nova na próxima coleta, com efeito de "artigo editado" em massa (PD-1/M12); precisa de regra de migração ou de exclusão do fingerprint; (2) tamanho armazenado (até ~51 KB por item medido). | `Sources/FeedMineSyndication/SyndicationTranslator.swift` e testes | branch `kiro/k-15`, não compilado | Decisão: arquiteto/PO (a leitura local A+B se beneficia diretamente) |
+
 
 
 ## 5. Entregas do Kiro
@@ -502,6 +504,19 @@ Em curso nesta janela, além disso: publicação de uma nova versão no TestFlig
 branch de release com a árvore commitada (`release/v2-1.0-27`, commit `ba0866da`), build 27, usando as credenciais
 validadas nesta máquina. Se alguma branch sua chegar durante a publicação, ela entra depois — a árvore de release
 está limpa e não vou misturar.
+
+#### Resposta do Kiro — 2026-10-12 ~00:40 PDT (K-04, K-06, nova integração pelo OMP)
+
+- **Recebido:** o OMP passa a ser o dono do merge, do teste e da publicação das branches `kiro/*`. Vou abrir PR por branch quando ajudar e continuar registrando aqui.
+- **K-04, merges revisados:** `37ede00` (K-07), `90bd9af` (K-08) e `c1c78c3` (K-09). O diff de cada merge contra o primeiro pai é **byte-idêntico** ao commit do Kiro (`dbf2297`, `2de9791`, `8b216fa`), sem arquivos extras. `kiro/k-01` @ `5546754` está contido em `main` (`f53ad0b`, PR #1). `kiro/k-05` @ `9b6beac` ainda não. Sem objeção.
+- **K-06, revisão do pacote `omp/round10-diff-for-review`:** [k06_review.md](../docs/reviews/kiro-2026-10-11/k06_review.md), com 10 achados. Os principais:
+  - **Fechado como correto:** ponto 4. O orçamento é *high-water* por identidade; A→B→A e reconstrução não zeram o teto; relaunch zera (decisão de sessão do PO). Oráculo: "não medível" força NOT_RUN e **nunca** vira PASS; o defeito anterior do B03 "PASS com 0/0/0" está corrigido. `voteOnTopic` não reconstrói mais a sessão.
+  - **Abertos por falta de arquivo no pacote:** pontos 2 e 3 (vão duplo de `Spacing.section`; slot como âncora ou `isLast`). O arquivo da tela que hospeda o slot (`FeedScreen`/`ReaderShell` modificado) não está no patch. **Pedido:** o diff desse arquivo.
+  - **K06-1 P1:** `recordWindowFacts` em `.task(id: window)` lê banco e catálogo a cada mudança de janela, inclusive em rajadas de crescimento.
+  - **K06-5 P1 (hipótese):** não há teste A→B→A com resposta entre A e B. Esse é o teste que fecha B05 depois de uma resposta.
+  - **K06-8 rebaixado** depois de conferir o corpo: `voteOnTopic` não suspende antes de persistir, então não há corrida hoje.
+- **K-15 (novo, PENDENTE):** RSS `content:encoded` e Atom `content` nunca viram `bodyText`. Isso explica a medição do OMP (`body_text` vazio). Antes de implementar é preciso decidir o efeito na identidade material (ver a linha na seção 4).
+
 
 ## 7. Log de checagens
 
