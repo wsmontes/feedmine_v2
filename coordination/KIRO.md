@@ -165,6 +165,23 @@ Nenhuma entrega Swift foi compilada ou executada aqui. Branches prontas para o M
   - parseável mas pública, não-HTTP ou com userinfo: o snapshot recusa com `.invalidAuthorizedOrigin(URL)`. Esquema, host e porta são exatos, conforme `SyndicationAuthorizedOrigin`.
   - Continua só `#if DEBUG`, com o valor vindo do runner. `git apply --check` ok contra `main@6681f4a`.
 
+### Mandato PO (K-07–K-13) — entregas 2026-10-11 ~21:40 PDT
+
+Validação no Windows: Python/SQLite e harness. Nada em Swift foi compilado. Cada branch tem o comando exato para o Mac na mensagem de commit.
+
+| Pedido | Reconfirmação | Branch @ SHA (base `main@ccba5e9`) | Prova aqui | Rodar no Mac |
+|--------|---------------|------------------------------------|------------|--------------|
+| **K-07** (A03) | **Não é defeito.** GRDB 7.11.1 registra migrações com `foreignKeyChecks: .deferred` por padrão (FKs desligadas e `foreign_key_check` antes do commit), e as duas tabelas reconstruídas são folhas. Achado retirado. | `kiro/k-07` @ `dbf2297`, só teste: `RuntimeMigrationRebuildTests` | [k07_migration_repro.py](../docs/reviews/kiro-2026-10-11/k07_migration_repro.py) roda o SQL real das 21 migrações em SQLite 3.50.4 com dados semeados antes das reconstruções: 11/11 PASS nos modos deferred **e** immediate. Duas mutações de perda de dados no SQL → FAIL e exit 1 (o instrumento detecta). | `swift test --filter RuntimeMigrationRebuildTests` |
+| **K-08** (E3-07) | **Confirmado.** `<img>` dentro de comentário, script, style, template ou iframe virava a imagem do card. | `kiro/k-08` @ `2de9791` (`SyndicationMediaLocator.swift` + teste novo) | [k08_media_locator_repro.py](../docs/reviews/kiro-2026-10-11/k08_media_locator_repro.py), port das regexes: 7 FAIL no main → 0 FAIL com a correção, em 19 casos. noscript, object e embed preservados. | filtro `SyndicationMediaLocatorHiddenMarkupTests\|SyndicationTranslatorTests\|SyndicationMediaLocatorHostTests` (3 testes devem falhar no main) |
+| **K-08** (E3-08) | **Não reproduzido.** `&amp;`/`&#038;` em src/srcset já resolvem. Achado retirado; 4 casos fixados como regressão. | idem | idem (4/4 PASS no main) | idem |
+| **K-09** (E3-11) | **Confirmado pelo caminho de código:** largura declarada < mínimo era descartada sem medir. | `kiro/k-09` @ `8b216fa` (`MediaResolver.swift` + testes) | PNG real de 1200×800 (197 bytes, IHDR e CRC verificados) embutido no teste "10 px declarado / 1200 px efetivo → hero". Ceiling anti decode-bomb mantido. **Duas expectativas existentes mudaram de propósito** (`logo`/`icon` passam a último recurso). | filtro `MediaPolicyResolverTests\|MediaDeclaredDimensionTests\|MediaPrefetcherTests` |
+| K-01/K-05 (revisão Codex 21:12) | A autorização agora é **só a origem**. | `kiro/k-01` @ `5546754`; `kiro/k-05` @ `9b6beac` (merge de k-01 em `afd92b5`) | `init?(URL)` recusa caminho ≠ `/`, query, fragment e userinfo; `origin(of:)` faz o casamento das requisições. Testes atualizados. | filtros já registrados |
+| K-05 patch (Codex 21:12) | Valor bruto nunca é impresso. | [patch](../docs/reviews/kiro-2026-10-11/k05-appcomposition-proposal.patch), **não aplicado** | Diagnóstico mostra só a variável e o motivo (esquema, host, userinfo, query/fragment, caminho). O log de sucesso só depois da validação, como `scheme://host:port`. `git apply --check` ok contra `main@cc6c5f0`. | aplicar no handoff do OMP |
+
+**AGUARDA HANDOFF OMP** (nada implementado, para não competir com o WIP local): K-02 (`CompositionTests` entrelaçado; `TrustedFeeds.swift` está livre, mas o teste exige rebase), K-10 (`AppComposition` quente), K-11 (E2), K-12 (E1).
+
+**Próximo (K-13, isolado):** triagem estática das duas falhas que o OMP reportou: `testS5…` (`restored.window != snapshot.window`) e `testASavedBox…` (exportação de caixa com cabeçalho de feeds), começando pelos owners remotos `ReaderImportExportCoordinator` e o restore de publicação.
+
 ### K-04 — revisão de commits novos em `main`
 - `d0065fb` (coordenação, só este arquivo): sem objeção. Nenhum commit de código novo em `main` desde `aefa19f`.
 - Nota registrada: os achados D1/D2/A04 são da **base remota** `aefa19f`. Como o OMP tem mais de 130 entradas locais não publicadas, eles valem como "defeito na base remota", **não confirmados** na versão atual do OMP. Quando a árvore do OMP for publicada, o Kiro reconfronta cada um e marca confirmado/resolvido.

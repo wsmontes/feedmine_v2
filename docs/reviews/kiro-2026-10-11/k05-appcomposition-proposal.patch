@@ -1,31 +1,41 @@
 diff --git a/FeedMineApp/FeedMineApp/AppComposition.swift b/FeedMineApp/FeedMineApp/AppComposition.swift
-index 7924b28..e98ebf5 100644
+index 7924b28..7d44614 100644
 --- a/FeedMineApp/FeedMineApp/AppComposition.swift
 +++ b/FeedMineApp/FeedMineApp/AppComposition.swift
-@@ -1079,8 +1079,33 @@ final class FeedAssociation {
+@@ -1079,8 +1079,43 @@ final class FeedAssociation {
          }
          let transport = URLSession(configuration: configuration)
          self.transport = transport
 +        #if DEBUG
 +        // Kiro K-05: an instrumented development/benchmark run may authorize the exact origin of its own
-+        // fixture server (http(s), non-public host, exact port), e.g. FEEDMINE_AUTHORIZED_FEED_ORIGIN=
-+        // http://192.168.1.76:8757, passed explicitly by the runner from its controlled-transport configuration.
-+        // Never derived from catalog/OPML endpoints. Release builds do not compile this.
-+        // Fail loudly: a present but empty or unparsable value throws here; a parsable but public, non-HTTP or
-+        // userinfo origin is refused by the snapshot (.invalidAuthorizedOrigin). Unset means none.
-+        struct MalformedAuthorizedFeedOrigin: Error, CustomStringConvertible {
-+            let raw: String
-+            var description: String { "FEEDMINE_AUTHORIZED_FEED_ORIGIN is not an http(s) origin URL: \"\(raw)\"" }
++        // fixture server, passed explicitly by the runner from its controlled-transport configuration, e.g.
++        // FEEDMINE_AUTHORIZED_FEED_ORIGIN=http://192.168.1.76:8757. Never derived from catalog/OPML endpoints.
++        // Release builds do not compile this. Unset means none. A present value must be exactly an http(s)
++        // origin (no userinfo, path, query or fragment) or startup fails; the snapshot then also refuses a
++        // public host. Diagnostics name the variable and the reason only: an invalid value may hold credentials.
++        struct InvalidAuthorizedFeedOrigin: Error, CustomStringConvertible {
++            let reason: String
++            var description: String { "FEEDMINE_AUTHORIZED_FEED_ORIGIN rejected: \(reason)" }
 +        }
 +        var authorizedOrigins: [URL] = []
 +        if let raw = ProcessInfo.processInfo.environment["FEEDMINE_AUTHORIZED_FEED_ORIGIN"] {
-+            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-+            guard let origin = URL(string: value), origin.scheme != nil, origin.host != nil else {
-+                let failure = MalformedAuthorizedFeedOrigin(raw: raw)
++            let reason: String?
++            let parsed = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines))
++            if let url = parsed, let scheme = url.scheme?.lowercased() {
++                if scheme != "http" && scheme != "https" { reason = "scheme must be http or https" }
++                else if url.host?.isEmpty ?? true { reason = "missing host" }
++                else if url.user != nil || url.password != nil { reason = "userinfo is not allowed" }
++                else if url.query != nil || url.fragment != nil { reason = "query or fragment is not allowed" }
++                else if !(url.path.isEmpty || url.path == "/") { reason = "an origin has no path" }
++                else { reason = nil }
++            } else { reason = "not a URL with a scheme" }
++            if let reason {
++                let failure = InvalidAuthorizedFeedOrigin(reason: reason)
 +                Self.log("startup refused: \(failure)")
 +                throw failure
 +            }
-+            Self.log("authorized non-public feed origin \(origin.absoluteString)")
++            let origin = parsed! // validated above
++            Self.log("authorized non-public feed origin \(origin.scheme!)://\(origin.host!):\(origin.port.map(String.init) ?? "default")")
 +            authorizedOrigins = [origin]
 +        }
 +        #else
