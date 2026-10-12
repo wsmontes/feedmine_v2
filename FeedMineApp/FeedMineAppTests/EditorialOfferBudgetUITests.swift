@@ -467,6 +467,14 @@ final class EditorialOfferBudgetUITests: XCTestCase {
         attach(app, "preference-survives-relaunch")
     }
 
+    // Kiro K-06, achado 2 — a semântica que o arquiteto fixou é: ausência de oferta devolve `nil` (não uma linha
+    // de altura zero, que o `LazyVStack` ainda espaçava) e esconder uma oferta já exposta preserva o slot. A
+    // CORREÇÃO está no produto (`FeedMineApp.presented`), mas a MEDIÇÃO da metade "ausência" não é possível com os
+    // instrumentos daqui: o frame do contêiner de card inclui o espaçamento da seção, então o vão entre contêineres
+    // é sempre ≤ 0 (duas corridas perdidas nisso, 56 s cada), e a linha do slot escondido não tem identidade de
+    // acessibilidade para medir. Reportado ao arquiteto com o pedido de uma costura observável no produto; a
+    // metade "esconder preserva" continua coberta por `assertNothingMoved` no fluxo de esconder.
+
     private func attach(_ app: XCUIApplication, _ name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = name

@@ -743,8 +743,14 @@ struct FeedMineApp: App {
     /// control nobody can see is not a control VoiceOver may offer, and `accessibilityHidden` alone left the
     /// buttons reachable in the tree (measured on the device, 2026-10-11). The layout slot stays, because moving
     /// rows out of the feed moved the reader's anchored card by 128 pt (measured twice).
+    ///
+    /// **Absence is not a slot.** Kiro K-06 finding 2: a block that was never offered must return `nil` — a
+    /// zero-height child is still a child of the `LazyVStack`, so the stack kept inserting `Spacing.section` for a
+    /// slot that does not exist and hiding a block never restored the geometry of "no block". An offered block
+    /// that was hidden keeps its slot (the architect's rule: hiding preserves the slot the reader's layout was
+    /// built on) — which is exactly the case `slotHeight` answers with a height.
     @MainActor private func presented(_ block: AnyView, tipsHidden: Bool, on card: PublicationCardID,
-        isCompact: Bool) -> AnyView {
+        isCompact: Bool) -> AnyView? {
         guard tipsHidden else {
             // The block reports the room its content takes while it is really on screen, and it is drawn inside
             // the slot it was given the first time: the reader's layout is theirs, so the block may not pull the
@@ -759,7 +765,9 @@ struct FeedMineApp: App {
         // Nothing of the suggestion is drawn at all: not a control, not a word. Marking a block as hidden left
         // both its buttons and its texts in the accessibility tree (measured on the device, 2026-10-11), and the
         // reader asked for the invitations to stop — so the surface draws the room they took and nothing else.
-        return AnyView(Color.clear.frame(height: cadence.slotHeight(of: card, isCompact: isCompact) ?? 0))
+        // No room taken means no row at all.
+        guard let slot = cadence.slotHeight(of: card, isCompact: isCompact) else { return nil }
+        return AnyView(Color.clear.frame(height: slot))
     }
 
     /// The block itself, rendered wherever its host card is. It always reads the *current* answer, so voting and

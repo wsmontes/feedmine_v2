@@ -10,6 +10,7 @@ import FeedMineRuntime
 import FeedMineUI
 import FeedMineComposition
 import FeedMineEditorial
+import FeedMinePublication
 @testable import FeedMine
 
 // Controlled transport exists only in this test target; all admission and publication are real.
@@ -691,11 +692,22 @@ final class CompositionTests: XCTestCase {
         return false
     }
 
-    /// Kiro K-06, achado 5: o pacote da rodada 10 não exercitava A→B→A com uma resposta no meio, e essa era uma
-    /// lacuna de evidência (não uma correção de produto). Este é o teste que faltava: responder em A, ir a B e
-    /// voltar tem de devolver a **edição e a janela de A** (a âncora), manter o nível declarado e os salvos do
-    /// leitor. Se a volta a A re-ancorar, este teste é quem acusa.
-    func testK06AnsweringInABetweenAAndBKeepsTheWindowAndTheSaves() async throws {
+    /// Kiro K-06, achado 5, e o arquiteto fixou o que exigir: voltar a um contexto **preserva a edição, a âncora e
+    /// a posição**, com histórico alcançável — **sem impor igualdade de tamanho da janela**, que é uma expectativa
+    /// que o próprio `testS5` põe e que a arquitetura não promete.
+    ///
+    /// Dois testes, um com resposta no meio e um sem: a diferença entre eles é o experimento que localiza a causa.
+    /// Se o ida-e-volta simples preserva e o respondido não, o custo está em responder — e responder não pode custar
+    /// ao leitor a posição dele.
+    func testK06RoundTripBetweenContextsKeepsTheEditionAnchorAndPosition() async throws {
+        try await assertRoundTripKeepsTheReader(answering: false)
+    }
+
+    func testK06AnsweringInABetweenAAndBKeepsTheReaderWhereTheyWere() async throws {
+        try await assertRoundTripKeepsTheReader(answering: true)
+    }
+
+    private func assertRoundTripKeepsTheReader(answering: Bool) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let root = root(directory: directory)
@@ -708,9 +720,15 @@ final class CompositionTests: XCTestCase {
         let publication = try PublicationStore(database: try RuntimeDatabase(location: .init(directory: directory)))
         try publication.toggleBookmark(cardID: aCard.id, at: Date())
         await a.viewport(.init(anchor: .init(cardID: aCard.id, placement: .top)), activity: .forward)
+        let aAnchor = try XCTUnwrap(a.store.state.presentation).window.anchor
+        // A posição durável antes de sair — é o que o teste de filtro faz, e é o que separa "voltar não restaura"
+        // de "não havia o que restaurar". Sem esta linha, o ida-e-volta não tem checkpoint de A para recuperar.
+        _ = try await a.session.checkpointCurrentPosition(at: Date())
 
-        let answered = await root.voteOnTopic(nodeKey: "04-technology-science", level: .more)
-        XCTAssertTrue(answered)
+        if answering {
+            let answered = await root.voteOnTopic(nodeKey: "04-technology-science", level: .more)
+            XCTAssertTrue(answered)
+        }
 
         // Go to B, then come back to A.
         try await root.selectContext(.source(TrustedFeed.development[1].sourceID))
@@ -720,13 +738,47 @@ final class CompositionTests: XCTestCase {
         let back = try XCTUnwrap(root.association)
 
         let restored = try XCTUnwrap(back.store.state.presentation)
-        XCTAssertEqual(restored.editionID, aSnapshot.editionID, "voltar a A devolve a edição de A")
-        XCTAssertEqual(restored.window, aSnapshot.window,
-            "voltar a A devolve a mesma janela — a âncora de A não foi re-ancorada")
-        XCTAssertEqual(root.declaredLevel(forNode: "04-technology-science"), .more,
-            "a resposta dada em A sobrevive à ida a B e à volta")
-        XCTAssertTrue(try publication.bookmarkedCardIDs().contains(aCard.id),
-            "os salvos do leitor sobrevivem à ida e à volta")
+        // Fatos do store no log, para quem for ler este vermelho: onde exatamente o fio se rompeu. O diagnóstico
+        // vem antes das asserções de propósito — uma asserção que falha primeiro esconde o que explica a falha.
+        do {
+            let db = try RuntimeDatabase(location: .init(directory: directory))
+            let key = ContextKey(request: .source(TrustedFeed.development[0].sourceID))
+            let stored = try SessionStore(database: db).checkpoint(for: key)
+            let active = try SessionStore(database: db).checkpoint()
+            let editionThere = try PublicationStore(database: db).edition(id: aSnapshot.editionID) != nil
+            let restoredPub = try PublicationHistory(database: db).restore(backwardCapacity: 8,
+                forwardCapacity: 16, contextKey: key)
+            let revision = restoredPub?.edition.editorialRevision
+            print("ROUNDTRIP_FACTS responding=\(answering) checkpoint-contexto="
+                + "\(stored == nil ? "nil" : "presente") checkpoint-ativo=\(active == nil ? "nil" : "presente") "
+                + "edicao-de-A-no-store=\(editionThere) restore-devolve-algo=\(restoredPub != nil)")
+            if let revision {
+                // As quatro comparações que o `mayShow` faz, uma a uma: é o que decide se a restauração é usada
+                // ou descartada (e descartada significa edição nova).
+                print("ROUNDTRIP_MAYSHOW contexto-da-revisao==chave: \(revision.contextKey == key)"
+                    + " | selecao: revisao=\(revision.userSelectionVersion.rawValue)"
+                    + " | elegibilidade: revisao=\(revision.eligibilityPolicyVersion.rawValue)"
+                    + " | scoring: revisao=\(revision.scoringPolicyVersion.rawValue)")
+                let presentedEdition = try PublicationStore(database: db).edition(id: restored.editionID)
+                let presentedRevision = presentedEdition?.editorialRevision.id
+                print("ROUNDTRIP_KEY chave-consultada=\(key.canonicalIdentity)")
+                print("ROUNDTRIP_PRESENTED mesma-revisao-que-a-restaurada: "
+                    + "\(presentedRevision == revision.id) (apresentada=\(presentedRevision?.rawValue.uuidString.prefix(8) ?? "nil") "
+                    + "restaurada=\(revision.id.rawValue.uuidString.prefix(8)))")
+            }
+        } catch { print("ROUNDTRIP_FACTS falha ao ler o store: \(error)") }
+        XCTAssertEqual(restored.editionID, aSnapshot.editionID,
+            "voltar a A devolve a edição de A (responding: \(answering))")
+        XCTAssertEqual(restored.window.anchor, aAnchor,
+            "a âncora de A é a mesma — o leitor volta para onde estava")
+        XCTAssertEqual(restored.window.items.first?.id, aCard.id,
+            "e o topo da janela é o mesmo card")
+        if answering {
+            XCTAssertEqual(root.declaredLevel(forNode: "04-technology-science"), .more,
+                "a resposta dada em A sobrevive à ida a B e à volta")
+            XCTAssertTrue(try publication.bookmarkedCardIDs().contains(aCard.id),
+                "os salvos do leitor sobrevivem à ida e à volta")
+        }
         await back.close()
     }
 
