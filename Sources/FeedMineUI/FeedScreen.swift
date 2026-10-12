@@ -241,7 +241,6 @@ struct FeedVisualCapture {
     private(set) var velocityUnverified = false
     #if DEBUG
     private var geometryLogged = false
-    private var cardLogged = false
     #endif
 
     mutating func phase(active: Bool, velocity: CGVector?) {
@@ -276,7 +275,6 @@ struct FeedVisualCapture {
         tailReported = false
         #if DEBUG
         geometryLogged = false
-        cardLogged = false
         #endif
     }
 
@@ -309,10 +307,12 @@ struct FeedVisualCapture {
 
     mutating func observeCard(_ proof: FeedVisualCardGeometry, isLast: Bool = false) -> FeedVisualEvent? {
         #if DEBUG
-        if !cardLogged {
-            Self.trace("native card observed frameY=\(proof.frame.minY) offset=\(proof.offset) height=\(proof.height)")
-            cardLogged = true
-        }
+        // Traço por carta e por leitura, com o id: a coordenada de conteúdo (`frameY + offset`) é imune ao gesto,
+        // então uma descontinuidade nela é o deslocamento causado pela ATUALIZAÇÃO da janela — a referência que o
+        // arquiteto definiu, medida sem estimar alturas. Antes este traço saía uma vez por captura e sem o id, o que
+        // não permitia acompanhar carta nenhuma ao longo do tempo. É #if DEBUG: diagnóstico, sem custo no produto.
+        Self.trace("native card observed id=\(proof.cardID.rawValue.uuidString) frameY=\(proof.frame.minY) "
+            + "offset=\(proof.offset) height=\(proof.height)")
         #endif
         let intersects = proof.frame.height > 0 && proof.frame.maxY > 0 && proof.frame.minY < proof.height
         if isLast { tailOffset = intersects ? proof.offset : nil }
