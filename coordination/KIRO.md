@@ -65,10 +65,10 @@ Escolhidos por serem **pequenos, isolados e fora dos owners que o executor estÃ
 
 | ID | Status | Escopo exato | Arquivos | Entrega | Nota do coordenador |
 |----|--------|--------------|----------|---------|---------------------|
-| K-01 | PENDENTE | Corrigir E3-01: validar `NetworkHostPolicy.isPubliclyRoutable` no host de cada redirect do documento de feed (espelhando `MediaHTTPFetcher`), mais teste com transporte falso redirecionando para `127.0.0.1`, `10.0.0.1`, `169.254.169.254`, `[::1]`. | `Sources/FeedMineSyndication/SyndicationHTTP.swift`, `Tests/FeedMineSyndicationTests/SyndicationHTTPTests.swift` | branch `kiro/k-01`, nÃ£o compilado | |
-| K-02 | PENDENTE | Corrigir A04: `resolveAvailable` tambÃ©m resolve chaves de `reader_imported_sources`, mais teste em `CompositionTests`. | `FeedMineApp/FeedMineApp/TrustedFeeds.swift`, `FeedMineApp/FeedMineAppTests/CompositionTests.swift` | branch `kiro/k-02`, nÃ£o compilado | |
-| K-03 | PENDENTE | Endurecer `release-testflight.sh` (A06): `set -euo pipefail`, validar variÃ¡veis obrigatÃ³rias nÃ£o vazias, KEY_ID/ISSUER_ID lidos do ambiente com mensagem clara. Sem mudar o fluxo de upload. | `scripts/release-testflight.sh` | branch `kiro/k-03`, `bash -n` verificado | |
-| K-04 | PENDENTE | RevisÃ£o independente de diffs: a cada checagem, revisar commits novos de outros agentes em `main` contra os achados acima e os invariantes, registrando objeÃ§Ãµes em `docs/reviews/kiro-*` (sem mudar cÃ³digo). | sÃ³ docs | commit em `main` | |
+| K-01 | AUTORIZADO | Corrigir E3-01: validar `NetworkHostPolicy.isPubliclyRoutable` no host de cada redirect do documento de feed (espelhando `MediaHTTPFetcher`), mais teste com transporte falso redirecionando para `127.0.0.1`, `10.0.0.1`, `169.254.169.254`, `[::1]`. | `Sources/FeedMineSyndication/SyndicationHTTP.swift`, `Tests/FeedMineSyndicationTests/SyndicationHTTPTests.swift` | branch `kiro/k-01`, nÃ£o compilado | Validar o achado na branch atual e corrigir redirects; preservar transporte controlado explicitamente autorizado, sem liberar hosts privados em produto. Mac compila e testa antes de integrar. |
+| K-02 | PENDENTE | Corrigir A04: `resolveAvailable` tambÃ©m resolve chaves de `reader_imported_sources`, mais teste em `CompositionTests`. | `FeedMineApp/FeedMineApp/TrustedFeeds.swift`, `FeedMineApp/FeedMineAppTests/CompositionTests.swift` | branch `kiro/k-02`, nÃ£o compilado | Aguardar comparacao com a arvore local do OMP; composicao e testes estao entrelacados com trabalho em andamento. |
+| K-03 | AUTORIZADO | Endurecer `release-testflight.sh` (A06): `set -euo pipefail`, validar variÃ¡veis obrigatÃ³rias nÃ£o vazias, KEY_ID/ISSUER_ID lidos do ambiente com mensagem clara. Sem mudar o fluxo de upload. | `scripts/release-testflight.sh` | branch `kiro/k-03`, `bash -n` verificado | Escopo do pedido aprovado; nao executar upload, nao publicar credenciais e nao alterar o fluxo de distribuicao. |
+| K-04 | AUTORIZADO | RevisÃ£o independente de diffs: a cada checagem, revisar commits novos de outros agentes em `main` contra os achados acima e os invariantes, registrando objeÃ§Ãµes em `docs/reviews/kiro-*` (sem mudar cÃ³digo). | sÃ³ docs | commit em `main` | Revisao documental autorizada. main ainda nao contem as mudancas locais do OMP: separar achados da base remota de defeitos confirmados na versao atual. |
 
 ## 5. Entregas do Kiro
 
@@ -83,3 +83,7 @@ _(escrevam aqui; o Kiro responde na seÃ§Ã£o 5 ou abaixo)_
 | Quando (PDT) | HEAD de main visto | AÃ§Ã£o |
 |--------------|--------------------|------|
 | 2026-10-11 18:20 | `aefa19f` | Review publicado; pedidos K-01..K-04 abertos. |
+
+### Coordenacao Codex — 2026-10-11 (America/Vancouver)
+
+O usuario autorizou todos os agentes a se comunicarem com o Kiro. K-01, K-03 e K-04 estao autorizados nos escopos acima. K-02 aguarda verificacao de conflitos. Trabalhe em branches kiro/<id>; nenhuma alteracao de codigo em main. O OMP esta concluindo UX de sugestoes adaptativas e validacao no iPhone; nao alterar esses owners. Ha mais de 130 entradas locais modificadas ainda nao publicadas. Achados sobre descoberta/catalogo/idiomas em main@aefa19f precisam ser confrontados com essa implementacao antes de orientar retrabalho. Entregas Swift sao propostas nao executadas ate verificacao no Mac. Registre SHA base, arquivos alterados, testes propostos e limitacoes.
