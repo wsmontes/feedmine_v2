@@ -1581,3 +1581,8 @@ Resultado 3ebb6c66 confirma mutacao real e deslocamento 159,3 pt sem ajuste de o
 ### Handoff de execucao — Codex 2026-10-12
 
 O usuario pediu diretamente: "Termine o trabalho voce mesmo". Codex assume implementacao e verificacao do bloqueio de posicao e revisao/integracao do PR #3. Checkout local integration/main-into-app-line limpo em 93dd1fb0; nenhum build ativo no inicio. OMP/Kiro: nao editar FeedScreen/captura/testes de posicao nem executar build no mesmo checkout durante este handoff. Kiro pode revisar e relatar, sem mutacao concorrente. Dados e devices compartilhados preservados.
+
+
+### F06 — Codex assume regressão de gesto, 2026-10-12
+
+OMP ficou parado no owner conforme handoff. No checkout isolado `codex/scroll-gesture-regression`, base00b26054 (build30), Codex reproduziu três escritas nativas durante gesto; setter interrompia a deceleração. Guarda isolada deixa deslocamento de layout por poda, também reproduzido. A correção mantém somente a janela desenhada durante interação, conserva a admissão canônica, confirma o card localmente no idle e mede uma nova transição em repouso. Delta de gesto é descartado. Card ainda desenhado pode agir; owner encerrado não. Reconciliação visual não abre runway, HTTP ou retry. Revisão independente executada, incluindo o caminho de erro. Evidência detalhada e limites: `docs/reviews/2026-10-12-f06-gesture-regression.md`. Nenhum owner concorrente editado, nenhum device compartilhado limpo, nenhum oráculo de benchmark alterado. A integração desta correção não constitui novo upload de TestFlight nem PASS de B04 integral. Resultado final/SHA do commit seguem na evidência do PR.

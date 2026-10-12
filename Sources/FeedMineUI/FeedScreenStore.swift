@@ -8,8 +8,13 @@ import FeedMineRuntime
 @Observable
 public final class FeedScreenStore {
     public private(set) var state: FeedPresentationState
+    /// Visual timing only. It never starts work or changes admission/publication.
+    public private(set) var isReadingInteractionActive = false
+    public func setReadingInteractionActive(_ active: Bool) { isReadingInteractionActive = active }
     @ObservationIgnored
     private let onViewport: @MainActor (ViewportObservation, RunwayActivity) -> Void
+    @ObservationIgnored private let onRenderedViewport: (@MainActor (RenderedViewportEvidence, RunwayActivity) -> Void)?
+    @ObservationIgnored private var viewportOrdinal: UInt64 = 0
     public private(set) var bookmarkedIDs: Set<PublicationCardID> = []
     /// What this host can actually execute. A card renders only these controls, so a menu item can
     /// never be a dead control while its delivery (T5–T11) has not landed yet.
@@ -38,6 +43,7 @@ public final class FeedScreenStore {
     /// what the reader asked for. No URL, player, pasteboard or sheet crosses into UI; external
     /// composition resolves them from published history.
     public init(onViewport: @escaping @MainActor (ViewportObservation, RunwayActivity) -> Void,
+        onRenderedViewport: (@MainActor (RenderedViewportEvidence, RunwayActivity) -> Void)? = nil,
         availableActions: Set<ReaderCardAction> = Set(ReaderCardAction.allCases),
         onAction: @escaping @MainActor (ReaderCardActionEvent) -> Void = { _ in },
         availableDestinations: Set<ReaderDestination> = [],
@@ -45,6 +51,7 @@ public final class FeedScreenStore {
         onNavigate: @escaping @MainActor (ReaderDestination) -> Void = { _ in }) {
         state = FeedPresentationState(presentation: nil)
         self.onViewport = onViewport
+        self.onRenderedViewport = onRenderedViewport
         self.availableActions = availableActions
         self.onAction = onAction
         self.availableDestinations = availableDestinations
@@ -117,14 +124,29 @@ public final class FeedScreenStore {
     }
 
     /// Emits one explicit user observation. The external consumer decides how to execute it.
-    public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity) {
+    public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,
+        rendered: FeedPresentationSnapshot? = nil, reconciliation: Bool = false) {
+        if let onRenderedViewport, let rendered {
+            viewportOrdinal += 1
+            guard let evidence = rendered.evidence(for: observation, ordinal: viewportOrdinal, reconciliation: reconciliation) else { return }
+            onRenderedViewport(evidence, activity)
+            return
+        }
         onViewport(observation, activity)
     }
 
     /// One semantic request from one admitted card. Only an admitted occurrence may act, and the
     /// external consumer decides how to execute it.
-    public func perform(_ event: ReaderCardActionEvent) {
-        guard state.presentation?.window.items.contains(where: { $0.id == event.cardID }) == true else { return }
+    public func perform(_ event: ReaderCardActionEvent, rendered: FeedPresentationSnapshot? = nil) {
+        if let rendered {
+            guard let current = state.presentation,
+                rendered.contextKey == current.contextKey, rendered.editionID == current.editionID,
+                rendered.provenance.sequenceID == current.provenance.sequenceID,
+                rendered.provenance.position <= current.provenance.position,
+                rendered.window.items.contains(where: { $0.id == event.cardID }) else { return }
+        } else {
+            guard state.presentation?.window.items.contains(where: { $0.id == event.cardID }) == true else { return }
+        }
         guard availableActions.contains(event.action) else { return }
         onAction(event)
     }

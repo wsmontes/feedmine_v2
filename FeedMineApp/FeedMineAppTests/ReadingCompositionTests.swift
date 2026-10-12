@@ -13,7 +13,9 @@ import XCTest
 import Foundation
 import Synchronization
 import FeedMineDomain
-import FeedMineUI
+@testable import FeedMineUI
+import UIKit
+import FeedMineRuntime
 @testable import FeedMine
 
 /// The text shape the controlled transport serves for this case. Set per test and restored by the test itself.
@@ -120,6 +122,63 @@ final class ReadingCompositionTests: XCTestCase {
         XCTAssertEqual(association.readingTarget(cardID)?.kindDescription, target?.kindDescription,
             "reading the same card twice must answer the same thing")
         return target
+    }
+
+    func testATouchWithoutMotionKeepsTheIdleWindowWitness() {
+        let scroll = UIScrollView(frame: .init(x: 0, y: 0, width: 300, height: 800))
+        scroll.contentSize = .init(width: 300, height: 2_000)
+        scroll.setContentOffset(.init(x: 0, y: 500), animated: false)
+        let adapter = FeedNativeScrollOffset()
+        adapter.scrollView = scroll
+        let a = PublicationCardID(), b = PublicationCardID(), c = PublicationCardID()
+        adapter.updateWindow([a, b])
+        _ = adapter.observe(.init(cardID: b,
+            frame: .init(x: 0, y: 100, width: 300, height: 400), offset: 500, height: 800))
+        adapter.setInteractionActive(true)
+        adapter.cancel(discardingSamples: false)
+        XCTAssertEqual(scroll.contentOffset.y, 500, "Tracking never writes into the native offset")
+        adapter.setInteractionActive(false)
+        adapter.updateWindow([b, c])
+        _ = adapter.observe(.init(cardID: b,
+            frame: .init(x: 0, y: -200, width: 300, height: 400), offset: 500, height: 800))
+        XCTAssertEqual(scroll.contentOffset.y, 200, accuracy: 0.5,
+            "An unchanged drawn window keeps its geometric witness through a touch with no movement")
+        _ = adapter.observe(.init(cardID: b,
+            frame: .init(x: 0, y: 100, width: 300, height: 400), offset: 200, height: 800))
+        XCTAssertEqual(adapter.measuredCorrections, 1)
+        XCTAssertEqual(adapter.maximumVisualResidual, 0, accuracy: 0.5)
+    }
+
+    func testAStillRenderedCardOpensAfterCanonicalPruningButAStaleOwnerCannot() async throws {
+        try await withShape(.body) { _, association in
+            // Like the existing long-navigation fixture, publish distinct future items before admission.
+            // A cold single-card result and a saturated corpus cannot exercise pruning.
+            let generation = ReadingFixture.generation.withLock { $0 }
+            defer { ReadingFixture.generation.withLock { $0 = generation } }
+            for _ in 0..<400 {
+                if (association.store.state.presentation?.window.items.count ?? 0) > association.bounds.backwardCapacity + 1 { break }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            let rendered = try XCTUnwrap(association.store.state.presentation)
+            XCTAssertGreaterThan(rendered.window.items.count, association.bounds.backwardCapacity + 1)
+            let first = try XCTUnwrap(rendered.window.items.first)
+            ReadingFixture.generation.withLock { $0 += 1 }
+            for _ in 0..<8 {
+                if association.store.state.presentation?.window.items.contains(where: { $0.id == first.id }) == false { break }
+                _ = try await association.driver.drive(resources: FeedAssociation.resources)
+                let tail = try XCTUnwrap(association.store.state.presentation?.window.items.last)
+                await association.viewport(.init(anchor: .init(cardID: tail.id, placement: .center)), activity: .explicitTailApproach)
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            XCTAssertFalse(association.store.state.presentation?.window.items.contains(where: { $0.id == first.id }) == true)
+            var opens = 0
+            association.onReading = { _ in opens += 1 }
+            association.store.perform(.init(action: .open, cardID: first.id), rendered: rendered)
+            XCTAssertEqual(opens, 1, "The reader can tap the card the retained window actually shows")
+            await association.close()
+            association.store.perform(.init(action: .open, cardID: first.id), rendered: rendered)
+            XCTAssertEqual(opens, 1, "A retired owner cannot open an old rendered card")
+        }
     }
 
     func testACardWithAStoredBodyIsReadLocally() async throws {

@@ -1427,6 +1427,9 @@ final class FeedAssociation {
     lazy var store: FeedScreenStore = FeedScreenStore(onViewport: { [weak self] observation, activity in
         guard let self else { return }
         Task { await self.viewport(observation, activity: activity) }
+    }, onRenderedViewport: { [weak self] evidence, activity in
+        guard let self, self.active else { return }
+        Task { await self.viewport(evidence.observation, activity: activity, evidence: evidence) }
     }, availableActions: Self.readerCardActions, onAction: { [weak self] event in
         guard let self, self.active else { return }
         switch event.action {
@@ -1564,12 +1567,13 @@ final class FeedAssociation {
     /// Review F10: resolve the frozen action target from published history and open it.
     /// The URL never crosses the UI boundary; only the card identity does.
     private func open(_ cardID: PublicationCardID) {
-        guard active, visible, store.state.presentation?.window.items.contains(where: { $0.id == cardID }) == true else { return }
+        // The sole caller is the store's validated action callback. Its card may remain drawn in
+        // the borrowed gesture window after canonical pruning; do not discard that legitimate tap.
+        guard active, visible else { return }
         read(cardID)
     }
 
-    /// U2: a saved article may sit outside the presented window, so it resolves straight from
-    /// published history. The window guard above is unchanged for feed cards.
+    /// U2: a saved article resolves straight from published history; it has no feed-window action gate.
     func openSaved(_ cardID: PublicationCardID) {
         guard active else { return }
         read(cardID)
@@ -2289,23 +2293,51 @@ final class FeedAssociation {
         do { try install(store.state.reporting(.preparing(progress))) } catch { Self.log("preparation update rejected") }
     }
 
-    func viewport(_ observation: ViewportObservation, activity: RunwayActivity) async {
+    func viewport(_ observation: ViewportObservation, activity: RunwayActivity,
+        evidence: RenderedViewportEvidence? = nil) async {
         do {
             guard active else { throw FeedPresentationStateError.projectionSequenceMismatch }
+            if let evidence {
+                guard let current = store.state.presentation, evidence.belongs(to: current) else { return }
+            }
             // F02's budget counts **this** and nothing else: the capture's own proof of the card the reader is
             // at. It is recorded before the handoff, because the reader's exposure happened whether or not the
             // publication side accepted the opportunity.
-            editorialExposure.expose(observation.anchor.cardID)
-            #if DEBUG
-            viewportReceived += 1
-            #endif
-            Self.log("viewport forwarded activity=\(activity) anchor=\(observation.anchor.cardID)")
-            trace?.record("advance", ["activity": String(describing: activity),
-                "anchor": observation.anchor.cardID.rawValue.uuidString])
-            Self.log("viewport opportunity sent to driver")
+            if evidence?.isPositionReconciliation != true {
+                editorialExposure.expose(observation.anchor.cardID)
+                #if DEBUG
+                viewportReceived += 1
+                #endif
+            }
+            if evidence?.isPositionReconciliation != true {
+                Self.log("viewport forwarded activity=\(activity) anchor=\(observation.anchor.cardID)")
+                trace?.record("advance", ["activity": String(describing: activity),
+                    "anchor": observation.anchor.cardID.rawValue.uuidString])
+                Self.log("viewport opportunity sent to driver")
+            }
             let received = try await FeedPresentationHandoff.submitViewport(observation, activity: activity,
-                resources: Self.resources, driver: driver, into: store.state)
-            try install(received)
+                resources: Self.resources, driver: driver, into: store.state, evidence: evidence,
+                onCommitted: { [weak self] committed in
+                    await MainActor.run {
+                        guard let self, self.active else { return }
+                        do { try self.install(FeedPresentationHandoff.receive(snapshot: committed, into: self.store.state)) }
+                        catch { Self.log("obsolete early viewport projection rejected") }
+                    }
+                })
+            guard active else { return }
+            // The committed projection may already have been installed while the driver drained work.
+            // A late receipt is not a product failure and must not overwrite newer reader input.
+            if let candidate = received.presentation, let current = store.state.presentation,
+                candidate.provenance.sequenceID == current.provenance.sequenceID,
+                candidate.provenance.position < current.provenance.position {
+                Self.log("obsolete viewport receipt ignored")
+            } else {
+                try install(received)
+            }
+            if evidence?.isPositionReconciliation == true {
+                Self.log("rendered position reconciled locally")
+                return
+            }
             await growAdmittedWindowIfPublished()
             await scheduleLocalRetryIfNeeded()
             #if DEBUG
@@ -2318,7 +2350,10 @@ final class FeedAssociation {
             trace?.record("runway_completed", ["activity": String(describing: activity),
                 "admitted_cards": String(store.state.presentation?.window.items.count ?? 0)])
             trace?.flush()
-        } catch { reportFailure(error); await scheduleLocalRetryIfNeeded() }
+        } catch {
+            reportFailure(error)
+            if evidence?.isPositionReconciliation != true { await scheduleLocalRetryIfNeeded() }
+        }
     }
 
     func foreground() async {

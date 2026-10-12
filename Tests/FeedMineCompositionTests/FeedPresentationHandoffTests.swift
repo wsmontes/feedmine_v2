@@ -363,7 +363,9 @@ final class FeedPresentationHandoffTests: XCTestCase {
             XCTAssertFalse(source.contains(forbidden), forbidden)
         }
         XCTAssertNil(source.range(of: #"\b(actor|var|init)\b"#, options: .regularExpression))
-        XCTAssertEqual(source.components(separatedBy: "driver.submitViewport(").count - 1, 1)
+        // One explicit branch per input contract; neither starts work from rendering or owns state.
+        XCTAssertEqual(source.components(separatedBy: "driver.submitViewport(").count - 1, 2)
+        XCTAssertTrue(source.contains("if let evidence"))
     }
 }
 

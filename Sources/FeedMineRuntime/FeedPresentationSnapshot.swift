@@ -98,3 +98,31 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
         self.provenance = provenance
     }
 }
+
+/// Small, non-persisted evidence issued only from a Runtime-produced presentation.
+/// It carries IDs/provenance, never pixels, retained history or acquisition authority.
+public struct RenderedViewportEvidence: Sendable {
+    public let observation: ViewportObservation
+    public let isPositionReconciliation: Bool
+    let ordinal: UInt64
+    let contextKey: ContextKey
+    let editionID: FeedEditionID
+    let provenance: FeedProjectionProvenance
+    let admittedIDs: [PublicationCardID]
+
+    public func belongs(to current: FeedPresentationSnapshot) -> Bool {
+        contextKey == current.contextKey && editionID == current.editionID &&
+            provenance.sequenceID == current.provenance.sequenceID &&
+            provenance.position <= current.provenance.position &&
+            admittedIDs.contains(observation.anchor.cardID)
+    }
+}
+
+extension FeedPresentationSnapshot {
+    public func evidence(for observation: ViewportObservation, ordinal: UInt64 = 1, reconciliation: Bool = false) -> RenderedViewportEvidence? {
+        guard ordinal > 0, window.items.contains(where: { $0.id == observation.anchor.cardID }) else { return nil }
+        return RenderedViewportEvidence(observation: observation, isPositionReconciliation: reconciliation,
+            ordinal: ordinal, contextKey: contextKey,
+            editionID: editionID, provenance: provenance, admittedIDs: window.items.map(\.id))
+    }
+}

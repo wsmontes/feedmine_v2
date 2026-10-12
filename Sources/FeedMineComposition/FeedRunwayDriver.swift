@@ -129,10 +129,33 @@ public actor FeedRunwayDriver {
     /// `FeedPresentationAdmission.forwardScroll` when the movement was forward, and only through
     /// `FeedPresentationAdmission.backwardScroll` when it was backward and reached the admitted head.
     public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,
-        resources: FeedRunwayDriverResources) async throws -> FeedPresentationSnapshot? {
+        resources: FeedRunwayDriverResources,
+        onCommitted: (@Sendable (FeedPresentationSnapshot) async -> Void)? = nil) async throws -> FeedPresentationSnapshot? {
         guard let recorded = try await session.submitViewport(observation) else {
             await runway.deactivate(); return nil
         }
+        return try await finishViewport(observation, recorded: recorded, activity: activity,
+            resources: resources, onCommitted: onCommitted)
+    }
+
+    public func submitViewport(_ evidence: RenderedViewportEvidence, activity: RunwayActivity,
+        resources: FeedRunwayDriverResources,
+        onCommitted: (@Sendable (FeedPresentationSnapshot) async -> Void)? = nil) async throws -> FeedPresentationSnapshot? {
+        guard let recorded = try await session.submitViewport(evidence.observation, from: evidence) else {
+            return await session.currentPresentation()
+        }
+        if evidence.isPositionReconciliation {
+            // A local visual acknowledgement is not another runway/acquisition opportunity.
+            if let onCommitted { await onCommitted(recorded) }
+            return recorded
+        }
+        return try await finishViewport(evidence.observation, recorded: recorded, activity: activity,
+            resources: resources, onCommitted: onCommitted)
+    }
+
+    private func finishViewport(_ observation: ViewportObservation, recorded: FeedPresentationSnapshot,
+        activity: RunwayActivity, resources: FeedRunwayDriverResources,
+        onCommitted: (@Sendable (FeedPresentationSnapshot) async -> Void)?) async throws -> FeedPresentationSnapshot? {
         // An unknown anchor is inert: the session kept its current anchor and no observation is claimed.
         guard recorded.window.anchor == observation.anchor else { return recorded }
         _ = try await validateCurrentScope()
@@ -148,6 +171,7 @@ public actor FeedRunwayDriver {
             // admitted from the store — no acquisition, no network, and bounded by the frozen backward bound.
             _ = try await session.admitPresentation(.backwardScroll(observation))
         }
+        if let onCommitted, let current = await session.currentPresentation() { await onCommitted(current) }
         return try await drive(resources: resources)
     }
 

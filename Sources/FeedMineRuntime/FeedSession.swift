@@ -17,6 +17,7 @@ public actor FeedSession {
     private var releasedImageCards: Set<PublicationCardID> = []
     private let projectionSequenceID = UUID()
     private var projectionPosition: UInt64 = 0
+    private var lastRenderedViewportOrdinal: UInt64 = 0
 
     /// Composition-only exception: accepts the semantic Publication boundary.
     /// UI consumes Runtime presentation results without importing Publication.
@@ -64,9 +65,32 @@ public actor FeedSession {
     }
 
     /// Observes a reading position in the current snapshot, using retained history only.
-    /// Recording an observation moves the logical anchor and marks exposure; it never extends
-    /// or rebuilds the admitted list, which only `admitPresentation(.forwardScroll:)` may do.
-    public func submitViewport(_ observation: ViewportObservation) throws -> FeedPresentationSnapshot? {
+    /// Recording an observation moves the logical anchor and marks exposure. Evidence of a still
+    /// rendered previous window may rematerialize its already-admitted local IDs; it cannot
+    /// publish or acquire content. Ordinary admission remains an explicit operation.
+    public func submitViewport(_ observation: ViewportObservation, from evidence: RenderedViewportEvidence? = nil) throws -> FeedPresentationSnapshot? {
+        guard let original = state else { return nil }
+        if let evidence {
+            guard evidence.observation == observation, evidence.belongs(to: original.presentation),
+                evidence.ordinal > lastRenderedViewportOrdinal else { return nil }
+            lastRenderedViewportOrdinal = evidence.ordinal
+            if !original.presentation.window.items.contains(where: { $0.id == observation.anchor.cardID }) {
+                // The reader is still looking at a previous presentation from this same association.
+                // Re-read only locally published IDs already admitted by one of these two values.
+                let allowed = Set(original.presentation.window.items.map(\.id) + evidence.admittedIDs)
+                let history = try publicationHistory.window(editionID: original.presentation.editionID,
+                    around: FeedWindowAnchor(cardID: observation.anchor.cardID, placement: .center),
+                    backwardCapacity: original.bounds.backwardCapacity,
+                    forwardCapacity: original.bounds.forwardCapacity)
+                let cards = history.cards.filter { allowed.contains($0.id) }
+                    .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+                guard let window = FeedWindowSnapshot(items: cards, anchor: observation.anchor) else { return nil }
+                let restored = try projectWindow(contextKey: original.presentation.contextKey,
+                    editionID: original.presentation.editionID, window: window)
+                state = FeedSessionState(editorialRevisionID: original.editorialRevisionID,
+                    presentation: restored, bounds: original.bounds)
+            }
+        }
         guard let current = state else { return nil }
         let items = current.presentation.window.items
         guard items.contains(where: { $0.id == observation.anchor.cardID }) else { return current.presentation }

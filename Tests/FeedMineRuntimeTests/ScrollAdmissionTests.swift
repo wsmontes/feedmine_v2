@@ -16,6 +16,55 @@ import FeedMineRuntime
 /// and so is the admitted structure.
 @MainActor
 final class ScrollAdmissionTests: XCTestCase {
+    func testRenderedOldCardRemainsObservableAfterTheCanonicalWindowMoved() async throws {
+        let f = try fixture()
+        let first = try await admitted(f.session, .initial(f.bounds))
+        let reading = observation(f.cards[0], placement: .center)
+        let evidence = try XCTUnwrap(first.evidence(for: reading))
+        _ = try await recorded(f.session, observation(f.cards[4], placement: .top))
+        let moved = try await admitted(f.session, .forwardScroll(observation(f.cards[4], placement: .top)))
+        XCTAssertFalse(moved.window.items.contains(where: { $0.id == reading.anchor.cardID }))
+        let result = try await f.session.submitViewport(reading, from: evidence)
+        let returned = try XCTUnwrap(result)
+        XCTAssertEqual(returned.editionID, first.editionID)
+        XCTAssertEqual(returned.window.anchor, reading.anchor,
+            "a real card in the borrowed rendered window remains a valid reading position")
+        XCTAssertTrue(returned.window.items.contains(where: { $0.id == reading.anchor.cardID }))
+        let permitted = Set(first.window.items.map(\.id) + moved.window.items.map(\.id))
+        XCTAssertTrue(Set(returned.window.items.map(\.id)).isSubset(of: permitted),
+            "a reading proof cannot admit unpublished or never-admitted future cards")
+        XCTAssertLessThanOrEqual(returned.window.items.count, 7)
+    }
+
+    func testAnotherSessionCannotAuthorizeAReadingPosition() async throws {
+        let f = try fixture()
+        _ = try await admitted(f.session, .initial(f.bounds))
+        _ = try await recorded(f.session, observation(f.cards[4], placement: .top))
+        let current = try await admitted(f.session, .forwardScroll(observation(f.cards[4], placement: .top)))
+        let other = FeedSession(publicationHistory: PublicationHistory(database: f.database))
+        let otherProjection = try await admitted(other, .initial(.init(backwardCapacity: 0, forwardCapacity: 10)))
+        let observation = observation(f.cards[6], placement: .center)
+        let wrong = try XCTUnwrap(otherProjection.evidence(for: observation))
+        let after = try await f.session.submitViewport(observation, from: wrong)
+        XCTAssertNil(after, "another sequence must not become a reading observation")
+        let unchanged = await f.session.currentPresentation()
+        XCTAssertEqual(unchanged, current)
+    }
+
+    func testLateRenderedObservationCannotUndoNewerReading() async throws {
+        let f = try fixture()
+        let first = try await admitted(f.session, .initial(f.bounds))
+        let newer = observation(f.cards[3], placement: .center)
+        let older = observation(f.cards[1], placement: .center)
+        let accepted = try await f.session.submitViewport(newer,
+            from: XCTUnwrap(first.evidence(for: newer, ordinal: 2)))
+        let rejected = try await f.session.submitViewport(older,
+            from: XCTUnwrap(first.evidence(for: older, ordinal: 1)))
+        XCTAssertNil(rejected)
+        let current = await f.session.currentPresentation()
+        XCTAssertEqual(current, accepted)
+    }
+
     private struct Fixture {
         let database: RuntimeDatabase
         let directory: URL
