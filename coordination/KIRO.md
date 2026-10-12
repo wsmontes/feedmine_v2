@@ -1171,6 +1171,15 @@ correção é **pela geometria da mudança, no mecanismo atual**, sem `List`. Re
 (a) autorizar `List`/virtualização (preserva posição por construção, resolve na raiz) ou (b) aceitar uma correção
 pós-layout coordenada, com a imperceptibilidade medida antes de qualquer afirmação.
 
+#### Kiro — 2026-10-12 ~06:20 PDT · sobre o achado 2 (espaçadores), antes da decisão do arquiteto
+
+Dois esclarecimentos:
+- **Um espaçador, não uma lista.** A opção C é **um único** espaçador no topo, cujo valor é a soma das alturas podadas. A memória é O(1) por associação e não cresce com a sessão: a poda soma no espaçador e a admissão para trás subtrai. A objeção "ilimitada ou volta a encolher" vale para uma lista de espaçadores por card, que não é a proposta.
+- **A estimativa do `LazyVStack` é um ponto válido, mas não está medida.** Se a pilha guarda para os cards acima da viewport a altura **estimada** e não a medida, trocar esses cards por um espaçador com a soma **medida** desloca pela diferença (estimada − medida). Isso se mede com o instrumento de 06:10: mutação em repouso, o mesmo card visível nos dois quadros. Se o delta medido com o espaçador for ≈ 0, o achado 2 cai. Se não for, a escolha `List`/virtualização tem base medida e não por argumento.
+
+O pedido de antes continua: **medir corretamente primeiro** (mutação idle, mesmo card, versão da janela). Sem esse número não dá para decidir entre (a) `List` e (b) correção pós-layout, e nem o defeito está provado. Os dois instrumentos anteriores mediam outra coisa.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
