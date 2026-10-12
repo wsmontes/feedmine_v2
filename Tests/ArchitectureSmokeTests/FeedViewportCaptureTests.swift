@@ -11,62 +11,52 @@ import AppKit
 
 @MainActor
 final class FeedViewportCaptureTests: XCTestCase {
-    /// Os cenários que o arquiteto pediu, no cálculo: **podas consecutivas**, **retorno completo**, **cauda** — e a
-    /// invariante que de fato prova o estado, e não uma soma que fecha por coincidência: a soma guardada tem de ser
-    /// igual à **recomputada a partir do conjunto representado**. Ele apontou certo: `height≈0` com `count=1` exigia
-    /// explicação, e a explicação era o contador guardado em paralelo, que podia divergir do conjunto. Agora o
-    /// contador é derivado, e a invariante é afirmada a cada passo.
-    ///
-    /// Alturas distintas de propósito: se a soma fechasse por coincidência, o teste não provaria nada.
-    ///
-    /// A classificação acima/abaixo **não** está modelada — `reconcileWindow` conta toda carta retirada como se fosse
-    /// de cima do leitor. Num cenário de cauda isso está errado por definição, e o caso registra o fato em vez de
-    /// fixar a semântica errada em asserção: é achado para o handoff, não contrato.
-    func testSpacerAccountingHoldsAcrossPrunesFullReturnAndTail() {
-        var capture = FeedVisualCapture()
-        let top = (0..<3).map { _ in PublicationCardID() }
-        let bottom = (0..<3).map { _ in PublicationCardID() }
-        for (n, id) in (top + bottom).enumerated() {
-            _ = capture.observeCard(.init(cardID: id,
-                frame: .init(x: 0, y: CGFloat(n) * 400, width: 300, height: 120 + CGFloat(n) * 37), offset: 0, height: 800))
+    func testNativeWindowWitnessIsBoundedAndCapturedBeforeTheNewLayout() {
+        var correction = FeedWindowOffsetCorrection()
+        let ids = (0..<30).map { _ in PublicationCardID() }
+        correction.updateWindow(Array(ids[0..<3]))
+        _ = correction.observe(.init(cardID: ids[1],
+            frame: CGRect(x: 0, y: 200, width: 300, height: 400), offset: 100, height: 800))
+        correction.updateWindow(Array(ids[1..<4]))
+        let delta = correction.observe(.init(cardID: ids[1],
+            frame: CGRect(x: 0, y: -10, width: 300, height: 400), offset: 150, height: 800))
+        XCTAssertEqual(delta, -160)
+        for start in 2..<27 {
+            correction.updateWindow(Array(ids[start..<(start + 3)]))
+            for id in ids[start..<(start + 3)] {
+                _ = correction.observe(.init(cardID: id,
+                    frame: CGRect(x: 0, y: 200, width: 300, height: 400), offset: 100, height: 800))
+            }
+            XCTAssertLessThanOrEqual(correction.retainedCount, 3)
         }
-        var window = top + bottom
-        XCTAssertEqual(capture.prunedAboveHeight, 0, "sem poda, sem espaço reservado")
-        XCTAssertTrue(capture.spacerIsConsistent)
+    }
+    func testReprojectionAndNewGestureDiscardStaleCorrection() {
+        var correction = FeedWindowOffsetCorrection()
+        let a = PublicationCardID(), b = PublicationCardID()
+        correction.updateWindow([a])
+        let before = FeedVisualCardGeometry(cardID: a,
+            frame: CGRect(x: 0, y: 200, width: 300, height: 400), offset: 100, height: 800)
+        _ = correction.observe(before)
+        correction.updateWindow([a])
+        XCTAssertNil(correction.observe(before))
+        correction.updateWindow([a, b])
+        correction.cancel()
+        XCTAssertNil(correction.observe(.init(cardID: a,
+            frame: CGRect(x: 0, y: 40, width: 300, height: 400), offset: 100, height: 800)))
+    }
 
-        // Podas consecutivas por cima, com uma carta NOVA entrando por baixo a cada passo: é o caso que zerava o
-        // contador na versão anterior.
-        var pruned: [PublicationCardID] = []
-        for (n, id) in top.enumerated() {
-            let before = window
-            let fresh = PublicationCardID()
-            _ = capture.observeCard(.init(cardID: fresh,
-                frame: .init(x: 0, y: 3000 + CGFloat(n) * 400, width: 300, height: 260), offset: 0, height: 800))
-            window = window.filter { $0 != id } + [fresh]
-            capture.reconcileWindow(from: before, to: window)
-            pruned.append(id)
-            XCTAssertTrue(capture.spacerIsConsistent,
-                "passo \(n + 1): a soma guardada divergiu do conjunto que ela diz representar")
-            XCTAssertEqual(capture.spacerCardIDs, Set(pruned), "o conjunto representa exatamente o que saiu por cima")
-            XCTAssertEqual(capture.prunedAboveCount, pruned.count)
-        }
-        XCTAssertGreaterThan(capture.prunedAboveHeight, 0, "e o espaçador tem altura a reservar")
-
-        // Cauda: uma carta sai por BAIXO. A invariante tem de valer aqui também.
-        let beforeTail = window
-        window = window.filter { $0 != beforeTail.last! }
-        capture.reconcileWindow(from: beforeTail, to: window)
-        XCTAssertTrue(capture.spacerIsConsistent, "a invariante vale também no cenário de cauda")
-
-        // Retorno completo: tudo o que o espaçador representa volta, e a reserva tem de voltar a zero.
-        let beforeReturn = window
-        window = window + Array(capture.spacerCardIDs)
-        capture.reconcileWindow(from: beforeReturn, to: window)
-        XCTAssertTrue(capture.spacerIsConsistent)
-        XCTAssertEqual(capture.prunedAboveHeight, 0, accuracy: 0.01,
-            "com o retorno completo a reserva volta a zero — é a mesma medida entrando e saindo")
-        XCTAssertEqual(capture.prunedAboveCount, 0)
-        XCTAssertTrue(capture.spacerCardIDs.isEmpty)
+    func testWindowCorrectionIgnoresPureScrollingAndChangedViewport() {
+        var correction = FeedWindowOffsetCorrection()
+        let a = PublicationCardID(), b = PublicationCardID(), c = PublicationCardID()
+        correction.updateWindow([a])
+        _ = correction.observe(.init(cardID: a,
+            frame: CGRect(x: 0, y: 200, width: 300, height: 400), offset: 100, height: 800))
+        correction.updateWindow([a, b])
+        XCTAssertNil(correction.observe(.init(cardID: a,
+            frame: CGRect(x: 0, y: 150, width: 300, height: 400), offset: 150, height: 800)))
+        correction.updateWindow([a, b, c])
+        XCTAssertNil(correction.observe(.init(cardID: a,
+            frame: CGRect(x: 0, y: 100, width: 600, height: 400), offset: 150, height: 400)))
     }
 
     func testN3OffscreenReferenceNeverBecomesVisibleAnchor() {

@@ -183,6 +183,16 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
     /// de conteúdo é medida depois, sem gesto, e o anexo casa frame e offset do MESMO card com a mutação.
     @MainActor
     func testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped() throws {
+        try exercisePruningAndReinsertion(largeText: false)
+    }
+
+    @MainActor
+    func testWindowPruningPreservesPositionWithLargeText() throws {
+        try exercisePruningAndReinsertion(largeText: true)
+    }
+
+    @MainActor
+    private func exercisePruningAndReinsertion(largeText: Bool) throws {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
@@ -195,6 +205,9 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         // feed por padrão (dois feeds, doze cartas), o que faz a janela cobrir o conteúdo INTEIRO — sem poda
         // nenhuma, e o teste antigo passava sem exercitar nada. Noventa e cinco itens por feed dão ~190 cartas.
         app.launchEnvironment["FEEDMINE_FIXTURE_ITEMS"] = "95"
+        if largeText {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        }
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 120), "o app tem de chegar ao feed")
         XCTAssertGreaterThan(waitForCards(app, within: 180), 3, "o arranjo precisa de cartas para admitir acima")
@@ -208,15 +221,13 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         }
         let trackedID = tracked.identifier
 
-        // 1. Avançar até a carta acompanhada SAIR da lista, e medir o que a retirada faz com o frame de uma carta que
-        //    FICA — em repouso, sem gesto concorrente. O arquiteto foi explícito: "corrigir a posição final não basta
-        //    se houver salto visível antes", então o que se mede aqui é o **intermediário**, o passo que a poda
-        //    impõe. Cada rodada: gesto, espera a rolagem parar, e só então observa — a retirada chega depois.
+        // 1. Exigir retirada real dos IDs admitidos. A prova da posição não vem da
+        // consulta LazyVStack nem de uma comparação após o gesto: o adaptador mede
+        // o mesmo card no primeiro callback coerente após cada correção de janela.
         var rounds = 0
         var removed = false
         var stayingID: String?
         var stayingFrameBefore: CGFloat = 0
-        var mutationStep: CGFloat = 0
         while rounds < 40, !removed {
             app.scrollViews.firstMatch.swipeUp(velocity: .slow)
             rounds += 1
@@ -235,23 +246,21 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
             let visible = containers(app).filter { $0.frame != .zero }
             if let candidate = visible.dropFirst().first, candidate.identifier != trackedID {
                 let before = candidate.frame.minY
-                Thread.sleep(forTimeInterval: 1.2)   // a admissão é assíncrona: é aqui que ela chega
-                if let after = containers(app).first(where: { $0.identifier == candidate.identifier })?.frame.minY,
-                    abs(after - before) > 1 {
-                    // O passo só conta como da MUTAÇÃO se a carta acompanhada saiu no mesmo intervalo e nada rolou.
-                    stayingID = candidate.identifier
-                    stayingFrameBefore = before
-                    mutationStep = after - before
-                }
-                removed = containers(app).first { $0.identifier == trackedID } == nil
+                Thread.sleep(forTimeInterval: 1.2)
+                removed = app.staticTexts["feed-window-proof"].exists && !app.staticTexts["feed-window-proof"].label.contains(trackedID)
                 if removed, stayingID == nil {
                     stayingID = candidate.identifier
                     stayingFrameBefore = before
                 }
             } else {
-                removed = containers(app).first { $0.identifier == trackedID } == nil
+                removed = app.staticTexts["feed-window-proof"].exists && !app.staticTexts["feed-window-proof"].label.contains(trackedID)
             }
         }
+        let nativeProof = app.staticTexts["feed-window-proof"].label
+        let proofAttachment = XCTAttachment(string: nativeProof)
+        proofAttachment.name = "native-window-proof-after-pruning"
+        proofAttachment.lifetime = .keepAlways
+        add(proofAttachment)
         let removalShot = XCTAttachment(screenshot: app.screenshot())
         removalShot.name = "after-tracked-card-was-pruned"
         removalShot.lifetime = .keepAlways
@@ -259,9 +268,7 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         XCTAssertTrue(removed,
             "INCOMPLETO: a janela não retirou a carta acompanhada (\(trackedID)) em \(rounds) gestos — sem poda "
                 + "efetiva este cenário não prova nada, e execução incompleta nunca é PASS")
-        XCTAssertLessThan(abs(mutationStep), 24,
-            "a retirada moveu a carta que FICA (\(stayingID ?? "?")) em \(mutationStep) pt com o leitor em repouso — "
-                + "é o salto intermediário, e corrigir a posição final não bastaria")
+
 
         // 2. Voltar até ela REAPARECER: a reinserção é a outra metade da exigência.
         var backRounds = 0
@@ -270,7 +277,10 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
             app.scrollViews.firstMatch.swipeDown(velocity: .slow)
             backRounds += 1
             Thread.sleep(forTimeInterval: 0.4)
-            restored = containers(app).first { $0.identifier == trackedID } != nil
+            let candidate = containers(app).first { $0.identifier == trackedID }
+            restored = app.staticTexts["feed-window-proof"].exists
+                && app.staticTexts["feed-window-proof"].label.contains(trackedID)
+                && candidate.map { $0.frame.height > 0 && $0.frame.intersects(app.scrollViews.firstMatch.frame) } == true
         }
         XCTAssertTrue(restored,
             "a carta retirada tem de VOLTAR quando o leitor retorna (\(trackedID) não reapareceu em \(backRounds) gestos)")
@@ -312,7 +322,7 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         let shift = high - low
         let evidence = XCTAttachment(string: "carta=\(trackedID) retirada-em=\(rounds)-gestos "
             + "reinserida-em=\(backRounds)-gestos carta-que-fica=\(stayingID ?? "?") "
-            + "frame-antes-da-retirada=\(stayingFrameBefore) passo-da-retirada=\(mutationStep) pt "
+            + "frame-assentado-apos-retirada=\(stayingFrameBefore) "
             + "no-repouso=\(stableY) min=\(low) max=\(high) "
             + "amostras=\(samples.count) saiu-de-novo=\(leftAgain) deslocamento=\(shift) pt")
         evidence.name = "prune-reinsert-and-stability"
@@ -320,6 +330,20 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         add(evidence)
         XCTAssertFalse(leftAgain,
             "a carta acompanhada não pode sair da janela durante a medida — senão o objeto da medida se perdeu")
+        let finalProof = app.staticTexts["feed-window-proof"].label
+        let correctionValue = finalProof.components(separatedBy: ";").first { $0.hasPrefix("corrections=") }?.dropFirst("corrections=".count)
+        XCTAssertGreaterThan(Int(correctionValue ?? "0") ?? 0, 0,
+            "a poda real tem de exercitar a compensação nativa, não apenas sair da árvore preguiçosa")
+        let residualValue = finalProof.components(separatedBy: ";").first { $0.hasPrefix("residual=") }?.dropFirst("residual=".count)
+        XCTAssertLessThan(Double(residualValue ?? "999") ?? 999, 1, "a correção remove o deslocamento de layout")
+        let measured = finalProof.components(separatedBy: ";").first { $0.hasPrefix("measured=") }?.dropFirst("measured=".count)
+        let visualResidual = finalProof.components(separatedBy: ";").first { $0.hasPrefix("visualResidual=") }?.dropFirst("visualResidual=".count)
+        XCTAssertGreaterThan(Int(measured ?? "0") ?? 0, 0,
+            "a mesma carta deve ser medida depois de uma correção ligada à mutação real da janela")
+        XCTAssertEqual(Int(measured ?? "0") ?? 0, Int(correctionValue ?? "0") ?? 0,
+            "cada correção executada precisa de uma medição coerente; testemunha perdida deixa o cenário incompleto")
+        XCTAssertLessThan(Double(visualResidual ?? "999") ?? 999, 1,
+            "o primeiro frame coerente após a correção deve preservar a carta, descontando apenas o gesto")
         XCTAssertLessThan(shift, 1,
             "com o leitor PARADO, a janela moveu a carta visível em \(shift) pt, sem gesto concorrente")
     }

@@ -958,13 +958,21 @@ final class CompositionTests: XCTestCase {
         configuration.protocolClasses = [FixtureTransport.self]
         let root = AppComposition(directory: directory, feeds: TrustedFeed.development,
             transportConfiguration: configuration)
+        ReadingFixture.generation.withLock { $0 = 0 }
+        defer { ReadingFixture.generation.withLock { $0 = 0 } }
         await root.launch()
         let old = try XCTUnwrap(root.association)
-        // Duas publicações: a edição passa a ter mais cartas do que a janela que a restauração devolve (8 atrás).
-        try await produceAndAdmit(old)
-        try await produceAndAdmit(old)
+        var publishedWhileOpen = Set(old.store.state.presentation?.window.items.map(\.id) ?? [])
+        // IDs actually admitted while reading, across distinct batches: one bounded window
+        // cannot be the oracle for all previously reachable history.
+        for _ in 0..<4 {
+            ReadingFixture.generation.withLock { $0 += 1 }
+            try await produceAndAdmit(old)
+            publishedWhileOpen.formUnion(old.store.state.presentation?.window.items.map(\.id) ?? [])
+        }
         let before = try XCTUnwrap(old.store.state.presentation)
-        let publishedWhileOpen = Set(before.window.items.map(\.id))
+        XCTAssertGreaterThan(publishedWhileOpen.count, 25,
+            "the previously reached history must exceed a full presentation window")
         await old.background()
         await old.close()
 
@@ -980,7 +988,7 @@ final class CompositionTests: XCTestCase {
         // Anda para trás como o leitor andaria: re-ancora no topo da janela e pede mais. O que aparecer só pode vir
         // do store — o transporte continua rejeitando —, então isto mede o histórico local, não a rede.
         var reachable = Set(restored.window.items.map(\.id))
-        for _ in 0..<10 {
+        for _ in 0..<40 {
             guard let head = next.store.state.presentation?.window.items.first else { break }
             next.store.submitViewport(
                 ViewportObservation(anchor: PresentationAnchor(cardID: head.id, placement: .top)),
@@ -993,7 +1001,7 @@ final class CompositionTests: XCTestCase {
                 try await Task.sleep(for: .milliseconds(120))
             } while Date() < deadline
             guard let step, !step.isSubset(of: reachable) else { break }
-            reachable = step
+            reachable.formUnion(step)
         }
         let lost = publishedWhileOpen.subtracting(reachable)
         XCTAssertTrue(lost.isEmpty,
@@ -1002,6 +1010,13 @@ final class CompositionTests: XCTestCase {
         // E a segunda metade da exigência: **navegação de volta para frente**. Depois de andar para trás, o leitor
         // tem de poder retornar à posição em que estava — a história ganha acima dele não pode empurrá-lo nem
         // afastar o que ele já tinha.
+        // Return by actual admissions, rather than submitting an off-window anchor (a no-op).
+        for _ in 0..<40 {
+            let items = next.store.state.presentation?.window.items ?? []
+            if items.contains(where: { $0.id == before.window.anchor.cardID }) { break }
+            guard let tail = items.last else { break }
+            await next.viewport(.init(anchor: .init(cardID: tail.id, placement: .top)), activity: .explicitTailApproach)
+        }
         next.store.submitViewport(
             ViewportObservation(anchor: PresentationAnchor(cardID: before.window.anchor.cardID, placement: .top)),
             activity: .forward)
@@ -1040,12 +1055,14 @@ final class CompositionTests: XCTestCase {
         // exercitar o limite (medido: a janela não passava de 20). O arranjo é a prova; sem ele o teste é vacuoso.
         ReadingFixture.generation.withLock { $0 = 0 }
         defer { ReadingFixture.generation.withLock { $0 = 0 } }
+        var publishedWhileOpen = Set(old.store.state.presentation?.window.items.map(\.id) ?? [])
         for _ in 0..<8 {
             try await produceAndAdmit(old)
+            publishedWhileOpen.formUnion(old.store.state.presentation?.window.items.map(\.id) ?? [])
             ReadingFixture.generation.withLock { $0 += 1 }
         }
-        let before = try XCTUnwrap(old.store.state.presentation)
-        let publishedWhileOpen = Set(before.window.items.map(\.id))
+        XCTAssertGreaterThan(publishedWhileOpen.count, 25,
+            "the reachability oracle must include cards outside the final bounded window")
         await old.background()
         await old.close()
 
@@ -1093,13 +1110,14 @@ final class CompositionTests: XCTestCase {
         while step < 40 {
             guard let head = next.store.state.presentation?.window.items.first else { break }
             let ids = try await observe(.backward, at: head.id)
-            let before = reachable.count
             reachable.formUnion(ids)
             let count = next.store.state.presentation?.window.items.count ?? 0
             XCTAssertLessThanOrEqual(count, ceiling,
                 "passo \(step + 1) para trás: a janela total tinha \(count) cartas, acima do teto de \(ceiling)")
             step += 1
-            if reachable.count == before { break }
+            // Previously visited IDs still need to be crossed on the way to older history.
+            // Stop at the actual boundary, not when this step overlaps the earlier forward walk.
+            if ids.first == head.id { break }
         }
         // E de volta para frente, com a mesma exigência de teto.
         for _ in 0..<10 {

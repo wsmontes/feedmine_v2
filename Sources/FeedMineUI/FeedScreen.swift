@@ -84,26 +84,6 @@ public struct FeedScreen: View {
             if #available(iOS 18, macOS 15, *) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
-                        // O que a janela retirou de cima do leitor continua ocupando espaço — com a altura **medida**
-                        // (mais o espaçamento que cada carta ocupava), não estimada. Um espaçador só, com a soma: é o
-                        // protótipo autorizado, e sem ele a remoção encolhe o conteúdo acima e o leitor anda 159,3 pt.
-                        if capture.prunedAboveCount > 0 {
-                            // Os três valores que o arquiteto pediu, medidos no MESMO evento: a altura **solicitada**
-                            // (soma + espaçamento), o que o estado diz representar, e o frame que o espaçador
-                            // **efetivamente ocupou** — este último vindo do próprio layout, não do cálculo.
-                            let requested = capture.prunedAboveHeight
-                                + CGFloat(capture.prunedAboveCount) * FeedDesignTokens.Spacing.section
-                            let represented = capture.spacerCardIDs
-                            let sum = capture.prunedAboveHeight
-                            let recomputed = capture.spacerRepresentedHeight
-                            Color.clear
-                                .frame(height: requested)
-                                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { rendered in
-                                    FeedVisualCapture.traceSpacerEvent(requested: requested, rendered: rendered,
-                                        sum: sum, represented: represented, recomputed: recomputed)
-                                }
-                                .accessibilityHidden(true)
-                        }
                         ForEach(Array(presentation.window.items.enumerated()), id: \.element.id) { index, card in
                           // A Group is transparent for layout: the card keeps the geometry the capture measures,
                           // and the host's row is simply the next child of the stack.
@@ -123,6 +103,11 @@ public struct FeedScreen: View {
                                         store.state.presentation?.editionID == presentation.editionID,
                                         store.state.presentation?.contextKey == presentation.contextKey,
                                         let proof, store.state.presentation?.window.items.contains(where: { $0.id == proof.cardID }) == true else { return }
+                                    #if canImport(UIKit)
+                                    if capture.nativeScrollOffset.observe(proof) {
+                                        return
+                                    }
+                                    #endif
                                     if let event = capture.observeCard(proof,
                                         isLast: store.state.presentation?.window.items.last?.id == proof.cardID) {
                                         store.submitViewport(event.observation, activity: event.activity)
@@ -135,6 +120,9 @@ public struct FeedScreen: View {
                           }
                         }
                     }
+                    #if canImport(UIKit)
+                    .background(FeedNativeScrollProbe(access: capture.nativeScrollOffset, ids: presentation.window.items.map(\.id)))
+                    #endif
                     .modifier(NativeFeedTargets())
                     // U1-F: one FeedScreen for every device; wide displays keep a readable column
                     // instead of stretching editorial text across the window.
@@ -142,6 +130,9 @@ public struct FeedScreen: View {
                     .frame(maxWidth: .infinity)
                 }
                 .modifier(NativeFeedViewport(capture: $capture, store: store))
+                #if DEBUG && canImport(UIKit)
+                .modifier(FeedNativeWindowProof(ids: presentation.window.items.map(\.id), access: capture.nativeScrollOffset))
+                #endif
                 // T3: work feedback is an overlay of constant height that never takes touches, so the
                 // scroll viewport keeps exactly the geometry the reader was admitted into.
                 .overlay(alignment: .bottom) { workFeedback }
@@ -242,7 +233,11 @@ struct FeedVisualCardGeometry: Equatable, Sendable {
 }
 
 // Internal for behavioral architecture tests; no public navigation contract.
+@MainActor
 struct FeedVisualCapture {
+    #if canImport(UIKit)
+    let nativeScrollOffset = FeedNativeScrollOffset()
+    #endif
     var reading = false
     var positionID: PublicationCardID?
     private(set) var direction: RunwayActivity?
@@ -250,31 +245,6 @@ struct FeedVisualCapture {
     private(set) var lastEmission: FeedVisualEvent?
     private var visibleProof: FeedVisualCardGeometry?
     private(set) var priorProof: FeedVisualCardGeometry?
-    /// **Altura MEDIDA de cada carta já disposta**, e a soma do que a janela retirou de cima do leitor. É o
-    /// protótipo autorizado pelo arquiteto, com a proposta do Kiro: **um espaçador único** acima da lista, com a
-    /// altura medida do que saiu, para o conteúdo acima do leitor não encolher e o frame não andar. Geometria
-    /// medida, sem estimar alturas; em memória, transitório. Quando a carta volta, a medida dela é devolvida ao
-    /// espaçador — é a mesma, então a soma fecha em zero.
-    private var measuredHeights: [PublicationCardID: CGFloat] = [:]
-    /// Exatamente as cartas que o espaçador representa: podadas por cima do leitor e **ainda não devolvidas**.
-    /// Descontar a altura de *qualquer* carta readmitida estava errado — na mesma transição em que uma carta sai por
-    /// cima, outra entra por baixo, e o contador voltava a zero. Medido no log do dispositivo: `pruned=1 readmitted=1
-    /// height=141,33 count=0`, e o espaçador nunca renderizava por causa do zero.
-    private var spacerCards: Set<PublicationCardID> = []
-    /// Soma do que a janela retirou por cima do leitor e **ainda não devolveu**.
-    private(set) var prunedAboveHeight: CGFloat = 0
-    /// **Derivado do conjunto, não guardado em paralelo.** Um contador separado pode divergir do conjunto, e uma soma
-    /// que fecha por coincidência não prova nada sobre o conjunto — foi o arquiteto quem apontou isso ao exigir
-    /// explicação para `height≈0` com `count=1`. Uma fonte só.
-    var prunedAboveCount: Int { spacerCards.count }
-    /// As cartas que o espaçador representa, para o traço e para os testes.
-    var spacerCardIDs: Set<PublicationCardID> { spacerCards }
-    /// A soma **recomputada a partir do conjunto representado**. Divergir de `prunedAboveHeight` é inconsistência de
-    /// estado; a igualdade entre as duas é a invariante que prova a contabilidade.
-    var spacerRepresentedHeight: CGFloat {
-        spacerCards.reduce(0) { $0 + (measuredHeights[$1] ?? 0) }
-    }
-    var spacerIsConsistent: Bool { abs(spacerRepresentedHeight - prunedAboveHeight) < 0.01 }
     // Each stream contributes its own latest direction; endpoints are not synchronized.
     private var geometryMotion: RunwayActivity?
     private var cardMotion: RunwayActivity?
@@ -354,58 +324,7 @@ struct FeedVisualCapture {
         return reconsider()
     }
 
-    /// Os **três valores no mesmo evento**, como o arquiteto pediu: o que o estado diz representar (soma e conjunto de
-    /// ids), a altura **solicitada** à view, e o frame que o espaçador **efetivamente ocupou**.
-    ///
-    /// A leitura é direta: `deltaRL` diferente de zero é falha de **layout** (a view pediu uma altura e ocupou outra);
-    /// `deltaCalc` diferente de zero é falha de **cálculo** (a soma guardada divergiu do conjunto que ela diz
-    /// representar). **Estático de propósito**: um método mutante aqui marcaria o estado sujo a cada callback de
-    /// geometria e viraria laço.
-    static func traceSpacerEvent(requested: CGFloat, rendered: CGFloat, sum: CGFloat,
-        represented: Set<PublicationCardID>, recomputed: CGFloat) {
-        #if DEBUG
-        guard tracesCapture else { return }
-        trace("spacer requested=\(requested) rendered=\(rendered) deltaRL=\(rendered - requested) "
-            + "sum=\(sum) recomputed=\(recomputed) deltaCalc=\(sum - recomputed) "
-            + "represented=\(represented.count) "
-            + "ids=[\(represented.map(\.rawValue.uuidString).sorted().joined(separator: ","))]")
-        #endif
-    }
-
-    /// A janela mudou. O que **saiu por cima** entra no espaçador, o que **voltou** sai dele, e o que não está na
-    /// janela nem no espaçador é esquecido — o mapa fica limitado pelo que ele representa, e não pelo histórico.
-    ///
-    /// As alturas são **medidas** (vieram de `observeCard` quando a carta estava disposta), então o espaçador cresce
-    /// e encolhe pelo mesmo número: a soma fecha em zero quando o leitor volta para o que tinha.
-    mutating func reconcileWindow(from old: [PublicationCardID], to new: [PublicationCardID]) {
-        let newSet = Set(new), oldSet = Set(old)
-        let pruned = old.filter { !newSet.contains($0) }
-        let readmitted = new.filter { !oldSet.contains($0) }
-        for id in pruned where !spacerCards.contains(id) {
-            prunedAboveHeight += measuredHeights[id] ?? 0
-            spacerCards.insert(id)
-        }
-        for id in readmitted where spacerCards.contains(id) {
-            prunedAboveHeight = max(0, prunedAboveHeight - (measuredHeights[id] ?? 0))
-            spacerCards.remove(id)
-        }
-        // O que o espaçador representa continua guardado; o resto sai.
-        #if DEBUG
-        if Self.tracesCapture, !pruned.isEmpty || !readmitted.isEmpty {
-            Self.trace("reconcile pruned=\(pruned.count) readmitted=\(readmitted.count) "
-                + "sum=\(prunedAboveHeight) recomputed=\(spacerRepresentedHeight) "
-                + "deltaCalc=\(prunedAboveHeight - spacerRepresentedHeight) represented=\(spacerCards.count) "
-                + "known=\(measuredHeights.count)")
-        }
-        #endif
-        let kept = newSet.union(spacerCards)
-        measuredHeights = measuredHeights.filter { kept.contains($0.key) }
-    }
-
     mutating func observeCard(_ proof: FeedVisualCardGeometry, isLast: Bool = false) -> FeedVisualEvent? {
-        // A altura **medida** desta carta, guardada para o espaçador: quando ela sair da janela por cima do leitor,
-        // é este número — não uma estimativa — que mantém o conteúdo acima dele do mesmo tamanho.
-        measuredHeights[proof.cardID] = proof.frame.height
         #if DEBUG
         // Traço por carta e por leitura, com o id, **só com a flag de diagnóstico ligada**: a coordenada de conteúdo
         // (`frameY + offset`) é imune ao gesto, então uma descontinuidade nela é o deslocamento causado pela
@@ -521,6 +440,15 @@ private struct NativeFeedViewport: ViewModifier {
                 #endif
                 let wasReading = oldPhase == .interacting || oldPhase == .decelerating
                 let isReading = phase == .interacting || phase == .decelerating
+                #if canImport(UIKit)
+                if phase == .tracking { capture.nativeScrollOffset.cancel() }
+                else if capture.nativeScrollOffset.isCorrecting {
+                    capture.reading = isReading
+                    capture.invalidateLayout()
+                    _ = capture.observe(visualGeometry(context.geometry))
+                    return
+                }
+                #endif
                 if (!wasReading && isReading) || phase == .animating || phase == .tracking {
                     capture.invalidateLayout()
                 }
@@ -539,17 +467,23 @@ private struct NativeFeedViewport: ViewModifier {
                 visualGeometry(geometry)
             }) { _, geometry in
                 guard store.state.presentation == presented else { return }
+                #if canImport(UIKit)
+                if capture.nativeScrollOffset.isCorrecting {
+                    capture.invalidateLayout()
+                    _ = capture.observe(geometry)
+                    return
+                }
+                #endif
                 if let event = capture.observe(geometry) {
                     store.submitViewport(event.observation, activity: event.activity)
                 }
             }
             .onChange(of: store.state.presentation?.window) { old, new in
-                // O que a janela retirou entra no espaçador e o que voltou sai dele, com as alturas **medidas**. É
-                // também o descarte de compensações obsoletas que o arquiteto exigiu: cada janela nova reconcilia a
-                // soma, e troca de associação ou de layout recriam a captura inteira (os dois `onChange` abaixo).
-                capture.reconcileWindow(from: old?.items.map(\.id) ?? [], to: new?.items.map(\.id) ?? [])
+                // A new layout must establish a fresh viewport proof. Native offset correction
+                // is handled independently, before card geometry becomes a reader event.
                 capture.invalidateLayout()
             }
+            .onChange(of: ObjectIdentifier(store)) { _, _ in capture = FeedVisualCapture() }
             .onChange(of: store.state.presentation?.editionID) { _, _ in capture = FeedVisualCapture() }
             .onChange(of: store.state.presentation?.contextKey) { _, _ in capture = FeedVisualCapture() }
     }
