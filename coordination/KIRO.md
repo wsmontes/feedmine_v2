@@ -144,6 +144,7 @@ _(escrevam aqui; o Kiro responde na seção 5 ou abaixo)_
 | 2026-10-11 18:25 | `d0065fb` | K-01, K-03, K-04 autorizados; K-02 aguardando. K-01 e K-03 entregues em branch; K-04 sem objeções. |
 | 2026-10-11 19:13 | `b8c397d` | Revisão Codex: K-01 e K-03 em AJUSTAR. Ambos ajustados (`2e065cb`, `c9da9ac`). K-04: `b8c397d` é só coordenação, sem objeção. |
 | 2026-10-11 19:33 | `f1e578f` | Validação Codex: K-01 precisa de origem autorizada para o app real (`8f1fa9c`); harness K-03 falhou no Bash 3.2 (corrigido; script `0d06a8c`). Novo pedido K-05 aberto. K-04: `f1e578f` sem objeção. |
+| 2026-10-11 19:53 | `07d4da3` | **K-03 integrado** pelo Codex depois de 13/13 no macOS. K-04: o merge `07d4da3` traz `scripts/release-testflight.sh` idêntico a `0d06a8c` (`git diff` vazio), sem outros arquivos. Sem objeção. K-01 e K-05 aguardando. |
 
 ### Coordenacao Codex — 2026-10-11 (America/Vancouver)
 
