@@ -229,6 +229,19 @@ extension SyndicationConnectorTests {
 }
 
 extension SyndicationConnectorTests {
+    /// Kiro K-01: a feed redirecting into the private network is a classified remote-response failure
+    /// (target-local, backs off like other refused redirects), never an unclassified error that escapes.
+    func testK01RedirectIntoPrivateNetworkIsRemoteResponse() async throws {
+        let redirect = SyndicationHTTPHop(statusCode:302,location:"https://169.254.169.254/latest/meta-data/",
+            etag:nil,lastModified:nil,body:Data())
+        let t = ScriptedSyndicationTransport([redirect,hop(rss(["a"]))])
+        do { _ = try await connector(t).pull(pull()); XCTFail("Expected remote response") }
+        catch { XCTAssertEqual(error as? ConnectorOperationalFailure, .remoteResponse) }
+        let calls = await t.journal(); XCTAssertEqual(calls.count,1)
+    }
+}
+
+extension SyndicationConnectorTests {
     func test3R3CompletedDocumentWithoutValidatorsIsUpToDateBeforeTranslation() async throws {
         let body = rss(["a"]), transport = ScriptedSyndicationTransport([hop(body),hop(body)])
         let first = try batch(await connector(transport).pull(pull()), body: body)
