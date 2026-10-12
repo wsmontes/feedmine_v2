@@ -87,8 +87,7 @@ de restauração e preservando a proveniência nova que o próprio S5 exige (`se
   que **passa**). Nesse enquadramento, `XCTAssertEqual(restored.window, snapshot.window)` (:729) está exigindo
   mais do que o produto promete; trocar por asserção de âncora igual + prefixo/sufixo alcançável.
 
-Recomendação: **B** é a correção mínima correta; **A** só se o PO reverter o veredito de round 5 e exigir janela
-idêntica. Nenhuma das duas toca AppComposition (owner quente, K-10).
+Recomendação: **B** é a correção mínima correta **somente se** um teste de alcance **para trás**, a partir da âncora restaurada, provar que todo card do snapshot continua alcançável. Ver `coordination/KIRO.md`, Kiro 01:45: pela leitura não existe admissão para trás (`FeedPresentationAdmission`), e `testReopenKeepsPublishedCardsReachable` só rola para frente, então esse teste provavelmente **falha**. Nesse caso vale **A** (persistir o topo da janela no checkpoint) ou uma admissão para trás, como decisão de arquitetura.
 
 ### Diagnóstico de 1–3 prints que confirma no Mac
 Antes da asserção `:729`:
