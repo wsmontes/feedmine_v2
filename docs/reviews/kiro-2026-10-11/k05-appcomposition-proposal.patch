@@ -1,0 +1,24 @@
+diff --git a/FeedMineApp/FeedMineApp/AppComposition.swift b/FeedMineApp/FeedMineApp/AppComposition.swift
+index 7924b28..2fec8ca 100644
+--- a/FeedMineApp/FeedMineApp/AppComposition.swift
++++ b/FeedMineApp/FeedMineApp/AppComposition.swift
+@@ -1079,8 +1079,18 @@ final class FeedAssociation {
+         }
+         let transport = URLSession(configuration: configuration)
+         self.transport = transport
++        #if DEBUG
++        // Kiro K-05: an instrumented development/benchmark run may authorize the exact origin of its own
++        // fixture server (http(s), non-public host, exact port), e.g. FEEDMINE_AUTHORIZED_FEED_ORIGIN=
++        // http://192.168.1.76:8757. Never derived from catalog/OPML endpoints. A malformed or public value
++        // fails the snapshot loudly instead of being ignored. Release builds do not compile this.
++        let authorizedOrigins = ProcessInfo.processInfo.environment["FEEDMINE_AUTHORIZED_FEED_ORIGIN"]
++            .flatMap { URL(string: $0) }.map { [$0] } ?? []
++        #else
++        let authorizedOrigins: [URL] = []
++        #endif
+         let acquisition = try SyndicationAcquisitionSnapshot(database: db, registrations: registrations,
+-            session: transport, redirectCapacity: 4)
++            session: transport, redirectCapacity: 4, authorizedNonPublicOrigins: authorizedOrigins)
+         self.acquisition = acquisition
+         // H2: a feed that keeps failing cools down for a doubling window that starts at what one
+         // failed attempt may already cost (the request timeout) and is capped by the resource

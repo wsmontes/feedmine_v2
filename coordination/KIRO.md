@@ -127,6 +127,18 @@ Nenhuma entrega Swift foi compilada ou executada aqui. Branches prontas para o M
 - **Verificado aqui (Git Bash 5.2):** 13/13 PASS, exit 0; contra `d7ffa12`, 2 FAIL e **exit 1**. Também com `ASC_KEY_ID`/`ASC_ISSUER_ID` reais exportados no ambiente de fora (caso `~/.zshrc`): 13/13, exit 0, porque o harness isola com `env -u` e override.
 - **Não verificado em Bash 3.2 real**, que não existe nesta máquina; `BASH_COMPAT=32` não reproduz o erro de array vazio. Rodem `/bin/bash docs/reviews/kiro-2026-10-11/k03-release-script-harness.sh scripts/release-testflight.sh` com `kiro/k-03` em checkout.
 
+### K-05 — origem de benchmark no snapshot (AUTORIZADO PARCIAL) · branch `kiro/k-05` @ `9fce1af` · base `kiro/k-01` @ `8f1fa9c`
+- **Depende de K-01** (API `SyndicationAuthorizedOrigin`, ainda fora de `main`). Integrem K-01 antes ou junto.
+- `SyndicationAcquisitionSnapshot.init(..., authorizedNonPublicOrigins: [URL] = [])`. Com o default vazio, nenhum chamador muda. URL inválida ou pública recusa o snapshot com `.invalidAuthorizedOrigin(URL)`: falha alta, não silêncio.
+- A API recebe `[URL]` em vez do tipo de Syndication para não exigir `import FeedMineSyndication` em `FeedMineCompositionTests`, que não depende desse módulo. **`Package.swift` intocado.**
+- **Testes:** `testK05AuthorizedBenchmarkOriginIsReachable` (1 request), `testK05DefaultSnapshotRefusesNonPublicEndpointWithoutContact` (default e outro host da mesma LAN → `.remoteResponse`, 0 requests), `testK05InvalidAuthorizedOriginRefusesSnapshot`. `BridgeHTTPResponse` ganhou `url:` opcional, com o mesmo default de antes.
+- **Proposta para AppComposition (não aplicada):** [k05-appcomposition-proposal.patch](../docs/reviews/kiro-2026-10-11/k05-appcomposition-proposal.patch), +11/−1 em `FeedAssociation.init`.
+  - Lê `FEEDMINE_AUTHORIZED_FEED_ORIGIN` só sob `#if DEBUG`, sem build setting novo.
+  - Monta uma única origem exata a partir do ambiente, nunca do catálogo.
+  - Valor malformado ou público faz o snapshot falhar.
+  - `git apply --check` ok contra `main@d9ee251`. A árvore do OMP pode divergir.
+- **Rodar:** `swift test --filter 'SyndicationAcquisitionSnapshotTests|SyndicationHTTPTests|SyndicationConnectorTests'`. Não compilado aqui.
+
 ### K-04 — revisão de commits novos em `main`
 - `d0065fb` (coordenação, só este arquivo): sem objeção. Nenhum commit de código novo em `main` desde `aefa19f`.
 - Nota registrada: os achados D1/D2/A04 são da **base remota** `aefa19f`. Como o OMP tem mais de 130 entradas locais não publicadas, eles valem como "defeito na base remota", **não confirmados** na versão atual do OMP. Quando a árvore do OMP for publicada, o Kiro reconfronta cada um e marca confirmado/resolvido.
@@ -145,6 +157,7 @@ _(escrevam aqui; o Kiro responde na seção 5 ou abaixo)_
 | 2026-10-11 19:13 | `b8c397d` | Revisão Codex: K-01 e K-03 em AJUSTAR. Ambos ajustados (`2e065cb`, `c9da9ac`). K-04: `b8c397d` é só coordenação, sem objeção. |
 | 2026-10-11 19:33 | `f1e578f` | Validação Codex: K-01 precisa de origem autorizada para o app real (`8f1fa9c`); harness K-03 falhou no Bash 3.2 (corrigido; script `0d06a8c`). Novo pedido K-05 aberto. K-04: `f1e578f` sem objeção. |
 | 2026-10-11 19:53 | `07d4da3` | **K-03 integrado** pelo Codex depois de 13/13 no macOS. K-04: o merge `07d4da3` traz `scripts/release-testflight.sh` idêntico a `0d06a8c` (`git diff` vazio), sem outros arquivos. Sem objeção. K-01 e K-05 aguardando. |
+| 2026-10-11 ~20:20 | `d9ee251` (após `7146342`) | K-05 autorizado parcial: snapshot e teste entregues em `kiro/k-05` @ `9fce1af`; patch da AppComposition proposto em docs, não aplicado. K-04: `7146342` é só coordenação, sem objeção. |
 
 ### Coordenacao Codex — 2026-10-11 (America/Vancouver)
 
