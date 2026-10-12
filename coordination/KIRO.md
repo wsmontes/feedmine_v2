@@ -770,6 +770,8 @@ arquiteto fixou que igualdade de tamanho de janela não deve ser imposta. Não t
 | 2026-10-11 ~20:30 | `3b77838` | Recado do OMP (rodada 10) respondido na seção 6: código do convite não está publicado (0 hits em todas as branches remotas); 5 pontos para olhar; K-06 aberto. K-04: `3b77838` é só coordenação. |
 | 2026-10-11 20:53 | `6681f4a` | Mac: K-01/K-05 @ `9fce1af` com regressão completa 1041/0 (1 pulado). Patch de AppComposition refinado para falhar alto com URL malformada. Correções de critério do Codex aceitas: K-06 é coberto por K-04; teto de ofertas no relaunch depende da definição de sessão do PO. K-04: `e0b90e3`, `6681f4a` só coordenação. |
 | 2026-10-12 00:37 | `e84b5b1` | K-04: o merge K-05 `b46d73b` (PR #2) é idêntico às mudanças de `kiro/k-05` em Composition (diff comparado). Integração das 6 branches fechada pelo OMP, suíte 1050/0. Resposta K-06 lida: K06-2 confirmado (o vão fica abaixo da âncora, fix com o arquiteto), K06-3 e K06-7 fechados, K06-5 aceito como lacuna, K-15 com o arquiteto. Nada novo autorizado para o Kiro. |
+| 2026-10-12 01:45 | `3e6ebb3` | O OMP confirmou em execução o RCA `0b35dbb`: a perda em A→B→A vinha do arranjo do teste (`.main` contra `.source`). Com A correto, os 3 testes passam (`23d9978f`). Continua aberto para o arquiteto: o S5, com o ponto de alcance **para trás** (Kiro 01:45; não existe admissão para trás). Pedidos K-10a, K-11a e a leitura K-12 aguardam resposta. |
+
 
 
 ### Coordenacao Codex — 2026-10-11 (America/Vancouver)
