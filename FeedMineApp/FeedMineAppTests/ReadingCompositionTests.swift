@@ -28,20 +28,31 @@ enum ReadingFixtureShape: String {
 enum ReadingFixture {
     static let shape = Mutex(ReadingFixtureShape.shortSummary)
 
+    /// Which batch of items the next payload serves. Default `0` keeps every payload byte-identical to what this
+    /// transport always served; a test that needs a **deep store** (a long navigation, where the edition must hold
+    /// far more cards than one window) advances it, so each publication brings *distinct* items instead of
+    /// re-publishing the same twenty-four. Restored by the test itself, like `shape`.
+    static let generation = Mutex(0)
+
+    private static var itemRange: ClosedRange<Int> {
+        let base = generation.withLock { $0 } * 24
+        return (base + 1)...(base + 24)
+    }
+
     /// Comfortably over the 3.000-character parameter that opens the local reader, and recognisable on screen.
     static var longText: String {
         (1...60).map { "Parágrafo \($0): o texto que a fonte publicou para este artigo." }.joined(separator: " ")
     }
 
     private static func rss(description: (Int) -> String) -> Data {
-        let items = (1...24).map {
+        let items = itemRange.map {
             "<item><guid>fixture-\($0)</guid><title>Published fixture \($0)</title><link>https://fixture.invalid/story-\($0)</link>\(description($0))</item>"
         }.joined()
         return Data("<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Trusted fixture</title><link>https://fixture.invalid/</link><description>Integration</description>\(items)</channel></rss>".utf8)
     }
 
     private static var jsonFeed: Data {
-        let items = (1...24).map {
+        let items = itemRange.map {
             """
             {"id": "https://fixture.invalid/story-\($0)", "url": "https://fixture.invalid/story-\($0)",
              "title": "Published fixture \($0)", "summary": "Readable local story \($0)",

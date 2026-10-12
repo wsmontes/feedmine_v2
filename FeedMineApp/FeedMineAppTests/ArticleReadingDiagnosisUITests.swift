@@ -169,6 +169,62 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         return containers(app).count
     }
 
+    /// A segunda demonstração que o arquiteto exigiu ao aceitar o reparo: **posição visual preservada ao inserir
+    /// cards acima**, e ele foi explícito de que "identidade e placement não substituem essa medição". Então a
+    /// medição é de TELA: o próprio app publica o elemento da sua âncora, e o teste lê onde ele está.
+    ///
+    /// O gesto é pequeno de propósito: um arrasto para trás (na direção do histórico) já faz o app emitir
+    /// `.backward`, ou seja, a admissão acontece, mas o leitor não troca de carta. Se o prepend empurrasse o
+    /// conteúdo, a âncora saltaria centenas de pontos na tela — a medida anterior desta família registrou 139 pt e
+    /// 912 pt em corridas reais. Sem inserção, o esperado é não haver salto.
+    @MainActor
+    func testBackwardAdmissionDoesNotJumpTheReadersVisualPosition() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 120), "o app tem de chegar ao feed")
+        XCTAssertGreaterThan(waitForCards(app, within: 180), 3, "o arranjo precisa de cartas para admitir acima")
+
+        guard let anchorBefore = anchor(app), anchorBefore.frame != .zero else {
+            return XCTFail("o app tem de publicar a âncora E ela tem de estar visível para a medida ser de tela")
+        }
+        let frameBefore = anchorBefore.frame
+        let identityBefore = anchorBefore.identifier
+        let screenBefore = XCTAttachment(screenshot: app.screenshot())
+        screenBefore.name = "anchor-before-backward-gesture"
+        screenBefore.lifetime = .keepAlways
+        add(screenBefore)
+
+        // Pequeno arrasto na direção do histórico (para cima do conteúdo): dispara `.backward` no app — a admissão —
+        // sem tirar o leitor da carta em que está.
+        app.scrollViews.firstMatch.swipeDown(velocity: .slow)
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+        let screenAfter = XCTAttachment(screenshot: app.screenshot())
+        screenAfter.name = "anchor-after-backward-gesture"
+        screenAfter.lifetime = .keepAlways
+        add(screenAfter)
+
+        guard let anchorAfter = anchor(app), anchorAfter.frame != .zero else {
+            return XCTFail("depois do gesto a âncora tem de continuar visível para a medida ser comparável")
+        }
+        let jump = abs(anchorAfter.frame.minY - frameBefore.minY)
+        let evidence = XCTAttachment(string: """
+            antes: \(identityBefore) em y=\(frameBefore.minY) \
+            (\(frameBefore.width)x\(frameBefore.height)) · depois: \(anchorAfter.identifier) em \
+            y=\(anchorAfter.frame.minY) · salto medido: \(jump) pt
+            """)
+        evidence.name = "anchor-visual-jump"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        XCTAssertEqual(anchorAfter.identifier, identityBefore,
+            "um gesto pequeno não troca a carta do leitor — se trocou, a medida perdeu o objeto")
+        XCTAssertLessThan(jump, 24,
+            "inserir histórico acima não pode empurrar a posição visual do leitor: salto de \(jump) pt")
+    }
+
     /// Espera **rolando**, como o gate faz: numa folha preguiçosa o controle não EXISTE até aparecer, então
     /// `waitForExistence` sozinho falha para um controle que está abaixo da dobra — foi assim que a minha primeira
     /// versão deste teste reprovou a folha de fontes que existe.

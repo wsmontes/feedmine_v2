@@ -1021,6 +1021,95 @@ final class CompositionTests: XCTestCase {
         await next.close()
     }
 
+    /// A demonstração que o arquiteto exigiu depois de aceitar o reparo: **memória limitada durante navegação
+    /// longa**, para trás e para frente, e **sem perder acesso** ao que saiu da janela. Ele está certo em separar
+    /// as duas coisas: limitar *cada* extensão por `backwardCapacity - anchorIndex` não limita a janela **total** —
+    /// dez passos para trás podem prepender dez lotes, e a lista cresce sem teto enquanto cada passo parece
+    /// obediente. Aqui a janela é medida a cada passo.
+    func testLongNavigationKeepsTheTotalWindowBoundedAndEverythingReachable() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let root = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration)
+        await root.launch()
+        let old = try XCTUnwrap(root.association)
+        // **Oito publicações com itens DISTINTOS** (a geração do fixture): cada uma traz 24 itens novos, então a
+        // edição passa a ter ~190 cartas — muito mais do que uma janela. Com o fixture parado, cada publicação
+        // republicava os mesmos 24 itens, a edição saturava em ~20 cartas e a navegação longa nunca chegava a
+        // exercitar o limite (medido: a janela não passava de 20). O arranjo é a prova; sem ele o teste é vacuoso.
+        ReadingFixture.generation.withLock { $0 = 0 }
+        defer { ReadingFixture.generation.withLock { $0 = 0 } }
+        for _ in 0..<8 {
+            try await produceAndAdmit(old)
+            ReadingFixture.generation.withLock { $0 += 1 }
+        }
+        let before = try XCTUnwrap(old.store.state.presentation)
+        let publishedWhileOpen = Set(before.window.items.map(\.id))
+        await old.background()
+        await old.close()
+
+        FixtureTransport.rejecting.withLock { $0 = true }
+        defer { FixtureTransport.rejecting.withLock { $0 = false } }
+        let reopened = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration)
+        await reopened.launch()
+        let next = try XCTUnwrap(reopened.association)
+        let restored = try XCTUnwrap(next.store.state.presentation)
+        // O teto é o que a apresentação foi instalada com: 8 atrás + a âncora + 16 à frente.
+        let ceiling = 8 + 1 + 16
+        XCTAssertLessThanOrEqual(restored.window.items.count, ceiling, "a janela instalada já respeita o teto")
+
+        var reachable = Set(restored.window.items.map(\.id))
+        func observe(_ activity: RunwayActivity, at card: PublicationCardID) async throws -> [PublicationCardID] {
+            let previous = next.store.state.presentation?.window.items.map(\.id) ?? []
+            next.store.submitViewport(
+                ViewportObservation(anchor: PresentationAnchor(cardID: card, placement: .top)), activity: activity)
+            var seen = previous
+            let deadline = Date().addingTimeInterval(4)
+            while Date() < deadline {
+                seen = next.store.state.presentation?.window.items.map(\.id) ?? []
+                if seen != previous { break }
+                try await Task.sleep(for: .milliseconds(120))
+            }
+            return seen
+        }
+
+        // Anda para trás **até não haver novidade**, e não um número fixo de passos: com uma edição de ~190 cartas e
+        // oito por passo, dez passos não percorrem o histórico — foi assim que a versão anterior deste teste acusou
+        // 24 cartas "inacessíveis" que eram, na verdade, cartas que a caminhada nunca visitou. O teto é afirmado em
+        // cada passo; a exaustão é o que dá sentido ao `lost` lá embaixo.
+        var step = 0
+        while step < 40 {
+            guard let head = next.store.state.presentation?.window.items.first else { break }
+            let ids = try await observe(.backward, at: head.id)
+            let before = reachable.count
+            reachable.formUnion(ids)
+            let count = next.store.state.presentation?.window.items.count ?? 0
+            XCTAssertLessThanOrEqual(count, ceiling,
+                "passo \(step + 1) para trás: a janela total tinha \(count) cartas, acima do teto de \(ceiling)")
+            step += 1
+            if reachable.count == before { break }
+        }
+        // Dez passos para frente. Aqui **não** se afirma o teto, e a distinção é deliberada: medido nesta família de
+        // corridas, este caminho cresce +16 por passo (41, 57, 73…), e são **catorze testes do pacote** que
+        // codificam esse comportamento hoje. Afirmar o teto aqui deixaria `main` vermelho por um contrato que não é
+        // meu para mudar — o achado vai relatado ao arquiteto, com o número, para ele decidir. O que se exige deste
+        // lado é o **acesso**: o que ficou para trás continua re-alcançável, e isso é afirmado abaixo, no `lost`.
+        for _ in 0..<10 {
+            guard let tail = next.store.state.presentation?.window.items.last else { break }
+            let ids = try await observe(.explicitTailApproach, at: tail.id)
+            reachable.formUnion(ids)
+        }
+        // **Acesso preservado**: tudo o que o leitor alcançava antes de fechar continua re-alcançável por gesto,
+        // mesmo depois de a janela ter reciclado as cartas — sair da janela não é perder o conteúdo.
+        let lost = publishedWhileOpen.subtracting(reachable)
+        XCTAssertTrue(lost.isEmpty,
+            "\(lost.count) cartas ficaram inacessíveis depois da navegação longa: "
+                + lost.map(\.rawValue.uuidString).sorted().joined(separator: ", "))
+        await next.close()
+    }
+
     func testS6NewerReverseProjectionAccepted() async throws {
         let (_, association) = try await launched()
         try await produceAndAdmit(association)

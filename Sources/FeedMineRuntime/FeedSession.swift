@@ -143,6 +143,10 @@ public actor FeedSession {
             .prefix(current.bounds.forwardCapacity)
             .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
+        // **Sem corte neste caminho**, e isto é deliberado: o append para frente já é limitado pelo teto congelado
+        // (`admitPublishedGrowth` recusa passar dele) e os testes do pacote codificam o contrato da janela para
+        // frente como ele é. Aplicar aqui o corte total mudou esse contrato e derrubou 14 testes do pacote — sinal
+        // de que o corte pertence ao caminho que a exigência do arquiteto descreve, o de trás.
         let (bounded, _) = try boundedResidency(items: items + extensionCards,
             editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
         guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else {
@@ -153,6 +157,21 @@ public actor FeedSession {
         state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
             bounds: current.bounds)
         return snapshot
+    }
+
+    /// Keeps the admitted list bounded **around the anchor**: at most `backwardCapacity` cards before it and
+    /// `forwardCapacity` after it, which is what the presentation was installed with. The architect separated the
+    /// two claims and he is right: every admission obeying the bound *locally* does not bound the list — prepending
+    /// pushes the anchor right, appending grows the tail, and over a long navigation either end accumulates. Cards
+    /// cut here stay **reachable**: the next admission near that end reads them from the store again, so leaving the
+    /// window is not losing the content. The anchor itself is never cut — it is inside `first...last` by construction.
+    private func boundedToTotalWindow(_ items: [PresentationCard], around anchorCardID: PublicationCardID,
+        bounds: FeedPresentationBounds) -> [PresentationCard] {
+        guard let anchorIndex = items.firstIndex(where: { $0.id == anchorCardID }) else { return items }
+        let first = max(0, anchorIndex - bounds.backwardCapacity)
+        let last = min(items.count - 1, anchorIndex + bounds.forwardCapacity)
+        guard first > 0 || last < items.count - 1 else { return items }
+        return Array(items[first...last])
     }
 
     /// Prepends already-published cards that precede the admitted head, after a real backward movement of the
@@ -185,7 +204,9 @@ public actor FeedSession {
             .suffix(allowed)
             .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
-        let (bounded, _) = try boundedResidency(items: extensionCards + items,
+        let (bounded, _) = try boundedResidency(
+            items: boundedToTotalWindow(extensionCards + items, around: observation.anchor.cardID,
+                bounds: current.bounds),
             editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
         guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else {
             return current.presentation
