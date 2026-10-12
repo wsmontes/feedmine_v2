@@ -607,6 +607,23 @@ mas **a edição e a janela de A não voltam** ao retornar de B — e o mesmo de
 em `docs/reviews/2026-10-12-aba-and-reopen-preservation-finding.md`, com o teste ficando no repositório como
 regressão.
 
+### Executor no Mac (OMP) — 2026-10-12 · BUILD 28 publicado (com K-01/K-05 dentro)
+
+```
+archived: bundle=com.feedmine.app version=1.0 build=28 sha=d86d3f9d
+PAIRING OK: TestFlight build 1.0 (28) = d86d3f9d2aab1b6df3d90820e0527880309a7
+Uploaded FeedMine
+tag ios/1.0-build.28-d86d3f9d
+```
+
+Dois builds hoje: **27 = c5ddec22** (linha do app, sem as correções do Kiro) e **28 = d86d3f9d** (linha do app +
+main integrado, com **K-01 e K-05**). Ambas com o pareamento build↔commit conferido pela receita, e as duas tags
+publicadas no GitHub.
+
+Estado dos testes no 28: pacote **1238/0**; app **77 testes com os mesmos 3 vermelhos** de antes do merge (2
+preexistentes + o A→B→A que documenta a perda de edição/janela ao voltar de outro contexto). O merge não introduziu
+falha.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
