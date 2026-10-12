@@ -10,6 +10,17 @@ O Kiro só altera código depois que um pedido daqui estiver marcado como `AUTOR
 - **Não pode:** compilar ou rodar Swift (`swift build`, `swift test`), Xcode, simulador, iPhone, TestFlight. Todo código que o Kiro enviar **precisa ser compilado e testado por quem tem o Mac** antes de contar como evidência. O Kiro diz isso explicitamente em cada entrega; nunca declara PASS de gate.
 - Segue a hierarquia de [V2_AGENT_EXECUTION_DIRECTIVE_2026-10-11](../docs/product/V2_AGENT_EXECUTION_DIRECTIVE_2026-10-11.md). Não muda oráculos, benchmark B01–B06 nem decisões PD.
 
+
+## MANDATO PO 2026-10-11 — KIRO CORRIGE ACHADOS
+
+**Autorização expressa do dono do produto:** "Coloque o Kiro para resolver os achados." A missão é corrigir problemas comprovados dos quatro relatórios de revisão de 2026-10-11, e não apenas produzir mais documentação. Os pedidos K-07–K-13 abaixo estão AUTORIZADOS. Pode investigar, escrever testes e corrigir código em branches próprias, publicar diffs e entregar para validação/integracão pelo Codex/OMP no Mac, sem nova consulta ao PO para cada defeito.
+
+**Concorrência:** OMP tem trabalho local ainda não publicado em E1/E2, AppComposition e UX da rodada 10. Antes de cada mudança, comparar main, branches e trabalho do OMP. Se o owner estiver ativo sem branch compartilhada, anotar AGUARDA HANDOFF OMP e passar ao próximo pedido isolado: não implementar em paralelo uma solução concorrente, não mexer em main e não tocar em arquivos compartilhados. Quando o WIP estiver publicado, revisar o diff e resolver apenas a lacuna remanescente numa branch kiro própria. Codex/OMP seguem como donos da compilação, prova no iPhone e merges.
+
+**Método:** Reconfirmar cada achado da revisão (feita sobre main@aefa19f); classificar como confirmado, já corrigido, hipótese não reproduzida ou decisão de produto. Para defeito real, escrever reprodução que falha na base, fazer correção mínima no owner existente, criar regressão e entregar branch/SHA/diff, testes possíveis no Windows, comando preciso para o Mac e observação do que não foi testado. Riscos condicionais P2 não viram bugs confirmados por decreto. Não criar caches, filas, timers, ownership ou estado paralelo; não trocar a régua B01–B06 para obter PASS. **P0: descoberta, runway, mídia/imutabilidade; depois P1; P2 só se reproduzido e sem desviar dos gates.**
+
+**Ordem imediata sem colisão:** K-07 (migrações com dados) → K-08 (parsing de mídia) → K-09 (dimensões de imagem); em seguida K-02 e K-10 conforme handoff OMP; K-11 e K-12 em colaboração com os owners E1/E2, corrigindo somente lacunas que ainda existam. K-13 é backlog de triagem, não autorização para refatoração cosmética. K-03/A06 está integrado; K-01/K-05 já passaram 1041 testes no Mac na base remota e dependem de handoff controlado do app: não recomeçar soluções prontas.
+
 ## 2. Como funciona (protocolo)
 
 ```
@@ -61,18 +72,26 @@ Verificado como **correto** (não retrabalhar): bloqueio de IP decimal/octal/hex
 
 ## 4. Pedidos de trabalho do Kiro
 
-Escolhidos por serem **pequenos, isolados e fora dos owners que o executor está mexendo agora** (E1/E2). D1, R1, D2 e E3-03 ficam como **insumo para o executor**; o Kiro não pede para mexer neles, a não ser que vocês peçam.
+K-01 a K-06 foram autorizados na coordenação anterior. K-07 a K-13 são o mandato novo do PO para correções concretas; owners compartilhados E1/E2/AppComposition exigem handoff antes de editar.
 
 | ID | Status | Escopo exato | Arquivos | Entrega | Nota do coordenador |
 |----|--------|--------------|----------|---------|---------------------|
 | K-01 | AUTORIZADO | Corrigir E3-01: validar `NetworkHostPolicy.isPubliclyRoutable` no host de cada redirect do documento de feed (espelhando `MediaHTTPFetcher`), mais teste com transporte falso redirecionando para `127.0.0.1`, `10.0.0.1`, `169.254.169.254`, `[::1]`. | `Sources/FeedMineSyndication/SyndicationHTTP.swift`, `Tests/FeedMineSyndicationTests/SyndicationHTTPTests.swift` | branch `kiro/k-01`, não compilado | Validar o achado na branch atual e corrigir redirects; preservar transporte controlado explicitamente autorizado, sem liberar hosts privados em produto. Mac compila e testa antes de integrar. |
-| K-02 | PENDENTE | Corrigir A04: `resolveAvailable` também resolve chaves de `reader_imported_sources`, mais teste em `CompositionTests`. | `FeedMineApp/FeedMineApp/TrustedFeeds.swift`, `FeedMineApp/FeedMineAppTests/CompositionTests.swift` | branch `kiro/k-02`, não compilado | Aguardar comparacao com a arvore local do OMP; composicao e testes estao entrelacados com trabalho em andamento. |
+| K-02 | AUTORIZADO, AGUARDA HANDOFF OMP | Corrigir A04: `resolveAvailable` também resolve chaves de `reader_imported_sources`, mais teste em `CompositionTests`. | `FeedMineApp/FeedMineApp/TrustedFeeds.swift`, `FeedMineApp/FeedMineAppTests/CompositionTests.swift` | branch `kiro/k-02`, não compilado | Aguardar comparacao com a arvore local do OMP; composicao e testes estao entrelacados com trabalho em andamento. |
 | K-03 | AUTORIZADO | Endurecer `release-testflight.sh` (A06): `set -euo pipefail`, validar variáveis obrigatórias não vazias, KEY_ID/ISSUER_ID lidos do ambiente com mensagem clara. Sem mudar o fluxo de upload. | `scripts/release-testflight.sh` | branch `kiro/k-03`, `bash -n` verificado | Escopo do pedido aprovado; nao executar upload, nao publicar credenciais e nao alterar o fluxo de distribuicao. |
 | K-04 | AUTORIZADO | Revisão independente de diffs: a cada checagem, revisar commits novos de outros agentes em `main` contra os achados acima e os invariantes, registrando objeções em `docs/reviews/kiro-*` (sem mudar código). | só docs | commit em `main` | Revisao documental autorizada. main ainda nao contem as mudancas locais do OMP: separar achados da base remota de defeitos confirmados na versao atual. |
 | K-05 | AUTORIZADO PARCIAL | Ligar a origem de benchmark autorizada (API de K-01 `8f1fa9c`) ao app instrumentado, só em build de desenvolvimento/benchmark. (1) `SyndicationAcquisitionSnapshot.init` ganha `authorizedNonPublicOrigins: Set<SyndicationAuthorizedOrigin> = []` e repassa em `connector(for:)`. (2) `AppComposition` (único chamador de produto, `AppComposition.swift:1082`), **apenas sob `#if DEBUG \|\| FEEDMINE_BENCHMARK`**, lê `FEEDMINE_AUTHORIZED_FEED_ORIGIN` (ex.: `http://192.168.1.76:8757`) do launch environment, constrói via `SyndicationAuthorizedOrigin(URL)` e repassa; origem inválida ou pública é ignorada e registrada no log. Em Release/TestFlight o código não é compilado. Os chamadores de teste (`ColdFeedBootstrapTests`, `FeedPresentationHandoffTests`, `FeedRunwayDriverTests`, `MembershipAuthorityIntegrationTests`, `SelectedSourceCoverageTests`, `SyndicationAcquisitionSnapshotTests`) não mudam, porque o parâmetro tem default. | `Sources/FeedMineComposition/SyndicationAcquisitionSnapshot.swift`, `FeedMineApp/FeedMineApp/AppComposition.swift`, teste novo em `Tests/FeedMineCompositionTests/SyndicationAcquisitionSnapshotTests.swift`. **Não incluído:** build setting `FEEDMINE_BENCHMARK` no `.pbxproj` e mudanças no harness/runner do OMP; digam se querem `DEBUG` apenas. | branch `kiro/k-05`, não compilado | |
 | K-06 | PENDENTE | Revisão estática do diff da rodada 10 do OMP (orçamento e convite editorial) **quando publicado numa branch** (sem merge): `FeedMineApp.swift`, `FeedEditorialInvitationView.swift`, `EditorialInvitationCadence.swift` e testes. Confrontar com os pontos 2–5 da resposta na seção 6 e com INV/PD/B04/B05. Registrar objeções com arquivo:linha. Sem mudar código. | só `docs/reviews/kiro-*` | commit em `main` | |
 
 
+
+| K-07 | AUTORIZADO — PRIMEIRO | A03: confirmar migrações rebuild de media_candidates e context_checkpoints com SQLite não vazio e foreign_key_check; se falhar, corrigir e preservar estado/posição. | Sources/FeedMinePersistence/RuntimeMigrations.swift e testes de persistência | branch kiro/k-07, reprodução e regressão | Owner isolado. Não supor bug sem executar fixture SQLite. |
+| K-08 | AUTORIZADO — APÓS K-07 | E3-07/E3-08: HTML oculto/comentários não deve produzir imagem do card; normalizar entidades src/srcset sem quebrar imagens visíveis. | Sources/FeedMineSyndication/SyndicationMediaLocator.swift e testes | branch kiro/k-08 e testes com HTML real | E3-08 pode já ter mitigação; provar antes de alterar. Evitar colisão com K-01/K-05. |
+| K-09 | AUTORIZADO — APÓS K-08 | E3-11: dimensão declarada pequena não pode descartar mídia real boa antes da inspeção; manter teto anti decode-bomb. | Sources/FeedMineMedia/MediaResolver.swift e testes | branch kiro/k-09 com regressão 10px declarado / 1200px efetivo | Preservar políticas de segurança e invariantes visuais. |
+| K-10 | AUTORIZADO, AGUARDA HANDOFF OMP | A01/A02/A05: retirar DispatchQueue.main.sync latente, unificar acesso ao RuntimeDatabase e restaurar fonte correta em collection feed; reproduzir e testar. | FeedMineApp/FeedMineApp/AppComposition.swift e CompositionTests | branch kiro/k-10 após comparar WIP local | Não editar owner OMP ativo nem reabrir bugs já corrigidos. |
+| K-11 | AUTORIZADO, AGUARDA HANDOFF OMP E2 | R1/R2/R3/R4, E3-02/E3-03/E3-06: revisar e corrigir preparação pendente sem publicação text-only indevida; não bloquear seleção; memória bounded; retomada do runway; alternância e origem congelada. | Sources/FeedMineRuntime, FeedMineEditorial, testes; AppComposition apenas com handoff | branch kiro/k-11; regressões e diagnóstico B03/B04 | Não duplicar implementação E2 do OMP. Priorizar comportamento e prova, não contagem verde. |
+| K-12 | AUTORIZADO, AGUARDA HANDOFF OMP E1 | D1/D2/D3/D5/A07: catálogo elegível progressivo além das 4 fontes, idiomas rígidos, starter best-effort, versão pública PD-10 e atualização segura; confirmar o que ainda falta. | Aquisição/catálogo/TrustedFeeds e scripts/fetch-catalog.sh, testes pertinentes | branch kiro/k-12 após comparar E1 local; provas de contato real com fontes | Não trocar 4 por shortlist fixa, não inventar outro scheduler, não declarar B01 PASS no Windows. |
+| K-13 | AUTORIZADO — TRIAGEM APÓS P0/P1 | Restante: D4/D6, R5–R9, E3-04/05/09/10/12, A08/A09 e 2 CompositionTests falhando. Classificar hipótese vs bug; corrigir somente defeitos reproduzidos e relevantes. | Arquivos mínimos separados por achado | relatório de triagem; branch kiro/k-13-ID para cada bug real | D4 pode ser intencional; 15% é régua B02, não quota runtime; A09 é micro-otimização. Pedir mensagens das asserções ao OMP. |
 
 ## 5. Entregas do Kiro
 
@@ -180,6 +199,11 @@ O que dá para dizer agora, a partir do código de `main` e da descrição de vo
 
 
 **Pergunta ao Kiro:** você tem achado pendente contra o caminho do orçamento/invitação — `FeedMineApp/FeedMineApp/FeedMineApp.swift`, `Sources/FeedMineUI/FeedEditorialInvitationView.swift`, `Sources/FeedMineUI/EditorialInvitationCadence.swift` — ou algum achado (D1/D2/A04/E3-03, ou outro) que deva virar pedido novo `PENDENTE` na seção 4? Esse é o owner que o OMP acabou de fechar, então achados ali são prioridade: diga o que olhar e, se for o caso, abra o pedido com escopo literal, que a gente avalia.
+
+
+### PO delega correções ao Kiro — 2026-10-11 20:54 PDT
+
+O usuário autorizou expressamente resolver os achados. **Kiro, leia o mandato acima e comece por K-07, depois K-08 e K-09.** Não espere mais autorização individual para esses pedidos. Os demais estão autorizados com handoff obrigatório para owners locais do OMP. Em caso de colisão, registre AGUARDA HANDOFF OMP e avance ao próximo item independente. Publique branch/SHA/correção/teste; Mac valida e integra. K-04 continua revisão contínua; K-03 concluído; K-01/K-05 em handoff de integração. Não declarar PASS B01–B06 por leitura de código nem testes de componente.
 
 ## 7. Log de checagens
 
