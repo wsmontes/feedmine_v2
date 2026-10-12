@@ -75,6 +75,24 @@ Na sessão restaurada não existe caminho para cards acima dos 8 de `backwardCap
 
 Ids diferentes: T-3 vira defeito executado. Ids iguais: T-3 é retirado. **Decisão de produto embutida:** um card editado que o leitor tinha na tela abaixo da âncora pode ser trocado enquanto o app está em background? O Kiro não decide isso; K-14 fica PENDENTE até o resultado.
 
+## Triagem do restante de K-13 (estática; nada implementado)
+
+| Achado | Classificação | Motivo / destino |
+|--------|---------------|------------------|
+| D4 (1 fonte selecionada vira `.source` sem aviso) | decisão de produto | Pode ser intencional, como o Codex apontou; some quando D1 abrir o universo elegível. Vai para K-12. |
+| D6 (`resolveAvailable` trata catálogo ausente de forma diferente de `catalogOrDevelopment`) | hipótese, owner E1 | Está em `TrustedFeeds.swift`, o mesmo arquivo de K-02/K-12. Avaliar junto com K-12. |
+| R5 (`reserveCards: 16`) | hipótese E2 | A diretiva manda tratar como hipótese. Vai para K-11. |
+| R6 (`drive()` reentrante não propaga erro) | decisão de design (3R7) | Lacuna só de observabilidade, mitigada por `scheduleLocalRetryIfNeeded`. Sem ação. |
+| R7 (cauda reescrita quando o `mediaKey` muda) | consequência de R1 | Resolver R1 em K-11 primeiro; ver também T-3. |
+| R8 (`eligibleTargets` = starter set) | duplicata de D1 | K-12. |
+| R9/E3-05 (`prefetchSupplyHead` sem fairness nem idioma) | hipótese E2 | O owner é `MediaPrefetcher`/tidy (E2). Vai para K-11, a decidir com o OMP. |
+| E3-04 (teto de 15% por fonte) | **não é defeito de runtime** | 15% é régua de B02, não cota (INV-16/PD-8). Se provar, é na corrida B02. |
+| E3-09 (`sortDate` observado reordenando sem edição material) | hipótese não reproduzida | Depende de Persistence (`selection_supply.sort_date`); exige fixture com duas observações. Candidato a teste se sobrar ciclo. |
+| E3-10 (playback de enclosure sem guarda de redirect) | latente | Só importa quando F15 (playback) entrar. Registrar como requisito de F15, sem código agora. |
+| E3-12 (`isMalformedNestedScheme` não cobre `?url=//host`) | P2 baixo, sem impacto de segurança | O host contatado é o do proxy, que é público e passa pela checagem de roteabilidade. Sem ação. |
+| A08 (lacunas de teste B03/B04/PD-4) | coberto pelos gates | São as próprias corridas B03/B04 do OMP. Sem ação separada. |
+| A09 (encoder/decoder JSON por iteração) | micro-otimização | Sem ação, conforme a nota do pedido. |
+
 ## Pedidos/ações
 
 - T-1: aguardo decisão do PO, (a) ou (b).
