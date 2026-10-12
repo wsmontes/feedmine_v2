@@ -88,9 +88,20 @@ public struct FeedScreen: View {
                         // (mais o espaçamento que cada carta ocupava), não estimada. Um espaçador só, com a soma: é o
                         // protótipo autorizado, e sem ele a remoção encolhe o conteúdo acima e o leitor anda 159,3 pt.
                         if capture.prunedAboveCount > 0 {
+                            // Os três valores que o arquiteto pediu, medidos no MESMO evento: a altura **solicitada**
+                            // (soma + espaçamento), o que o estado diz representar, e o frame que o espaçador
+                            // **efetivamente ocupou** — este último vindo do próprio layout, não do cálculo.
+                            let requested = capture.prunedAboveHeight
+                                + CGFloat(capture.prunedAboveCount) * FeedDesignTokens.Spacing.section
+                            let represented = capture.spacerCardIDs
+                            let sum = capture.prunedAboveHeight
+                            let recomputed = capture.spacerRepresentedHeight
                             Color.clear
-                                .frame(height: capture.prunedAboveHeight
-                                    + CGFloat(capture.prunedAboveCount) * FeedDesignTokens.Spacing.section)
+                                .frame(height: requested)
+                                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { rendered in
+                                    FeedVisualCapture.traceSpacerEvent(requested: requested, rendered: rendered,
+                                        sum: sum, represented: represented, recomputed: recomputed)
+                                }
                                 .accessibilityHidden(true)
                         }
                         ForEach(Array(presentation.window.items.enumerated()), id: \.element.id) { index, card in
@@ -250,8 +261,20 @@ struct FeedVisualCapture {
     /// cima, outra entra por baixo, e o contador voltava a zero. Medido no log do dispositivo: `pruned=1 readmitted=1
     /// height=141,33 count=0`, e o espaçador nunca renderizava por causa do zero.
     private var spacerCards: Set<PublicationCardID> = []
+    /// Soma do que a janela retirou por cima do leitor e **ainda não devolveu**.
     private(set) var prunedAboveHeight: CGFloat = 0
-    private(set) var prunedAboveCount: Int = 0
+    /// **Derivado do conjunto, não guardado em paralelo.** Um contador separado pode divergir do conjunto, e uma soma
+    /// que fecha por coincidência não prova nada sobre o conjunto — foi o arquiteto quem apontou isso ao exigir
+    /// explicação para `height≈0` com `count=1`. Uma fonte só.
+    var prunedAboveCount: Int { spacerCards.count }
+    /// As cartas que o espaçador representa, para o traço e para os testes.
+    var spacerCardIDs: Set<PublicationCardID> { spacerCards }
+    /// A soma **recomputada a partir do conjunto representado**. Divergir de `prunedAboveHeight` é inconsistência de
+    /// estado; a igualdade entre as duas é a invariante que prova a contabilidade.
+    var spacerRepresentedHeight: CGFloat {
+        spacerCards.reduce(0) { $0 + (measuredHeights[$1] ?? 0) }
+    }
+    var spacerIsConsistent: Bool { abs(spacerRepresentedHeight - prunedAboveHeight) < 0.01 }
     // Each stream contributes its own latest direction; endpoints are not synchronized.
     private var geometryMotion: RunwayActivity?
     private var cardMotion: RunwayActivity?
@@ -331,6 +354,24 @@ struct FeedVisualCapture {
         return reconsider()
     }
 
+    /// Os **três valores no mesmo evento**, como o arquiteto pediu: o que o estado diz representar (soma e conjunto de
+    /// ids), a altura **solicitada** à view, e o frame que o espaçador **efetivamente ocupou**.
+    ///
+    /// A leitura é direta: `deltaRL` diferente de zero é falha de **layout** (a view pediu uma altura e ocupou outra);
+    /// `deltaCalc` diferente de zero é falha de **cálculo** (a soma guardada divergiu do conjunto que ela diz
+    /// representar). **Estático de propósito**: um método mutante aqui marcaria o estado sujo a cada callback de
+    /// geometria e viraria laço.
+    static func traceSpacerEvent(requested: CGFloat, rendered: CGFloat, sum: CGFloat,
+        represented: Set<PublicationCardID>, recomputed: CGFloat) {
+        #if DEBUG
+        guard tracesCapture else { return }
+        trace("spacer requested=\(requested) rendered=\(rendered) deltaRL=\(rendered - requested) "
+            + "sum=\(sum) recomputed=\(recomputed) deltaCalc=\(sum - recomputed) "
+            + "represented=\(represented.count) "
+            + "ids=[\(represented.map(\.rawValue.uuidString).sorted().joined(separator: ","))]")
+        #endif
+    }
+
     /// A janela mudou. O que **saiu por cima** entra no espaçador, o que **voltou** sai dele, e o que não está na
     /// janela nem no espaçador é esquecido — o mapa fica limitado pelo que ele representa, e não pelo histórico.
     ///
@@ -348,12 +389,13 @@ struct FeedVisualCapture {
             prunedAboveHeight = max(0, prunedAboveHeight - (measuredHeights[id] ?? 0))
             spacerCards.remove(id)
         }
-        prunedAboveCount = spacerCards.count
         // O que o espaçador representa continua guardado; o resto sai.
         #if DEBUG
         if Self.tracesCapture, !pruned.isEmpty || !readmitted.isEmpty {
             Self.trace("reconcile pruned=\(pruned.count) readmitted=\(readmitted.count) "
-                + "height=\(prunedAboveHeight) count=\(prunedAboveCount) known=\(measuredHeights.count)")
+                + "sum=\(prunedAboveHeight) recomputed=\(spacerRepresentedHeight) "
+                + "deltaCalc=\(prunedAboveHeight - spacerRepresentedHeight) represented=\(spacerCards.count) "
+                + "known=\(measuredHeights.count)")
         }
         #endif
         let kept = newSet.union(spacerCards)

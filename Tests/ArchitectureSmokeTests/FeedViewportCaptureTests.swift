@@ -11,28 +11,62 @@ import AppKit
 
 @MainActor
 final class FeedViewportCaptureTests: XCTestCase {
-    /// O protótipo do espaçador depende de a reconciliação **contar** o que a janela retirou, com a altura MEDIDA.
-    /// Este caso isola isso sem layout nenhum: alimenta a captura com duas cartas medidas, tira uma da janela, e
-    /// exige que a soma suba exatamente pela altura dela — e volte a zero quando ela volta. Se este caso passa e o
-    /// espaçador ainda não segura o frame na tela, a causa está no layout, não na contabilidade.
-    func testReconcileCountsMeasuredHeightAndReturnsItOnReentry() {
+    /// Os cenários que o arquiteto pediu, no cálculo: **podas consecutivas**, **retorno completo**, **cauda** — e a
+    /// invariante que de fato prova o estado, e não uma soma que fecha por coincidência: a soma guardada tem de ser
+    /// igual à **recomputada a partir do conjunto representado**. Ele apontou certo: `height≈0` com `count=1` exigia
+    /// explicação, e a explicação era o contador guardado em paralelo, que podia divergir do conjunto. Agora o
+    /// contador é derivado, e a invariante é afirmada a cada passo.
+    ///
+    /// Alturas distintas de propósito: se a soma fechasse por coincidência, o teste não provaria nada.
+    ///
+    /// A classificação acima/abaixo **não** está modelada — `reconcileWindow` conta toda carta retirada como se fosse
+    /// de cima do leitor. Num cenário de cauda isso está errado por definição, e o caso registra o fato em vez de
+    /// fixar a semântica errada em asserção: é achado para o handoff, não contrato.
+    func testSpacerAccountingHoldsAcrossPrunesFullReturnAndTail() {
         var capture = FeedVisualCapture()
-        let left = PublicationCardID(), stays = PublicationCardID()
-        _ = capture.observeCard(.init(cardID: left,
-            frame: .init(x: 0, y: 0, width: 300, height: 159.33), offset: 0, height: 800))
-        _ = capture.observeCard(.init(cardID: stays,
-            frame: .init(x: 0, y: 170, width: 300, height: 240), offset: 0, height: 800))
+        let top = (0..<3).map { _ in PublicationCardID() }
+        let bottom = (0..<3).map { _ in PublicationCardID() }
+        for (n, id) in (top + bottom).enumerated() {
+            _ = capture.observeCard(.init(cardID: id,
+                frame: .init(x: 0, y: CGFloat(n) * 400, width: 300, height: 120 + CGFloat(n) * 37), offset: 0, height: 800))
+        }
+        var window = top + bottom
         XCTAssertEqual(capture.prunedAboveHeight, 0, "sem poda, sem espaço reservado")
+        XCTAssertTrue(capture.spacerIsConsistent)
 
-        capture.reconcileWindow(from: [left, stays], to: [stays])
-        XCTAssertEqual(capture.prunedAboveHeight, 159.33, accuracy: 0.01,
-            "a soma do espaçador tem de subir pela altura MEDIDA do que saiu")
-        XCTAssertEqual(capture.prunedAboveCount, 1)
+        // Podas consecutivas por cima, com uma carta NOVA entrando por baixo a cada passo: é o caso que zerava o
+        // contador na versão anterior.
+        var pruned: [PublicationCardID] = []
+        for (n, id) in top.enumerated() {
+            let before = window
+            let fresh = PublicationCardID()
+            _ = capture.observeCard(.init(cardID: fresh,
+                frame: .init(x: 0, y: 3000 + CGFloat(n) * 400, width: 300, height: 260), offset: 0, height: 800))
+            window = window.filter { $0 != id } + [fresh]
+            capture.reconcileWindow(from: before, to: window)
+            pruned.append(id)
+            XCTAssertTrue(capture.spacerIsConsistent,
+                "passo \(n + 1): a soma guardada divergiu do conjunto que ela diz representar")
+            XCTAssertEqual(capture.spacerCardIDs, Set(pruned), "o conjunto representa exatamente o que saiu por cima")
+            XCTAssertEqual(capture.prunedAboveCount, pruned.count)
+        }
+        XCTAssertGreaterThan(capture.prunedAboveHeight, 0, "e o espaçador tem altura a reservar")
 
-        capture.reconcileWindow(from: [stays], to: [left, stays])
+        // Cauda: uma carta sai por BAIXO. A invariante tem de valer aqui também.
+        let beforeTail = window
+        window = window.filter { $0 != beforeTail.last! }
+        capture.reconcileWindow(from: beforeTail, to: window)
+        XCTAssertTrue(capture.spacerIsConsistent, "a invariante vale também no cenário de cauda")
+
+        // Retorno completo: tudo o que o espaçador representa volta, e a reserva tem de voltar a zero.
+        let beforeReturn = window
+        window = window + Array(capture.spacerCardIDs)
+        capture.reconcileWindow(from: beforeReturn, to: window)
+        XCTAssertTrue(capture.spacerIsConsistent)
         XCTAssertEqual(capture.prunedAboveHeight, 0, accuracy: 0.01,
-            "e voltar a zero quando a carta volta — é a mesma medida, então a soma fecha")
+            "com o retorno completo a reserva volta a zero — é a mesma medida entrando e saindo")
         XCTAssertEqual(capture.prunedAboveCount, 0)
+        XCTAssertTrue(capture.spacerCardIDs.isEmpty)
     }
 
     func testN3OffscreenReferenceNeverBecomesVisibleAnchor() {
