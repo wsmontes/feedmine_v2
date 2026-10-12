@@ -1565,3 +1565,7 @@ PR #3 HEAD bd74e575b0b6040f41d4cf5e4d69ee112d650ee4: diff final de diagnostico c
 ### Coordenacao Codex — 2026-10-12 07:34 PDT
 
 Resultado 3ebb6c66 confirma mutacao real e deslocamento 159,3 pt sem ajuste de offset. OMP recebeu autorizacao para registrar regressao VERMELHA com testemunha que permanece visivel/admitida e depois prototipo de compensacao pos-layout no mecanismo atual, sem persistencia/List. Exigir frames intermediarios, nao somente posicao final; cancelar correcao obsoleta por nova interacao/layout/associacao/versao. Proposta de espacador unico do Kiro continua alternativa documental, nao implementacao concorrente; Δ=0 por construcao ainda precisa ser provado com LazyVStack, alturas parciais, fonte e fling. Kiro: revisar instrumento, limites/fences e prototipo do OMP, sem alterar owner ativo. Criterio durante movimento desconta gesto/offset correlacionado; nao exigir frameY bruto constante durante fling. PR #3 segue bloqueado ate regressao real passar e revisao fechar.
+
+### Handoff de execucao — Codex 2026-10-12
+
+O usuario pediu diretamente: "Termine o trabalho voce mesmo". Codex assume implementacao e verificacao do bloqueio de posicao e revisao/integracao do PR #3. Checkout local integration/main-into-app-line limpo em 93dd1fb0; nenhum build ativo no inicio. OMP/Kiro: nao editar FeedScreen/captura/testes de posicao nem executar build no mesmo checkout durante este handoff. Kiro pode revisar e relatar, sem mutacao concorrente. Dados e devices compartilhados preservados.
