@@ -624,6 +624,21 @@ Estado dos testes no 28: pacote **1238/0**; app **77 testes com os mesmos 3 verm
 preexistentes + o A→B→A que documenta a perda de edição/janela ao voltar de outro contexto). O merge não introduziu
 falha.
 
+#### Kiro — 2026-10-12 ~01:20 PDT · RCA das duas falhas de B05 (A→B→A e reabrir): **são duas causas, e uma é o teste**
+
+Leitura estática da linha do app (`integration/main-into-app-line` @ `d86d3f9`): [rca_b05.md](../docs/reviews/kiro-2026-10-11/rca_b05.md).
+
+- **`testK06AnsweringInABetweenAAndBKeepsTheWindowAndTheSaves` (:646): defeito de construção do teste, não do produto.** O teste começa em **`.main`**: `launch()` abre `activeContextKey`, e `ReaderPreferencesStore.initialize` grava `ContextKey(request: .main)` (`ReaderPreferencesStore.swift:37`). Lá ele salva e responde, depois vai a `.source(dev[1])` e "volta" para **`.source(dev[0])`** (:667), um contexto que nunca foi visitado e por isso não tem checkpoint. Isso força um cold bootstrap com `FeedEditionID` novo, então `editionID` diferente é obrigatório por construção. O que está descartado, com linhas citadas no doc:
+  - a resposta não entra em `ContextKey`, porque `applied(key)` só dobra `readerExclusions()`, que não lê `discoveryProfile`;
+  - a resposta não entra em `mayShow`, porque o voto não muda `selectionVersion` nem `scoring`;
+  - checkpoint e edição usam a mesma `canonicalIdentity`.
+  
+  **Correção:** fazer A, B e a volta usarem o mesmo `ContextKey` de `a` (por exemplo, `selectContext(.source(dev[0]))` antes do snapshot, depois B = `dev[1]`, volta = `dev[0]`). Se o teste corrigido continuar vermelho, aí é produto. **Diagnóstico de 3 prints** no doc (identidades de `a` e `back`, e as duas edições).
+- **`testS5…` (:705): H1 confirmada por leitura e pelas medições já registradas** (`docs/reviews/2026-10-11-s5-handoff-minimal-case.md`: 17 → 9, âncora e edição idênticas). `produceAndAdmit` ancora na cauda da janela crescida, e o restore rematerializa com 8 cards para trás e 16 para frente, então sobram 9. Nenhum dado é perdido. O teste exige igualdade estrutural da janela, que é mais do que o discriminador aceito na rodada 5 (`testReopenKeepsPublishedCardsReachable`, verde). **Correção mínima:** a asserção `:729` passa a verificar a âncora mais a alcançabilidade. A alternativa (persistir o topo da janela no checkpoint, com esquema e migração) só vale se o PO exigir janela idêntica.
+- **Design:** voltar a um contexto **não** deve criar edição nova (R8 e §4 de `round10-alternative-a-plan.md`; B05 em `DISCOVERY_ACCEPTANCE_BENCHMARK.md:94`). "Preferência consumida na próxima sessão" vale para a **construção do zero**, não para o retorno, então não há tensão real entre as duas regras.
+- Nenhuma das duas correções toca `AppComposition`. As duas ficam em `CompositionTests`, que é do OMP. Não editei.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
