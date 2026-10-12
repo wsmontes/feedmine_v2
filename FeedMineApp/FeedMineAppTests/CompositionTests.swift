@@ -700,14 +700,23 @@ final class CompositionTests: XCTestCase {
     /// Se o ida-e-volta simples preserva e o respondido não, o custo está em responder — e responder não pode custar
     /// ao leitor a posição dele.
     func testK06RoundTripBetweenContextsKeepsTheEditionAnchorAndPosition() async throws {
-        try await assertRoundTripKeepsTheReader(answering: false)
+        try await assertRoundTripKeepsTheReader(answering: false, switchingBy: .source)
+    }
+
+    /// O terceiro gêmeo: o **mesmo** ida-e-volta trocando por **filtro**, que é o caminho do teste verde que
+    /// preserva a edição. É o experimento que separa "a troca de fonte é o problema" de "o meu arranjo é o
+    /// problema" — sem ele, a hipótese fica no ar.
+    func testK06RoundTripByFilterKeepsTheEdition() async throws {
+        try await assertRoundTripKeepsTheReader(answering: false, switchingBy: .filter)
     }
 
     func testK06AnsweringInABetweenAAndBKeepsTheReaderWhereTheyWere() async throws {
-        try await assertRoundTripKeepsTheReader(answering: true)
+        try await assertRoundTripKeepsTheReader(answering: true, switchingBy: .source)
     }
 
-    private func assertRoundTripKeepsTheReader(answering: Bool) async throws {
+    private enum RoundTripSwitch { case source, filter }
+
+    private func assertRoundTripKeepsTheReader(answering: Bool, switchingBy: RoundTripSwitch) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let root = root(directory: directory)
@@ -730,11 +739,17 @@ final class CompositionTests: XCTestCase {
             XCTAssertTrue(answered)
         }
 
-        // Go to B, then come back to A.
-        try await root.selectContext(.source(TrustedFeed.development[1].sourceID))
+        // Go to B, then come back to A — pelo caminho que o parâmetro escolhe.
+        switch switchingBy {
+        case .source: try await root.selectContext(.source(TrustedFeed.development[1].sourceID))
+        case .filter: try await root.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
+        }
         let b = try XCTUnwrap(root.association)
         XCTAssertFalse(b === a, "ir a B constrói outra associação")
-        try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+        switch switchingBy {
+        case .source: try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+        case .filter: try await root.applyFilter(.unrestricted, preset: .everything)
+        }
         let back = try XCTUnwrap(root.association)
 
         let restored = try XCTUnwrap(back.store.state.presentation)
@@ -749,7 +764,7 @@ final class CompositionTests: XCTestCase {
             let restoredPub = try PublicationHistory(database: db).restore(backwardCapacity: 8,
                 forwardCapacity: 16, contextKey: key)
             let revision = restoredPub?.edition.editorialRevision
-            print("ROUNDTRIP_FACTS responding=\(answering) checkpoint-contexto="
+            print("ROUNDTRIP_FACTS via=\(switchingBy) responding=\(answering) checkpoint-contexto="
                 + "\(stored == nil ? "nil" : "presente") checkpoint-ativo=\(active == nil ? "nil" : "presente") "
                 + "edicao-de-A-no-store=\(editionThere) restore-devolve-algo=\(restoredPub != nil)")
             if let revision {
