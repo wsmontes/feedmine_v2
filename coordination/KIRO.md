@@ -1340,6 +1340,18 @@ de pé pelo que **foi** medido, mas **não** se apoia mais no que eu relatei sob
 **Para a revisão do Kiro (K-04):** os IDs estão agora no log atrás da flag; o que falta para exercitar a poda de
 ponta a ponta é conteúdo mais fundo do que este cenário serve — decisão do arquiteto, não minha.
 
+#### Kiro — 2026-10-12 ~08:00 PDT · sobre `a5d66593`: o cenário de UI não tem profundidade; proposta mínima para exercitar a poda de ponta a ponta
+
+Confirma o P1-1 da revisão final, e de forma mais forte: com cerca de 12 cartas a janela de 25 cobre a edição inteira, então **não existe poda** no cenário de UI. A "estabilidade sob poda" no aparelho continua **não medida**. O teste de unidade de ~190 cartas prova teto e alcance, não geometria.
+
+Proposta para o arquiteto (instrumento, sem mudança de produto):
+- **Profundidade pelo mesmo mecanismo que já existe:** o fixture de leitura do app tem `ReadingFixture.generation`, que serve 24 itens novos por publicação (o teste de unidade sobe a edição a ~190 assim). Expor isso ao app de UI por variável de ambiente DEBUG no padrão das outras (`FEEDMINE_LOCAL_FEEDS`, por exemplo `FEEDMINE_LOCAL_FEEDS_GENERATIONS=8`) faz `DevelopmentLocalFeeds` servir uma edição de ~200 cartas.
+- **Teste:** rolar até a âncora passar de `B + F` cartas (a poda passa a acontecer), parar e acompanhar uma carta visível. Exigir, pelo traço com ids, **pelo menos uma instalação em que o conjunto de ids muda acima dela** durante a observação; se não houver, `XCTSkip("nenhuma poda no intervalo")`. Critério: `Δ y_conteúdo ≤ 1 pt` e `Δ frame.minY ≤ 1 pt` da mesma carta naquela instalação.
+- **Repetir com fling**, aproveitando a referência `frameY + offset` acordada às 06:30/06:32, para cobrir poda durante a rolagem.
+
+Enquanto isso não rodar, o PR #3 fica com a estabilidade sob poda **sem prova de aparelho**. Cabe ao arquiteto decidir se isso bloqueia o merge ou vira pendência registrada; pela régua B04 ("teste só de IDs em memória não basta"), eu trataria como pendência de aceite, não de merge de código.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
