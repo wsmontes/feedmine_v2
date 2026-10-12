@@ -1064,6 +1064,36 @@ Para ajudar a decisão do arquiteto: este é o achado **R2** da revisão origina
 - **Pedido:** a lista dos 14 testes que caíram com o corte total para frente (nome e asserção que falha). Eu classifico cada um, só por leitura, em três grupos: (a) depende do *prefixo inteiro* desde o início da edição, e deve passar a exigir alcance em vez de presença na janela; (b) depende de `items.first` fixo, e deve passar a usar a âncora; (c) defeito real que o corte revela. Assim a decisão não fica entre "manter o defeito" e "reescrever 14 testes às cegas".
 
 
+### Executor no Mac (OMP) — 2026-10-12 · teto nas DUAS direções, contrato limitado nos testes, e um DEFEITO de posição medido (HEAD `4a7eaa5c`)
+
+Decisão do arquiteto aplicada: "O teto vale para a janela inteira, nas duas direções. Crescimento ilimitado para
+frente é defeito", com as regras de preservar ordem/identidade/âncora/posição/acesso, **substituir** as expectativas
+de acumulação ilimitada, e **investigar** o que indique perda real.
+
+1. **Produto**: `boundedToTotalWindow` passou a valer em `admitForwardScroll` **e** `admitPublishedGrowth` (antes só
+   no caminho de trás). Janela limitada em volta da âncora nos dois sentidos; o que sai segue alcançável pelo store.
+2. **Cinco testes do pacote (14 asserções)** reescritos em quatro arquivos independentes. **Nenhum sinal de perda
+   real** — ordem, identidade, âncora, proveniência e residência de imagem verificadas. O contrato antigo era "a
+   lista admitida é o prefixo publicado inteiro"; o novo é "a janela em volta da âncora". Achado colateral: uma
+   asserção antiga do teste de residência (`observation(cards[0])`) virou **no-op silencioso** sob o contrato novo —
+   não checava nada; substituída por acesso real com re-decodificação.
+3. **Percurso frente → trás → frente** no teste de limite, teto nas duas direções, todos os IDs alcançáveis por
+   **rematerialização offline**.
+4. **Posição visual ao remover/re-adicionar acima: DEFEITO MEDIDO.** O corte remove cartas ACIMA do leitor e o
+   SwiftUI preserva o offset em **pontos**; o conteúdo sob a viewport desloca-se pela altura do que saiu —
+   **545 e 555 pt**, contra **69–96 pt** do próprio gesto (baseline calibrada com gesto que não dispara admissão).
+   Não é id preso: normalizei a captura, o número não mudou, revertido. O teste tem instrumento **auto-calibrado**
+   (arrasta até a âncora passar por 12 cartas, além do limite de 8) e o defeito está **rastreado** com
+   `XCTExpectFailure` + a medida no anexo — não suprimido: corrigido o produto, o marcador vira "expected failure
+   que não ocorreu" e o teste fica **vermelho**, que é o sinal de removê-lo. Candidatos: compensar o offset pela
+   geometria removida, ou virtualizar com `List`. **Decisão do arquiteto.**
+5. **Origem inválida presente**: diagnóstico claro e **sem o valor bruto**, nos dois modos — o log é público e a
+   variável pode carregar credenciais.
+
+**Medido no device dedicado:** pacote **1238/0** (1 pulado); unitário do app **83/0**; os dois testes de UI verdes
+(o visual com a falha esperada registrada). **Declarado:** uma corrida falhou por disco, e duas versões do
+instrumento visual mediam o próprio arrasto em vez do salto — corrigidas para medir o salto.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
