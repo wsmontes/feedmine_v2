@@ -912,6 +912,26 @@ abaixo é da rodada que de fato rodou. O device compartilhado **não** foi tocad
 
 **Medido:** app **81 testes, 0 falhas**; pacote **1238/0**.
 
+### Executor no Mac (OMP) — 2026-10-12 · veredito medido no switch de fonte (HEAD `0988ede9`)
+
+O arquiteto ordenou o instrumento certo para a minha observação ("toques sintéticos do host não viram switch"):
+**XCUITest pelo identificador**, comparando **estado visual, valor de acessibilidade e preferência persistida**,
+sem concluir pelo toque isolado.
+
+**Veredito: o produto está certo; o toque de host é que estava errado.** O achado do T7, que já vivia no
+repositório, explica: a **linha envolve** o switch e o toque tem de ir no controle **interno**; a linha abre o
+drill-in, e era isso que o toque sintético acertava.
+
+O teste novo mede os três eixos e passa: o elemento do identificador anuncia "selected"/"not selected"; o interno
+reporta "0"/"1"; o toque vira o estado; e a **preferência sobrevive a fechar e reabrir o app**.
+
+**Dois erros meus, corrigidos:** timeouts de 30 s curtos para o cold start; e `waitForExistence` sem rolar numa
+folha preguiçosa, onde o controle **não existe** até aparecer.
+
+**Operacional:** limpeza dos meus resíduos de disco (que impediam compilar). O device compartilhado foi **limpo,
+não apagado** (3,3 GB -> 17 MB) e a corrida reinstalou o app. O LEIA-ME das capturas ganhou o veredito ao lado da
+observação, para não ficar um alarme falso registrado.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
