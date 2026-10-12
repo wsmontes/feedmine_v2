@@ -11,6 +11,49 @@ import AppKit
 
 @MainActor
 final class FeedViewportCaptureTests: XCTestCase {
+    func testBorrowedRenderWaitsForActualReaderAndRejectsAnotherOwner() throws {
+        let ids = (0..<9).map { _ in PublicationCardID() }
+        let cards = try ids.map { id in
+            PresentationCard(publishedCard: try XCTUnwrap(PublishedCard(id: id,
+                origin: .init(originRecordID: OriginRecordID(), originRevisionID: OriginRevisionID(),
+                    sourceID: nil, providerID: nil, sourceDisplayName: nil, providerDisplayName: nil),
+                contentEntityID: nil, contentClusterID: nil, text: .init(title: "Local", primaryText: "Text"),
+                timestamp: nil, media: .none, renderContract: XCTUnwrap(RenderContract(layout: .textOnly,
+                    mediaAspectRatio: nil)), primaryAction: nil)))
+        }
+        let edition = FeedEditionID(), sequence = UUID()
+        func snapshot(_ range: Range<Int>, position: UInt64) throws -> FeedPresentationSnapshot {
+            .init(contextKey: FeedContext(request: .main).key, editionID: edition,
+                window: try XCTUnwrap(FeedWindowSnapshot(items: Array(cards[range]),
+                    anchor: .init(cardID: ids[range.lowerBound], placement: .center))),
+                provenance: .init(sequenceID: sequence, position: position))
+        }
+        let first = try snapshot(0..<5, position: 1), moved = try snapshot(2..<9, position: 2)
+        let store = FeedScreenStore { _, _ in }
+        try store.install(.init(presentation: first))
+        var render = FeedInteractionPresentation()
+        render.begin(first, owner: ObjectIdentifier(store))
+        store.setReadingInteractionActive(true)
+        try store.install(.init(presentation: moved))
+        render.noteIncoming(store)
+        XCTAssertEqual(render.presentation(for: store), first)
+        XCTAssertEqual(render.deferredWindows, 1)
+        render.end(afterReading: ids[0], store: store)
+        XCTAssertTrue(render.isHolding, "Do not drop the real rendered reader before Runtime acknowledgement")
+        let acknowledged = try snapshot(0..<7, position: 3)
+        try store.install(.init(presentation: acknowledged))
+        render.noteIncoming(store)
+        XCTAssertFalse(render.isHolding)
+        XCTAssertFalse(store.isReadingInteractionActive)
+        XCTAssertEqual(render.presentation(for: store), acknowledged)
+        render.begin(acknowledged, owner: ObjectIdentifier(store))
+        let other = FeedScreenStore { _, _ in }
+        try other.install(.init(presentation: moved))
+        XCTAssertEqual(render.presentation(for: other), moved)
+        render.noteIncoming(other)
+        XCTAssertFalse(render.isHolding)
+    }
+
     func testNativeWindowWitnessIsBoundedAndCapturedBeforeTheNewLayout() {
         var correction = FeedWindowOffsetCorrection()
         let ids = (0..<30).map { _ in PublicationCardID() }

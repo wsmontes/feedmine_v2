@@ -16,21 +16,36 @@ final class FeedNativeScrollOffset {
     private var correction = FeedWindowOffsetCorrection()
     private var suppressCorrectionEvents = false
     private var correctedOffset: CGFloat = 0
-    var isCorrecting: Bool {
-        if suppressCorrectionEvents, let scrollView,
-            (scrollView.isDragging || scrollView.isDecelerating),
-            abs(scrollView.contentOffset.y - correctedOffset) > 0.5 {
-            suppressCorrectionEvents = false
-        }
-        return suppressCorrectionEvents
+    private var interactionPhaseActive = false
+    func setInteractionActive(_ active: Bool) { interactionPhaseActive = active }
+    private var nativeGestureActive: Bool {
+        guard let scrollView else { return interactionPhaseActive }
+        return interactionPhaseActive || scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating
     }
+    // Reading this property must not mutate the capture or cancel reader activity.
+    var isCorrecting: Bool { suppressCorrectionEvents && !nativeGestureActive }
+    #if DEBUG
+    private(set) var activeWrites = 0
+    private(set) var activeWindowChanges = 0
+    private(set) var activeLayoutSteps = 0
+    private(set) var maximumActiveLayoutStep: CGFloat = 0
+    private var gestureProofs: [PublicationCardID: (proof: FeedVisualCardGeometry, nativeOffset: CGFloat)] = [:]
+    #endif
     private(set) var appliedCount = 0
     private(set) var maximumResidual: CGFloat = 0
     private var visualWitness: (id: PublicationCardID, expectedY: CGFloat, offset: CGFloat)?
     private(set) var measuredCorrections = 0
     private(set) var maximumVisualResidual: CGFloat = 0
     func updateWindow(_ ids: [PublicationCardID]) {
-        correction.updateWindow(ids)
+        let gestureActive = nativeGestureActive
+        let changed = correction.updateWindow(ids, allowingCorrection: !gestureActive)
+        #if DEBUG
+        if changed {
+            let kept = Set(ids)
+            gestureProofs = gestureProofs.filter { kept.contains($0.key) }
+            if gestureActive { activeWindowChanges += 1 }
+        }
+        #endif
         #if DEBUG
         if FeedVisualCapture.tracesCapture {
             Logger(subsystem: "com.feedmine.development", category: "native-capture").info(
@@ -38,8 +53,40 @@ final class FeedNativeScrollOffset {
         }
         #endif
     }
-    func cancel() { correction.cancel(); suppressCorrectionEvents = false }
+    func cancel(discardingSamples: Bool = true) {
+        correction.cancel(discardingSamples: discardingSamples)
+        suppressCorrectionEvents = false
+        visualWitness = nil
+    }
     func observe(_ proof: FeedVisualCardGeometry) -> Bool {
+        #if DEBUG
+        if FeedVisualCapture.tracesCapture, let scrollView {
+            let nativeOffset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+            if nativeGestureActive, let old = gestureProofs[proof.cardID],
+                old.proof.frame.size == proof.frame.size, old.proof.height == proof.height,
+                old.proof.frame.maxY > 0, old.proof.frame.minY < proof.height,
+                proof.frame.maxY > 0, proof.frame.minY < proof.height,
+                abs(old.proof.offset - proof.offset) < 0.5,
+                abs(old.nativeOffset - nativeOffset) < 0.5,
+                abs(proof.frame.minY - old.proof.frame.minY) > 1 {
+                let step = abs(proof.frame.minY - old.proof.frame.minY)
+                activeLayoutSteps += 1
+                maximumActiveLayoutStep = max(maximumActiveLayoutStep, step)
+                Logger(subsystem: "com.feedmine.development", category: "native-capture").info(
+                    "active layout step card=\(proof.cardID.rawValue.uuidString, privacy: .public) frameBefore=\(old.proof.frame.minY) frameAfter=\(proof.frame.minY) proofOffsetBefore=\(old.proof.offset) proofOffsetAfter=\(proof.offset) nativeBefore=\(old.nativeOffset) nativeAfter=\(nativeOffset) dragging=\(scrollView.isDragging) decelerating=\(scrollView.isDecelerating)")
+            }
+            gestureProofs[proof.cardID] = (proof, nativeOffset)
+        }
+        #endif
+        // A gesture owns the native offset. Discard, never postpone, any witness
+        // crossing it; keep fresh geometry only for a later independent idle mutation.
+        if nativeGestureActive {
+            correction.cancel()
+            _ = correction.observe(proof)
+            suppressCorrectionEvents = false
+            visualWitness = nil
+            return false
+        }
         // Ignore the stale geometry callback carrying the pre-adjustment offset. Measure the
         // same retained card when the layout first reports the actual corrected native offset.
         if let witness = visualWitness, witness.id == proof.cardID,
@@ -48,6 +95,7 @@ final class FeedNativeScrollOffset {
             measuredCorrections += 1
             visualWitness = nil
         }
+        let prior = correction.pendingProof
         guard let delta = correction.observe(proof) else { return isCorrecting }
         guard let scrollView else {
             #if DEBUG
@@ -59,6 +107,14 @@ final class FeedNativeScrollOffset {
         }
         suppressCorrectionEvents = true
         let before = scrollView.contentOffset.y
+        #if DEBUG
+        if FeedVisualCapture.tracesCapture {
+            if scrollView.isDragging || scrollView.isDecelerating { activeWrites += 1 }
+            let velocity = scrollView.panGestureRecognizer.velocity(in: scrollView).y
+            Logger(subsystem: "com.feedmine.development", category: "native-capture").info(
+                "correction input card=\(proof.cardID.rawValue.uuidString, privacy: .public) frameY=\(proof.frame.minY) priorFrameY=\(prior?.frame.minY ?? 0) priorOffset=\(prior?.offset ?? 0) proofOffset=\(proof.offset) nativeOffset=\(before) dragging=\(scrollView.isDragging) tracking=\(scrollView.isTracking) decelerating=\(scrollView.isDecelerating) velocityY=\(velocity) delta=\(delta)")
+        }
+        #endif
         adjust(by: delta)
         correctedOffset = scrollView.contentOffset.y
         visualWitness = (proof.cardID, proof.frame.minY - delta + proof.offset - before, correctedOffset)
@@ -67,7 +123,16 @@ final class FeedNativeScrollOffset {
         #if DEBUG
         if FeedVisualCapture.tracesCapture {
             Logger(subsystem: "com.feedmine.development", category: "native-capture").info(
-                "window correction card=\(proof.cardID.rawValue.uuidString, privacy: .public) delta=\(delta) offsetBefore=\(before) offsetAfter=\(scrollView.contentOffset.y)")
+                "window correction card=\(proof.cardID.rawValue.uuidString, privacy: .public) delta=\(delta) offsetBefore=\(before) offsetAfter=\(scrollView.contentOffset.y) draggingAfter=\(scrollView.isDragging) deceleratingAfter=\(scrollView.isDecelerating)")
+        }
+        #endif
+        #if DEBUG
+        if FeedVisualCapture.tracesCapture {
+            DispatchQueue.main.async { [weak scrollView] in
+                guard let scrollView else { return }
+                Logger(subsystem: "com.feedmine.development", category: "native-capture").info(
+                    "correction next turn offset=\(scrollView.contentOffset.y) dragging=\(scrollView.isDragging) decelerating=\(scrollView.isDecelerating)")
+            }
         }
         #endif
         return true
@@ -75,7 +140,9 @@ final class FeedNativeScrollOffset {
     private func adjust(by delta: CGFloat) {
         guard let scrollView, delta.isFinite else { return }
         let offset = scrollView.contentOffset
-        // Preserve a gesture already in progress; only the layout-induced displacement is removed.
+        // Defense at the write boundary as well: no native offset writes during tracking,
+        // drag or deceleration, and no timer/queued delta applied after the gesture.
+        guard !nativeGestureActive else { return }
         scrollView.setContentOffset(CGPoint(x: offset.x, y: offset.y + delta), animated: false)
     }
 }
@@ -110,10 +177,11 @@ struct FeedNativeScrollProbe: UIViewRepresentable {
 struct FeedNativeWindowProof: ViewModifier {
     let ids: [PublicationCardID]
     let access: FeedNativeScrollOffset
+    let deferredWindows: Int
     func body(content: Content) -> some View {
         content.overlay(alignment: .topLeading) {
             if FeedVisualCapture.tracesCapture {
-                Text("ids=\(ids.map { $0.rawValue.uuidString }.joined(separator: ","));corrections=\(access.appliedCount);residual=\(access.maximumResidual);measured=\(access.measuredCorrections);visualResidual=\(access.maximumVisualResidual)")
+                Text("ids=\(ids.map { $0.rawValue.uuidString }.joined(separator: ","));corrections=\(access.appliedCount);residual=\(access.maximumResidual);measured=\(access.measuredCorrections);visualResidual=\(access.maximumVisualResidual);activeWrites=\(access.activeWrites);activeWindows=\(access.activeWindowChanges);activeLayoutSteps=\(access.activeLayoutSteps);activeLayoutStep=\(access.maximumActiveLayoutStep);deferredWindows=\(deferredWindows)")
                     .font(.system(size: 1)).frame(width: 1, height: 1).opacity(0)
                     .allowsHitTesting(false).accessibilityIdentifier("feed-window-proof")
             }

@@ -297,7 +297,7 @@ final class FeedScreenRenderingTests: XCTestCase {
             for forbidden in ["URLSession", "AsyncImage", "ContentStore", "RuntimeDatabase", "AcquisitionCoordinator", "SelectionEngine",
                 "PublicationCoordinator", "PublicationStore", "Task", ".task", ".onAppear", ".onDisappear", "Timer", "sleep",
                 "retry", "backoff", "scheduler", "cache", "generation", "checkpoint", "UUID(", "PublicationCardID(", "exhausted", "@State", "@Observable", "GeometryReader", "NavigationStack"] {
-                if file == "FeedScreen.swift" && forbidden == "@State" { continue }
+                if file == "FeedScreen.swift" && (forbidden == "@State" || forbidden == ".onDisappear") { continue }
                 XCTAssertFalse(source.contains(forbidden), file + ": " + forbidden)
             }
         }
@@ -308,7 +308,10 @@ final class FeedScreenRenderingTests: XCTestCase {
         XCTAssertTrue(screen.contains("#available(iOS 18, macOS 15, *)"))
         XCTAssertTrue(screen.contains("onScrollGeometryChange"))
         XCTAssertTrue(screen.contains("onScrollPhaseChange"))
-        XCTAssertTrue(screen.contains("store.submitViewport(event.observation, activity: event.activity)"))
+        XCTAssertTrue(screen.contains("store.submitViewport(event.observation, activity: event.activity, rendered:"))
+        XCTAssertTrue(screen.contains("capture.interaction.end()"))
+        XCTAssertTrue(screen.contains("capture.nativeScrollOffset.cancel()"))
+        // Lifecycle cleanup is visual only. The general forbidden list still excludes all execution.
         FeedViewportCaptureTests.assertVisualBoundary()
 
     }

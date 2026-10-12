@@ -701,6 +701,11 @@ struct FeedMineApp: App {
                 isCompact: hosted.isCompact), tipsHidden: tipsHidden, on: card.id,
                 isCompact: hosted.isCompact)
         }
+        // New rows wait for native scrolling to end; existing hosted slots above keep their form.
+        guard !association.store.isReadingInteractionActive,
+            let reading = association.store.state.presentation,
+            let anchorIndex = reading.window.items.firstIndex(where: { $0.id == reading.window.anchor.cardID }),
+            index > anchorIndex else { return nil }
         // **Where the feed moves to a subject**, not on a clock: a fixed cadence offered the same subject over and
         // over and, in one whole profile, never offered a second one (the acceptance driver could declare only one
         // of the two answers the benchmark requires).

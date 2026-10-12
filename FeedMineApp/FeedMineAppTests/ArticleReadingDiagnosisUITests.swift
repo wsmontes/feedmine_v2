@@ -182,6 +182,42 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
     /// medir repouso numa janela que nunca mudou foi exatamente o erro que ele apontou. A estabilidade da coordenada
     /// de conteúdo é medida depois, sem gesto, e o anexo casa frame e offset do MESMO card com a mutação.
     @MainActor
+    func testFastFlingWindowChangesDoNotWriteIntoAnActiveGesture() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["FEEDMINE_TRACE_CAPTURE"] = "1"
+        app.launchEnvironment["FEEDMINE_FIXTURE_ITEMS"] = "95"
+        app.launch()
+        XCTAssertGreaterThan(waitForCards(app, within: 180), 3)
+        let initial = app.staticTexts["feed-window-proof"].label
+        for _ in 0..<8 { app.scrollViews.firstMatch.swipeUp(velocity: .fast) }
+        Thread.sleep(forTimeInterval: 1)
+        let final = app.staticTexts["feed-window-proof"].label
+        let evidence = XCTAttachment(string: "initial=\(initial)\nfinal=\(final)")
+        evidence.name = "fast-fling-native-state"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        func value(_ key: String) -> Int {
+            let prefix = key + "="
+            return Int(final.components(separatedBy: ";").first { $0.hasPrefix(prefix) }?.dropFirst(prefix.count) ?? "-1") ?? -1
+        }
+        XCTAssertNotEqual(initial.components(separatedBy: ";").first, final.components(separatedBy: ";").first,
+            "the admitted IDs must change; a fling in a static window cannot reproduce this regression")
+        XCTAssertGreaterThan(value("deferredWindows"), 0,
+            "canonical window updates must arrive during the gesture; a static-window walk is incomplete")
+        XCTAssertEqual(value("activeWindows"), 0,
+            "the drawn window must not change underneath the native gesture")
+        XCTAssertEqual(value("activeWrites"), 0,
+            "the renderer must not overwrite the native offset while a drag or deceleration owns it")
+        let step = final.components(separatedBy: ";").first { $0.hasPrefix("activeLayoutStep=") }?.dropFirst("activeLayoutStep=".count)
+        XCTAssertLessThan(Double(step ?? "999") ?? 999, 1,
+            "a retained visible card must not jump while both measured and native offsets remain unchanged")
+    }
+
+    @MainActor
     func testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped() throws {
         try exercisePruningAndReinsertion(largeText: false)
     }

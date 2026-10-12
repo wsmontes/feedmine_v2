@@ -364,6 +364,19 @@ final class FeedRunwayDriverTests: XCTestCase {
         let result = try await f.driver.submitViewport(.init(anchor:.init(cardID:PublicationCardID(),placement:.top)),activity:.explicitTailApproach,resources:resources())
         let after = await f.runway.snapshot(); XCTAssertEqual(after,before); XCTAssertEqual(result,p); XCTAssertEqual(f.http.calls,0)
     }
+    func testRenderedPositionReconciliationDoesNotEnterRunwayOrAcquire() async throws {
+        let f = try fixture(historyCount: 4), p = try await restore(f)
+        let before = await f.runway.snapshot()
+        let observation = ViewportObservation(anchor: .init(cardID: f.cards[2], placement: .top))
+        let evidence = try XCTUnwrap(p.evidence(for: observation, reconciliation: true))
+        let result = try await f.driver.submitViewport(evidence, activity: .explicitTailApproach, resources: resources())
+        let after = await f.runway.snapshot()
+        XCTAssertEqual(result?.window.anchor, observation.anchor)
+        XCTAssertEqual(after, before, "A local acknowledgement is not reader input to the runway")
+        XCTAssertEqual(f.http.calls, 0)
+        XCTAssertEqual(f.otherHTTP.calls, 0)
+    }
+
     func test19SameAnchorIsSemanticTailInput() async throws {
         let f = try fixture(registrations:false),p = try await restore(f),before = await f.runway.snapshot()
         _ = try await tail(f,p); let after = await f.runway.snapshot()

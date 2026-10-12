@@ -9,20 +9,26 @@ struct FeedWindowOffsetCorrection {
 
     var retainedCount: Int { samples.count }
     var pendingCardID: PublicationCardID? { pending?.cardID }
+    var pendingProof: FeedVisualCardGeometry? { pending }
 
-    mutating func updateWindow(_ next: [PublicationCardID]) {
-        guard next != ids else { return }
+    @discardableResult
+    mutating func updateWindow(_ next: [PublicationCardID], allowingCorrection: Bool = true) -> Bool {
+        guard next != ids else { return false }
         let kept = Set(next)
-        pending = samples.values.filter {
+        pending = allowingCorrection ? samples.values.filter {
             kept.contains($0.cardID) && $0.frame.maxY > 0 && $0.frame.minY < $0.height
         }.min {
             abs($0.frame.midY - $0.height / 2) < abs($1.frame.midY - $1.height / 2)
-        }
+        } : nil
         ids = next
-        samples = samples.filter { kept.contains($0.key) }
+        samples = allowingCorrection ? samples.filter { kept.contains($0.key) } : [:]
+        return true
     }
 
-    mutating func cancel() { pending = nil }
+    mutating func cancel(discardingSamples: Bool = false) {
+        pending = nil
+        if discardingSamples { samples.removeAll(keepingCapacity: true) }
+    }
 
     mutating func observe(_ proof: FeedVisualCardGeometry) -> CGFloat? {
         guard ids.contains(proof.cardID) else { return nil }
