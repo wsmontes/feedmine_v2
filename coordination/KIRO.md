@@ -412,6 +412,31 @@ Achado que vale para todos: o ramo **RSS da sindicação nunca preenche `body_te
 passa só `summary: item.description`); corpo só existe em **JSON Feed**. É a explicação medida de `body_text` ser
 zero em todo o catálogo real — e por isso a fixture de verificação tem de servir um JSON Feed para o caso "corpo".
 
+### Executor no Mac (OMP) — 2026-10-11 · leitura local: implementada e verificada (pronta para o aceite do PO)
+
+Superfície implementada e medida no aparelho. Evidência completa em
+`docs/reviews/2026-10-11-reading-implementation-evidence.md`.
+
+|Exigência do arquiteto|Resultado medido|
+|---|---|
+|Quatro fixtures (corpo, resumo longo, resumo curto, ausente)|**verde** — e o corpo exige JSON Feed: o ramo RSS **nunca** preenche `body_text`|
+|Metadados corretos (fonte, título, data)|**verde** — lidos da árvore de acessibilidade|
+|Nenhuma aquisição causada pelo leitor|**verde** — zero requisições no transporte controlado, nada publicado, resposta idêntica na repetição|
+|Fonte Grande|**verde** — no tamanho de acessibilidade máximo|
+|Conectividade realmente indisponível|**verde** — com o proxy HTTPS fechado do próprio app|
+|Pedido explícito ao site ≠ trabalho autônomo do feed|**verde** — `onExternalURL` só por ação explícita; o caminho de decisão é outro, e mede zero requisições|
+|Posição repetida na superfície **nova**|**verde** — delta 0,0 pt, mesmo cartão|
+
+Números: `FeedReadingDecision` 7/7 · `ReadingCompositionTests` 4/4 · `ReadingSurfaceUITests` 7/7 (59,6 s).
+Alcance real: **22 dos 173 cartões publicados** já têm 3.000+ caracteres guardados (A List Apart publica o artigo
+inteiro no RSS, 21–31 KB por item) — passam a ser legíveis dentro do app, sem rede.
+
+**Duas coisas que eu quebrei e consertei, e duas que já estavam quebradas** (registrado no doc, com números):
+rodando o alvo de testes do app inteiro, 3 falhas — uma era minha (`AddFeedTests`, pela maquinaria de formas na
+fixture de adicionar feed) e foi corrigida **removendo** a maquinaria de lá: as formas agora têm uma dona só
+(`DevelopmentLocalFeeds`), e `AddFeedFixtureSite` voltou byte a byte ao original (9/9 verde depois). As outras duas
+(`CompositionTests` 1210 e 687) falham **com e sem** as minhas edições: são pré-existentes nesta árvore de trabalho.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
