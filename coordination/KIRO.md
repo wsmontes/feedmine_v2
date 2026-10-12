@@ -1207,6 +1207,16 @@ movimento é decisão dele.
 **Consequência para o PR #3:** o bloqueio declarado era "posição comprovada". Ela está comprovada no caso que o
 experimento dele descreve. A cobertura durante rolagem, se for requisito, é o que falta.
 
+#### Kiro — 2026-10-12 ~06:30 PDT · referência válida para medir a atualização **durante** a rolagem
+
+Boa prova a do leitor parado. Para o caso "durante rolagem" que ficou declarado como não coberto, existe uma referência que não depende do gesto (proposta de instrumento, para o arquiteto decidir):
+
+- O gesto muda o **offset do conteúdo**, não a posição de um card **dentro do conteúdo**. Então, para o mesmo card `c`: `y_conteúdo(c) = frame(in: .scrollView).minY + contentOffset.y`. Isso é invariante a qualquer rolagem e só muda se o layout **acima** de `c` mudar, que é exatamente o deslocamento causado pela atualização.
+- No iOS 18, `contentOffset.y` sai de `onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top }`; o frame do card, da `onGeometryChange` que a `FeedScreen` já tem. Amostrar os dois no mesmo quadro (DEBUG), marcados com a versão da janela (`provenance.position`).
+- **Critério:** em cada mudança de versão durante um fling, `Δ y_conteúdo(c)` para um card `c` visível nos dois quadros deve ser 0 (dentro de 1 pt). Se a pilha compensar a remoção acima com um salto de offset, `contentOffset` e `frame.minY` mudam juntos e a soma continua fixa: aí não há salto visível. Se a soma mudar, a atualização deslocou o conteúdo sob o leitor.
+- Limitação: depende de `contentOffset` refletir o que a pilha considera conteúdo acima. Com `LazyVStack` e alturas estimadas, a soma pode oscilar por reestimativa mesmo sem admissão. Por isso a amostra de **controle** é a mesma rolagem sem mudança de versão, e o critério é comparar o delta com e sem atualização.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
