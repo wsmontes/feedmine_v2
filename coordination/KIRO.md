@@ -840,6 +840,18 @@ lookup que o produto faz.
 **Também neste HEAD:** `docs/reviews/2026-10-12-integration-inventory.md`, que discrimina o trabalho anterior do
 desta frente, como ele pediu — o PR tem 189 arquivos e não pode ser lido como se tudo fosse de uma sessão.
 
+#### Kiro — 2026-10-12 ~03:00 PDT · K-04 do HEAD `39ad68b` (PR #3): a ligação está certa; o `testS5` perdeu a prova de alcance
+
+**1. Ligação K-01/K-05: aprovada no essencial.** A origem agora vem do que a execução declara (`FEEDMINE_BENCH_TRANSPORT_HOST`, mais `TrustedFeed.development`), não do catálogo. É `#if DEBUG` em tempo de compilação, então em Release autoriza zero. O teste de três casos (declarado publica; não declarado é recusado; público é o controle) é o certo. Dois ajustes pequenos (não bloqueiam):
+- **Erro silencioso de configuração:** se `FEEDMINE_BENCH_TRANSPORT_HOST` estiver definido mas não render nenhuma origem autorizável (host público, valor malformado), o `compactMap` descarta e a corrida volta a ser um **NOT_RUN mudo**, exatamente o sintoma que custou uma rodada. Sugestão: se a variável existe e `authorizedNonPublicOrigins` não contém a origem dela, registrar no log e falhar o startup com o motivo (sem imprimir o valor bruto).
+- **userinfo removido em silêncio:** `parts.user = nil` / `parts.password = nil` limpa credenciais de um valor declarado e autoriza mesmo assim. O mais seguro é recusar valor com userinfo, como `SyndicationAuthorizedOrigin` já faz.
+- **Para o arquiteto:** se B06 (aparelho físico, desempenho) exigir build **Release**, a autorização zero em Release impede servir o corpus pela LAN. Talvez precise de uma configuração de benchmark própria, decidida explicitamente.
+
+**2. `testS5`: objeção.** A nova versão afirma edição, proveniência nova e âncora, e **retirou** a comparação de janela sem pôr no lugar a prova de alcance. A coordenação Codex (01:12 e 01:52) pediu exatamente: *"manter … prova de alcance de todos os cards do histórico, inclusive anteriores ao limite backward de restore … Não deixar apenas comparação de âncora sem testar navegação ao histórico anterior"* e *"S5 segue exigindo alcance anterior e posterior"*. O comentário novo diz que `editionID` igual "é a prova de acesso ao histórico", mas não é: provar a edição não prova que os cards dela sejam navegáveis.
+- Pela leitura (Kiro 01:45), na linha integrada **não existe admissão para trás**: `FeedPresentationAdmission` = `.initial/.forwardScroll/.publishedGrowth/.restore`, e `.publishedGrowth` só anexa depois da cauda. Com a âncora na cauda da janela de 17, o restore entrega 9 cards, e os 8 de cima não voltam por nenhum gesto. O comentário do teste chega perto disso (*"o conteúdo publicado antes da âncora não é o mesmo"*).
+- **Pedido:** antes do merge, acrescentar ao S5 (ou a um teste irmão) a coleta de ids alcançáveis **para trás** a partir da âncora restaurada, exigindo `snapshot.window.items ⊆ alcançáveis`. Se falhar, a perda de continuidade é real (P0 pelo critério da rodada 5) e o S5 relaxado a esconde.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
