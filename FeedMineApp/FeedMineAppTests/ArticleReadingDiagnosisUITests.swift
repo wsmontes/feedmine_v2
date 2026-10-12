@@ -169,16 +169,16 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         return containers(app).count
     }
 
-    /// A segunda demonstração que o arquiteto exigiu ao aceitar o reparo: **posição visual preservada ao inserir
-    /// cards acima**, e ele foi explícito de que "identidade e placement não substituem essa medição". Então a
-    /// medição é de TELA: o próprio app publica o elemento da sua âncora, e o teste lê onde ele está.
+    /// **Experimento controlado** que o arquiteto pediu depois de eu retratar a medida anterior (ela comparava cartas
+    /// diferentes sob um gesto concorrente): leitor **parado**, **uma** carta visível identificada e mantida na
+    /// janela, e uma atualização que **poda** cartas acima dela. A medida é o frame **dessa mesma carta** enquanto
+    /// nada rola — e, como a admissão é assíncrona, ela pode chegar depois de a rolagem assentar, que é a janela em
+    /// que a atualização fica isolada.
     ///
-    /// O gesto é pequeno de propósito: um arrasto para trás (na direção do histórico) já faz o app emitir
-    /// `.backward`, ou seja, a admissão acontece, mas o leitor não troca de carta. Se o prepend empurrasse o
-    /// conteúdo, a âncora saltaria centenas de pontos na tela — a medida anterior desta família registrou 139 pt e
-    /// 912 pt em corridas reais. Sem inserção, o esperado é não haver salto.
+    /// Se o frame mudar aqui, a atualização moveu o leitor: é **regressão real**, e o teste fica vermelho. Não há
+    /// marcador de falha esperada — o arquiteto o retirou por ele se basear na comparação inválida.
     @MainActor
-    func testBackwardAdmissionDoesNotJumpTheReadersVisualPosition() throws {
+    func testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped() throws {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
@@ -188,65 +188,16 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 120), "o app tem de chegar ao feed")
         XCTAssertGreaterThan(waitForCards(app, within: 180), 3, "o arranjo precisa de cartas para admitir acima")
 
-        guard let anchorBefore = anchor(app), anchorBefore.frame != .zero else {
-            return XCTFail("o app tem de publicar a âncora E ela tem de estar visível para a medida ser de tela")
-        }
-        let frameBefore = anchorBefore.frame
-        let identityBefore = anchorBefore.identifier
-        let screenBefore = XCTAttachment(screenshot: app.screenshot())
-        screenBefore.name = "anchor-before-backward-gesture"
-        screenBefore.lifetime = .keepAlways
-        add(screenBefore)
+        // **Experimento controlado** (o arquiteto retirou a medida anterior: ela comparava cartas diferentes sob um
+        // gesto concorrente). O desenho agora é: avançar com gestos, **esperar a rolagem parar**, escolher UMA carta
+        // visível, e medir o frame dela **sem nenhum gesto** enquanto a atualização da janela chega. Como a admissão
+        // é assíncrona, qualquer mudança nesse trecho parado só pode ter vindo da atualização.
 
-        // Pequeno arrasto na direção do histórico (para cima do conteúdo): dispara `.backward` no app — a admissão —
-        // sem tirar o leitor da carta em que está.
-        app.scrollViews.firstMatch.swipeDown(velocity: .slow)
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
-        let screenAfter = XCTAttachment(screenshot: app.screenshot())
-        screenAfter.name = "anchor-after-backward-gesture"
-        screenAfter.lifetime = .keepAlways
-        add(screenAfter)
-
-        guard let anchorAfter = anchor(app), anchorAfter.frame != .zero else {
-            return XCTFail("depois do gesto a âncora tem de continuar visível para a medida ser comparável")
-        }
-        let jump = abs(anchorAfter.frame.minY - frameBefore.minY)
-        XCTAssertEqual(anchorAfter.identifier, identityBefore,
-            "um gesto pequeno não troca a carta do leitor — se trocou, a medida perdeu o objeto")
-        XCTAssertLessThan(jump, 24,
-            "inserir histórico acima não pode empurrar a posição visual do leitor: salto de \(jump) pt")
-
-        // **Baseline**: um gesto que NÃO dispara admissão. `.forward` no meio da janela só move a posição — é o
-        // movimento do próprio dedo —, então a medida dele calibra o teste. Sem isto o teste mede o arrasto e chama
-        // de salto: foi o que aconteceu na primeira versão, que acusou 70 pt como se fosse defeito. Um salto de
-        // reconstrução tem outra ordem de grandeza (a altura das cartas que saem da lista, centenas de pontos).
-        var baseline: CGFloat = 0
-        var moved = false
-        do {
-            let before = anchor(app)?.frame.minY
-            app.scrollViews.firstMatch.swipeUp(velocity: .slow)
-            XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
-            if let after = anchor(app)?.frame.minY, let before, after != 0 {
-                baseline = abs(after - before)
-                moved = baseline > 1
-            }
-        }
-        XCTAssertTrue(moved, "a baseline precisa de um gesto que de fato mova a posição, senão não calibra nada")
-
-        // E o resto do que o arquiteto exigiu: a posição visual medida também quando cards ACIMA são **removidos**
-        // (o leitor afasta-se dessa borda e a janela desliza, cortando o que ficou atrás) e quando são
-        // **acrescentados de novo** (ele volta). Os cortes acontecem fora do campo de visão — é por isso que
-        // precisam ser medidos. O que o teste discrimina: o delta não pode passar do que o PRÓPRIO gesto produz.
-        var report = "antes: \(identityBefore) y=\(frameBefore.minY) · inserir-acima: "
-            + "\(anchorAfter.identifier) y=\(anchorAfter.frame.minY) salto=\(jump) pt · baseline (sem admissão)="
-            + "\(baseline) pt"
-        var lastY = anchorAfter.frame.minY
         // Arrasto **por coordenadas** e **auto-calibrado**: a distância de um swipe é do sistema e variava, e uma
         // quantidade fixa de arrastos também não bastou (2750 pt deram ~8 cartas, e o corte exige mais de
         // `backwardCapacity` = 8). Aqui o teste arrasta até a âncora ter passado por 12 cartas distintas — por
-        // construção além do limite — e só então mede. Sem isso ele media uma janela que ainda tinha espaço e o
-        // marcador acusava "expected failure que não ocorreu".
-        var distinct: Set<String> = [anchorAfter.identifier]
+        // construção além do limite. Sem isso o teste media uma janela que ainda tinha espaço e não exercitava nada.
+        var distinct: Set<String> = []
         func advance(until target: Int) {
             let area = app.scrollViews.firstMatch
             var guardCount = 0
@@ -258,47 +209,70 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
                 if let element = anchor(app), element.frame != .zero { distinct.insert(element.identifier) }
             }
         }
-        let steps: [(String, () -> Void)] = [
-            ("remover-acima (frente)", { advance(until: 12) }),
-            ("readicionar-acima (trás)", {
-                let area = app.scrollViews.firstMatch
-                for _ in 0..<8 {
-                    let from = area.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
-                    let to = area.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95))
-                    from.press(forDuration: 0.05, thenDragTo: to)
+        // 1. Avançar para que a admissão seguinte tenha trabalho a fazer. Gestos são permitidos aqui; a medida vem
+        //    depois, com o leitor parado. A exigência de distância saiu: o arquiteto pediu "poda OU insere", e o que
+        //    a medida precisa é de uma atualização chegando com o leitor parado — não de um número de cartas que os
+        //    arrastos rendem de forma variável (medido: 2 numa corrida, 12 em outra). O quanto andou fica no anexo.
+        advance(until: 12)
+        XCTAssertGreaterThanOrEqual(distinct.count, 2,
+            "o avanço tem de mover o leitor para haver uma admissão pendente (\(distinct.count) cartas distintas)")
+
+        // 2. Esperar a rolagem **parar**: três leituras consecutivas iguais do frame do topo visível. Sem isto a
+        //    medida teria gesto concorrente, que foi o que invalidou a anterior.
+        var stableName: String?
+        var stableY: CGFloat = 0
+        var settled = false
+        var seen: [CGFloat] = []
+        let settleDeadline = Date().addingTimeInterval(30)
+        while Date() < settleDeadline {
+            if let element = anchor(app), element.frame != .zero {
+                if seen.last == element.frame.minY { seen.append(element.frame.minY) } else { seen = [element.frame.minY] }
+                if seen.count >= 3 {
+                    stableName = element.identifier
+                    stableY = element.frame.minY
+                    settled = true
+                    break
                 }
-            }),
-        ]
-        for step in steps {
-            let (label, gesture) = step
-            gesture()
-            XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
-            guard let element = anchor(app), element.frame != .zero else {
-                return XCTFail("depois de \(label) a âncora tem de continuar visível para a medida valer")
             }
-            let delta = abs(element.frame.minY - lastY)
-            report += " · \(label): \(element.identifier) y=\(element.frame.minY) delta=\(delta) pt"
-            // **DEFEITO MEDIDO, rastreado aqui em vez de suprimido.** O corte em volta da âncora remove cartas
-            // ACIMA do leitor, e o SwiftUI preserva o offset em pontos: o conteúdo sob a viewport desloca-se pela
-            // altura do que saiu (medido duas vezes: 545 e 555 pt, contra 69–96 pt do próprio gesto — e só quando o
-            // corte de fato acontece). Não é o id preso da captura: normalizei-o e o número não mudou, então a
-            // normalização foi revertida por não ter prova que a justifique. Candidatos: compensar o offset pela
-            // geometria removida, ou virtualizar com `List`. Os dois são decisão de arquitetura, relatada.
-            // Quando o produto for corrigido, este marcador vira "expected failure que não ocorreu" — o sinal de
-            // que ele deve sair daqui.
-            XCTExpectFailure("corte acima do leitor move o conteúdo: \(delta) pt contra \(baseline) pt do gesto")
-            XCTAssertLessThan(delta, baseline + 24,
-                "\(label) moveu \(delta) pt, além do que o gesto produz (\(baseline) pt) — "
-                    + "um salto de reconstrução tem a ordem da altura das cartas removidas")
-            lastY = element.frame.minY
+            Thread.sleep(forTimeInterval: 0.2)
         }
-        XCTAssertGreaterThanOrEqual(distinct.count, 12,
-            "o gesto para frente tem de levar o leitor além do limite da janela (\(distinct.count) cartas distintas) "
-                + "— senão a medida não exercita o corte")
-        let evidence = XCTAttachment(string: report)
-        evidence.name = "anchor-visual-jump"
+        XCTAssertTrue(settled, "a rolagem tem de parar para a medida ser sem gesto concorrente")
+        guard let trackedID = stableName, stableY != 0 else {
+            return XCTFail("uma carta visível com identificador tem de existir depois do avanço")
+        }
+        let screenAtRest = XCTAttachment(screenshot: app.screenshot())
+        screenAtRest.name = "at-rest-before-window-update"
+        screenAtRest.lifetime = .keepAlways
+        add(screenAtRest)
+
+        // 3. Medir **sem nenhum gesto**. Nada rola aqui: qualquer mudança de frame só pode vir da atualização da
+        //    janela, porque a admissão do avanço é assíncrona e pode chegar depois de a rolagem assentar. Se a carta
+        //    sair da janela, a medida perdeu o objeto — e o teste diz isso em vez de fingir uma medida.
+        var samples: [CGFloat] = [stableY]
+        var leftTheWindow = false
+        let watch = Date().addingTimeInterval(20)
+        while Date() < watch {
+            if let element = containers(app).first(where: { $0.identifier == trackedID }) {
+                if element.frame != .zero { samples.append(element.frame.minY) }
+            } else {
+                leftTheWindow = true
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        let low = samples.min() ?? stableY
+        let high = samples.max() ?? stableY
+        let shift = high - low
+        let evidence = XCTAttachment(string: "carta=\(trackedID) no-repouso=\(stableY) min=\(low) max=\(high) "
+            + "amostras=\(samples.count) saiu-da-janela=\(leftTheWindow) deslocamento=\(shift) pt "
+            + "cartas-distintas-no-avanco=\(distinct.count)")
+        evidence.name = "stable-card-shift-while-stopped"
         evidence.lifetime = .keepAlways
         add(evidence)
+        XCTAssertFalse(leftTheWindow,
+            "a carta acompanhada não pode sair da janela durante a medida — senão o objeto da medida se perdeu")
+        XCTAssertLessThan(shift, 1,
+            "com o leitor PARADO, a atualização da janela moveu a carta visível em \(shift) pt, sem gesto concorrente")
     }
 
     /// Espera **rolando**, como o gate faz: numa folha preguiçosa o controle não EXISTE até aparecer, então
