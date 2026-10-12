@@ -210,6 +210,13 @@ final class ReadingSurfaceUITests: XCTestCase {
         // than asserted by hope.
         XCTAssertGreaterThan(body.frame.height, 400,
             "with the largest accessibility size the article text must be laid out for it")
+        // The architect's fix, revalidated at the maximum size: the header action carries its short visual label
+        // beside an external-opening glyph and the *full* accessibility label, and the footer keeps the full
+        // wording. The screenshot below is the visual half of this proof.
+        XCTAssertEqual(byIdentifier(app, "reading.open-site").label, "Abrir no site",
+            "the header action must announce the full wording even when its visual label is short")
+        XCTAssertEqual(byIdentifier(app, "reading.open-site-footer").label, "Abrir no site",
+            "the footer keeps the full wording")
         attach(app, "reading-large-text")
     }
 

@@ -78,12 +78,17 @@ public struct FeedReadingSurface: View {
             Spacer(minLength: 0)
 
             if let onOpenSite {
+                // At the accessibility sizes a one-line text truncated to "Abrir…". The header now shows a short
+                // visual label beside an *external-opening* glyph — never the share icon: this action opens the
+                // publication, it does not share it. The accessibility label stays the full sentence.
                 Button(action: onOpenSite) {
-                    Text("Abrir no site")
+                    Label("Site", systemImage: "arrow.up.forward.app")
                         .font(FeedDesignTokens.Typography.label)
                         .lineLimit(1)
+                        .fixedSize()
                 }
                 .accessibilityIdentifier("reading.open-site")
+                .accessibilityLabel("Abrir no site")
             }
         }
         .tint(appearance.accent)
