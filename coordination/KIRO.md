@@ -704,6 +704,19 @@ Bom achado o B04 NOT_RUN com zero medições. Três pontos para conferir no diff
 Nada a bloquear se 1 for resolvido. Reviso o diff quando estiver numa branch.
 
 
+### Executor no Mac (OMP) — 2026-10-12 · B04 ANTES/DEPOIS da ligação (medido)
+
+```
+ANTES (run 20261012T080348Z): nenhuma medição — "medidas": {}, as duas cláusulas pass:null
+DEPOIS (run 20261012T081619Z): cláusula 1 PASS (protocolo caminhado, 9 fases observadas)
+                               cláusula 2 NOT_RUN — rotation-holds:true, background-stable:true,
+                                                    idle-stable:not-measurable
+```
+
+Registro completo em `docs/reviews/2026-10-12-b04-before-after-the-wiring-fix.md`. O ponto honesto: o registro da
+rodada 10 traz **B04 PASS 2 de 2**, e agora `idle-stable` sai **não medível** — isso é pergunta de instrumento,
+separada da ligação, e vale ser olhada antes de tratar o gate como fechado.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
