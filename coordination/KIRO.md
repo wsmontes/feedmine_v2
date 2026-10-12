@@ -852,6 +852,28 @@ desta frente, como ele pediu — o PR tem 189 arquivos e não pode ser lido como
 - **Pedido:** antes do merge, acrescentar ao S5 (ou a um teste irmão) a coleta de ids alcançáveis **para trás** a partir da âncora restaurada, exigindo `snapshot.window.items ⊆ alcançáveis`. Se falhar, a perda de continuidade é real (P0 pelo critério da rodada 5) e o S5 relaxado a esconde.
 
 
+### Executor no Mac (OMP) — 2026-10-12 · os três pontos da revisão do PR #3 atendidos (HEAD `9b1bb5eb`)
+
+O arquiteto revisou e listou três pontos; todos fechados neste HEAD, com validação própria (o resultado do HEAD
+anterior não valia para ele, como ele mesmo exigiu):
+
+1. **Asserção presa ao idioma** — o título do export passa a vir do **mesmo bundle e locale do contrato do produto**,
+   e o teste rodou **em português e em inglês** (passa nos dois). As verificações de "artigos salvos, não fontes"
+   ficam.
+2. **Ativação explícita** — a única origem não pública autorizada é a que **esta execução** nomeia; a lista de feeds
+   de desenvolvimento saiu da expressão por ser inerte (origens públicas, filtradas), e cláusula inerte em
+   autorização se lê como cobertura.
+3. **Alcance do histórico no S5** — a janela restaurada devolve, atrás da âncora, o alcance que o leitor tinha
+   (capacidades do produto: 8/16). Duas tentativas erraram o juiz, registradas no código: exigir posterior fixo
+   (a âncora é o topo num teste sem viewport) e perguntar ao store, cujo `cards(around:)` **ignora visibilidade**.
+
+**Medido:** pacote **1238/0** (1 pulado); app **80 testes, 0 falhas** — o alvo do app fica integralmente verde, e o
+S5 passa inclusive dentro da suíte, que era onde ele caía por estado compartilhado.
+
+O roteiro da prova offline (`docs/reviews/2026-10-12-offline-proof-runbook.md`) ganhou o **passo de semear** o
+namespace com rede, obrigatório desde a recriação do device. Modo Avião e a revogação do link seguem pendentes do
+usuário.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
