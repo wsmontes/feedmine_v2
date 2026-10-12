@@ -1805,18 +1805,30 @@ final class FeedAssociation {
         // §5.3: discovery is a **traversal**, not a preview — the same object advances page by page across the cold and
         // active drivers, and the targets it registers become eligible inside this snapshot, which is where the
         // authority for them lives. The session's resolved policy keeps saying only what the reader chose.
-        // Kiro K-01/K-05 wiring. The root decides which builds may leave the public network: a debug build
-        // authorizes **the exact non-public origins of the endpoints this run was configured to fetch** — a
-        // benchmark server on the LAN, the in-process fixtures — and a Release build authorizes none, so product
-        // acquisition stays publicly routable.
+        // Kiro K-01/K-05 wiring — corrected after the architect's review of PR #3, and he was right: deriving the
+        // set from `registrations` means deriving it from the **catalogue**, which is untrusted input. K-01's own
+        // note says authorization never derives from catalog or OPML endpoints, and a catalog row naming a LAN
+        // host would have been authorized by that alone.
         //
-        // An authorization is an *origin*, not an endpoint: `SyndicationAuthorizedOrigin` refuses any URL carrying
-        // a path or query (deliberately — authorizing `http://host:8757` must not authorize `…/admin`), so the
-        // endpoint's path is stripped here and the origin that survives is the one the connector will check for
-        // the endpoint and for every redirect hop. The filter keeps only non-public origins: a public endpoint
-        // needs no authorization and is dropped rather than passed.
+        // What is authorized here is exactly what **this run declares it will fetch**, from inputs the build owns:
+        //   * the benchmark transport's origin, named by the run itself (`FEEDMINE_BENCH_TRANSPORT_HOST`, which the
+        //     runner sets to this Mac's `host:port` in device mode). The corpus the benchmark injects is served
+        //     there, and its catalogue names those endpoints — which is precisely why the catalogue cannot be the
+        //     source of the authorization;
+        //   * the development feeds this build carries (`TrustedFeed.development`), whose origins are public and
+        //     therefore dropped by the filter below — kept in the expression so a future non-public development
+        //     feed is authorized by being *declared*, not by being named.
+        // A debug build still authorizes only non-public origins (`SyndicationAuthorizedOrigin` refuses public
+        // hosts, userinfo, non-HTTP schemes and any URL with a path or query); a Release build authorizes none.
         #if DEBUG
-        let authorizedNonPublicOrigins = registrations.map(\.endpoint).compactMap { endpoint -> URL? in
+        var declared: [URL] = TrustedFeed.development.map(\.endpoint)
+        if let host = ProcessInfo.processInfo.environment["FEEDMINE_BENCH_TRANSPORT_HOST"],
+            !host.trimmingCharacters(in: .whitespaces).isEmpty {
+            for scheme in ["http", "https"] {
+                if let transport = URL(string: "\(scheme)://\(host)") { declared.append(transport) }
+            }
+        }
+        let authorizedNonPublicOrigins = declared.compactMap { endpoint -> URL? in
             guard var parts = URLComponents(url: endpoint, resolvingAgainstBaseURL: false),
                 parts.host != nil else { return nil }
             parts.path = ""

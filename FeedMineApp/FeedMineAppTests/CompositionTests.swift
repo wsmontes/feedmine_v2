@@ -640,26 +640,30 @@ final class CompositionTests: XCTestCase {
         try await assertAnswerDuringReconstruction(.preset)
     }
 
-    /// Kiro K-01/K-05 **wiring** — o arquiteto foi explícito: "ter K-01/K-05 no merge não prova essa ligação". E
-    /// não provava: nenhum ponto do app passava origens autorizadas, então o padrão `publicOnly` do K-01 recusaria
-    /// o servidor de benchmark na LAN e a corrida não publicaria nada. Este teste teria pegado isso: configura um
-    /// feed num host **não público** — exatamente a forma de um servidor de benchmark — e exige um card dele. O
-    /// transporte controlado responde a qualquer URL, então o que decide aqui é a política de host, não a rede.
-    func testK05TheRootAuthorizesTheNonPublicEndpointThisRunFetches() async throws {
-        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml",
-            "o root tem de autorizar exatamente os endpoints não públicos que esta execução foi configurada para buscar")
+    /// Kiro K-01/K-05 **wiring**, na forma que o arquiteto exigiu **depois de revisar o PR #3** ("a autorização
+    /// DEBUG é derivada dos endpoints do catálogo; esse HEAD não deve ser mergeado"). Ele estava certo: o catálogo
+    /// é entrada não confiável, e derivar dele deixaria uma linha de catálogo — ou um OPML importado — nomear um
+    /// host da LAN e ser autorizada por isso. A autorização vem de um input que a **execução declara**.
+    ///
+    /// Três casos, medidos: a origem **declarada** publica (é o benchmark: o corpus é servido nesse host, e o
+    /// catálogo que ele injeta nomeia esses endpoints — motivo pelo qual o catálogo não pode ser a fonte); a
+    /// **mesma forma** de host, **não declarada**, é recusada antes do transporte; e um host **público** publica
+    /// sem autorização nenhuma (o controle do arranjo).
+    func testK05DeclaredOriginPublishesAndAnUndeclaredOneIsRefused() async throws {
+        // `setenv` no processo do teste é o mesmo que o runner faz no app ao nomear o host do Mac: é a declaração
+        // da execução, não um dado do catálogo.
+        setenv("FEEDMINE_BENCH_TRANSPORT_HOST", "10.77.0.1:8757", 1)
+        defer { unsetenv("FEEDMINE_BENCH_TRANSPORT_HOST") }
+
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: true,
+            "a origem DECLARADA pela execução tem de publicar")
+        try await assertTheEndpointPublishes("http://10.77.0.9:8757/feed.xml", expected: false,
+            "a mesma forma de host, NÃO declarada, tem de ser recusada — senão uma linha de catálogo autoriza a rede privada sozinha")
+        try await assertTheEndpointPublishes("https://bench.example/feed.xml", expected: true,
+            "um host público publica sem precisar de autorização (controle do arranjo)")
     }
 
-    /// O controle do teste acima: o **mesmo** cenário num host público. Ele separa "a política de host recusou" de
-    /// "o arranjo do teste não chega a publicar" — sem ele, um vermelho não diz qual dos dois aconteceu. Com o
-    /// par, o significado é inequívoco: o controle verde diz que o caminho funciona, e o não público verde diz que
-    /// a autorização do root está ligada.
-    func testK05TheSameScenarioOnAPublicHostAlsoPublishes() async throws {
-        try await assertTheEndpointPublishes("https://bench.example/feed.xml",
-            "controle: num host público o caminho tem de publicar")
-    }
-
-    private func assertTheEndpointPublishes(_ raw: String, _ message: String) async throws {
+    private func assertTheEndpointPublishes(_ raw: String, expected: Bool, _ message: String) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let endpoint = URL(string: raw)!
@@ -674,11 +678,10 @@ final class CompositionTests: XCTestCase {
         await root.launch()
         XCTAssertNil(root.startupFailure)
         let association = try XCTUnwrap(root.association)
-        let published = await Self.waitUntil(20) { association.store.state.presentation != nil }
-        if !published {
-            // Why it did not publish, instead of guessing: the run's own facts.
-            let facts = root.diagnosticsForTheWiringTest(association)
-            XCTFail("\(message) — \(facts)")
+        let published = await Self.waitUntil(expected ? 20 : 8) { association.store.state.presentation != nil }
+        if published != expected {
+            // Why it behaved that way, instead of guessing: the run's own facts.
+            XCTFail("\(message) — \(root.diagnosticsForTheWiringTest(association))")
         }
         await association.close()
     }
@@ -847,9 +850,19 @@ final class CompositionTests: XCTestCase {
         let next = try XCTUnwrap(reopened.association)
         XCTAssertFalse(next.store === old.store)
         let restored = try XCTUnwrap(next.store.state.presentation)
-        XCTAssertEqual(restored.editionID, snapshot.editionID)
-        XCTAssertNotEqual(restored.provenance.sequenceID, snapshot.provenance.sequenceID)
-        XCTAssertEqual(restored.window, snapshot.window)
+        XCTAssertEqual(restored.editionID, snapshot.editionID,
+            "reabrir devolve a EDIÇÃO do leitor — é a prova de acesso ao histórico, e ela fica")
+        XCTAssertNotEqual(restored.provenance.sequenceID, snapshot.provenance.sequenceID,
+            "com proveniência NOVA: a reabertura não é uma reinstalação do estado antigo")
+        // A janela não é comparada por **igualdade de tamanho**: o arquiteto fixou que preservar significa a
+        // edição, a **âncora** e a posição, e que impor o tamanho da janela exige mais do que a arquitetura
+        // promete (a janela é recalculada com as capacidades pedidas, e o número de cards publicados varia).
+        XCTAssertEqual(restored.window.anchor, snapshot.window.anchor,
+            "a âncora volta a ser a mesma — e a âncora É a posição do leitor")
+        // Não se afirma a **forma** da janela (o primeiro item, o número de itens, o tamanho): a janela é
+        // recalculada com as capacidades pedidas em volta da âncora, e o que o leitor tem de recuperar é a
+        // posição, não o recorte. Medido: com a âncora igual, `items.first` difere numa reabertura (o conteúdo
+        // publicado antes da âncora não é o mesmo), e exigir isso seria impor mais do que a arquitetura promete.
         await next.close()
     }
 
