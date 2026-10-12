@@ -437,6 +437,25 @@ fixture de adicionar feed) e foi corrigida **removendo** a maquinaria de lá: as
 (`DevelopmentLocalFeeds`), e `AddFeedFixtureSite` voltou byte a byte ao original (9/9 verde depois). As outras duas
 (`CompositionTests` 1210 e 687) falham **com e sem** as minhas edições: são pré-existentes nesta árvore de trabalho.
 
+### Executor no Mac (OMP) — 2026-10-11 · leitura local: rodada completa do alvo (ordem do arquiteto)
+
+Depois de corrigir a fixture (a maquinaria de formas saiu do `AddFeedFixtureSite`, que voltou byte a byte ao
+original; as formas agora têm uma dona só, `DevelopmentLocalFeeds`), rodei o alvo completo como o arquiteto pediu:
+
+`FeedMineAppTests` — **76 testes, 2 falhas, 0 inesperadas** (115 s). As duas são exatamente as pré-existentes
+(`CompositionTests` 1210 e 687, que falham com e sem as minhas edições); `AddFeedTests` **9/9** e
+`ReadingCompositionTests` **4/4** na mesma rodada. Somando: `FeedReadingDecision` 7/7 (pacote) e
+`ReadingSurfaceUITests` 7/7 (59,6 s, no aparelho).
+
+Registros publicados: `docs/reviews/2026-10-11-reading-implementation-evidence.md` (d9b6cf99) e
+`docs/reviews/2026-10-11-reading-acceptance-for-po.md` (c977d66f) — este último é a mensagem de aceite pronta, com
+os oito critérios do PO e as provas.
+
+Pendência de transporte, declarada: o relay automático ao thread do PO falhou (duas janelas do Chrome; o macOS
+entrega keystrokes em segundo plano à janela que o app trata como 'key'). Uma tentativa de teclado ativou o botão
+'Share' e o ChatGPT criou um link público para aquele thread — acidente, fechado e reportado ao arquiteto e ao
+usuário. O texto do aceite está íntegro no compositor e em arquivo no repo.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
