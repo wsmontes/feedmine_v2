@@ -1828,8 +1828,14 @@ final class FeedAssociation {
         // porta e em qualquer esquema" é autorizar mais do que a execução declarou.
         let declared: [URL] = {
             guard let named = ProcessInfo.processInfo.environment["FEEDMINE_BENCH_TRANSPORT_ORIGIN"]?
-                .trimmingCharacters(in: .whitespaces), !named.isEmpty,
-                let parts = URLComponents(string: named) else { return [] }
+                .trimmingCharacters(in: .whitespaces), !named.isEmpty else { return [] }
+            guard let parts = URLComponents(string: named) else {
+                // Diagnóstico **claro** e **sem o valor bruto** (exigência do arquiteto, e o subsistema de log é
+                // público): a variável pode carregar credenciais, então o operador fica sabendo o que declarou de
+                // errado — e nada do que declarou.
+                Self.log("transport origin declared but unparseable as a URL; authorizing nothing (value withheld)")
+                return []
+            }
             return parts.url.map { [$0] } ?? []
         }()
         // **Rejeita, não sanitiza** (exigência do arquiteto na revisão do PR #3): um valor declarado com caminho,
@@ -1845,6 +1851,13 @@ final class FeedAssociation {
             else { return nil }
             guard let origin = parts.url, SyndicationAuthorizedOrigin(origin) != nil else { return nil }
             return origin
+        }
+        if !declared.isEmpty, authorizedNonPublicOrigins.isEmpty {
+            // O caso que o arquiteto nomeou: **presente e inválida**. O diagnóstico diz o que exigimos — esquema,
+            // host e porta, sem caminho, query, fragmento ou credenciais — e **não** repete o valor declarado, que
+            // pode carregar credenciais e iria para um log público.
+            Self.log("transport origin declared but not a usable origin (scheme, host and port required; no path, "
+                + "query, fragment or credentials); authorizing no non-public origin")
         }
         #else
         let authorizedNonPublicOrigins: [URL] = []

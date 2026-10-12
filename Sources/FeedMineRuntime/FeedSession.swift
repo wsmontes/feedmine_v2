@@ -143,11 +143,12 @@ public actor FeedSession {
             .prefix(current.bounds.forwardCapacity)
             .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
-        // **Sem corte neste caminho**, e isto é deliberado: o append para frente já é limitado pelo teto congelado
-        // (`admitPublishedGrowth` recusa passar dele) e os testes do pacote codificam o contrato da janela para
-        // frente como ele é. Aplicar aqui o corte total mudou esse contrato e derrubou 14 testes do pacote — sinal
-        // de que o corte pertence ao caminho que a exigência do arquiteto descreve, o de trás.
-        let (bounded, _) = try boundedResidency(items: items + extensionCards,
+        // O teto vale para a janela inteira, **nas duas direções** (decisão do arquiteto): crescer para frente sem
+        // limite também é defeito. O corte é em volta da âncora, então ordem, identidade, âncora e posição ficam, e
+        // as cartas cortadas seguem alcançáveis — a admissão seguinte as relê do store.
+        let (bounded, _) = try boundedResidency(
+            items: boundedToTotalWindow(items + extensionCards, around: observation.anchor.cardID,
+                bounds: current.bounds),
             editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
         guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else {
             return current.presentation
@@ -243,7 +244,9 @@ public actor FeedSession {
             .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
         let anchor = current.presentation.window.anchor
-        let (bounded, _) = try boundedResidency(items: items + extensionCards,
+        // Mesma regra do arquiteto, e agora num lugar só: o teto vale para a janela inteira nas duas direções.
+        let (bounded, _) = try boundedResidency(
+            items: boundedToTotalWindow(items + extensionCards, around: anchor.cardID, bounds: current.bounds),
             editionID: current.presentation.editionID, around: anchor.cardID, bounds: current.bounds)
         guard let window = FeedWindowSnapshot(items: bounded, anchor: anchor) else {
             return current.presentation

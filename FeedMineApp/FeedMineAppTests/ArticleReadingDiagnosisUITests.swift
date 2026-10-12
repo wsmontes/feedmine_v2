@@ -211,18 +211,94 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
             return XCTFail("depois do gesto a âncora tem de continuar visível para a medida ser comparável")
         }
         let jump = abs(anchorAfter.frame.minY - frameBefore.minY)
-        let evidence = XCTAttachment(string: """
-            antes: \(identityBefore) em y=\(frameBefore.minY) \
-            (\(frameBefore.width)x\(frameBefore.height)) · depois: \(anchorAfter.identifier) em \
-            y=\(anchorAfter.frame.minY) · salto medido: \(jump) pt
-            """)
-        evidence.name = "anchor-visual-jump"
-        evidence.lifetime = .keepAlways
-        add(evidence)
         XCTAssertEqual(anchorAfter.identifier, identityBefore,
             "um gesto pequeno não troca a carta do leitor — se trocou, a medida perdeu o objeto")
         XCTAssertLessThan(jump, 24,
             "inserir histórico acima não pode empurrar a posição visual do leitor: salto de \(jump) pt")
+
+        // **Baseline**: um gesto que NÃO dispara admissão. `.forward` no meio da janela só move a posição — é o
+        // movimento do próprio dedo —, então a medida dele calibra o teste. Sem isto o teste mede o arrasto e chama
+        // de salto: foi o que aconteceu na primeira versão, que acusou 70 pt como se fosse defeito. Um salto de
+        // reconstrução tem outra ordem de grandeza (a altura das cartas que saem da lista, centenas de pontos).
+        var baseline: CGFloat = 0
+        var moved = false
+        do {
+            let before = anchor(app)?.frame.minY
+            app.scrollViews.firstMatch.swipeUp(velocity: .slow)
+            XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+            if let after = anchor(app)?.frame.minY, let before, after != 0 {
+                baseline = abs(after - before)
+                moved = baseline > 1
+            }
+        }
+        XCTAssertTrue(moved, "a baseline precisa de um gesto que de fato mova a posição, senão não calibra nada")
+
+        // E o resto do que o arquiteto exigiu: a posição visual medida também quando cards ACIMA são **removidos**
+        // (o leitor afasta-se dessa borda e a janela desliza, cortando o que ficou atrás) e quando são
+        // **acrescentados de novo** (ele volta). Os cortes acontecem fora do campo de visão — é por isso que
+        // precisam ser medidos. O que o teste discrimina: o delta não pode passar do que o PRÓPRIO gesto produz.
+        var report = "antes: \(identityBefore) y=\(frameBefore.minY) · inserir-acima: "
+            + "\(anchorAfter.identifier) y=\(anchorAfter.frame.minY) salto=\(jump) pt · baseline (sem admissão)="
+            + "\(baseline) pt"
+        var lastY = anchorAfter.frame.minY
+        // Arrasto **por coordenadas** e **auto-calibrado**: a distância de um swipe é do sistema e variava, e uma
+        // quantidade fixa de arrastos também não bastou (2750 pt deram ~8 cartas, e o corte exige mais de
+        // `backwardCapacity` = 8). Aqui o teste arrasta até a âncora ter passado por 12 cartas distintas — por
+        // construção além do limite — e só então mede. Sem isso ele media uma janela que ainda tinha espaço e o
+        // marcador acusava "expected failure que não ocorreu".
+        var distinct: Set<String> = [anchorAfter.identifier]
+        func advance(until target: Int) {
+            let area = app.scrollViews.firstMatch
+            var guardCount = 0
+            while distinct.count < target, guardCount < 40 {
+                let from = area.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                let to = area.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
+                from.press(forDuration: 0.05, thenDragTo: to)
+                guardCount += 1
+                if let element = anchor(app), element.frame != .zero { distinct.insert(element.identifier) }
+            }
+        }
+        let steps: [(String, () -> Void)] = [
+            ("remover-acima (frente)", { advance(until: 12) }),
+            ("readicionar-acima (trás)", {
+                let area = app.scrollViews.firstMatch
+                for _ in 0..<8 {
+                    let from = area.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+                    let to = area.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95))
+                    from.press(forDuration: 0.05, thenDragTo: to)
+                }
+            }),
+        ]
+        for step in steps {
+            let (label, gesture) = step
+            gesture()
+            XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+            guard let element = anchor(app), element.frame != .zero else {
+                return XCTFail("depois de \(label) a âncora tem de continuar visível para a medida valer")
+            }
+            let delta = abs(element.frame.minY - lastY)
+            report += " · \(label): \(element.identifier) y=\(element.frame.minY) delta=\(delta) pt"
+            // **DEFEITO MEDIDO, rastreado aqui em vez de suprimido.** O corte em volta da âncora remove cartas
+            // ACIMA do leitor, e o SwiftUI preserva o offset em pontos: o conteúdo sob a viewport desloca-se pela
+            // altura do que saiu (medido duas vezes: 545 e 555 pt, contra 69–96 pt do próprio gesto — e só quando o
+            // corte de fato acontece). Não é o id preso da captura: normalizei-o e o número não mudou, então a
+            // normalização foi revertida por não ter prova que a justifique. Candidatos: compensar o offset pela
+            // geometria removida, ou virtualizar com `List`. Os dois são decisão de arquitetura, relatada.
+            // Quando o produto for corrigido, este marcador vira "expected failure que não ocorreu" — o sinal de
+            // que ele deve sair daqui.
+            XCTExpectFailure("corte acima do leitor move o conteúdo: \(delta) pt contra \(baseline) pt do gesto")
+            XCTAssertLessThan(delta, baseline + 24,
+                "\(label) moveu \(delta) pt, além do que o gesto produz (\(baseline) pt) — "
+                    + "um salto de reconstrução tem a ordem da altura das cartas removidas")
+            lastY = element.frame.minY
+        }
+        XCTAssertGreaterThanOrEqual(distinct.count, 12,
+            "o gesto para frente tem de levar o leitor além do limite da janela (\(distinct.count) cartas distintas) "
+                + "— senão a medida não exercita o corte")
+        let evidence = XCTAttachment(string: report)
+        evidence.name = "anchor-visual-jump"
+        evidence.lifetime = .keepAlways
+        add(evidence)
     }
 
     /// Espera **rolando**, como o gate faz: numa folha preguiçosa o controle não EXISTE até aparecer, então

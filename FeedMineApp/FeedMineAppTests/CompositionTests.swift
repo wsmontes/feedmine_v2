@@ -1075,10 +1075,20 @@ final class CompositionTests: XCTestCase {
             return seen
         }
 
+        // **Percurso FRENTE → TRÁS → FRENTE**, na ordem que o arquiteto pediu, com o teto afirmado nas duas
+        // direções: ele decidiu que crescer para frente sem limite também é defeito, e o produto passou a cortar nos
+        // dois lados. A rede continua rejeitada, então tudo o que aparecer é **rematerialização offline** do store.
+        for _ in 0..<10 {
+            guard let tail = next.store.state.presentation?.window.items.last else { break }
+            let ids = try await observe(.explicitTailApproach, at: tail.id)
+            reachable.formUnion(ids)
+            let count = next.store.state.presentation?.window.items.count ?? 0
+            XCTAssertLessThanOrEqual(count, ceiling,
+                "frente: a janela total tinha \(count) cartas, acima do teto de \(ceiling)")
+        }
         // Anda para trás **até não haver novidade**, e não um número fixo de passos: com uma edição de ~190 cartas e
         // oito por passo, dez passos não percorrem o histórico — foi assim que a versão anterior deste teste acusou
-        // 24 cartas "inacessíveis" que eram, na verdade, cartas que a caminhada nunca visitou. O teto é afirmado em
-        // cada passo; a exaustão é o que dá sentido ao `lost` lá embaixo.
+        // 24 cartas "inacessíveis" que eram, na verdade, cartas que a caminhada nunca visitou.
         var step = 0
         while step < 40 {
             guard let head = next.store.state.presentation?.window.items.first else { break }
@@ -1091,15 +1101,14 @@ final class CompositionTests: XCTestCase {
             step += 1
             if reachable.count == before { break }
         }
-        // Dez passos para frente. Aqui **não** se afirma o teto, e a distinção é deliberada: medido nesta família de
-        // corridas, este caminho cresce +16 por passo (41, 57, 73…), e são **catorze testes do pacote** que
-        // codificam esse comportamento hoje. Afirmar o teto aqui deixaria `main` vermelho por um contrato que não é
-        // meu para mudar — o achado vai relatado ao arquiteto, com o número, para ele decidir. O que se exige deste
-        // lado é o **acesso**: o que ficou para trás continua re-alcançável, e isso é afirmado abaixo, no `lost`.
+        // E de volta para frente, com a mesma exigência de teto.
         for _ in 0..<10 {
             guard let tail = next.store.state.presentation?.window.items.last else { break }
             let ids = try await observe(.explicitTailApproach, at: tail.id)
             reachable.formUnion(ids)
+            let count = next.store.state.presentation?.window.items.count ?? 0
+            XCTAssertLessThanOrEqual(count, ceiling,
+                "volta para frente: a janela total tinha \(count) cartas, acima do teto de \(ceiling)")
         }
         // **Acesso preservado**: tudo o que o leitor alcançava antes de fechar continua re-alcançável por gesto,
         // mesmo depois de a janela ter reciclado as cartas — sair da janela não é perder o conteúdo.

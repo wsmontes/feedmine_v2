@@ -171,11 +171,15 @@ final class PresentationProjectionOrderingTests: XCTestCase {
     }
 
     /// The inverse of the removed defect pin: committed publication never advances the admitted list
-    /// by itself; a real forward scroll at the boundary admits the ready prefix exactly once.
+    /// by itself; only a real forward scroll at the boundary admits it, once, as a window bounded
+    /// around the reader's anchor.
     func testO12CommittedPublicationWaitsForForwardScrollAdmission() async throws {
-        let f = try fixture(), a = try await snapshot(f, backward: 1, forward: 8)
+        // The bounds this association is installed with, frozen for the life of the presentation: the admitted
+        // list is the window around the anchor, at most 1 card before it and 8 after it.
+        let backwardCapacity = 1, forwardCapacity = 8
+        let f = try fixture(), a = try await snapshot(f, backward: backwardCapacity, forward: forwardCapacity)
         let history = PublicationHistory(database: f.database)
-        let restored = try XCTUnwrap(history.restore(backwardCapacity: 1, forwardCapacity: 8))
+        let restored = try XCTUnwrap(history.restore(backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity))
         let candidate = Candidate(originRecordID: OriginRecordID(), originRevisionID: OriginRevisionID(), headline: "New committed card",
             summary: "Content", timestamp: .init(value: Date(), kind: .observed), language: nil, providerID: nil)
         let selection = SelectionResult(editorialRevision: restored.edition.editorialRevision,
@@ -183,16 +187,17 @@ final class PresentationProjectionOrderingTests: XCTestCase {
         let input = PublicationPreparationInput(origin: .init(originRecordID: candidate.originRecordID,
             originRevisionID: candidate.originRevisionID, sourceID: nil, providerID: nil, sourceDisplayName: nil, providerDisplayName: nil),
             contentEntityID: nil, contentClusterID: nil, primaryAction: nil, presentation: .textOnly)
+        let newCardID = PublicationCardID()
         _ = try PublicationCoordinator(database: f.database).append(.init(selection: selection,
             drafts: PublicationPreparation.drafts(selection: selection, inputs: [input]), editionID: f.editionID,
-            segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date(), cardIDs: [PublicationCardID()]))
+            segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date(), cardIDs: [newCardID]))
         // The publication exists in history, and the reader is stationary: the admitted list is identical.
         let ready = try history.readyAhead(editionID: f.editionID, anchorCardID: f.cardIDs[3], probeBound: 8)
         guard case .exact(let ahead) = ready.amount else { return XCTFail("Expected an exact ready-ahead count") }
         XCTAssertEqual(ahead, 1)
         let stationary = await f.session.currentPresentation()
         XCTAssertEqual(stationary, a)
-        // A real forward scroll at the boundary admits the ready prefix once, appending at the tail.
+        // A real forward scroll at the boundary admits what the committed publication appended, once.
         let tail = try XCTUnwrap(a.window.items.last)
         let observation = ViewportObservation(anchor: .init(cardID: tail.id, placement: .center))
         // Record the reader's position first (what the driver does), then admit behind it.
@@ -200,12 +205,38 @@ final class PresentationProjectionOrderingTests: XCTestCase {
         let admission = try await f.session.admitPresentation(.forwardScroll(observation))
         let admitted = try XCTUnwrap(admission)
         XCTAssertEqual(admitted.provenance.sequenceID, a.provenance.sequenceID)
-        XCTAssertEqual(admitted.window.items.count, a.window.items.count + 1)
-        XCTAssertEqual(Array(admitted.window.items.prefix(a.window.items.count)), a.window.items)
         XCTAssertGreaterThan(admitted.provenance.position, a.provenance.position)
+        // The admitted list is the window around the anchor, bounded by the frozen capacities (1 before, 8 after) —
+        // the scroll anchored the reader on the admitted tail, so the window is one card of context above it, the
+        // anchor itself, and the card the committed publication appended at the tail. Order and identity are the
+        // published ones and nothing is inserted above the reader.
+        XCTAssertEqual(admitted.window.anchor, .init(cardID: f.cardIDs[3], placement: .center))
+        XCTAssertEqual(admitted.window.items.map(\.id), [f.cardIDs[2], f.cardIDs[3], newCardID])
+        // Same list, derived from the store with the same bounds: the session materializes the store's window
+        // around the anchor, it does not accumulate a prefix.
+        let expectedWindow = try history.window(editionID: f.editionID,
+            around: .init(cardID: tail.id, placement: .center),
+            backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity)
+        XCTAssertEqual(admitted.window.items.map(\.id), expectedWindow.cards.map(\.id))
+        XCTAssertLessThanOrEqual(admitted.window.items.count, forwardCapacity + backwardCapacity + 1)
         // Nothing new is published now, so a repeat admission adds nothing.
         let again = try await f.session.admitPresentation(.forwardScroll(.init(anchor: .init(cardID: tail.id, placement: .center))))
         XCTAssertEqual(again, admitted)
+        // The card the bound cut (the head of the old prefix) is not lost: a real backward scroll re-reads it from
+        // the local store, prepended in order and with its identity, next to the anchor.
+        let head = try XCTUnwrap(admitted.window.items.first)
+        let back = ViewportObservation(anchor: .init(cardID: head.id, placement: .center))
+        _ = try await f.session.submitViewport(back)
+        let backAdmission = try await f.session.admitPresentation(.backwardScroll(back))
+        let reached = try XCTUnwrap(backAdmission)
+        XCTAssertEqual(reached.window.anchor, .init(cardID: f.cardIDs[2], placement: .center))
+        XCTAssertEqual(reached.window.items.map(\.id), [f.cardIDs[1], f.cardIDs[2], f.cardIDs[3], newCardID])
+        XCTAssertGreaterThan(reached.provenance.position, admitted.provenance.position)
+        // And the store still holds the card the window no longer shows, reachable the same way.
+        let behind = try history.window(editionID: f.editionID,
+            around: .init(cardID: f.cardIDs[1], placement: .center),
+            backwardCapacity: backwardCapacity, forwardCapacity: 1)
+        XCTAssertEqual(behind.cards.map(\.id), [f.cardIDs[0], f.cardIDs[1], f.cardIDs[2]])
     }
 
     private func persistAndClose() async throws -> (RuntimeDatabaseLocation, FeedPresentationSnapshot) {
