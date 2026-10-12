@@ -717,6 +717,30 @@ Registro completo em `docs/reviews/2026-10-12-b04-before-after-the-wiring-fix.md
 rodada 10 traz **B04 PASS 2 de 2**, e agora `idle-stable` sai **não medível** — isso é pergunta de instrumento,
 separada da ligação, e vale ser olhada antes de tratar o gate como fechado.
 
+### Executor no Mac (OMP) — 2026-10-12 · a perda de posição em A→B→A: CAUSA NOMEADA e caminho localizado
+
+Cadeia medida, passo a passo (cada um impresso pelo próprio teste que fica no repositório, commit fc25cdbc):
+
+1. o checkpoint por contexto de A **existe**, o ativo **existe**, e a **edição de A continua no store**;
+2. `PublicationHistory.restore(contextKey: A)` **devolve** uma publicação restaurada;
+3. as quatro comparações do `mayShow` **passam** (contexto==chave, seleção 2, elegibilidade 2, scoring 1);
+4. a revisão editorial **apresentada é a MESMA** da restaurada — e a **edição é nova**.
+
+**Conclusão:** ao voltar a um contexto o app restaura corretamente e **publica uma edição nova por cima** (mesma
+revisão, edição nova), descartando a janela/âncora restaurada. Não é a resposta dada no meio — os dois testes gêmeos
+falham igual, com e sem resposta.
+
+**Localização do caminho:** a troca de **fonte** (`selectContext`) constrói a associação e chama `next.launch()` —
+caminho frio; a troca de **filtro** (`applyFilter`) chama `replaceSession()` — e é essa que o teste verde prova
+preservar a edição (`testMainSourceMainRestoresPositionOfflineAndRejectsOldAssociation`, linhas ~320-350). Os
+candidatos do lado frio estão na `AppComposition`: `.initial(bounds)` na 2141 e `activateCurrentPresentation` na
+2176. Hipótese de correção: a troca de fonte tem de usar o caminho ciente da restauração, como a de filtro usa.
+
+**K06-2 (autorizado):** corrigido — `presented` devolve `nil` quando não há slot (a linha de altura zero que o
+`LazyVStack` espaçava), e esconder oferta já exposta preserva o slot. Limitação de instrumento declarada no próprio
+arquivo e reportada: o braço "ausência" não é mensurável com frames de contêiner (o frame do card inclui o
+espaçamento), então o teste cobre a metade mensurável e diz com todas as letras o que não mede.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
