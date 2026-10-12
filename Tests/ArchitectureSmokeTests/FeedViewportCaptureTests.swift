@@ -11,6 +11,30 @@ import AppKit
 
 @MainActor
 final class FeedViewportCaptureTests: XCTestCase {
+    /// O protótipo do espaçador depende de a reconciliação **contar** o que a janela retirou, com a altura MEDIDA.
+    /// Este caso isola isso sem layout nenhum: alimenta a captura com duas cartas medidas, tira uma da janela, e
+    /// exige que a soma suba exatamente pela altura dela — e volte a zero quando ela volta. Se este caso passa e o
+    /// espaçador ainda não segura o frame na tela, a causa está no layout, não na contabilidade.
+    func testReconcileCountsMeasuredHeightAndReturnsItOnReentry() {
+        var capture = FeedVisualCapture()
+        let left = PublicationCardID(), stays = PublicationCardID()
+        _ = capture.observeCard(.init(cardID: left,
+            frame: .init(x: 0, y: 0, width: 300, height: 159.33), offset: 0, height: 800))
+        _ = capture.observeCard(.init(cardID: stays,
+            frame: .init(x: 0, y: 170, width: 300, height: 240), offset: 0, height: 800))
+        XCTAssertEqual(capture.prunedAboveHeight, 0, "sem poda, sem espaço reservado")
+
+        capture.reconcileWindow(from: [left, stays], to: [stays])
+        XCTAssertEqual(capture.prunedAboveHeight, 159.33, accuracy: 0.01,
+            "a soma do espaçador tem de subir pela altura MEDIDA do que saiu")
+        XCTAssertEqual(capture.prunedAboveCount, 1)
+
+        capture.reconcileWindow(from: [stays], to: [left, stays])
+        XCTAssertEqual(capture.prunedAboveHeight, 0, accuracy: 0.01,
+            "e voltar a zero quando a carta volta — é a mesma medida, então a soma fecha")
+        XCTAssertEqual(capture.prunedAboveCount, 0)
+    }
+
     func testN3OffscreenReferenceNeverBecomesVisibleAnchor() {
         var capture = FeedVisualCapture()
         let id = PublicationCardID()
