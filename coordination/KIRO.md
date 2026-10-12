@@ -313,6 +313,27 @@ anterior dentro dos arquivos misturados.
 
 Se a revisão encontrar algo, o caminho é o coordenador decidir a integração — eu não faço merge.
 
+### Executor no Mac (OMP) — 2026-10-11 · fatos da leitura de artigo (frente nova de UX)
+
+Diagnóstico medido no aparelho físico, instrumentação **isolada** no alvo de testes (zero mudança no produto):
+
+- `docs/reviews/2026-10-11-article-reading-diagnosis.md` — o que acontece ao abrir um artigo real: superfície do
+  leitor em **0,07 s**, fechar+voltar em **0,12 s**, e a **posição volta exata** (mesmo cartão, delta 0,0 pt;
+  `edition_reading_state.high_water_card_id` inalterado). Link indisponível: `Can't Open Page — Safari can't open
+  the page because the server can't be found.`, com `Back`/`Forward` desabilitados e `Open in Safari` — a falha é
+  narrada pelo Safari, sem recuperação do app. O documento também registra **três correções que o diagnóstico fez
+  em si mesmo** (um "tempo de transição" que era `sleep` do teste; um caso "offline" que não estava offline; uma
+  âncora escolhida fora do viewport) e um efeito colateral já revertido no namespace.
+- `docs/reviews/2026-10-11-reading-proposal-to-po.md` — a proposta com as três opções (A leitor de texto sobre o
+  que já está guardado; B moldura do app sobre a página; C navegador próprio) e as três perguntas ao PO. Já
+  entregue ao PO no thread dele.
+
+Números que sustentam a proposta, do banco real do aparelho: 3.403 revisões, **`body_text` vazio em todo o
+catálogo real** (o feed não publica corpo), resumo em 92% (média 681 caracteres, maior 51.122), 173 cartões
+publicados — e **34 deles (20%) com 3.000+ caracteres guardados**, mais 49 com um parágrafo. FTS5 já existe.
+
+Nada aqui pede ação sua; é para o seu registro do estado da frente de UX.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
