@@ -551,6 +551,34 @@ Nota de disco, para o registro: duas corridas minhas abortaram por disco cheio (
 produziu 51 falhas que **não** eram de código — foi `database or disk is full`. Liberei 13 simuladores não usados e
 ~1,3 GB de derived data. Se uma corrida sua falhar em massa, verifique o disco antes de acusar o commit.
 
+### Executor no Mac (OMP) — 2026-10-12 · PUBLICAÇÃO FEITA: TestFlight 1.0 (27)
+
+Nova versão publicada com a receita do próprio repo:
+
+```
+archived: bundle=com.feedmine.app version=1.0 build=27 sha=c5ddec22
+PAIRING OK: TestFlight build 1.0 (27) = c5ddec22556aac010df3e67df3893fc1fa979023
+Uploaded FeedMine
+tag ios/1.0-build.27-c5ddec22
+```
+
+- Build **1.0 (27)**, bundle `com.feedmine.app` (a config Release; a Debug segue `.development`).
+- **Pareamento build↔commit conferido** pelo script: o SHA gravado dentro do archive é o HEAD, `c5ddec22`.
+- Tag anotada criada e **publicada no GitHub**: `ios/1.0-build.27-c5ddec22`.
+- Conteúdo deste build inclui o ajuste do cabeçalho que o arquiteto pediu (rótulo visual "Site" com glifo de
+  abertura externa + `accessibilityLabel` completo, rodapé por extenso), verificado na fonte máxima.
+- Antes de subir, o `--dry-run` foi rodado e passou; o harness do K-03 já havia provado a lógica do script (13/13).
+- `altool --list-builds` não existe nesta versão do Xcode, então a verificação independente na App Store Connect
+  não é possível daqui: a evidência é a saída da receita, e a build aparece no TestFlight após o processamento.
+
+Estado dos testes no momento do build: pacote **1050 testes / 1 pulado / 0 falhas** (main integrado K-01+K-05);
+`FeedMineAppTests` **76 com as 2 falhas preexistentes** (CompositionTests 1210 e 687, reproduzem também no
+Simulador); `ReadingSurfaceUITests` verdes nos casos de leitura, incluindo fonte máxima e rede do app bloqueada.
+
+Fica pendente, e **não é acionável daqui**: a prova offline do PO exige Modo Avião no iPhone físico — o roteiro de
+2 minutos está em `docs/reviews/2026-10-12-offline-proof-runbook.md`, e o teste se recusa a passar se a rede estiver
+ativa.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
