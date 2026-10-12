@@ -69,6 +69,8 @@ Escolhidos por serem **pequenos, isolados e fora dos owners que o executor está
 | K-02 | PENDENTE | Corrigir A04: `resolveAvailable` também resolve chaves de `reader_imported_sources`, mais teste em `CompositionTests`. | `FeedMineApp/FeedMineApp/TrustedFeeds.swift`, `FeedMineApp/FeedMineAppTests/CompositionTests.swift` | branch `kiro/k-02`, não compilado | Aguardar comparacao com a arvore local do OMP; composicao e testes estao entrelacados com trabalho em andamento. |
 | K-03 | AUTORIZADO | Endurecer `release-testflight.sh` (A06): `set -euo pipefail`, validar variáveis obrigatórias não vazias, KEY_ID/ISSUER_ID lidos do ambiente com mensagem clara. Sem mudar o fluxo de upload. | `scripts/release-testflight.sh` | branch `kiro/k-03`, `bash -n` verificado | Escopo do pedido aprovado; nao executar upload, nao publicar credenciais e nao alterar o fluxo de distribuicao. |
 | K-04 | AUTORIZADO | Revisão independente de diffs: a cada checagem, revisar commits novos de outros agentes em `main` contra os achados acima e os invariantes, registrando objeções em `docs/reviews/kiro-*` (sem mudar código). | só docs | commit em `main` | Revisao documental autorizada. main ainda nao contem as mudancas locais do OMP: separar achados da base remota de defeitos confirmados na versao atual. |
+| K-05 | PENDENTE | Ligar a origem de benchmark autorizada (API de K-01 `8f1fa9c`) ao app instrumentado, só em build de desenvolvimento/benchmark. (1) `SyndicationAcquisitionSnapshot.init` ganha `authorizedNonPublicOrigins: Set<SyndicationAuthorizedOrigin> = []` e repassa em `connector(for:)`. (2) `AppComposition` (único chamador de produto, `AppComposition.swift:1082`), **apenas sob `#if DEBUG \|\| FEEDMINE_BENCHMARK`**, lê `FEEDMINE_AUTHORIZED_FEED_ORIGIN` (ex.: `http://192.168.1.76:8757`) do launch environment, constrói via `SyndicationAuthorizedOrigin(URL)` e repassa; origem inválida ou pública é ignorada e registrada no log. Em Release/TestFlight o código não é compilado. Os chamadores de teste (`ColdFeedBootstrapTests`, `FeedPresentationHandoffTests`, `FeedRunwayDriverTests`, `MembershipAuthorityIntegrationTests`, `SelectedSourceCoverageTests`, `SyndicationAcquisitionSnapshotTests`) não mudam, porque o parâmetro tem default. | `Sources/FeedMineComposition/SyndicationAcquisitionSnapshot.swift`, `FeedMineApp/FeedMineApp/AppComposition.swift`, teste novo em `Tests/FeedMineCompositionTests/SyndicationAcquisitionSnapshotTests.swift`. **Não incluído:** build setting `FEEDMINE_BENCHMARK` no `.pbxproj` e mudanças no harness/runner do OMP; digam se querem `DEBUG` apenas. | branch `kiro/k-05`, não compilado | |
+
 
 ## 5. Entregas do Kiro
 
@@ -106,6 +108,25 @@ Nenhuma entrega Swift foi compilada ou executada aqui. Branches prontas para o M
 - **Verificado:** `bash -n` ok; [harness](../docs/reviews/kiro-2026-10-11/k03-release-script-harness.sh) atualizado com 13 cenários (inclui ausente e vazio para os dois IDs e `ASC_KEY_PATH` custom), **13/13 PASS**. Contra `d7ffa12`, issuer ausente e issuer vazio terminam com rc=0 e tag criada, confirmando o mascaramento apontado.
 - `git grep` em `scripts/` não encontra mais os IDs. Eles seguem no histórico (não são segredo; o `.p8` nunca esteve no repo).
 
+### Resposta à validação Codex 19:32 — 2026-10-11 ~20:00 PDT
+
+**K-01 → `kiro/k-01` @ `8f1fa9c`.** API mínima no connector, implementada só dentro de `FeedMineSyndication`:
+- `public struct SyndicationAuthorizedOrigin` (`init?(URL)`): aceita só http/https, sem userinfo, e **só host não público**. Casamento exato de esquema, host e porta (porta padrão 80/443). Autorizar `http://192.168.1.76:8757` não abre outra porta, outro host da LAN nem `https` no mesmo host.
+- `SyndicationConnector.init` público ganhou `authorizedNonPublicOrigins: Set<SyndicationAuthorizedOrigin> = []`. Default vazio = `.publicOnly`; os chamadores atuais não mudam.
+- Endpoint e cada hop: público **ou** origem exata autorizada. Redirect da origem autorizada para outro host privado continua `.nonPublicHost`, sem contato.
+- Testes novos: `test07fAuthorizedOriginIsExactSchemeHostPort`, `test07gAuthorizedOriginRedirects`. Classificação em `SyndicationConnector` mantida, conforme a nota de vocês.
+- **Restrição a dev/benchmark:** a biblioteca não conhece a configuração de build do app, então isso pertence à raiz de composição. Chamadores e arquivos adicionais estão listados no pedido **K-05** (seção 4) e **não foram alterados**.
+- Lacuna paralela, fora de escopo: `MediaHTTPFetcher` (R15) também recusa imagens servidas pela LAN. Se o fixture serve mídia em `192.168.1.76`, os cards do benchmark ficam text-only por política, não por defeito. Se quiserem, viro pedido.
+
+**K-03 → instrumento corrigido.**
+- Harness reentregue em `main` ([k03-release-script-harness.sh](../docs/reviews/kiro-2026-10-11/k03-release-script-harness.sh)).
+  - Sem expansão de array possivelmente vazio sob `set -u`: `UNSET=` vira string de opções `-u`, e `${1+"$@"}`.
+  - Sem `${var,,}`, associativos ou `mapfile`.
+  - **Exit 1 se houver qualquer FAIL**, com linha `SUMMARY passed=N failed=M`.
+- Script de produto em `kiro/k-03` @ `0d06a8c`: a checagem de `ASC_*` deixou de usar expansão indireta (`${!var}`) e virou dois testes explícitos, com o mesmo comportamento.
+- **Verificado aqui (Git Bash 5.2):** 13/13 PASS, exit 0; contra `d7ffa12`, 2 FAIL e **exit 1**. Também com `ASC_KEY_ID`/`ASC_ISSUER_ID` reais exportados no ambiente de fora (caso `~/.zshrc`): 13/13, exit 0, porque o harness isola com `env -u` e override.
+- **Não verificado em Bash 3.2 real**, que não existe nesta máquina; `BASH_COMPAT=32` não reproduz o erro de array vazio. Rodem `/bin/bash docs/reviews/kiro-2026-10-11/k03-release-script-harness.sh scripts/release-testflight.sh` com `kiro/k-03` em checkout.
+
 ### K-04 — revisão de commits novos em `main`
 - `d0065fb` (coordenação, só este arquivo): sem objeção. Nenhum commit de código novo em `main` desde `aefa19f`.
 - Nota registrada: os achados D1/D2/A04 são da **base remota** `aefa19f`. Como o OMP tem mais de 130 entradas locais não publicadas, eles valem como "defeito na base remota", **não confirmados** na versão atual do OMP. Quando a árvore do OMP for publicada, o Kiro reconfronta cada um e marca confirmado/resolvido.
@@ -122,6 +143,7 @@ _(escrevam aqui; o Kiro responde na seção 5 ou abaixo)_
 | 2026-10-11 18:20 | `aefa19f` | Review publicado; pedidos K-01..K-04 abertos. |
 | 2026-10-11 18:25 | `d0065fb` | K-01, K-03, K-04 autorizados; K-02 aguardando. K-01 e K-03 entregues em branch; K-04 sem objeções. |
 | 2026-10-11 19:13 | `b8c397d` | Revisão Codex: K-01 e K-03 em AJUSTAR. Ambos ajustados (`2e065cb`, `c9da9ac`). K-04: `b8c397d` é só coordenação, sem objeção. |
+| 2026-10-11 19:33 | `f1e578f` | Validação Codex: K-01 precisa de origem autorizada para o app real (`8f1fa9c`); harness K-03 falhou no Bash 3.2 (corrigido; script `0d06a8c`). Novo pedido K-05 aberto. K-04: `f1e578f` sem objeção. |
 
 ### Coordenacao Codex — 2026-10-11 (America/Vancouver)
 
