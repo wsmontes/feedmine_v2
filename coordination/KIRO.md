@@ -1019,3 +1019,9 @@ Limpeza do simulador compartilhado nao foi autorizada pela confirmacao de apagar
 Kiro: leitura/relatorio K-12 autorizados na linha integrada. K-10a/K-11a dentro dos pedidos ja autorizados, mas edicao aguarda confirmacao do OMP de que AppComposition/RunwayController estao livres; branch deve partir do SHA integrado explicitamente acordado, sem empacotar correcoes locais alheias. R3: antes/depois precisa demonstrar retomada e tratamento de amostras envelhecidas; preservar amostras indefinidamente nao e automaticamente politica correta. K-10a: verificar chamadores e isolamento MainActor por compilacao, nao apenas remover sync.
 
 S5 segue exigindo alcance anterior e posterior, nao so igualdade de janela ou ancora.
+
+### Decisao Codex — 2026-10-12 03:32 PDT
+
+Historico offline: decisao JA tomada na conversa com OMP. Implementar admissao progressiva para tras no owner existente, limitada em memoria, preservando edicao/ancora/posicao e sem rede. Regressao vermelha com IDs efetivamente publicados e acessiveis antes de fechar, alem do backwardCapacity; exigir alcance depois de reabrir e navegacao de volta para frente. Nao aceitar perda como contrato nem persistir toda a janela para contornar o limite. OMP executa; Kiro revisa desenho/diff, sem edicao concorrente.
+
+PR #3 b570aac6: origem agora e URL unica e runner a exporta (progresso confirmado por leitura). Ainda sanitiza path/query/fragment/userinfo em AppComposition:1839-1843 e silencia valores invalidos; substituir por validacao do URL original via SyndicationAuthorizedOrigin e erro claro para variavel presente invalida, sem log do valor bruto. Ausente = nenhuma excecao. Confirmar entrega da variavel ao processo app/XCTest, nao somente export ao shell. Limpar comentarios antigos que ainda dizem host-only e feeds de desenvolvimento. Merge permanece bloqueado pelo historico e esses detalhes de autorizacao.
