@@ -1,5 +1,8 @@
 # File responsibilities
 
+> **DOC CORRECTION — responsabilidade atual versus cronologia de fases (2026-10-10).** As linhas abaixo agregam **registros históricos de implementação**: uma linha dizendo "future", "scaffold" ou "Phase ... implemented" não prova o status do código em `main` hoje. Para decisões atuais, consultar [produto](../product/PRODUCT_NORTH_STAR.md), [PD-8/9/10](../product/PRODUCT_DECISIONS_2026-10-09.md), [INV-16/17/18](PRODUCT_INVARIANTS.md) e o código. A autoridade do catálogo gerenciado é [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository); o V2 já tem leitor local do `catalog.sqlite`, mas ainda não comprovou sync remoto, staging e ativação. A fronteira de leitura/substituição de catálogo deve respeitar `runtime.sqlite` durável, o único fluxo de aquisição e a apresentação imutável, não gerar novo scheduler. Usar este arquivo para **ownership**, não para declarar implementação completa ou adotar descrições de fases superadas.
+
+
 | Module | File | Responsibility | Explicitly does not own |
 | --- | --- | --- | --- |
 | FeedMineDomain | FeedIdentifiers.swift | Phase 1A implemented: seven nominal UUID IDs for source, provider, origin record/revision, source binding, content entity and cluster. Phase 1B adds EditorialRevisionID; Phase 2B adds cross-boundary FeedEditionID, FeedSegmentID and PublicationCardID; Phase 3I1 adds caller-supplied MediaCandidateID independent of locator/asset identity. Domain owns nominal identity only; semantic ContextKey belongs to FeedContext.swift. | Endpoint identity, protocol-specific identity or transport-derived ID generation |

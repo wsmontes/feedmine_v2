@@ -1,5 +1,8 @@
 # Transferência do frontend V1 → V2 — Implementation Plan
 
+> **DOC CORRECTION — paridade V1 substituída em pontos de produto (2026-10-10).** Esta é a trilha histórica de transferência de interfaces e testes. A instrução interna abaixo de que "paridade de UI atual prevalece sobre decisões anteriores" **não** prevalece sobre decisões **posteriores** do dono do produto. Para a primeira abertura, o [PRD F02](../../product/F02_DISCOVERY_FEED_ONBOARDING_PRD.md) exige duas escolhas curtas (idiomas/lugares) e **o feed real como experiência principal**, com convites editoriais opcionais **dentro** do feed; não recriar Welcome→Composer→duelos como barreira obrigatória só para copiar V1. [F05](../../product/F05_CONTINUOUS_RUNWAY_PRODUCT_PRD.md) e [F06](../../product/F06_SACRED_FEED_CARD_READINESS_PRD.md) exigem candidato pendente fora da publicação, runway adaptativo e histórico imutável; [PD-10](../../product/PRODUCT_DECISIONS_2026-10-09.md) exige catálogo público autoritativo/sync para release. Preservar as descobertas visuais e provas históricas deste plano sem reinterpretá-las como contrato atual.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Execução pelo agente principal; delegação somente mediante autorização explícita. Este pedido entrega o plano, não inicia a implementação.
 
 **Goal:** Entregar o Feedmine com a UI e as interações do V1, reaproveitando seu código, sobre o backend sustentável do V2 e com admissão de novos cards controlada pelo scroll.

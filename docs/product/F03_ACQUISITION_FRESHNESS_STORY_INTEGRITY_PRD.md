@@ -123,3 +123,26 @@ A ingestão pode recusar dados inválidos ou perigosos; o produto não pode trat
 ## 9. Critério de conclusão
 
 A Frente 03 estará pronta do ponto de vista do produto quando uma pessoa conseguir descobrir, abrir e consumir histórias verdadeiras de fontes diferentes, com frescor contextual honesto, forte preferência por acesso aberto, sem republicações repetitivas nem supressão de perspectivas independentes, e quando itens elegíveis não sumirem sem razão identificável. **A prova deve acompanhar a história de ponta a ponta: fonte → aquisição → identidade → conteúdo → decisão editorial → card → consumo efetivo.**
+
+## 10. Ganchos para a experiência de consumo (F11–F20)
+
+A F03 define quando um artigo, link e mídia são **conteúdo legítimo e consumível**. A experiência de **abrir/fechar e voltar sem perda** pertence à [F14](F14_READER_LINK_NAVIGATION_UX_PRD.md); reprodução explícita de áudio e posição de episódio pertencem à [F15](F15_PODCAST_PLAYBACK_CONTINUITY_UX_PRD.md); compartilhar o destino e atribuição sem falsificar origem pertence à [F19](F19_SHARING_DISCOVERY_UX_PRD.md). Todos devem respeitar F03, [F06](F06_SACRED_FEED_CARD_READINESS_PRD.md), B04 e B05. A dependência completa aparece na [matriz de impacto](PRODUCT_SPEC_DEPENDENCIES_F11_F20.md).
+
+---
+
+## Referências externas de apoio — F03 (complementares, sem alterar os critérios de aceite):
+
+Suportar variações de feed, revisões e identidades de origem.
+
+- [RSS 2.0](https://www.rssboard.org/rss-specification) — GUID, datas, enclosures e parsing.
+- [Atom RFC 4287](https://www.rfc-editor.org/info/rfc4287/) — ID, links e atualização Atom.
+- [JSON Feed 1.1](https://www.jsonfeed.org/version/1.1/) — IDs, HTML/texto e timestamps.
+- [HTTP RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) — Conditional requests e semântica de HTTP.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+
+## Pesquisa Apple transversal — F03 (2026-10-10)
+
+Cenários complementares iOS sobre estabilidade, background, offline, integrações e recursos: [F22](F22_NETWORK_OFFLINE_CONSTRAINED_UX_PRD.md) · [F23](F23_BACKGROUND_EXECUTION_TRANSFERS_PRD.md) · [F24](F24_IOS_STORAGE_PROTECTION_RECOVERY_PRD.md). Referência direta: [Apple — URLSessionConfiguration](https://developer.apple.com/documentation/foundation/urlsessionconfiguration). Visão geral: [Frentes Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
+
+**Precedência:** esta pesquisa não substitui o PRD, decisões de produto, owners existentes ou B01–B06; referências de APIs não comprovam implementação ou teste.

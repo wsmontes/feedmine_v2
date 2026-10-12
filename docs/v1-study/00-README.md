@@ -1,5 +1,8 @@
 # FeedMine v1 study: lessons for v2
 
+> **DOC CORRECTION — perguntas e números históricos (2026-10-10).** Este inventário investiga a V1 e preserva as perguntas *feitas na época*, não pendências para o dono do produto. A dúvida "reutilizar catálogo da V1?" foi resolvida por PD-2 e **ampliada por PD-10**: o [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository) é a fonte da verdade do catálogo gerenciado; o `catalog.sqlite` da V2 é o bootstrap local e deve acompanhar novas revisões públicas em background. O snapshot de referência tem 77.443 fontes, não a cifra histórica de ~88 mil nem um teto permanente. A V1 ter desabilitado update no release foi decisão de implementação, **não autorização do produto**. Aplicam-se [10 frentes](../product/PRODUCT_AUDIT_10_FRONTS.md) e [decisões atuais](../product/PRODUCT_DECISIONS_2026-10-09.md).
+
+
 This is a study of FeedMine v1 (`wsmontes/feedmine-dev`, `main` @ `b5c2f59c`, 2026-09-17).
 v1 is an iOS app of about 40k lines of Swift plus 188 Python catalog scripts, built over 1010
 commits between 2026-06-30 and 2026-09-17. The study reviews v1's code and records what it

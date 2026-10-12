@@ -1,5 +1,8 @@
 # v1 → v2 port log
 
+> **DOC CORRECTION — inventário de transferência V1 ≠ backlog/catálogo vigente (2026-10-10).** O status de itens `addressed`, `done` ou `validado` refere-se à **transferência técnica registrada nas datas respectivas**, não à validação de produto das 10 frentes. A entrega do `catalog.sqlite` pela release `catalog-v1` não implementa sincronização com [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository), exigida para release em [PD-10](../product/PRODUCT_DECISIONS_2026-10-09.md)/[INV-18](../architecture/PRODUCT_INVARIANTS.md). Regras atuais de F02 (feed inicial, idiomas/lugares antes de votos temáticos), F05 (runway sem fim artificial) e F06 (pendência fora da fila, histórico imutável) prevalecem sobre paridade mecânica da V1. Preservar este log como trilha de execução, não reabrir automaticamente tarefas antigas.
+
+
 Changes that bring v1 lessons (`docs/v1-study/`) and product decisions
 (`docs/product/PRODUCT_DECISIONS_2026-10-09.md`) into v2 code.
 

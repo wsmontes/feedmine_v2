@@ -57,12 +57,16 @@ enum SyndicationMediaLocator {
 
     /// First plausible content image in an HTML fragment, honoring lazy-loading attributes.
     /// Decorative images (avatars, share buttons, pixels) are skipped, not returned.
+    /// Kiro K-08 (review E3-07): only markup a reader would render is considered. Comments and the raw-text or
+    /// inert contents of script, style, template and iframe are removed first, so a feed cannot make a hidden
+    /// `<img>` (tracking beacon, commented-out markup) its card visual. `noscript` and `object` fallbacks stay:
+    /// without scripts or plugins they are exactly what is shown; `embed` is void and has no contents.
     static func firstContentImage(inHTML html: String?, base: URL?) -> URL? {
         guard let html, html.range(of: "<img", options: .caseInsensitive) != nil
             || html.range(of: "&lt;img", options: .caseInsensitive) != nil else { return nil }
         let unescaped = html.replacingOccurrences(of: "&lt;", with: "<").replacingOccurrences(of: "&gt;", with: ">")
             .replacingOccurrences(of: "&quot;", with: "\"")
-        for candidate in [html, unescaped] {
+        for candidate in [html, unescaped].map(renderableMarkup) {
             let range = NSRange(candidate.startIndex..., in: candidate)
             for match in imgTag.matches(in: candidate, range: range) {
                 guard let tagRange = Range(match.range, in: candidate) else { continue }
@@ -87,6 +91,22 @@ enum SyndicationMediaLocator {
 
     // MARK: - Rules
 
+    /// The fragment without comments and without never-rendered element contents (K-08). An unterminated
+    /// comment or element runs to the end of the fragment, as an HTML parser treats it.
+    static func renderableMarkup(_ html: String) -> String {
+        var text = html
+        for pattern in hiddenMarkup {
+            text = pattern.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        }
+        return text
+    }
+
+    // Immutable after construction; NSRegularExpression matching is thread-safe.
+    // One expression per element (no back-reference), comments first so `<!-- <script> -->` cannot open one.
+    nonisolated(unsafe) private static let hiddenMarkup: [NSRegularExpression] =
+        (["<!--[\\s\\S]*?(?:-->|\\z)"] + ["script", "style", "template", "iframe"].map { name in
+            "<\(name)(?=[\\s/>])[^>]*>[\\s\\S]*?(?:</\(name)\\s*>|\\z)"
+        }).map { try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
     // Immutable after construction; NSRegularExpression matching is thread-safe.
     nonisolated(unsafe) private static let imgTag = try! NSRegularExpression(pattern: "<img\\b[^>]*>", options: [.caseInsensitive])
     nonisolated(unsafe) private static let attributePattern = try! NSRegularExpression(

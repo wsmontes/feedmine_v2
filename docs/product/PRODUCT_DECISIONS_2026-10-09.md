@@ -40,6 +40,8 @@ per-card view state; a new occurrence keeps INV-08 intact and needs no mutation.
 
 **Decision.** v2 uses v1's catalog (`catalog.sqlite` plus Python tooling; 77,443 sources in the bundled snapshot).
 
+**Esclarecimento vinculante de 2026-10-10:** reutilizar o snapshot/formato da V1 não transfere autoridade editorial para uma cópia congelada nem significa operação bundled-only. A fonte da verdade do catálogo gerenciado é o repositório público `https://github.com/wawasoft/feed-repository`; ver PD-10. O asset embarcado é um bootstrap local, não um catálogo independente.
+
 **Consequences.**
 - Catalog / SourceBinding materialization is now required work (`04-catalog-editorial.md`
   Lesson A). Sources have their own lifecycle, separate from runtime supply.
@@ -185,3 +187,20 @@ softer behaviour than the product performs.
 **Future distinction (product owner's direction, not this round).** Two different reader intentions should not
 share one semantics: *"Menos de X"* = reduce frequency without eliminating the subject; *"Não quero mais X"* =
 exclude the subject from discovery. Until that exists, the label must state the truth of what is implemented.
+
+
+---
+
+## PD-10 — Repositório público é a autoridade do catálogo gerenciado (2026-10-10)
+
+**Decisão do dono do produto — requisito de release, não trabalho futuro opcional.** `https://github.com/wawasoft/feed-repository` é a **fonte da verdade editorial e de versionamento** do catálogo público *gerenciado* do FeedMine. Esse repositório distribui metadados, URLs, classificação e organização de fontes, **não artigos nem um backend proprietário de conteúdo**. A intenção é que o catálogo cresça por contribuições públicas e que o app continue robusto quando chegar a centenas de milhares de fontes. A contagem atual (77.443) descreve um snapshot, nunca um limite de produto.
+
+**Snapshot incorporado em cada versão do app.** Cada build destinado a distribuição deve embarcar uma cópia local válida do catálogo, gerada a partir da revisão mais recente validada/disponível do repositório público no momento da montagem do release. A revisão/origem precisa ser rastreável. Instalação, primeira abertura e restauração devem funcionar usando essa cópia, **sem baixar o catálogo antes de mostrar o feed**. O bundle é ponto de partida e proteção offline, não autoridade concorrente. A ausência de rede ou do GitHub não torna o app inutilizável.
+
+**Sincronização regular e discreta.** Com o app em execução e rede/oportunidade permitida pelo iOS, verificar o manifesto público em segundo plano no início ou retorno ao primeiro plano **quando não houver verificação bem-sucedida nas últimas ~24 horas**, e em outras oportunidades legítimas quando o período expirar. Reaberturas frequentes não provocam download integral repetido; revisões iguais não exigem recompilação. Se o app ficar fechado/suspenso ou offline, verificar na próxima oportunidade, sem prometer execução garantida diária fora das permissões do iOS. A consulta não participa da barreira de primeira apresentação, não bloqueia scroll/runway e não implica polling incessante nem scheduler paralelo.
+
+**Qualquer alteração de catálogo importa.** Uma revisão maior pode acrescentar ou remover fontes, corrigir URLs, alterar metadados, idioma, taxonomia, qualidade, classificação e elegibilidade. Aplicar alterações para descoberta/aquisição **futuras**, inclusive desativando fontes removidas do universo gerenciado, sem recriar nem deslocar cards já publicados. Uma fonte removida do catálogo público não apaga automaticamente fontes importadas pelo usuário, salvos, coleções, histórico, conteúdo já adquirido ou estado da sessão. Mudanças de URL/canonical key exigem tratamento explícito de identidade para não duplicar fontes nem perder associações locais.
+
+**Atualização íntegra, atômica e recuperável.** Usar a revisão monotônica do `manifest.json` e verificar esquema, inventário, tamanho e SHA-256 de todos os OPMLs baixados antes de construir/validar o novo snapshot local. Só ativar depois de validação completa; erro de rede, arquivo, esquema, integridade, compilação ou ativação preserva o snapshot anterior. Não inventar garantia criptográfica de assinatura que o canal público ainda não oferece; se autenticação adicional for introduzida, documentar e testar seu contrato real. Preservar separação catálogo substituível vs. dados pessoais/runtime duráveis.
+
+**Critério de release e evidência.** Release não pode ser considerado pronto enquanto este fluxo não estiver implementado e testado em produção: (1) release embarca snapshot verificável correspondente a uma revisão pública conhecida; (2) cold/warm launch apresenta local primeiro, inclusive offline; (3) revisão igual não provoca substituição; (4) alteração com adição, remoção e edição é refletida apenas no catálogo gerenciado e em trabalho futuro; (5) manifesto/arquivo inválido ou falha de rede mantém a última cópia válida; (6) dados pessoais e feed publicado permanecem intactos; (7) verificação vencida é disparada de forma não bloqueante, sem depender de execução iOS garantida em background. **Documentar como requisito ainda não comprovado na V2, não como feature entregue.** Cobertura: F01 (catálogo/descoberta), F09 (persistência/offline/atualização), F10 (gate de release), com F05/F06 protegendo continuidade e estabilidade. Aplicam-se INV-07/08/09/12/16/18; não criar segundo pipeline de aquisição.

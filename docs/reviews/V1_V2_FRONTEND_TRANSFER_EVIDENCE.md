@@ -1,5 +1,8 @@
 # V1 → V2 frontend transfer: executed evidence
 
+> **DOC CORRECTION — waiver T12 não libera B06 (2026-10-10).** Evidências, prints e PASS deste relatório são específicos da transferência visual/funcional da V1. O termo histórico `T12 — PASS WITH PHYSICAL-DEVICE WAIVER` **não** concede waiver ao **gate B06**, que exige testes em iPhone físico para o release ([benchmark](../product/DISCOVERY_ACCEPTANCE_BENCHMARK.md)); tampouco aprova as frentes F01–F10. A primeira experiência deixou de ser uma paridade literal de Welcome→Composer e segue [F02](../product/F02_DISCOVERY_FEED_ONBOARDING_PRD.md). Novas revisões públicas do catálogo gerenciado devem ser sincronizadas conforme [PD-10](../product/PRODUCT_DECISIONS_2026-10-09.md), mesmo que o snapshot local da V1 tenha passado checksum. Históricos de teste abaixo permanecem intactos.
+
+
 One row per delivered surface. **Every row states a command that was actually run and its result**; a row that
 says "not executed" was not run, and nothing here claims otherwise. Work package: T1–T12 of
 `docs/superpowers/plans/2026-10-09-transferencia-frontend-v1-v2.md`; the narrative is in

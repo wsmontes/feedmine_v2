@@ -1,5 +1,11 @@
 # FeedMine
 
+**INSTRUÇÃO ATUAL PARA AGENTES (2026-10-11):** [Diretriz de execução V2 após checkpoint B05](docs/product/V2_AGENT_EXECUTION_DIRECTIVE_2026-10-11.md). Leia antes de iniciar novas correções ou mais documentação; preservar a evidência canônica de B05 e atacar descoberta real, runway e os gates restantes sem alterar a régua.
+
+
+**Status documental (2026-10-10):** O catálogo público gerenciado é mantido em [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository) e é a **fonte da verdade** (decisão vinculante [PD-10](docs/product/PRODUCT_DECISIONS_2026-10-09.md), [INV-18](docs/architecture/PRODUCT_INVARIANTS.md)). O arquivo `catalog.sqlite` atualmente instalado via `scripts/fetch-catalog.sh` é um snapshot de desenvolvimento originado da V1, **não prova** de atualização a partir da revisão pública. Antes de qualquer release, a V2 deve empacotar a revisão pública mais recente validada e verificar periodicamente o `manifest.json` em background (~24 h por oportunidade permitida pelo iOS), sem bloquear a primeira apresentação; atualização inválida conserva o snapshot anterior e não remove dados pessoais. **Isso ainda não está implementado/comprovado na V2.** A régua de lançamento é [B01–B06](docs/product/DISCOVERY_ACCEPTANCE_BENCHMARK.md), incluindo o contrato do catálogo público; relatórios de fases e testes antigos não são aprovação atual de produto. **Agentes em paralelo: consultem antes de implementar o [DOC CORRECTION — auditoria de 63 documentos](docs/reviews/DOCUMENTATION_CONSISTENCY_AUDIT_2026-10-10.md)**, que separa requisitos atuais de planos de fases ultrapassados.
+
+
 **Por que existe:** fazer a internet aberta voltar a ser um lugar onde é gostoso descobrir coisas. O objetivo é oferecer descoberta contínua de conteúdo interessante, inclusive de fontes que a pessoa ainda não conhece — sem exigir que ela primeiro configure um leitor RSS. Leia o [norte de produto](docs/product/PRODUCT_NORTH_STAR.md) antes de decidir funcionalidades, prioridades ou mudanças na experiência de leitura. O [benchmark de aceitação vigente](docs/product/DISCOVERY_ACCEPTANCE_BENCHMARK.md) fixa as provas de produto: agentes devem implementá-las, executá-las e corrigir falhas autonomamente, sem pedir aprovação intermediária nem baixar a exigência. A [especificação de produto F02](docs/product/F02_DISCOVERY_FEED_ONBOARDING_PRD.md) define o primeiro contato como um feed normal, divertido e interativo, não um formulário obrigatório de onboarding; descreve experiência, interface, linguagem e aceitação, não implementação.
 
 FeedMine é um feed reader local-first/offline-first, sem servidor próprio. O pacote Swift contém dez módulos; o aplicativo iOS separado usa esses módulos por referência local.
@@ -17,3 +23,11 @@ Verificação do pacote: `swift package describe`, `swift build`, `swift test`, 
 Veja [execução iOS](docs/IOS_RUN.md) e [arquitetura](docs/architecture/ARCHITECTURE.md).
 
 Antes de avaliar UX/experiência em um build de simulador, rode `scripts/verify_product_catalogue.sh "$(xcrun simctl get_app_container booted com.feedmine.development app)"`: uma corrida do benchmark instala o app com o catálogo do corpus dentro dele e, fora da corrida, esse app parece não publicar nada (o script sai 1 e diz como reinstalar o build de produto).
+
+## Pesquisa Apple — UI/UX, offline e confiabilidade
+
+Documentação primária Apple com limites iOS e cenários verificáveis: [índice de pesquisa Apple](docs/research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md). A terceira onda de [F21–F27](docs/product/PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) complementa F01–F20 em scene lifecycle, rede/offline, background, integridade local, SwiftUI, integrações e recursos; não altera B01–B06 ou o status de release.
+
+## Ouro escondido da V1 — backlog de produto para V2
+
+Análise de 15 oportunidades da V1 com código/linhas como evidência, V2 atual inspecionada e critérios de aceitação: [Garimpo V1: 15 oportunidades com prova no código](docs/v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md). Para executar sem copiar o runtime legado: [Briefs de implementação por jornada](docs/product/V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md). Armadilhas arquiteturais que não devem ser trazidas: [Lista do que não portar](docs/v1-study/V1_GOLD_DO_NOT_PORT_2026-10-10.md). **Não há código novo nem certificação B01–B06 nesses documentos.**

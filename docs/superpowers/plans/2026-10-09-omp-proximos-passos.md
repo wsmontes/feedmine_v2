@@ -1,5 +1,8 @@
 # FeedMine V2 — Plano dos próximos passos para OMP
 
+> **DOC CORRECTION — acompanhamento encerrado/histórico (2026-10-10).** O plano T1–T8 e suas medições registram a execução em commits anteriores, **não** o backlog definitivo da V2 nem um atestado de release. A distribuição por `catalog-v1` do snapshot local **não** satisfaz a exigência posterior de autoridade e sincronização com [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository) (PD-10/INV-18). As dez frentes e o benchmark B01–B06 permanecem pendentes de aceitação onde não há PASS integral documentado. Consultar [mapa F01–F10](../../product/PRODUCT_AUDIT_10_FRONTS.md) e [decisões atuais](../../product/PRODUCT_DECISIONS_2026-10-09.md) antes de agir.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Executar sequencialmente; este pedido é de planejamento, não de implementação nem de envio a outro chat.
 
 **Goal:** Tornar verificável a rodada atual e fechar as lacunas de catálogo, contextos, preparação e mídia antes de avaliar uma versão para usuários.

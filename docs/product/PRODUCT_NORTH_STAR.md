@@ -53,6 +53,8 @@ Busca, fontes seguidas, bookmarks, coleções, filtros e feeds curados são mane
 
 **Internet aberta, execução local.** A ausência de servidor próprio de conteúdo, o uso do catálogo local e a operação offline-first sustentam privacidade, autonomia e resiliência. São características estruturais que tornam a promessa possível; não substituem a experiência que a pessoa veio buscar.
 
+**Catálogo público colaborativo como autoridade, com operação local.** O catálogo gerenciado tem fonte da verdade no repositório público [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository), criado para receber contribuições, correções e remoções da comunidade e crescer para centenas de milhares de feeds ou mais. Cada release embarca um snapshot da revisão pública mais recente validada à época do build; o aplicativo o usa imediatamente e consulta revisões futuras discretamente em background (quando houver oportunidade, aproximadamente uma vez ao dia), sem atrasar a leitura. O GitHub distribui **metadados de fontes**, não serve os artigos, não controla as bibliotecas pessoais e não é dependência operacional para uso offline. Atualizações do catálogo afetam futuras descobertas, não o histórico apresentado. Esse comportamento é **obrigatório para release**, conforme PD-10 e INV-18; sua implementação na V2 ainda precisa ser comprovada.
+
 **Múltiplos formatos sem contaminar a experiência.** O conteúdo pode vir de diferentes protocolos e, ao longo da evolução do produto, diferentes mídias. O leitor não deveria precisar entender conectores para descobrir algo interessante.
 
 ## Princípio transversal — exploração progressiva e capacidade relativa
@@ -133,7 +135,7 @@ A experiência será validada no aplicativo real (simulador e dispositivo), com 
 Este documento define o **porquê** e a experiência desejada. Ele não substitui contratos técnicos nem reabre decisões já tomadas.
 
 - [Benchmark de aceitação vigente](DISCOVERY_ACCEPTANCE_BENCHMARK.md): provas obrigatórias de experiência e execução autônoma; nenhum agente pode reduzir os critérios para acomodar sua implementação.
-- [Decisões de produto](PRODUCT_DECISIONS_2026-10-09.md): regras vinculantes e escolhas concretas (primeira abertura, alternância, mídia etc.).
+- [Decisões de produto](PRODUCT_DECISIONS_2026-10-09.md): regras vinculantes e escolhas concretas (primeira abertura, alternância, mídia e **PD-10: autoridade e atualização do catálogo público**).
 - [Invariantes de produto](../architecture/PRODUCT_INVARIANTS.md): comportamentos obrigatórios e fronteiras arquiteturais.
 - [Arquitetura](../architecture/ARCHITECTURE.md): como a implementação sustenta a apresentação local, o runway adaptativo e a separação de responsabilidades.
 - [Inventário de transferência V1 → V2](../v1-study/UI_TRANSFER_MATRIX.md): quais controles e interações estão sendo preservados ou deliberadamente alterados.
@@ -146,3 +148,15 @@ Quando uma proposta parece tecnicamente correta mas piora a descoberta, **o dese
 **Frase para qualquer pessoa — inclusive um agente de código — lembrar:**
 
 > *O FeedMine não existe para gerenciar feeds. Ele existe para fazer a internet aberta voltar a ser um lugar onde é gostoso descobrir coisas.*
+
+## Ganchos para a segunda onda de UX
+
+O norte de produto continua sendo descoberta antes de assinatura, leitura contínua e autonomia local. As [frentes F11–F20](PRODUCT_AUDIT_FRONTS_11_20.md) detalham **como a pessoa pesquisa, navega, controla, lê, escuta, organiza, localiza, compartilha e retorna** sem transformar o aplicativo em trabalho de administrar feeds. O [mapa de impactos e benchmarks UX11–UX20](PRODUCT_SPEC_DEPENDENCIES_F11_F20.md) identifica fronteiras com F01–F10, bem como o significado verificável de **portabilidade** (interoperabilidade de fontes ≠ backup integral dos dados do leitor). Este documento continua sendo a autoridade do **porquê**; os PRDs são os contratos específicos, e B01–B06 mantêm a autoridade de release.
+
+## Pesquisa de confiabilidade da plataforma iOS
+
+A continuidade proposta por este North Star também depende de reconhecer as restrições do iOS: cenas podem perder foco, apps podem ser suspensos ou terminados, e trabalho de rede/background não é garantido. O [mapa Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e as [referências oficiais](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md) aprofundam tais restrições sem adicionar outra visão de produto.
+
+## Aproveitamento de funcionalidades V1 — sem comprometer o North Star
+
+O [Garimpo V1: 15 oportunidades com prova no código](../v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md) seleciona ideias e comportamentos úteis da V1, incluindo Source View real, busca por restrições, curação explícita e contextos visíveis. É uma fonte de **oportunidades**, não exigência de paridade nem permissão para copiar FeedStore/Reservoir/WhatsNewManager. Os [Briefs de implementação por jornada](V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) definem jornadas candidatas a implementar sem bloquear feed local contínuo.

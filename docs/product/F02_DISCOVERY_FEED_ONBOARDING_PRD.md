@@ -296,3 +296,29 @@ A V1 foi inspecionada diretamente em [wawasoft/feedmine](https://github.com/wawa
 ### Definição final de sucesso
 
 > “Escolhi ler em português e inglês, acompanhar Canadá, Brasil e China e comecei a ver ótimas histórias de fontes reais — algumas conhecidas, outras novas. Fui dizendo do que queria mais ou menos, e o FeedMine começou a explorar novos caminhos, sem me tirar do meu feed e sem precisar aprender o que é RSS.”
+
+## 14. Especificações derivadas de UX (F11–F20)
+
+O primeiro feed não exige gestão de Sources ou OPML. Após o primeiro contato, a exploração por [fonte/região/assunto F12](F12_SOURCE_TAXONOMY_NAVIGATION_UX_PRD.md) é opcional; os votos «mais/menos» continuam preferências leves, distintos de [regras duráveis de exclusão F13](F13_CONTENT_CONTROL_EXCLUSIONS_UX_PRD.md); idiomas de conteúdo do onboarding não são a mesma coisa que [idioma dos controles F17](F17_LOCALIZATION_APPEARANCE_ACCESSIBILITY_UX_PRD.md); e retorno/novidades são descritos na [F20](F20_RETURN_FRESHNESS_LIFECYCLE_PRD.md). Consulte o [mapa de impactos](PRODUCT_SPEC_DEPENDENCIES_F11_F20.md). Os casos US-01..US-18 e B01–B06 não são alterados por estes links.
+
+---
+
+## Referências externas de apoio — F02 (complementares, sem alterar os critérios de aceite):
+
+Começar pelo feed real, com escolhas opcionais e evidências honestas de preparação.
+
+- [HIG Onboarding](https://developer.apple.com/design/human-interface-guidelines/onboarding) — Evitar gate obrigatório de configuração.
+- [HIG Disclosure controls](https://developer.apple.com/design/human-interface-guidelines/disclosure-controls) — Mostrar preferências no contexto de uso.
+- [HIG Feedback](https://developer.apple.com/design/human-interface-guidelines/feedback) — Comunicar progresso real, não inventado.
+
+Índice completo: [Pesquisa F01–F20](../research/FeedMine_V2_referencias_F01-F20_2026-10-10.md). A aplicação deve respeitar os owners existentes e as decisões de produto vigentes.
+
+## Pesquisa Apple transversal — F02 (2026-10-10)
+
+Cenários complementares iOS sobre estabilidade, background, offline, integrações e recursos: [F25](F25_SWIFTUI_PRESENTATION_STABILITY_UX_PRD.md) · [F27](F27_DEVICE_PRESSURE_PERFORMANCE_EVIDENCE_PRD.md). Referência direta: [Apple — HIG: Progress Indicators](https://developer.apple.com/design/human-interface-guidelines/progress-indicators). Visão geral: [Frentes Apple F21–F27](PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) e [índice Apple](../research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md).
+
+**Precedência:** esta pesquisa não substitui o PRD, decisões de produto, owners existentes ou B01–B06; referências de APIs não comprovam implementação ou teste.
+
+## Resgate V1 sem ressuscitar onboarding obrigatório (G02/G03)
+
+O [Garimpo V1: 15 oportunidades com prova no código](../v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md) documenta comparações entre histórias reais e Undo de escolha, com [Briefs de implementação por jornada](V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md) (S3). A V2 deve usar esses sinais **somente como interação opcional com o feed já funcionando**, jamais restaurar Welcome→Composer obrigatório; passividade/scroll não ensinam, e não se pode inventar histórico de evidências. Ver [Lista do que não portar](../v1-study/V1_GOLD_DO_NOT_PORT_2026-10-10.md).

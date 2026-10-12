@@ -40,6 +40,8 @@ public enum SyndicationAcquisitionSnapshotError: Error, Equatable, Sendable {
     case staleConfigurationGeneration(targetID: AcquisitionTargetID, configured: UInt64, durable: UInt64)
     case connectorKindMismatch(targetID: AcquisitionTargetID)
     case searchContextUnavailable
+    /// Kiro K-05: an authorized non-public origin must be an exact http(s) origin on a non-public host.
+    case invalidAuthorizedOrigin(URL)
 }
 
 public struct SyndicationAcquisitionSnapshot: Sendable {
@@ -48,12 +50,25 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
     private let registrations: [SyndicationTargetRegistration]
     private let session: URLSession
     private let redirectCapacity: Int
+    private let authorizedNonPublicOrigins: Set<SyndicationAuthorizedOrigin>
     private let now: @Sendable () -> Date
 
+    /// `authorizedNonPublicOrigins` (Kiro K-05) defaults to none, so product acquisition reaches only publicly
+    /// routable hosts. A development composition may pass the exact fixture origins it controls (for example
+    /// an instrumented benchmark server on the LAN); each must be an http(s) origin on a non-public host or
+    /// the snapshot is refused. Authorization never derives from catalog or OPML endpoints.
     public init(database: RuntimeDatabase, registrations: [SyndicationTargetRegistration], session: URLSession,
         redirectCapacity: Int, now: @escaping @Sendable () -> Date = { Date() },
-        discovery: ReaderDiscoveryTraversal? = nil) throws {
+        discovery: ReaderDiscoveryTraversal? = nil,
+        authorizedNonPublicOrigins: [URL] = []) throws {
         guard redirectCapacity >= 0 else { throw SyndicationAcquisitionSnapshotError.invalidRedirectCapacity }
+        var origins = Set<SyndicationAuthorizedOrigin>()
+        for url in authorizedNonPublicOrigins {
+            guard let origin = SyndicationAuthorizedOrigin(url) else {
+                throw SyndicationAcquisitionSnapshotError.invalidAuthorizedOrigin(url)
+            }
+            origins.insert(origin)
+        }
         var seen = Set<AcquisitionTargetID>()
         for registration in registrations {
             guard seen.insert(registration.targetID).inserted else {
@@ -86,6 +101,7 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
         self.registrations = registrations
         self.session = session
         self.redirectCapacity = redirectCapacity
+        self.authorizedNonPublicOrigins = origins
         self.now = now
     }
 
@@ -141,7 +157,7 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
             let registration = registrations.first(where: { $0.targetID == target.id && $0.targetGeneration == target.generation })
         else { return discovery?.connector(for: target, using: transport) }
         return SyndicationConnector(configuration: registration.configuration, session: transport,
-            redirectCapacity: redirectCapacity, now: now)
+            redirectCapacity: redirectCapacity, now: now, authorizedNonPublicOrigins: authorizedNonPublicOrigins)
     }
 
     // Page snapshots carry no traversal, so connector lookup cannot recurse into its owner.

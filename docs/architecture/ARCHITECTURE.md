@@ -12,6 +12,31 @@ O FeedMine explora progressivamente **todo o catálogo elegível** e aproveita f
 
 Autoridade normativa: [norte de produto](../product/PRODUCT_NORTH_STAR.md) e [INV-16](PRODUCT_INVARIANTS.md). As descrições de fases históricas abaixo não revogam esta política de produto.
 
+## Catálogo público: autoridade, bootstrap e reconciliação
+
+**Autoridade editorial única:** [`wawasoft/feed-repository`](https://github.com/wawasoft/feed-repository) é o canal público versionado do catálogo *gerenciado*. O app busca **histórias diretamente das fontes externas**, nunca desse GitHub. O repositório público publica OPMLs e `manifest.json` com revisão monotônica, inventário, tamanho e hashes; não é backend de conteúdo nem recebe estado de leitura ou preferências pessoais.
+
+**Cadeia de distribuição sem dependência na abertura:**
+
+```text
+wawasoft/feed-repository (catálogo gerenciado autoritativo)
+    ├─ pipeline de release → snapshot local validado no bundle do app
+    └─ atualização opcional de rede → verificação de manifest em background
+                                      → download de revisão nova + validação
+                                      → snapshot local staged → ativação atômica
+snapshot local ativo + catálogo pessoal do usuário
+    → descoberta/eligibilidade → registro gradual de targets → aquisição externa
+    → supply local → seleção → preparação → publicação
+```
+
+- **Release:** empacotar a última revisão pública validada disponível durante o build; registrar revisão, procedência e integridade. O executável sempre começa com o snapshot local e deve operar sem rede. Na V2 atual, o asset `catalog.sqlite` vem da V1 e é buscado de uma *release do repositório do código V2*, não do canal público da Wawasoft: **essa reconciliação ainda precisa ser implementada e validada**, não pode ser declarada pronta só por ter 77.443 entradas.
+- **Runtime:** na primeira oportunidade de launch/foreground com rede, se a última verificação bem-sucedida tiver aproximadamente 24 horas, consultar somente o manifesto em trabalho de background oportunista. Se uma sessão continuar ativa após o prazo, aproveitar uma oportunidade legítima; sem busy loop, timer arbitrário nem novo scheduler. Repetidos launches dentro da janela não baixam tudo; revisão igual é no-op. iOS offline/suspenso/encerrado adia para a próxima oportunidade, sem promessas irreais de execução fora do app.
+- **Troca do catálogo:** se `revision` avançar, preparar somente uma cópia candidata completa e validá-la contra inventário, SHA-256, tamanho, formato/esquema e consistência. A entrada do catálogo público ainda não prova assinatura criptográfica; não confundir revisão manifestada, hashes e autenticação de origem. Falha preserva a última cópia válida, e a ativação deve permitir recuperação de interrupção, sem tocar `runtime.sqlite`.
+- **Semântica de diff:** inserções, remoções, mudanças de URL, taxonomia, idioma, qualidade e metadados mudam descoberta/registro de aquisição **para o futuro**. Remover uma fonte gerenciada não reescreve cards publicados nem remove fontes importadas pelo usuário, salvos, históricos, coleções ou conteúdo local; a identidade estável e chaves alteradas exigem migração/reconciliação explícita. Reavaliar elegibilidade e alvos pelos donos existentes, preservando posição e runway.
+- **Ownership:** leitura/staging/troca do catálogo junto da fronteira de Persistence/catálogo; decisão de disparo e composição junto do ciclo existente em Composition; descoberta e aquisição usam o fluxo normal. Não introduzir servidor, segundo catálogo editorial, segundo acquisition scheduler ou sincronizador paralelo. O catálogo público é autoridade das **fontes gerenciadas**, nunca da publicação já congelada nem do estado pessoal local.
+
+**Gate:** testes end-to-end de snapshot empacotado, revisão igual, delta com adição/remoção/edição, falha de integridade/rede, upgrade, preservação de dados e lançamento local sem bloqueio. Requisito vinculante [PD-10](../product/PRODUCT_DECISIONS_2026-10-09.md), [INV-18](PRODUCT_INVARIANTS.md); frentes F01/F09/F10 e invariantes F05/F06. Não confundir contrato aqui descrito com implementação já entregue.
+
 ## Canonical pipeline
 
 ```text
@@ -57,7 +82,7 @@ FeedMineUI -> FeedMineDomain, FeedMineRuntime
 FeedMineComposition -> FeedMineDomain, FeedMinePersistence, FeedMineAcquisition, FeedMineSyndication, FeedMineEditorial, FeedMineMedia, FeedMinePublication, FeedMineRuntime, FeedMineUI
 ```
 
-Há exatamente dez targets de produção e dois targets de testes: ArchitectureSmokeTests e FeedMineDomainTests. Um único Swift Package usa Swift tools 6.0, sem dependências externas. Phase 1A implementa somente os value models canônicos em FeedIdentifiers.swift, Source.swift e Content.swift; os outros arquivos permanecem scaffolds. FeedMineDomain may depend on Swift standard library and Foundation value types. It does not depend on another FeedMine module. Veja [Domain model](DOMAIN_MODEL.md).
+O pacote atual contém dez targets de produção e **vários** targets de testes (ver `Package.swift` vigente; a contagem inicial de dois é histórica). Utiliza Swift tools 6.0 com dependências externas **GRDB 7.11.1 somente em Persistence e FeedKit 10.9.4 somente em Syndication**, conforme `Package.swift` e `Package.resolved`. Os modelos Domain deixaram de ser o único código implementado: a V2 já tem persistência, aquisição, seleção, mídia, publicação, runtime, UI e composição. FeedMineDomain pode depender apenas de Swift standard library/Foundation, sem dependência de outro módulo FeedMine. O grafo acima continua sendo a fronteira normativa de dependências entre módulos. Veja [Domain model](DOMAIN_MODEL.md).
 
 ## Local presentation and immutable publication
 
@@ -103,7 +128,7 @@ FeedMinePublication owns publication semantics: PublishedCard, FeedEdition and F
 
 FeedMinePersistence owns storage mechanics and local durability. Persistence must not create a parallel publication domain.
 
-A representação concreta para armazenar a história publicada permanece intencionalmente não resolvida na Phase 0. Nenhuma API ou representação de PublicationStore pode ser implementada antes da escolha explícita de uma estratégia compatível com as dependências. O [phase gate](DEPENDENCY_RULES.md#publicationpersistence-boundary-gate) proíbe DTOs de publicação, repository protocols, novas arestas e movimentação de modelos entre módulos. Não há mudança no grafo nesta correção.
+**Histórico (Phase 0):** a representação de publicação ainda estava em aberto e não podia ser criada sem resolver a fronteira. **Estado atual:** a decisão foi implementada em `PublicationStore`/`PublicationHistory` com semântica em FeedMinePublication e persistência mecânica em FeedMinePersistence. A restrição que permanece válida é não introduzir domínio paralelo de publicação, DTOs substitutos, protocolos genéricos desnecessários nem novas dependências circulares. Ver [Dependency rules](DEPENDENCY_RULES.md) e [Publication/Restore](PUBLICATION_RESTORE_CONTRACT.md).
 
 ## Adaptive runway
 
@@ -111,15 +136,15 @@ Scroll emite ViewportObservation, nunca loadMore ou fetchNextPage. RunwayControl
 
 ## Confined connectors
 
-FeedConnector pertence a Acquisition. FeedMineSyndication será sua primeira implementação concreta, confinando RSS, Atom, JSON Feed e HTTP específico. A tradução/admission encerra representações específicas de protocolo; Selection, Publication, Session e UI recebem conceitos canônicos. Selection não busca candidatos remotamente: supply insuficiente gera demanda upstream. Publication não resolve mídia remota. A UI consome a superfície Runtime e não importa Publication para renderizar presentation cards.
+FeedConnector pertence a Acquisition. FeedMineSyndication **já implementa** o conector concreto de RSS, Atom, JSON Feed e HTTP específico. A tradução/admission encerra representações específicas de protocolo; Selection, Publication, Session e UI recebem conceitos canônicos. Selection não busca candidatos remotamente: supply insuficiente gera demanda upstream. Publication não resolve mídia remota. A UI consome a superfície Runtime e não importa Publication para renderizar presentation cards.
 
 ## Composition root
 
-FeedMineComposition é o único composition root e o único lugar que conhece o conjunto das implementações concretas. FeedMineEnvironment fará composição explícita por initializer. FeedMineBootstrap construirá database → stores → connector → acquisition → editorial → media → publication → runtime/session → screen store. Não existe framework de DI, container dinâmico ou service locator global. Nenhum módulo depende de Composition.
+FeedMineComposition é o único composition root e o único lugar que conhece o conjunto das implementações concretas. `FeedMineEnvironment`/`FeedMineBootstrap` registram a composição por initializer e a aplicação faz seu wiring concreto também em `AppComposition.swift`: database → stores → connector → acquisition → editorial → media → publication → runtime/session → screen store. Não existe framework de DI, container dinâmico ou service locator global. Nenhum módulo depende de Composition.
 
 ## Clean rewrite and simplicity
 
-Existe apenas FeedMine nos nomes de produção. O projeto histórico não é base arquitetural; nenhum código foi copiado. Não há runtime de compatibilidade, caminhos alternativos ou pipeline de background separado. Cada responsabilidade possui um único owner. Não criar FeedStore, FeedRuntime monolítico, event bus, registries, managers genéricos ou protocols por testability. FeedConnector é a única boundary de protocol autorizada, ainda sem declaração de API nesta phase.
+Existe apenas FeedMine nos nomes de produção. O projeto histórico não é base arquitetural; nenhum código foi copiado. Não há runtime de compatibilidade, caminhos alternativos ou pipeline de background separado. Cada responsabilidade possui um único owner. Não criar FeedStore, FeedRuntime monolítico, event bus, registries, managers genéricos ou protocols por testability. FeedConnector é a boundary de protocolo intencional para conectores de aquisição, já implementada e tipada. Não criar interfaces de serviços genéricos adicionais só para testabilidade.
 
 Alarmes de tamanho futuros: FeedSession idealmente < 300 LOC; FeedSessionReducer < 500; SelectionEngine < 400; PublicationCoordinator < 400; RunwayController < 300. São sinais para revisar ownership, não limites mecânicos nem justificativa para divisão artificial.
 
