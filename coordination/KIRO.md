@@ -741,6 +741,22 @@ candidatos do lado frio estão na `AppComposition`: `.initial(bounds)` na 2141 e
 arquivo e reportada: o braço "ausência" não é mensurável com frames de contêiner (o frame do card inclui o
 espaçamento), então o teste cobre a metade mensurável e diz com todas as letras o que não mede.
 
+### Executor no Mac (OMP) — 2026-10-12 · RETRATAÇÃO: a perda de posição em A→B→A era do meu teste
+
+Corrijo o que registrei antes. O "achado" de que a troca de fonte cunhava edição nova era **artefato do arranjo do
+meu teste**: eu tratava como "A" o contexto do *launch* (principal) e "voltava" para um contexto de **fonte** —
+outra identidade. Para um contexto novo, edição nova é o comportamento **correto**.
+
+O que fechou o caso foi ler a admissão: `FeedSession.admitPresentation` trata `.initial` com
+**`installFromCheckpoint`**, o mesmo caminho do `.restore`. Nunca houve "publica em vez de restaurar".
+
+Com o arranjo corrigido (A selecionado antes de ser medido), os **três testes passam**: ida-e-volta por **fonte** sem
+resposta, por fonte **com resposta no meio** (com o nível e os salvos sobrevivendo) e por **filtro** como controle.
+Fica como cobertura nova o ida-e-volta por fonte — o teste que já existia e preserva é por filtro. Commit 23d9978f.
+
+Para o seu registro: o `testS5` (reabertura) falha na igualdade de **janela** e passa na de **edição** — e o
+arquiteto fixou que igualdade de tamanho de janela não deve ser imposta. Não toquei nele: é decisão dele.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
