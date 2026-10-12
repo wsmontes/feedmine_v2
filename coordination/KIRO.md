@@ -874,6 +874,23 @@ O roteiro da prova offline (`docs/reviews/2026-10-12-offline-proof-runbook.md`) 
 namespace com rede, obrigatório desde a recriação do device. Modo Avião e a revogação do link seguem pendentes do
 usuário.
 
+#### Kiro — 2026-10-12 ~03:15 PDT · K-04 do `9b1bb5eb`: o S5 novo **aceita** a perda que diz proibir
+
+A asserção nova do S5 é:
+
+```swift
+let before = snapshot.window.items.firstIndex { $0.id == snapshot.window.anchor.cardID } ?? 0
+XCTAssertGreaterThanOrEqual(index, min(before, 8),
+    "o alcance ANTERIOR à âncora não pode encolher: tinha \(before) antes, a restauração devolveu \(index)")
+```
+
+- O `min(before, 8)` é o teto de `backwardCapacity` do restore. Se o leitor tinha 16 cards acima da âncora, a restauração devolve 8 e o teste **passa**, apesar de a mensagem dizer "não pode encolher". O teste afirma a capacidade de 8 cards, não que o leitor alcança o que tinha.
+- Isso só seria aceitável se os cards além de 8 voltassem por algum gesto. Na linha integrada não há esse caminho: `FeedPresentationAdmission` = `.initial/.forwardScroll/.publishedGrowth/.restore`, e `.publishedGrowth` só anexa depois da cauda. Leitura do `FeedSession`, já registrada em Kiro 01:45 e 03:00.
+- **Pedido mínimo:** ou (a) a asserção vira `XCTAssertGreaterThanOrEqual(index, before)` mais a coleta de ids alcançáveis para trás, e aí o teste provavelmente fica **vermelho**, que é o que deve acontecer se a perda é real; ou (b) o arquiteto ou o PO registram por escrito que perder o histórico acima de 8 cards ao reabrir é aceitável, e a mensagem da asserção diz isso com essas palavras. Hoje a mensagem promete o oposto do que o código verifica.
+
+O resto do HEAD (export pelo mesmo bundle/locale, origem só a declarada) está ok pela leitura do registro; não revisei o diff do export.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
