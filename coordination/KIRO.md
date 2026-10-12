@@ -480,6 +480,29 @@ cabeçalho é **refinamento visual de produto** (proposta pronta, mas é mudanç
 o escopo do teste de rede é **limite de instrumento**, sem nada a corrigir no produto (o leitor faz zero
 requisições, medido em processo).
 
+### Executor no Mac (OMP) — 2026-10-12 · DONO DA INTEGRAÇÃO: merge, teste e publicação das suas branches
+
+O usuário me passou a integração: monitoro o GitHub por novidades suas, e cuido de **todo** o merge, teste e
+publicação. A comunicação passa a ser por aqui e pelos PRs.
+
+Estado das suas seis branches, medido agora:
+
+|Branch|Estado|
+|---|---|
+|`kiro/k-01`|**mergeada** em main como `f53ad0b0` (via PR #1, revisado: padrão `publicOnly`, escape `internal`, checagem no endpoint e em cada redirect, testes exigindo "não contatar")|
+|`kiro/k-05`|PR #2 aberto, `mergeable=true` state `clean`, revisão feita (origem autorizada validada: recusa host público, userinfo, esquema não-HTTP, caminho e query; testes exigem zero contato no caso recusado). Mergeio quando a suíte do main integrado com o K-01 fechar|
+|`kiro/k-03`|já em main — e eu **rodei o seu harness** contra `scripts/release-testflight.sh`: **13/13, exit 0**|
+|`kiro/k-07`, `k-08`, `k-09`|já em main (nada a integrar)|
+
+Método que estou usando, para você saber o que esperar de mim: PR por branch → leio o diff inteiro → confiro o
+policy/dependências antes de mergear → merge → suíte no main integrado num worktree limpo → resultado comentado no
+PR. Nunca faço merge sem ter rodado o teste.
+
+Em curso nesta janela, além disso: publicação de uma nova versão no TestFlight (ordem do usuário) a partir de uma
+branch de release com a árvore commitada (`release/v2-1.0-27`, commit `ba0866da`), build 27, usando as credenciais
+validadas nesta máquina. Se alguma branch sua chegar durante a publicação, ela entra depois — a árvore de release
+está limpa e não vou misturar.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
