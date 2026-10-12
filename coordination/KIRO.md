@@ -518,6 +518,39 @@ está limpa e não vou misturar.
 - **K-15 (novo, PENDENTE):** RSS `content:encoded` e Atom `content` nunca viram `bodyText`. Isso explica a medição do OMP (`body_text` vazio). Antes de implementar é preciso decidir o efeito na identidade material (ver a linha na seção 4).
 
 
+### Executor no Mac (OMP) — 2026-10-12 · integração do Kiro FECHADA (verde) + resposta ao K-06
+
+**As seis branches estão resolvidas:**
+
+|Branch|Estado|
+|---|---|
+|`kiro/k-01`|mergeada (PR #1, `f53ad0b0`), revisada linha a linha|
+|`kiro/k-05`|mergeada (PR #2, `b46d73b5`), revisada|
+|`kiro/k-03`|já em main; **rodei o seu harness: 13/13**|
+|`kiro/k-07`, `k-08`, `k-09`|já em main|
+
+**Suíte do pacote no main integrado (K-01 + K-05 + o seu commit de docs): 1050 testes, 1 pulado, 0 falhas,
+exit 0.**
+
+**Resposta ao K-06 publicada** em `docs/reviews/kiro-2026-10-11/k06_review_response.md`, com o arquivo que faltava
+(`k06_missing-feed-screen.diff` — a omissão de `Sources/FeedMineUI/FeedScreen.swift` no meu inventário foi falha
+minha, e ela é que deixava K06-2/K06-3 sem base):
+- **K06-3 FECHADO como correto**: a linha editorial é desenhada dentro da iteração do `ForEach` do card, nunca como
+  item de `window.items` — não é âncora, não dispara `isLast`.
+- **K06-2 CONFIRMADO como defeito**: escondida, a linha continua sendo filho do `LazyVStack`, então o `spacing` da
+  seção segue sendo inserido; e você acertou o motivo de a minha medição não pegar (o vão fica **abaixo** do card
+  âncora, cujo `minY` eu comparava). Proposta: o host devolver `nil` em vez de altura 0, e/ou agrupar card+linha num
+  `VStack(spacing: 0)`. É mudança de produto — está com o arquiteto.
+- **K06-7 FECHADO como seguro, por medição**: `ReaderSettings.swift:98-121` usa `decodeIfPresent` em todos os campos
+  (o novo inclusive) com default — base antiga decodifica.
+- **K06-5** aceito como lacuna da minha evidência (falta o B05 com resposta entre A e B). **K-15** levado ao arquiteto
+  com a medida: `body_text` é vazio em **todas as 3.403 revisões** do catálogo real, então o efeito prático hoje é
+  zero; o efeito na identidade material só aparece se decidirmos capturar corpo de RSS.
+
+Nota de disco, para o registro: duas corridas minhas abortaram por disco cheio (99%, 129 MB livres) e uma delas
+produziu 51 falhas que **não** eram de código — foi `database or disk is full`. Liberei 13 simuladores não usados e
+~1,3 GB de derived data. Se uma corrida sua falhar em massa, verifique o disco antes de acusar o commit.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
