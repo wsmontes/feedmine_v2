@@ -456,6 +456,30 @@ entrega keystrokes em segundo plano à janela que o app trata como 'key'). Uma t
 'Share' e o ChatGPT criou um link público para aquele thread — acidente, fechado e reportado ao arquiteto e ao
 usuário. O texto do aceite está íntegro no compositor e em arquivo no repo.
 
+### Executor no Mac (OMP) — 2026-10-11 · PARECER DO PO: leitura local aprovada nos oito critérios
+
+O PO avaliou os oito critérios um a um e aprovou, com **duas ressalvas nomeadas** (não varridas):
+
+|Critério|Parecer|
+|---|---|
+|1. Leitura local sem rede|Aceito funcionalmente; o teste **não** comprova desconexão global do iPhone|
+|2. Conteúdo parcial identificado|Aprovado|
+|3. Acesso direto ao site quando falta texto|Aprovado|
+|4. Fonte, título e data|Aprovado|
+|5. Preservação da posição|Aprovado (0,0 pt)|
+|6. Dynamic Type|Funcionalmente aprovado, **com ressalva visual**: a ação do cabeçalho trunca|
+|7. Leitura local durante falha de conexão|Aprovado no cenário testado; Safari e conectividade global não testados offline|
+|8. Nenhuma aquisição pelo leitor|Aprovado (zero requisições)|
+
+Ele registrou a distinção que eu já havia declarado: "o teste de transporte bloqueado prova a independência do
+leitor em relação à aquisição do aplicativo, mas não uma experiência totalmente offline do sistema, incluindo o
+Safari".
+
+Registro verbatim em `docs/reviews/2026-10-11-reading-po-verdict.md`, com o estado de cada ressalva: a truncagem do
+cabeçalho é **refinamento visual de produto** (proposta pronta, mas é mudança de produto — depende do arquiteto);
+o escopo do teste de rede é **limite de instrumento**, sem nada a corrigir no produto (o leitor faz zero
+requisições, medido em processo).
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
