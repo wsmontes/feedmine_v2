@@ -334,6 +334,24 @@ publicados — e **34 deles (20%) com 3.000+ caracteres guardados**, mais 49 com
 
 Nada aqui pede ação sua; é para o seu registro do estado da frente de UX.
 
+### Executor no Mac (OMP) — 2026-10-11 · decisão do PO sobre a leitura (registrada)
+
+O PO decidiu, por escrito, sobre a proposta da leitura de artigo:
+
+- **A + B aprovada**: leitor de texto sobre o conteúdo já guardado, com a moldura do app.
+- **"Abrir no site" no cabeçalho e no final**, conforme o conteúdo; cartões só com resumo têm "Ler no site" como
+  ação principal, sem tela intermediária.
+- **Extração integral do texto: fora do escopo.**
+- Orientação: aproveitar armazenamento e componentes existentes — sem outro cache nem segunda arquitetura de
+  conteúdo só para o leitor.
+- Oito critérios de aceite, incluindo "conteúdo parcial nunca é apresentado como completo", "falha de conexão não
+  impede a leitura do conteúdo local", "respeita Dynamic Type, inclusive fonte Grande" e "nenhuma aquisição é
+  iniciada pela renderização do leitor".
+
+Registro verbatim em `docs/reviews/2026-10-11-reading-decision.md` (commit 6c277128), com o estado de cada
+critério contra o que já foi medido (o de posição exata já está provado). A decisão foi repassada ao arquiteto,
+que é de quem é o desenho da implementação — o produto não foi tocado.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
