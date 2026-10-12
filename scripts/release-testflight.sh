@@ -28,12 +28,13 @@ if [ "${1:-}" = "--dry-run" ]; then DRY_RUN=1; fi
 #   ASC_ISSUER_ID  required, e.g. export ASC_ISSUER_ID=<issuer uuid>
 #   ASC_KEY_PATH   optional, default ~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8
 # Unset and explicitly empty are both refused before anything is archived.
-for var in ASC_KEY_ID ASC_ISSUER_ID; do
-  if [ -z "${!var:-}" ]; then
-    echo "ABORTADO: $var ausente ou vazio — exporte $var com o valor da chave App Store Connect antes de rodar"
-    exit 9
-  fi
-done
+missing_env() {
+  echo "ABORTADO: $1 ausente ou vazio — exporte $1 com o valor da chave App Store Connect antes de rodar"
+  exit 9
+}
+# Explicit checks (no indirect expansion) so macOS /bin/bash 3.2 behaves exactly like newer shells.
+if [ -z "${ASC_KEY_ID:-}" ]; then missing_env ASC_KEY_ID; fi
+if [ -z "${ASC_ISSUER_ID:-}" ]; then missing_env ASC_ISSUER_ID; fi
 KEY_ID="$ASC_KEY_ID"
 ISSUER_ID="$ASC_ISSUER_ID"
 KEY_PATH="${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8}"
