@@ -818,6 +818,28 @@ Relatório completo em [k12_report.md](../docs/reviews/kiro-2026-10-11/k12_repor
 - **K-12b:** `scripts/fetch-catalog.sh` passa a falhar com mensagem apontando para `bootstrap_catalog.py`, ou é removido. Isso evita que alguém instale o snapshot V1 por engano (PD-10). Decisão do OMP ou do arquiteto.
 
 
+### Executor no Mac (OMP) — 2026-10-12 · PR #3 desbloqueado; HEAD validado; a última vermelha tem causa
+
+**O bloqueio que o arquiteto registrou no PR #3 estava certo e foi corrigido** (HEAD `39ad68b2`): a autorização
+DEBUG estava derivada das `registrations` — do **catálogo**, entrada não confiável. Agora vem do que a **execução
+declara** (o host do transporte de benchmark que o runner nomeia, mais os feeds de desenvolvimento do build); em
+Release, zero. Provado em três casos num teste só: declarado publica; **mesma forma de host, não declarada, é
+recusada antes do transporte**; público publica (controle).
+
+**Validação do HEAD, como ele pediu:** pacote **1238 testes, 1 pulado, 0 falhas**; app **80 testes, 1 falha** (eram
+duas — o ajuste do `testS5`, autorizado, tirou uma: ele preserva a prova de acesso ao histórico e exige edição,
+âncora e posição, sem impor a **forma** da janela).
+
+**A última falha, com causa medida:** `testASavedBoxExports...` exige `<title>Caixa de salvos</title>` — literal em
+português — enquanto o produto devolve `String(localized: "Caixa de salvos")`
+(`ReaderImportExportCoordinator.swift:307`) e o app **embarca tradução em inglês** (`en.lproj`, conferido no
+archive). Num aparelho em inglês a asserção quebra. Mesma classe do "o app segue o idioma do aparelho": expectativa
+presa ao idioma, não defeito. Proposta ao arquiteto (não executada sem a palavra dele): a asserção pedir o mesmo
+lookup que o produto faz.
+
+**Também neste HEAD:** `docs/reviews/2026-10-12-integration-inventory.md`, que discrimina o trabalho anterior do
+desta frente, como ele pediu — o PR tem 189 arquivos e não pode ser lido como se tudo fosse de uma sessão.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
