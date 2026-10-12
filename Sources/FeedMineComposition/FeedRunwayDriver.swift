@@ -125,8 +125,9 @@ public actor FeedRunwayDriver {
         return try await drive(resources: resources)
     }
 
-    /// Records one real observation and lets the runway produce. The admitted list changes only
-    /// through `FeedPresentationAdmission.forwardScroll`, and only when the movement was forward.
+    /// Records one real observation and lets the runway produce. The admitted list changes only through
+    /// `FeedPresentationAdmission.forwardScroll` when the movement was forward, and only through
+    /// `FeedPresentationAdmission.backwardScroll` when it was backward and reached the admitted head.
     public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,
         resources: FeedRunwayDriverResources) async throws -> FeedPresentationSnapshot? {
         guard let recorded = try await session.submitViewport(observation) else {
@@ -141,6 +142,11 @@ public actor FeedRunwayDriver {
             // The gesture reveals the prefix that was already ready; cards produced by this very
             // opportunity wait for the next genuine scroll observation.
             _ = try await session.admitPresentation(.forwardScroll(observation))
+        }
+        if activity.admitsBackwardContent {
+            // The reader reached the admitted head: the history below it is already published locally, so it is
+            // admitted from the store — no acquisition, no network, and bounded by the frozen backward bound.
+            _ = try await session.admitPresentation(.backwardScroll(observation))
         }
         return try await drive(resources: resources)
     }

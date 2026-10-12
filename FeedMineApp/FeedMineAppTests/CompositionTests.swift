@@ -650,12 +650,9 @@ final class CompositionTests: XCTestCase {
     /// **mesma forma** de host, **não declarada**, é recusada antes do transporte; e um host **público** publica
     /// sem autorização nenhuma (o controle do arranjo).
     func testK05DeclaredOriginPublishesAndAnUndeclaredOneIsRefused() async throws {
-        // `setenv` no processo do teste é o mesmo que o runner faz ao exportar a origem para o app: é a declaração
+        // `setenv` **dentro do helper** é o mesmo que o runner faz ao exportar a origem para o app: é a declaração
         // da execução, não um dado do catálogo. **Uma URL, com esquema, host e porta** — é o que o arquiteto exigiu
         // depois de revisar o HEAD anterior, e é o valor que o runner exporta (`bench/run.sh`).
-        setenv("FEEDMINE_BENCH_TRANSPORT_ORIGIN", "http://10.77.0.1:8757", 1)
-        defer { unsetenv("FEEDMINE_BENCH_TRANSPORT_ORIGIN") }
-
         try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: true,
             "a origem DECLARADA pela execução tem de publicar")
         try await assertTheEndpointPublishes("http://10.77.0.9:8757/feed.xml", expected: false,
@@ -669,15 +666,36 @@ final class CompositionTests: XCTestCase {
     /// que traz só `host:porta`, sem esquema, **não autoriza nada**, porque o código que sintetizasse os dois
     /// esquemas estaria autorizando mais do que a execução declarou — e é exatamente esse silêncio que se quer
     /// impossível.
-    func testK05AnOriginWithoutASchemeAuthorizesNothing() async throws {
-        setenv("FEEDMINE_BENCH_TRANSPORT_ORIGIN", "10.77.0.1:8757", 1)
-        defer { unsetenv("FEEDMINE_BENCH_TRANSPORT_ORIGIN") }
-
+    func testK05AnInexactOrInvalidDeclarationAuthorizesNothing() async throws {
+        // Controle do arranjo, pela mesma porta do helper: a declaração exata autoriza.
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: true,
+            "controle: a declaração exata autoriza")
+        // Sem esquema: `host:porta` não é uma origem, e nenhum esquema pode ser inferido.
         try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: false,
-            "sem esquema declarado, nenhum esquema pode ser inferido: host:porta não é uma origem")
+            "sem esquema declarado, nenhum esquema pode ser inferido: host:porta não é uma origem",
+            declaring: "10.77.0.1:8757")
+        // Com caminho: **recusar, não limpar** — sanear esconderia que a execução declarou algo que não é origem.
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: false,
+            "declarar com caminho tem de ser recusado, não saneado até virar origem",
+            declaring: "http://10.77.0.1:8757/feed.xml")
+        // Com credenciais: idem.
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: false,
+            "declarar com credenciais tem de ser recusado", declaring: "http://u:p@10.77.0.1:8757")
+        // Sem porta: a porta faz parte da origem.
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: false,
+            "declarar sem porta não autoriza: a porta faz parte da origem", declaring: "http://10.77.0.1")
+        // Porta DIFERENTE — a prova de que a configuração explícita chega ao app, e chega exata: quem declara 8756
+        // não autoriza 8757.
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: false,
+            "declarar outra porta não autoriza a porta do endpoint", declaring: "http://10.77.0.1:8756")
     }
 
-    private func assertTheEndpointPublishes(_ raw: String, expected: Bool, _ message: String) async throws {
+    private func assertTheEndpointPublishes(_ raw: String, expected: Bool, _ message: String,
+        declaring declared: String = "http://10.77.0.1:8757") async throws {
+        // A declaração vive aqui, num lugar só: cada caso diz o que a execução declara, e a asserção mede se o app
+        // obedeceu exatamente aquilo.
+        setenv("FEEDMINE_BENCH_TRANSPORT_ORIGIN", declared, 1)
+        defer { unsetenv("FEEDMINE_BENCH_TRANSPORT_ORIGIN") }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let endpoint = URL(string: raw)!
@@ -927,6 +945,79 @@ final class CompositionTests: XCTestCase {
             "e tem de ser carta que a restauração não trazia — senão não houve navegação nenhuma")
         XCTAssertEqual(extended?.window.anchor.cardID, oldest.id,
             "e a âncora continua sendo onde o leitor parou: a janela cresce, o leitor não anda sozinho")
+        await next.close()
+    }
+
+    /// A **regressão vermelha** que o arquiteto exigiu: "IDs efetivamente publicados e acessíveis antes de fechar,
+    /// além do `backwardCapacity`; exigir alcance depois de reabrir e navegação de volta para frente". Ela falha
+    /// no HEAD em que foi escrita — a edição tem cartas além da janela restaurada, e nenhum gesto para trás as
+    /// alcança. Fica vermelha como prova da perda; o commit que a deixa verde é o da admissão para trás.
+    func testReopeningOfflineKeepsCardsBeyondTheBackwardCapacityReachable() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let root = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration)
+        await root.launch()
+        let old = try XCTUnwrap(root.association)
+        // Duas publicações: a edição passa a ter mais cartas do que a janela que a restauração devolve (8 atrás).
+        try await produceAndAdmit(old)
+        try await produceAndAdmit(old)
+        let before = try XCTUnwrap(old.store.state.presentation)
+        let publishedWhileOpen = Set(before.window.items.map(\.id))
+        await old.background()
+        await old.close()
+
+        FixtureTransport.rejecting.withLock { $0 = true }
+        defer { FixtureTransport.rejecting.withLock { $0 = false } }
+        let reopened = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration)
+        await reopened.launch()
+        let next = try XCTUnwrap(reopened.association)
+        let restored = try XCTUnwrap(next.store.state.presentation)
+        XCTAssertEqual(restored.window.anchor, before.window.anchor, "a âncora volta a ser a posição do leitor")
+
+        // Anda para trás como o leitor andaria: re-ancora no topo da janela e pede mais. O que aparecer só pode vir
+        // do store — o transporte continua rejeitando —, então isto mede o histórico local, não a rede.
+        var reachable = Set(restored.window.items.map(\.id))
+        for _ in 0..<10 {
+            guard let head = next.store.state.presentation?.window.items.first else { break }
+            next.store.submitViewport(
+                ViewportObservation(anchor: PresentationAnchor(cardID: head.id, placement: .top)),
+                activity: .backward)
+            var step: Set<PublicationCardID>?
+            let deadline = Date().addingTimeInterval(4)
+            repeat {
+                step = Set(next.store.state.presentation?.window.items.map(\.id) ?? [])
+                if let step, !step.isSubset(of: reachable) { break }
+                try await Task.sleep(for: .milliseconds(120))
+            } while Date() < deadline
+            guard let step, !step.isSubset(of: reachable) else { break }
+            reachable = step
+        }
+        let lost = publishedWhileOpen.subtracting(reachable)
+        XCTAssertTrue(lost.isEmpty,
+            "\(lost.count) cartas que o leitor alcançava ANTES de fechar não voltam por nenhum gesto para trás: "
+                + lost.map(\.rawValue.uuidString).sorted().joined(separator: ", "))
+        // E a segunda metade da exigência: **navegação de volta para frente**. Depois de andar para trás, o leitor
+        // tem de poder retornar à posição em que estava — a história ganha acima dele não pode empurrá-lo nem
+        // afastar o que ele já tinha.
+        next.store.submitViewport(
+            ViewportObservation(anchor: PresentationAnchor(cardID: before.window.anchor.cardID, placement: .top)),
+            activity: .forward)
+        // `submitViewport` na fachada é uma emissão: quem executa é o consumidor externo, de forma assíncrona. Ler
+        // o estado sem esperar mediria a corrida, não o produto — então espera-se, como a caminhada para trás faz.
+        var returned: FeedPresentationSnapshot?
+        let returnDeadline = Date().addingTimeInterval(5)
+        repeat {
+            returned = next.store.state.presentation
+            if returned?.window.anchor.cardID == before.window.anchor.cardID { break }
+            try await Task.sleep(for: .milliseconds(120))
+        } while Date() < returnDeadline
+        XCTAssertEqual(returned?.window.anchor.cardID, before.window.anchor.cardID,
+            "voltar para frente tem de re-ancorar na posição do leitor")
+        XCTAssertTrue(Set(returned?.window.items.map(\.id) ?? []).contains(before.window.anchor.cardID),
+            "e a carta onde ele estava tem de continuar admitida depois de o histórico aparecer acima dela")
         await next.close()
     }
 

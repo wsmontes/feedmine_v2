@@ -1832,15 +1832,17 @@ final class FeedAssociation {
                 let parts = URLComponents(string: named) else { return [] }
             return parts.url.map { [$0] } ?? []
         }()
+        // **Rejeita, não sanitiza** (exigência do arquiteto na revisão do PR #3): um valor declarado com caminho,
+        // query, fragmento ou credenciais NÃO é limpo até virar origem — é recusado inteiro. Sanear esconderia
+        // que a execução declarou algo que não é uma origem, e autorizar o resto seria autorizar mais do que ela
+        // disse. Sem esquema http(s), sem host ou sem porta também não autoriza: a porta faz parte da origem.
         let authorizedNonPublicOrigins = declared.compactMap { endpoint -> URL? in
-            guard var parts = URLComponents(url: endpoint, resolvingAgainstBaseURL: false),
+            guard let parts = URLComponents(url: endpoint, resolvingAgainstBaseURL: false),
                 let scheme = parts.scheme?.lowercased(), ["http", "https"].contains(scheme),
-                let host = parts.host, !host.isEmpty, parts.port != nil else { return nil }
-            parts.path = ""
-            parts.query = nil
-            parts.fragment = nil
-            parts.user = nil
-            parts.password = nil
+                let host = parts.host, !host.isEmpty, parts.port != nil,
+                parts.user == nil, parts.password == nil,
+                parts.path.isEmpty, parts.query == nil, parts.fragment == nil
+            else { return nil }
             guard let origin = parts.url, SyndicationAuthorizedOrigin(origin) != nil else { return nil }
             return origin
         }

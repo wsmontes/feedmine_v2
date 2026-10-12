@@ -56,6 +56,8 @@ public actor FeedSession {
             return try installFromCheckpoint(bounds)
         case .forwardScroll(let observation):
             return try admitForwardScroll(observation)
+        case .backwardScroll(let observation):
+            return try admitBackwardScroll(observation)
         case .publishedGrowth:
             return try admitPublishedGrowth()
         }
@@ -142,6 +144,48 @@ public actor FeedSession {
             .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
         let (bounded, _) = try boundedResidency(items: items + extensionCards,
+            editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
+        guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else {
+            return current.presentation
+        }
+        let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
+            editionID: current.presentation.editionID, window: window)
+        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
+            bounds: current.bounds)
+        return snapshot
+    }
+
+    /// Prepends already-published cards that precede the admitted head, after a real backward movement of the
+    /// reader reached it. Mirror of `admitForwardScroll`: the observation must still be the reader's current anchor
+    /// (an older gesture cannot reinstall a position a newer one already left), the prepend is ordered and
+    /// deduplicated, and the batch is bounded by the frozen backward bound *around the anchor* — which is what makes
+    /// a repeat a no-op and what keeps the admitted list's memory bounded by the bounds it was installed with.
+    ///
+    /// Nothing else moves: the anchor, the edition and every already-admitted card keep their identity and their
+    /// order, so the reader's position does not jump when history appears above them. The cards come from the local
+    /// store; the network is not consulted, which is what makes this work offline.
+    private func admitBackwardScroll(_ observation: ViewportObservation) throws -> FeedPresentationSnapshot? {
+        guard let current = state else { return nil }
+        guard current.presentation.window.anchor == observation.anchor else { return current.presentation }
+        let items = current.presentation.window.items
+        guard let head = items.first,
+            let anchorIndex = items.firstIndex(where: { $0.id == current.presentation.window.anchor.cardID })
+        else { return current.presentation }
+        // How many cards the frozen bounds still allow *before* the anchor: the admitted list is bounded around the
+        // anchor, not by an ever-growing list. Zero means the reader is already as far back as this session admits.
+        let allowed = max(0, current.bounds.backwardCapacity - anchorIndex)
+        guard allowed > 0 else { return current.presentation }
+        let published = try publicationHistory.window(editionID: current.presentation.editionID,
+            around: FeedWindowAnchor(cardID: head.id, placement: .center),
+            backwardCapacity: current.bounds.backwardCapacity, forwardCapacity: 0)
+        let admitted = Set(items.map(\.id))
+        // The read is centred on the head, so its last card *is* the head: the extension is what precedes it. Taking
+        // the suffix keeps the cards closest to the head — the reader's next step back, not the far end of history.
+        let extensionCards = published.cards.dropLast().filter { !admitted.contains($0.id) }
+            .suffix(allowed)
+            .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+        guard !extensionCards.isEmpty else { return current.presentation }
+        let (bounded, _) = try boundedResidency(items: extensionCards + items,
             editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
         guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else {
             return current.presentation
