@@ -208,14 +208,47 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         }
         let trackedID = tracked.identifier
 
-        // 1. Avançar até a carta acompanhada SAIR da lista: ela está no topo, e a janela desliza acima dela.
+        // 1. Avançar até a carta acompanhada SAIR da lista, e medir o que a retirada faz com o frame de uma carta que
+        //    FICA — em repouso, sem gesto concorrente. O arquiteto foi explícito: "corrigir a posição final não basta
+        //    se houver salto visível antes", então o que se mede aqui é o **intermediário**, o passo que a poda
+        //    impõe. Cada rodada: gesto, espera a rolagem parar, e só então observa — a retirada chega depois.
         var rounds = 0
         var removed = false
+        var stayingID: String?
+        var stayingFrameBefore: CGFloat = 0
+        var mutationStep: CGFloat = 0
         while rounds < 40, !removed {
             app.scrollViews.firstMatch.swipeUp(velocity: .slow)
             rounds += 1
-            Thread.sleep(forTimeInterval: 0.4)
-            removed = containers(app).first { $0.identifier == trackedID } == nil
+            // Espera a rolagem parar: três leituras iguais do topo visível.
+            var still: [CGFloat] = []
+            let settleUntil = Date().addingTimeInterval(8)
+            while Date() < settleUntil, still.count < 3 {
+                if let element = anchor(app), element.frame != .zero {
+                    if still.last == element.frame.minY { still.append(element.frame.minY) } else { still = [element.frame.minY] }
+                }
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            // Uma carta que FICA: a segunda inteiramente visível, depois da que vai sair.
+            let visible = containers(app).filter { $0.frame != .zero }
+            if let candidate = visible.dropFirst().first, candidate.identifier != trackedID {
+                let before = candidate.frame.minY
+                Thread.sleep(forTimeInterval: 1.2)   // a admissão é assíncrona: é aqui que ela chega
+                if let after = containers(app).first(where: { $0.identifier == candidate.identifier })?.frame.minY,
+                    abs(after - before) > 1 {
+                    // O passo só conta como da MUTAÇÃO se a carta acompanhada saiu no mesmo intervalo e nada rolou.
+                    stayingID = candidate.identifier
+                    stayingFrameBefore = before
+                    mutationStep = after - before
+                }
+                removed = containers(app).first { $0.identifier == trackedID } == nil
+                if removed, stayingID == nil {
+                    stayingID = candidate.identifier
+                    stayingFrameBefore = before
+                }
+            } else {
+                removed = containers(app).first { $0.identifier == trackedID } == nil
+            }
         }
         let removalShot = XCTAttachment(screenshot: app.screenshot())
         removalShot.name = "after-tracked-card-was-pruned"
@@ -224,6 +257,9 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         XCTAssertTrue(removed,
             "INCOMPLETO: a janela não retirou a carta acompanhada (\(trackedID)) em \(rounds) gestos — sem poda "
                 + "efetiva este cenário não prova nada, e execução incompleta nunca é PASS")
+        XCTAssertLessThan(abs(mutationStep), 24,
+            "a retirada moveu a carta que FICA (\(stayingID ?? "?")) em \(mutationStep) pt com o leitor em repouso — "
+                + "é o salto intermediário, e corrigir a posição final não bastaria")
 
         // 2. Voltar até ela REAPARECER: a reinserção é a outra metade da exigência.
         var backRounds = 0
@@ -273,7 +309,9 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         let high = samples.max() ?? stableY
         let shift = high - low
         let evidence = XCTAttachment(string: "carta=\(trackedID) retirada-em=\(rounds)-gestos "
-            + "reinserida-em=\(backRounds)-gestos no-repouso=\(stableY) min=\(low) max=\(high) "
+            + "reinserida-em=\(backRounds)-gestos carta-que-fica=\(stayingID ?? "?") "
+            + "frame-antes-da-retirada=\(stayingFrameBefore) passo-da-retirada=\(mutationStep) pt "
+            + "no-repouso=\(stableY) min=\(low) max=\(high) "
             + "amostras=\(samples.count) saiu-de-novo=\(leftAgain) deslocamento=\(shift) pt")
         evidence.name = "prune-reinsert-and-stability"
         evidence.lifetime = .keepAlways
