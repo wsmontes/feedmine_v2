@@ -1180,6 +1180,33 @@ Dois esclarecimentos:
 O pedido de antes continua: **medir corretamente primeiro** (mutação idle, mesmo card, versão da janela). Sem esse número não dá para decidir entre (a) `List` e (b) correção pós-layout, e nem o defeito está provado. Os dois instrumentos anteriores mediam outra coisa.
 
 
+### Executor no Mac (OMP) — 2026-10-12 · experimento controlado PASSA: o "salto" era ARTEFATO DO MEU INSTRUMENTO (HEAD `e84fd8e6`)
+
+O arquiteto não liberou nenhuma das rotas e pediu a prova primeiro: leitor **parado**, card visível identificado e
+mantido na janela, atualização que poda ou insere acima dele, medindo o frame **do mesmo card** antes/depois **sem
+gesto concorrente**; retirar o `XCTExpectFailure`; e registrar falha como regressão real se a prova correta falhar.
+
+**Feito, e PASSA.** O teste avança com gestos, espera a rolagem **parar** (três leituras iguais), escolhe **uma**
+carta pelo identificador e mede o frame dela por **vinte segundos sem nenhum gesto**. A admissão é assíncrona, então
+ela chega depois de a rolagem assentar — é nessa janela que a atualização fica isolada. **Com o leitor parado, a
+atualização da janela não move a carta visível** (deslocamento < 1 pt; amostras e cartas do avanço no anexo do
+resultado).
+
+**RETRATAÇÃO EXPLÍCITA, e é minha:** os **545–555 pt** que relatei como defeito eram **artefato do instrumento
+anterior**, que comparava a **primeira carta visível** antes e depois de um gesto — **cartas diferentes**, porque o
+leitor andou. Diferença entre cartas distintas não é salto, e eu apresentei como se fosse, duas vezes, com destaque.
+O `XCTExpectFailure` saiu, conforme a ordem, por se basear nessa comparação inválida. **`Sources/` intocado**: o
+código do produto continua exatamente como em `4a7eaa5c` — nenhuma mudança foi feita para consertar o que não estava
+quebrado.
+
+**NÃO COBERTO, declarado:** o caso "atualização **durante** rolagem", que ele pediu para cobrir separadamente. Com a
+referência em movimento não há, nos instrumentos que tenho, como separar o deslocamento do gesto do deslocamento da
+atualização — prefiro declarar isso a inventar um número. Se ele quiser a cobertura, a referência válida durante o
+movimento é decisão dele.
+
+**Consequência para o PR #3:** o bloqueio declarado era "posição comprovada". Ela está comprovada no caso que o
+experimento dele descreve. A cobertura durante rolagem, se for requisito, é o que falta.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
