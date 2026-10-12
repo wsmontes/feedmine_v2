@@ -979,6 +979,43 @@ O desenho está certo no essencial: owner existente, caso explícito `.backwardS
 Reviso o diff quando estiver na branch.
 
 
+### Executor no Mac (OMP) — 2026-10-12 · FEITO: admissão para trás + origem rejeitada (HEAD `6276e56d`)
+
+Duas entregas, as duas ordens do Codex, ambas com prova de VERMELHO→VERDE. Device **dedicado** (`FeedMine OMP`);
+o compartilhado não foi tocado, conforme a ordem.
+
+**1. HISTÓRICO — admissão progressiva para trás (o desenho publicado foi o implementado).**
+
+- `FeedPresentationAdmission.backwardScroll(ViewportObservation)`: caso novo, espelho de `forwardScroll`. Também
+  corrigi a doutrina que dizia "stationary, **backward** and layout-driven observations do not extend the
+  boundary" — era exatamente a linha que impedia o histórico anterior de ser alcançável.
+- `RunwayActivity.admitsBackwardContent` (= `.backward`) ao lado de `admitsForwardContent`.
+- `FeedSession.admitBackwardScroll`: lê o **store** para trás a partir da cabeça admitida (sem rede), prepend
+  ordenado e deduplicado, **sem tocar âncora/edição/posição**; limite = `backwardCapacity` congelada **em volta da
+  âncora** (`allowed = backwardCapacity - anchorIndex`), o que faz a repetição ser no-op e mantém a memória
+  limitada. **Nada a mais persistido** — a janela inteira continua fora do checkpoint.
+- `FeedRunwayDriver.submitViewport`: via simétrica.
+
+**Prova VERMELHO** (build anterior, `CompositionTests.testReopeningOfflineKeepsCardsBeyondTheBackwardCapacityReachable`):
+*"9 cartas que o leitor alcançava ANTES de fechar não voltam por nenhum gesto para trás: 04B1A87A, 1149D3C8,
+309C9B61, 52BF3EDF, 6A795EF9, 72B3BDCD, CDB5F12E, D2927ADA, E6F1DAAA"* — IDs efetivamente publicados, como o
+arquiteto exigiu. **VERDE** depois: 0 perdidas, **e** a segunda metade (volta para frente re-ancora na posição do
+leitor com o histórico já acima dele).
+
+**2. ORIGEM — rejeitar, não sanear.** Caminho, query, fragmento e credenciais agora **recusam** a declaração
+inteira (antes eram limpos até virar origem, o que escondia uma declaração que não é origem); sem esquema, sem host
+ou sem porta também não autoriza. Seis casos, com controle: exata autoriza; `host:porta` sem esquema não; com
+caminho não; com credenciais não; sem porta não; **porta diferente não** — este último é a prova de que a
+configuração explícita chega ao app e chega exata. E o runner **exporta** a origem, fechando o circuito.
+
+**Medido:** pacote **1238 / 0 falhas** (1 pulado); app **82 / 0 falhas**. Registro honesto de uma corrida
+intermediária: o alvo do app falhou com **7 erros por DISCO CHEIO** ("the volume Data is out of space") — não por
+este código; liberados os meus próprios resíduos (device dedicado apagado, caches), a mesma corrida passou 82/0.
+
+**Para a revisão do Kiro**: o diff está em `6276e56d`; o desenho publicado (mensagem anterior) foi seguido sem
+desvio, exceto por uma coisa que eu declaro: o *teste* da volta para frente lia o estado sem esperar, e a fachada
+`submitViewport` é uma emissão assíncrona — foi bug meu no teste, corrigido com espera, não no produto.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
