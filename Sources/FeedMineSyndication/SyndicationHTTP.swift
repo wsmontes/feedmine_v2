@@ -81,16 +81,46 @@ public enum SyndicationHTTPError: Error, Equatable, Sendable {
 internal enum SyndicationHostAccess: Sendable, Equatable {
     /// Product behaviour: the endpoint and every redirect hop must be publicly routable.
     case publicOnly
+    /// Public hosts plus the exact non-public origins a development or benchmark composition authorized.
+    case publicAndAuthorized(Set<SyndicationAuthorizedOrigin>)
     /// Explicit opt-in for a controlled test transport (scripted transport, URLProtocol fixture, local
     /// server). Internal on purpose: only `@testable` tests can choose it; product composition cannot.
     case controlledFixture
 
+    init(authorizedOrigins: Set<SyndicationAuthorizedOrigin>) {
+        self = authorizedOrigins.isEmpty ? .publicOnly : .publicAndAuthorized(authorizedOrigins)
+    }
+
     func permits(_ url: URL) -> Bool {
+        let isPublic = url.host.map { NetworkHostPolicy.isPubliclyRoutable($0) } ?? false
         switch self {
         case .controlledFixture: return true
-        case .publicOnly: return url.host.map { NetworkHostPolicy.isPubliclyRoutable($0) } ?? false
+        case .publicOnly: return isPublic
+        case .publicAndAuthorized(let origins): return isPublic || origins.contains { $0.matches(url) }
         }
     }
+}
+
+/// One non-public HTTP origin (scheme, host, port) that a development or benchmark build authorizes
+/// explicitly, e.g. an instrumented fixture server on the LAN (Kiro K-01). Matching is exact: authorizing
+/// `http://192.168.1.76:8757` opens neither another port nor another LAN host, and a redirect away from it
+/// into private space is still refused. Construction refuses public hosts (they need no authorization),
+/// userinfo and non-HTTP schemes. Which builds may supply origins is decided by the composition root.
+public struct SyndicationAuthorizedOrigin: Hashable, Sendable {
+    public let scheme: String
+    public let host: String
+    public let port: Int
+
+    public init?(_ url: URL) {
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+            let host = url.host?.lowercased(), !host.isEmpty, url.user == nil, url.password == nil,
+            !NetworkHostPolicy.isPubliclyRoutable(host) else { return nil }
+        self.scheme = scheme
+        self.host = host
+        self.port = url.port ?? (scheme == "https" ? 443 : 80)
+    }
+
+    func matches(_ url: URL) -> Bool { SyndicationAuthorizedOrigin(url) == self }
 }
 
 internal protocol SyndicationHTTPTransport: Sendable {

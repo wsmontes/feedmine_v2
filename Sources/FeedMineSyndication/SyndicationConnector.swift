@@ -29,17 +29,22 @@ public struct SyndicationConnector: FeedConnector, Sendable {
     private let http: SyndicationHTTPClient
     private let now: @Sendable () -> Date
 
+    /// `authorizedNonPublicOrigins` defaults to none: product feeds reach only publicly routable hosts.
+    /// A development or benchmark composition may pass the exact fixture origins it controls (Kiro K-01).
     public init?(configuration: SyndicationTargetConfiguration, session: URLSession, redirectCapacity: Int,
-        now: @escaping @Sendable () -> Date = { Date() }) {
+        now: @escaping @Sendable () -> Date = { Date() },
+        authorizedNonPublicOrigins: Set<SyndicationAuthorizedOrigin> = []) {
         self.init(configuration: configuration, redirectCapacity: redirectCapacity, now: now,
-            transport: URLSessionSyndicationHTTPTransport(session: session))
+            transport: URLSessionSyndicationHTTPTransport(session: session),
+            hostAccess: SyndicationHostAccess(authorizedOrigins: authorizedNonPublicOrigins))
     }
 
     internal init?(configuration: SyndicationTargetConfiguration, redirectCapacity: Int,
-        now: @escaping @Sendable () -> Date, transport: any SyndicationHTTPTransport) {
+        now: @escaping @Sendable () -> Date, transport: any SyndicationHTTPTransport,
+        hostAccess: SyndicationHostAccess = .publicOnly) {
         guard redirectCapacity >= 0 else { return nil }
         self.configuration = configuration
-        self.http = SyndicationHTTPClient(transport: transport, redirectCapacity: redirectCapacity)
+        self.http = SyndicationHTTPClient(transport: transport, redirectCapacity: redirectCapacity, hostAccess: hostAccess)
         self.now = now
     }
 

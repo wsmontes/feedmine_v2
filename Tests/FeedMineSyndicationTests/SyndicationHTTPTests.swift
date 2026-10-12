@@ -129,6 +129,44 @@ final class SyndicationHTTPTests: XCTestCase {
         XCTAssertEqual(d.redirectCount,1)
         let journal = await t.journal(); XCTAssertEqual(journal.last?.url?.absoluteString,"http://127.0.0.1:8080/moved")
     }
+    /// Development/benchmark builds authorize exact non-public origins; nothing else in private space opens.
+    func test07fAuthorizedOriginIsExactSchemeHostPort() throws {
+        let origin = try XCTUnwrap(SyndicationAuthorizedOrigin(URL(string:"http://192.168.1.76:8757/bench/feed.xml")!))
+        XCTAssertEqual(origin.scheme,"http"); XCTAssertEqual(origin.host,"192.168.1.76"); XCTAssertEqual(origin.port,8757)
+        XCTAssertEqual(SyndicationAuthorizedOrigin(URL(string:"https://bench.local/feed")!)?.port,443)
+        XCTAssertEqual(SyndicationAuthorizedOrigin(URL(string:"http://127.0.0.1/feed")!)?.port,80)
+        // A public host needs no authorization; userinfo and non-HTTP schemes are never authorizable.
+        for raw in ["https://example.test/feed","http://user:pw@192.168.1.76:8757/feed","ftp://192.168.1.76/feed"] {
+            XCTAssertNil(SyndicationAuthorizedOrigin(URL(string:raw)!),raw)
+        }
+        let access = SyndicationHostAccess(authorizedOrigins:[origin])
+        XCTAssertTrue(access.permits(URL(string:"http://192.168.1.76:8757/other")!))
+        XCTAssertTrue(access.permits(URL(string:"https://example.test/feed")!))
+        for raw in ["http://192.168.1.76:8758/feed","https://192.168.1.76:8757/feed","http://192.168.1.77:8757/feed",
+            "http://169.254.169.254/latest/meta-data/","http://127.0.0.1:8757/feed"] {
+            XCTAssertFalse(access.permits(URL(string:raw)!),raw)
+        }
+        XCTAssertEqual(SyndicationHostAccess(authorizedOrigins:[]),.publicOnly)
+    }
+    /// An authorized benchmark origin can serve and redirect within itself, but a redirect from it to another
+    /// private host (or another port) is refused before contact.
+    func test07gAuthorizedOriginRedirects() async throws {
+        let origin = try XCTUnwrap(SyndicationAuthorizedOrigin(URL(string:"http://192.168.1.76:8757")!))
+        let endpoint = URL(string:"http://192.168.1.76:8757/feed")!
+        let within = ScriptedSyndicationTransport([hop(302,location:"/moved"),hop()])
+        let outcome = try await SyndicationHTTPClient(transport:within,redirectCapacity:2,hostAccess:.init(authorizedOrigins:[origin]))
+            .fetch(endpoint:endpoint,checkpoint:SyndicationCheckpointCodec.empty,bodyByteCapacity:64)
+        guard case .document = outcome else { return XCTFail("Expected document") }
+        for escape in ["http://192.168.1.1/admin","http://192.168.1.76:22/","http://169.254.169.254/latest/meta-data/"] {
+            let t = ScriptedSyndicationTransport([hop(302,location:escape),hop()])
+            do {
+                _ = try await SyndicationHTTPClient(transport:t,redirectCapacity:2,hostAccess:.init(authorizedOrigins:[origin]))
+                    .fetch(endpoint:endpoint,checkpoint:SyndicationCheckpointCodec.empty,bodyByteCapacity:64)
+                XCTFail("Expected refusal for \(escape)")
+            } catch { XCTAssertEqual(error as? SyndicationHTTPError,.nonPublicHost,escape) }
+            let journal = await t.journal(); XCTAssertEqual(journal.count,1,escape)
+        }
+    }
     func test08MissingLocation() async {
         for location in [nil,""] as [String?] { await failure(.init([hop(308,location:location)]),expected:.missingRedirectLocation(308)) }
     }
