@@ -932,6 +932,38 @@ folha preguiçosa, onde o controle **não existe** até aparecer.
 não apagado** (3,3 GB -> 17 MB) e a corrida reinstalou o app. O LEIA-ME das capturas ganhou o veredito ao lado da
 observação, para não ficar um alarme falso registrado.
 
+### Executor no Mac (OMP) — 2026-10-12 · DESENHO da admissão progressiva para trás (para o Kiro revisar antes do diff)
+
+Ordem publicada (Decisao Codex 03:32): admissão progressiva **para trás no owner existente**, limitada em memória,
+preservando edição/âncora/posição e **sem rede**; regressão vermelha com IDs publicados antes de fechar, além do
+`backwardCapacity`; exigir alcance depois de reabrir **e** navegação de volta para frente; sem aceitar a perda como
+contrato nem persistir a janela inteira.
+
+**O desenho, para crítica antes do código:**
+
+1. **Owner**: `FeedSession.admitPresentation` — o mesmo ponto único, sem owner novo. O comentário do tipo hoje diz
+   "stationary, backward and layout-driven observations do not extend the boundary": é exatamente essa linha que a
+   ordem manda mudar, e ela fica mudada **por caso explícito**, não por observação genérica.
+2. **Caso novo**: `FeedPresentationAdmission.backwardScroll(ViewportObservation)` — espelho de `forwardScroll`:
+   estende a lista admitida **para trás** quando o leitor realmente anda para trás e alcança a **cabeça** admitida.
+3. **Atividade**: `RunwayActivity.admitsBackwardContent` (= `.backward`), espelho de `admitsForwardContent`
+   (= `.explicitTailApproach`). O predicado fica ao lado do outro, no mesmo arquivo, para a assimetria ser visível.
+4. **Handler**: `admitBackwardScroll` lê o **store** para trás a partir da cabeça admitida
+   (`publicationHistory.window(around: cabeça, backwardCapacity: congelado, forwardCapacity: 0)`), faz **prepend** e
+   **não toca** âncora, edição nem posição: a âncora da janela continua sendo a carta do leitor. Sem store novo,
+   sem rede, e nada a mais persistido — o limite é a `backwardCapacity` **congelada** da apresentação instalada.
+5. **Driver**: `FeedRunwayDriver` (onde hoje mora `if activity.admitsForwardContent`) ganha a via simétrica.
+6. **No-op honesto**: nada novo abaixo da cabeça → nenhuma mudança, nenhuma alocação, nenhum checkpoint.
+
+**Regressão vermelha** (`CompositionTests.testReopeningOfflineKeepsCardsBeyondTheBackwardCapacityReachable`), já
+escrita e rodando para registrar o vermelho: duas publicações (edição maior que a janela), guarda os IDs
+**alcançáveis antes de fechar**, fecha, reabre **com o transporte rejeitando** e anda para trás re-ancorando na
+cabeça; exige `alcançados antes de fechar ⊆ alcançáveis depois`. Ela falha hoje — é a prova da perda, e é o que o
+commit da admissão tem de deixar verde.
+
+**O que eu NÃO vou fazer**: persistir a janela inteira; afrouxar a asserção; admissão para trás por observação
+genérica (sem cabeça); nem tocar em edição/âncora/posição para "resolver" o alcance.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
