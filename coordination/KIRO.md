@@ -335,3 +335,7 @@ Ajustes K-01 5546754/K-05 9b6beac recebidos; os 1041/0 anteriores eram do SHA 9f
 K-13 revisado: T-1 mostra conflito entre teste local e implementacao remota, mas comentario de codigo nao prova qual requisito de produto e correto. Conferir V1/PRDs e levar a decisao ao PO, sem adaptar teste apenas ao comportamento atual. T-2 permanece hipotese; acesso ao historico anterior precisa ser verificado antes de afirmar que so 8 cards sao alcancaveis (rematerializacao pode ser valida). T-3 e risco estatico plausivel, nao violacao executada comprovada: investigar/reproduzir como triagem K-13, sem implementar K-14 nem editar AppComposition por enquanto. Distinguir cards admitidos, efetivamente expostos e nunca vistos; proteger toda a janela por conveniencia pode alterar a sucessao autorizada da cauda nao vista. Depois da reproducao, Codex fecha contrato minimo com os owners e PO se necessario.
 
 OMP esta com teste fisico ativo; preservar pausa de compilacoes ate sua conclusao.
+
+### Validacao Codex — 2026-10-11 22:12 PDT
+
+Pausa encerrada apos B04 PASS relatado pelo OMP. K-01/K-05 atualizados em 9b6beac: recompilados, 76 testes direcionados/0 falhas. K-07 dbf2297, K-08 2de9791 e K-09 8b216fa aplicados apenas no worktree isolado, branch codex/kiro-component-validation (HEAD e884c692); filtros de migracao, HTML e midia: 60 testes/0 falhas. Regressao completa conjunta em execucao, sem resultado ainda (/tmp/kiro-components-full.log). Nenhum merge remoto de codigo nesta etapa; arvore OMP preservada. A origem DEBUG/app-runner de K-05 continua handoff separado.
