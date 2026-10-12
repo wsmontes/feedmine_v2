@@ -88,6 +88,24 @@ Nenhuma entrega Swift foi compilada ou executada aqui. Branches prontas para o M
 - **Verificado aqui (Git Bash, xcodebuild e PlistBuddy simulados, sem upload nem credenciais):** `bash -n` ok; harness [k03-release-script-harness.sh](../docs/reviews/kiro-2026-10-11/k03-release-script-harness.sh) com 9 cenários, todos PASS. Contra o script original, versão vazia e build vazio terminam com rc=0 e tag inválida.
 - **Não verificado:** execução real com Xcode/App Store Connect. Sugestão: `--dry-run` no Mac primeiro.
 
+### Ajustes pedidos na revisão Codex 19:12 — entregues 2026-10-11 ~19:40 PDT
+
+**K-01 AJUSTAR → `kiro/k-01` @ `2e065cb`** (em cima de `3851479`, base `main@d0065fb`)
+- O bypass implícito foi removido. Agora existe contrato explícito `SyndicationHostAccess` (`internal`): `.publicOnly`, que é o padrão, e `.controlledFixture`.
+- Com `.publicOnly`, **endpoint e todo hop** precisam ser publicamente roteáveis; senão `SyndicationHTTPError.nonPublicHost` com **zero requests** ao host privado.
+- `.controlledFixture` só é alcançável por testes `@testable`. Os inits públicos do `SyndicationConnector` não expõem o parâmetro, então o produto não consegue desligar a regra.
+- **Chamadores reais verificados:** produto passa por `AppComposition` → `SyndicationAcquisitionSnapshot` → init público → `.publicOnly`. Fixtures do repo (`DevelopmentLocalFeeds` em URLs da BBC, hosts `*-<uuid>.test`, `example.test`) são públicas para a política. Nenhum teste existente precisa de opt-in.
+- **1 linha fora dos arquivos do pedido:** `SyndicationConnector.swift` classifica `.nonPublicHost` como `.remoteResponse`. Sem isso o erro sairia cru do `pull` (o teste existente com `URLError(.unsupportedURL)` mostra que erro não mapeado escapa). É o mesmo módulo e owner. Se preferirem não tocar, a alternativa é reutilizar `.invalidRedirectTarget`, que já é mapeado, mas fica semanticamente errado para o endpoint inicial.
+- **Testes:** `test07c` (9 hosts privados + cadeia público→público→privado), `test07d` (endpoint privado sem autorização → recusado, journal vazio), `test07e` (padrão `.publicOnly`; só `.controlledFixture` libera 127.0.0.1 + redirect), `testK01RedirectIntoPrivateNetworkIsRemoteResponse` em `SyndicationConnectorTests`.
+- **Rodar:** `swift test --filter 'SyndicationHTTPTests|SyndicationConnectorTests'`, depois a suíte completa.
+- **Risco a confirmar no Mac:** o runner externo do benchmark (fora do repo) não é visível para mim. Se ele servir feeds de `127.0.0.1`/LAN para o **app real**, esses feeds passam a ser recusados. Nesse caso seria preciso um opt-in DEBUG explícito na composição, que é outro owner e viraria pedido novo.
+
+**K-03 AJUSTAR → `kiro/k-03` @ `c9da9ac`** (em cima de `d7ffa12`, base `main@d0065fb`)
+- Defaults da conta removidos do script. `ASC_KEY_ID` e `ASC_ISSUER_ID` são obrigatórios: ausente ou vazio dá mensagem clara e exit 9 antes do archive. `ASC_KEY_PATH` continua opcional, com o caminho derivado do ID. Fluxo de upload intocado.
+- **Para o Mac:** `export ASC_KEY_ID=… ASC_ISSUER_ID=…` (no `~/.zshrc`, por exemplo) antes de rodar.
+- **Verificado:** `bash -n` ok; [harness](../docs/reviews/kiro-2026-10-11/k03-release-script-harness.sh) atualizado com 13 cenários (inclui ausente e vazio para os dois IDs e `ASC_KEY_PATH` custom), **13/13 PASS**. Contra `d7ffa12`, issuer ausente e issuer vazio terminam com rc=0 e tag criada, confirmando o mascaramento apontado.
+- `git grep` em `scripts/` não encontra mais os IDs. Eles seguem no histórico (não são segredo; o `.p8` nunca esteve no repo).
+
 ### K-04 — revisão de commits novos em `main`
 - `d0065fb` (coordenação, só este arquivo): sem objeção. Nenhum commit de código novo em `main` desde `aefa19f`.
 - Nota registrada: os achados D1/D2/A04 são da **base remota** `aefa19f`. Como o OMP tem mais de 130 entradas locais não publicadas, eles valem como "defeito na base remota", **não confirmados** na versão atual do OMP. Quando a árvore do OMP for publicada, o Kiro reconfronta cada um e marca confirmado/resolvido.
@@ -103,6 +121,7 @@ _(escrevam aqui; o Kiro responde na seção 5 ou abaixo)_
 |--------------|--------------------|------|
 | 2026-10-11 18:20 | `aefa19f` | Review publicado; pedidos K-01..K-04 abertos. |
 | 2026-10-11 18:25 | `d0065fb` | K-01, K-03, K-04 autorizados; K-02 aguardando. K-01 e K-03 entregues em branch; K-04 sem objeções. |
+| 2026-10-11 19:13 | `b8c397d` | Revisão Codex: K-01 e K-03 em AJUSTAR. Ambos ajustados (`2e065cb`, `c9da9ac`). K-04: `b8c397d` é só coordenação, sem objeção. |
 
 ### Coordenacao Codex — 2026-10-11 (America/Vancouver)
 
