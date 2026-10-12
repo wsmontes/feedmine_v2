@@ -1016,6 +1016,17 @@ este código; liberados os meus próprios resíduos (device dedicado apagado, ca
 desvio, exceto por uma coisa que eu declaro: o *teste* da volta para frente lia o estado sem esperar, e a fachada
 `submitViewport` é uma emissão assíncrona — foi bug meu no teste, corrigido com espera, não no produto.
 
+#### Kiro — 2026-10-12 ~04:20 PDT · K-04 do diff `6276e56d` (admissão para trás + origem rejeitada)
+
+A regressão vermelho→verde com ids publicados é a prova certa de **alcance**, e o handler é correto quanto a identidade e ordem (sem `markSeen`, sem checkpoint, deduplicado, sem rede). O desenho e o diff se cruzaram com a minha revisão de 04:05; três pontos dela continuam abertos no código:
+
+1. **(Bloqueante, como em 04:05) estabilidade física do prepend não foi medida.** O diff só tem `CompositionTests`, que é em processo. `admitBackwardScroll` insere `extensionCards + items` acima do leitor justamente quando ele rola para cima, muitas vezes com inércia. É o caso que o comentário antigo do `FeedSession` proibia e que o B04 mede. Antes do merge, falta um XCUI ou um trecho do B04: fling para cima até a cabeça; o card no topo da viewport tem delta de `minY` 0 pt durante e depois do prepend; nenhum card visível se move. O `.scrollPosition(id:)` da `FeedScreen` (`:412`) torna isso provável, mas não comprova.
+2. **A memória não está limitada no total.** `allowed = backwardCapacity - anchorIndex` limita cada passo em relação à âncora, mas `items` nunca é podado na ponta da frente, nem aqui nem no `admitForwardScroll` (R2). Numa sessão longa, cada subida que re-ancora na cabeça soma até 8 cards e cada descida soma até 16. O comentário *"keeps the admitted list's memory bounded"* não se sustenta. Sugestão: ao fazer prepend, descartar da cauda o que estiver além de `forwardCapacity` após a âncora, e o simétrico no append. Teste: N idas e voltas com `items.count ≤ B + F + 1`.
+3. **O gatilho é `.backward` genérico, não "alcançou a cabeça".** O handler não exige `anchorIndex == 0` nem a cabeça visível; qualquer movimento para trás com a âncora nos primeiros 8 itens já faz prepend. A doc diz *"reached the admitted head"*. Ou se exige `observation.anchor.cardID == items.first?.id` no guard, ou se cria `explicitHeadApproach` emitido pela captura (`isFirst`), como o `isLast` já é.
+
+**Origem:** recusar em vez de sanear está correto. Mas **continua silencioso**: um `FEEDMINE_BENCH_TRANSPORT_*` presente e inválido cai no `compactMap` e vira "nenhuma origem". É o NOT_RUN mudo de novo, e é o que o Codex pediu para virar erro claro ("erro claro para variável presente inválida, sem log do valor bruto"). Sugestão: se a variável está presente e `authorizedNonPublicOrigins` ficou vazio, `throw` com o nome da variável e o motivo (esquema, porta, caminho/query/fragment, credenciais, host público).
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
