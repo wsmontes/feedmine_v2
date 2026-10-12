@@ -839,6 +839,12 @@ final class CompositionTests: XCTestCase {
         await root.launch()
         let old = try XCTUnwrap(root.association)
         try await produceAndAdmit(old)
+        // **Uma segunda publicação**, e ela é o que torna o alcance dos DOIS lados uma asserção real: a primeira
+        // deixa o leitor no topo do store (medido: 9 cards e a âncora na última), e ali não existe posterior para
+        // alcançar — exigir isso seria exigir conteúdo que o fixture não tem, que foi exatamente o erro que a
+        // versão anterior desta asserção cometeu. Com a segunda, o leitor fica com histórico dos dois lados, e a
+        // âncora tem de continuar sendo a posição dele (ela não anda para o conteúdo novo).
+        try await produceAndAdmit(old)
         let snapshot = try XCTUnwrap(old.store.state.presentation)
         await old.background()
         await old.close()
@@ -859,10 +865,20 @@ final class CompositionTests: XCTestCase {
         // promete (a janela é recalculada com as capacidades pedidas, e o número de cards publicados varia).
         XCTAssertEqual(restored.window.anchor, snapshot.window.anchor,
             "a âncora volta a ser a mesma — e a âncora É a posição do leitor")
-        // Não se afirma a **forma** da janela (o primeiro item, o número de itens, o tamanho): a janela é
-        // recalculada com as capacidades pedidas em volta da âncora, e o que o leitor tem de recuperar é a
-        // posição, não o recorte. Medido: com a âncora igual, `items.first` difere numa reabertura (o conteúdo
-        // publicado antes da âncora não é o mesmo), e exigir isso seria impor mais do que a arquitetura promete.
+        // **Alcance do histórico** (o arquiteto pediu, na revisão do PR #3): o que se afirma não é a *forma* da
+        // janela, é o **alcance** dela atrás da âncora — o leitor tem de continuar voltando a ter o que já tinha.
+        // O witness é o próprio snapshot, com as capacidades do produto (8 atrás / 16 à frente). Duas versões
+        // anteriores desta asserção erraram o juiz, e as duas estão registradas porque o erro é instrutivo: uma
+        // exigia "posterior" fixo (num teste sem viewport a âncora é o topo do store, então exigia conteúdo
+        // inexistente) e a outra perguntava ao store, cujo `cards(around:)` **ignora visibilidade** — o que ele
+        // devolvia eram cartas do segmento novo, ainda não visível ao leitor, e o produto acerta em não mostrá-las.
+        let items = restored.window.items
+        let index = try XCTUnwrap(items.firstIndex { $0.id == restored.window.anchor.cardID },
+            "a âncora tem de estar dentro da janela restaurada")
+        let before = snapshot.window.items.firstIndex { $0.id == snapshot.window.anchor.cardID } ?? 0
+        XCTAssertGreaterThanOrEqual(index, min(before, 8),
+            "o alcance ANTERIOR à âncora não pode encolher: tinha \(before) antes, a restauração devolveu \(index)")
+        XCTAssertGreaterThan(items.count, 1, "a janela restaurada não é degenerada")
         await next.close()
     }
 
@@ -1385,7 +1401,16 @@ final class CompositionTests: XCTestCase {
         XCTAssertTrue(text.contains("• \(try XCTUnwrap(linked.title))"))
         let html = try coordinator.preview(ReaderExportRequest(scope: .bookmarkBox(ReaderBookmarkList.defaultID),
             format: .html))
-        XCTAssertTrue(html.contains("<title>Caixa de salvos</title>"))
+        // O título vem do **mesmo bundle e do mesmo locale do contrato do produto** — não de um literal fixo. Era
+        // `<title>Caixa de salvos</title>`, e num aparelho em inglês a asserção quebrava (medido; correção
+        // autorizada pelo arquiteto). As verificações de que a caixa exporta **artigos salvos** e não **fontes**
+        // seguem intactas abaixo, que é o que este teste existe para provar.
+        let exportTitle = String(localized: "Caixa de salvos", bundle: .main,
+            locale: CatalogLanguageNaming.interfaceLocale)
+        XCTAssertTrue(html.contains("<title>\(exportTitle)</title>"),
+            "o documento declara o que ele é, resolvido pelo contrato do produto (título: \(exportTitle))")
+        XCTAssertFalse(html.contains("<title>Fontes</title>"),
+            "e o título é o da caixa de salvos, não o de uma lista de fontes")
 
         // The file name V1 wrote for this scope, and the formats it never offered are refused rather than
         // answered with a document about something else.

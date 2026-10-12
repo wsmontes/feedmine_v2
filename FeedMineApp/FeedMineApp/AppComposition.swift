@@ -1821,13 +1821,17 @@ final class FeedAssociation {
         // A debug build still authorizes only non-public origins (`SyndicationAuthorizedOrigin` refuses public
         // hosts, userinfo, non-HTTP schemes and any URL with a path or query); a Release build authorizes none.
         #if DEBUG
-        var declared: [URL] = TrustedFeed.development.map(\.endpoint)
-        if let host = ProcessInfo.processInfo.environment["FEEDMINE_BENCH_TRANSPORT_HOST"],
-            !host.trimmingCharacters(in: .whitespaces).isEmpty {
-            for scheme in ["http", "https"] {
-                if let transport = URL(string: "\(scheme)://\(host)") { declared.append(transport) }
-            }
-        }
+        // **Ativação explícita** (o arquiteto pediu, na revisão do PR #3): a única origem não pública autorizada é
+        // a que **esta execução** nomeia como seu transporte. Nenhuma outra fonte autoriza nada — nem o catálogo
+        // (que nomeia os endpoints do corpus, e é justamente por isso que não pode ser a fonte), nem um OPML
+        // importado, nem a lista de feeds de desenvolvimento (cujas origens são públicas e nem passam o filtro
+        // abaixo). Sem a variável, a lista é vazia: um build Debug rodando o catálogo de produto não autoriza
+        // nada além do público.
+        let declared: [URL] = {
+            guard let host = ProcessInfo.processInfo.environment["FEEDMINE_BENCH_TRANSPORT_HOST"]?
+                .trimmingCharacters(in: .whitespaces), !host.isEmpty else { return [] }
+            return ["http", "https"].compactMap { URL(string: "\($0)://\(host)") }
+        }()
         let authorizedNonPublicOrigins = declared.compactMap { endpoint -> URL? in
             guard var parts = URLComponents(url: endpoint, resolvingAgainstBaseURL: false),
                 parts.host != nil else { return nil }
