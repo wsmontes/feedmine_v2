@@ -2,6 +2,7 @@
 import CryptoKit
 import Foundation
 import FeedMineAcquisition
+import FeedMineDomain
 
 public struct SyndicationCheckpointState: Hashable, Codable, Sendable {
     public let etag: String?
@@ -106,6 +107,7 @@ internal struct SyndicationHTTPClient: Sendable {
             request.setValue(checkpoint.lastModified, forHTTPHeaderField: "If-Modified-Since")
         }
         var redirects = 0
+        let endpointIsPublic = endpoint.host.map { NetworkHostPolicy.isPubliclyRoutable($0) } ?? false
         // Each traversal consumes an explicit redirect slot; no status starts a second opportunity.
         for _ in 0...redirectCapacity {
             try Task.checkCancellation()
@@ -136,6 +138,14 @@ internal struct SyndicationHTTPClient: Sendable {
                 }
                 // v1 lesson IN-2 / review M13: never follow a redirect from https down to http.
                 if request.url?.scheme?.lowercased() == "https", scheme == "http" {
+                    throw SyndicationHTTPError.invalidRedirectTarget
+                }
+                // Kiro K-01 (extends review R15 to feed documents): the redirect target is chosen by
+                // the remote server, so a chain that started on the public internet never moves to
+                // loopback, the local network or a metadata address. An endpoint that is itself
+                // non-public was configured explicitly (controlled fixture transport) and keeps its
+                // existing redirect behaviour; this rule only refuses escalation into private space.
+                if endpointIsPublic, !NetworkHostPolicy.isPubliclyRoutable(host) {
                     throw SyndicationHTTPError.invalidRedirectTarget
                 }
                 request = URLRequest(url: destination, cachePolicy: .reloadIgnoringLocalCacheData)
