@@ -32,6 +32,11 @@ public enum MediaResolver {
         var sufficient: [(candidate: MediaCandidate, width: Int)] = []
         var unknown: [MediaCandidate] = []
         var undersized: [(candidate: MediaCandidate, width: Int)] = []
+        // Kiro K-09 (review E3-11): a declared width below the thumbnail minimum is a hint, not a measurement.
+        // Feeds mislabel real images (width="10" on a 1200 px photo), so such candidates stay viable as a last
+        // resort and the measured fit decides; a genuinely tiny image still settles as unsuitable after
+        // inspection. Only the safety ceilings refuse before any bytes move.
+        var declaredTooSmall: [(candidate: MediaCandidate, width: Int)] = []
         for candidate in candidates where candidate.role == .cardVisual && candidate.mediaClass == .image {
             if let mime = candidate.declaredMimeType?.lowercased(), !mime.hasPrefix("image/") || mime.contains("svg") { continue }
             guard let width = candidate.declaredPixelWidth, let height = candidate.declaredPixelHeight else {
@@ -40,8 +45,14 @@ public enum MediaResolver {
             }
             // Declared facts beyond the safety ceilings are refused before any bytes move.
             if width > policy.ceilings.maximumPixelSide || height > policy.ceilings.maximumPixelSide { continue }
-            if width < minimum { continue }
+            if width < minimum { declaredTooSmall.append((candidate, width)); continue }
             if width >= target { sufficient.append((candidate, width)) } else { undersized.append((candidate, width)) }
+        }
+        // Largest declared first within a below-target tier; feed order breaks ties.
+        func largestFirst(_ tier: [(candidate: MediaCandidate, width: Int)]) -> [MediaCandidate] {
+            tier.enumerated().sorted { a, b in
+                a.element.width != b.element.width ? a.element.width > b.element.width : a.offset < b.offset
+            }.map(\.element.candidate)
         }
         // Smallest image that fills the target first (no wasted bytes); feed order breaks ties.
         let ordered = sufficient.enumerated().sorted { a, b in
@@ -49,9 +60,9 @@ public enum MediaResolver {
         }.map(\.element.candidate)
             + unknown
             // Below target but still usable in a slot: largest first.
-            + undersized.enumerated().sorted { a, b in
-                a.element.width != b.element.width ? a.element.width > b.element.width : a.offset < b.offset
-            }.map(\.element.candidate)
+            + largestFirst(undersized)
+            // Declared below the minimum: only measured if nothing better exists in this revision.
+            + largestFirst(declaredTooSmall)
         guard let first = ordered.first else { return .textOnly(.noViableCandidate) }
         return .prepare(first, fallbacks: Array(ordered.dropFirst()))
     }

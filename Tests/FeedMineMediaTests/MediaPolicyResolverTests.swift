@@ -44,7 +44,8 @@ final class MediaPolicyResolverTests: XCTestCase {
         let p = try policy(conditions())
         let resolution = MediaResolver.resolve([try candidate("huge", 4000), try candidate("exact", 1200), try candidate("unknown"),
             try candidate("small", 600), try candidate("logo", 64)], policy: p)
-        XCTAssertEqual(chosen(resolution), ["exact", "huge", "unknown", "small"])
+        // K-09: "logo" (declared below the thumbnail minimum) is no longer discarded unmeasured; it is the last resort.
+        XCTAssertEqual(chosen(resolution), ["exact", "huge", "unknown", "small", "logo"])
     }
     func testEconomyConditionsSettleForOnePixelPerPoint() throws {
         for c in [try conditions(network: .expensive), try conditions(lowPower: true), try conditions(thermal: .serious),
@@ -62,10 +63,23 @@ final class MediaPolicyResolverTests: XCTestCase {
             .textOnly(.conditionsForbidRemoteMedia))
         XCTAssertEqual(MediaResolver.resolve([], policy: try policy(conditions())), .textOnly(.noCandidates))
     }
-    func testSvgNonImageTinyAndOverCeilingCandidatesAreNotViable() throws {
+    func testSvgNonImageAndOverCeilingCandidatesAreNotViable() throws {
         let resolution = MediaResolver.resolve([try candidate("vector", mime: "image/svg+xml"), try candidate("clip", mime: "video/mp4"),
-            try candidate("icon", 32), try candidate("bomb", 20_000)], policy: try policy(conditions()))
+            try candidate("bomb", 20_000)], policy: try policy(conditions()))
         XCTAssertEqual(resolution, .textOnly(.noViableCandidate))
+    }
+    /// K-09 (review E3-11): a declared width below the minimum is a hint, so the candidate stays viable and the
+    /// measured fit decides. Format and safety-ceiling refusals are unchanged.
+    func testDeclaredTooSmallIsALastResortNotARefusal() throws {
+        let p = try policy(conditions())
+        XCTAssertEqual(chosen(MediaResolver.resolve([try candidate("vector", mime: "image/svg+xml"), try candidate("icon", 32),
+            try candidate("bomb", 20_000)], policy: p)), ["icon"])
+        XCTAssertEqual(chosen(MediaResolver.resolve([try candidate("mislabeled", 10, 10)], policy: p)), ["mislabeled"])
+        // Largest declared first within the last tier, always after every better tier.
+        XCTAssertEqual(chosen(MediaResolver.resolve([try candidate("tiny", 10), try candidate("small", 600),
+            try candidate("less-tiny", 64), try candidate("unknown")], policy: p)), ["unknown", "small", "less-tiny", "tiny"])
+        // A declared side beyond the ceiling is still refused before any byte moves, even if the other side is tiny.
+        XCTAssertEqual(MediaResolver.resolve([try candidate("bomb-tall", 10, 20_000)], policy: p), .textOnly(.noViableCandidate))
     }
     func testDownloadBudgetFollowsMeasuredThroughputAndWait() throws {
         XCTAssertEqual(try policy(conditions(rate: 200_000, wait: 2)).downloadByteBudget, 400_000)
