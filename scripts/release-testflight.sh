@@ -23,11 +23,19 @@ cd "$REPO"
 DRY_RUN=0
 if [ "${1:-}" = "--dry-run" ]; then DRY_RUN=1; fi
 
-# App Store Connect API key identifiers. They are not secrets (the .p8 file is), but they belong
-# to one account: override through the environment instead of editing the script.
-#   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (default ~/.appstoreconnect/private_keys/AuthKey_<ID>.p8)
-KEY_ID="${ASC_KEY_ID:-H3U55Z9WZ7}"
-ISSUER_ID="${ASC_ISSUER_ID:-0e1bd229-1284-4916-91d2-7bf989859bcc}"
+# App Store Connect API key identity comes only from the environment (no account defaults in Git):
+#   ASC_KEY_ID     required, e.g. export ASC_KEY_ID=<key id from App Store Connect>
+#   ASC_ISSUER_ID  required, e.g. export ASC_ISSUER_ID=<issuer uuid>
+#   ASC_KEY_PATH   optional, default ~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8
+# Unset and explicitly empty are both refused before anything is archived.
+for var in ASC_KEY_ID ASC_ISSUER_ID; do
+  if [ -z "${!var:-}" ]; then
+    echo "ABORTADO: $var ausente ou vazio — exporte $var com o valor da chave App Store Connect antes de rodar"
+    exit 9
+  fi
+done
+KEY_ID="$ASC_KEY_ID"
+ISSUER_ID="$ASC_ISSUER_ID"
 KEY_PATH="${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8}"
 PROJECT="FeedMineApp/FeedMineApp.xcodeproj"
 SCHEME="FeedMine"
@@ -48,7 +56,7 @@ if [ ! -f "$CATALOG" ]; then
 fi
 
 if [ ! -f "$KEY_PATH" ]; then
-  echo "ABORTADO: API key ausente em $KEY_PATH (defina ASC_KEY_PATH ou ASC_KEY_ID)"
+  echo "ABORTADO: API key ausente em $KEY_PATH (confira ASC_KEY_ID ou defina ASC_KEY_PATH)"
   exit 9
 fi
 
@@ -56,8 +64,6 @@ fi
 require() {
   if [ -z "${2:-}" ]; then echo "ABORTADO: $1 vazio — não é possível parear build e commit"; exit 9; fi
 }
-require "ASC_KEY_ID" "$KEY_ID"
-require "ASC_ISSUER_ID" "$ISSUER_ID"
 
 SHA="$(git rev-parse HEAD)"
 SHORT="$(git rev-parse --short HEAD)"
