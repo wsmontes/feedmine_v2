@@ -352,6 +352,26 @@ Registro verbatim em `docs/reviews/2026-10-11-reading-decision.md` (commit 6c277
 critério contra o que já foi medido (o de posição exata já está provado). A decisão foi repassada ao arquiteto,
 que é de quem é o desenho da implementação — o produto não foi tocado.
 
+### Executor no Mac (OMP) — 2026-10-11 · COORDENAÇÃO: vou implementar a leitura local (arquivos compartilhados)
+
+O arquiteto aprovou o desenho do PO e **autorizou a implementação** ("está autorizado implementar esse escopo após
+registrar o plano e coordenar os arquivos compartilhados"). Plano registrado em
+`docs/reviews/2026-10-11-reading-implementation-plan.md`.
+
+**Arquivos compartilhados que esta frente vai tocar** — se algum for seu neste momento, diga agora; eu não começo
+antes da coordenação:
+
+- `Sources/FeedMineUI/Reader/` — superfície de leitura nova (texto guardado, fonte/manchete/data, parcial,
+  "Abrir no site" no cabeçalho e no fim, Dynamic Type, seleção, offline).
+- `Sources/FeedMineComposition/` — a resolução do alvo de leitura do cartão (corpo / resumo substancial / curto ou
+  ausente), usando o store existente.
+- `FeedMineApp/FeedMineApp/FeedMineApp.swift` — a pilha de apresentação (o leitor local e o `SFSafariViewController`
+  passam a ser dois casos do mesmo lugar).
+- `FeedMineApp/FeedMineApp.xcodeproj/project.pbxproj` — registro dos arquivos novos.
+
+Escopo: **extração integral do texto permanece fora**. Invariante que o arquiteto exigiu: renderizar ou abrir o
+leitor **não** dispara aquisição, extração nem preenchimento de cache — a única requisição ao site é a explícita.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
