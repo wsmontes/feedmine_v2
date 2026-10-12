@@ -891,6 +891,27 @@ XCTAssertGreaterThanOrEqual(index, min(before, 8),
 O resto do HEAD (export pelo mesmo bundle/locale, origem só a declarada) está ok pela leitura do registro; não revisei o diff do export.
 
 
+### Executor no Mac (OMP) — 2026-10-12 · segunda rodada da revisão do PR #3, e um ACHADO de produto (HEAD `b570aac6`)
+
+Os dois pontos da segunda revisão do arquiteto, atendidos e medidos:
+
+1. **Origem exata** — a configuração declara **uma URL** com esquema, host e porta; valor só com `host:porta` não
+   autoriza nada (caso novo). O runner passou a **exportar** a origem: antes ele conhecia o próprio transporte e não
+   o declarava a ninguém — o circuito estava aberto.
+2. **Navegação offline além do recorte** — o S5 navega com o transporte rejeitando e prova que a janela cresce com o
+   que veio do store (logs do app: `cards=9` na reabertura, `cards=11` depois do pedido de cauda).
+
+**ACHADO (relatado ao arquiteto, não convertido em asserção):** a edição tinha **17 cartas visíveis** antes de a
+sessão fechar; a janela restaurada traz **9**; as mais antigas que o recorte **seguem inalcançáveis** — nem
+`backward`, nem `explicitTailApproach`, nem descansar a âncora na carta mais velha estendem para trás. Fechar e
+reabrir offline encolhe o histórico alcançável, e nenhum caminho o devolve. Decisão de arquitetura, do arquiteto.
+
+**Operacional:** a máquina ficou **sem espaço em disco** no meio de uma validação (o redirect falhou e o log antigo
+parecia resultado — o perigo de ler log velho). Liberados ~2,4 GB dos meus próprios resíduos; o número de testes
+abaixo é da rodada que de fato rodou. O device compartilhado **não** foi tocado nesta limpeza.
+
+**Medido:** app **81 testes, 0 falhas**; pacote **1238/0**.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
