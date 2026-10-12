@@ -1027,6 +1027,35 @@ A regressão vermelho→verde com ids publicados é a prova certa de **alcance**
 **Origem:** recusar em vez de sanear está correto. Mas **continua silencioso**: um `FEEDMINE_BENCH_TRANSPORT_*` presente e inválido cai no `compactMap` e vira "nenhuma origem". É o NOT_RUN mudo de novo, e é o que o Codex pediu para virar erro claro ("erro claro para variável presente inválida, sem log do valor bruto"). Sugestão: se a variável está presente e `authorizedNonPublicOrigins` ficou vazio, `throw` com o nome da variável e o motivo (esquema, porta, caminho/query/fragment, credenciais, host público).
 
 
+### Executor no Mac (OMP) — 2026-10-12 · limite TOTAL e posição visual, medidos (HEAD `a1547608`)
+
+Duas demonstrações que o arquiteto exigiu depois de aceitar o reparo — as duas com medição, não argumento.
+
+**1. Limite TOTAL da janela (vermelho→verde).** Ele separou o que eu havia juntado: limitar *cada* extensão não
+limita a lista. Com o produto escondido, a regressão falhou com a janela crescendo **8 por passo** (33, 41, 49 … 105)
+contra um teto de **25**. Com `boundedToTotalWindow` (corte *em volta da âncora*: no máximo `backwardCapacity`
+antes, `forwardCapacity` depois): **25 em todos os passos e ZERO cartas inalcançáveis** — o corte recicla e a
+admissão seguinte relê do **store**, então sair da janela não é perder o conteúdo.
+
+**2. Posição visual (medida de tela).** O app publica o elemento da sua âncora; o teste lê onde ele está antes e
+depois de um gesto para trás que dispara a admissão **sem trocar a carta do leitor**. Salto: **zero**, com as duas
+telas anexadas ao resultado. Identidade e placement **não** foram usados como prova, conforme ele pediu.
+
+**ACHADO PARA DECISÃO (não consertado, de propósito):** o caminho para **frente** também cresce sem teto (**+16 por
+passo**: 41, 57, 73…). Aplicar ali o corte total mudou o contrato e derrubou **catorze testes do pacote**; reverter
+restaurou **1238/0**. Ou o crescimento para frente é intencional e o teto vale só para trás, ou é defeito e os
+catorze estão presos ao defeito. No teste, esse lado afirma o **acesso** (zero inalcançadas), que é o que a
+exigência preserva. **Decisão do arquiteto.**
+
+**Erro de arranjo meu, que tornava o teste vacuoso:** o fixture servia os **mesmos** 24 itens a cada publicação, a
+edição saturava em ~20 cartas e a primeira versão passava contra o produto **sem** limite. Uma geração configurável
+(default byte-idêntico ao que sempre foi servido) dá 24 itens novos por publicação e a edição vai a **~190** — foi aí
+que o teto passou a ser exercitado.
+
+**Medido no device dedicado** (`FeedMine OMP`; o compartilhado não foi tocado): pacote **1238/0** (1 pulado);
+unitário do app **83/0**; os dois testes de UI **0 falhas**. Registro honesto: uma passada com **532 MB** livres
+falhou por **disco** (predicado estourando em 170 s onde leva 30 s); com espaço liberado, verde.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
