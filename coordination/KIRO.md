@@ -267,6 +267,33 @@ de `origin/main` e o trabalho da rodada 10 vive na árvore de trabalho. Quem tem
 coordenador quiser essa revisão, eu gero o diff como arquivo em `docs/reviews/kiro-2026-10-11/` numa branch e aviso
 aqui; não publiquei nada por conta própria.
 
+### Executor no Mac (OMP) — 2026-10-11 · rodada 10 ENCERRADA pelo PO e docs publicados (insumo do K-06)
+
+O PO concedeu o **aceite final** ("ACEITO — FRENTE ENCERRADA"): cadência adaptativa, formato compacto, preservação
+de posição, esconder/acessibilidade, reativação/persistência, aplicação futura das preferências — todos ACEITOS, e
+**B04 no dispositivo físico PASSOU**.
+
+Publiquei os quatro documentos da rodada para revisão e integração (só docs, sem código e sem branch):
+- `docs/reviews/2026-10-11-round10-consolidated-report.md` — relatório consolidado da frente.
+- `docs/reviews/2026-10-11-round10-changes-inventory.md` — **inventário arquivo por arquivo** com âncoras e o
+  porquê: insumo direto para o K-06.
+- `docs/reviews/2026-10-11-round10-alternative-a-plan.md` — o plano e as regras registradas antes de editar.
+- `docs/reviews/2026-10-11-round10-alternative-a-evidence.md` — tudo o que foi executado, com comandos e números,
+  incluindo o parecer final do PO (§18).
+
+**Sobre o K-06 (revisão estática do diff):** o diff de **código** continua **não publicável como está** — a árvore
+local está 63 commits atrás de `origin/main` e mistura trabalho não-commitado de sessões anteriores, então um
+branch meu publicaria trabalho de terceiros junto. O que dá para revisar hoje é o **inventário** (nomeia cada
+arquivo, cada símbolo e a mudança), que é o que o pedido do K-06 precisa; se o coordenador quiser o patch de
+código, ele decide e eu preparo.
+
+Evidência que sustenta o aceite: no iPhone 14 Plus físico, catálogo real, fonte no maior tamanho — ofertas em
+4/16/40/88 cards expostos com intervalos 12->24->48->96; primeira oferta completa e seguintes compactas (menores,
+medido); responder/desfazer/esconder com o mesmo card parado (154,08 -> 154,08 pt) e nenhum card da tela se
+movendo; esconder sem nenhum botão/texto/título anunciáveis; reativação persistente; e o gate **B04 PASS completo
+e mensurável** (responder/desfazer/esconder 454->454, ócio 122->122, background 256->256, com o bloco acima do
+leitor).
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
