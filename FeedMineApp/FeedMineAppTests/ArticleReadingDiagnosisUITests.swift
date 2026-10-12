@@ -40,6 +40,81 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         return candidate.exists ? candidate : card
     }
 
+    /// A OBSERVAÇÃO que o arquiteto mandou verificar e **não** concluir: no simulador, toques sintéticos do HOST
+    /// navegaram a tela de fontes mas não viraram nenhum switch. Ele ordenou o instrumento certo — XCUITest **pelo
+    /// identificador do controle** — e três eixos de comparação: estado visual, valor de acessibilidade e
+    /// preferência persistida.
+    ///
+    /// O achado do T7, que já vive neste repositório, explica o fenômeno melhor que qualquer teoria: a **linha**
+    /// envolve o switch, e o toque tem de ir no controle **interno** (`country.switches.firstMatch`), não na linha
+    /// — que abre o drill-in. Era isso que meu toque de host acertava: a linha. Este teste mede o controle interno
+    /// nos três eixos, em namespace próprio e descartável (o namespace do soak não é tocado).
+    @MainActor
+    func testSourceSwitchStateIsVisibleAnnouncedAndPersisted() throws {
+        let namespace = UUID().uuidString
+        let app = launch(namespace, firstRun: false)
+        XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 120), "o app tem de chegar à casca do leitor")
+        app.buttons["more-menu"].tap()
+        app.buttons.matching(NSPredicate(format: "label IN {'Fontes', 'Sources'}")).firstMatch.tap()
+        let openCountries = app.buttons["sources-open-countries"]
+        XCTAssertTrue(waitWhileScrolling(openCountries, in: app), "a folha de fontes tem de oferecer os países")
+        for _ in 0..<8 where !openCountries.isHittable { app.swipeUp() }
+        openCountries.tap()
+
+        let country = app.switches["country-toggle-argentina"]
+        XCTAssertTrue(waitWhileScrolling(country, in: app), "o controle tem de existir PELO IDENTIFICADOR")
+        for _ in 0..<12 where !country.isHittable { app.swipeUp() }
+        // Eixo 1 (acessibilidade), medido: o controle **externo** anuncia o estado semântico ("selected" /
+        // "not selected") e o **interno** é o UISwitch cru, que reporta "0"/"1". Eles não anunciam o mesmo texto —
+        // a asserção anterior supunha que sim e media a coisa errada. O que importa: existe um valor semântico,
+        // ele está no elemento que a linha publica pelo identificador, e é ele que muda ao tocar.
+        let announcedBefore = try XCTUnwrap(country.value as? String, "o controle anuncia um valor")
+        XCTAssertTrue(["selected", "not selected"].contains(announcedBefore),
+            "o elemento do identificador tem de anunciar o estado semântico, e anunciou: \(announcedBefore)")
+        // O controle interno é o que aceita toque; a linha abre o drill-in (T7).
+        let inner = country.switches.firstMatch
+        XCTAssertTrue(inner.waitForExistence(timeout: 10), "a linha envolve o switch")
+        XCTAssertTrue(["0", "1"].contains(inner.value as? String ?? ""),
+            "e o interno reporta o valor cru do UISwitch, e reportou: \(inner.value ?? "nil")")
+        // Eixo 2 (visual): a tela antes do toque, anexada.
+        let before = XCTAttachment(screenshot: app.screenshot())
+        before.name = "sources-before-tap"
+        before.lifetime = .keepAlways
+        add(before)
+
+        inner.tap()
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "selected"),
+            object: country)
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 60), .completed,
+            "tocar o controle INTERNO tem de virar o estado anunciado (antes: \(announcedBefore))")
+        let after = XCTAttachment(screenshot: app.screenshot())
+        after.name = "sources-after-tap"
+        after.lifetime = .keepAlways
+        add(after)
+
+        // Eixo 3 (persistência): fechar adota a seleção; reabrir com o MESMO namespace tem de mostrá-la.
+        app.buttons["countries-done"].tap()
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 120), "reabrir tem de voltar à casca")
+        app.buttons["more-menu"].tap()
+        app.buttons.matching(NSPredicate(format: "label IN {'Fontes', 'Sources'}")).firstMatch.tap()
+        XCTAssertTrue(waitWhileScrolling(openCountries, in: app))
+        for _ in 0..<8 where !openCountries.isHittable { app.swipeUp() }
+        openCountries.tap()
+        let again = app.switches["country-toggle-argentina"]
+        XCTAssertTrue(waitWhileScrolling(again, in: app))
+        for _ in 0..<12 where !again.isHittable { app.swipeUp() }
+        let persisted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "selected"),
+            object: again)
+        XCTAssertEqual(XCTWaiter.wait(for: [persisted], timeout: 60), .completed,
+            "a preferência tem de SOBREVIVER ao fechar e reabrir — é o eixo que um toque sintético não mede")
+        let proof = XCTAttachment(string: "namespace=\(namespace) antes=\(announcedBefore) depois=\(again.value ?? "nil")")
+        proof.name = "source-switch-three-axes"
+        proof.lifetime = .keepAlways
+        add(proof)
+    }
+
     private func launch(_ namespace: String, firstRun: Bool, fixtures: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
@@ -92,6 +167,18 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 1.0)
         }
         return containers(app).count
+    }
+
+    /// Espera **rolando**, como o gate faz: numa folha preguiçosa o controle não EXISTE até aparecer, então
+    /// `waitForExistence` sozinho falha para um controle que está abaixo da dobra — foi assim que a minha primeira
+    /// versão deste teste reprovou a folha de fontes que existe.
+    private func waitWhileScrolling(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 10) -> Bool {
+        if element.waitForExistence(timeout: 5) { return true }
+        for _ in 0..<attempts {
+            app.swipeUp()
+            if element.waitForExistence(timeout: 3) { return true }
+        }
+        return false
     }
 
     private func byIdentifier(_ app: XCUIApplication, _ identifier: String) -> XCUIElement {
