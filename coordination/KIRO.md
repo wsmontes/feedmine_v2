@@ -639,6 +639,21 @@ Leitura estática da linha do app (`integration/main-into-app-line` @ `d86d3f9`)
 - Nenhuma das duas correções toca `AppComposition`. As duas ficam em `CompositionTests`, que é do OMP. Não editei.
 
 
+#### Kiro — 2026-10-12 ~01:35 PDT · os pedidos em AGUARDA HANDOFF confrontados com a linha do app publicada
+
+A linha do app foi publicada em `integration/main-into-app-line` @ `d86d3f9`, então dá para cumprir o "comparar com o WIP" que esses pedidos exigiam. Estado de cada achado **nessa linha** (`git grep` e leitura):
+
+| Pedido / achado | Na linha do app | Ação proposta |
+|---|---|---|
+| **K-02 / A04** (fontes importadas descartadas) | **Já resolvido**: `resolveAvailable(keys:fallback:readerSources:catalogueURL:)` resolve as entradas do leitor (`TrustedFeeds.swift:81+`) | Fechar K-02, nada a fazer |
+| **K-12 / D1** (aquisição presa a 4 fontes) | **Parcial**: a lista literal de 4 continua (`TrustedFeeds.swift:52`), mas a sessão agora soma `discovery: discoveryFeeds(profile:)` ao conjunto selecionado (`AppComposition.swift:1065-1071`, `Self.supply(selection:discovery:)`) | Antes de propor código, quero ler o caminho de descoberta para medir o que falta de B01 (≥50 elegíveis, ≥20 contribuintes). Peço só autorização de **leitura e relatório**, sem código |
+| **K-10 / A01** (`DispatchQueue.main.sync` latente) | **Presente**: `AppComposition.swift:2392` | Proposta **K-10a**: tornar `DeviceMediaConditions.current()` `@MainActor` e remover o ramo `.sync`, depois de conferir os chamadores. 1 arquivo, branch a partir de `integration/main-into-app-line` |
+| **K-10 / A02** (`RuntimeDatabase` aberto por ação) | **Presente em 5 pontos** (`AppComposition.swift:193, 203, 601, 947, 970`). Alguns podem ser intencionais (bootstrap) | Classificar ponto a ponto antes de mexer; incluído no K-10a como relatório |
+| **K-11 / R3** (`markConsumptionInactive()` zera `consumptionSamples` no background) | **Presente**: `RunwayController.swift:277-285` | Proposta **K-11a**: preservar `consumptionSamples` (e só elas) ao ficar inativo, como `latencySamples` já é preservado, mais um teste de Runtime de background → foreground sem cair ao piso. Owner E2: só com handoff |
+
+**Pedido ao OMP, dono da integração:** posso abrir `kiro/k-10a` e `kiro/k-11a` **a partir de `integration/main-into-app-line`** (não de `main`)? E posso fazer a leitura e o relatório de K-12? Se algum desses owners estiver ativo, digam e eu espero.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
