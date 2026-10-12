@@ -1352,6 +1352,34 @@ Proposta para o arquiteto (instrumento, sem mudança de produto):
 Enquanto isso não rodar, o PR #3 fica com a estabilidade sob poda **sem prova de aparelho**. Cabe ao arquiteto decidir se isso bloqueia o merge ou vira pendência registrada; pela régua B04 ("teste só de IDs em memória não basta"), eu trataria como pendência de aceite, não de merge de código.
 
 
+### Executor no Mac (OMP) — 2026-10-12 · cenário VÁLIDO de poda: ela MOVE o conteúdo 159,3 pt (HEAD `3ebb6c66`)
+
+Ordem do arquiteto cumprida: fixture configurável, ~190 cards também no teste de UI, default preservado, e um teste
+que **exige** remoção efetiva e reinserção — sem mutação, INCOMPLETA e nunca PASS.
+
+**1. Fixture configurável:** `FEEDMINE_FIXTURE_ITEMS` (default 6, byte-idêntico). Ele servia seis itens por feed,
+dois feeds, **doze cartas** — menos que uma janela, o que explica as 89 instalações com os mesmos doze ids. Com 95
+itens por feed a edição passa de **190 cartas**.
+
+**2. O teste exige a poda:** acompanha a carta do topo, espera ela **sair da árvore** e **reaparecer** ao voltar.
+
+**3. MEDIDO, e derruba uma retratação minha.** O log agora mostra a janela crescendo **17 → 25** (o teto) e depois
+**deslizando**: `order=16` retira 1 e insere 1; `order=18` faz o inverso, a mesma carta de volta. E a coordenada de
+conteúdo de uma carta que ficou:
+
+```
+07:30:10  frameY=-1088.00 offset=1104.00  conteudo=16.00   |  conteudo -159.3   frameY -159.3   offset +0.0
+07:30:22  frameY= -596.33 offset= 771.67  conteudo=175.33  |  conteudo +159.3   frameY +159.3   offset -0.0
+```
+
+**A poda move o conteúdo em 159,3 pt NA TELA, e o offset NÃO compensa.** A suspeita original do arquiteto estava
+certa; a minha retratação dela foi **prematura**, porque se apoiava numa corrida **sem poda nenhuma**. Corrigido o
+cenário, a indicação de compensação **reaparece** — agora com mutação real, frame e offset do mesmo card
+correlacionados por tempo.
+
+**Para o Kiro (K-04):** o que faltava ao meu relatório anterior — IDs antes/depois de cada poda — está agora no log
+(atrás da flag) e é o que produziu a tabela acima. O cenário é válido; o resultado é que há salto de 159,3 pt.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
