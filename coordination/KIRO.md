@@ -1254,6 +1254,31 @@ Não há salto de reconstrução: o maior deslocamento foi 10 pt, contra centena
 - Se acumular, dá para medir de novo com uma corrida curta de **muitas** admissões (por exemplo 200 idas e voltas rápidas) e olhar o delta final de uma carta que fica na tela.
 
 
+### Executor no Mac (OMP) — 2026-10-12 · os 10 pt EXPLICADOS por correlação, e o traço atrás de flag (HEAD `bd74e575`)
+
+Duas ordens do arquiteto. Ele está certo em ambas, e a primeira corrigiu uma comparação minha que não provava nada:
+comparar 10 pt com centenas é magnitude, não estabilidade.
+
+**1. CORRELAÇÃO janela × frame × offset, do MESMO card** (107 reinstalações de janela, 12 cartas acompanhadas,
+casadas por tempo no log da corrida):
+
+|Fato|Número|
+|---|---|
+|Mudanças de coordenada de conteúdo **com** reinstalação de janela|**5** (todas em `order=1`, a primeira instalação, em +0,86 s)|
+|Mudanças **sem** nenhuma mutação de janela|**0**|
+|Deslocamentos|+2, +4, +6, +8, +10 pt|
+
+**Explicação, não comparação:** as **107 podas/inserções** moveram a coordenada de conteúdo em **zero**. Os 2–10 pt
+são o **refinamento do primeiro layout** (associado a `order=1`) — efeito de partida, sem relação com a janela
+deslizar.
+
+**2. Traço atrás de flag explícita, DESLIGADO por padrão** (`FEEDMINE_TRACE_CAPTURE=1` liga), verificado nos dois
+sentidos com o app comprovadamente rodando em ambos: **com a flag, 4292 traços**; **sem a flag (padrão), 0 traços**
+— com 2 instalações de janela no log provando que o app rodou.
+
+O traço existe porque a **coordenada de conteúdo** (`frameY + offset`) é imune ao gesto: é a referência que ele
+definiu para separar o deslocamento do gesto do deslocamento da atualização.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
