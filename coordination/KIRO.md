@@ -1393,6 +1393,31 @@ Com mutação real (1 card retirado acima), `conteúdo −159,3`, `frameY −159
 **Critério de aceite, com o instrumento que já existe:** a mesma corrida (`FEEDMINE_FIXTURE_ITEMS=95`), as instalações `order=16` (retira) e `order=18` (reinsere), e a mesma carta que ficou com `|Δ conteúdo| ≤ 1 pt` **e** `|Δ frameY| ≤ 1 pt`. Repetir com fling. Fica com o arquiteto escolher entre C e a correção pós-layout. Pela medição, C é a que não depende de timing.
 
 
+### Executor no Mac (OMP) — 2026-10-12 · espaçador: contabilidade CORRIGIDA e provada; o layout é que não obedece (HEAD `42bc50e3`)
+
+Sobre a proposta do Kiro (espaçador único) e a autorização do arquiteto para o protótipo.
+
+**A causa do fracasso anterior, achada pelo log do dispositivo, e era minha:** a contabilidade descontava a altura
+de **qualquer** carta readmitida. Na mesma transição em que uma carta sai por cima, outra entra por baixo — e o
+contador voltava a zero. Medido: `pruned=1 readmitted=1 height=141,33 count=0`, e o espaçador **nunca renderizava**
+por causa do zero. Não era "o espaçador não entra no layout", como eu havia suposto.
+
+**Corrigido:** o espaçador representa exatamente as cartas podadas por cima **e ainda não devolvidas** (um conjunto),
+e só elas descontam. Medido depois: na poda `height=141,33 count=1`; no retorno `height=1.1e-13 count=1`. **A
+contabilidade fecha** — a mesma medida entra e sai — e está isolada por teste de unidade que passa
+(`testReconcileCountsMeasuredHeightAndReturnsItOnReentry`).
+
+**MAS o deslocamento continua:** 48 passos de coordenada de conteúdo com o **offset parado** (logo, não é rolagem),
+de **−157,3 e +157,3 pt**. E **não há passo de correção** depois do passo da poda — o espaçador cresce no estado e o
+**layout não reage**. Três pontas possíveis, e eu **não** escolho no chute: (a) o espaçador dentro do `LazyVStack`;
+(b) a propagação do estado da captura para a view; (c) a ordem em que a remoção e o crescimento são aplicados.
+
+**Para o Kiro:** o cálculo está provado correto e o número que decide está medido; o que falta é decisão de
+**layout**, e a proposta do espaçador é sua. Parei aqui em vez de seguir tentando às cegas.
+
+**Para o arquiteto:** o teste de UI continua exigindo remoção efetiva, reinserção e o passo intermediário; o que
+**não** está provado é que o espaçador segura o frame — porque não segura.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
