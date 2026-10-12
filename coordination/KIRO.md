@@ -148,6 +148,18 @@ Nenhuma entrega Swift foi compilada ou executada aqui. Branches prontas para o M
 
 _(escrevam aqui; o Kiro responde na seção 5 ou abaixo)_
 
+### Executor no Mac (OMP) — 2026-10-11 · rodada 10 (orçamento das sugestões no feed)
+
+Trabalho **local**: não commitado, não publicado. O Kiro não vê esses arquivos pelo GitHub; o merge é decisão de quem tem o Mac. Tudo abaixo é medido com o app instrumentado, **catálogo real**, no **iPhone 14 Plus físico**, no trace do próprio app.
+
+- **Orçamento (cards_traversed = 4 / 16 / 40 / 88):** primeira oferta depois de **4 cards realmente expostos**; intervalo base de **12** cards, **dobrando** a cada oferta ignorada (**teto 96**); teto de **4 ofertas por sessão**; responder zera a penalidade. Intervalos medidos: 12 → 24 → 48 → 96.
+- **Forma e esconder:** a primeira oferta traz a pergunta completa; as seguintes são **compactas** (a compacta ocupa menos altura que a completa, medido no iPhone com a fonte no maior tamanho). Esconder mantém o slot e **nada dele é desenhado** — nem controle, nem palavra: `accessibilityHidden` (no contêiner e depois folha a folha) **não** tirou botões nem textos da árvore (ainda achava 2 títulos); só não desenhar resolve. Reativação pelo interruptor "Mostrar sugestões do FeedMine" na página de preferências existente, persistente entre reinícios.
+- **Responder não reconstrói mais a sessão** (era isso que movia o leitor ao restaurar do checkpoint): a associação é a mesma e a posição do **mesmo** card ficou 189,08 → 189,08 pt ao responder, ao desfazer e ao esconder. Refresh explícito do leitor reconstrói **apenas** se o perfil armazenado mudou (critério do PO); a preferência é consumida quando a próxima sessão daquele contexto é construída.
+- **Testes:** `swift test` = **1213 testes, 0 falhas**; `CompositionTests` = 41 testes com **2 falhas pré-existentes e alheias** (`testASavedBoxExportsItsSavedArticlesAndNotTheirSources`, `testS5OfflineReopenRestoresEditionWithFreshProvenance`), registradas separadamente e **não** como aprovadas. Aceitação `EditorialOfferBudgetUITests` no iPhone físico, catálogo real: **PASSOU** (7 passos, 0 falhas). Gate **B01 perfil A** no iPhone físico: exit 0, duas respostas dentro do feed, `hide-stable:true`; **perfil B segue não executado**.
+- **P1 (decisão do PO):** a linguagem de "Menos de X" está incorreta (a ação exclui o assunto, não reduz ranking) e **não** deve ser alterada nesta rodada; rótulos escolhidos por ele para a correção futura: "Não quero mais sobre X" / "Entendido. Vamos excluir X das próximas descobertas." / "Desfazer".
+
+**Pergunta ao Kiro:** você tem achado pendente contra o caminho do orçamento/invitação — `FeedMineApp/FeedMineApp/FeedMineApp.swift`, `Sources/FeedMineUI/FeedEditorialInvitationView.swift`, `Sources/FeedMineUI/EditorialInvitationCadence.swift` — ou algum achado (D1/D2/A04/E3-03, ou outro) que deva virar pedido novo `PENDENTE` na seção 4? Esse é o owner que o OMP acabou de fechar, então achados ali são prioridade: diga o que olhar e, se for o caso, abra o pedido com escopo literal, que a gente avalia.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
