@@ -388,6 +388,30 @@ A regra pura do roteamento (`FeedReadingDecision`) já está escrita e **verific
 3.000 caracteres abre a leitura local sem afirmar completude, contagem por caractere (não por byte), corpo vence o
 resumo, teaser mantém o site como ação principal e nada é oferecido quando não há texto nem endereço.
 
+### Executor no Mac (OMP) — 2026-10-11 · leitura local: o que foi realmente tocado (e uma correção do meu aviso)
+
+Implementado e em verificação. Conjunto real de arquivos (correção do que eu havia anunciado):
+
+|Arquivo|Mudança|
+|---|---|
+|`Sources/FeedMineUI/Reader/FeedReadingDecision.swift`|**novo** — a regra pura: corpo > resumo ≥3.000 caracteres > site; nada quando não há texto nem endereço|
+|`Sources/FeedMineUI/Reader/FeedReadingSurface.swift`|**novo** — a superfície de leitura local|
+|`FeedMineApp/FeedMineApp/AppComposition.swift`|o toque resolve *onde* se lê; `onReading` separado de `onExternalURL` (a diferenciação que o arquiteto pediu)|
+|`FeedMineApp/FeedMineApp/FeedMineApp.swift`|`ReaderPage` com dois casos (site / local), mesma pilha de apresentação|
+|`FeedMineApp/FeedMineApp/TrustedFeeds.swift`|**aditivo** — variantes de texto na fixture do app e o feed JSON|
+|`FeedMineApp/FeedMineAppTests/CompositionTests.swift`|**aditivo** — o transporte controlado registra requisições e serve a forma pedida (payload padrão byte-idêntico)|
+|`FeedMineApp/FeedMineAppTests/ReadingCompositionTests.swift`|**novo** — provas em processo|
+|`FeedMineApp/FeedMineAppTests/ReadingSurfaceUITests.swift`|**novo** — aceitação no aparelho|
+|`FeedMineApp/FeedMineApp.xcodeproj/project.pbxproj`|registro dos dois arquivos de teste do alvo do app|
+
+**Correção do meu próprio aviso:** `Sources/FeedMineUI/` e `Tests/` entram pelo glob do SwiftPM e **não** precisam de
+`pbxproj` (era o único motivo pelo qual eu o havia listado). E `Sources/FeedMineComposition/` **não** foi tocado — a
+resolução do alvo vive na composição do app, onde o cartão e o store já se encontram.
+
+Achado que vale para todos: o ramo **RSS da sindicação nunca preenche `body_text`** (`SyndicationTranslator.rss`
+passa só `summary: item.description`); corpo só existe em **JSON Feed**. É a explicação medida de `body_text` ser
+zero em todo o catálogo real — e por isso a fixture de verificação tem de servir um JSON Feed para o caso "corpo".
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
