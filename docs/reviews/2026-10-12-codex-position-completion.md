@@ -40,3 +40,9 @@ Controle negativo: retirada temporária do ajuste nativo, mesmo teste de poda re
 - TestFlight: o fluxo `release-testflight.sh --dry-run` recusou com exit 9 porque ASC_KEY_ID não está configurado; ASC_ISSUER_ID também está ausente nesta sessão. Nenhum upload declarado ou executado por esta frente.
 
 Compilação Release iPhone (sem assinatura/distribuição): **BUILD SUCCEEDED**, sobre `0d38f102` (merge apenas documental após `f4bfabc2`). Log `/tmp/codex-release-build.log`. Não é archive pareado nem upload TestFlight.
+
+## Integração publicada
+
+PR #3 mergeado em **a6678e32d1c8927a817fcf2870a0584e880150b2**. A árvore do merge e a árvore validada em 09a6e3a4 têm o mesmo hash Git: c4183dc6819227b00982d8c8784b65b59de8ce04. Main local atualizado por fast-forward; nenhuma alteração de código depois da validação.
+
+Resumo bruto dos comandos preservado em `docs/reviews/evidence/2026-10-12-codex-scroll/verification.log`. Logs completos e bundles ainda disponíveis foram copiados para `/Users/wagnermontes/Desktop/feedmine-codex-20261012`. Xcode rotaciona automaticamente os bundles anteriores; os logs das execuções UI foram preservados, mas não se promete disponibilidade de todos os anexos antigos. O monitor permanece ativo com o estado integrado atualizado.

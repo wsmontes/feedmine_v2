@@ -1,0 +1,82 @@
+
+## codex-final-package.log
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.280 (0.281) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.322 (0.322) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.385 (0.386) seconds
+	 Executed 3 tests, with 1 test skipped and 0 failures (0 unexpected) in 0.036 (0.036) seconds
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.063 (0.064) seconds
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.001 (0.002) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.145 (0.146) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 11.952 (11.953) seconds
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.004 (0.005) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.002 (0.002) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.003 (0.004) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.001 (0.002) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.002 (0.003) seconds
+Test Case '-[FeedMineRuntimeTests.FeedSessionViewportTests testWindowFailurePreservesInstalledState]' passed (0.031 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedViewportCaptureTests testWindowCorrectionIgnoresPureScrollingAndChangedViewport]' passed (0.000 seconds).
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.019 (0.019) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.079 (0.079) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.001 (0.002) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.007 (0.008) seconds
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.501 (0.503) seconds
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.443 (0.444) seconds
+Test Case '-[FeedMineRuntimeTests.PresentationProjectionTests testWindowSnapshotRejectsEmptyDuplicateAndAbsentAnchorAndKeepsOrder]' passed (0.000 seconds).
+Test Case '-[FeedMinePublicationTests.PublicationHistoryTests testWindowWithoutCheckpointAndStoreErrorsPropagate]' passed (0.040 seconds).
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.001 (0.002) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.056 (0.057) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.154 (0.154) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.088 (0.088) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.002 (0.003) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.123 (0.124) seconds
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.400 (0.402) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.128 (0.129) seconds
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.003 (0.005) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.266 (0.266) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.122 (0.122) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.088 (0.089) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.004 (0.004) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+	 Executed 1241 tests, with 1 test skipped and 0 failures (0 unexpected) in 69.268 (69.433) seconds
+	 Executed 1241 tests, with 1 test skipped and 0 failures (0 unexpected) in 69.268 (69.438) seconds
+
+## codex-completed-app.log
+	 Executed 9 tests, with 0 failures (0 unexpected) in 12.207 (12.210) seconds
+Test Case '-[FeedMineAppTests.CompositionTests testLongNavigationKeepsTheTotalWindowBoundedAndEverythingReachable]' passed (12.926 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testReopeningOfflineKeepsCardsBeyondTheBackwardCapacityReachable]' passed (6.443 seconds).
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.001 (0.002) seconds
+	 Executed 83 tests, with 0 failures (0 unexpected) in 184.704 (184.733) seconds
+	 Executed 83 tests, with 0 failures (0 unexpected) in 184.704 (184.734) seconds
+** TEST SUCCEEDED **
+
+## codex-final-validation.log
+	 Executed 9 tests, with 0 failures (0 unexpected) in 12.796 (12.800) seconds
+Test Case '-[FeedMineAppTests.CompositionTests testLongNavigationKeepsTheTotalWindowBoundedAndEverythingReachable]' passed (24.912 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testReopeningOfflineKeepsCardsBeyondTheBackwardCapacityReachable]' passed (4.651 seconds).
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.002 (0.003) seconds
+	 Executed 83 tests, with 0 failures (0 unexpected) in 215.934 (215.972) seconds
+	 Executed 83 tests, with 0 failures (0 unexpected) in 215.934 (215.973) seconds
+Test Case '-[FeedMineUITests.ArticleReadingDiagnosisUITests testWindowPruningPreservesPositionWithLargeText]' passed (104.703 seconds).
+Test Case '-[FeedMineUITests.ArticleReadingDiagnosisUITests testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped]' passed (82.429 seconds).
+	 Executed 7 tests, with 0 failures (0 unexpected) in 65.562 (65.565) seconds
+	 Executed 9 tests, with 0 failures (0 unexpected) in 252.694 (252.702) seconds
+	 Executed 9 tests, with 0 failures (0 unexpected) in 252.694 (252.703) seconds
+** TEST SUCCEEDED **
+
+## codex-final-interaction.log
+Test Case '-[FeedMineUITests.ArticleReadingDiagnosisUITests testWindowPruningPreservesPositionWithLargeText]' passed (83.800 seconds).
+Test Case '-[FeedMineUITests.ArticleReadingDiagnosisUITests testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped]' passed (84.302 seconds).
+Test Case '-[FeedMineUITests.EditorialOfferBudgetUITests testTheOfferBudgetHoldsOnTheRealCatalogue]' passed (326.293 seconds).
+	 Executed 3 tests, with 0 failures (0 unexpected) in 494.396 (494.403) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 494.396 (494.405) seconds
+** TEST SUCCEEDED **
+
+## codex-scroll-negative.log
+/Users/wagnermontes/Documents/GitHub/feedmine_v2/FeedMineApp/FeedMineAppTests/ArticleReadingDiagnosisUITests.swift:347: error: -[FeedMineUITests.ArticleReadingDiagnosisUITests testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped] : XCTAssertLessThan failed: ("157.333333") is not less than ("1.0") - a correção remove o deslocamento de layout
+/Users/wagnermontes/Documents/GitHub/feedmine_v2/FeedMineApp/FeedMineAppTests/ArticleReadingDiagnosisUITests.swift:350: error: -[FeedMineUITests.ArticleReadingDiagnosisUITests testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped] : XCTAssertGreaterThan failed: ("0") is not greater than ("0") - a mesma carta deve ser medida depois de uma correção ligada à mutação real da janela
+Test Case '-[FeedMineUITests.ArticleReadingDiagnosisUITests testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped]' failed (91.000 seconds).
+
+## codex-release-build.log
+** BUILD SUCCEEDED **
