@@ -1805,8 +1805,34 @@ final class FeedAssociation {
         // §5.3: discovery is a **traversal**, not a preview — the same object advances page by page across the cold and
         // active drivers, and the targets it registers become eligible inside this snapshot, which is where the
         // authority for them lives. The session's resolved policy keeps saying only what the reader chose.
+        // Kiro K-01/K-05 wiring. The root decides which builds may leave the public network: a debug build
+        // authorizes **the exact non-public origins of the endpoints this run was configured to fetch** — a
+        // benchmark server on the LAN, the in-process fixtures — and a Release build authorizes none, so product
+        // acquisition stays publicly routable.
+        //
+        // An authorization is an *origin*, not an endpoint: `SyndicationAuthorizedOrigin` refuses any URL carrying
+        // a path or query (deliberately — authorizing `http://host:8757` must not authorize `…/admin`), so the
+        // endpoint's path is stripped here and the origin that survives is the one the connector will check for
+        // the endpoint and for every redirect hop. The filter keeps only non-public origins: a public endpoint
+        // needs no authorization and is dropped rather than passed.
+        #if DEBUG
+        let authorizedNonPublicOrigins = registrations.map(\.endpoint).compactMap { endpoint -> URL? in
+            guard var parts = URLComponents(url: endpoint, resolvingAgainstBaseURL: false),
+                parts.host != nil else { return nil }
+            parts.path = ""
+            parts.query = nil
+            parts.fragment = nil
+            parts.user = nil
+            parts.password = nil
+            guard let origin = parts.url, SyndicationAuthorizedOrigin(origin) != nil else { return nil }
+            return origin
+        }
+        #else
+        let authorizedNonPublicOrigins: [URL] = []
+        #endif
         let acquisition = try SyndicationAcquisitionSnapshot(database: db, registrations: registrations,
-            session: transport, redirectCapacity: 4, discovery: discoveryTraversal)
+            session: transport, redirectCapacity: 4, discovery: discoveryTraversal,
+            authorizedNonPublicOrigins: authorizedNonPublicOrigins)
         self.acquisition = acquisition
         // H2: a feed that keeps failing cools down for a doubling window that starts at what one
         // failed attempt may already cost (the request timeout) and is capped by the resource

@@ -639,6 +639,58 @@ final class CompositionTests: XCTestCase {
         try await assertAnswerDuringReconstruction(.preset)
     }
 
+    /// Kiro K-01/K-05 **wiring** — o arquiteto foi explícito: "ter K-01/K-05 no merge não prova essa ligação". E
+    /// não provava: nenhum ponto do app passava origens autorizadas, então o padrão `publicOnly` do K-01 recusaria
+    /// o servidor de benchmark na LAN e a corrida não publicaria nada. Este teste teria pegado isso: configura um
+    /// feed num host **não público** — exatamente a forma de um servidor de benchmark — e exige um card dele. O
+    /// transporte controlado responde a qualquer URL, então o que decide aqui é a política de host, não a rede.
+    func testK05TheRootAuthorizesTheNonPublicEndpointThisRunFetches() async throws {
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml",
+            "o root tem de autorizar exatamente os endpoints não públicos que esta execução foi configurada para buscar")
+    }
+
+    /// O controle do teste acima: o **mesmo** cenário num host público. Ele separa "a política de host recusou" de
+    /// "o arranjo do teste não chega a publicar" — sem ele, um vermelho não diz qual dos dois aconteceu. Com o
+    /// par, o significado é inequívoco: o controle verde diz que o caminho funciona, e o não público verde diz que
+    /// a autorização do root está ligada.
+    func testK05TheSameScenarioOnAPublicHostAlsoPublishes() async throws {
+        try await assertTheEndpointPublishes("https://bench.example/feed.xml",
+            "controle: num host público o caminho tem de publicar")
+    }
+
+    private func assertTheEndpointPublishes(_ raw: String, _ message: String) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let endpoint = URL(string: raw)!
+        let feed = TrustedFeed(targetID: AcquisitionTargetID(), sourceID: SourceID(rawValue: UUID()),
+            bindingID: SourceBindingID(), principal: endpoint.absoluteString, endpoint: endpoint,
+            displayName: "fixture")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 20
+        let root = AppComposition(directory: directory, feeds: [feed], transportConfiguration: configuration)
+
+        await root.launch()
+        XCTAssertNil(root.startupFailure)
+        let association = try XCTUnwrap(root.association)
+        let published = await Self.waitUntil(20) { association.store.state.presentation != nil }
+        if !published {
+            // Why it did not publish, instead of guessing: the run's own facts.
+            let facts = root.diagnosticsForTheWiringTest(association)
+            XCTFail("\(message) — \(facts)")
+        }
+        await association.close()
+    }
+
+    private static func waitUntil(_ seconds: TimeInterval, _ condition: () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return false
+    }
+
     /// Kiro K-06, achado 5: o pacote da rodada 10 não exercitava A→B→A com uma resposta no meio, e essa era uma
     /// lacuna de evidência (não uma correção de produto). Este é o teste que faltava: responder em A, ir a B e
     /// voltar tem de devolver a **edição e a janela de A** (a âncora), manter o nível declarado e os salvos do
@@ -1328,5 +1380,17 @@ final class MediaWaitDerivationTests: XCTestCase {
         XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 2, inputs: inputs, transportCeiling: 0),
             4.4, accuracy: 1e-9)
         XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 600, inputs: inputs, transportCeiling: -1), 5)
+    }
+}
+
+// Test-only: why a wiring run did not publish, from the run's own facts. The decisive one is whether the
+// controlled transport was called at all — zero requests means the fetch was refused *before* the transport,
+// which is exactly the host policy (K-01) and not a setup problem.
+extension AppComposition {
+    func diagnosticsForTheWiringTest(_ association: FeedAssociation) -> String {
+        let requested = FixtureTransport.requests.withLock { $0.count }
+        return "transport-requests=\(requested) sources=\(feeds.count) "
+            + "failure=\(String(describing: startupFailure)) "
+            + "presentation=\(association.store.state.presentation == nil ? "nil" : "present")"
     }
 }
