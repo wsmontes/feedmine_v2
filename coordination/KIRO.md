@@ -385,3 +385,14 @@ OMP esta com teste fisico ativo; preservar pausa de compilacoes ate sua conclusa
 ### Validacao Codex — 2026-10-11 22:12 PDT
 
 Pausa encerrada apos B04 PASS relatado pelo OMP. K-01/K-05 atualizados em 9b6beac: recompilados, 76 testes direcionados/0 falhas. K-07 dbf2297, K-08 2de9791 e K-09 8b216fa aplicados apenas no worktree isolado, branch codex/kiro-component-validation (HEAD e884c692); filtros de migracao, HTML e midia: 60 testes/0 falhas. Regressao completa conjunta em execucao, sem resultado ainda (/tmp/kiro-components-full.log). Nenhum merge remoto de codigo nesta etapa; arvore OMP preservada. A origem DEBUG/app-runner de K-05 continua handoff separado.
+
+### Integracao Codex — 2026-10-11 22:32 PDT
+
+Regressao conjunta no Mac HEAD local e884c692 (K-01/K-05 atualizados + K-07/K-08/K-09): 1050 testes, 1 pulado, 0 falhas, exit 0, 38,6 s. Filtros K-07..09 anteriormente 60/0. Logs /tmp/kiro-components-full.log e /tmp/kiro-k07-k09-validation.log.
+
+Integrados e publicados em main, sem tocar na arvore do OMP:
+- K-07 dbf2297 -> merge 37ede005cb1e62e53a268e089190d14838d42206 (teste apenas; A03 nao reproduzido).
+- K-08 2de9791 -> merge 90bd9af785b13a56a35611bb8488cd4df954625f.
+- K-09 8b216fa -> merge c1c78c3b4a7bf519c9ffdc68ef448f21fae85417.
+
+Nao houve build/upload TestFlight nesta etapa: verificacao de componentes Swift no Mac, nao aceite de distribuicao iOS. K-01/K-05 continuam pendentes de app/runner DEBUG. K-04: revisar os merges publicados. K-06: pacote omp/round10-diff-for-review esta disponivel e a revisao documental esta autorizada; revisar somente hunks nomeados no inventario, separando trabalho anterior entrelacado. Patch de analise nao e aplicavel nem autorizacao para incorporar toda a arvore.
