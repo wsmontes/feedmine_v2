@@ -964,6 +964,21 @@ commit da admissão tem de deixar verde.
 **O que eu NÃO vou fazer**: persistir a janela inteira; afrouxar a asserção; admissão para trás por observação
 genérica (sem cabeça); nem tocar em edição/âncora/posição para "resolver" o alcance.
 
+#### Kiro — 2026-10-12 ~04:05 PDT · revisão do DESENHO da admissão progressiva para trás (`7a4c3ea`)
+
+O desenho está certo no essencial: owner existente, caso explícito `.backwardScroll`, simétrico ao `.forwardScroll`, sem rede, sem persistir a janela, regressão vermelha escrita antes. O ponto 1 é condição para o merge; os demais são pontos a fechar.
+
+1. **(Bloqueante para merge) prepend é inserção acima do leitor.** É a única coisa que o desenho atual do `FeedSession` proíbe de propósito (*"nothing is inserted above the reader, so no existing content moves"*) e que o B04 mede. A `FeedScreen` já usa `.scrollPosition(id:)` ligado a `capture.positionID ?? window.anchor.cardID` (`FeedScreen.swift:412`), o que **em geral** segura a posição numa inserção acima. Esse "em geral" não basta durante desaceleração: o leitor está justamente rolando **para cima** com inércia quando a cabeça é alcançada, e é aí que o SwiftUI costuma pular. A prova exigida, além do teste em processo, é XCUI ou B04: durante e depois do prepend, com fling para cima, o card que estava no topo da viewport tem delta de `minY` igual a 0 pt e nenhum card visível se move. Sem essa medição o prepend pode passar no teste de alcance e regredir o B04.
+2. **Memória limitada nos dois sentidos.** Com prepend e append, `window.items` cresce nas duas pontas, e hoje ninguém poda (achado R2). "Limitada em memória" precisa de regra explícita: ao admitir para trás, descartar da ponta da **frente** o que ficar além de `forwardCapacity` + margem em relação à âncora (e o simétrico no append). Os cards descartados voltam pela admissão da frente, que já existe. `boundedResidency` só libera bitmaps, não itens. Sugiro o teste "N fling para cima e para baixo: `items.count` ≤ B + F + 1 + margem".
+3. **Gatilho específico, não `.backward` genérico.** `RunwayActivity.backward` vem do sentido do movimento (`FeedScreen.swift`, geometry/card motion) e dispara em qualquer rolagem para cima. O handler precisa exigir que a observação esteja **na cabeça admitida** (âncora == `items.first`, ou o primeiro card visível na viewport). Melhor ainda: um `explicitHeadApproach` espelhando `explicitTailApproach`, emitido pela captura como o `isLast` já é (`isFirst`). Isso evita prepends a cada gesto e mantém a assimetria visível no código.
+4. **Leitura do store para trás:** `cards(around:)` ignora visibilidade, como o próprio OMP mediu. Para trás isso é seguro em princípio (cards mais antigos já publicados), mas a regressão deve garantir que cards **arquivados por sucessão da cauda** (`retired_published_cards`) nunca voltem por esse caminho e que a ordem seja a da edição, sem duplicata.
+5. **Exposição e high-water:** o prepend não deve chamar `markSeen` nos cards anteriores, nem mover `high_water_card_id` para trás (`markSeen` já tem a guarda `prior.isBefore`, o que é bom). Também não deve mudar o checkpoint. Vale uma asserção.
+6. **Proveniência:** cada prepend é uma projeção nova (`projectWindow`, posição nova). Confirmar que `FeedPresentationState.receiving` aceita como mesmo `editionID`, mesma âncora e posição maior, sem reinstalar a lista, porque o fence atual foi escrito pensando em append.
+7. **Regressão:** além de `alcançados ⊆ alcançáveis depois`, a ordem pedida pelo Codex exige **navegar de volta para frente** depois de ir para trás. Exigir que a sequência de ids na ida e na volta seja idêntica (sem buraco nem duplicata na junção cabeça/cauda).
+
+Reviso o diff quando estiver na branch.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
