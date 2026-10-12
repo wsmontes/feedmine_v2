@@ -1,18 +1,33 @@
 diff --git a/FeedMineApp/FeedMineApp/AppComposition.swift b/FeedMineApp/FeedMineApp/AppComposition.swift
-index 7924b28..2fec8ca 100644
+index 7924b28..e98ebf5 100644
 --- a/FeedMineApp/FeedMineApp/AppComposition.swift
 +++ b/FeedMineApp/FeedMineApp/AppComposition.swift
-@@ -1079,8 +1079,18 @@ final class FeedAssociation {
+@@ -1079,8 +1079,33 @@ final class FeedAssociation {
          }
          let transport = URLSession(configuration: configuration)
          self.transport = transport
 +        #if DEBUG
 +        // Kiro K-05: an instrumented development/benchmark run may authorize the exact origin of its own
 +        // fixture server (http(s), non-public host, exact port), e.g. FEEDMINE_AUTHORIZED_FEED_ORIGIN=
-+        // http://192.168.1.76:8757. Never derived from catalog/OPML endpoints. A malformed or public value
-+        // fails the snapshot loudly instead of being ignored. Release builds do not compile this.
-+        let authorizedOrigins = ProcessInfo.processInfo.environment["FEEDMINE_AUTHORIZED_FEED_ORIGIN"]
-+            .flatMap { URL(string: $0) }.map { [$0] } ?? []
++        // http://192.168.1.76:8757, passed explicitly by the runner from its controlled-transport configuration.
++        // Never derived from catalog/OPML endpoints. Release builds do not compile this.
++        // Fail loudly: a present but empty or unparsable value throws here; a parsable but public, non-HTTP or
++        // userinfo origin is refused by the snapshot (.invalidAuthorizedOrigin). Unset means none.
++        struct MalformedAuthorizedFeedOrigin: Error, CustomStringConvertible {
++            let raw: String
++            var description: String { "FEEDMINE_AUTHORIZED_FEED_ORIGIN is not an http(s) origin URL: \"\(raw)\"" }
++        }
++        var authorizedOrigins: [URL] = []
++        if let raw = ProcessInfo.processInfo.environment["FEEDMINE_AUTHORIZED_FEED_ORIGIN"] {
++            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
++            guard let origin = URL(string: value), origin.scheme != nil, origin.host != nil else {
++                let failure = MalformedAuthorizedFeedOrigin(raw: raw)
++                Self.log("startup refused: \(failure)")
++                throw failure
++            }
++            Self.log("authorized non-public feed origin \(origin.absoluteString)")
++            authorizedOrigins = [origin]
++        }
 +        #else
 +        let authorizedOrigins: [URL] = []
 +        #endif
