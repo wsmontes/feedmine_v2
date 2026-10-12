@@ -63,10 +63,12 @@ public struct ReaderFilterDraft: Hashable, Sendable {
 
     // MARK: - Editing (the controls V1's sheet offers)
 
-    /// V1 toggled a language on and off, and reset the set when every language was deselected.
+    /// V1 toggled a language on and off, and reset the set when every language was deselected. The value is the
+    /// language, not the catalogue's code: a control that hands over `en-US` records `en`, and toggling it again
+    /// takes the language back off.
     public mutating func toggleLanguage(_ code: String) {
         guard availableCriteria.contains(.languages) else { return }
-        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = ReaderLanguageCode.choice(code)
         guard !normalized.isEmpty else { return }
         if languages.contains(normalized) { languages.remove(normalized) } else { languages.insert(normalized) }
     }

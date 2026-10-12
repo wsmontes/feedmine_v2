@@ -76,9 +76,13 @@ public struct ReaderImportResult: Hashable, Sendable {
     /// Entries the reader already had selected (nothing was written for them).
     public let alreadySelected: Int
     public let rejected: Int
+    /// Memberships written into the collection the import was filed into, in the same transaction. Zero when no
+    /// collection was asked for, or when every feed was already in it.
+    public let filedInCollection: Int
 
-    public init(insertedSources: Int, alreadySelected: Int, rejected: Int) {
+    public init(insertedSources: Int, alreadySelected: Int, rejected: Int, filedInCollection: Int = 0) {
         self.insertedSources = insertedSources; self.alreadySelected = alreadySelected; self.rejected = rejected
+        self.filedInCollection = filedInCollection
     }
 }
 

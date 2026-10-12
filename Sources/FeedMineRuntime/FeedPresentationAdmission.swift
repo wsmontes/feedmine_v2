@@ -29,8 +29,25 @@ public enum FeedPresentationAdmission: Hashable, Sendable {
     /// Installs the first presentation of an association, at most once per session.
     case initial(FeedPresentationBounds)
     /// Extends the admitted prefix after real forward movement of the reader.
-    /// Stationary, backward and layout-driven observations do not extend the boundary.
+    /// Stationary and layout-driven observations do not extend the boundary.
     case forwardScroll(ViewportObservation)
+    /// Extends the admitted list **below its head**, after real backward movement of the reader reached that head.
+    /// Mirror of `forwardScroll` in the direction the reader is actually moving: older cards already published are
+    /// prepended, the anchor, the edition and every already-admitted card keep their identity and position, and the
+    /// batch is bounded by the frozen backward bound. No network is involved — the cards come from the local store.
+    ///
+    /// Without this case the admitted list could only grow forward, and a relaunch that anchored the reader near
+    /// the tail left everything older than the frozen backward bound unreachable by any gesture (measured: 17 cards
+    /// visible before closing, 9 after reopening offline, and the 8 oldest reachable by nothing).
+    case backwardScroll(ViewportObservation)
+    /// Extends the admitted prefix with cards **already published** beyond the admitted tail, owned by
+    /// the runtime rather than by a reader gesture (F05/R4: the first open shows what the local store
+    /// already holds instead of waiting for a scroll that no one made).
+    ///
+    /// It invents no observation: the anchor, the reader's position and every already-admitted card are
+    /// untouched, and cards are only ever appended after the current tail, bounded by the frozen
+    /// forward capacity of the installed presentation. A window with nothing new is a no-op.
+    case publishedGrowth
     /// Recovers a presentation for an association that has none (relaunch after a state loss).
     case restore(FeedPresentationBounds)
 }
@@ -41,5 +58,12 @@ public extension RunwayActivity {
     /// backward gesture and a layout change never admit.
     var admitsForwardContent: Bool {
         self == .explicitTailApproach
+    }
+
+    /// Real backward movement *and* the need to reach what is below it: the reader has reached the admitted head.
+    /// A stationary settle and a layout change never admit, and the symmetric case has no separate activity — the
+    /// reader moving back **is** the demand, and the frozen backward bound is what keeps it bounded.
+    var admitsBackwardContent: Bool {
+        self == .backward
     }
 }

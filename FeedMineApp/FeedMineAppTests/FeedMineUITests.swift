@@ -1,6 +1,56 @@
 import XCTest
 
 final class FeedMineUITests: XCTestCase {
+    /// Persistent, opt-in scale/soak namespace. scripts/soak.py uses this exact UUID.
+    /// Never randomize or clear it: selection and checkpoints must survive the preparation test.
+    /// Requires Debug (Release ignores FEEDMINE_RUNTIME_NAMESPACE); uses public feeds, no fixtures.
+    private static let soakRuntimeNamespace = "B50A0000-0000-4000-8000-000000000030"
+
+    @MainActor
+    func testPreparePersistentScaleSoakThroughCountryCascade() throws {
+        // Keep the normal isolated UI gate from populating a persistent namespace or contacting RSS.
+        guard ProcessInfo.processInfo.environment["FEEDMINE_PREPARE_SCALE_SOAK"] == "1" else {
+            throw XCTSkip("Opt in with scripts/soak.py --prepare; this test preserves real reader state")
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = Self.soakRuntimeNamespace
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        for key in ["FEEDMINE_USE_DEVELOPMENT_FEEDS", "FEEDMINE_LOCAL_FEEDS",
+                    "FEEDMINE_BLOCK_RSS_NETWORK", "FEEDMINE_EMPTY_SELECTION", "FEEDMINE_MEDIA_SIMULATION"] {
+            app.launchEnvironment[key] = "0"
+        }
+        app.launch()
+        XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 120))
+        openMenu(app)
+        app.buttons["Fontes"].tap()
+        XCTAssertTrue(scrollIntoView(app.buttons["sources-open-countries"], in: app, timeout: 30))
+        app.buttons["sources-open-countries"].tap()
+        // The packaged V1 catalog places 1,411 feeds under Argentina's topic leaves.
+        let country = app.switches["country-toggle-argentina"]
+        XCTAssertTrue(scrollIntoView(country, in: app, timeout: 30))
+        guard country.exists else { return }
+        if country.value as? String != "selected" {
+            // T7: the row wraps the actual switch; tap that control, not the country drill-in.
+            let control = country.switches.firstMatch
+            XCTAssertTrue(control.waitForExistence(timeout: 10))
+            guard control.exists else { return }
+            control.tap()
+        }
+        let enabled = NSPredicate(format: "value == %@", "selected")
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: enabled, object: country)],
+            timeout: 60)
+        XCTAssertEqual(result, .completed, "The country cascade must finish persisting before closing")
+        guard result == .completed else { return }
+        let selectionProof = XCTAttachment(string: "namespace=\(Self.soakRuntimeNamespace) country=Argentina value=\(country.value ?? "nil")")
+        selectionProof.name = "persistent-soak-selection"
+        selectionProof.lifetime = .keepAlways
+        add(selectionProof)
+        // This closes the whole sheet and adopts the selection. Reopening can retain the countries
+        // navigation path; sources-enabled-count belongs to the root, not to that retained surface.
+        app.buttons["countries-done"].tap()
+        XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 120))
+    }
+
     // N1/N2: the test never constructs ViewportObservation or calls submitViewport.
     @MainActor
     func testContextNavigationAndSourcePickerOffline() throws {
@@ -119,6 +169,113 @@ final class FeedMineUITests: XCTestCase {
         app.buttons["countries-done"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60),
             "the selection the source surface accepted is what the app adopts when it closes")
+    }
+
+    /// PD-10 / the bundled bootstrap, black box: a **clean install** — a runtime namespace nothing has ever
+    /// written — with the app's own transport fault in force presents a feed, and the source it presents is the
+    /// one the reader took from the catalogue this build ships.
+    ///
+    /// `FEEDMINE_BLOCK_RSS_NETWORK=1` is set **before** `launch()`: the app's own fault configuration (a closed
+    /// local proxy), never a mock. Nothing is seeded from outside the app — no development-feeds list (the two
+    /// hardcoded DEBUG keys stay unused) and no reader state written by the test; the reader's own source surface
+    /// is the only thing that chooses anything.
+    ///
+    /// Where the attribution comes from: revision 5 of the shipped catalogue titles
+    /// `https://feeds.bbci.co.uk/news/science_and_environment/rss.xml` as **"BBC News"** (`sqlite3
+    /// Resources/catalog.sqlite`, `catalog_source.title`), placed under the leaf `15-nature-animals/wildlife-nature`
+    /// — node ids 582585858 / 560998273 as this snapshot declares them. The document that answers the fetch calls
+    /// itself "BBC Science", and the development-feeds list this test does *not* enable would have said
+    /// "BBC Science" too. A card whose own source line reads "BBC News" therefore states the catalogue's title,
+    /// resolved through the catalogue, and not the document's or a fixture list's.
+    ///
+    /// `FEEDMINE_LOCAL_FEEDS=1` is the app's own DEBUG local-feed transport: it answers the two BBC endpoints the
+    /// catalogue itself names, in-process. It is the only reason article text can exist with the network gone; the
+    /// public transport under test is blocked either way, and none of the catalogue's other sources answers.
+    ///
+    /// The reader chooses **one** source deliberately. An earlier version of this test turned the whole
+    /// `Nature & Animals` section on (348 catalogue keys) and no card had been published after 900 s: that run's
+    /// own runtime database held 188 registered targets and zero fetched origins, and the one source the local
+    /// transport answers sits at position 111 of those 348 keys — measured, not guessed. Selecting that single
+    /// source is the difference between "still working through the section" and a presentation.
+    @MainActor
+    func testCleanInstallPresentsTheBundledCatalogueSourceWithTransportBlocked() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        let started = Date()
+        app.launch()
+
+        // 1. The install presents with the transport dead. A clean reader has chosen nothing, and the app says so
+        //    with its own surface instead of waiting on a request.
+        let emptyTitle = app.staticTexts["feed-empty-title"]
+        XCTAssertTrue(emptyTitle.waitForExistence(timeout: 300),
+            "a clean install presents its own surface with the network blocked")
+        XCTAssertEqual(emptyTitle.label, "Nenhuma fonte habilitada")
+        print("BLACKBOX_EMPTY_SURFACE_SECONDS=\(String(format: "%.1f", Date().timeIntervalSince(started)))")
+
+        // 2. The reader takes the source out of the shipped catalogue, through the app's own source surface: the
+        //    catalogue's own section → its own leaf, then the row of the one key this build's local transport can
+        //    answer at all. The reader's selection is exactly that key, so the session has exactly one target and
+        //    the presentation cannot be waiting on any other fetch.
+        app.buttons["feed-empty-action"].tap()
+        let sectionRow = app.buttons["node-child-582585858"]
+        XCTAssertTrue(scrollIntoView(sectionRow, in: app, timeout: 90),
+            "the source surface lists the catalogue's own sections")
+        sectionRow.tap()
+        let leafRow = app.buttons["node-child-560998273"]
+        XCTAssertTrue(leafRow.waitForExistence(timeout: 60),
+            "the section opens the catalogue's own leaf, Wildlife & Nature")
+        leafRow.tap()
+        let sourceKey = "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"
+        let sourceRow = app.switches["node-source-toggle-\(sourceKey)"]
+        XCTAssertTrue(scrollIntoView(sourceRow, in: app, timeout: 240),
+            "the leaf lists the catalogue's own sources, this key among them")
+        XCTAssertEqual(sourceRow.label, "BBC News", "the row carries the catalogue's title for this key")
+        let control = sourceRow.switches.firstMatch
+        if control.exists { control.tap() } else { sourceRow.tap() }
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"),
+            object: sourceRow)
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 60), .completed,
+            "the row states that the reader's selection is now this source")
+        let chosen = Date()
+        print("BLACKBOX_SELECTION_SECONDS=\(String(format: "%.1f", chosen.timeIntervalSince(started)))")
+
+        // 3. Back to the surface's root and close it: closing is the adopt, and the app rebuilds the session over
+        //    the catalogue's source.
+        for _ in 0..<2 {
+            let back = app.navigationBars.buttons.element(boundBy: 0)
+            XCTAssertTrue(back.waitForExistence(timeout: 20), "the surface navigates back out of the node")
+            back.tap()
+        }
+        let done = app.buttons["sources-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 20), "the source surface's own close control is back")
+        done.tap()
+
+        // 4. The feed presents content with the transport blocked: the card the suite already identifies by the
+        //    published occurrence's own UUID.
+        let card = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", Self.cardIdentifier)).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 900),
+            "the source the catalogue named reaches the feed with the network blocked")
+        print("BLACKBOX_FIRST_CARD_SECONDS=\(String(format: "%.1f", Date().timeIntervalSince(started)))")
+        print("BLACKBOX_SELECTION_TO_CARD_SECONDS=\(String(format: "%.1f", Date().timeIntervalSince(chosen)))")
+
+        // The card states the **catalogue's** title for the source it came from (the document's own channel title
+        // is "BBC Science"), and its text is the local document's articles, so both halves are visible at once.
+        if !card.staticTexts["BBC News"].exists {
+            print("BLACKBOX_TREE_BEGIN\n\(app.debugDescription)\nBLACKBOX_TREE_END")
+        }
+        XCTAssertTrue(card.staticTexts["BBC News"].exists,
+            "the card states the catalogue's title for this source, not the document's own channel title")
+        let stories = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'BBC Science story '"))
+        XCTAssertGreaterThan(stories.count, 0, "the presented card carries the local feed document's articles")
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "v2-bundled-catalogue-clean-install-offline"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     /// T8: the reader's bookmark boxes — V1's screen, managing real persisted boxes, and their own contents.
@@ -308,6 +465,74 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
 
+    /// F02: the discovery answers have a page of their own in the adjustments — the same controls the first run
+    /// shows, over the stored profile — and an answer given there is still there when the page is opened again.
+    @MainActor
+    func testDiscoveryPreferencesAreAPageOfTheirOwn() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
+        openMenu(app)
+        app.buttons["Ajustes"].tap()
+        XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 15))
+
+        let row = app.buttons["settings-discovery-preferences"]
+        for _ in 0..<5 where !row.isHittable { app.swipeUp() }
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "the adjustments offer the discovery preferences")
+        row.tap()
+        XCTAssertTrue(app.navigationBars["Preferências de descoberta"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["discovery-preferences-summary"].exists,
+            "the page states what the answers are for")
+
+        let languages = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'discovery-language-'"))
+        XCTAssertTrue(languages.firstMatch.waitForExistence(timeout: 10),
+            "the page offers the catalogue's own languages")
+        let chosen = languages.firstMatch
+        let identifier = chosen.identifier
+        XCTAssertFalse(chosen.isSelected, "nothing is chosen before the reader says so")
+        chosen.tap()
+        XCTAssertTrue(chosen.isSelected, "a chosen language states itself to assistive technology")
+        let pageShot = XCTAttachment(screenshot: app.screenshot())
+        pageShot.name = "v2-discovery-preferences"
+        pageShot.lifetime = .keepAlways
+        add(pageShot)
+
+        // Leave the page and come back: the answer is the database's, not the screen's.
+        app.navigationBars["Preferências de descoberta"].buttons.firstMatch.tap()
+        for _ in 0..<5 where !row.isHittable { app.swipeUp() }
+        row.tap()
+        XCTAssertTrue(app.navigationBars["Preferências de descoberta"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons[identifier].waitForExistence(timeout: 10),
+            "the same answer is still there after leaving the page")
+        XCTAssertTrue(app.buttons[identifier].isSelected, "and it is still stated as chosen")
+
+        // A feed of the reader's own, built from exactly these answers: it gets a name, and creating it opens
+        // nothing — the offer to open it appears, and the page is still the page.
+        let nameField = app.textFields["discovery-feed-name"]
+        for _ in 0..<8 where !nameField.isHittable { app.swipeUp() }
+        XCTAssertTrue(nameField.waitForExistence(timeout: 10), "the page offers a feed built from these rules")
+        nameField.tap()
+        nameField.typeText("Ciência")
+        let create = app.buttons["discovery-create-feed"]
+        for _ in 0..<4 where !create.isHittable { app.swipeUp() }
+        XCTAssertTrue(create.isHittable, "and the action to create it")
+        create.tap()
+        XCTAssertTrue(app.buttons["discovery-open-created-feed"].waitForExistence(timeout: 20),
+            "creating a feed offers to open it — it never opens it by itself")
+        XCTAssertTrue(app.staticTexts["discovery-create-note"].exists,
+            "and says so: creating does not change what the reader is reading")
+        XCTAssertTrue(app.navigationBars["Preferências de descoberta"].exists,
+            "the reader is still on the page: nothing was activated behind their back")
+
+        app.navigationBars["Preferências de descoberta"].buttons.firstMatch.tap()
+        app.buttons["settings-done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+    }
+
     /// T10: the import preview states what a file offers before anything is written, its confirmation writes it,
     /// and the export sheet shows the document it would produce.
     @MainActor
@@ -351,9 +576,11 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
 
-    /// T11: V1's two-stage onboarding — Welcome, then the Composer — and the feed its answers produce.
+    /// F02's first run (the journey the acceptance benchmark walks): the reader answers **idiomas e lugares**,
+    /// enters the feed, and **no thematic question** stands between them and discovery. The controls the product
+    /// keeps for whoever wants to tune the machinery are reachable *by choice*, in the discovery preferences.
     @MainActor
-    func testOnboardingWelcomeComposerAndSave() throws {
+    func testFirstRunCollectsLanguagesAndPlacesAndEntersTheFeed() throws {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
@@ -365,45 +592,40 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["welcome-body"].exists)
         XCTAssertTrue(app.otherElements["welcome-trust"].exists)
         app.buttons["welcome-shape"].tap()
-        // Stage 2: the composer, with the controls V1 had.
+
+        // Stage 2: the two answers the first run collects — and nothing thematic.
         XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.sliders["composer-discovery"].exists)
-        XCTAssertTrue(app.buttons["composer-language-pt"].exists || app.buttons.matching(
-            NSPredicate(format: "identifier BEGINSWITH 'composer-language-'")).firstMatch.exists)
-        // The Composer scrolls: its topic rows and media toggles sit below the fold. The scroll is anchored on
-        // the Composer's own vertical scroll view — the gate's first — and never on the horizontal preview zone
-        // inside it, which leaves the screen as soon as the sheet moves.
-        let composer = element(app, "onboarding").scrollViews.firstMatch
-        XCTAssertTrue(composer.waitForExistence(timeout: 10), "the Composer is on screen")
-        composer.swipeUp()
-        let topic = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-topic-'")).firstMatch
-        XCTAssertTrue(topic.waitForExistence(timeout: 10), "the Composer offers its topic controls")
-        // A topic cycles normal → more → less → normal, and the label follows.
-        let label = topic.label
-        topic.tap()
-        XCTAssertNotEqual(topic.label, label, "tapping a topic changes its answer")
-        let podcast = app.switches["composer-media-podcast"]
-        XCTAssertTrue(podcast.waitForExistence(timeout: 10), "the Composer offers its media toggles")
-        // The last rows sit below the fold: the sheet's own scroll view is what moves them, and the footer is
-        // its sibling, so the toggle ends above the footer instead of under its own buttons.
-        for _ in 0..<4 where !podcast.isHittable { composer.swipeUp() }
-        XCTAssertTrue(podcast.isHittable, "the Composer's media toggles are reachable")
-        // The control is the row's trailing switch (the row's own label is not its target), so the switch's own
-        // position is what is tapped — and the toggle states the answer it took.
-        podcast.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        XCTAssertEqual(podcast.value as? String, "0", "the toggle states what the reader chose")
-        // The footer saves and opens the feed.
+        let languages = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-language-'"))
+        XCTAssertTrue(languages.firstMatch.waitForExistence(timeout: 10), "the first run offers the languages")
+        let places = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-region-'"))
+        XCTAssertTrue(places.firstMatch.waitForExistence(timeout: 10), "and the catalogue's places")
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-topic-'")).count, 0,
+            "no subject is asked before discovery: subjects are answered inside the feed")
+        XCTAssertFalse(app.switches["composer-media-podcast"].exists,
+            "the machinery is not put in the reader's way on the way in")
+        XCTAssertFalse(app.sliders["composer-discovery"].exists, "nor is the depth dial")
+
+        // An answer states itself, and one place is enough to mean "this is where I am curious about".
+        let place = places.firstMatch
+        XCTAssertFalse(place.isSelected)
+        place.tap()
+        XCTAssertTrue(place.isSelected, "the chosen place is stated to assistive technology")
+
+        // The reader enters the feed: the first screen is content, not a form.
         app.buttons["composer-open-feed"].tap()
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60))
-        XCTAssertFalse(app.staticTexts["welcome-headline"].exists, "the gate is done")
-        // And the reader can reach the hood of the feed they just made.
-        openMenu(app)
-        XCTAssertTrue(app.buttons["Abrir o capô do feed curado"].waitForExistence(timeout: 10))
-        app.buttons["Abrir o capô do feed curado"].tap()
-        XCTAssertTrue(app.staticTexts["hood-badge"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.staticTexts["hood-privacy"].exists)
-        app.buttons["hood-close"].tap()
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 120),
+            "the first run ends in the feed, without opening the sources screen")
+        XCTAssertFalse(app.staticTexts["welcome-headline"].exists, "the first run is done")
+
+        // The first run is over and the feed is the reader's surface: nothing of the first run is still up.
+        XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForNonExistence(timeout: 30),
+            "the first run is dismissed")
+        XCTAssertTrue(app.buttons["card.bookmark"].firstMatch.waitForExistence(timeout: 45),
+            "and the reader has cards, not a form")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "v2-first-run"
+        shot.lifetime = .keepAlways
+        add(shot)
     }
 
     /// T12: the native gestures and the reader's own settings — a long scroll down and back, a rotation, a
@@ -473,9 +695,16 @@ final class FeedMineUITests: XCTestCase {
         let firstCard = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier MATCHES %@", Self.cardIdentifier)).firstMatch
         XCTAssertTrue(firstCard.waitForExistence(timeout: 45), "a real published occurrence must appear")
-        pressCard(firstCard)
-        XCTAssertTrue(app.buttons["Salvar artigo"].waitForExistence(timeout: 10), "the card menu offers saving")
-        app.buttons["Salvar artigo"].tap()
+        // The reader's own save control on the card. The long press opens the card's `contextMenu`, which also
+        // offers "Salvar artigo" (`FeedItemCardView` ~337) — but the press did not reach it on this surface, and
+        // that is an **open question**, not something this test may paper over: what this test measures is the
+        // persistence path, and `card.bookmark` is the control the reader sees on the card itself. The state is
+        // compared, not merely tapped, so "saved" means saved.
+        let bookmark = firstCard.buttons["card.bookmark"]
+        XCTAssertTrue(bookmark.waitForExistence(timeout: 15), "the card offers saving")
+        XCTAssertEqual(bookmark.value as? String, "not bookmarked", "the card starts unsaved")
+        bookmark.tap()
+        XCTAssertEqual(bookmark.value as? String, "bookmarked", "saving the card records its state")
         // Offline, and a fresh launch of the same reader's store.
         app.terminate()
         app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
@@ -756,6 +985,223 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(scroll.waitForExistence(timeout: 10))
     }
 
+    /// R5/F05: the first open presents what the local store already published, without any gesture. Before
+    /// the runtime-owned growth the admitted window held exactly the first card and the rest of the screen
+    /// stayed empty until the reader scrolled; this asserts the window grew on its own — the delivery
+    /// counters must still read zero — and that the reading point survives a foreground.
+    @MainActor
+    func testFirstOpenExpandsTheAdmittedWindowWithoutAGesture() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        XCTAssertEqual(proof.label, "received=0 completed=0 backward=0",
+            "the first open must not depend on a reader observation")
+        let cards = app.buttons.matching(identifier: "card.bookmark")
+        XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 45), "the first card is the first fact")
+        let expanded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count >= 2"), object: cards)
+        XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 60), .completed,
+            "the admitted window must grow with the cards the store already published; observed \(cards.count)")
+        let reference = try XCTUnwrap(topmostCard(app: app, scroll: scroll), "a card must be visible")
+        let referenceID = reference.identifier
+        let referenceTop = reference.frame.minY
+        XCTAssertEqual(proof.label, "received=0 completed=0 backward=0", "still no reader gesture")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 20))
+        let afterForeground = try XCTUnwrap(topmostCard(app: app, scroll: scroll))
+        XCTAssertEqual(afterForeground.identifier, referenceID, "the reading point survives a foreground")
+        XCTAssertEqual(afterForeground.frame.minY, referenceTop, accuracy: 1,
+            "and the offset inside the viewport survives with it")
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "r5-first-open-expanded"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    /// R5/PO: a reader whose attempt finished without eligible stories gets the honest surface and its two
+    /// actions — "Tentar novamente" keeps them on a truthful surface, "Ajustar interesses" opens the existing
+    /// flow that owns the interests. `FEEDMINE_EMPTY_FEEDS=1` makes the controlled transport answer with its
+    /// channel and no stories, so nothing here depends on the network failing.
+    @MainActor
+    func testNoStoriesSurfaceOffersItsRecoveryActions() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_EMPTY_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        let title = app.staticTexts["Ainda não encontramos histórias para você."]
+        XCTAssertTrue(title.waitForExistence(timeout: 90), "the surface states the attempt's result")
+        let tryAgain = app.buttons["Tentar novamente"]
+        let adjust = app.buttons["Ajustar interesses"]
+        XCTAssertTrue(tryAgain.exists, "the retry action is offered")
+        XCTAssertTrue(adjust.exists, "and the way to the interests")
+        tryAgain.tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 45), "trying again keeps the reader on a truthful surface")
+        adjust.tap()
+        XCTAssertTrue(app.buttons["settings-done"].waitForExistence(timeout: 30),
+            "adjusting interests opens the existing flow that owns them")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "r5-no-stories-recovery"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    /// R5/PO: the acceptance journey — the first run over the **shipped catalogue** and the real network. The
+    /// reader answers the two questions, enters the feed, and the window expands on its own: no gesture, no
+    /// refresh. It needs the network, like the real-RSS lifecycle test beside it, and exists so the journey the
+    /// PO asked to see can be demonstrated (and recorded) instead of described.
+    @MainActor
+    func testFirstRunOverTheRealCatalogueExpandsWithoutAGesture() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 60))
+        app.buttons["welcome-shape"].tap()
+        XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForExistence(timeout: 20))
+        // The journey round 3 measured: a language and a place, which is what makes the shipped catalogue
+        // answer with more than a single story.
+        let languages = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-language-'"))
+        if languages.firstMatch.waitForExistence(timeout: 10) {
+            let portuguese = languages.matching(NSPredicate(format: "label CONTAINS[c] 'Portuguese'")).firstMatch
+            if portuguese.exists { portuguese.tap() }
+        }
+        let places = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-region-'"))
+        XCTAssertTrue(places.firstMatch.waitForExistence(timeout: 30), "the shipped catalogue offers its places")
+        let brazil = places.matching(NSPredicate(format: "label CONTAINS[c] 'Brazil'")).firstMatch
+        (brazil.exists ? brazil : places.firstMatch).tap()
+        app.buttons["composer-open-feed"].tap()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 180), "the first run ends in the feed")
+        let cards = app.buttons.matching(identifier: "card.bookmark")
+        XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 240), "the first card is the first fact")
+        // The acceptance the PO asked for: cards the store already published reach the screen without a
+        // gesture. Measured open defect (R5): with the shipped catalogue the growth runs and admits nothing —
+        // the log says `published growth: admitted 1 -> 1` while the store holds 22 published cards (1+1+20
+        // segments) and the screen keeps one. The window's materialisation stops at the segment boundary, which
+        // is publication-side work owned elsewhere. This expectation is deliberately left FAILING (the PO's
+        // decision on the round: a red acceptance test documents the defect; it must not be hidden or softened).
+        let expanded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count >= 2"), object: cards)
+        XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 60), .completed,
+            "already-published cards must arrive without a gesture; observed \(cards.count)")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "r5-real-catalogue-first-run"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    /// R5/PO: the restoration risk, measured. A reopen may legitimately materialise a smaller window; what it
+    /// must not do is lose continuity — the reader returns to their card, and every card the edition already
+    /// published stays reachable without a refresh. This is the discrimination the PO asked for before
+    /// accepting the reopen experience (anchor preservation alone does not prove it).
+    @MainActor
+    func testReopenKeepsPublishedCardsReachable() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        // Identity, not count: the published occurrence each card carries as its accessibility identifier (the
+        // pattern the real-RSS lifecycle test uses). The bookmark buttons all share one identifier, so counting
+        // them cannot say whether a *particular* card stayed reachable.
+        let cards = app.descendants(matching: .any).matching(NSPredicate(format: "identifier MATCHES %@",
+            "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"))
+        XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 45), "a real published occurrence must appear")
+        let before = collectCardIdentifiers(cards, scroll: scroll, passes: 8)
+        XCTAssertGreaterThan(before.count, 1, "the controlled transport publishes more than one card")
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 45), "the reopened feed has cards")
+        let after = collectCardIdentifiers(cards, scroll: scroll, passes: 10)
+        let missing = before.subtracting(after)
+        XCTAssertTrue(missing.isEmpty,
+            "cards published before the reopen must stay reachable; missing \(missing.count) of \(before.count): \(missing.sorted())")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "r5-reopen-continuity"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    /// Every card identifier a slow forward scroll makes reachable, unioned across passes.
+    private func collectCardIdentifiers(_ cards: XCUIElementQuery, scroll: XCUIElement, passes: Int) -> Set<String> {
+        var seen = Set<String>()
+        for _ in 0..<passes {
+            for element in cards.allElementsBoundByIndex { seen.insert(element.identifier) }
+            scroll.swipeUp(velocity: .slow)
+        }
+        for element in cards.allElementsBoundByIndex { seen.insert(element.identifier) }
+        return seen
+    }
+
+    /// R5/PO: the other half of the discrimination, on the shipped catalogue — the cards the store published are
+    /// *not lost*, they are reachable with a scroll even when the window did not fill itself. Together with the
+    /// red expectation above this says: "not admitted without a gesture" (defect), not "unreachable" (worse).
+    @MainActor
+    func testRealCatalogueCardsStayReachableByScrolling() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 60))
+        app.buttons["welcome-shape"].tap()
+        XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForExistence(timeout: 20))
+        // Addressed by identifier, never by text: two languages can read alike, and the interface language is
+        // whatever the device is set to (round 9 replaced the ambiguous `label CONTAINS 'Portuguese'` lookup).
+        let portuguese = app.buttons["composer-language-pt"]
+        if portuguese.waitForExistence(timeout: 10) { portuguese.tap() }
+        let places = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-region-'"))
+        XCTAssertTrue(places.firstMatch.waitForExistence(timeout: 30))
+        let brazil = places.matching(NSPredicate(format: "identifier CONTAINS[c] 'brazil'")).firstMatch
+        (brazil.exists ? brazil : places.firstMatch).tap()
+        app.buttons["composer-open-feed"].tap()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 180))
+        let occurrences = app.descendants(matching: .any).matching(NSPredicate(format: "identifier MATCHES %@",
+            "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"))
+        XCTAssertTrue(occurrences.firstMatch.waitForExistence(timeout: 240), "the first card is the first fact")
+        let reachable = collectCardIdentifiers(occurrences, scroll: scroll, passes: 6)
+        XCTAssertGreaterThan(reachable.count, 1,
+            "the store's published cards must be reachable with a scroll; reachable \(reachable.count)")
+    }
+
+    /// R7/Codex: a publication that completes **after** the bounded follow-up has finished must still reach the
+    /// window by itself. The second endpoint answers late (`FEEDMINE_SLOW_FEED_SECONDS=10`), so the burst lands
+    /// after the timed chain is over — growth has to be bound to the publication event, not to the clock.
+    @MainActor
+    func testPublicationAfterTheFollowUpWindowStillReachesTheWindow() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["FEEDMINE_SLOW_FEED_SECONDS"] = "10"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        let cards = app.buttons.matching(identifier: "card.bookmark")
+        XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 60), "the first card is the first fact")
+        // The timed follow-up (8 × 0,75 s) is long over by the time the late endpoint answers.
+        let expanded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count >= 2"), object: cards)
+        XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 90), .completed,
+            "a publication after the follow-up window must still fill the window; observed \(cards.count)")
+        XCTAssertEqual(proof.label, "received=0 completed=0 backward=0", "and still without a gesture")
+    }
+
     /// T5: the reader's chrome is V1's, every control reaches a real flow, and no gesture is swallowed
     /// by an overlapping one. Only the actions this build executes are offered, so nothing here can be a
     /// dead control.
@@ -796,7 +1242,8 @@ final class FeedMineUITests: XCTestCase {
         app.buttons["search-button"].tap()
         XCTAssertTrue(app.textFields["reader-search-field"].waitForExistence(timeout: 10))
         app.buttons["reader-search-cancel"].tap()
-        XCTAssertFalse(app.textFields["reader-search-field"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForAbsence(app.textFields["reader-search-field"], timeout: 10),
+            "cancelling the search closes its field")
         XCTAssertTrue(scroll.waitForExistence(timeout: 10))
         // A long press reaches the card's own menu; the same card's tap is not consumed by it.
         let cards = app.descendants(matching: .any)
@@ -824,6 +1271,176 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "tapping the card must open it")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "t5-shell-and-gestures"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    /// Adding a feed from a link, on screen: the reader pastes an address into V1's own sheet, the address is
+    /// discovered into a feed, the feed is added, and the reader reads it — and it is still there after the app
+    /// is relaunched. The site and its feed come from the app's own fixture, so no test touches the network.
+    ///
+    /// The reader starts with no sources at all — V1's own state, where the way to get content is to add it —
+    /// so what is published afterwards can only be the feed the reader brought.
+    @MainActor
+    func testAddFeedByLinkDiscoversAddsAndReadsIt() throws {
+        let namespace = UUID().uuidString
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_ADD_FEED_FIXTURE"] = "1"
+        app.launchEnvironment["FEEDMINE_EMPTY_SELECTION"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(element(app, "feed-empty-state").waitForExistence(timeout: 60),
+            "the reader's own chrome is drawn with no sources, which is where adding one starts")
+
+        openMenu(app)
+        app.buttons["Adicionar feed"].tap()
+        XCTAssertTrue(app.navigationBars["Adicionar fontes"].waitForExistence(timeout: 20),
+            "V1's add-feed sheet must be offered by the reader's own menu")
+        let field = element(app, "add-feed-input")
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        // A pasted address, exactly as a reader would: the site that declares its own feed.
+        field.tap()
+        field.typeText("https://site.feedmine.test/")
+        app.buttons["add-feed-add"].tap()
+
+        let added = element(app, "add-feed-result-added")
+        XCTAssertTrue(added.waitForExistence(timeout: 30), "the sheet states what it added")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "add-feed-sheet"
+        shot.lifetime = .keepAlways
+        add(shot)
+        app.buttons["add-feed-cancel"].tap()
+
+        // The feed the reader added is theirs: its own card is in the feed, read from the real runtime.
+        let card = app.staticTexts["Fixture site story 3"]
+        XCTAssertTrue(scrollIntoView(card, in: app, timeout: 90),
+            "the added feed's own headline must be publishable and visible")
+        let readShot = XCTAttachment(screenshot: app.screenshot())
+        readShot.name = "add-feed-card"
+        readShot.lifetime = .keepAlways
+        add(readShot)
+
+        // And it survives a relaunch: the same namespace, the feed still read. The launch that started with no
+        // selection is over — the reader has a source now, and that is what the reopened app must find.
+        app.terminate()
+        app.launchEnvironment["FEEDMINE_EMPTY_SELECTION"] = "0"
+        app.launch()
+        XCTAssertTrue(scrollIntoView(app.staticTexts["Fixture site story 3"], in: app, timeout: 90),
+            "the feed the reader added is still read after a relaunch")
+    }
+
+    /// The content filters' own surface, on screen: V1's templates, the reader's own words, and the master switch
+    /// that turns the hiding off without erasing a rule — which is what the surface itself states.
+    @MainActor
+    func testContentFilterSurfaceListsTemplatesAndKeepsTheRules() throws {
+        let namespace = UUID().uuidString
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 45))
+
+        openMenu(app)
+        app.buttons["Ajustes"].tap()
+        XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 20))
+        let rules = element(app, "settings-content-filter-rules")
+        XCTAssertTrue(scrollIntoView(rules, in: app, timeout: 20), "the settings must offer the filter rules")
+        rules.tap()
+        XCTAssertTrue(app.navigationBars["Filtros de conteúdo"].waitForExistence(timeout: 20))
+
+        // V1's six templates are offered, each stating how many rules it adds.
+        for key in ["politics", "violence", "crypto", "sports", "celebrity", "ai_hype"] {
+            XCTAssertTrue(element(app, "content-filter-template-\(key)").exists, "missing template \(key)")
+        }
+        let state = element(app, "content-filter-state")
+        XCTAssertTrue(state.waitForExistence(timeout: 10))
+        XCTAssertTrue(state.label.contains("aplicadas"), "the filters start on: \(state.label)")
+
+        // The master switch states what it does, in both directions. A SwiftUI toggle row wraps the actual
+        // switch, so the control is the switch inside the row (the same shape T7's country rows have).
+        func tapGate() {
+            let row = app.switches["content-filter-enabled"].firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 10), "the master switch must be drawn")
+            let control = row.switches.firstMatch.exists ? row.switches.firstMatch : row
+            control.tap()
+        }
+        tapGate()
+        let off = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Desligado"),
+            object: state)
+        XCTAssertEqual(XCTWaiter.wait(for: [off], timeout: 10), .completed,
+            "with the switch off the surface says the rules are kept and nothing is hidden")
+        tapGate()
+
+        // A rule the reader writes is listed, and survives leaving and reopening the surface.
+        element(app, "content-filter-add-rule").tap()
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.typeText("casino, apostas")
+        app.alerts.buttons["Adicionar"].tap()
+        XCTAssertTrue(scrollIntoView(element(app, "content-filter-rule"), in: app, timeout: 15),
+            "the reader's own rule is listed")
+        app.navigationBars["Filtros de conteúdo"].buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 15))
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "content-filters-settings"
+        shot.lifetime = .keepAlways
+        add(shot)
+
+        XCTAssertTrue(scrollIntoView(rules, in: app, timeout: 20))
+        rules.tap()
+        XCTAssertTrue(app.navigationBars["Filtros de conteúdo"].waitForExistence(timeout: 20))
+        XCTAssertTrue(scrollIntoView(app.staticTexts["casino"], in: app, timeout: 15),
+            "the words the reader wrote are still there")
+        XCTAssertTrue(app.staticTexts["apostas"].exists, "every word the reader wrote is a rule of its own")
+        app.navigationBars["Filtros de conteúdo"].buttons.element(boundBy: 0).tap()
+        app.buttons["settings-done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
+    }
+
+    /// The reader's own resume, on screen: an episode plays, the app goes away, the app comes back, and the
+    /// episode is where they left it — V1's own promise (`savePosition` / `restorePositionIfNeeded`).
+    ///
+    /// The lock screen's own continuity is not asserted here: what the simulator can prove is that the episode
+    /// keeps playing while the app is not in front (the audio session and the background mode are declared), and
+    /// the lockscreen/headphone commands need a physical device to be observed end to end.
+    @MainActor
+    func testPlaybackResumesWhereTheReaderLeftIt() throws {
+        let namespace = UUID().uuidString
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["FEEDMINE_MEDIA_SIMULATION"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60))
+        XCTAssertTrue(app.buttons["mini-player-toggle"].waitForExistence(timeout: 60),
+            "the simulated episode is up in the reader's own bar")
+
+        // Long enough for the player to have written a position past V1's five-second threshold.
+        Thread.sleep(forTimeInterval: 8)
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 1)
+        app.terminate()
+
+        app.launch()
+        XCTAssertTrue(app.buttons["mini-player-toggle"].waitForExistence(timeout: 60),
+            "the episode is up again after the relaunch")
+        let bar = element(app, "mini-player")
+        XCTAssertTrue(bar.waitForExistence(timeout: 10))
+        bar.tap()
+        XCTAssertTrue(app.otherElements["full-player"].waitForExistence(timeout: 15))
+        let scrub = app.sliders["full-player-scrub"]
+        XCTAssertTrue(scrub.waitForExistence(timeout: 15), "the full player states where the reader is")
+        let resumed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != %@", "0%"), object: scrub)
+        XCTAssertEqual(XCTWaiter.wait(for: [resumed], timeout: 20), .completed,
+            "the episode must resume where the reader left it, not at the beginning (value: \(scrub.value ?? "nil"))")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "playback-resumed"
         shot.lifetime = .keepAlways
         add(shot)
     }
@@ -856,6 +1473,15 @@ final class FeedMineUITests: XCTestCase {
     /// identifier.
     private static let cardIdentifier =
         "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"
+
+    /// Waits for an element to stop existing. `waitForExistence` cannot express this, and the mistake is easy to
+    /// make: it returns true immediately while the element is still there, so an *inverted* assertion built on it
+    /// passes the instant a transition begins rather than when it ends. An absence has to be awaited as one.
+    @MainActor
+    private func waitForAbsence(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
+        return XCTWaiter().wait(for: [gone], timeout: timeout) == .completed
+    }
 
     /// The card's own element contains the card, so a hit test at its centre lands on what is inside it; the
     /// reader's own long press therefore goes through that centre. It is still a real press on the card they
@@ -904,14 +1530,19 @@ final class FeedMineUITests: XCTestCase {
             "editing the draft enables Clear All, which was disabled on a clean selection")
         app.buttons["filter-done"].tap()
         // The transition is explicit and complete: the sheet is gone and the reader is on the filtered context.
-        XCTAssertFalse(app.buttons["filter-done"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForAbsence(app.buttons["filter-done"], timeout: 90),
+            "the transition closes the sheet before the reader is back")
         XCTAssertTrue(scroll.waitForExistence(timeout: 20), "the reader keeps a feed after the transition")
         XCTAssertTrue(proof.waitForExistence(timeout: 10))
         // The lens states the criterion that is applied and removes exactly that one when its chip is tapped.
         let lensChip = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'lens-chip-language-'")).firstMatch
         XCTAssertTrue(lensChip.waitForExistence(timeout: 10), "an applied criterion must show its chip")
         lensChip.tap()
-        XCTAssertFalse(lensChip.waitForExistence(timeout: 5), "removing the chip clears that criterion")
+        // Removing the criterion has to be awaited as an absence: `waitForExistence` returns true the instant the
+        // chip still exists, so the inverted form would pass before the transition had done anything. The tap is
+        // deliberately left as a plain `tap()` — if the chip is not hittable, that is a finding, not a nuisance to
+        // be routed around with a coordinate press.
+        XCTAssertTrue(waitForAbsence(lensChip, timeout: 10), "removing the chip clears that criterion")
         XCTAssertTrue(scroll.waitForExistence(timeout: 20), "the reader survives a criterion removal")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "t6-filter-transition"
@@ -993,7 +1624,7 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, "ciencia", "the field takes what the reader types")
         XCTAssertEqual(proof.label, before, "writing a query is not an update the reader asked for")
         app.buttons["reader-search-cancel"].tap()
-        XCTAssertFalse(field.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForAbsence(field, timeout: 10), "cancelling the search closes its field")
         XCTAssertTrue(scroll.waitForExistence(timeout: 10))
         XCTAssertTrue(card.waitForExistence(timeout: 20), "the same card is still there to read")
         XCTAssertEqual(proof.label, before, "cancelling restores the reader instead of rebuilding the session")
@@ -1069,5 +1700,127 @@ final class FeedMineUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    /// Round 9: the composer offers one chip per language — never the catalogue's code, never two chips a reader
+    /// cannot tell apart — and the catalogue's regional codes appear as information, counted, with nothing
+    /// selectable inside the expansion.
+    @MainActor
+    func testComposerOffersOneChipPerLanguage() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(pt-BR)", "-AppleLocale", "pt_BR"]
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 90))
+        XCTAssertEqual(app.staticTexts["welcome-headline"].label, "A web aberta, arrumada por você.",
+            "the head-line is the interface's, not a fixed English string")
+        app.buttons["welcome-shape"].tap()
+
+        let chips = app.buttons.matching(NSPredicate(format: "identifier MATCHES %@", "composer-language-[a-z]{2,3}"))
+        XCTAssertTrue(chips.firstMatch.waitForExistence(timeout: 90),
+            "the composer offers the catalogue's languages")
+        let labels = chips.allElementsBoundByIndex.map(\.label)
+        XCTAssertEqual(Set(labels).count, labels.count, "two chips a reader cannot tell apart: \(labels)")
+        XCTAssertTrue(labels.contains("Português"), "the interface names the language in its own language: \(labels)")
+        XCTAssertFalse(labels.contains("pt") || labels.contains("pt-BR"),
+            "a chip is never one of the catalogue's codes: \(labels)")
+
+        let portuguese = app.buttons["composer-language-pt"]
+        XCTAssertTrue(portuguese.exists, "the language is one chip, addressed by the language itself")
+        portuguese.tap()
+        XCTAssertTrue(portuguese.isSelected, "tapping the chip chooses the language")
+
+        app.buttons["composer-language-regions-pt"].tap()
+        let variants = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'composer-language-variant-'"))
+        let found = variants.allElementsBoundByIndex
+            .map { "\($0.identifier)|\($0.elementType.rawValue)|\($0.label.prefix(24))" }
+        XCTAssertFalse(found.isEmpty,
+            "the expansion names the catalogue's own codes under the language; present: \(found.joined(separator: " ; "))")
+        for variant in variants.allElementsBoundByIndex {
+            XCTAssertNotEqual(variant.elementType, .button, "a region is information, never a control")
+        }
+        XCTAssertTrue(app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "fontes disponíveis")).firstMatch.exists,
+            "the expansion counts what the catalogue holds, in the approved wording")
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "r9-composer-language-expansion-pt-BR"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    /// The interface follows the device: in English the same screen is English, the languages are named in
+    /// English, and the counts are stated in English.
+    @MainActor
+    func testInterfaceFollowsTheDeviceLanguage() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 90))
+        XCTAssertEqual(app.staticTexts["welcome-headline"].label, "The open web, arranged by you.")
+        XCTAssertEqual(app.buttons["welcome-shape"].label, "Build my feed",
+            "the welcome copy follows the device's language")
+        app.buttons["welcome-shape"].tap()
+
+        let chips = app.buttons.matching(NSPredicate(format: "identifier MATCHES %@", "composer-language-[a-z]{2,3}"))
+        XCTAssertTrue(chips.firstMatch.waitForExistence(timeout: 90))
+        let labels = chips.allElementsBoundByIndex.map(\.label)
+        XCTAssertTrue(labels.contains("Portuguese"), "a language is named in the interface's own language: \(labels)")
+        XCTAssertFalse(labels.contains("Português"), "not in the catalogue's own language: \(labels)")
+
+        app.buttons["composer-language-pt"].tap()
+        app.buttons["composer-language-regions-pt"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "sources available")).firstMatch.exists,
+            "the counts are stated in the interface's language")
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "r9-composer-language-expansion-en"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    /// Round 9: the filter sheet offers one selectable row per language with the count the catalogue holds, and
+    /// the catalogue's own codes appear only inside the expansion, as information. The sheet is the same row model
+    /// as the composer's chips, on the surface that persists a selection.
+    @MainActor
+    func testFilterSheetOffersOneRowPerLanguage() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(pt-BR)", "-AppleLocale", "pt_BR"]
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.buttons["filter-button"].waitForExistence(timeout: 120), "the reader's chrome is up")
+        app.buttons["filter-button"].tap()
+
+        let rows = app.buttons.matching(NSPredicate(format: "identifier MATCHES %@", "language-[a-z]{2,3}"))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 60), "the sheet lists the catalogue's languages")
+        let labels = rows.allElementsBoundByIndex.map(\.label)
+        XCTAssertTrue(labels.contains { $0.hasPrefix("Português") },
+            "the row names the language and counts what the catalogue holds: \(labels)")
+        XCTAssertTrue(labels.contains { $0.contains("fontes disponíveis") }, "one unit, stated: \(labels)")
+        XCTAssertFalse(app.buttons["language-pt-BR"].exists, "a catalogue code is never a row")
+        XCTAssertFalse(app.buttons["language-en-US"].exists, "nor is any other regional code")
+
+        app.buttons["language-regions-pt"].tap()
+        XCTAssertTrue(app.staticTexts["language-variant-pt-BR"].waitForExistence(timeout: 20),
+            "the expansion names the region the catalogue declares under the language")
+        XCTAssertFalse(app.buttons["language-variant-pt-BR"].exists, "and the region is not selectable")
+        let counted = app.staticTexts["language-variant-count-pt-BR"]
+        XCTAssertTrue(counted.exists)
+        XCTAssertEqual(counted.label, "936", "the variant row counts what the catalogue holds for that code")
+
+        app.buttons["language-pt"].tap()
+        XCTAssertEqual(app.buttons["language-pt"].value as? String, "selected",
+            "the row selects the language, and what it persists is the language")
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "r9-filter-sheet-language-expansion-pt-BR"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        app.buttons["filter-done"].tap()
     }
 }

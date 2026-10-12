@@ -5,6 +5,7 @@ import FeedMinePersistence
 import FeedMineEditorial
 import FeedMinePublication
 import FeedMineRuntime
+import FeedMineMedia
 
 private struct InitialSliceFixture: Sendable {
     let database: RuntimeDatabase
@@ -56,12 +57,13 @@ private struct InitialSliceFixture: Sendable {
             membershipMutations: [.upsert(sourceID: SourceID(rawValue: Self.uuid(43000)),kind: .direct,observedAt: revision.observedAt)]))
     }
     func request(capacity: Int = 10, exposure: ResolvedSelectionPolicy.ExposureBehavior = .excludePublishedRevisions,
-        placement: AnchorPlacement = .center, checkpointTime: Double = 20) -> InitialProductionSlice.Request {
+        placement: AnchorPlacement = .center, checkpointTime: Double = 20,
+        after: CandidateSupplyCursor? = nil) -> InitialProductionSlice.Request {
         .init(plan: plan, policy: policy(exposure), examinedCapacity: capacity, editionID: editionID,
             publicationSchemaVersion: PublicationSchemaVersion(rawValue: 1), selectionSeed: 7,
             editionCreatedAt: Date(timeIntervalSince1970: 10), segmentID: FeedSegmentID(rawValue: Self.uuid(42000)),
             segmentSeed: 8, segmentCreatedAt: Date(timeIntervalSince1970: 11), anchorPlacement: placement,
-            checkpointedAt: Date(timeIntervalSince1970: checkpointTime))
+            checkpointedAt: Date(timeIntervalSince1970: checkpointTime), after: after)
     }
 }
 
@@ -180,4 +182,55 @@ final class InitialProductionSliceTests: XCTestCase {
         XCTAssertTrue(progress.exhausted)
         try assertAbsent(f)
     }
+
+    func testInitialExaminationContinuesPastAnEntirePendingWindowWithoutReservingHistory() async throws {
+        let f = try fixture(5), readiness = MediaReadiness()
+        let slice = InitialProductionSlice(database: f.database, readiness: readiness)
+        let first = try slice.run(f.request(capacity: 2)) { _ in throw PreparationFailure.refused }
+        guard case .advancedWithoutPublication(let progress) = first else { return XCTFail("Pending head must not publish") }
+        XCTAssertEqual(progress.examinedCount, 2)
+        XCTAssertEqual(progress.nextCursor?.originRecordID, InitialSliceFixture.revision(4).originRecordID)
+        XCTAssertFalse(progress.exhausted)
+        try assertAbsent(f)
+        XCTAssertEqual(try slice.revisionsToPrepare(for: f.request(capacity: 2, after: progress.nextCursor)),
+            [InitialSliceFixture.revision(3).id, InitialSliceFixture.revision(2).id])
+        let assets = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: assets) }
+        let media = MediaPrefetcher(database: f.database, assetDirectory: assets, readiness: readiness,
+            concurrentDownloadLimit: 1, fetch: { _, _ in throw PreparationFailure.refused }, conditions: { _ in Self.mediaPolicy() })
+        await media.prefetch([InitialSliceFixture.revision(3).id, InitialSliceFixture.revision(2).id])
+        let (_, receipt) = try published(slice.run(f.request(capacity: 2, after: progress.nextCursor)) {
+            InitialSliceFixture.prepared($0)
+        })
+        XCTAssertEqual(receipt.segmentOrdinal, 0)
+        XCTAssertEqual(try receipt.cardIDs.map { try XCTUnwrap(PublicationStore(database: f.database).card(id: $0)).originRevisionID },
+            [InitialSliceFixture.revision(3).id, InitialSliceFixture.revision(2).id])
+        XCTAssertNil(try PublicationStore(database: f.database).card(id: InitialSliceFixture.cardID(InitialSliceFixture.candidate(InitialSliceFixture.revision(5)))))
+        XCTAssertEqual(try SessionStore(database: f.database).checkpoint()?.cardID, receipt.cardIDs[0])
+    }
+
+    func testInitialPendingSupplyReachesExhaustionWithoutRepeatedHeadOrPreparation() throws {
+        let f = try fixture(5), slice = InitialProductionSlice(database: f.database, readiness: MediaReadiness())
+        var after: CandidateSupplyCursor?
+        for (last, count, exhausted) in [(4, 2, false), (2, 2, false), (1, 1, true)] {
+            let outcome = try slice.run(f.request(capacity: 2, after: after)) { _ in throw PreparationFailure.refused }
+            guard case .advancedWithoutPublication(let progress) = outcome else { return XCTFail("Pending story published") }
+            XCTAssertEqual(progress.nextCursor?.originRecordID, InitialSliceFixture.revision(last).originRecordID)
+            XCTAssertEqual(progress.examinedCount, count)
+            XCTAssertEqual(progress.exhausted, exhausted)
+            XCTAssertNotEqual(progress.nextCursor, after)
+            after = progress.nextCursor
+            try assertAbsent(f)
+        }
+    }
+
+    private static func mediaPolicy() -> MediaPolicy? {
+        guard let conditions = MediaDeviceConditions(heroSlotPointWidth: 2, thumbnailSlotPointWidth: 1,
+            screenScale: 1, network: .unconstrained, measuredBytesPerSecond: nil, waitBudgetSeconds: nil,
+            freeStorageBytes: nil, lowPowerMode: false, thermal: .nominal),
+            let ceilings = MediaSafetyCeilings(maximumDownloadBytes: 1_000_000, maximumPixelSide: 10_000,
+                maximumPixelCount: 10_000_000) else { return nil }
+        return MediaPolicy(conditions: conditions, ceilings: ceilings)
+    }
+
 }

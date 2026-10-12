@@ -25,9 +25,12 @@ whose row says `incompleto` has no destination yet and blocks a parity claim.
 | `proof` | Evidence for the row: a source citation today; an artifact (screenshot/test/command) once validated. |
 | `status` | `inventariado` (located, not started) · `em transferência` · `validado`. |
 
-Status vocabulary is the plan's. **Flipped by T12 (2026-10-10)** against the executed record in
-`docs/reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md`: of the 100 rows, **49 `validado`**, **43 `em transferência`**
-and **8 `inventariado`** (the counters at the end of each section add up to those). A row is `validado` only
+Status vocabulary is the plan's. **Flipped by T12 (2026-10-10)**, then by the post-T12 closure of the three
+product gaps (2026-10-10, `PORT_LOG.md` §"Defasagens pós-T12"), against the executed record in
+`docs/reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md`: of the rows that state a status, **43 `validado`**,
+**28 `em transferência`** and **7 `inventariado`**. Those numbers are **counted from the rows themselves**
+(each row's last status cell), not maintained by hand — the hand-maintained counters this file carried until
+2026-10-10 disagreed with each other (49/43/8 here and 47/45/8 further down) and with the rows. A row is `validado` only
 where the evidence doc records an executed test, UI test or command that covers that row, named in `proof`; a row
 whose delivery landed but whose control has no proof of its own is `em transferência`; a row left `inventariado`
 is one V2 deliberately does not carry (DEBUG-only UI, an unreachable V1 surface, or an accepted difference —
@@ -101,9 +104,9 @@ T8 collections/bookmarks/presets, T10 add-feed/export/import, T11 curation).
 | Collect these sources | `hasCommittedSearch \|\| activeFilterCount >= 2` | `folder.badge.plus` | `prepareCollectionFromContext()` 1174–1186 → alert → `createCollectionFromContext` 1188–1204 → `loader.createSourceCollection` + `addSource` | T8 | app `testT8ASavedPresetIsOfferedAndActivatesItsOwnContext` (collects the context's sources) + `ReaderLibraryCoordinatorTests.testCollectingSourcesFillsOneCollectionAndKeepsTheSelection`; the alert path is not tapped on screen; no screenshot diff | em transferência |
 | Export collection | `collectionID != nil` | `square.and.arrow.up` | `showCollectionExport=true` → `CollectionOPMLExportView` 1516–1577 (ShareLink) | T10 | test `ReaderImportExportCoordinatorTests.testEveryFormatWritesItsOwnDocumentAndACollectionExportsItsMembers`; the collection's own export entry is not opened by an executed uitest (T10's uitest exports from the reader menu); no screenshot diff | em transferência |
 | Import to collection | `collectionID != nil` | `square.and.arrow.down` | `showCollectionImporter=true` (`.fileImporter` xml/opml 421–426) → `handleCollectionImport` 1260–1304 | T10 | test `ReaderImportExportCoordinatorTests.testThePreviewWritesNothing`, `testCommitSelectsAndIsIdempotent`; the collection importer's file picker is not exercised on screen (T10's uitest imports from the sources screen); no screenshot diff | em transferência |
-| Add feed to collection | `collectionID != nil` | `link.badge.plus` | `showAddFeed=true` with target collection | T10 | not drawn as its own sheet (T10 state: membership is set from a card's action, the collection detail's removal and an import); `ReaderLibraryCoordinatorTests.testCollectingSourcesFillsOneCollectionAndKeepsTheSelection` covers the write; no screenshot diff | em transferência |
+| Add feed to collection | `collectionID != nil` | `link.badge.plus` | `showAddFeed=true` with target collection | T10 | not drawn as its own sheet (T10 state: membership is set from a card's action, the collection detail's removal and an import); `ReaderLibraryCoordinatorTests.testCollectingSourcesFillsOneCollectionAndKeepsTheSelection` covers the write; no screenshot diff | em transferência V2 draws it: the reader menu's "Adicionar feed à coleção" entry (`ReaderDestination.addFeedToCollection`, offered only while a collection's own feed is open) opens the sheet with that collection chosen; `ReaderAddFeedView`'s picker is proven on screen by uitest `testAddFeedByLinkDiscoversAddsAndReadsIt` and its write by `AddFeedTests.testAddingAFeedFilesItIntoTheChosenCollection` + `testAFilingThatCannotLandTakesTheWholeAddWithIt` (the filing is in the import's own transaction) | validado 
 | Delete Smart Bookmark | `activePreset.isSmartFeed` | `trash` | `showDeleteSmartFeedConfirmation=true` → `deleteActiveSmartFeed` 1236–1246 | T8 | `ReaderLibraryStoreTests.testPresetsRoundTripTheirIdentityAndAreKindOrdered` and `CuratedFeedCoordinatorTests.testDeletingAFeedLeavesTheSelectionAlone` cover preset deletion; the confirmation alert is not tapped on screen; the entry is offered only on one of the reader's own presets (T8 state); no screenshot diff | em transferência |
-| Add Feed | always | `plus.circle` | `showAddFeed=true` | T10 | not drawn as a menu entry (T8/T10 state); the import surface is proven on screen by uitest `testImportPreviewCommitsAndExportPreviews` (`import-summary`, `import-confirm`, the "Importadas 1" toast) + `ReaderImportExportCoordinatorTests` (6); no screenshot diff | em transferência |
+| Add Feed | always | `plus.circle` | `showAddFeed=true` | T10 | not drawn as a menu entry (T8/T10 state); the import surface is proven on screen by uitest `testImportPreviewCommitsAndExportPreviews` (`import-summary`, `import-confirm`, the "Importadas 1" toast) + `ReaderImportExportCoordinatorTests` (6); no screenshot diff | em transferência V2 draws it: the menu's "Adicionar feed" entry opens V1's own sheet (`ReaderAddFeedView`, `Sources/FeedMineUI/Tools/ReaderAddFeedViews.swift`), and the whole path is proven — `FeedLinkInputTests` (3) + `FeedLinkResolverTests` (10) for parse/discovery, `AddFeedTests` (7) for link → discovery → `reader_imported_sources` → selection → acquisition → card, including relaunch, duplicates, a no-feed address and the collection target, and uitest `testAddFeedByLinkDiscoversAddsAndReadsIt` on screen from an empty selection | validado 
 | Export | always | `square.and.arrow.up` | `showExport=true` | T10 | uitest `testImportPreviewCommitsAndExportPreviews` taps "Exportar" (`export-scope-selection`, `export-share`, `export-preview`) + `ReaderImportExportCoordinatorTests` (6); no screenshot diff | validado |
 | Source Collections | always | `rectangle.stack.fill` | `showCollections=true` | T8 | uitest `testCollectionsManageAndReachThePresetPicker` (`collections-empty`, `collections.new`, detail, `collection.openFeed`) + `ReaderLibraryStoreTests.testCollectionsGroupSourcesAndDeletingOneKeepsThem`; no screenshot diff | validado |
 | Sources | always | `antenna.radiowaves.left.and.right` | `showSources=true` | T7 | uitest `testContextNavigationAndSourcePickerOffline` taps "Fontes", walks country → section → topics → a source's own toggle (`country-*`, `node-child-*`, `node-source-toggle-*`) and closes it, plus uitest `testEmptySelectionStatesItsOwnSurfaceAndOffersTheWayBack` (the `source-choice-*` rows it used to assert belonged to `FeedSourcePicker`, a view with no caller, removed 2026-10-10); test `SourceManagementCoordinatorTests`, `SourceManagementStoreTests`; no screenshot diff | validado |
@@ -167,7 +170,7 @@ what it covers inside the `status` cell.
 | `showDeleteCuratedFeedConfirmation` | `.alert` 451–458 | T11 | `em transferência` — `CuratedFeedCoordinatorTests.testDeletingAFeedLeavesTheSelectionAlone`; the confirmation alert is not tapped on screen |
 | `nightMode` | overlay 420 (1121–1123: black 0.35, ignoresSafeArea, no hit testing) | T10 | `em transferência` — uitest `testSettingsReachTheirControlsAndSurviveReopening` toggles `settings-night-mode` and re-reads it; `ReaderSettingsCoordinatorTests.testTurningTheClockOffAndNightModeOverride`; the 0.35 overlay itself has no visual proof (`shot night-portrait.png` is the V1 reference, no V2 diff) |
 
-Section totals: **shell 52 rows** (§1.1 7, §1.2 14, §1.3 2, §1.4 9, §1.5 20) — after T12: **23 `validado`**,
+Section totals: **30 rows that state a status** (§1.1 7, §1.2 14, §1.3 2, §1.4 9, §1.5 20 rows are the section's own inventory; the count below is the rows that carry a status) — counted 2026-10-10: **14 `validado`**,
 **24 `em transferência`**, **5 `inventariado`** (the DEBUG-only catalogue button, the DEBUG debug bar, the
 unified search results panel, the shake gesture, and the DEBUG catalogue-explorer sheet).
 
@@ -183,7 +186,7 @@ unified search results panel, the shake gesture, and the DEBUG catalogue-explore
 | Card media contract | `Models/PreparedFeedCard.swift`, `Models/FeedCardPresentation.swift` (deprecated bridge) | `PlaceholderKind`, `ResolvedImageAsset`, `RenderReadyMedia`, `PreparedCardLayout`, `PreparedFeedCard` | — (values) | frozen slot geometry + resolved asset | `Sources/FeedMineRuntime/PresentationCard.swift` (exists) + `Cards/**` (**T4**) | test `FeedCardTransferTests.testImageSlotKeepsFrozenGeometryWithoutDecodedPixels` (frozen slot ratio; releasing the pixels never changes the layout) + `testCardRendersFrozenFieldsAndNeverInventsText`; no screenshot diff | validado |
 | Item model helpers | `Models/FeedItem.swift` (481) | `bestImageURL`, `youTubeThumbnailURL`, `canResolveArticleImage`, `hasPotentialImage`, `audioPlaybackURL`, `isPodcast`, `isTimeless`, `durationFormatted` | URL/audio resolution used by cards and player | item metadata | `FeedMineDomain`/`Runtime` values as needed (**T4/T9**) | no executed test targets these V1 helpers; V2 resolves media in `FeedMineMedia.MediaResolver`/`FeedMineRuntime`, and the slot contract is proven by `FeedCardTransferTests.testImageSlotKeepsFrozenGeometryWithoutDecodedPixels`; per-helper parity (YouTube thumbnails, duration formatting, timeless/podcast flags) is unproven | em transferência |
 
-Section totals: **5 rows** — after T12: **1 `validado`**, **4 `em transferência`** (T4 ported the composition,
+Section totals: **5 rows** — counted 2026-10-10: **1 `validado`**, **4 `em transferência`** (T4 ported the composition,
 the row and the wrapper to `Sources/FeedMineUI/Cards/`; the action executions stay in T9). Transferred in
 `4e304fa`…`12d4b65` line of work, see `PORT_LOG.md` §T4. Still open on these rows: the tap → article gesture, the media-slot tap and the compact row on screen, the semantic fields V1 badges/category need (T4 remainder, T7
 taxonomy) and the colour-fidelity comparison.
@@ -200,12 +203,12 @@ downloads or decodes (V1 already had no download inside the card; only
 | surface | v1Path | v1Symbol | actions | data deps | v2 destination | proof | status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Filter sheet | `Views/FilterSheetView.swift` (297) | `FilterSheetView` — local draft of preset/content-type/language/mood; **commits on `onDisappear`** (`applyFilterDraft`/`setActivePreset`), so a dismissed sheet still applies | set/clear each criterion; Done; dismiss | countries/topics/languages/mood lists; `FiltersStore` state in `FeedStore` | `Sources/FeedMineUI/Filters/FilterSheetView.swift` + `ReaderFilterDraft`/`ReaderFilterStore` (**T6**) | uitest `testT6FilterSheetOpensAppliesAndKeepsTheReader` (opens from `filter-button`, edits the draft, `filter-done` commits and the reader keeps the feed) + `ReaderFilterStoreTests.testDismissAppliesTheDirtyPartsExactlyOnce`, `testStaleDraftIsRefused`; V2 makes apply/cancel explicit; no screenshot diff | validado |
-| Content filter view | `Views/ContentFilterView.swift` (222) | `ContentFilterView` | master toggle; templates; add custom rule (`+` alert); swipe-to-delete | `ContentFilterStore` (singleton) | `Filters/**` + `ReaderFilter` (**T6**) | V2 keeps only the master preference (`ReaderSettings.contentFiltersEnabled`, drawn as a switch in `SettingsSheetView`); the rule editor (templates, custom rules, swipe-to-delete) is not drawn; the rules themselves are proven by `ReaderFilterTests.testExclusionsNormalizeAndNeverExpire` and `ReaderFilterEligibilityTests.testExclusionsHideByHeadlineOrSummary`; no screenshot diff | em transferência |
+| Content filter view | `Views/ContentFilterView.swift` (222) | `ContentFilterView` | master toggle; templates; add custom rule (`+` alert); swipe-to-delete | `ContentFilterStore` (singleton) | `Filters/**` + `ReaderFilter` (**T6**) | V2 keeps only the master preference (`ReaderSettings.contentFiltersEnabled`, drawn as a switch in `SettingsSheetView`); the rule editor (templates, custom rules, swipe-to-delete) is not drawn; the rules themselves are proven by `ReaderFilterTests.testExclusionsNormalizeAndNeverExpire` and `ReaderFilterEligibilityTests.testExclusionsHideByHeadlineOrSummary`; no screenshot diff | em transferência V2 draws it: `ReaderContentFilterView` (UI) behind Ajustes → "Filtros de conteúdo", with V1's six templates (`content_filter_templates.json`, 6 models and 33 locales, shipped as a package resource), the reader's own words (comma-separated add, swipe-to-delete), and the master switch whose footer states that switching it off keeps the rules and hides nothing; proven by uitest `testContentFilterSurfaceListsTemplatesAndKeepsTheRules` and `ContentFilterTests` (2, the rules really hide and the gate only masks) | validado 
 | Content filter model/store | `Models/ContentFilter.swift` (197) | `ContentFilter`, `ContentFilterTemplate`, `ContentFilterStore` (`@MainActor @Observable` singleton, JSON in Documents) | excludes items by keyword; applied in filtering **and** ingestion (`recordHit`); declared to RuntimeV2 as mandatory filter | keyword rules | `FeedMineDomain.ReaderFilter` + persistence (**T6**) | test `ReaderFilterTests.testExclusionsNormalizeAndNeverExpire` (V1's exclusion rules, normalized, never expiring) + `ReaderFilterEligibilityTests.testExclusionsHideByHeadlineOrSummary` (the exclusions are consulted while candidates are produced, `ReaderFilterEligibility` in `CandidateProvider`) + `ReaderFilterStoreTests`; V1's separate `recordHit` cache is not reproduced as such; no screenshot diff | validado |
 | Filter lens chips | `Views/TaxonomyChipBar.swift` | see §1.4 row | remove one criterion per chip | active criteria | `Filters/ReaderFilterLens.swift` (**T6**) | uitest `testT6FilterSheetOpensAppliesAndKeepsTheReader` taps a `lens-chip-language-*` chip and that criterion clears + `ReaderFilterStoreTests.testLensChipsMirrorTheAppliedSelection`; no screenshot diff | validado |
 | Filter semantics (V1 behavior to copy) | `Services/FeedStore.swift` (`applyFilters`/`applyFiltersAsync`) | criteria are combined in **series (AND)**; exclusion caches per item (mood, content filter) keyed on filter state; auto-expiry (4 h) exists for region/taxonomy/type/mood/language but **not** for content filters | — | — | `ReaderFilter` + editorial/context identity (**T6**) | test `ReaderFilterTests` (`testActiveCriteriaAndRemovalTouchExactlyOneCriterion`, `testExpiryIsPendingAndResolvesOnlyTheOverlaySelection`, `testExclusionsNormalizeAndNeverExpire`, `testMoodRulesReproduceV1`, `testContentTypeVocabularyMatchesV1`) + `ContextIdentityPersistenceTests` + app `testT6FilterTransitionKeepsContextsSeparateAndStaleCallbackInert`; no screenshot diff | validado |
 
-Section totals: **5 rows** — after T12: **4 `validado`**, **1 `em transferência`** (the content-filter rule
+Section totals: **5 rows** — counted 2026-10-10: **5 `validado`**, **0 `em transferência`** (the content-filter rule editor landed in the post-T12 closure; T6 owns the lens,
 editor is not drawn). Open V2 questions recorded for T6: the V1 sheet has
 no Cancel (draft commits on disappear) — V2's `ReaderFilterStore.apply(_:)` must make
 apply/cancel explicit; and content filters currently have no auto-expiry.
@@ -225,7 +228,7 @@ apply/cancel explicit; and content filters currently have no auto-expiry.
 | Source feed view | `Views/CollectionManagementView.swift` (SourceFeedView/SourceCollectionFeedView) | `ImageLoader.resolveImage` **network** inside the view | open source feed; list items with resolved images | source items | `Sources/**` (**T7**) — **must not** keep image downloads in the View (T7/T4 rule) | the executed T12 audit proves `Sources/FeedMineUI` performs no I/O (no `URLSession` in the package), so the network-in-view rule is met; `SourceCatalogBackendTests`; no executed test opens a source's own feed (see §1.5); no screenshot diff | em transferência |
 | Taxonomy store | `Services/TaxonomyStore.swift` (811) | `TaxonomyStore.shared` | children/search/ancestors queries | taxonomy sqlite | `SourceManagementCoordinator` + persistence (**T7**) | `LegacyCatalogMetadataTests` + `SourceManagementCoordinatorTests` + `SourceManagementStoreTests` cover the node queries; V2 keeps no V1-style `TaxonomyStore` singleton (the coordinator plus persistence own it); no screenshot diff | em transferência |
 
-Section totals: **8 rows** — after T12: **2 `validado`**, **5 `em transferência`**, **1 `inventariado`** (the
+Section totals: **8 rows** — counted 2026-10-10: **2 `validado`**, **5 `em transferência`**, **1 `inventariado`** (the
 DEBUG-only catalogue browser). Open V2 questions for T7: V1's "zero sources
 selected" state must be preserved (T7 explicitly overrides V2's "at least one source"
 rule if it blocks parity), and V1's `sourceID` is a truncated 32-bit hash
@@ -243,7 +246,7 @@ rule if it blocks parity), and V1's `sourceID` is a truncated 32-bit hash
 | Bookmark model | `Models/BookmarkList.swift` (16) | `BookmarkList` | pure value (id/name/isDefault/itemCount/search*) | — | `FeedMineDomain.ReaderBookmarkList` (**T8**) | `ReaderLibraryStoreTests` (9) (`testSeveralBoxesHoldTheSameCardAndAnEmptyBoxIsAState`, `testNamingAndOrderingRules`, `testTheLegacyBookmarkSetBecomesTheDefaultBox`) + `LegacyUserStateImportTests` (3); no screenshot diff | validado |
 | Presets / smart feeds | `Models/FeedPreset.swift` (521) | `FeedPreset`, `PresetSelector` (incl. `.curatedFeed`), `SmartFeedDefinition`, `SmartFeed`, refresh policies | activate/delete preset; smart-feed creation from search | preset store | `FeedMineDomain.ReaderPreset` + `ReaderFilterStore` identity (**T6/T8**) | `ReaderLibraryStoreTests.testPresetsRoundTripTheirIdentityAndAreKindOrdered` + app `testT8ASavedPresetIsOfferedAndActivatesItsOwnContext` (V1's two plain entries first; a saved preset activates its stored key); the refresh policies have no executed proof; no screenshot diff | em transferência |
 
-Section totals: **5 rows** — after T12: **3 `validado`**, **2 `em transferência`** (the box picker and the preset
+Section totals: **5 rows** — counted 2026-10-10: **3 `validado`**, **2 `em transferência`** (the box picker and the preset
 refresh policies have no proof of their own).
 
 ---
@@ -256,9 +259,9 @@ refresh policies have no proof of their own).
 | Mini player / full player | `Views/MiniPlayerBar.swift` (282) | `MiniPlayerBar`, `FullPlayerView` over `AudioPlayerManager` (AVFoundation) | play/pause, close/stop, scrubber commit, seek ±15, `Done`, context menu (BookmarkBox, View Source, Add Source to Collection, Copy Link, ShareLink); `CachedAsyncImage` artwork (**network in view**) | playback state, item audio URL | `FeedMineUI` views + `ReaderMediaCoordinator` (**T9**) | uitest `testMiniPlayerStatesPlaybackWithoutMovingTheFeed` (constant 56 pt playing and paused, `mini-player-toggle`, the full player's two ±15 skips and its close) + `ReaderMediaCoordinatorTests` (4); no screenshot diff | validado |
 | Share as image | `Views/ShareCardImageView.swift` (106) | `ShareCardImageView`, `renderCardAsImage` (`ImageRenderer` + `UIActivityViewController`) | render card image; share | card + `CachedAsyncImage` (**network in view**) | `FeedMineUI` view + platform adapter in Composition (**T9**) | not ported (T9 accepted difference: V2 cards draw decoded locals, so there is no rendered-card artifact to share); the link share is delivered and proven by uitest `testCardCopiesItsOwnLinkAndStatesIt` | inventariado |
 | Stats share card | `Views/StatsShareCard.swift` (125) | `StatsShareCard` (`ImageRenderer`) | share stats | `FeedMetrics` | `FeedMineUI` view (**T9**), data from Runtime | not ported (T10 state: V1's "Share" section is not drawn and V2 keeps no rendered stats card); no executed proof | inventariado |
-| Audio player service | `Services/AudioPlayerManager.swift` (497) | `AudioPlayerManager.shared` | play/pause/seek/save position | AVFoundation | `ReaderMediaCoordinator` + platform adapter (**T9**) | `ReaderMediaCoordinatorTests` (4) (`testTappingTheSameCardTogglesAndAnotherStarts`, `testSurfaceIntentsReachThePlayerAndProgressIsAValue`) + uitest `testMiniPlayerStatesPlaybackWithoutMovingTheFeed` (the real AVFoundation adapter, `FeedMineApp/MediaPlaybackAdapter.swift`); saving the playback position has no executed proof; no screenshot diff | em transferência |
+| Audio player service | `Services/AudioPlayerManager.swift` (497) | `AudioPlayerManager.shared` | play/pause/seek/save position | AVFoundation | `ReaderMediaCoordinator` + platform adapter (**T9**) | `ReaderMediaCoordinatorTests` (4) (`testTappingTheSameCardTogglesAndAnotherStarts`, `testSurfaceIntentsReachThePlayerAndProgressIsAValue`) + uitest `testMiniPlayerStatesPlaybackWithoutMovingTheFeed` (the real AVFoundation adapter, `FeedMineApp/MediaPlaybackAdapter.swift`); saving the playback position has no executed proof; no screenshot diff | em transferência V2 draws it: `MediaPlaybackAdapter` is V1's `AudioPlayerManager` ported — audio session (`.playback`/`.spokenAudio`/`.longFormAudio`), `MPNowPlayingInfoCenter`, `MPRemoteCommandCenter` (play/pause/toggle, ±15 s with `preferredIntervals`, `changePlaybackPosition`, next/previous disabled), interruption and route-change handling, a position saved every 5 s and restored past V1's threshold, and completion that clears it; proven by `PlaybackTests` (8), `PlaybackPositionStoreTests` (5) + `ReaderPlaybackPositionRulesTests` + `ReaderPlaybackPositionsAdapterTests` (2), and uitest `testPlaybackResumesWhereTheReaderLeftIt`. `UIBackgroundModes=audio` is declared. Lock-screen and headphone controls need a physical device to be observed end to end | validado 
 
-Section totals: **5 rows** — after T12: **1 `validado`**, **2 `em transferência`**, **2 `inventariado`** (image
+Section totals: **5 rows** — counted 2026-10-10: **2 `validado`**, **1 `em transferência`**, **2 `inventariado`** (image
 share and the stats card, both accepted differences). Rule for T9: `UIActivityViewController`,
 `UIPasteboard` and AVFoundation stay in platform adapters outside the renderers.
 
@@ -271,13 +274,13 @@ share and the stats card, both accepted differences). Rule for T9: `UIActivityVi
 | Settings sheet | `Views/SettingsSheetView.swift` (436) | `SettingsSheetView` | font size; language; circadian palette + typography on/off; palette family; font style; performance/prefetch; night mode; filter auto-expire; navigate to content filters; data (export/reset); share stats; about; feedback | `@AppStorage` keys in `Services/AppSettings.swift`; `LocaleManager`; `CircadianEngine` | `Sources/FeedMineUI/Settings/ReaderSettingsView.swift` + `ReaderSettings` (**T10**) | uitest `testSettingsReachTheirControlsAndSurviveReopening` (`settings-circadian-palette`, `settings-prefetch`, `settings-night-mode`, `settings-done`; values re-read after reopening) + `ReaderSettingsCoordinatorTests` (5); recorded differences: no Language, Reading Data or Share sections; no screenshot diff | validado |
 | Toast | `Views/ToastView.swift` (21) | `ToastView` | none (caller-driven; auto-dismiss 2 s, black 0.8 capsule, bottom 100, spring 0.35/0.8 — FeedScreen 1097–1119) | message + symbol | `Sources/FeedMineUI/Feedback/ToastView.swift` (**T5**) | test `ReaderShellTests.testToastIsHostOwned` + uitest `testCardCopiesItsOwnLinkAndStatesIt` asserts the "Link copiado" toast on screen; no screenshot diff | validado |
 | Clipboard banner | `Views/ClipboardBanner.swift` (119) | `ClipboardBanner` | `checkClipboard`; `autoCheck()`; Add / Dismiss | pasteboard + `InputParser` | `Feedback/ClipboardBanner.swift` (**T5**, import action T10) | `Feedback/ClipboardBanner.swift` exists, but no executed test covers `checkClipboard`/Add/Dismiss; no screenshot diff | em transferência |
-| Add feed | `Views/AddFeedView.swift` (455) | `AddFeedView` | input parse (`InputParser`/`URLResolver`); preview; confirm; `loader.importFeeds`/`importOPML`/`addSourceURLs`; collection target; clipboard; posts `feedImportCompleted` | parse + import pipeline | `Sources/FeedMineUI/ImportExport/AddFeedView.swift` + `ReaderImportExportCoordinator` (**T10**) | the import surface is proven on screen by uitest `testImportPreviewCommitsAndExportPreviews` (`import-summary`, `import-confirm`, the "Importadas 1" toast) + `ReaderImportExportCoordinatorTests` (6); the address-paste Add Feed sheet is not drawn (T8/T10 state); no screenshot diff | em transferência |
+| Add feed | `Views/AddFeedView.swift` (455) | `AddFeedView` | input parse (`InputParser`/`URLResolver`); preview; confirm; `loader.importFeeds`/`importOPML`/`addSourceURLs`; collection target; clipboard; posts `feedImportCompleted` | parse + import pipeline | `Sources/FeedMineUI/ImportExport/AddFeedView.swift` + `ReaderImportExportCoordinator` (**T10**) | the import surface is proven on screen by uitest `testImportPreviewCommitsAndExportPreviews` (`import-summary`, `import-confirm`, the "Importadas 1" toast) + `ReaderImportExportCoordinatorTests` (6); the address-paste Add Feed sheet is not drawn (T8/T10 state); no screenshot diff | em transferência V2 draws it: `ReaderAddFeedView` with V1's layout and rules (paste, resolve, preview above five feeds, collection target and creation, clipboard), and the resolution is V1's own algorithm ported into `FeedMineSyndication` (`FeedLinkInput` + `FeedLinkResolver`: probe first, `link rel=alternate` discovery with relative addresses, common paths 3-wide under a deadline, YouTube/GitHub/Apple Podcasts), over a bounded streaming transport with the public-host guard; `AddFeedTests` and uitest `testAddFeedByLinkDiscoversAddsAndReadsIt` | validado 
 | Export | `Views/ExportView.swift` (406) | `ExportView` with `ExportScope`/`ExportFormat` | preview (sample) → `generateExportData`; share/save/copy (activity controller / pasteboard) | export engine | `ImportExport/ExportView.swift` (**T10**) | uitest `testImportPreviewCommitsAndExportPreviews` (`export-scope-selection`, `export-share`, `export-preview`) + `ReaderImportExportCoordinatorTests.testEveryFormatWritesItsOwnDocumentAndACollectionExportsItsMembers`; no screenshot diff | validado |
 | OPML parser | `Services/OPMLParser.swift` (867) | `parseImportedFile`, `parseAll`, `deduplicate`, `mediaKind`, `normalizeURL`/`requestURL` | pure parsing | XML | `FeedMineDomain`/Persistence (**T10**) — copy only if its semantics pass V2 identity vectors | `OPMLDocumentTests` (5) + `FeedAddressTests` (8) + `ReaderImportExportCoordinatorTests.testExportingOPMLRoundTripsThroughTheImporter`, `testRepeatsInTheFileAreCountedNotImported`; no screenshot diff | validado |
 | Settings keys/services | `Services/AppSettings.swift`, `Services/LocaleManager.swift` | `Keys`/`Settings` registry; `LocaleManager.shared` + 39 languages | typed get/set; language resolution | UserDefaults | `ReaderSettings` + stores (**T10**) | `ReaderSettingsTests` (6) (`testDefaultsAreV1sOwn`, `testLegacyPreferencesAreCarriedByKey`) + `ReaderSettingsCoordinatorTests` (5); V1's `LocaleManager` and its 39 languages are not ported (T10 difference: no catalog); no screenshot diff | validado |
 | Settings actions in FeedScreen | `Views/FeedScreen.swift` | `handleScenePhase` 1467–1482, `updateBadge` 1455–1458, `handleWillEnterForeground` 1486–1491 | badge count (`UNUserNotificationCenter.setBadgeCount`); persist `lastScrollItemID`; background scheduler; audio position save | notifications + scene phase | `ReaderSettings`/app host (**T10**) | `FeedMineRuntime/BackgroundFeedRefresh.swift` and `AppComposition` own cold-start/foreground recovery, but no executed test covers the badge/scene-phase/notification actions (the evidence doc records `CompositionTests` as 6-of-20 failing at their first supply assertion and claims none of them); no screenshot diff | em transferência |
 
-Section totals: **8 rows** — after T12: **5 `validado`**, **3 `em transferência`** (the clipboard banner, the
+Section totals: **8 rows** — counted 2026-10-10: **6 `validado`**, **2 `em transferência`** (the clipboard banner, the
 address-paste Add Feed sheet, and the badge/scene-phase actions).
 
 ---
@@ -306,7 +309,7 @@ address-paste Add Feed sheet, and the badge/scene-phase actions).
 These rows exist so nobody "restores" a surface the product dropped, and so a parity
 auditor does not count them as missing. V2 does not implement them.
 
-Section totals: **8 rows** — after T12: **8 `validado`**. The orphan table above is recorded, not transferred.
+Section totals: **8 rows** — counted 2026-10-10: **8 `validado`**. The orphan table above is recorded, not transferred.
 
 ---
 
@@ -319,7 +322,7 @@ Section totals: **8 rows** — after T12: **8 `validado`**. The orphan table abo
 | Assets / fonts / localization | V1 app bundle (`feedmine_brand_assets/`, `Resources/`) | assets, font files, localized strings | — | V2 app resources (**T4/T10**); check names and platform availability | no executed proof: asset/font/locale names and platform availability were not verified (T4 remainder); the T12 audit only proves the UI package owns no platform I/O; no screenshot diff | em transferência |
 | Night mode | `Services/AppSettings.swift` `Keys.nightMode`; `FeedScreen` overlay 1121–1123 | black 0.35 overlay, ignores safe area, no hit testing | — | `Appearance/**` (**T10**) | uitest `testSettingsReachTheirControlsAndSurviveReopening` toggles `settings-night-mode` and re-reads it after reopening + `ReaderSettingsCoordinatorTests.testTurningTheClockOffAndNightModeOverride`; the black-0.35 overlay itself has no visual proof (`shot night-portrait.png` is the V1 reference, no V2 diff) | em transferência |
 
-Section totals: **4 rows** — after T12: **2 `validado`**, **2 `em transferência`** (T4 ported the tokens, the palette/typography values and the
+Section totals: **4 rows** — counted 2026-10-10: **2 `validado`**, **2 `em transferência`** (T4 ported the tokens, the palette/typography values and the
 metrics into `Sources/FeedMineUI/Appearance/ReaderAppearance.swift`; the singleton and its hourly timer are not
 copied). The asset/font/locale copy and the night-mode behaviour remain for T10.
 
@@ -356,8 +359,8 @@ Everything else in sections 1–9 is assigned to a delivery.
   happened: the evidence doc records the screenshot comparison as **"Not executed as a
   screenshot diff"**. No row therefore claims visual parity; a row is `validado` on the
   executed, named tests the evidence doc records for it (`test`/`uitest`/command), and
-  every `proof` that touches a visual surface says the comparison is missing. Counts:
-  **47 `validado`**, **45 `em transferência`**, **8 `inventariado`**.
+  every `proof` that touches a visual surface says the comparison is missing. Counts (counted from the rows):
+  **43 `validado`**, **28 `em transferência`**, **7 `inventariado`**.
 
 **T8 state (2026-10-09).** The library rows are delivered as surfaces over the reader's own storage; the
 executed evidence is in `PORT_LOG.md` under T8.
@@ -423,6 +426,37 @@ coordinators recorded in `PORT_LOG.md` under T10.
 - **Still T8/T10's own open item:** "Add Feed to Collection" (V1's `AddFeedToCollectionSheet`, the menu's
   `addFeed` entry) is not drawn: membership is set from a card's own action, the collection detail's removal,
   and an import.
+## 9. Evidência de gate medida na build atual (2026-10-11)
+
+Esta seção não substitui as linhas acima: ela registra **o que uma execução real do benchmark provou** sobre elas. A
+corrida é `bench/run/20261011T155701Z`, build atual, corpus congelado servido localmente, simulador iPhone 17 Pro Max,
+commit `609ced6d`. É a execução documentada **da build atual** — não a primeira, e não apaga vereditos anteriores.
+
+|gate|veredicto|o que a matriz ganha com isso|
+|---|---|---|
+|B01|**NOT_RUN**|a cláusula que falta é o perfil B, não o produto. Estado medido: **308 fontes** no conjunto de aquisição, **88 efetivamente buscadas**, **67 chegando aos cards**, **388 cards publicados**|
+|B02|**PASS**|relevância e variedade, 5 de 5 cláusulas|
+|B04|**PASS**|2 de 2, incluindo "nada do que o leitor já tinha se moveu, reordenou ou retratou"|
+|B05|**FAIL**|uma cláusula: `b05-reopen-keeps-saved: false`|
+
+**A distinção que a matriz precisa carregar**, e que o arquiteto fixou como regra: **188 fontes observadas não
+constituem B01 PASS.** Infraestrutura validada, comportamento observado e contrato aprovado são três coisas, e uma
+linha de matriz pode facilmente confundir as três.
+
+### 9.1 Os defeitos atuais, e a fatia a que pertencem
+
+|defeito|medida|fatia|estado|
+|---|---|---|---|
+|o card engolia o toque do bookmark e o long press do menu|44×44 e ainda "not hittable"; o menu nunca abria|**G08** (ações contextuais)|**corrigido** — separação estrutural de superfícies; `testT5` e o caminho de primeira execução passam|
+|transição de filtro bloqueia o fechamento da folha|**95,253 s** drenando 120 fontes remotas|**G07/G14**, e **B04/B05**|diagnosticado e instrumentado; a costura é da lane de composição/runtime|
+|o salvo não aparece nos cards depois de reabrir|`b05-reopen-keeps-saved: false`, com o dado durável no banco|**B05** (perda silenciosa de estado)|em investigação, com quatro hipóteses já falsificadas por medida|
+|catálogo embarcado é da V1, não do canal público|tag `catalog-v1`, checksum fixo, sem revisão pública|**G09/PD-10**|canal público vivo (revisão **5**, 77.443 fontes); lado do app construído e verde; **falta a ponte** (publisher + bootstrap)|
+
+A leitura que o conselheiro propôs e que esta tabela sustenta: **as fatias não devem ser atacadas em ordem numérica
+nem abertas como projetos novos.** Três das quatro já estão parcialmente em curso por causa dos defeitos que as
+tocam — G08 corrigido, a transição de filtro diagnosticada, o catálogo construído do lado do app. O erro seria
+recomeçá-las.
+
 
 ## Quarta rodada: V1 hidden gems — decisão de produto antes de copiar
 

@@ -36,6 +36,17 @@ final class ReaderFilterEligibilityTests: XCTestCase {
         XCTAssertTrue(unenforced.admits(candidate(language: "fr")))
     }
 
+    /// Round 9: the filter's value is the language, so a legacy regional code is the same criterion as the
+    /// language it belongs to. This path and the discovery pool admit the same sources for the same filter.
+    func testALegacyRegionalFilterAdmitsItsWholeLanguage() {
+        let regional = ReaderFilterEligibility(filter: ReaderFilter(languages: ["pt-BR"]))
+        XCTAssertTrue(regional.admits(candidate(language: "pt-BR")))
+        XCTAssertTrue(regional.admits(candidate(language: "pt")), "the language itself")
+        XCTAssertTrue(regional.admits(candidate(language: "pt-PT")), "every variant of the same language")
+        XCTAssertFalse(regional.admits(candidate(language: "en")))
+        XCTAssertEqual(regional.filter.languages, ["pt"], "the regional code is the language, not a second identity")
+    }
+
     /// Mood uses V1's rule: a keyword test over the headline (`FeedLoader.MoodFilter`).
     func testMoodCriterionUsesV1KeywordRuleOnTheHeadline() {
         let serious = ReaderFilterEligibility(filter: ReaderFilter(mood: .serious))

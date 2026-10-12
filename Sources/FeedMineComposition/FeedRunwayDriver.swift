@@ -19,8 +19,10 @@ public struct FeedRunwaySegmentIdentity: Hashable, Sendable {
 public struct FeedRunwayDriverResources: Hashable, Sendable {
     public let runway: RunwayResourceFacts
     public let acquisition: AcquisitionPlanningResources
-    public init(runway: RunwayResourceFacts, acquisition: AcquisitionPlanningResources) {
+    public let discoveryExaminedCapacity: Int
+    public init(runway: RunwayResourceFacts, acquisition: AcquisitionPlanningResources, discoveryExaminedCapacity: Int = 120) {
         self.runway = runway; self.acquisition = acquisition
+        self.discoveryExaminedCapacity = max(1, discoveryExaminedCapacity)
     }
 }
 public enum FeedRunwayDriverError: Error, Equatable, Sendable {
@@ -34,6 +36,7 @@ public actor FeedRunwayDriver {
     private struct CausalExecution {
         var resources: FeedRunwayDriverResources
         var reconsiderRequested = false
+        var mediaOpportunity: MediaPreparationOpportunity?
     }
     private var causalExecution: CausalExecution?
     private let session: FeedSession
@@ -50,9 +53,13 @@ public actor FeedRunwayDriver {
     private let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication
     /// Receives the next editorial candidates (priority order) so media is prepared for exactly
     /// what the coming slice can publish (review F05).
+    private let makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)?
     private let prepareMedia: (@Sendable ([OriginRevisionID]) async -> Void)?
+    private let onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)?
     private let selectedSourceCoverage: AcquisitionDemand?
     private let candidateProvider: CandidateProvider
+    /// Optional evidence of the replenishment attempts this driver executes; nil records nothing.
+    private let trace: ReplenishmentTrace?
 
     public init(session: FeedSession, runway: RunwayController, plan: FeedPlan, policy: ResolvedSelectionPolicy,
         acquisition: SyndicationAcquisitionSnapshot, coordinator: AcquisitionCoordinator,
@@ -60,20 +67,30 @@ public actor FeedRunwayDriver {
         makeSegmentIdentity: @escaping @Sendable () throws -> FeedRunwaySegmentIdentity,
         prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication,
         prepareMedia: (@Sendable ([OriginRevisionID]) async -> Void)? = nil,
-        selectedSourceCoverage: AcquisitionDemand? = nil) throws {
+        selectedSourceCoverage: AcquisitionDemand? = nil,
+        // F06-A (Codex's review): the slice must judge readiness with the **same** index the preparation closure
+        // uses. Two different views of what is ready is how a suspended candidate becomes a text-only card.
+        readiness: MediaReadiness? = nil,
+        onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)? = nil,
+        makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil,
+        trace: ReplenishmentTrace? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw FeedRunwayDriverError.policyContextMismatch }
         if let demand = selectedSourceCoverage {
             guard demand.contextKey == plan.context.key, demand.editorialRevisionID == plan.revision.id,
                 demand.pressure == .selectedSourceCoverage else { throw FeedRunwayDriverError.policyContextMismatch }
         }
+        self.makeMediaOpportunity = makeMediaOpportunity
+        self.onDiscoveryPage = onDiscoveryPage
         self.selectedSourceCoverage = selectedSourceCoverage
         self.prepareMedia = prepareMedia
         candidateProvider = CandidateProvider(contentStore: ContentStore(database: acquisition.runtimeDatabase))
         self.session = session; self.runway = runway; self.plan = plan; self.policy = policy; self.acquisition = acquisition
         publicationHistory = PublicationHistory(database: acquisition.runtimeDatabase)
-        localProductionSlice = LocalProductionSlice(database: acquisition.runtimeDatabase)
-        acquisitionCycle = RunwayAcquisitionCycle(runway: runway, coordinator: coordinator)
+        localProductionSlice = LocalProductionSlice(database: acquisition.runtimeDatabase, readiness: readiness,
+            trace: trace)
+        acquisitionCycle = RunwayAcquisitionCycle(runway: runway, coordinator: coordinator, trace: trace)
         self.coordinator = coordinator
+        self.trace = trace
         self.monotonicNow = monotonicNow; self.makeSegmentIdentity = makeSegmentIdentity; self.prepare = prepare
     }
 
@@ -108,8 +125,9 @@ public actor FeedRunwayDriver {
         return try await drive(resources: resources)
     }
 
-    /// Records one real observation and lets the runway produce. The admitted list changes only
-    /// through `FeedPresentationAdmission.forwardScroll`, and only when the movement was forward.
+    /// Records one real observation and lets the runway produce. The admitted list changes only through
+    /// `FeedPresentationAdmission.forwardScroll` when the movement was forward, and only through
+    /// `FeedPresentationAdmission.backwardScroll` when it was backward and reached the admitted head.
     public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,
         resources: FeedRunwayDriverResources) async throws -> FeedPresentationSnapshot? {
         guard let recorded = try await session.submitViewport(observation) else {
@@ -124,6 +142,11 @@ public actor FeedRunwayDriver {
             // The gesture reveals the prefix that was already ready; cards produced by this very
             // opportunity wait for the next genuine scroll observation.
             _ = try await session.admitPresentation(.forwardScroll(observation))
+        }
+        if activity.admitsBackwardContent {
+            // The reader reached the admitted head: the history below it is already published locally, so it is
+            // admitted from the store — no acquisition, no network, and bounded by the frozen backward bound.
+            _ = try await session.admitPresentation(.backwardScroll(observation))
         }
         return try await drive(resources: resources)
     }
@@ -143,6 +166,28 @@ public actor FeedRunwayDriver {
         // Claim before the first suspension, including scope validation.
         causalExecution = CausalExecution(resources: resources)
         defer { causalExecution = nil }
+        // One catalogue page per caller opportunity, outside the causal drain. Coverage may
+        // settle this page through the existing planner; it cannot load the next page here.
+        guard let scope = try await validateCurrentScope(), await runway.snapshot().scope == scope else {
+            return await session.currentPresentation()
+        }
+        if causalExecution!.resources.runway.localWorkAllowed {
+            causalExecution?.mediaOpportunity = await makeMediaOpportunity?()
+        }
+        // Reading the budget may suspend; revocation fences catalogue work as well as publication.
+        guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
+            return await session.currentPresentation()
+        }
+        let discoveryResources = causalExecution!.resources
+        if discoveryResources.runway.localWorkAllowed {
+            if let page = try acquisition.advanceDiscovery(for: plan.context,
+                examinedCapacity: discoveryResources.discoveryExaminedCapacity) {
+                await onDiscoveryPage?(page.entries)
+            }
+            guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
+                return await session.currentPresentation()
+            }
+        }
         var resumeOutstanding = true
         while true {
             causalExecution?.reconsiderRequested = false
@@ -209,19 +254,23 @@ public actor FeedRunwayDriver {
                 do {
                     try Task.checkCancellation()
                     // Bounded media preparation for the supply head before it is selected (PD-5).
-                    if let prepareMedia {
+                    if let prepareMedia = causalExecution!.mediaOpportunity.map({ opportunity in
+                        { @Sendable (revisions: [OriginRevisionID]) async in await opportunity.prepare(revisions) }
+                    }) ?? prepareMedia {
                         await prepareMedia(try await nextEditorialRevisions(after: intent.after,
-                            capacity: intent.examinedCapacity, editionID: intent.scope.editionID))
+                            capacity: intent.examinedCapacity, editionID: intent.scope.editionID,
+                            operation: intent.operation))
                     }
                     guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
                         try? await runway.failLocalSlice(intent, failure: .cancelled, at: monotonicNow())
                         return await session.currentPresentation()
                     }
                     let identity = try makeSegmentIdentity()
-                    let request = LocalProductionSlice.Request(plan: plan, policy: policy, editionID: intent.scope.editionID,
+                    let request = LocalProductionSlice.Request(plan: plan, policy: try acquisition.policyIncludingDiscovery(policy), editionID: intent.scope.editionID,
                         after: intent.after, examinedCapacity: intent.examinedCapacity, segmentID: identity.segmentID,
                         segmentSeed: identity.segmentSeed, segmentCreatedAt: identity.segmentCreatedAt,
-                        readerAnchorCardID: await session.currentPresentation()?.window.anchor.cardID)
+                        readerAnchorCardID: await session.currentPresentation()?.window.anchor.cardID,
+                        operation: intent.operation)
                     let outcome = try localProductionSlice.run(request, prepare: prepare)
                     try await runway.completeLocalSlice(intent, outcome: outcome, at: monotonicNow())
                     // Publication extends the reserve only. Installing a different admitted list here
@@ -255,13 +304,17 @@ public actor FeedRunwayDriver {
     /// The same window the coming slice examines, minus origins this Edition already published
     /// (unless edited articles may recur) and origins still waiting ahead of the reader.
     private func nextEditorialRevisions(after cursor: CandidateSupplyCursor?, capacity: Int,
-        editionID: FeedEditionID) async throws -> [OriginRevisionID] {
-        let window = try candidateProvider.candidates(for: plan, after: cursor, examinedCapacity: capacity)
+        editionID: FeedEditionID, operation: FeedReplenishmentOperationID) async throws -> [OriginRevisionID] {
+        let window = try candidateProvider.candidates(for: plan, after: cursor, examinedCapacity: capacity,
+            operation: operation, consult: "preparation", trace: trace)
         let anchor = await session.currentPresentation()?.window.anchor.cardID
         let facts = try publicationHistory.exposure(editionID: editionID,
             originIDs: window.candidates.map(\.originRecordID), readerAnchorCardID: anchor)
-        let recurring = policy.exposure == .excludePublishedMaterial
+        let effectivePolicy = try acquisition.policyIncludingDiscovery(policy)
+        let recurring = effectivePolicy.exposure == .excludePublishedMaterial
         return window.candidates.filter { candidate in
+            if case .selectedSources(let sources) = effectivePolicy.eligibility,
+                candidate.sourceIDs.isDisjoint(with: sources) { return false }
             guard facts.publishedOriginIDs.contains(candidate.originRecordID) else { return true }
             return recurring && !facts.unseenOriginIDs.contains(candidate.originRecordID)
         }.map(\.originRevisionID)

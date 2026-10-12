@@ -117,24 +117,101 @@ final class FeedPresentationAdmissionTests: XCTestCase {
         XCTAssertNotNil(recoveredPresentation)
     }
 
-    /// A forward scroll at the boundary admits exactly the ready prefix, appending after the tail.
+    /// A forward scroll at the boundary admits the ready cards beyond the tail into the anchored window:
+    /// the reader's frozen bounds decide the list, so what is published past the tail enters and what is
+    /// left behind the backward bound leaves — still in the store, and read back by the next admission there.
     func testForwardScrollAdmitsOnlyReadyPrefix() async throws {
         let f = try fixture()
+        // Expected windows are derived from the anchor, the fixture's bounds and the published order — never
+        // from a hand-copied published prefix: the admitted list is the window around the anchor, at most the
+        // frozen backward capacity before it and the frozen forward capacity after it.
+        let published = f.cards.map(\.id)
+        func expectedWindow(around card: PublishedCard) throws -> [PublicationCardID] {
+            let index = try XCTUnwrap(published.firstIndex(of: card.id))
+            let start = max(0, index - f.bounds.backwardCapacity)
+            let end = min(published.count - 1, index + f.bounds.forwardCapacity)
+            return Array(published[start...end])
+        }
         let before = try await admitted(f.session, .initial(f.bounds))
+        // The installed window is the checkpoint anchor's neighbourhood, clamped to what is published then
+        // (cards[4...5] do not exist yet).
+        XCTAssertEqual(before.window.items.map(\.id), Array(f.cards[1...3]).map(\.id))
         try f.publishTail()
         let observed = observation(f.cards[3], placement: .top)
         // The driver records the reader's position first; only then does the gesture admit.
         _ = try await f.session.submitViewport(observed)
-        let admitted = try await admitted(f.session, .forwardScroll(observed))
-        XCTAssertEqual(admitted.window.items.count, before.window.items.count + 2)
-        XCTAssertEqual(Array(admitted.window.items.prefix(before.window.items.count)), before.window.items,
+        let forward = try await admitted(f.session, .forwardScroll(observed))
+        // The new anchor's neighbourhood: cards[4...5] enter past the tail, and cards[1] — admitted before —
+        // is left behind by the frozen backward bound.
+        let expected = try expectedWindow(around: f.cards[3])
+        XCTAssertEqual(forward.window.items.map(\.id), expected)
+        XCTAssertEqual(forward.window.items.count, f.bounds.backwardCapacity + 1 + f.bounds.forwardCapacity)
+        // The window is centred on the reader: exactly the frozen backward capacity before the anchor and the
+        // frozen forward capacity after it.
+        let anchorPosition = try XCTUnwrap(forward.window.items.firstIndex { $0.id == f.cards[3].id })
+        XCTAssertEqual(anchorPosition, f.bounds.backwardCapacity)
+        XCTAssertEqual(forward.window.items.count - anchorPosition - 1, f.bounds.forwardCapacity)
+        // The cards the window keeps keep identity, order and projection; the only card that leaves is the one
+        // behind the backward bound.
+        let kept = before.window.items.filter { expected.contains($0.id) }
+        XCTAssertEqual(Array(forward.window.items.prefix(kept.count)), kept,
             "Earlier cards keep identity, order and projection")
-        XCTAssertEqual(admitted.window.items.map(\.id), Array(f.cards[1...5]).map(\.id))
-        XCTAssertEqual(Set(admitted.window.items.map(\.id)).count, admitted.window.items.count)
-        XCTAssertEqual(admitted.window.anchor.cardID, f.cards[3].id)
-        // Every published card is admitted now, so a repeat admission below the boundary adds nothing.
-        let repeated = try await f.session.admitPresentation(.forwardScroll(observation(f.cards[3], placement: .top)))
-        XCTAssertEqual(repeated, admitted, "An admission with nothing ready to add adds nothing")
+        XCTAssertEqual(before.window.items.map(\.id).filter { !expected.contains($0) }, [f.cards[1].id],
+            "Only the card behind the reader leaves the window")
+        XCTAssertEqual(Set(forward.window.items.map(\.id)).count, forward.window.items.count)
+        XCTAssertEqual(forward.window.anchor, .init(cardID: f.cards[3].id, placement: .top))
+        XCTAssertEqual(forward.provenance.sequenceID, before.provenance.sequenceID,
+            "The session keeps its projection sequence")
+        XCTAssertGreaterThan(forward.provenance.position, before.provenance.position,
+            "The admission allocates a new projection in the session's sequence")
+        // The window already reaches the published tail, so a repeat admission has nothing ready to add.
+        let repeated = try await admitted(f.session, .forwardScroll(observation(f.cards[3], placement: .top)))
+        XCTAssertEqual(repeated, forward, "An admission with nothing ready to add adds nothing")
+        // Leaving the window is not losing the card: the cut card is still published in the local store ...
+        let stored = try PublicationHistory(database: f.database).window(editionID: f.edition.id,
+            around: FeedWindowAnchor(cardID: f.cards[1].id, placement: .center),
+            backwardCapacity: 0, forwardCapacity: 0)
+        XCTAssertEqual(stored.cards.map(\.id), [f.cards[1].id])
+        // ... and the next admission near it reads it back, in its place before the anchor. Recording the
+        // reader's position alone never changes the admitted list.
+        let atHead = try await recorded(f.session, observation(f.cards[2]))
+        XCTAssertEqual(atHead.window.items.map(\.id), expected,
+            "Recording a position never widens the window")
+        let headWindow = try expectedWindow(around: f.cards[2])
+        let back = try await admitted(f.session, .backwardScroll(observation(f.cards[2])))
+        XCTAssertEqual(back.window.items.map(\.id), headWindow,
+            "The admission next to the cut card brings it back, in order, before the anchor")
+        XCTAssertEqual(back.window.items.first?.id, f.cards[1].id)
+        XCTAssertEqual(back.window.anchor, .init(cardID: f.cards[2].id, placement: .center))
+        XCTAssertFalse(back.window.items.contains { $0.id == f.cards[5].id },
+            "The same anchored bound cuts both ends: the far card leaves while the cut one returns")
+    }
+
+    /// R4/F05: the runtime grows the admitted window with cards **already published**, without any
+    /// reader gesture and without inventing one. The anchor, the order and every admitted card stay
+    /// exactly as they were; only the end of the list moves.
+    func testPublishedGrowthAppendsWithoutAGestureAndKeepsTheAnchor() async throws {
+        let f = try fixture()
+        let before = try await admitted(f.session, .initial(f.bounds))
+        // Nothing published beyond the admitted tail yet: growth is a no-op, not a new projection.
+        let unchanged = try await f.session.admitPresentation(.publishedGrowth)
+        XCTAssertEqual(unchanged, before)
+        try f.publishTail()
+        let grown = try await admitted(f.session, .publishedGrowth)
+        XCTAssertGreaterThan(grown.window.items.count, before.window.items.count,
+            "Cards the store already published enter without a reader gesture")
+        let anchorIndex = try XCTUnwrap(grown.window.items.firstIndex { $0.id == grown.window.anchor.cardID })
+        XCTAssertLessThanOrEqual(grown.window.items.count, anchorIndex + f.bounds.forwardCapacity + 1,
+            "Growth fills the reader's forward window and stops at its frozen bound")
+        XCTAssertEqual(Array(grown.window.items.prefix(before.window.items.count)), before.window.items,
+            "Earlier cards keep identity, order and projection")
+        XCTAssertEqual(Set(grown.window.items.map(\.id)).count, grown.window.items.count,
+            "Growth appends once per card: no duplicates")
+        XCTAssertEqual(grown.window.anchor, before.window.anchor, "Growth never moves the reading point")
+        XCTAssertEqual(grown.contextKey, before.contextKey)
+        XCTAssertEqual(grown.editionID, before.editionID)
+        let repeated = try await f.session.admitPresentation(.publishedGrowth)
+        XCTAssertEqual(repeated, grown, "A repeat never walks the tail past the bound")
     }
 
     /// An observation inside the admitted list moves the anchor without rebuilding anything.

@@ -17,7 +17,9 @@ public enum ReaderExportScope: Hashable, Sendable, Identifiable {
     case selection
     /// One source collection (T7/T8).
     case collection(String)
-    /// One saved box: the sources the cards in it came from.
+    /// One saved box: the **articles** the reader saved, and V1 exported exactly those
+    /// (`ExportView.generateExportData`, "Bookmarks export uses articles, not sources"). A box's article formats
+    /// are the four below, and OPML is not one of them — an OPML document is a list of feeds.
     case bookmarkBox(String)
 
     public var id: String {
@@ -68,6 +70,16 @@ public enum ReaderExportFormat: String, Hashable, Sendable, CaseIterable, Identi
         case .text: return "doc.plaintext"
         case .shareLink: return "link"
         case .socialCard: return "rectangle.on.rectangle"
+        }
+    }
+
+    /// Which formats a scope can be written in. V1 decided this per scope and hid the rest
+    /// (`ExportView.availableFormats`): a saved box carries articles, so it offers exactly the four formats an
+    /// article list has, and a surface that offers OPML for a box would be promising a document it cannot write.
+    public static func available(for scope: ReaderExportScope) -> [ReaderExportFormat] {
+        switch scope {
+        case .bookmarkBox: return [.text, .markdown, .csv, .html]
+        case .selection, .collection: return allCases
         }
     }
 }

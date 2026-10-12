@@ -44,7 +44,7 @@ public final class ReaderMediaCoordinator {
             throw ReaderActionError.actionUnavailable(.openMedia)
         }
         try await player.play(ReaderMediaItem(cardID: cardID, url: media.url, title: media.title,
-            mimeType: media.mimeType))
+            mimeType: media.mimeType, source: media.source))
     }
 
     public func pause() async { await player.pause() }

@@ -10,6 +10,7 @@
 
 import Foundation
 import GRDB
+import FeedMineDomain
 
 public enum LegacyCatalogError: Error, Equatable, Sendable {
     case open(String)
@@ -63,11 +64,42 @@ public struct LegacyCatalogLanguageRecord: Hashable, Sendable {
         self.code = code; self.enabledSources = enabledSources; self.totalSources = totalSources
     }
 
-    /// V1 compared the primary subtag when a feed declared "pt-BR" and the reader selected "pt".
-    public var primarySubtag: String {
-        String(code.prefix(while: { $0 != "-" && $0 != "_" })).lowercased()
+    /// V1 compared the primary subtag when a feed declared "pt-BR" and the reader selected "pt"; the rule lives
+    /// in `ReaderLanguageCode` so the catalogue, the filter and the pool cannot disagree about it.
+    public var primarySubtag: String { ReaderLanguageCode.choice(code) }
+    public var isUndeclared: Bool { ReaderLanguageCode.isUndeclared(code) }
+}
+
+/// The `catalog_metadata` row v1's compiler writes: the catalogue's own claims about itself
+/// (`04-catalog-editorial.md` §2.1 — `build_catalog.py` emits the key/value table). Read-only, and
+/// authoritative for what a snapshot declares about its own revision, schema and size; the public
+/// preparation is the publisher of that table, so a reader that verifies it is reconciling with the
+/// authority rather than inventing a second identity. `nil` when the file carries no such table
+/// (a catalogue predating it), which is itself the answer "this snapshot declares nothing".
+public struct LegacyCatalogMetadata: Hashable, Sendable {
+    /// `schema_version` — the v1 compiler's own catalogue schema counter.
+    public let schemaVersion: Int?
+    /// `catalog_version` — the catalogue's own revision counter, the number the edition stamps as
+    /// `CatalogGeneration` provenance.
+    public let revision: Int64?
+    public let sourceCount: Int?
+    public let nodeCount: Int?
+    public let placementCount: Int?
+    public let fileCount: Int?
+    public let invalidSourceCount: Int?
+    public let failedFileCount: Int?
+
+    public init(schemaVersion: Int?, revision: Int64?, sourceCount: Int?, nodeCount: Int?, placementCount: Int?,
+        fileCount: Int?, invalidSourceCount: Int?, failedFileCount: Int?) {
+        self.schemaVersion = schemaVersion
+        self.revision = revision
+        self.sourceCount = sourceCount
+        self.nodeCount = nodeCount
+        self.placementCount = placementCount
+        self.fileCount = fileCount
+        self.invalidSourceCount = invalidSourceCount
+        self.failedFileCount = failedFileCount
     }
-    public var isUndeclared: Bool { code.isEmpty || primarySubtag == "und" }
 }
 
 /// One taxonomy node. `kind` is the catalogue's own discriminator, measured on the bundled snapshot
@@ -129,6 +161,12 @@ public struct LegacyCatalogNodePage: Hashable, Sendable {
 }
 
 public struct LegacyCatalogReader: Sendable {
+    /// The catalogue schema this build reads, as the compiled snapshot declares it in `catalog_metadata`
+    /// (`schema_version`). A snapshot declaring another version is refused by a caller that verifies the
+    /// catalogue, rather than opened and misread; the reader's own table check
+    /// (`catalog_source`/`catalog_node`/`catalog_placement`) remains the mechanical gate.
+    public static let supportedSchemaVersion = 2
+
     private let queue: DatabaseQueue
 
     public init(catalogURL: URL) throws {
@@ -144,6 +182,30 @@ public struct LegacyCatalogReader: Sendable {
 
     public func sourceCount() throws -> Int {
         try Self.wrap { try queue.read { db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM catalog_source") ?? 0 } }
+    }
+
+    /// The catalogue's own `catalog_metadata` table, as values; `nil` when the snapshot carries no such table
+    /// or names no keys. Mechanical only: nothing is inferred and no key is invented (the table is written by
+    /// the external preparation, so keys this build does not know are ignored rather than refused).
+    public func metadata() throws -> LegacyCatalogMetadata? {
+        try Self.wrap { try queue.read { db in
+            let tables = try String.fetchAll(db,
+                sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'catalog_metadata'")
+            guard !tables.isEmpty else { return nil }
+            let rows = try Row.fetchAll(db, sql: "SELECT key, value FROM catalog_metadata")
+            guard !rows.isEmpty else { return nil }
+            var values: [String: String] = [:]
+            for row in rows {
+                let key: String = row["key"]
+                values[key] = row["value"] as String?
+            }
+            let int = { (key: String) -> Int? in values[key].flatMap(Int.init) }
+            return LegacyCatalogMetadata(schemaVersion: int("schema_version"),
+                revision: values["catalog_version"].flatMap(Int64.init), sourceCount: int("source_count"),
+                nodeCount: int("node_count"), placementCount: int("placement_count"),
+                fileCount: int("file_count"), invalidSourceCount: int("invalid_source_count"),
+                failedFileCount: int("failed_file_count"))
+        } }
     }
 
     /// One bounded page in stable key order. `after` is the last key of the previous page.

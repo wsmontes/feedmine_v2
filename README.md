@@ -22,6 +22,8 @@ Verificação do pacote: `swift package describe`, `swift build`, `swift test`, 
 
 Veja [execução iOS](docs/IOS_RUN.md) e [arquitetura](docs/architecture/ARCHITECTURE.md).
 
+Antes de avaliar UX/experiência em um build de simulador, rode `scripts/verify_product_catalogue.sh "$(xcrun simctl get_app_container booted com.feedmine.development app)"`: uma corrida do benchmark instala o app com o catálogo do corpus dentro dele e, fora da corrida, esse app parece não publicar nada (o script sai 1 e diz como reinstalar o build de produto).
+
 ## Pesquisa Apple — UI/UX, offline e confiabilidade
 
 Documentação primária Apple com limites iOS e cenários verificáveis: [índice de pesquisa Apple](docs/research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md). A terceira onda de [F21–F27](docs/product/PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) complementa F01–F20 em scene lifecycle, rede/offline, background, integridade local, SwiftUI, integrações e recursos; não altera B01–B06 ou o status de release.

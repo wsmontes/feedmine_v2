@@ -22,7 +22,7 @@ final class TransferScenarioTests: XCTestCase {
     private func card(_ number: Int, title: String? = nil) -> PresentationCard {
         PresentationCard(id: PublicationCardID(),
             title: title ?? "c\(number)", primaryText: "texto \(number)", timestamp: nil,
-            sourceDisplayName: "Fonte \(number)", providerDisplayName: nil, layout: .textOnly,
+            sourceID: SourceID(), sourceDisplayName: "Fonte \(number)", providerDisplayName: nil, layout: .textOnly,
             mediaAspectRatio: nil, primaryActionKind: nil, image: nil)
     }
 
@@ -51,7 +51,7 @@ final class TransferScenarioTests: XCTestCase {
         // 3. A decode lands late: the *same* frozen cards, with their images now decoded.
         let decoded = grown.map { card in
             PresentationCard(id: card.id, title: card.title, primaryText: card.primaryText,
-                timestamp: card.timestamp, sourceDisplayName: card.sourceDisplayName,
+                timestamp: card.timestamp, sourceID: card.sourceID, sourceDisplayName: card.sourceDisplayName,
                 providerDisplayName: card.providerDisplayName, layout: card.layout,
                 mediaAspectRatio: card.mediaAspectRatio, primaryActionKind: card.primaryActionKind,
                 image: nil)

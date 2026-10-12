@@ -5,7 +5,7 @@ import FeedMinePersistence
 import FeedMineMedia
 import FeedMineRuntime
 
-/// PD-5/PD-6: one owner prepares supply media before selection; failures become text-only.
+/// PD-5/PD-6: definitive decisions permit text-only; pending work never does.
 final class MediaPrefetcherTests: XCTestCase {
     private let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAEElEQVR4nGP4z8AARAwoFABE0AX7pM/egAAAAABJRU5ErkJggg==")!
     private final class Calls: @unchecked Sendable {
@@ -77,7 +77,7 @@ final class MediaPrefetcherTests: XCTestCase {
             fetch: { url, _ in calls.add(url); return Data() }, conditions: { _ in Self.policy(network: .unavailable) })
         await prefetcher.prefetchSupplyHead(limit: 10)
         XCTAssertTrue(calls.all.isEmpty)
-        XCTAssertEqual(prefetcher.readiness.presentation(for: revision), .textOnly)
+        XCTAssertNil(prefetcher.readiness.presentation(for: revision), "Offline is pending, not evidence for text-only")
     }
 }
 
@@ -101,6 +101,7 @@ extension MediaPrefetcherTests {
         let elapsed = ProcessInfo.processInfo.systemUptime - started
         XCTAssertLessThan(elapsed, 2.0, "prefetch must return near its deadline")
         XCTAssertNil(prefetcher.readiness.prepared(revision))
+        XCTAssertNil(prefetcher.readiness.presentation(for: revision), "The deadline ends waiting, not preparation")
         // The owned download keeps going and still helps the next selection.
         await hold.release()
         for _ in 0..<200 where prefetcher.readiness.prepared(revision) == nil { try await Task.sleep(nanoseconds: 10_000_000) }
@@ -119,6 +120,7 @@ extension MediaPrefetcherTests {
             conditions: { _ in Self.policy() })
         await prefetcher.prefetchSupplyHead(limit: 10)
         XCTAssertEqual(calls.all.count, 1); XCTAssertNil(prefetcher.readiness.prepared(revision))
+        XCTAssertNil(prefetcher.readiness.presentation(for: revision), "Transient failure must remain pending")
         clock.now = 5
         await prefetcher.prefetchSupplyHead(limit: 10)
         XCTAssertEqual(calls.all.count, 1, "cooling after a transient failure")

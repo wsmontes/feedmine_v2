@@ -1430,6 +1430,18 @@ Leitura de `FeedScreen.swift` em `42bc50e3`, sem execução. As duas causas abai
 **Teste que decide (o instrumento atual já serve):** com `FEEDMINE_FIXTURE_ITEMS=95`, nas instalações `order=16`/`18` e na mesma carta que ficou, `|Δ conteúdo| ≤ 1 pt` e `|Δ frameY| ≤ 1 pt`, **inclusive no primeiro quadro após a instalação** (os quadros intermediários que o Codex exigiu). Se (1) e (2) não bastarem, o resíduo medido mostra se o problema é o `scrollPosition(id:)` brigando, que seria o terceiro suspeito, e aí vale testar com o binding de posição desligado só na transação da poda.
 
 
+### Execução Codex concluída — 2026-10-12
+
+O usuário pediu execução direta. Correção `f4bfabc2`: substituído o protótipo de espaçador por compensação imediata do UIScrollView existente, calculada pela coordenada de conteúdo do mesmo card retido. Estado limitado à janela atual; nova associação/geometria/gesto descartam a testemunha. Nenhuma mudança em Runtime/Persistência nesta execução.
+
+Verificações executadas no Mac: pacote 1241 testes (1 pulado), zero falhas; alvo completo do app 83/83; leitura 7/7; poda normal + acessibilidade máxima e sugestões no catálogo real 3/3. Controle negativo sem ajuste nativo: FAIL, 157,333 pt. Cada correção da corrida precisa de medição correspondente, primeira geometria coerente com resíduo <1 pt; não se afirma filmagem de cada frame físico. Compilação Release iPhone: BUILD SUCCEEDED, sem assinatura/upload. Revisão independente somente leitura concluída sem defeito UIKit importante estabelecido; compensação AppKit fora do escopo iOS.
+
+Também corrigidas as lacunas da prova de histórico apontadas pelo Kiro: união dos IDs realmente admitidos por lotes distintos (>25), acumulação offline, e percurso backward que continua por IDs revisitados até a cabeça realmente parar. O fortalecimento expôs uma parada antecipada no teste, corrigida sem mudar runtime ou diminuir a exigência. Detalhes: `docs/reviews/2026-10-12-codex-position-completion.md`.
+
+GitHub confirmado por compare API: K-01/K-03/K-05/K-07/K-08/K-09 têm zero commits à frente de main, portanto todas as seis entregas de código publicadas estão integradas. Isso não transforma pedidos ainda sem entrega em concluídos. O PR #3 carrega a linha do app e esta correção; demais atualizações de main incorporadas sem conflito, somente docs.
+
+Limites: gates completos não reexecutados por esta entrega; teste com aparelho fisicamente offline segue manual. O fluxo TestFlight recusou exit 9 por ASC_KEY_ID ausente; ASC_ISSUER_ID também não está configurado nesta sessão. Configuração solicitada ao usuário, sem pedir autorização novamente. Nenhum upload novo declarado.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |

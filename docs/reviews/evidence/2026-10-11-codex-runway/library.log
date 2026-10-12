@@ -1,0 +1,244 @@
+Building for debugging...
+[0/3] Write sources
+[1/3] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Compiling FeedMineComposition FeedRunwayDriver.swift
+[4/5] Emitting module FeedMineComposition
+[4/6] Write Objects.LinkFileList
+[5/6] Linking FeedMinePackageTests
+Build complete! (2.05s)
+Test Suite 'Selected tests' started at 2026-10-11 00:51:19.801.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-10-11 00:51:19.802.
+Test Suite 'ColdFeedBootstrapTests' started at 2026-10-11 00:51:19.802.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests test3R2ColdAllOperationalFailuresRetainsOrderedResultsWithoutPublication]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests test3R2ColdAllOperationalFailuresRetainsOrderedResultsWithoutPublication]' passed (0.060 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests test3R2ColdHTTPFailureDoesNotBlockHealthyTarget]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests test3R2ColdHTTPFailureDoesNotBlockHealthyTarget]' passed (0.034 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests test3R4RealSyndicationAdmitsTenItemsAndColdPublishesWithOneGET]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests test3R4RealSyndicationAdmitsTenItemsAndColdPublishesWithOneGET]' passed (0.050 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests test3R6ColdPublishesHealthyTargetAfterResidualRemoteFailuresWithoutRetry]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests test3R6ColdPublishesHealthyTargetAfterResidualRemoteFailuresWithoutRetry]' passed (0.058 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC10ExactIdentityAndCardIDsSurviveRemoteGap]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC10ExactIdentityAndCardIDsSurviveRemoteGap]' passed (0.017 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC11AcquisitionFailureSettlesOnce]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC11AcquisitionFailureSettlesOnce]' passed (0.012 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC12EarlierAdmissionPublishesDespiteLaterTargetFailure]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC12EarlierAdmissionPublishesDespiteLaterTargetFailure]' passed (0.018 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC13PostAcquisitionPreparationFailurePreservesSupply]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC13PostAcquisitionPreparationFailurePreservesSupply]' passed (0.016 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC14SecondLocalFailureDoesNotAcquireAgain]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC14SecondLocalFailureDoesNotAcquireAgain]' passed (0.016 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC15InstalledSessionRefusedBeforeAnyWork]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC15InstalledSessionRefusedBeforeAnyWork]' passed (0.019 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC16DurableCheckpointFencePropagatesAndRollsBack]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC16DurableCheckpointFencePropagatesAndRollsBack]' passed (0.016 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC17ExactInstalledWindowWithoutCheckpointRewrite]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC17ExactInstalledWindowWithoutCheckpointRewrite]' passed (0.022 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC18LocalSearchDoesNotAcquire]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC18LocalSearchDoesNotAcquire]' passed (0.015 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC19FinitePlanSequentialOrderAndSettlement]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC19FinitePlanSequentialOrderAndSettlement]' passed (0.019 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC1ExistingLocalSupplyPublishesWithZeroHTTP]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC1ExistingLocalSupplyPublishesWithZeroHTTP]' passed (0.020 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC20FinitePlanOnlyOnceWithoutReplanning]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC20FinitePlanOnlyOnceWithoutReplanning]' passed (0.019 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC21ResourcesHaveOnlyExplicitMechanicalBounds]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC21ResourcesHaveOnlyExplicitMechanicalBounds]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC22ColdSuccessStopsAtInstalledPresentation]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC22ColdSuccessStopsAtInstalledPresentation]' passed (0.018 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC2FullColdRemotePathOnlyBootstrapRun]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC2FullColdRemotePathOnlyBootstrapRun]' passed (0.019 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC3NonexhaustedLocalMissForbidsHTTPAndEligibility]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC3NonexhaustedLocalMissForbidsHTTPAndEligibility]' passed (0.017 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC4EmptyAndNoEligibleTargetIsUnavailable]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC4EmptyAndNoEligibleTargetIsUnavailable]' passed (0.014 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC5ResourceDeniedDefersWithoutHTTP]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC5ResourceDeniedDefersWithoutHTTP]' passed (0.013 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC6RealActiveGenerationConflictAndAdmissionFence]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC6RealActiveGenerationConflictAndAdmissionFence]' passed (0.015 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC7UpToDateDoesNotRunSecondLocalAttempt]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC7UpToDateDoesNotRunSecondLocalAttempt]' passed (0.013 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC8CheckpointOnlyDoesNotRunSecondLocalAttempt]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC8CheckpointOnlyDoesNotRunSecondLocalAttempt]' passed (0.015 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC9SupplyChangeRunsOneSecondLocalAttemptFromCanonicalHead]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testC9SupplyChangeRunsOneSecondLocalAttemptFromCanonicalHead]' passed (0.023 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testClosedBootstrapCannotPublishAfterScopedLocalPreparation]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testClosedBootstrapCannotPublishAfterScopedLocalPreparation]' passed (0.016 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testClosedBootstrapCannotPublishAfterSuspendedPreparation]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testClosedBootstrapCannotPublishAfterSuspendedPreparation]' passed (0.016 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testColdWindowsShareOneMediaDeadlineAndTheNextOpportunityRenewsIt]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testColdWindowsShareOneMediaDeadlineAndTheNextOpportunityRenewsIt]' passed (0.024 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testIdentityRequiresAllThreeFiniteDates]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testIdentityRequiresAllThreeFiniteDates]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testPolicyContextMismatchRefusedAtConstruction]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testPolicyContextMismatchRefusedAtConstruction]' passed (0.027 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testPublishedRestoreMustMatchCallerEdition]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testPublishedRestoreMustMatchCallerEdition]' passed (0.032 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testScopedContinuationYieldsAfterFiniteWindowsAndResumesCursor]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testScopedContinuationYieldsAfterFiniteWindowsAndResumesCursor]' passed (0.032 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testScopedPendingMediaResumesFiniteWindowsWithoutReservingPublication]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testScopedPendingMediaResumesFiniteWindowsWithoutReservingPublication]' passed (0.040 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testScopedPreparationFailureRetainsResumedWindowAndPublicationIdentity]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testScopedPreparationFailureRetainsResumedWindowAndPublicationIdentity]' passed (0.025 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testSecondNonexhaustedMissStopsWithSecondProgressAndOrderedResults]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testSecondNonexhaustedMissStopsWithSecondProgressAndOrderedResults]' passed (0.018 seconds).
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testStaticFiniteControlFlowAndModuleBoundaries]' started.
+Test Case '-[FeedMineCompositionTests.ColdFeedBootstrapTests testStaticFiniteControlFlowAndModuleBoundaries]' passed (0.018 seconds).
+Test Suite 'ColdFeedBootstrapTests' passed at 2026-10-11 00:51:20.614.
+	 Executed 37 tests, with 0 failures (0 unexpected) in 0.810 (0.812) seconds
+Test Suite 'FeedRunwayDriverTests' started at 2026-10-11 00:51:20.614.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test01SemanticTailFullProductionLoop]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test01SemanticTailFullProductionLoop]' passed (0.039 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test02LocalPresentationSurvivesSuspendedTailHTTP]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test02LocalPresentationSurvivesSuspendedTailHTTP]' passed (0.034 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test03NoCheckpointNoColdEdition]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test03NoCheckpointNoColdEdition]' passed (0.016 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test04LocalSupplyPrecedesNetwork]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test04LocalSupplyPrecedesNetwork]' passed (0.041 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test05HistoryMeasurementIgnoresTinyWindowTail]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test05HistoryMeasurementIgnoresTinyWindowTail]' passed (0.029 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test06LocalPublicationExtendsReserveWithoutChangingTheAdmittedList]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test06LocalPublicationExtendsReserveWithoutChangingTheAdmittedList]' passed (0.022 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test07AdvanceWithoutPublicationPreservesPresentation]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test07AdvanceWithoutPublicationPreservesPresentation]' passed (0.020 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test08DeferredExactIntentExplicitlyResumes]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test08DeferredExactIntentExplicitlyResumes]' passed (0.035 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test09NoEligibleQuiesces]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test09NoEligibleQuiesces]' passed (0.021 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test10OperationalFailureSettlesOnceAndPreservesPresentation]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test10OperationalFailureSettlesOnceAndPreservesPresentation]' passed (0.038 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test11PreparationFailureRecordsFailed]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test11PreparationFailureRecordsFailed]' passed (0.024 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test12CancellationRecordsCancelled]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test12CancellationRecordsCancelled]' passed (0.022 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test13SourceContextEligibility]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test13SourceContextEligibility]' passed (0.027 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test14LocalSearchSettlesWithoutHTTP]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test14LocalSearchSettlesWithoutHTTP]' passed (0.018 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test15SessionContextMismatch]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test15SessionContextMismatch]' passed (0.016 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test16EditorialRevisionMismatch]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test16EditorialRevisionMismatch]' passed (0.017 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test17PolicyContextMismatchInit]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test17PolicyContextMismatchInit]' passed (0.014 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test18UnknownViewportDoesNotEnterRunway]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test18UnknownViewportDoesNotEnterRunway]' passed (0.017 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test19SameAnchorIsSemanticTailInput]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test19SameAnchorIsSemanticTailInput]' passed (0.019 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test20ViewportShiftUsesCommittedAdvance]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test20ViewportShiftUsesCommittedAdvance]' passed (0.017 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test21MarkInactivePreservesPresentation]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test21MarkInactivePreservesPresentation]' passed (0.020 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test22DeactivatePreservesPresentation]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test22DeactivatePreservesPresentation]' passed (0.016 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test23SameEditionOnly]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test23SameEditionOnly]' passed (0.033 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test24SingleTailOpportunityReachesQuiescence]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test24SingleTailOpportunityReachesQuiescence]' passed (0.033 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test25BackwardAndStationaryActivitiesDoNotAdmit]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test25BackwardAndStationaryActivitiesDoNotAdmit]' passed (0.037 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test25SegmentIdentityRequiresFiniteCallerTime]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test25SegmentIdentityRequiresFiniteCallerTime]' passed (0.000 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testCausalDrainSharesOneMediaDeadlineAcrossLocalSlices]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testCausalDrainSharesOneMediaDeadlineAcrossLocalSlices]' passed (0.037 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testQ1ColdAndRunwayShareCompositionCoordinatorAndDatabase]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testQ1ColdAndRunwayShareCompositionCoordinatorAndDatabase]' passed (0.025 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testQ2DriverObservesSharedActiveGenerationConflictWithoutReplacement]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testQ2DriverObservesSharedActiveGenerationConflictWithoutReplacement]' passed (0.023 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testQ4ConsumersNeverConstructTheirOwnCoordinator]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testQ4ConsumersNeverConstructTheirOwnCoordinator]' passed (0.015 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR12StructuralFailureReleasesOwnerAndPreservesPresentation]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR12StructuralFailureReleasesOwnerAndPreservesPresentation]' passed (0.021 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR13CancellationDuringHTTPReleasesOwnerAndCoordinator]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR13CancellationDuringHTTPReleasesOwnerAndCoordinator]' passed (0.022 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR14DeactivateDuringHTTPKeepsSupplyWithoutReactivatingOrPublishing]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR14DeactivateDuringHTTPKeepsSupplyWithoutReactivatingOrPublishing]' passed (0.022 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR15ContextAndEditionChangeDuringHTTPPreservesNewPresentation]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR15ContextAndEditionChangeDuringHTTPPreservesNewPresentation]' passed (0.034 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR16NewEditionActivationDuringHTTPGetsReconsideredByOwner]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR16NewEditionActivationDuringHTTPGetsReconsideredByOwner]' passed (0.024 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR18IndependentDriversBothEnterHTTPBeforeEitherIsReleased]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR18IndependentDriversBothEnterHTTPBeforeEitherIsReleased]' passed (0.054 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR1ConcurrentDriveWhileHTTPSuspendedReturnsPresentationWithoutEffects]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR1ConcurrentDriveWhileHTTPSuspendedReturnsPresentationWithoutEffects]' passed (0.034 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR3NewestViewportDuringHTTPDoesNotStartAnotherCausalExecutor]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR3NewestViewportDuringHTTPDoesNotStartAnotherCausalExecutor]' passed (0.032 seconds).
+Test Suite 'FeedRunwayDriverTests' passed at 2026-10-11 00:51:21.585.
+	 Executed 38 tests, with 0 failures (0 unexpected) in 0.968 (0.971) seconds
+Test Suite 'FeedScreenRenderingTests' started at 2026-10-11 00:51:21.585.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testCardAdaptsToNarrowAvailableWidth]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testCardAdaptsToNarrowAvailableWidth]' passed (0.306 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testNativeHostingObservesStoreWithoutReplacingView]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testNativeHostingObservesStoreWithoutReplacingView]' passed (0.655 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testTimestampMeaningIsNotChangedToAuthorship]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testTimestampMeaningIsNotChangedToAuthorship]' passed (0.282 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU10AllNonPresentationFactsRemainDistinctAndNonterminal]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU10AllNonPresentationFactsRemainDistinctAndNonterminal]' passed (0.702 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU11NewSameEditionWindowRendersExactReceivedSequence]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU11NewSameEditionWindowRendersExactReceivedSequence]' passed (0.564 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU12DeferredViewportCaptureEmitsNoFabricatedObservation]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU12DeferredViewportCaptureEmitsNoFabricatedObservation]' passed (0.168 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU13RenderingPerformsNoDurableWorkOrIntentEmission]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU13RenderingPerformsNoDurableWorkOrIntentEmission]' passed (0.256 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU14UIBoundaryHasNoProductionImportsOrHiddenEffects]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU14UIBoundaryHasNoProductionImportsOrHiddenEffects]' passed (0.034 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU1TextOnlyCardActuallyRendersLocalFields]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU1TextOnlyCardActuallyRendersLocalFields]' passed (0.094 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU2AbsentOptionalContentRendersWithoutInventedText]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU2AbsentOptionalContentRendersWithoutInventedText]' passed (0.040 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU3HeroAndThumbnailWithoutExposedAssetRemainTextual]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU3HeroAndThumbnailWithoutExposedAssetRemainTextual]' passed (0.107 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU4RealViewSequenceUsesPublishedOccurrenceIDs]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU4RealViewSequenceUsesPublishedOccurrenceIDs]' passed (0.163 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU5PublishedOrderIsRenderedRatherThanTitleSorting]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU5PublishedOrderIsRenderedRatherThanTitleSorting]' passed (0.189 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU6ImmediateLocalPresentationHasNoRemotePrerequisite]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU6ImmediateLocalPresentationHasNoRemotePrerequisite]' passed (0.162 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU7PendingKeepsRenderedCardsWithoutLoadingSurface]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU7PendingKeepsRenderedCardsWithoutLoadingSurface]' passed (0.173 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU8FailureAndOtherWorkFactsKeepRenderedCards]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU8FailureAndOtherWorkFactsKeepRenderedCards]' passed (0.447 seconds).
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU9InitialPendingRendersOnlyFactualPreparation]' started.
+Test Case '-[ArchitectureSmokeTests.FeedScreenRenderingTests testU9InitialPendingRendersOnlyFactualPreparation]' passed (0.095 seconds).
+Test Suite 'FeedScreenRenderingTests' passed at 2026-10-11 00:51:26.024.
+	 Executed 17 tests, with 0 failures (0 unexpected) in 4.438 (4.439) seconds
+Test Suite 'ReaderDiscoveryPoolTests' started at 2026-10-11 00:51:26.024.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testALanguageWithNoSourcesYieldsNothing]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testALanguageWithNoSourcesYieldsNothing]' passed (0.005 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testAnExcludedSubjectLeavesThePoolWithoutTakingAlicesSourcesWithIt]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testAnExcludedSubjectLeavesThePoolWithoutTakingAlicesSourcesWithIt]' passed (0.004 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testAPoolIsTheTopicsSourcesInTheReadersLanguage]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testAPoolIsTheTopicsSourcesInTheReadersLanguage]' passed (0.003 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testAProfileThatNamesNothingDiscoversNothing]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testAProfileThatNamesNothingDiscoversNothing]' passed (0.002 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testColdDiscoveryResumesAfterAnEmptyProfilePageUsingTheSameCoordinator]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testColdDiscoveryResumesAfterAnEmptyProfilePageUsingTheSameCoordinator]' passed (0.025 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testDeactivationDuringMediaBudgetCreationDoesNotAdvanceDiscovery]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testDeactivationDuringMediaBudgetCreationDoesNotAdvanceDiscovery]' passed (0.021 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testDiscoveryDoesNotExpandSourceOrSearchScopes]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testDiscoveryDoesNotExpandSourceOrSearchScopes]' passed (0.015 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testDiscoveryMetadataSuspensionCoalescesDriveAndDeactivationStopsWork]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testDiscoveryMetadataSuspensionCoalescesDriveAndDeactivationStopsWork]' passed (0.022 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testDiscoveryPolicyPreservesCuratedRankingAndAllBehaviorVersions]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testDiscoveryPolicyPreservesCuratedRankingAndAllBehaviorVersions]' passed (0.023 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testEmptyFilteredPageAdvancesAndCursorCannotCrossProfiles]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testEmptyFilteredPageAdvancesAndCursorCannotCrossProfiles]' passed (0.006 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testExistingDriverAndCoordinatorAcquireProgressivePagesBeyond120]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testExistingDriverAndCoordinatorAcquireProgressivePagesBeyond120]' passed (0.990 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testProgressivePagesReachBeyond120AndLegacyCeilingsWithoutDuplicates]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testProgressivePagesReachBeyond120AndLegacyCeilingsWithoutDuplicates]' passed (0.031 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testRetainedDiscoveryUsesTheReplacementAssociationsTransport]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testRetainedDiscoveryUsesTheReplacementAssociationsTransport]' passed (0.032 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testTheLimitIsRespectedAndKeepsQualityOrder]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testTheLimitIsRespectedAndKeepsQualityOrder]' passed (0.003 seconds).
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testTheSameProfileAlwaysYieldsTheSamePool]' started.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testTheSameProfileAlwaysYieldsTheSamePool]' passed (0.004 seconds).
+Test Suite 'ReaderDiscoveryPoolTests' passed at 2026-10-11 00:51:27.210.
+	 Executed 15 tests, with 0 failures (0 unexpected) in 1.185 (1.186) seconds
+Test Suite 'FeedMinePackageTests.xctest' passed at 2026-10-11 00:51:27.210.
+	 Executed 107 tests, with 0 failures (0 unexpected) in 7.400 (7.408) seconds
+Test Suite 'Selected tests' passed at 2026-10-11 00:51:27.210.
+	 Executed 107 tests, with 0 failures (0 unexpected) in 7.400 (7.409) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

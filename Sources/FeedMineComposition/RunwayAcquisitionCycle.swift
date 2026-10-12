@@ -1,6 +1,7 @@
 // Owns: one bounded Runtime intent-to-Acquisition handoff and committed supply notifications.
 // Does not own: eligibility discovery, local production, publication or scheduling.
 import FeedMineAcquisition
+import FeedMineDomain
 import FeedMineRuntime
 
 public enum RunwayAcquisitionCycleError: Error, Equatable, Sendable {
@@ -23,10 +24,14 @@ public enum RunwayAcquisitionCycleOutcome: Hashable, Sendable {
 public struct RunwayAcquisitionCycle: Sendable {
     private let runway: RunwayController
     private let coordinator: AcquisitionCoordinator
+    /// Optional evidence of the replenishment attempt the intent names; nil records nothing.
+    private let trace: ReplenishmentTrace?
 
-    public init(runway: RunwayController, coordinator: AcquisitionCoordinator) {
+    public init(runway: RunwayController, coordinator: AcquisitionCoordinator,
+        trace: ReplenishmentTrace? = nil) {
         self.runway = runway
         self.coordinator = coordinator
+        self.trace = trace
     }
 
     public func run(_ intent: RunwayAcquisitionIntent, eligibleTargets: [AcquisitionTarget],
@@ -57,7 +62,8 @@ public struct RunwayAcquisitionCycle: Sendable {
             try Task.checkCancellation()
             let runway = self.runway, scope = intent.scope
             // Targets run concurrently (bounded by the plan) so one slow feed never delays the rest.
-            let results = try await coordinator.executeConcurrently(plan.work) { result in
+            let results = try await coordinator.executeConcurrently(plan.work, operation: intent.operation,
+                trace: trace) { result in
                 guard result.selectableSupplyChanged else { return }
                 do { try await runway.noteLocalSupplyChanged(scope: scope) }
                 catch RunwayControllerError.noActiveScope {}

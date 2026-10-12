@@ -56,7 +56,16 @@ public struct FeedItemView: View, Equatable {
     public var body: some View {
         Group {
             if usesRow {
+                // The compact line gets its own opening action, applied **here** and not inside the row: the row's
+                // own header states it owns the layout and not the gestures, and this wrapper owns the surface's
+                // interactions. A gesture is the right structure *here* and not on the card, because the objection
+                // to gestures is that they wrap controls and steal their touches — and this row has no control of
+                // its own (its menu rides on the `contextMenu` below, a different gesture from this tap). A button
+                // was tried first and was the wrong tool: measured, it widened the card past the readable column
+                // (730.25 pt against 704) in the iPad's landscape pass.
                 FeedItemRowView(card: card, appearance: appearance, isRead: isRead)
+                    .contentShape(Rectangle())
+                    .onTapGesture { emit(.open) }
                     .contextMenu { rowContextMenu }
             } else {
                 FeedItemCardView(card: card, appearance: appearance, isRead: isRead,
@@ -67,10 +76,14 @@ public struct FeedItemView: View, Equatable {
         // The identity used by the delivery's UI tests: the published occurrence. It is the card's own
         // element — without `.contain` the identifier would replace every identifier inside the card, and
         // the card itself would have no element with the card's frame.
+        //
+        // The wrapper deliberately recognises **no touches**. It used to carry `contentShape(Rectangle())` and a
+        // tap gesture, and that layer sat above every control inside the card: it swallowed the tap meant for the
+        // inline bookmark (measured: a 44×44 target reported not hittable) and the long press meant for the card's
+        // own `contextMenu`, which never opened. Which surface answers a touch is now decided by the structure —
+        // the content surface opens, the controls are its siblings — instead of by a contest between gestures.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(card.id.rawValue.uuidString)
-        .contentShape(Rectangle())
-        .onTapGesture { emit(.open) }
     }
 
     /// The compact row has no menu of its own in V1; the wrapper supplies the same vocabulary.

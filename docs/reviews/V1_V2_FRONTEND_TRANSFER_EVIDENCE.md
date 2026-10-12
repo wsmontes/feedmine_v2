@@ -294,7 +294,38 @@ landed on the onboarding cover instead of the sources sheet. The T5 test asserts
 sources sheet, so that is a mis-aimed click in this driving method, not a product finding. (3) The session
 contains two app relaunches (pid changes) from the same source experiment, which is why the first/second-half
 medians differ while the last 20 minutes are flat. (4) Unlike the physical-device item, this is a **simulator**
-measurement and is reported as such — and its 30-minute requirement is **not met**.
+measurement and is reported as such — and its 30-minute requirement is **not met** *by that run*: it was met on
+2026-10-10 by the second run below, on the same device, with a broad selection made through the app's own flow.
+
+### The 30-minute requirement, met (2026-10-10, second run)
+
+Same device (`8871DCF5…`, iOS 26.5), same namespace `B50A0000-0000-4000-8000-000000000030`, Debug build — **Release
+ignores `FEEDMINE_RUNTIME_NAMESPACE`**, so the namespace only survives in Debug. The run is the tool pair the
+architect's verdict named, not a hand-rolled substitute: `scripts/soak.py`, which runs the opt-in UI preparation
+through the app's own surfaces and then samples the **FeedMine process** (RSS, CPU, resolved by executable path)
+and the runtime database every 30 s, streaming the app's unified log alongside.
+
+**Preparation through the app's own flow.** The T7 interaction: menu → Fontes → Países → Argentina's toggle,
+tapped on the wrapped switch, with the test asserting `value == "selected"` before it closes. Result in a fresh
+container: `acquisition_targets = 1415`, 54 cards, 1826 origin records — the 1411-feed Argentine subtree, selected
+by clicks in the shipped surface, nothing written into the database by hand.
+
+| Window | What was measured |
+|---|---|
+| 30 minutes, 2026-10-10 09:05→09:35 local | 61 samples at 30 s, **0 errors, a single PID for the whole window**, elapsed 1800.01 s. RSS 13 MB at launch → **376 MB** peak → **290 MB** at the end; the last 10 minutes stay inside 290–329 MB: bounded use, **no monotonic growth**. CPU median **1.30 %** (max 98.5 %, the launch burst). Content: 54 → 81 cards, 1858 → 10 104 origin records, 3 feed segments. |
+| Continuous scrolling across all of it | Swipes driven on the simulator window: **766 swipes** in the five blocks whose counters returned (164/163/163/162/114), plus a first 5-minute block whose counter the harness's 300 s per-cell ceiling ended before it reported. Each block compared consecutive frames: 19–22 distinct screens and **never three identical frames in a row** — no freeze, no blank screen and no artificial end while the reader was moving. |
+| Integrity | `duplicate_revisions_per_segment = 0` and `duplicate_card_ids = 0` in every sample, re-checked after the restart; a saved checkpoint in **61 of 61** samples; and across the tool's own background → terminate → relaunch cycle the **same checkpoint** came back (`same_restart_checkpoint: true`, `failures: []`, exit 0). The app's log for the window (5.6 MB) carries the seam's admissions (`installed cards=17/25/31 …`) and exactly one non-admission event: an ATS refusal (`NSURLErrorDomain -1022`) of a single non-HTTPS resource among the 1415 feeds. |
+
+**Deviations of this run, stated rather than hidden.** (1) The harness's 300 s ceiling per driving cell ended the
+first block before it printed its counter, so the first minute of the 30 ran without swipes; the remaining 29
+minutes were driven continuously. (2) The sampler needed two host repairs to run on this machine at all:
+`simctl launch --terminate-running-process` fails here with `FBSOpenApplicationServiceErrorDomain code=4`: the tool
+placed the flag **after** the device, where `simctl` reads it as the bundle id (hence an error naming the flag
+itself as the app to open), so the tool now stops the app explicitly and launches plainly; and a preparation run leaves `com.feedmine.development` registered in a state that
+`simctl launch` refuses, so it must be reinstalled from the same build before sampling. (3) Hitches are still
+**not** measured: the tool says so itself and names Instruments Animation Hitches; what this run adds is the app
+log above, sampled across the whole window. (4) One network, not the heterogeneous set the last table row asks
+for.
 
 ## The architect's acceptance (2026-10-10)
 
@@ -343,6 +374,38 @@ content recorded separately.
 | `FeedMineUITests` as one run (21 tests) | **21 tests, 0 failures** (2026-10-10, whole-scheme run — the acceptance this round was aiming at; it was 16 failing before the repairs). The cause of the earlier failures was *not* shared simulator state: the app keeps no `UserDefaults` and every test already launches with its own `FEEDMINE_RUNTIME_NAMESPACE`. It was `.accessibilityIdentifier` on a SwiftUI *container* overriding its children's identifiers on this toolchain (iOS 26.5 / Xcode 26.6) — a defect the repository had already met and fixed once, for the search bar (`Sources/FeedMineUI/Reader/ReaderShell.swift:102`) — plus the destinations the menu was not offering, and the interaction and product defects listed below. |
 | Physical iPhone: 10 minutes idle + 30 minutes of scrolling, memory/CPU/hitches and media budget | **Not executed — accepted as a documented exception by the architect.** No physical device is attached to this machine (`xcrun devicectl list devices`, 2026-10-10: two iPhones known, both `unavailable`); the plan's own validation section asks for a simulator UUID for everything else. Needs the reader's device. |
 | Visual comparison by screenshots, surface by surface | **Not executed as a screenshot diff.** The UI tests assert structure, identifiers, labels and one geometry (the mini player's 56 pt); no pixel comparison was made. |
-| 30-minute scroll budget on heterogeneous networks | **Not executed — accepted as a documented exception by the architect; the pre-publication obligation its verdict names.** The deterministic, short-horizon scenario is the substitute that was run; long-horizon behaviour is the physical-device item above. |
+| 30-minute scroll budget on heterogeneous networks | **The duration half is executed** — the second run above: 30 minutes, 1800.01 s of measurement, 766 reported swipes, `failures: []`. **The heterogeneous-network half is not**: one network only, so it stays with the physical-device item above, as the architect's exception says. |
 
 Anything not listed as executed above has no claim attached to it.
+
+## Post-T12 closure — the three high-severity product gaps (2026-10-10)
+
+A product review against the code found eight gaps the transfer had not closed. The three the review put first
+are closed in `docs/v1-study/PORT_LOG.md` §"Defasagens pós-T12": **adding a source from a pasted link**,
+**personal content filters**, and the **podcast player**. This section is the evidence for those three surfaces,
+in the same shape as the rows above: what was executed, and what was not.
+
+| Surface | Evidence | State |
+|---|---|---|
+| Add a source from a link (`ReaderAddFeedView`, V1's `AddFeedView`) | `AddFeedTests` (7, app target over the real runtime): a pasted address is discovered, written to `reader_imported_sources`, selected, resolved into a session source and acquired, with the feed's own headline published; the same identities and a fresh fetch after a relaunch; the same feed twice adds nothing; an address with no feed writes nothing; a destination collection is filed in the import's own transaction; a filing that cannot land writes nothing; a key's authority is the same with and without the session's list. `FeedLinkInputTests` (3) + `FeedLinkResolverTests` (10) for extraction, classification, discovery order, the deadline and the byte ceiling. uitest `testAddFeedByLinkDiscoversAddsAndReadsIt`: from an empty selection, paste, add, read the card, relaunch, still there. | **Executed.** The reader's own sources now resolve to acquisition targets — before this work an imported key was written, selected and dropped, so the feed it named was never fetched. |
+| Content filters (`ReaderContentFilterView`, V1's `ContentFilterView`) | `ReaderContentFilterPolicyTests` (6): the keywords resolve for the reader's language with English always; rules and templates add up normalized; the master switch masks the rules without erasing them; an empty rule set is not a criterion; applying keeps the lens; the catalogue is V1's own file (6 templates). `ContentFilterTests` (2, app target): a rule matching the whole fixture supply publishes nothing, and switching the gate off publishes it again with the rule still stored; a template hides what its words match and turning it off leaves the reader's own words alone. uitest `testContentFilterSurfaceListsTemplatesAndKeepsTheRules`: the six templates, the switch that changes what the surface states, and a rule that survives leaving and reopening. | **Executed.** Recorded difference: V1's per-filter names/counters are not carried (V2's rule is one word, and it does not count hits at ingestion). |
+| Podcast player (`MediaPlaybackAdapter`, V1's `AudioPlayerManager`) | `PlaybackTests` (8, app target, a real `AVPlayer` over a silent WAV the test writes): the item and the lock screen's dictionary; resume past V1's five seconds and not before; an interruption that pauses and resumes when the system allows; unplugged headphones that pause; reaching the end that clears the position and a seek back that restores it; replay that restarts a finished episode and does not restart one mid-listen; the commands wired and deliberately disabled as V1 had them; teardown that clears item and lock screen. `PlaybackPositionStoreTests` (5) + `ReaderPlaybackPositionRulesTests` (1) + `ReaderPlaybackPositionsAdapterTests` (2). uitest `testPlaybackResumesWhereTheReaderLeftIt`: play, background, relaunch, and the full player states the resumed position. | **Executed**, with one honest limit below. |
+
+**Reviewed adversarially, after the first pass.** An independent review of the three surfaces found four
+defects in the player and one regression in the filters; every one is fixed with its own test, and the record is
+in `PORT_LOG.md` §"Revisão adversarial": a delayed resume overriding a reader's own seek; a switch between
+episodes not saving the one being left; the end-of-item event not bound to its item (so a late event could
+complete the wrong episode); a pending seek writing into an episode the reader had already changed; and the
+master filter switch erasing a context's own exclusions instead of masking only the global ones. The lock
+screen's artwork is **recorded as a difference**, not done: `ReaderMediaItem` carries no local image yet.
+
+**Not executed, and why.** Lock-screen continuity and headphone controls are **not** observed end to end: the
+simulator can show that the episode keeps playing outside the foreground (the audio session and
+`UIBackgroundModes=audio` are declared) and that the position comes back, but the lock screen and the wired
+controls need a physical device — the same exception the architect recorded for the transfer, and still the
+reader's device.
+
+**Counters at this closure.** `swift test` **1066 tests, 0 failures**; the app target (`FeedMineAppTests`)
+**44 tests, 0 failures**; the three new UI tests are green on the simulator. Four persistence assertions that
+inventory the migration list and the schema objects were updated for the new additive migration
+(`reader-playback-positions-v1`) and its table; none of them changed what it asserts about behaviour.

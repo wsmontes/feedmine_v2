@@ -31,10 +31,18 @@ public struct SourceManagementCoordinator: Sendable {
     public func languages() throws -> [CatalogLanguageSummary] {
         guard let catalog else { throw SourceManagementError.catalogUnavailable }
         return try catalog.languages().map { record in
-            CatalogLanguageSummary(code: record.code, displayName: Self.displayName(record.code),
+            CatalogLanguageSummary(code: record.code,
+                displayName: CatalogLanguageNaming.displayName(forLanguageCode: record.code),
+                regionName: CatalogLanguageNaming.regionName(forLanguageCode: record.code),
                 enabledSources: record.enabledSources, totalSources: record.totalSources,
                 isUndeclared: record.isUndeclared)
         }
+    }
+
+    /// The reader's choices: one per language, its regional variants kept as information. The catalogue declares
+    /// 257 codes and a reader chooses a language; the variants are what the catalogue holds under it.
+    public func languageGroups() throws -> [CatalogLanguageGroup] {
+        CatalogLanguageGroup.groups(try languages())
     }
 
     public func sections() throws -> [CatalogNodeSummary] {
@@ -155,11 +163,7 @@ public struct SourceManagementCoordinator: Sendable {
 
     /// A reader-facing label for a declared code; an undeclared bucket says so instead of pretending.
     public static func displayName(_ code: String) -> String {
-        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return String(localized: "Idioma não declarado") }
-        let primary = String(trimmed.prefix(while: { $0 != "-" && $0 != "_" })).lowercased()
-        if primary == "und" { return String(localized: "Idioma não declarado") }
-        return Locale.current.localizedString(forLanguageCode: primary)?.capitalized ?? code
+        CatalogLanguageNaming.displayName(forLanguageCode: code)
     }
 
     private static func summary(_ record: LegacyCatalogSourceRecord) -> CatalogSourceSummary {
@@ -175,7 +179,10 @@ public struct SourceManagementCoordinator: Sendable {
         case LegacyCatalogNodeRecord.topicKind: kind = .topic
         default: kind = .other
         }
-        return CatalogNodeSummary(id: node.id, key: node.key, name: node.name, kind: kind,
+        // The catalogue names a country in English; the reader's interface language has its own name for it, and
+        // an unplaceable name keeps the catalogue's own.
+        let name = kind == .country ? CatalogRegionNaming.localizedName(node.name) : node.name
+        return CatalogNodeSummary(id: node.id, key: node.key, name: name, kind: kind,
             sourceCount: node.sourceCount, hasChildren: node.hasChildren)
     }
 }

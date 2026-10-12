@@ -310,6 +310,18 @@ final class FeedPresentationHandoffTests: XCTestCase {
         XCTAssertEqual(coldFixture.http.calls, 1)
         XCTAssertNil(try SessionStore(database: coldFixture.database).checkpoint())
     }
+    /// R5/PO: the same outcome with no presentation to preserve is the reader's whole situation, and it is
+    /// stated as such — that is what makes the absence surface offer "Tentar novamente" and "Ajustar
+    /// interesses" instead of claiming to still be searching.
+    func testColdNoPublicationWithoutPresentationStatesNoStories() async throws {
+        let coldFixture = try fixture(history: 0, remoteItems: 0)
+        let outcome = try await cold(coldFixture)
+        guard case .noPublicationAfterAcquisition = outcome else { return XCTFail("Expected checkpoint-only acquisition") }
+        let updated = try FeedPresentationHandoff.receive(coldOutcome: outcome,
+            into: FeedPresentationHandoff.report(.pending, into: .init(presentation: nil)))
+        XCTAssertNil(updated.presentation)
+        XCTAssertEqual(updated.work, .unavailable)
+    }
     func testLocalWorkRemainingDoesNotMeanExhaustion() async throws {
         let f = try fixture(), state = try await warm(f)
         let coldFixture = try fixture(history: 0, context: .init(request: .source(SourceID())))

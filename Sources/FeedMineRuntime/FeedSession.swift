@@ -56,6 +56,10 @@ public actor FeedSession {
             return try installFromCheckpoint(bounds)
         case .forwardScroll(let observation):
             return try admitForwardScroll(observation)
+        case .backwardScroll(let observation):
+            return try admitBackwardScroll(observation)
+        case .publishedGrowth:
+            return try admitPublishedGrowth()
         }
     }
 
@@ -139,9 +143,112 @@ public actor FeedSession {
             .prefix(current.bounds.forwardCapacity)
             .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
-        let (bounded, _) = try boundedResidency(items: items + extensionCards,
+        // O teto vale para a janela inteira, **nas duas direções** (decisão do arquiteto): crescer para frente sem
+        // limite também é defeito. O corte é em volta da âncora, então ordem, identidade, âncora e posição ficam, e
+        // as cartas cortadas seguem alcançáveis — a admissão seguinte as relê do store.
+        let (bounded, _) = try boundedResidency(
+            items: boundedToTotalWindow(items + extensionCards, around: observation.anchor.cardID,
+                bounds: current.bounds),
             editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
         guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else {
+            return current.presentation
+        }
+        let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
+            editionID: current.presentation.editionID, window: window)
+        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
+            bounds: current.bounds)
+        return snapshot
+    }
+
+    /// Keeps the admitted list bounded **around the anchor**: at most `backwardCapacity` cards before it and
+    /// `forwardCapacity` after it, which is what the presentation was installed with. The architect separated the
+    /// two claims and he is right: every admission obeying the bound *locally* does not bound the list — prepending
+    /// pushes the anchor right, appending grows the tail, and over a long navigation either end accumulates. Cards
+    /// cut here stay **reachable**: the next admission near that end reads them from the store again, so leaving the
+    /// window is not losing the content. The anchor itself is never cut — it is inside `first...last` by construction.
+    private func boundedToTotalWindow(_ items: [PresentationCard], around anchorCardID: PublicationCardID,
+        bounds: FeedPresentationBounds) -> [PresentationCard] {
+        guard let anchorIndex = items.firstIndex(where: { $0.id == anchorCardID }) else { return items }
+        let first = max(0, anchorIndex - bounds.backwardCapacity)
+        let last = min(items.count - 1, anchorIndex + bounds.forwardCapacity)
+        guard first > 0 || last < items.count - 1 else { return items }
+        return Array(items[first...last])
+    }
+
+    /// Prepends already-published cards that precede the admitted head, after a real backward movement of the
+    /// reader reached it. Mirror of `admitForwardScroll`: the observation must still be the reader's current anchor
+    /// (an older gesture cannot reinstall a position a newer one already left), the prepend is ordered and
+    /// deduplicated, and the batch is bounded by the frozen backward bound *around the anchor* — which is what makes
+    /// a repeat a no-op and what keeps the admitted list's memory bounded by the bounds it was installed with.
+    ///
+    /// Nothing else moves: the anchor, the edition and every already-admitted card keep their identity and their
+    /// order, so the reader's position does not jump when history appears above them. The cards come from the local
+    /// store; the network is not consulted, which is what makes this work offline.
+    private func admitBackwardScroll(_ observation: ViewportObservation) throws -> FeedPresentationSnapshot? {
+        guard let current = state else { return nil }
+        guard current.presentation.window.anchor == observation.anchor else { return current.presentation }
+        let items = current.presentation.window.items
+        guard let head = items.first,
+            let anchorIndex = items.firstIndex(where: { $0.id == current.presentation.window.anchor.cardID })
+        else { return current.presentation }
+        // How many cards the frozen bounds still allow *before* the anchor: the admitted list is bounded around the
+        // anchor, not by an ever-growing list. Zero means the reader is already as far back as this session admits.
+        let allowed = max(0, current.bounds.backwardCapacity - anchorIndex)
+        guard allowed > 0 else { return current.presentation }
+        let published = try publicationHistory.window(editionID: current.presentation.editionID,
+            around: FeedWindowAnchor(cardID: head.id, placement: .center),
+            backwardCapacity: current.bounds.backwardCapacity, forwardCapacity: 0)
+        let admitted = Set(items.map(\.id))
+        // The read is centred on the head, so its last card *is* the head: the extension is what precedes it. Taking
+        // the suffix keeps the cards closest to the head — the reader's next step back, not the far end of history.
+        let extensionCards = published.cards.dropLast().filter { !admitted.contains($0.id) }
+            .suffix(allowed)
+            .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+        guard !extensionCards.isEmpty else { return current.presentation }
+        let (bounded, _) = try boundedResidency(
+            items: boundedToTotalWindow(extensionCards + items, around: observation.anchor.cardID,
+                bounds: current.bounds),
+            editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
+        guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else {
+            return current.presentation
+        }
+        let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
+            editionID: current.presentation.editionID, window: window)
+        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
+            bounds: current.bounds)
+        return snapshot
+    }
+
+    /// Appends cards already published beyond the admitted tail, without any reader observation and
+    /// without inventing one. Order, anchor and every already-admitted card are preserved; only the
+    /// end of the list grows, bounded by the frozen forward capacity.
+    private func admitPublishedGrowth() throws -> FeedPresentationSnapshot? {
+        guard let current = state else { return nil }
+        let items = current.presentation.window.items
+        guard let tail = items.last,
+            let anchorIndex = items.firstIndex(where: { $0.id == current.presentation.window.anchor.cardID }) else {
+            return current.presentation
+        }
+        // The admitted list is bounded by the frozen bounds *around the anchor*: growth fills the reader's
+        // forward window and never extends past it. That is also what makes a repeat growth a no-op — the
+        // extension cannot walk the tail past the bound however often it runs (measured: an unbounded tail
+        // walk grew a window past its own capacity and broke two composition tests).
+        let allowed = anchorIndex + current.bounds.forwardCapacity + 1
+        guard items.count < allowed else { return current.presentation }
+        let published = try publicationHistory.window(editionID: current.presentation.editionID,
+            around: FeedWindowAnchor(cardID: tail.id, placement: .center),
+            backwardCapacity: 0, forwardCapacity: current.bounds.forwardCapacity)
+        let admitted = Set(items.map(\.id))
+        let extensionCards = published.cards.dropFirst().filter { !admitted.contains($0.id) }
+            .prefix(allowed - items.count)
+            .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+        guard !extensionCards.isEmpty else { return current.presentation }
+        let anchor = current.presentation.window.anchor
+        // Mesma regra do arquiteto, e agora num lugar só: o teto vale para a janela inteira nas duas direções.
+        let (bounded, _) = try boundedResidency(
+            items: boundedToTotalWindow(items + extensionCards, around: anchor.cardID, bounds: current.bounds),
+            editionID: current.presentation.editionID, around: anchor.cardID, bounds: current.bounds)
+        guard let window = FeedWindowSnapshot(items: bounded, anchor: anchor) else {
             return current.presentation
         }
         let snapshot = try projectWindow(contextKey: current.presentation.contextKey,

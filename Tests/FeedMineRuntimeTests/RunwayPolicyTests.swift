@@ -20,7 +20,7 @@ final class RunwayPolicyTests: XCTestCase {
         let result = RunwayPolicy.evaluate(facts: facts, inputs: try XCTUnwrap(RunwayPolicyInputs(safetyFactor: 1.2, releaseMarginSeconds: 2)), resources: resources)
         XCTAssertEqual(result.coverage, .pressured(requiredCards: 48))
         XCTAssertEqual(result.action, .requestLocalSlice)
-        print("T7 reserve floor=16, measured scroll=8 cards/s, replenishment p95=5s, target=48")
+        print("T7 bootstrap reserve=16, measured scroll=8 cards/s, replenishment p95=5s, target=48")
     }
     func testMeasuredRateAndLatencyChangeCoverageRatherThanUsingFixedCount() throws {
         XCTAssertEqual(try evaluate(ready: .exact(6)).coverage,.healthy)
@@ -82,7 +82,7 @@ final class RunwayPolicyTests: XCTestCase {
 }
 
 extension RunwayPolicyTests {
-    /// Review F01: a stationary or unmeasured reader still gets the presented window backed.
+    /// An unmeasured reader gets bootstrap coverage; a measured zero rate does not retain it.
     func testReserveFloorDrivesProactiveFillWithoutConsumptionSamples() {
         let inputs = RunwayPolicyInputs(safetyFactor: 1, releaseMarginSeconds: 0)!
         let resources = RunwayResourceFacts(localWorkAllowed: true, examinedCandidateCapacity: 8, readyProbeBound: 4,
@@ -93,7 +93,7 @@ extension RunwayPolicyTests {
                 previouslyPressured: false, localSliceInFlight: false, unknownBootstrapAvailable: false),
                 inputs: inputs, resources: resources)
         }
-        XCTAssertEqual(evaluate(rate: 0, ready: .exact(2)), .init(coverage: .pressured(requiredCards: 6), action: .requestLocalSlice))
+        XCTAssertEqual(evaluate(rate: 0, ready: .exact(2)), .init(coverage: .healthy, action: .hold))
         XCTAssertEqual(evaluate(rate: nil, ready: .exact(2)), .init(coverage: .pressured(requiredCards: 6), action: .requestLocalSlice))
         XCTAssertEqual(evaluate(rate: 0, ready: .exact(6)).action, .hold)
         XCTAssertEqual(evaluate(rate: nil, ready: .atLeast(4)), .init(coverage: .unknown, action: .requestReadyProbe(6)))

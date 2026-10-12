@@ -31,19 +31,39 @@ public final class MediaReadiness: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         return ready[revision]
     }
-    func isSettled(_ revision: OriginRevisionID) -> Bool {
+    /// Whether this revision's media was **decided** (definitively unavailable, or prepared): a revision that is
+    /// neither prepared nor settled is *pending*, which is not the same fact as text-only (PD-5/PD-9, F06).
+    public func isSettled(_ revision: OriginRevisionID) -> Bool {
         lock.lock(); defer { lock.unlock() }
         return settled.contains(revision)
     }
-    func record(_ revision: OriginRevisionID, _ value: Ready?) {
+    @discardableResult
+    func record(_ revision: OriginRevisionID, _ value: Ready?) -> Bool {
         lock.lock(); defer { lock.unlock() }
+        guard !settled.contains(revision) else { return false }
         settled.insert(revision)
         if let value { ready[revision] = value }
+        return true
     }
 
-    /// PD-5: a card is either drawn with a real, prepared image or designed without one.
-    public func presentation(for revision: OriginRevisionID) -> PublicationPresentation {
-        guard let value = prepared(revision) else { return .textOnly }
+    /// nil means pending, never an implicit text-only fallback. Read the decision under one lock.
+    public func presentation(for revision: OriginRevisionID) -> PublicationPresentation? {
+        lock.lock(); defer { lock.unlock() }
+        return presentationLocked(for: revision)
+    }
+
+    /// One atomic snapshot for a publication opportunity. Missing entries are suspended;
+    /// their records and acquisition/preparation work remain in their existing owners.
+    public func presentations(for revisions: [OriginRevisionID]) -> [OriginRevisionID: PublicationPresentation] {
+        lock.lock(); defer { lock.unlock() }
+        var presentations: [OriginRevisionID: PublicationPresentation] = [:]
+        for revision in revisions { presentations[revision] = presentationLocked(for: revision) }
+        return presentations
+    }
+
+    private func presentationLocked(for revision: OriginRevisionID) -> PublicationPresentation? {
+        guard settled.contains(revision) else { return nil }
+        guard let value = ready[revision] else { return .textOnly }
         switch value.fit {
         case .hero: return .image(value.result, layout: .hero)
         case .thumbnail: return .image(value.result, layout: .thumbnail)
@@ -93,6 +113,7 @@ public actor MediaPrefetcher {
     private let concurrentDownloadLimit: Int
     private let transientRetryBaseSeconds: Double
     private let monotonicSeconds: @Sendable () -> Double
+    private let onReadinessChanged: (@Sendable (OriginRevisionID) async -> Void)?
     private var inFlight: Set<OriginRevisionID> = []
     private var measuredBytesPerSecond: Double?
     private var transientFailures: [OriginRevisionID: Int] = [:]
@@ -101,12 +122,14 @@ public actor MediaPrefetcher {
     public init(database: RuntimeDatabase, assetDirectory: URL, readiness: MediaReadiness = MediaReadiness(),
         concurrentDownloadLimit: Int, transientRetryBaseSeconds: Double = 30,
         monotonicSeconds: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime },
-        fetch: @escaping Fetch, conditions: @escaping Conditions) {
+        fetch: @escaping Fetch, conditions: @escaping Conditions,
+        onReadinessChanged: (@Sendable (OriginRevisionID) async -> Void)? = nil) {
         self.readiness = readiness
         contentStore = ContentStore(database: database)
         preparation = MediaPreparation(assetDirectory: assetDirectory)
         self.fetch = fetch
         self.conditions = conditions
+        self.onReadinessChanged = onReadinessChanged
         self.concurrentDownloadLimit = max(1, concurrentDownloadLimit)
         self.transientRetryBaseSeconds = transientRetryBaseSeconds.isFinite && transientRetryBaseSeconds > 0 ? transientRetryBaseSeconds : 30
         self.monotonicSeconds = monotonicSeconds
@@ -180,7 +203,7 @@ public actor MediaPrefetcher {
         switch MediaResolver.resolve(candidates, policy: policy) {
         case .prepare(let chosen, let rest): first = chosen; fallbacks = rest
         case .textOnly(.conditionsForbidRemoteMedia): return // Offline or overheated: try again later.
-        case .textOnly: settle(revision, nil); return
+        case .textOnly: await settle(revision, nil); return
         }
         let ceiling = policy.downloadByteBudget
         guard ceiling > 0 else { return } // Not affordable now; retry when conditions improve.
@@ -200,7 +223,7 @@ public actor MediaPrefetcher {
                 case .usable(let asset) = result.state else { continue }
             let fit = policy.fit(measuredPixelWidth: asset.pixelWidth, height: asset.pixelHeight)
             guard fit != .unsuitable else { continue }
-            settle(revision, .init(result: result, fit: fit))
+            await settle(revision, .init(result: result, fit: fit))
             return
         }
         if sawTransient {
@@ -211,13 +234,14 @@ public actor MediaPrefetcher {
             return
         }
         // Every viable candidate was definitively unusable: this revision is designed text-only.
-        settle(revision, nil)
+        await settle(revision, nil)
     }
 
-    private func settle(_ revision: OriginRevisionID, _ value: MediaReadiness.Ready?) {
+    /// A real transition may reopen the existing supply episode; no polling or retry owner is added.
+    private func settle(_ revision: OriginRevisionID, _ value: MediaReadiness.Ready?) async {
         transientFailures.removeValue(forKey: revision)
         transientRetryAt.removeValue(forKey: revision)
-        readiness.record(revision, value)
+        if readiness.record(revision, value) { await onReadinessChanged?(revision) }
     }
 
     /// Definitive failures are explicitly marked by the fetcher; anything else (timeouts, lost

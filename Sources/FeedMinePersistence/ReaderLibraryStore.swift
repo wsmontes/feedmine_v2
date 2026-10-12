@@ -198,9 +198,21 @@ public struct ReaderLibraryStore: Sendable {
     /// Writes an imported file's feeds and selects them, in **one** transaction. The feed's identity is the
     /// primary key, so running the same import twice adds nothing; the selection is versioned exactly as any
     /// other selection change is, so a session that fences on the version sees it.
-    public func commitImport(_ entries: [ReaderImportEntry], rejected: Int, at date: Date) throws -> ReaderImportResult {
+    ///
+    /// `collectionID` files the same feeds into a personal collection **inside the same transaction**: an import
+    /// a reader asked to be filed either lands whole (feeds, selection and memberships) or not at all. A
+    /// collection that does not exist refuses the whole write rather than leaving a reader with feeds they
+    /// believed were in a collection.
+    public func commitImport(_ entries: [ReaderImportEntry], rejected: Int, collectionID: String? = nil,
+        at date: Date) throws -> ReaderImportResult {
         let time = try PersistenceValueCoding.date(date, field: "imported_at")
         return try database.write { db in
+            if let collectionID {
+                guard try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_collections WHERE id = ?)",
+                    arguments: [collectionID]) == true else {
+                    throw ReaderLibraryError.missingLibraryItem
+                }
+            }
             var inserted = 0
             for entry in entries {
                 try db.execute(sql: """
@@ -208,6 +220,16 @@ public struct ReaderLibraryStore: Sendable {
                     ON CONFLICT(key) DO NOTHING
                     """, arguments: [entry.id, entry.requestURL, entry.title, time])
                 inserted += db.changesCount
+            }
+            var filed = 0
+            if let collectionID {
+                for entry in entries {
+                    try db.execute(sql: """
+                        INSERT INTO reader_collection_memberships (collection_id, source_key, added_at) VALUES (?, ?, ?)
+                        ON CONFLICT(collection_id, source_key) DO NOTHING
+                        """, arguments: [collectionID, entry.id, time])
+                    filed += db.changesCount
+                }
             }
             guard let row = try Row.fetchOne(db, sql: "SELECT source_keys, selection_version FROM reader_preferences WHERE singleton_id = 1") else {
                 throw ReaderLibraryError.missingLibraryItem
@@ -221,7 +243,8 @@ public struct ReaderLibraryStore: Sendable {
                 try db.execute(sql: "UPDATE reader_preferences SET source_keys = ?, selection_version = ? WHERE singleton_id = 1",
                     arguments: [try JSONEncoder().encode(selected.sorted()), version + 1])
             }
-            return ReaderImportResult(insertedSources: inserted, alreadySelected: alreadySelected, rejected: rejected)
+            return ReaderImportResult(insertedSources: inserted, alreadySelected: alreadySelected,
+                rejected: rejected, filedInCollection: filed)
         }
     }
 

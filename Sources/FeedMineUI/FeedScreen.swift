@@ -22,17 +22,31 @@ public struct FeedScreen: View {
     /// it is V1's own empty surface, so it takes precedence over both.
     private let hasSources: Bool
     private let onChooseSources: @MainActor () -> Void
+    /// R3: the host's recovery actions for the absence surface. "Tentar novamente" runs a real
+    /// attempt and "Ajustar interesses" opens the flow that owns the reader's interests; this view
+    /// executes neither.
+    private let onTryAgain: @MainActor () -> Void
+    private let onAdjustInterests: @MainActor () -> Void
+    /// The host's editorial row: offered between cards, and only where the host says there is something truthful
+    /// to ask. Nil — or a nil answer for a card — draws nothing, so the feed surface never invents an offer.
+    private let editorial: (@MainActor (PresentationCard, Int, PresentationCard?) -> AnyView?)?
     @State private var capture = FeedVisualCapture()
 
     public init(store: FeedScreenStore, appearance: ReaderAppearance = .standard,
         statusChip: AnyView? = nil, lens: AnyView? = nil, hasSources: Bool = true,
-        onChooseSources: @escaping @MainActor () -> Void = {}) {
+        onChooseSources: @escaping @MainActor () -> Void = {},
+        onTryAgain: @escaping @MainActor () -> Void = {},
+        onAdjustInterests: @escaping @MainActor () -> Void = {},
+        editorial: (@MainActor (PresentationCard, Int, PresentationCard?) -> AnyView?)? = nil) {
         self.store = store
         self.appearance = appearance
         self.customStatusChip = statusChip
         self.lens = lens
         self.hasSources = hasSources
         self.onChooseSources = onChooseSources
+        self.onTryAgain = onTryAgain
+        self.onAdjustInterests = onAdjustInterests
+        self.editorial = editorial
     }
 
     public var body: some View {
@@ -52,7 +66,8 @@ public struct FeedScreen: View {
                 feedBody
             }
         } else {
-            FeedLoadingView(work: store.state.work)
+            FeedLoadingView(work: store.state.work, onTryAgain: { onTryAgain() },
+                onAdjustInterests: { onAdjustInterests() })
         }
     }
 
@@ -69,8 +84,11 @@ public struct FeedScreen: View {
             if #available(iOS 18, macOS 15, *) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
-                        ForEach(presentation.window.items) { card in
-                            FeedItemView(card: card, appearance: appearance,
+                        ForEach(Array(presentation.window.items.enumerated()), id: \.element.id) { index, card in
+                          // A Group is transparent for layout: the card keeps the geometry the capture measures,
+                          // and the host's row is simply the next child of the stack.
+                            Group {
+                              FeedItemView(card: card, appearance: appearance,
                                 isBookmarked: store.bookmarkedIDs.contains(card.id),
                                 availableActions: store.availableActions,
                                 onAction: { store.perform($0) })
@@ -85,6 +103,11 @@ public struct FeedScreen: View {
                                         store.state.presentation?.editionID == presentation.editionID,
                                         store.state.presentation?.contextKey == presentation.contextKey,
                                         let proof, store.state.presentation?.window.items.contains(where: { $0.id == proof.cardID }) == true else { return }
+                                    #if canImport(UIKit)
+                                    if capture.nativeScrollOffset.observe(proof) {
+                                        return
+                                    }
+                                    #endif
                                     if let event = capture.observeCard(proof,
                                         isLast: store.state.presentation?.window.items.last?.id == proof.cardID) {
                                         store.submitViewport(event.observation, activity: event.activity)
@@ -93,8 +116,13 @@ public struct FeedScreen: View {
                                         store.submitViewport(event.observation, activity: event.activity)
                                     }
                                 }
+                            if let row = editorial?(card, index, index > 0 ? presentation.window.items[index - 1] : nil) { row }
+                          }
                         }
                     }
+                    #if canImport(UIKit)
+                    .background(FeedNativeScrollProbe(access: capture.nativeScrollOffset, ids: presentation.window.items.map(\.id)))
+                    #endif
                     .modifier(NativeFeedTargets())
                     // U1-F: one FeedScreen for every device; wide displays keep a readable column
                     // instead of stretching editorial text across the window.
@@ -102,6 +130,9 @@ public struct FeedScreen: View {
                     .frame(maxWidth: .infinity)
                 }
                 .modifier(NativeFeedViewport(capture: $capture, store: store))
+                #if DEBUG && canImport(UIKit)
+                .modifier(FeedNativeWindowProof(ids: presentation.window.items.map(\.id), access: capture.nativeScrollOffset))
+                #endif
                 // T3: work feedback is an overlay of constant height that never takes touches, so the
                 // scroll viewport keeps exactly the geometry the reader was admitted into.
                 .overlay(alignment: .bottom) { workFeedback }
@@ -109,11 +140,14 @@ public struct FeedScreen: View {
                 // macOS 14 renders local cards without automatic viewport capture.
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
-                        ForEach(presentation.window.items) { card in
-                            FeedItemView(card: card, appearance: appearance,
-                                isBookmarked: store.bookmarkedIDs.contains(card.id),
-                                availableActions: store.availableActions,
-                                onAction: { store.perform($0) })
+                        ForEach(Array(presentation.window.items.enumerated()), id: \.element.id) { index, card in
+                            Group {
+                                FeedItemView(card: card, appearance: appearance,
+                                    isBookmarked: store.bookmarkedIDs.contains(card.id),
+                                    availableActions: store.availableActions,
+                                    onAction: { store.perform($0) })
+                                if let row = editorial?(card, index, index > 0 ? presentation.window.items[index - 1] : nil) { row }
+                            }
                         }
                     }
                     .padding(FeedDesignTokens.Spacing.page)
@@ -125,7 +159,8 @@ public struct FeedScreen: View {
                 .overlay(alignment: .bottom) { workFeedback }
             }
         } else {
-            FeedLoadingView(work: store.state.work)
+            FeedLoadingView(work: store.state.work, onTryAgain: { onTryAgain() },
+                onAdjustInterests: { onAdjustInterests() })
         }
     }
 }
@@ -153,7 +188,7 @@ struct FeedWorkBadge: View {
         case .failed(let message):
             Label { Text(verbatim: message) } icon: { Image(systemName: "exclamationmark.triangle") }
                 .modifier(BadgeStyle())
-        case .idle, .unavailable, .deferred:
+        case .idle, .unavailable, .deferred, .unreachable:
             EmptyView()
         }
     }
@@ -198,7 +233,11 @@ struct FeedVisualCardGeometry: Equatable, Sendable {
 }
 
 // Internal for behavioral architecture tests; no public navigation contract.
+@MainActor
 struct FeedVisualCapture {
+    #if canImport(UIKit)
+    let nativeScrollOffset = FeedNativeScrollOffset()
+    #endif
     var reading = false
     var positionID: PublicationCardID?
     private(set) var direction: RunwayActivity?
@@ -216,8 +255,11 @@ struct FeedVisualCapture {
     // Diagnostic only: an unverified vector is never a direction authority or a global veto.
     private(set) var velocityUnverified = false
     #if DEBUG
+    /// Traço de diagnóstico do capture, **desligado por padrão** (ordem do arquiteto): liga com
+    /// `FEEDMINE_TRACE_CAPTURE=1`. A medição de posição precisa dele; a operação normal não paga o custo — uma
+    /// corrida de UI com o traço ligado passa de 1,4 milhão de linhas de log.
+    static let tracesCapture = ProcessInfo.processInfo.environment["FEEDMINE_TRACE_CAPTURE"] == "1"
     private var geometryLogged = false
-    private var cardLogged = false
     #endif
 
     mutating func phase(active: Bool, velocity: CGVector?) {
@@ -252,7 +294,6 @@ struct FeedVisualCapture {
         tailReported = false
         #if DEBUG
         geometryLogged = false
-        cardLogged = false
         #endif
     }
 
@@ -285,9 +326,12 @@ struct FeedVisualCapture {
 
     mutating func observeCard(_ proof: FeedVisualCardGeometry, isLast: Bool = false) -> FeedVisualEvent? {
         #if DEBUG
-        if !cardLogged {
-            Self.trace("native card observed frameY=\(proof.frame.minY) offset=\(proof.offset) height=\(proof.height)")
-            cardLogged = true
+        // Traço por carta e por leitura, com o id, **só com a flag de diagnóstico ligada**: a coordenada de conteúdo
+        // (`frameY + offset`) é imune ao gesto, então uma descontinuidade nela é o deslocamento causado pela
+        // ATUALIZAÇÃO da janela — a referência que o arquiteto definiu, medida sem estimar alturas.
+        if Self.tracesCapture {
+            Self.trace("native card observed id=\(proof.cardID.rawValue.uuidString) frameY=\(proof.frame.minY) "
+                + "offset=\(proof.offset) height=\(proof.height)")
         }
         #endif
         let intersects = proof.frame.height > 0 && proof.frame.maxY > 0 && proof.frame.minY < proof.height
@@ -396,6 +440,15 @@ private struct NativeFeedViewport: ViewModifier {
                 #endif
                 let wasReading = oldPhase == .interacting || oldPhase == .decelerating
                 let isReading = phase == .interacting || phase == .decelerating
+                #if canImport(UIKit)
+                if phase == .tracking { capture.nativeScrollOffset.cancel() }
+                else if capture.nativeScrollOffset.isCorrecting {
+                    capture.reading = isReading
+                    capture.invalidateLayout()
+                    _ = capture.observe(visualGeometry(context.geometry))
+                    return
+                }
+                #endif
                 if (!wasReading && isReading) || phase == .animating || phase == .tracking {
                     capture.invalidateLayout()
                 }
@@ -414,11 +467,23 @@ private struct NativeFeedViewport: ViewModifier {
                 visualGeometry(geometry)
             }) { _, geometry in
                 guard store.state.presentation == presented else { return }
+                #if canImport(UIKit)
+                if capture.nativeScrollOffset.isCorrecting {
+                    capture.invalidateLayout()
+                    _ = capture.observe(geometry)
+                    return
+                }
+                #endif
                 if let event = capture.observe(geometry) {
                     store.submitViewport(event.observation, activity: event.activity)
                 }
             }
-            .onChange(of: store.state.presentation?.window) { _, _ in capture.invalidateLayout() }
+            .onChange(of: store.state.presentation?.window) { old, new in
+                // A new layout must establish a fresh viewport proof. Native offset correction
+                // is handled independently, before card geometry becomes a reader event.
+                capture.invalidateLayout()
+            }
+            .onChange(of: ObjectIdentifier(store)) { _, _ in capture = FeedVisualCapture() }
             .onChange(of: store.state.presentation?.editionID) { _, _ in capture = FeedVisualCapture() }
             .onChange(of: store.state.presentation?.contextKey) { _, _ in capture = FeedVisualCapture() }
     }

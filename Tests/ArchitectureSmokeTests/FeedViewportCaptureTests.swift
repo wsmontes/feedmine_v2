@@ -11,6 +11,54 @@ import AppKit
 
 @MainActor
 final class FeedViewportCaptureTests: XCTestCase {
+    func testNativeWindowWitnessIsBoundedAndCapturedBeforeTheNewLayout() {
+        var correction = FeedWindowOffsetCorrection()
+        let ids = (0..<30).map { _ in PublicationCardID() }
+        correction.updateWindow(Array(ids[0..<3]))
+        _ = correction.observe(.init(cardID: ids[1],
+            frame: CGRect(x: 0, y: 200, width: 300, height: 400), offset: 100, height: 800))
+        correction.updateWindow(Array(ids[1..<4]))
+        let delta = correction.observe(.init(cardID: ids[1],
+            frame: CGRect(x: 0, y: -10, width: 300, height: 400), offset: 150, height: 800))
+        XCTAssertEqual(delta, -160)
+        for start in 2..<27 {
+            correction.updateWindow(Array(ids[start..<(start + 3)]))
+            for id in ids[start..<(start + 3)] {
+                _ = correction.observe(.init(cardID: id,
+                    frame: CGRect(x: 0, y: 200, width: 300, height: 400), offset: 100, height: 800))
+            }
+            XCTAssertLessThanOrEqual(correction.retainedCount, 3)
+        }
+    }
+    func testReprojectionAndNewGestureDiscardStaleCorrection() {
+        var correction = FeedWindowOffsetCorrection()
+        let a = PublicationCardID(), b = PublicationCardID()
+        correction.updateWindow([a])
+        let before = FeedVisualCardGeometry(cardID: a,
+            frame: CGRect(x: 0, y: 200, width: 300, height: 400), offset: 100, height: 800)
+        _ = correction.observe(before)
+        correction.updateWindow([a])
+        XCTAssertNil(correction.observe(before))
+        correction.updateWindow([a, b])
+        correction.cancel()
+        XCTAssertNil(correction.observe(.init(cardID: a,
+            frame: CGRect(x: 0, y: 40, width: 300, height: 400), offset: 100, height: 800)))
+    }
+
+    func testWindowCorrectionIgnoresPureScrollingAndChangedViewport() {
+        var correction = FeedWindowOffsetCorrection()
+        let a = PublicationCardID(), b = PublicationCardID(), c = PublicationCardID()
+        correction.updateWindow([a])
+        _ = correction.observe(.init(cardID: a,
+            frame: CGRect(x: 0, y: 200, width: 300, height: 400), offset: 100, height: 800))
+        correction.updateWindow([a, b])
+        XCTAssertNil(correction.observe(.init(cardID: a,
+            frame: CGRect(x: 0, y: 150, width: 300, height: 400), offset: 150, height: 800)))
+        correction.updateWindow([a, b, c])
+        XCTAssertNil(correction.observe(.init(cardID: a,
+            frame: CGRect(x: 0, y: 100, width: 600, height: 400), offset: 150, height: 400)))
+    }
+
     func testN3OffscreenReferenceNeverBecomesVisibleAnchor() {
         var capture = FeedVisualCapture()
         let id = PublicationCardID()

@@ -189,7 +189,9 @@ public struct ReaderFilter: Hashable, Codable, Sendable {
         exclusions: ReaderContentExclusions = .disabled) {
         self.regionIDs = Self.normalizeSet(regionIDs)
         self.taxonomyNodeIDs = Self.normalizeSet(taxonomyNodeIDs)
-        self.languages = Self.normalizeSet(languages)
+        // The choice is the language, not the catalogue's code: `pt-BR` and `pt` are one choice, and a filter
+        // that held both would be two identities for one answer.
+        self.languages = ReaderLanguageCode.choices(languages)
         self.contentType = contentType
         self.mood = mood
         self.exclusions = exclusions
@@ -226,6 +228,13 @@ public struct ReaderFilter: Hashable, Codable, Sendable {
     public var isUnrestricted: Bool {
         regionIDs.isEmpty && taxonomyNodeIDs.isEmpty && languages.isEmpty
             && contentType == .all && mood == .all && effectiveExclusionRules == nil
+    }
+
+    /// The same criteria with the content exclusions stated exactly. The content filters are not a lens
+    /// criterion — they are the reader's own, they never expire, and a surface that owns them (the settings'
+    /// rule editor, and the session that applies them) needs to say precisely which are in force.
+    public func replacing(exclusions: ReaderContentExclusions) -> ReaderFilter {
+        with(exclusions: exclusions)
     }
 
     /// Canonical, deterministic identity text for `ContextKey`. Equivalent selections — including any

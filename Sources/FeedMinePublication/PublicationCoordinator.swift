@@ -38,7 +38,12 @@ public enum PublicationOutcome: Hashable, Sendable {
 
 public struct PublicationCoordinator: Sendable {
     private let store: PublicationStore
-    public init(database: RuntimeDatabase) { self.store = PublicationStore(database: database) }
+    /// Optional evidence of the replenishment attempt a publication concludes; nil records nothing.
+    private let trace: ReplenishmentTrace?
+    public init(database: RuntimeDatabase, trace: ReplenishmentTrace? = nil) {
+        self.store = PublicationStore(database: database)
+        self.trace = trace
+    }
 
     public struct CreateRequest: Sendable {
         public let selection: SelectionResult
@@ -88,9 +93,14 @@ public struct PublicationCoordinator: Sendable {
         public let cardIDs: [PublicationCardID]
         /// PD-1: whether an already-published origin may occur again with materially new text.
         public let originRecurrence: PublicationOriginRecurrence
+        /// The replenishment attempt this publication concludes, when a host decided one; nil for work that is not
+        /// a replenishment (the first Edition, hidden tail maintenance).
+        public let operation: FeedReplenishmentOperationID?
 
         public init(selection: SelectionResult, drafts: [PublicationCardDraft], editionID: FeedEditionID, segmentID: FeedSegmentID, segmentSeed: UInt64, segmentCreatedAt: Date, cardIDs: [PublicationCardID],
-            originRecurrence: PublicationOriginRecurrence = .forbidden) {
+            originRecurrence: PublicationOriginRecurrence = .forbidden,
+            operation: FeedReplenishmentOperationID? = nil) {
+            self.operation = operation
             self.selection = selection
             self.drafts = drafts
             self.editionID = editionID
@@ -187,8 +197,19 @@ public struct PublicationCoordinator: Sendable {
             guard recurrence == .forbidden else { throw PublicationCoordinatorError.recurrenceRequiresTailExpectation }
             try store.appendSegment(records.0, cards: records.1)
         }
-        return .published(PublicationReceipt(editionID: request.editionID, segmentID: request.segmentID,
-            segmentOrdinal: ordinal, cardIDs: request.cardIDs))
+        let receipt = PublicationReceipt(editionID: request.editionID, segmentID: request.segmentID,
+            segmentOrdinal: ordinal, cardIDs: request.cardIDs)
+        // The destination, named: a segment is now frozen in history. This is **not** the same event as the host
+        // installing an offer — `admitted` records that, and the card ids here are what lets the two be joined.
+        if let operation = request.operation, let trace {
+            trace.record(ReplenishmentEvent.concluded, ["op": operation.described,
+                "destination": "segment_publication", "edition": receipt.editionID.rawValue.uuidString,
+                "segment": receipt.segmentID.rawValue.uuidString, "ordinal": String(receipt.segmentOrdinal),
+                "cards": String(receipt.cardIDs.count),
+                "head": receipt.cardIDs.first?.rawValue.uuidString ?? "",
+                "tail": receipt.cardIDs.last?.rawValue.uuidString ?? ""])
+        }
+        return .published(receipt)
     }
 
     private static func prepareCards(selection: SelectionResult, drafts: [PublicationCardDraft],

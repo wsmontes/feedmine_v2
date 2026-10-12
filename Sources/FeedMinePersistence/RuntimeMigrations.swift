@@ -511,6 +511,20 @@ public enum RuntimeMigrations {
             // its identity.
             try db.execute(sql: "ALTER TABLE reader_presets ADD COLUMN recipe_revision INTEGER NOT NULL DEFAULT 1")
         }
+        migrator.registerMigration("reader-playback-positions-v1") { db in
+            // V1 kept the position of every episode in `UserDefaults`, one key per item
+            // (`lastPodcastPosition.<id>`, `AudioPlayerManager.savePosition`). V2 keeps them where the rest of the
+            // reader's own state lives: a card's position is durable, and closing the app no longer loses it.
+            try db.execute(sql: """
+                CREATE TABLE reader_playback_positions (
+                    card_id TEXT PRIMARY KEY NOT NULL,
+                    position REAL NOT NULL,
+                    duration REAL,
+                    updated_at REAL NOT NULL,
+                    CHECK (position >= 0)
+                );
+                """)
+        }
         return migrator
     }
 

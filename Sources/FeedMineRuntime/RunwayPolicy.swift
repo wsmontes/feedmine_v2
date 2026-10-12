@@ -40,9 +40,10 @@ public struct RunwayResourceFacts: Hashable, Sendable {
     public let readyProbeBound: Int
     public let readyProbeCeiling: Int
     public let forwardAdvanceProbeBound: Int
-    /// Review F01: cards the reader can reach without scrolling past the presented window (the
-    /// session's forward materialization capacity). Coverage below it is pressure even for a
-    /// stationary or not-yet-measured reader, so the runway fills proactively. nil disables it.
+    /// Bootstrap coverage for a reader whose consumption/replenishment facts are not yet known.
+    /// The host may supply its forward materialization capacity here. Once facts are measured,
+    /// evaluate derives the reserve from them instead; a known zero rate disables this floor.
+    /// Kept under the existing name for host compatibility. nil disables bootstrap coverage.
     public let reserveCards: Int?
 
     public init?(localWorkAllowed: Bool, examinedCandidateCapacity: Int, readyProbeBound: Int,
@@ -129,10 +130,13 @@ public enum RunwayPolicy {
             coverage = facts.readyAmount == .exact(0) && (consumption.forwardIntent || consumption.explicitTailApproach)
                 ? .logicalPressure : .unknown
         }
-        // Review F01: the measured threshold modulates urgency; the reserve floor guarantees the
-        // presented window ahead is always backed by published cards, even with no samples.
+        // The forward window protects bootstrap only. Measured demand replaces it, including
+        // demand below that window and a known stationary reader. Invalid/overflowing measured
+        // targets remain unknown rather than falling back to an unrelated bootstrap count.
+        let needsBootstrap = consumption.cardsPerSecond == nil
+            || (consumption.cardsPerSecond != 0 && facts.replenishment.p95Seconds == nil)
         var floored = coverage
-        if let reserve = resources.reserveCards {
+        if needsBootstrap, let reserve = resources.reserveCards {
             switch facts.readyAmount {
             case .exact(let count) where count < reserve:
                 if case .pressured(let required) = floored { floored = .pressured(requiredCards: max(required, reserve)) }

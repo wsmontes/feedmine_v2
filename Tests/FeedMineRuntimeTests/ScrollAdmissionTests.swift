@@ -9,9 +9,11 @@ import FeedMineDomain
 @testable import FeedMineMedia
 import FeedMineRuntime
 
-/// T3 — the admitted boundary under a real reader: only genuine forward movement at the tail
-/// extends the list, layout changes and backward navigation never do, and decoded pixels are
-/// residency (bounded) while the admitted structure is not.
+/// T3 — the admitted boundary under a real reader: the admitted list is the frozen window around the
+/// reader's anchor (at most `backwardCapacity` cards before it and `forwardCapacity` after it), only
+/// genuine forward movement at the tail grows it, layout changes and backward navigation never do, and
+/// cards the window cuts stay reachable from the local store. Decoded pixels are residency (bounded),
+/// and so is the admitted structure.
 @MainActor
 final class ScrollAdmissionTests: XCTestCase {
     private struct Fixture {
@@ -127,61 +129,102 @@ final class ScrollAdmissionTests: XCTestCase {
     }
 
     /// Moving back must never reveal cards that were not admitted, and re-entering admitted history
-    /// is not a new admission.
+    /// is not a new admission. The admitted list is the window around the anchor, so a forward window
+    /// cuts cards behind it — they stay reachable from the store instead of being lost.
     func testBackwardNavigationDoesNotExposeFuture() async throws {
         let f = try fixture()
         let admitted = try await self.admitted(f.session, .initial(f.bounds))
+        // The checkpoint anchors the reader on the first card, so the installed window is its forward bound.
+        XCTAssertEqual(admitted.window.items.map(\.id), Array(f.ids[0...4]))
         let tail = try XCTUnwrap(admitted.window.items.last)
         _ = try await recorded(f.session, observation(f.cards[4], placement: .top))
         let extended = try await self.admitted(f.session, .forwardScroll(observation(f.cards[4], placement: .top)))
-        XCTAssertEqual(extended.window.items.map(\.id), Array(f.ids[0...8]))
+        // The admitted list is the window around the anchor: two cards before it and four after it.
+        XCTAssertEqual(extended.window.items.map(\.id), Array(f.ids[2...8]))
+        XCTAssertEqual(extended.window.anchor.cardID, f.cards[4].id)
         let future = Set(f.ids[9...])
         XCTAssertTrue(Set(extended.window.items.map(\.id)).isDisjoint(with: future),
             "Navigation must never expose a card that was not admitted")
-        // Backward navigation inside the admitted list adds nothing and removes nothing.
-        let backward = try await recorded(f.session, observation(f.cards[1], placement: .center))
-        XCTAssertEqual(backward.window.items.map(\.id), Array(f.ids[0...8]))
-        XCTAssertEqual(backward.window.anchor.cardID, f.cards[1].id)
+        // Backward navigation inside the admitted window adds nothing and removes nothing: the window
+        // is the bound and the observation only moves the anchor.
+        let backward = try await recorded(f.session, observation(f.cards[2], placement: .center))
+        XCTAssertEqual(backward.window.items.map(\.id), Array(f.ids[2...8]))
+        XCTAssertEqual(backward.window.anchor.cardID, f.cards[2].id)
         // Re-entering already-admitted history is not a new admission: only the anchor moves.
         let forwardAgain = try await recorded(f.session, observation(f.cards[8], placement: .top))
-        XCTAssertEqual(forwardAgain.window.items.map(\.id), Array(f.ids[0...8]))
+        XCTAssertEqual(forwardAgain.window.items.map(\.id), Array(f.ids[2...8]))
+        XCTAssertEqual(forwardAgain.window.anchor.cardID, f.cards[8].id)
         XCTAssertEqual(Set(forwardAgain.window.items.map(\.id)).count, forwardAgain.window.items.count)
         XCTAssertGreaterThan(forwardAgain.provenance.position, backward.provenance.position)
         XCTAssertNotEqual(tail.id, f.cards[8].id)
+        // What the forward window cut is not lost: an admission near the head re-reads those cards from
+        // the local store, keeping the order, the anchor and the disjunction with the unadmitted future.
+        let head = observation(f.cards[2], placement: .center)
+        _ = try await recorded(f.session, head)
+        let reachable = try await self.admitted(f.session, .backwardScroll(head))
+        XCTAssertEqual(reachable.window.items.map(\.id), Array(f.ids[0...6]),
+            "Backward admission re-reads the cards the window had cut")
+        XCTAssertEqual(reachable.window.anchor.cardID, f.cards[2].id)
+        XCTAssertEqual(Set(reachable.window.items.map(\.id)).count, reachable.window.items.count)
+        XCTAssertTrue(Set(reachable.window.items.map(\.id)).isDisjoint(with: future))
     }
 
     /// Decoded pixels are bounded residency: far cards keep their frozen descriptor and release the
-    /// bitmap; coming back re-decodes the same asset without changing geometry.
+    /// bitmap; coming back re-decodes the same asset without changing geometry. The admitted list is the
+    /// window around the anchor, so the pixels that stay resident are exactly the ones the window keeps.
     func testDecodedImageResidencyIsBoundedAroundTheReader() async throws {
         let f = try fixture(cards: 30, bounds: .init(backwardCapacity: 2, forwardCapacity: 4))
         var current = try await admitted(f.session, .initial(f.bounds))
-        XCTAssertEqual(current.window.items.count, 5)
+        // The checkpoint anchors the reader on the first card: the installed window is cards 0...4.
+        XCTAssertEqual(current.window.items.map(\.id), Array(f.ids[0...4]))
         XCTAssertTrue(current.window.items.allSatisfy { $0.image != nil }, "The admitted window decodes its images")
         let frozenLayout = try XCTUnwrap(current.window.items.first?.layout)
         let frozenRatio = try XCTUnwrap(current.window.items.first?.mediaAspectRatio)
         let originalImage = try XCTUnwrap(current.window.items.first?.image)
-        // Scroll forward to the end of the edition, four cards at a time.
+        // Scroll forward to the end of the edition, four cards at a time. The observation moves the reader
+        // (and releases pixels outside the residency zone, without changing the list); the admission is what
+        // cuts the list back to the window around that anchor.
+        var reader = current
         var cursor = 4
         while cursor < f.cards.count - 1 {
             let anchor = f.cards[min(cursor, f.cards.count - 1)]
-            _ = try await recorded(f.session, observation(anchor, placement: .top))
+            reader = try await recorded(f.session, observation(anchor, placement: .top))
             current = try await admitted(f.session, .forwardScroll(observation(anchor, placement: .top)))
             cursor += 4
         }
-        XCTAssertEqual(current.window.items.map(\.id), f.ids, "The admitted list is the published order")
-        let first = try XCTUnwrap(current.window.items.first)
-        XCTAssertNil(first.image, "A card far behind the reader releases its decoded pixels")
-        XCTAssertEqual(first.layout, frozenLayout, "Residency never changes the published layout")
-        XCTAssertEqual(first.mediaAspectRatio, frozenRatio, "The slot keeps its frozen geometry")
-        XCTAssertTrue(first.isImageBearing, "A card published with an image slot is never redefined as text-only")
-        let last = try XCTUnwrap(current.window.items.last)
-        XCTAssertNotNil(last.image, "The reader's own window keeps its images")
-        // Coming back re-decodes the same asset; identity, order and geometry are untouched.
-        let back = try await recorded(f.session, observation(f.cards[0], placement: .top))
-        XCTAssertEqual(back.window.items.map(\.id), f.ids)
-        let redecoded = try XCTUnwrap(back.window.items.first?.image)
+        // The admitted list is now the window around the reader's anchor — two cards before it, four after
+        // it — not the published prefix. The cards the reader left behind are cut and stay in the store.
+        XCTAssertEqual(current.window.items.map(\.id), Array(f.ids[26...29]),
+            "The admitted list is the window around the reader's anchor")
+        XCTAssertEqual(current.window.anchor.cardID, f.cards[28].id)
+        XCTAssertLessThanOrEqual(current.window.items.count,
+            f.bounds.backwardCapacity + 1 + f.bounds.forwardCapacity)
+        // The observation that preceded the last admission left the list wider than the residency zone (the
+        // list only moves on admission), so that snapshot is where released pixels are observable.
+        XCTAssertEqual(reader.window.items.map(\.id), Array(f.ids[22...28]))
+        XCTAssertEqual(reader.window.anchor.cardID, f.cards[28].id)
+        let farBehind = try XCTUnwrap(reader.window.items.first)
+        XCTAssertNil(farBehind.image, "A card far behind the reader releases its decoded pixels")
+        XCTAssertEqual(farBehind.layout, frozenLayout, "Residency never changes the published layout")
+        XCTAssertEqual(farBehind.mediaAspectRatio, frozenRatio, "The slot keeps its frozen geometry")
+        XCTAssertTrue(farBehind.isImageBearing, "A card published with an image slot is never redefined as text-only")
+        XCTAssertNil(reader.window.items[2].image, "The card re-read below is one of the released ones")
+        let nearTheReader = try XCTUnwrap(reader.window.items.last)
+        XCTAssertNotNil(nearTheReader.image, "The reader's own window keeps its images")
+        XCTAssertEqual(nearTheReader.id, f.cards[28].id)
+        // Cards the window cut are reachable, not lost: an admission near the head reads them from the local
+        // store again, and the ones that had released their pixels come back decoded from the same asset.
+        let head = observation(f.cards[26], placement: .center)
+        _ = try await recorded(f.session, head)
+        let reachable = try await self.admitted(f.session, .backwardScroll(head))
+        XCTAssertEqual(reachable.window.items.map(\.id), Array(f.ids[24...29]),
+            "Backward admission re-reads the cards the window had cut")
+        XCTAssertEqual(reachable.window.anchor.cardID, f.cards[26].id)
+        XCTAssertEqual(Set(reachable.window.items.map(\.id)).count, reachable.window.items.count)
+        let redecoded = try XCTUnwrap(reachable.window.items.first?.image)
         XCTAssertEqual(redecoded.key, originalImage.key)
         XCTAssertEqual(redecoded.cgImage.width, originalImage.cgImage.width)
-        XCTAssertEqual(back.window.items.first?.mediaAspectRatio, frozenRatio)
+        XCTAssertEqual(reachable.window.items.first?.layout, frozenLayout)
+        XCTAssertEqual(reachable.window.items.first?.mediaAspectRatio, frozenRatio)
     }
 }

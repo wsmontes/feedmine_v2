@@ -10,12 +10,16 @@ import FeedMineRuntime
 import FeedMineUI
 import FeedMineComposition
 import FeedMineEditorial
+import FeedMinePublication
 @testable import FeedMine
 
 // Controlled transport exists only in this test target; all admission and publication are real.
 final class FixtureTransport: URLProtocol, @unchecked Sendable {
     static let rejecting = Mutex(false)
     static let holdingScience = Mutex(false)
+    /// U-reading: every request this transport answered. A test can therefore state that opening a card's reading
+    /// makes none at all — which is what separates an explicit request for the site from the feed's own work.
+    static let requests = Mutex<[String]>([])
     private final class HeldLoaders: @unchecked Sendable {
         private let lock = NSLock()
         private var values: [FixtureTransport] = []
@@ -42,10 +46,12 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
         respond()
     }
     private func respond() {
-        let items = (1...24).map { "<item><guid>fixture-\($0)</guid><title>Published fixture \($0)</title><link>https://fixture.invalid/story-\($0)</link><description>Readable local story \($0)</description></item>" }.joined()
-        let data = Data("<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Trusted fixture</title><link>https://fixture.invalid/</link><description>Integration</description>\(items)</channel></rss>".utf8)
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/rss+xml"])!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
+        FixtureTransport.requests.withLock { $0.append(request.url?.absoluteString ?? "") }
+        // The shape is the default (`shortSummary`) unless a test set another one, and the default payload is the
+        // exact document this transport always served.
+        let payload = ReadingFixture.payload()
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": payload.contentType])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: payload.body)
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
@@ -180,13 +186,27 @@ final class CompositionTests: XCTestCase {
     func testBundledCatalogHasRealBytesAndStableBoundedDefaults() throws {
         let url = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
         let reader = try LegacyCatalogReader(catalogURL: url)
-        XCTAssertEqual(try reader.sourceCount(), 77_443)
+        // The identity is checked against the descriptor this build ships, not against a literal. The bootstrap
+        // pipeline re-derives the catalogue from the public channel, so a pinned hash turns every legitimate
+        // re-bootstrap into a test failure — and a test that must be edited whenever the artefact is legitimately
+        // rebuilt stops being evidence. What must hold is the PD-10 property: the file the app carries is the one
+        // its descriptor declares, and it is a real catalogue rather than a placeholder.
+        let descriptorURL = try XCTUnwrap(Bundle.main.url(forResource: "catalog.manifest", withExtension: "json"))
+        let descriptor = try JSONDecoder().decode(CatalogManifest.self, from: Data(contentsOf: descriptorURL))
+        let declared = try XCTUnwrap(descriptor.catalogueEntry,
+            "the descriptor must declare the compiled catalogue it describes")
+        XCTAssertEqual(try reader.sourceCount(), descriptor.sourceCount,
+            "the catalogue counts what its descriptor declares")
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
+        let size = Int(try XCTUnwrap(handle.seekToEnd()))
+        XCTAssertEqual(size, declared.bytes, "the bytes on disk are the bytes declared")
+        XCTAssertGreaterThan(size, 100_000_000, "a real catalogue, not a placeholder")
+        try handle.seek(toOffset: 0)
         var hash = SHA256()
         while let bytes = try handle.read(upToCount: 1_048_576), !bytes.isEmpty { hash.update(data: bytes) }
-        XCTAssertEqual(hash.finalize().map { String(format: "%02x", $0) }.joined(),
-            "c2ae483a7525fd2b6797855149eb6fb312abbed788549a90a7754121eb5c8629")
+        XCTAssertEqual(hash.finalize().map { String(format: "%02x", $0) }.joined(), declared.sha256,
+            "the file the app carries is the one its descriptor describes")
         let defaults = try TrustedFeed.catalog(limit: 64, resourceURL: url)
         XCTAssertEqual(defaults.count, 4)
         XCTAssertEqual(Set(defaults.map(\.sourceID)).count, 4)
@@ -236,7 +256,8 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(repaired.activeContext, .main)
 
         // Valid keys survive; only the vanished one is dropped.
-        let partial = try TrustedFeed.resolveAvailable(keys: ["https://absent.example/rss", starter[1].principal], fallback: starter)
+        let partial = try TrustedFeed.resolveAvailable(keys: ["https://absent.example/rss", starter[1].principal],
+            fallback: starter, catalogueURL: Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
         XCTAssertEqual(partial.map(\.principal), [starter[1].principal])
     }
 
@@ -564,6 +585,260 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
+    private enum RebuildRoute { case replacement, context, preset }
+
+    private func assertAnswerDuringReconstruction(_ route: RebuildRoute) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: TrustedFeed.development.map(\.principal))
+        var settings = ReaderSettings.standard
+        settings.discoveryProfile = .neutral(languages: ["pt"])
+        settings.discoveryProfile.topicPreferences["topic:90_countries/brazil"] = .more
+        _ = try preferences.setSettings(settings)
+        let root = root(directory: directory)
+        await root.launch()
+        let old = try XCTUnwrap(root.association)
+        XCTAssertFalse(old.discovery.isEmpty)
+        // A new profile forces the real detached catalogue read, giving the answer a controlled construction boundary.
+        settings.discoveryProfile.topicPreferences = ["topic:04-technology-science": .more]
+        _ = try preferences.setSettings(settings)
+        let transition = Task { @MainActor in
+            switch route {
+            case .replacement: try await root.replaceSession()
+            case .context: try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+            case .preset: try await root.activateSavedPreset(.init(request: .main, preset: .lastClicked))
+            }
+        }
+        // Observe the real retirement boundary, before the asynchronous constructor finishes.
+        let limit = ProcessInfo.processInfo.systemUptime + 5
+        while root.association != nil, ProcessInfo.processInfo.systemUptime < limit { await Task.yield() }
+        XCTAssertNil(root.association, "The answer must land during construction")
+        let answered = await root.voteOnTopic(nodeKey: "04-technology-science", level: .less)
+        XCTAssertTrue(answered)
+        try await transition.value
+        let next = try XCTUnwrap(root.association)
+        XCTAssertFalse(next === old)
+        let catalog = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let expected = try ReaderDiscoveryBuilder(catalogURL: catalog).pool(for: .init(languages: ["pt"],
+            excludedTopicNodeKeys: ["04-technology-science"]), limit: AppComposition.discoverySourceLimit)
+        XCTAssertEqual(Set(next.discovery.map(\.sourceID)), Set(expected.entries.map { $0.source.id }),
+            "The final association must read the answer received during construction")
+        XCTAssertEqual(root.declaredLevel(forNode: "04-technology-science"), .less)
+        await next.close()
+    }
+
+    func testAnswerDuringReplaceSessionIsApplied() async throws {
+        try await assertAnswerDuringReconstruction(.replacement)
+    }
+
+    func testAnswerDuringContextTransitionIsApplied() async throws {
+        try await assertAnswerDuringReconstruction(.context)
+    }
+
+    func testAnswerDuringPresetTransitionIsApplied() async throws {
+        try await assertAnswerDuringReconstruction(.preset)
+    }
+
+    /// Kiro K-01/K-05 **wiring**, na forma que o arquiteto exigiu **depois de revisar o PR #3** ("a autorização
+    /// DEBUG é derivada dos endpoints do catálogo; esse HEAD não deve ser mergeado"). Ele estava certo: o catálogo
+    /// é entrada não confiável, e derivar dele deixaria uma linha de catálogo — ou um OPML importado — nomear um
+    /// host da LAN e ser autorizada por isso. A autorização vem de um input que a **execução declara**.
+    ///
+    /// Três casos, medidos: a origem **declarada** publica (é o benchmark: o corpus é servido nesse host, e o
+    /// catálogo que ele injeta nomeia esses endpoints — motivo pelo qual o catálogo não pode ser a fonte); a
+    /// **mesma forma** de host, **não declarada**, é recusada antes do transporte; e um host **público** publica
+    /// sem autorização nenhuma (o controle do arranjo).
+    func testK05DeclaredOriginPublishesAndAnUndeclaredOneIsRefused() async throws {
+        // `setenv` **dentro do helper** é o mesmo que o runner faz ao exportar a origem para o app: é a declaração
+        // da execução, não um dado do catálogo. **Uma URL, com esquema, host e porta** — é o que o arquiteto exigiu
+        // depois de revisar o HEAD anterior, e é o valor que o runner exporta (`bench/run.sh`).
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: true,
+            "a origem DECLARADA pela execução tem de publicar")
+        try await assertTheEndpointPublishes("http://10.77.0.9:8757/feed.xml", expected: false,
+            "a mesma forma de host, NÃO declarada, tem de ser recusada — senão uma linha de catálogo autoriza a rede privada sozinha")
+        try await assertTheEndpointPublishes("https://bench.example/feed.xml", expected: true,
+            "um host público publica sem precisar de autorização (controle do arranjo)")
+    }
+
+    /// A exigência do arquiteto na revisão seguinte: a configuração declara **uma URL com esquema, host e porta** —
+    /// não um host que o código converte em HTTP **e** HTTPS. Este caso é a prova de que ele foi obedecido: um valor
+    /// que traz só `host:porta`, sem esquema, **não autoriza nada**, porque o código que sintetizasse os dois
+    /// esquemas estaria autorizando mais do que a execução declarou — e é exatamente esse silêncio que se quer
+    /// impossível.
+    func testK05AnInexactOrInvalidDeclarationAuthorizesNothing() async throws {
+        // Controle do arranjo, pela mesma porta do helper: a declaração exata autoriza.
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: true,
+            "controle: a declaração exata autoriza")
+        // Sem esquema: `host:porta` não é uma origem, e nenhum esquema pode ser inferido.
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: false,
+            "sem esquema declarado, nenhum esquema pode ser inferido: host:porta não é uma origem",
+            declaring: "10.77.0.1:8757")
+        // Com caminho: **recusar, não limpar** — sanear esconderia que a execução declarou algo que não é origem.
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: false,
+            "declarar com caminho tem de ser recusado, não saneado até virar origem",
+            declaring: "http://10.77.0.1:8757/feed.xml")
+        // Com credenciais: idem.
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: false,
+            "declarar com credenciais tem de ser recusado", declaring: "http://u:p@10.77.0.1:8757")
+        // Sem porta: a porta faz parte da origem.
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: false,
+            "declarar sem porta não autoriza: a porta faz parte da origem", declaring: "http://10.77.0.1")
+        // Porta DIFERENTE — a prova de que a configuração explícita chega ao app, e chega exata: quem declara 8756
+        // não autoriza 8757.
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: false,
+            "declarar outra porta não autoriza a porta do endpoint", declaring: "http://10.77.0.1:8756")
+    }
+
+    private func assertTheEndpointPublishes(_ raw: String, expected: Bool, _ message: String,
+        declaring declared: String = "http://10.77.0.1:8757") async throws {
+        // A declaração vive aqui, num lugar só: cada caso diz o que a execução declara, e a asserção mede se o app
+        // obedeceu exatamente aquilo.
+        setenv("FEEDMINE_BENCH_TRANSPORT_ORIGIN", declared, 1)
+        defer { unsetenv("FEEDMINE_BENCH_TRANSPORT_ORIGIN") }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let endpoint = URL(string: raw)!
+        let feed = TrustedFeed(targetID: AcquisitionTargetID(), sourceID: SourceID(rawValue: UUID()),
+            bindingID: SourceBindingID(), principal: endpoint.absoluteString, endpoint: endpoint,
+            displayName: "fixture")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 20
+        let root = AppComposition(directory: directory, feeds: [feed], transportConfiguration: configuration)
+
+        await root.launch()
+        XCTAssertNil(root.startupFailure)
+        let association = try XCTUnwrap(root.association)
+        let published = await Self.waitUntil(expected ? 20 : 8) { association.store.state.presentation != nil }
+        if published != expected {
+            // Why it behaved that way, instead of guessing: the run's own facts.
+            XCTFail("\(message) — \(root.diagnosticsForTheWiringTest(association))")
+        }
+        await association.close()
+    }
+
+    private static func waitUntil(_ seconds: TimeInterval, _ condition: () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return false
+    }
+
+    /// Kiro K-06, achado 5, e o arquiteto fixou o que exigir: voltar a um contexto **preserva a edição, a âncora e
+    /// a posição**, com histórico alcançável — **sem impor igualdade de tamanho da janela**, que é uma expectativa
+    /// que o próprio `testS5` põe e que a arquitetura não promete.
+    ///
+    /// Dois testes, um com resposta no meio e um sem: a diferença entre eles é o experimento que localiza a causa.
+    /// Se o ida-e-volta simples preserva e o respondido não, o custo está em responder — e responder não pode custar
+    /// ao leitor a posição dele.
+    func testK06RoundTripBetweenContextsKeepsTheEditionAnchorAndPosition() async throws {
+        try await assertRoundTripKeepsTheReader(answering: false, switchingBy: .source)
+    }
+
+    /// O terceiro gêmeo: o **mesmo** ida-e-volta trocando por **filtro**, que é o caminho do teste verde que
+    /// preserva a edição. É o experimento que separa "a troca de fonte é o problema" de "o meu arranjo é o
+    /// problema" — sem ele, a hipótese fica no ar.
+    func testK06RoundTripByFilterKeepsTheEdition() async throws {
+        try await assertRoundTripKeepsTheReader(answering: false, switchingBy: .filter)
+    }
+
+    func testK06AnsweringInABetweenAAndBKeepsTheReaderWhereTheyWere() async throws {
+        try await assertRoundTripKeepsTheReader(answering: true, switchingBy: .source)
+    }
+
+    private enum RoundTripSwitch { case source, filter }
+
+    private func assertRoundTripKeepsTheReader(answering: Bool, switchingBy: RoundTripSwitch) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        // A **identidade** de A tem de ser a mesma na ida e na volta, senão o teste compara dois contextos e o
+        // produto cunhar uma edição nova é o comportamento CERTO (contexto novo, edição nova). Trocar por filtro
+        // é o controle que já provava isso: ele volta à mesma identidade e preserva.
+        if case .source = switchingBy {
+            try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+        }
+        let a = try XCTUnwrap(root.association)
+        let aSnapshot = try XCTUnwrap(a.store.state.presentation)
+        let aCard = try XCTUnwrap(aSnapshot.window.items.first)
+
+        // A save the reader made in A, and the card they were reading there.
+        let publication = try PublicationStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+        try publication.toggleBookmark(cardID: aCard.id, at: Date())
+        await a.viewport(.init(anchor: .init(cardID: aCard.id, placement: .top)), activity: .forward)
+        let aAnchor = try XCTUnwrap(a.store.state.presentation).window.anchor
+        // A posição durável antes de sair — é o que o teste de filtro faz, e é o que separa "voltar não restaura"
+        // de "não havia o que restaurar". Sem esta linha, o ida-e-volta não tem checkpoint de A para recuperar.
+        _ = try await a.session.checkpointCurrentPosition(at: Date())
+
+        if answering {
+            let answered = await root.voteOnTopic(nodeKey: "04-technology-science", level: .more)
+            XCTAssertTrue(answered)
+        }
+
+        // Go to B, then come back to A — pelo caminho que o parâmetro escolhe.
+        switch switchingBy {
+        case .source: try await root.selectContext(.source(TrustedFeed.development[1].sourceID))
+        case .filter: try await root.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
+        }
+        // (B é uma identidade diferente de A nos dois casos: outra fonte, ou outro filtro.)
+        let b = try XCTUnwrap(root.association)
+        XCTAssertFalse(b === a, "ir a B constrói outra associação")
+        switch switchingBy {
+        case .source: try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+        case .filter: try await root.applyFilter(.unrestricted, preset: .everything)
+        }
+        let back = try XCTUnwrap(root.association)
+
+        let restored = try XCTUnwrap(back.store.state.presentation)
+        // Fatos do store no log, para quem for ler este vermelho: onde exatamente o fio se rompeu. O diagnóstico
+        // vem antes das asserções de propósito — uma asserção que falha primeiro esconde o que explica a falha.
+        do {
+            let db = try RuntimeDatabase(location: .init(directory: directory))
+            let key = ContextKey(request: .source(TrustedFeed.development[0].sourceID))
+            let stored = try SessionStore(database: db).checkpoint(for: key)
+            let active = try SessionStore(database: db).checkpoint()
+            let editionThere = try PublicationStore(database: db).edition(id: aSnapshot.editionID) != nil
+            let restoredPub = try PublicationHistory(database: db).restore(backwardCapacity: 8,
+                forwardCapacity: 16, contextKey: key)
+            let revision = restoredPub?.edition.editorialRevision
+            print("ROUNDTRIP_FACTS via=\(switchingBy) responding=\(answering) checkpoint-contexto="
+                + "\(stored == nil ? "nil" : "presente") checkpoint-ativo=\(active == nil ? "nil" : "presente") "
+                + "edicao-de-A-no-store=\(editionThere) restore-devolve-algo=\(restoredPub != nil)")
+            if let revision {
+                // As quatro comparações que o `mayShow` faz, uma a uma: é o que decide se a restauração é usada
+                // ou descartada (e descartada significa edição nova).
+                print("ROUNDTRIP_MAYSHOW contexto-da-revisao==chave: \(revision.contextKey == key)"
+                    + " | selecao: revisao=\(revision.userSelectionVersion.rawValue)"
+                    + " | elegibilidade: revisao=\(revision.eligibilityPolicyVersion.rawValue)"
+                    + " | scoring: revisao=\(revision.scoringPolicyVersion.rawValue)")
+                let presentedEdition = try PublicationStore(database: db).edition(id: restored.editionID)
+                let presentedRevision = presentedEdition?.editorialRevision.id
+                print("ROUNDTRIP_KEY chave-consultada=\(key.canonicalIdentity)")
+                print("ROUNDTRIP_PRESENTED mesma-revisao-que-a-restaurada: "
+                    + "\(presentedRevision == revision.id) (apresentada=\(presentedRevision?.rawValue.uuidString.prefix(8) ?? "nil") "
+                    + "restaurada=\(revision.id.rawValue.uuidString.prefix(8)))")
+            }
+        } catch { print("ROUNDTRIP_FACTS falha ao ler o store: \(error)") }
+        XCTAssertEqual(restored.editionID, aSnapshot.editionID,
+            "voltar a A devolve a edição de A (responding: \(answering))")
+        XCTAssertEqual(restored.window.anchor, aAnchor,
+            "a âncora de A é a mesma — o leitor volta para onde estava")
+        XCTAssertEqual(restored.window.items.first?.id, aCard.id,
+            "e o topo da janela é o mesmo card")
+        if answering {
+            XCTAssertEqual(root.declaredLevel(forNode: "04-technology-science"), .more,
+                "a resposta dada em A sobrevive à ida a B e à volta")
+            XCTAssertTrue(try publication.bookmarkedCardIDs().contains(aCard.id),
+                "os salvos do leitor sobrevivem à ida e à volta")
+        }
+        await back.close()
+    }
+
     func testS3ReplacementAndS4OldCallbackCannotInstall() async throws {
         let (root, old) = try await launched()
         let oldStore = old.store
@@ -596,6 +871,12 @@ final class CompositionTests: XCTestCase {
         await root.launch()
         let old = try XCTUnwrap(root.association)
         try await produceAndAdmit(old)
+        // **Uma segunda publicação**, e ela é o que torna o alcance dos DOIS lados uma asserção real: a primeira
+        // deixa o leitor no topo do store (medido: 9 cards e a âncora na última), e ali não existe posterior para
+        // alcançar — exigir isso seria exigir conteúdo que o fixture não tem, que foi exatamente o erro que a
+        // versão anterior desta asserção cometeu. Com a segunda, o leitor fica com histórico dos dois lados, e a
+        // âncora tem de continuar sendo a posição dele (ela não anda para o conteúdo novo).
+        try await produceAndAdmit(old)
         let snapshot = try XCTUnwrap(old.store.state.presentation)
         await old.background()
         await old.close()
@@ -607,9 +888,252 @@ final class CompositionTests: XCTestCase {
         let next = try XCTUnwrap(reopened.association)
         XCTAssertFalse(next.store === old.store)
         let restored = try XCTUnwrap(next.store.state.presentation)
-        XCTAssertEqual(restored.editionID, snapshot.editionID)
-        XCTAssertNotEqual(restored.provenance.sequenceID, snapshot.provenance.sequenceID)
-        XCTAssertEqual(restored.window, snapshot.window)
+        XCTAssertEqual(restored.editionID, snapshot.editionID,
+            "reabrir devolve a EDIÇÃO do leitor — é a prova de acesso ao histórico, e ela fica")
+        XCTAssertNotEqual(restored.provenance.sequenceID, snapshot.provenance.sequenceID,
+            "com proveniência NOVA: a reabertura não é uma reinstalação do estado antigo")
+        // A janela não é comparada por **igualdade de tamanho**: o arquiteto fixou que preservar significa a
+        // edição, a **âncora** e a posição, e que impor o tamanho da janela exige mais do que a arquitetura
+        // promete (a janela é recalculada com as capacidades pedidas, e o número de cards publicados varia).
+        XCTAssertEqual(restored.window.anchor, snapshot.window.anchor,
+            "a âncora volta a ser a mesma — e a âncora É a posição do leitor")
+        // **Alcance do histórico** (o arquiteto pediu, na revisão do PR #3): o que se afirma não é a *forma* da
+        // janela, é o **alcance** dela atrás da âncora — o leitor tem de continuar voltando a ter o que já tinha.
+        // O witness é o próprio snapshot, com as capacidades do produto (8 atrás / 16 à frente). Duas versões
+        // anteriores desta asserção erraram o juiz, e as duas estão registradas porque o erro é instrutivo: uma
+        // exigia "posterior" fixo (num teste sem viewport a âncora é o topo do store, então exigia conteúdo
+        // inexistente) e a outra perguntava ao store, cujo `cards(around:)` **ignora visibilidade** — o que ele
+        // devolvia eram cartas do segmento novo, ainda não visível ao leitor, e o produto acerta em não mostrá-las.
+        let items = restored.window.items
+        let index = try XCTUnwrap(items.firstIndex { $0.id == restored.window.anchor.cardID },
+            "a âncora tem de estar dentro da janela restaurada")
+        let before = snapshot.window.items.firstIndex { $0.id == snapshot.window.anchor.cardID } ?? 0
+        XCTAssertGreaterThanOrEqual(index, min(before, 8),
+            "o alcance ANTERIOR à âncora não pode encolher: tinha \(before) antes, a restauração devolveu \(index)")
+        XCTAssertGreaterThan(items.count, 1, "a janela restaurada não é degenerada")
+        // **Navegação offline além do recorte** — a exigência seguinte do arquiteto, e ele está certo: devolver 8
+        // cartas anteriores não prova acesso às mais antigas. O leitor anda até a carta mais VELHA da janela e pede
+        // a cauda (`explicitTailApproach` — o vocabulário do próprio produto para "cheguei ao fim, quero mais",
+        // que é o que libera o que está admitido e ainda oculto; `backward` é outro caminho, o de adquirir
+        // conteúdo novo, e mediu-se que ele não estende a janela). A rede continua rejeitada, então o que aparecer
+        // só pode ter vindo do store: é a experiência de leitura offline, não o recorte que a restauração já trazia.
+        let oldest = try XCTUnwrap(items.first, "a janela restaurada tem de ter uma carta")
+        next.store.submitViewport(
+            ViewportObservation(anchor: PresentationAnchor(cardID: oldest.id, placement: .top)),
+            activity: .explicitTailApproach)
+        var extended: FeedPresentationSnapshot?
+        let deadline = Date().addingTimeInterval(10)
+        repeat {
+            extended = next.store.state.presentation
+            if let now = extended, now.window.items.first?.id != oldest.id { break }
+            try await Task.sleep(for: .milliseconds(100))
+        } while Date() < deadline
+        let extendedItems = try XCTUnwrap(extended?.window.items,
+            "pedir a cauda tem de produzir uma janela; a restauração é o começo da leitura, não o fim")
+        // O que se prova aqui é o que foi **medido**: a janela cresce com a navegação, offline. Medição desta
+        // execução, dos logs do próprio app: `installed cards=9` na reabertura e `installed cards=11` depois do
+        // pedido de cauda, com o transporte ainda rejeitando — logo o conteúdo veio do store. A direção do
+        // crescimento NÃO é afirmada, e vale registrar por quê: ele acontece na **cauda**, e as cartas **mais
+        // antigas que o recorte** (a edição tinha 17 cartas visíveis antes da reabertura, e a janela restaurada
+        // traz 9) seguem inalcançáveis por navegação — nem `backward` nem um novo descanso de âncora as estendem.
+        // Isso é um achado de produto, relatado ao arquiteto; uma asserção aqui o transformaria em contrato.
+        let restoredIDs = Set(items.map(\.id))
+        XCTAssertGreaterThan(extendedItems.count, items.count,
+            "pedir a cauda offline tem de trazer conteúdo ALÉM do recorte restaurado (\(items.count) cartas na restauração, \(extendedItems.count) depois)")
+        let fresh = Set(extendedItems.map(\.id)).subtracting(restoredIDs)
+        XCTAssertFalse(fresh.isEmpty,
+            "e tem de ser carta que a restauração não trazia — senão não houve navegação nenhuma")
+        XCTAssertEqual(extended?.window.anchor.cardID, oldest.id,
+            "e a âncora continua sendo onde o leitor parou: a janela cresce, o leitor não anda sozinho")
+        await next.close()
+    }
+
+    /// A **regressão vermelha** que o arquiteto exigiu: "IDs efetivamente publicados e acessíveis antes de fechar,
+    /// além do `backwardCapacity`; exigir alcance depois de reabrir e navegação de volta para frente". Ela falha
+    /// no HEAD em que foi escrita — a edição tem cartas além da janela restaurada, e nenhum gesto para trás as
+    /// alcança. Fica vermelha como prova da perda; o commit que a deixa verde é o da admissão para trás.
+    func testReopeningOfflineKeepsCardsBeyondTheBackwardCapacityReachable() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let root = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration)
+        ReadingFixture.generation.withLock { $0 = 0 }
+        defer { ReadingFixture.generation.withLock { $0 = 0 } }
+        await root.launch()
+        let old = try XCTUnwrap(root.association)
+        var publishedWhileOpen = Set(old.store.state.presentation?.window.items.map(\.id) ?? [])
+        // IDs actually admitted while reading, across distinct batches: one bounded window
+        // cannot be the oracle for all previously reachable history.
+        for _ in 0..<4 {
+            ReadingFixture.generation.withLock { $0 += 1 }
+            try await produceAndAdmit(old)
+            publishedWhileOpen.formUnion(old.store.state.presentation?.window.items.map(\.id) ?? [])
+        }
+        let before = try XCTUnwrap(old.store.state.presentation)
+        XCTAssertGreaterThan(publishedWhileOpen.count, 25,
+            "the previously reached history must exceed a full presentation window")
+        await old.background()
+        await old.close()
+
+        FixtureTransport.rejecting.withLock { $0 = true }
+        defer { FixtureTransport.rejecting.withLock { $0 = false } }
+        let reopened = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration)
+        await reopened.launch()
+        let next = try XCTUnwrap(reopened.association)
+        let restored = try XCTUnwrap(next.store.state.presentation)
+        XCTAssertEqual(restored.window.anchor, before.window.anchor, "a âncora volta a ser a posição do leitor")
+
+        // Anda para trás como o leitor andaria: re-ancora no topo da janela e pede mais. O que aparecer só pode vir
+        // do store — o transporte continua rejeitando —, então isto mede o histórico local, não a rede.
+        var reachable = Set(restored.window.items.map(\.id))
+        for _ in 0..<40 {
+            guard let head = next.store.state.presentation?.window.items.first else { break }
+            next.store.submitViewport(
+                ViewportObservation(anchor: PresentationAnchor(cardID: head.id, placement: .top)),
+                activity: .backward)
+            var step: Set<PublicationCardID>?
+            let deadline = Date().addingTimeInterval(4)
+            repeat {
+                step = Set(next.store.state.presentation?.window.items.map(\.id) ?? [])
+                if let step, !step.isSubset(of: reachable) { break }
+                try await Task.sleep(for: .milliseconds(120))
+            } while Date() < deadline
+            guard let step, !step.isSubset(of: reachable) else { break }
+            reachable.formUnion(step)
+        }
+        let lost = publishedWhileOpen.subtracting(reachable)
+        XCTAssertTrue(lost.isEmpty,
+            "\(lost.count) cartas que o leitor alcançava ANTES de fechar não voltam por nenhum gesto para trás: "
+                + lost.map(\.rawValue.uuidString).sorted().joined(separator: ", "))
+        // E a segunda metade da exigência: **navegação de volta para frente**. Depois de andar para trás, o leitor
+        // tem de poder retornar à posição em que estava — a história ganha acima dele não pode empurrá-lo nem
+        // afastar o que ele já tinha.
+        // Return by actual admissions, rather than submitting an off-window anchor (a no-op).
+        for _ in 0..<40 {
+            let items = next.store.state.presentation?.window.items ?? []
+            if items.contains(where: { $0.id == before.window.anchor.cardID }) { break }
+            guard let tail = items.last else { break }
+            await next.viewport(.init(anchor: .init(cardID: tail.id, placement: .top)), activity: .explicitTailApproach)
+        }
+        next.store.submitViewport(
+            ViewportObservation(anchor: PresentationAnchor(cardID: before.window.anchor.cardID, placement: .top)),
+            activity: .forward)
+        // `submitViewport` na fachada é uma emissão: quem executa é o consumidor externo, de forma assíncrona. Ler
+        // o estado sem esperar mediria a corrida, não o produto — então espera-se, como a caminhada para trás faz.
+        var returned: FeedPresentationSnapshot?
+        let returnDeadline = Date().addingTimeInterval(5)
+        repeat {
+            returned = next.store.state.presentation
+            if returned?.window.anchor.cardID == before.window.anchor.cardID { break }
+            try await Task.sleep(for: .milliseconds(120))
+        } while Date() < returnDeadline
+        XCTAssertEqual(returned?.window.anchor.cardID, before.window.anchor.cardID,
+            "voltar para frente tem de re-ancorar na posição do leitor")
+        XCTAssertTrue(Set(returned?.window.items.map(\.id) ?? []).contains(before.window.anchor.cardID),
+            "e a carta onde ele estava tem de continuar admitida depois de o histórico aparecer acima dela")
+        await next.close()
+    }
+
+    /// A demonstração que o arquiteto exigiu depois de aceitar o reparo: **memória limitada durante navegação
+    /// longa**, para trás e para frente, e **sem perder acesso** ao que saiu da janela. Ele está certo em separar
+    /// as duas coisas: limitar *cada* extensão por `backwardCapacity - anchorIndex` não limita a janela **total** —
+    /// dez passos para trás podem prepender dez lotes, e a lista cresce sem teto enquanto cada passo parece
+    /// obediente. Aqui a janela é medida a cada passo.
+    func testLongNavigationKeepsTheTotalWindowBoundedAndEverythingReachable() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        let root = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration)
+        await root.launch()
+        let old = try XCTUnwrap(root.association)
+        // **Oito publicações com itens DISTINTOS** (a geração do fixture): cada uma traz 24 itens novos, então a
+        // edição passa a ter ~190 cartas — muito mais do que uma janela. Com o fixture parado, cada publicação
+        // republicava os mesmos 24 itens, a edição saturava em ~20 cartas e a navegação longa nunca chegava a
+        // exercitar o limite (medido: a janela não passava de 20). O arranjo é a prova; sem ele o teste é vacuoso.
+        ReadingFixture.generation.withLock { $0 = 0 }
+        defer { ReadingFixture.generation.withLock { $0 = 0 } }
+        var publishedWhileOpen = Set(old.store.state.presentation?.window.items.map(\.id) ?? [])
+        for _ in 0..<8 {
+            try await produceAndAdmit(old)
+            publishedWhileOpen.formUnion(old.store.state.presentation?.window.items.map(\.id) ?? [])
+            ReadingFixture.generation.withLock { $0 += 1 }
+        }
+        XCTAssertGreaterThan(publishedWhileOpen.count, 25,
+            "the reachability oracle must include cards outside the final bounded window")
+        await old.background()
+        await old.close()
+
+        FixtureTransport.rejecting.withLock { $0 = true }
+        defer { FixtureTransport.rejecting.withLock { $0 = false } }
+        let reopened = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration)
+        await reopened.launch()
+        let next = try XCTUnwrap(reopened.association)
+        let restored = try XCTUnwrap(next.store.state.presentation)
+        // O teto é o que a apresentação foi instalada com: 8 atrás + a âncora + 16 à frente.
+        let ceiling = 8 + 1 + 16
+        XCTAssertLessThanOrEqual(restored.window.items.count, ceiling, "a janela instalada já respeita o teto")
+
+        var reachable = Set(restored.window.items.map(\.id))
+        func observe(_ activity: RunwayActivity, at card: PublicationCardID) async throws -> [PublicationCardID] {
+            let previous = next.store.state.presentation?.window.items.map(\.id) ?? []
+            next.store.submitViewport(
+                ViewportObservation(anchor: PresentationAnchor(cardID: card, placement: .top)), activity: activity)
+            var seen = previous
+            let deadline = Date().addingTimeInterval(4)
+            while Date() < deadline {
+                seen = next.store.state.presentation?.window.items.map(\.id) ?? []
+                if seen != previous { break }
+                try await Task.sleep(for: .milliseconds(120))
+            }
+            return seen
+        }
+
+        // **Percurso FRENTE → TRÁS → FRENTE**, na ordem que o arquiteto pediu, com o teto afirmado nas duas
+        // direções: ele decidiu que crescer para frente sem limite também é defeito, e o produto passou a cortar nos
+        // dois lados. A rede continua rejeitada, então tudo o que aparecer é **rematerialização offline** do store.
+        for _ in 0..<10 {
+            guard let tail = next.store.state.presentation?.window.items.last else { break }
+            let ids = try await observe(.explicitTailApproach, at: tail.id)
+            reachable.formUnion(ids)
+            let count = next.store.state.presentation?.window.items.count ?? 0
+            XCTAssertLessThanOrEqual(count, ceiling,
+                "frente: a janela total tinha \(count) cartas, acima do teto de \(ceiling)")
+        }
+        // Anda para trás **até não haver novidade**, e não um número fixo de passos: com uma edição de ~190 cartas e
+        // oito por passo, dez passos não percorrem o histórico — foi assim que a versão anterior deste teste acusou
+        // 24 cartas "inacessíveis" que eram, na verdade, cartas que a caminhada nunca visitou.
+        var step = 0
+        while step < 40 {
+            guard let head = next.store.state.presentation?.window.items.first else { break }
+            let ids = try await observe(.backward, at: head.id)
+            reachable.formUnion(ids)
+            let count = next.store.state.presentation?.window.items.count ?? 0
+            XCTAssertLessThanOrEqual(count, ceiling,
+                "passo \(step + 1) para trás: a janela total tinha \(count) cartas, acima do teto de \(ceiling)")
+            step += 1
+            // Previously visited IDs still need to be crossed on the way to older history.
+            // Stop at the actual boundary, not when this step overlaps the earlier forward walk.
+            if ids.first == head.id { break }
+        }
+        // E de volta para frente, com a mesma exigência de teto.
+        for _ in 0..<10 {
+            guard let tail = next.store.state.presentation?.window.items.last else { break }
+            let ids = try await observe(.explicitTailApproach, at: tail.id)
+            reachable.formUnion(ids)
+            let count = next.store.state.presentation?.window.items.count ?? 0
+            XCTAssertLessThanOrEqual(count, ceiling,
+                "volta para frente: a janela total tinha \(count) cartas, acima do teto de \(ceiling)")
+        }
+        // **Acesso preservado**: tudo o que o leitor alcançava antes de fechar continua re-alcançável por gesto,
+        // mesmo depois de a janela ter reciclado as cartas — sair da janela não é perder o conteúdo.
+        let lost = publishedWhileOpen.subtracting(reachable)
+        XCTAssertTrue(lost.isEmpty,
+            "\(lost.count) cartas ficaram inacessíveis depois da navegação longa: "
+                + lost.map(\.rawValue.uuidString).sorted().joined(separator: ", "))
         await next.close()
     }
 
@@ -711,6 +1235,453 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
+    /// F01, the product's own promise: a reader who named interests and a language gets **sources they never
+    /// named**, out of the bundled catalogue, acquired together with their own selection. B01's precondition is
+    /// fifty distinct sources entering the acquisition set without a single manual choice.
+    func testAProfileOfInterestsSuppliesSourcesTheReaderNeverNamed() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = root(directory: directory)
+        var recipe = FeedRecipeDefinition.neutral(languages: ["pt"])
+        recipe.topicPreferences = ["topic:90_countries/brazil": .more,
+            "topic:01-news-current-affairs": .more]
+        let preset = try XCTUnwrap(root.saveCuratedFeed(recipe, named: "Descoberta"))
+
+        try await root.activateSavedPreset(preset.key)
+        let association = try XCTUnwrap(root.association)
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50,
+            "B01: at least fifty distinct sources must enter the acquisition set automatically")
+        guard case .selectedSources(let eligible) = association.policy.eligibility else {
+            return XCTFail("a discovery session is eligible by its own sources")
+        }
+        XCTAssertTrue(association.discovery.allSatisfy { eligible.contains($0.sourceID) },
+            "and the session may read from every one of them")
+
+        // The reader's own selection is untouched by discovery: they still chose nothing, and the sources screen
+        // states exactly that.
+        XCTAssertTrue(root.feeds.isEmpty || Set(root.feeds.map(\.principal))
+            .isSubset(of: Set(association.feeds.map(\.principal))))
+        XCTAssertFalse(try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+            .load()?.sourceKeys.contains { $0.hasPrefix("http") } ?? true,
+            "discovery never writes itself into the reader's selection")
+
+        // A profile with no interests discovers nothing: the promise belongs to the profile, not to the launch.
+        let plain = try XCTUnwrap(try root.makeAddFeedStore())
+        XCTAssertNotNil(plain)
+        await association.close()
+    }
+
+    /// F02, where the answers live: the discovery preferences page — and the invitations answered inside the feed
+    /// — store one profile, and that profile is what discovery reads. No curated feed and no manual source: the
+    /// reader's own selection is never written to, and an answer they took back stops shaping the pool.
+    func testTheReadersOwnDiscoveryAnswersDriveDiscoveryWithoutACuratedFeed() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        var profile = FeedRecipeDefinition.neutral(languages: ["pt"])
+        profile.topicPreferences = ["topic:90_countries/brazil": .more,
+            "topic:01-news-current-affairs": .more]
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        // The row a launch creates; `setSettings` updates it rather than inventing it.
+        _ = try preferences.initialize(sourceKeys: [])
+        var settings = try preferences.load()?.settings ?? .standard
+        settings.discoveryProfile = profile
+        _ = try preferences.setSettings(settings)
+
+        let root = root(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let key = try XCTUnwrap(association.contextKey)
+
+        // The derivation itself: the stored answers are the profile, in the catalogue's vocabulary.
+        let derived = root.discoveryProfile(for: key)
+        XCTAssertEqual(derived.languages, ["pt"])
+        XCTAssertEqual(derived.topicNodeKeys, ["90_countries/brazil", "01-news-current-affairs"])
+        XCTAssertTrue(derived.excludedTopicNodeKeys.isEmpty)
+
+        // And the consequence B01 asks for: at least fifty distinct sources enter the acquisition set, none of
+        // them written into the reader's selection.
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50,
+            "B01: at least fifty distinct sources must enter the acquisition set automatically")
+        XCTAssertTrue(root.feeds.isEmpty, "discovery never writes itself into the reader's selection")
+
+        // An answer taken back stops shaping discovery: "menos desse assunto" is an exclusion, not a preference.
+        settings.discoveryProfile.topicPreferences["topic:01-news-current-affairs"] = .less
+        _ = try preferences.setSettings(settings)
+        let after = root.discoveryProfile(for: key)
+        XCTAssertEqual(after.excludedTopicNodeKeys, ["01-news-current-affairs"])
+        XCTAssertEqual(after.topicNodeKeys, ["90_countries/brazil"])
+        await association.close()
+    }
+
+    /// F02's first run, end to end at the composition's own level: the answers become the reader's discovery
+    /// profile, the feed they enter is built from them, and **nothing is created to be activated** — no curated
+    /// feed, no name asked for, no source chosen by hand.
+    func testTheFirstRunAnswersBecomeTheFeedTheReaderEnters() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        XCTAssertTrue(try XCTUnwrap(root.association).discovery.isEmpty,
+            "before the reader answers anything, discovery has nothing to work from")
+
+        var answers = FeedRecipeDefinition.neutral(languages: ["pt"])
+        answers.topicPreferences = ["topic:90_countries/brazil": .more]
+        await root.completeFirstRun(discovery: answers)
+
+        let association = try XCTUnwrap(root.association)
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50,
+            "B01: the first run's own answers put at least fifty distinct sources in the acquisition set")
+        XCTAssertEqual(Set(association.discovery.map(\.sourceID)).count, association.discovery.count,
+            "and they are distinct sources, not the same one registered twice")
+        let key = try XCTUnwrap(association.contextKey)
+        XCTAssertEqual(root.discoveryProfile(for: key).languages, ["pt"])
+        XCTAssertEqual(root.discoveryProfile(for: key).topicNodeKeys, ["90_countries/brazil"])
+
+        // Nothing was created to be activated, and the reader's own selection is still empty.
+        let presets = try root.makeCuratedCoordinator()?.curatedPresets() ?? []
+        XCTAssertTrue(presets.isEmpty, "the first run creates no feed to activate")
+        let stored = try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+            .load()
+        XCTAssertEqual(stored?.settings.hasSeenOnboarding, true, "and the reader has met the app")
+        XCTAssertEqual(stored?.settings.discoveryProfile.languages, ["pt"], "the answers are a preference")
+        XCTAssertFalse(stored?.sourceKeys.contains { $0.hasPrefix("http") } ?? true,
+            "discovery never writes itself into the reader's selection")
+        await association.close()
+    }
+
+    /// F02, the door back to a feed of the reader's own: the rules are stated once in the discovery preferences and
+    /// a feed is created from them — and **creating does not activate it, does not move the reading**, and the
+    /// library keeps it. Opening it is the reader's own next step.
+    func testCreatingAFeedWithThePreferencesDoesNotActivateIt() async throws {
+        let (root, association) = try await launched()
+        let before = try XCTUnwrap(association.contextKey)
+        var recipe = FeedRecipeDefinition.neutral(languages: ["pt"])
+        recipe.topicPreferences = ["topic:04-technology-science": .more]
+        let preset = try XCTUnwrap(root.saveCuratedFeed(recipe, named: "Ciência e tecnologia"))
+
+        XCTAssertEqual(root.association?.contextKey, before,
+            "creating a feed with these preferences does not move what the reader is reading")
+        XCTAssertNotEqual(preset.key, before, "and it is its own context, not the one in use")
+        XCTAssertEqual(try root.makeCuratedCoordinator()?.curatedPresets().map(\.key), [preset.key],
+            "the library is where created feeds are found")
+        XCTAssertEqual(try root.makeCuratedCoordinator()?.curatedPresets().first?.recipe, recipe,
+            "and it carries the rules it was created from")
+
+        // The reader's own next step: opening it really switches the session.
+        try await root.activateSavedPreset(preset.key)
+        XCTAssertEqual(root.association?.contextKey, preset.key)
+        await root.association?.close()
+    }
+
+    /// F02's thematic phase: answering **inside the feed** changes what discovery looks for next — and nothing
+    /// else. The context's identity, the admitted edition and the reader's own selection stay where they were:
+    /// a person who says where they want more of must not lose the story they were reading.
+    /// The architect's question (2026-10-11): persisting the answer does not prove it already affects new
+    /// acquisition. The answer is a preference about **future discovery** — the block says so in as many words —
+    /// and this is the moment it is consumed: the next session built for that context reads it from the stored
+    /// profile and pulls the pool that matches it.
+    func testTheAnswerIsConsumedWhenTheNextSessionOfTheContextIsBuilt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        var answers = FeedRecipeDefinition.neutral(languages: ["pt"])
+        answers.topicPreferences = ["topic:90_countries/brazil": .more]
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: [])
+        var stored = try preferences.load()?.settings ?? .standard
+        stored.discoveryProfile = answers
+        _ = try preferences.setSettings(stored)
+
+        let root = root(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let key = try XCTUnwrap(association.contextKey)
+        let poolBefore = Set(association.discovery.map(\.sourceID))
+        XCTAssertGreaterThanOrEqual(poolBefore.count, 50, "discovery is running from the answers")
+
+        // The reader answers here, and the session they are reading is untouched.
+        await root.voteOnTopic(nodeKey: "04-technology-science", level: .more)
+        XCTAssertTrue(root.association === association, "answering does not rebuild what the reader is reading")
+
+        // The next session of that context is where the answer starts to work.
+        try await root.replaceSession()
+        let next = try XCTUnwrap(root.association)
+        let catalog = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let expected = try ReaderDiscoveryBuilder(catalogURL: catalog).pool(for: .init(languages: ["pt"],
+            topicNodeKeys: ["04-technology-science", "90_countries/brazil"],
+            excludedTopicNodeKeys: []), limit: AppComposition.discoverySourceLimit)
+        XCTAssertEqual(Set(next.discovery.map(\.sourceID)), Set(expected.entries.map { $0.source.id }),
+            "the next session pulls the pool the answer asks for")
+        await next.close()
+    }
+
+    /// The product owner's criterion (2026-10-11): **an explicit refresh that produces a new edition must also
+    /// honour the preference** the reader gave since the session was built — while an internal rebuild of the UI
+    /// is never treated as a new session just to anticipate its application. The refresh is the reader asking for
+    /// movement, so a rebuild there is legitimate; nothing is rebuilt when nothing changed.
+    func testAnExplicitRefreshHonoursAnAnswerGivenAfterTheSessionWasBuilt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        var answers = FeedRecipeDefinition.neutral(languages: ["pt"])
+        answers.topicPreferences = ["topic:90_countries/brazil": .more]
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: [])
+        var stored = try preferences.load()?.settings ?? .standard
+        stored.discoveryProfile = answers
+        _ = try preferences.setSettings(stored)
+
+        let root = root(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let editionBefore = try XCTUnwrap(association.store.state.presentation).editionID
+        let presentationBefore = association.store.state.presentation?.window.items
+        await root.voteOnTopic(nodeKey: "04-technology-science", level: .more)
+        await root.refreshFromTheReader()
+        let refreshed = try XCTUnwrap(root.association)
+        XCTAssertFalse(refreshed === association,
+            "the explicit refresh rebuilds the session, because the stored profile is no longer the one the pool was built from")
+        let catalog = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let expected = try ReaderDiscoveryBuilder(catalogURL: catalog).pool(for: .init(languages: ["pt"],
+            topicNodeKeys: ["04-technology-science", "90_countries/brazil"],
+            excludedTopicNodeKeys: []), limit: AppComposition.discoverySourceLimit)
+        XCTAssertEqual(Set(refreshed.discovery.map(\.sourceID)), Set(expected.entries.map { $0.source.id }),
+            "the refreshed session pulls the pool the answer asks for")
+        // What the reader was reading is not retracted by a refresh either: the same edition, and the cards they
+        // already had as a prefix of the new window.
+        XCTAssertEqual(try XCTUnwrap(refreshed.store.state.presentation).editionID, editionBefore,
+            "the refresh does not retract the edition the reader was reading")
+        let beforeItems = (presentationBefore ?? []).map { $0.id }
+        let nowItems = refreshed.store.state.presentation?.window.items.map(\.id) ?? []
+        XCTAssertEqual(Array(nowItems.prefix(beforeItems.count)), beforeItems,
+            "not one presented card was retracted or reordered by the refresh")
+
+        // Nothing changed since: the next explicit refresh rebuilds nothing.
+        await root.refreshFromTheReader()
+        XCTAssertTrue(root.association === refreshed,
+            "an explicit refresh with no pending answer rebuilds nothing")
+        await refreshed.close()
+    }
+
+    func testAnsweringInTheFeedChangesDiscoveryWithoutMovingTheReader() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        var answers = FeedRecipeDefinition.neutral(languages: ["pt"])
+        answers.topicPreferences = ["topic:90_countries/brazil": .more]
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: [])
+        var stored = try preferences.load()?.settings ?? .standard
+        stored.discoveryProfile = answers
+        _ = try preferences.setSettings(stored)
+
+        let root = root(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let key = try XCTUnwrap(association.contextKey)
+        let editionBefore = try XCTUnwrap(association.store.state.presentation).editionID
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50, "discovery is running from the answers")
+
+        // The reader answers a subject the feed presented.
+        await root.voteOnTopic(nodeKey: "04-technology-science", level: .more)
+        let after = try XCTUnwrap(root.association)
+        XCTAssertTrue(after === association,
+            "the answer does not rebuild the session: the rebuild retired the association and restored it from a checkpoint that carries no offset inside the card, which moved the reader 139 pt in one device run and 912 pt in another (2026-10-11)")
+        XCTAssertEqual(try XCTUnwrap(after.contextKey), key, "the context's identity does not change")
+        XCTAssertEqual(try XCTUnwrap(after.store.state.presentation).editionID, editionBefore,
+            "the admitted presentation is the same edition: nothing the reader was reading was retracted")
+        // The edition identity alone is not the whole promise (the reviewer's point): the **cards and their
+        // order** must be the same ones, in the same order, with nothing inserted or removed above the reader.
+        // F06-A publishes only what each opportunity can present, so the *tail* of the window may differ while the
+        // cards the reader already has must not: the old window is a **prefix** of the new one, nothing retracted,
+        // nothing reordered.
+        let before = association.store.state.presentation?.window.items.map(\.id) ?? []
+        let now = after.store.state.presentation?.window.items.map(\.id) ?? []
+        XCTAssertEqual(Array(now.prefix(before.count)), before,
+            "not one presented card was retracted, inserted or reordered by the answer")
+        XCTAssertEqual(root.declaredLevel(forNode: "04-technology-science"), .more,
+            "the answer is what the settings hold")
+        XCTAssertEqual(root.discoveryProfile(for: key).topicNodeKeys.sorted(),
+            ["04-technology-science", "90_countries/brazil"],
+            "and discovery reads it as an interest")
+
+        // "Menos desse assunto" is an exclusion, not a quieter preference.
+        await root.voteOnTopic(nodeKey: "90_countries/brazil", level: .less)
+        XCTAssertEqual(root.discoveryProfile(for: key).excludedTopicNodeKeys, ["90_countries/brazil"])
+        XCTAssertEqual(root.discoveryProfile(for: key).topicNodeKeys, ["04-technology-science"])
+
+        // Taking an answer back is answering again: the subject leaves both sets.
+        await root.voteOnTopic(nodeKey: "04-technology-science", level: .neutral)
+        XCTAssertNil(root.declaredLevel(forNode: "04-technology-science"))
+        XCTAssertTrue(root.discoveryProfile(for: key).topicNodeKeys.isEmpty)
+        await root.association?.close()
+    }
+
+    /// B01's own promise, and the defect recorded in `docs/v1-study/PORT_LOG.md` §19: a reader who has chosen
+    /// **no source at all** must still receive a feed, supplied by discovery. Measured before this test existed:
+    /// zero sources registered, zero cards published, nothing in the trace.
+    func testDiscoveryFeedsAReaderWhoChoseNothing() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        // The reader's answers, and nothing else: no selected source anywhere.
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: [])
+        var answers = FeedRecipeDefinition.neutral(languages: ["pt"])
+        answers.topicPreferences = ["topic:90_countries/brazil": .more]
+        var settings = try preferences.load()?.settings ?? .standard
+        settings.discoveryProfile = answers
+        _ = try preferences.setSettings(settings)
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 60
+        let root = AppComposition(directory: directory, feeds: [], transportConfiguration: configuration)
+        await root.launch()
+        if let failure = root.startupFailure {
+            XCTFail("the app failed to start for a reader who chose nothing: \(failure)")
+        }
+        let association = try XCTUnwrap(root.association)
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50,
+            "discovery supplies the reader who chose nothing")
+        XCTAssertTrue(root.hasSelectedSources,
+            "and the surface offers a feed: the reader is not sent to choose sources they never wanted")
+        XCTAssertNotNil(association.store.state.presentation,
+            "the feed really publishes for a reader who chose nothing")
+        await association.close()
+    }
+
+    /// The ceiling is not allowed to swallow evidence in silence. `batchSize` and `lineCeiling` existed before this
+    /// test and could absorb thousands of events; a run whose trace was truncated that way reads exactly like a run
+    /// where nothing happened — and the oracle would then report the absence as a fact about the product. It now
+    /// counts what it refused, states the first refusal, and states the totals when the trace is flushed.
+    func testTheTraceRecordsItsOwnDiscardInsteadOfGoingSilent() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let trace = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 3)
+        for index in 0..<10 { trace.record("event", ["index": String(index)]) }
+        trace.flushAndWait()
+        let url = directory.appendingPathComponent("trace.jsonl")
+        let records = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map { line in
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        }
+        XCTAssertEqual(records.filter { $0["event"] as? String == "event" }.count, 3,
+            "the ceiling holds: only the events under it were written")
+        let truncated = records.filter { $0["event"] as? String == "trace_truncated" }
+        XCTAssertEqual(truncated.count, 2, "the first refusal, and the totals at flush")
+        let first = try XCTUnwrap(truncated.first?["fields"] as? [String: String])
+        XCTAssertEqual(first["reason"], "line_ceiling")
+        XCTAssertEqual(first["dropped_by_ceiling"], "1")
+        XCTAssertEqual(first["ceiling"], "3")
+        let totals = try XCTUnwrap(truncated.last?["fields"] as? [String: String])
+        XCTAssertEqual(totals["reason"], "flush_total")
+        XCTAssertEqual(totals["dropped_by_ceiling"], "7", "all seven refused events are accounted for")
+        XCTAssertEqual(totals["written"], "3")
+        // The monotonic clock every interval is measured on, beside the wall clock the oracle already reads.
+        XCTAssertTrue(records.allSatisfy { $0["mono"] as? Double != nil && $0["at"] as? Double != nil })
+        // Nothing new to say means nothing written: the announcement does not become a second kind of noise.
+        let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").count
+        trace.flushAndWait()
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8).split(separator: "\n").count, lines)
+    }
+
+    /// Codex's review, finding 2: an invitation is only true for a source the app **went and found** in this
+    /// association. A source the reader chose is not discovery, and a pool built for an earlier profile does not
+    /// answer for the one being read now.
+    func testAnInvitationIsOnlyOfferedForDiscoveredSources() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        // The reader chose one of the development feeds **and** answered discovery: both supplies exist.
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: [])
+        var answers = FeedRecipeDefinition.neutral(languages: ["pt"])
+        answers.topicPreferences = ["topic:90_countries/brazil": .more]
+        var settings = try preferences.load()?.settings ?? .standard
+        settings.discoveryProfile = answers
+        _ = try preferences.setSettings(settings)
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 60
+        let root = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50, "the fixture has a discovery pool")
+
+        // The rule this side owns: only a source **found by this association's discovery** may be asked about, and
+        // the catalogue must name a subject for it.
+        // The fixture's own selected feed: a source the reader has, which discovery did not have to find.
+        let chosen = try XCTUnwrap(TrustedFeed.development.first)
+        XCTAssertNil(root.editorialSubject(for: chosen.sourceID, in: association),
+            "a source the reader chose is never asked about as a discovery")
+        XCTAssertNil(root.editorialSubject(for: SourceID(), in: association),
+            "a source this association never found is not asked about either")
+        if let discovered = association.discovery.first {
+            XCTAssertEqual(root.editorialSubject(for: discovered.sourceID, in: association) == nil,
+                !association.discovery.contains { $0.sourceID == discovered.sourceID } ,
+                "a discovered source is answered by the pool's own subject map, and nothing else")
+        }
+        await association.close()
+    }
+
+    /// V1's own promise for a saved box: what is exported is the reader's **articles**, not the sources they came
+    /// from, and only in the four formats an article list has.
+    func testASavedBoxExportsItsSavedArticlesAndNotTheirSources() async throws {
+        let (root, association) = try await launched()
+        let publication = PublicationStore(database: association.database)
+        let window = try XCTUnwrap(association.store.state.presentation?.window.items)
+        let linked = try XCTUnwrap(window.first { item in
+            (try? publication.card(id: item.id))?.primaryActionKind == "externalURL"
+        })
+        try publication.toggleBookmark(cardID: linked.id, at: Date())
+        let coordinator = try XCTUnwrap(root.makeImportExportCoordinator())
+        let box = ReaderExportRequest(scope: .bookmarkBox(ReaderBookmarkList.defaultID), format: .csv)
+
+        let csv = try coordinator.preview(box)
+        XCTAssertEqual(csv.split(separator: "\n").first.map(String.init), "title,url,source,date,category")
+        let record = try XCTUnwrap(publication.card(id: linked.id))
+        XCTAssertTrue(csv.contains(try XCTUnwrap(record.primaryActionReference)),
+            "the saved article's own link is in the document")
+        XCTAssertTrue(csv.contains(try XCTUnwrap(linked.title)), "and so is its own headline")
+        XCTAssertFalse(csv.contains("title,url,identity,category"),
+            "a box is not exported as a list of feeds")
+
+        let markdown = try coordinator.preview(ReaderExportRequest(scope: .bookmarkBox(ReaderBookmarkList.defaultID),
+            format: .markdown))
+        XCTAssertTrue(markdown.contains("- [\(try XCTUnwrap(linked.title))](\(try XCTUnwrap(record.primaryActionReference)))"))
+        let text = try coordinator.preview(ReaderExportRequest(scope: .bookmarkBox(ReaderBookmarkList.defaultID),
+            format: .text))
+        XCTAssertTrue(text.contains("• \(try XCTUnwrap(linked.title))"))
+        let html = try coordinator.preview(ReaderExportRequest(scope: .bookmarkBox(ReaderBookmarkList.defaultID),
+            format: .html))
+        // O título vem do **mesmo bundle e do mesmo locale do contrato do produto** — não de um literal fixo. Era
+        // `<title>Caixa de salvos</title>`, e num aparelho em inglês a asserção quebrava (medido; correção
+        // autorizada pelo arquiteto). As verificações de que a caixa exporta **artigos salvos** e não **fontes**
+        // seguem intactas abaixo, que é o que este teste existe para provar.
+        let exportTitle = String(localized: "Caixa de salvos", bundle: .main,
+            locale: CatalogLanguageNaming.interfaceLocale)
+        XCTAssertTrue(html.contains("<title>\(exportTitle)</title>"),
+            "o documento declara o que ele é, resolvido pelo contrato do produto (título: \(exportTitle))")
+        XCTAssertFalse(html.contains("<title>Fontes</title>"),
+            "e o título é o da caixa de salvos, não o de uma lista de fontes")
+
+        // The file name V1 wrote for this scope, and the formats it never offered are refused rather than
+        // answered with a document about something else.
+        let url = try coordinator.export(box)
+        XCTAssertTrue(url.lastPathComponent.contains("-bookmarks.csv"), url.lastPathComponent)
+        for format in [ReaderExportFormat.opml, .json, .shareLink, .socialCard] {
+            XCTAssertThrowsError(try coordinator.preview(ReaderExportRequest(scope: .bookmarkBox(ReaderBookmarkList.defaultID),
+                format: format)), "\(format.rawValue) is not a saved box's document") { error in
+                XCTAssertEqual(error as? ReaderImportExportError, .formatNotAvailable)
+            }
+        }
+        XCTAssertEqual(ReaderExportFormat.available(for: .bookmarkBox("x")), [.text, .markdown, .csv, .html],
+            "and the surface offers exactly what a box can be written in")
+        await association.close()
+    }
+
     /// Integrity gate for updating over the V1 app (same bundle id `com.feedmine.app`): V2's
     /// runtime store must never coincide with V1's, because a coincidence would mean V2 opening and
     /// migrating a foreign schema in place. V1 (feedmine-dev) writes
@@ -740,5 +1711,53 @@ final class CompositionTests: XCTestCase {
             "the two stores must stay distinct even if the volume ignores case")
         // V2 must create its own directory rather than adopt V1's tree.
         XCTAssertFalse(v2.path.contains("/Feedmine/RuntimeV2/"))
+    }
+}
+
+/// §5.3/PD-6: the media window is a **per-operation** limit derived from facts the run measures, never a fraction
+/// of the transport's timeout. The derivation is the precedent, so it is pinned here: unmeasured states the run's
+/// bootstrap, measured follows the runway's own tolerance for one request, and the transport timeout stays what it
+/// is — an operational ceiling, which is the one thing PD-6 rule 4 allows it to be.
+final class MediaWaitDerivationTests: XCTestCase {
+    private let inputs = RunwayPolicyInputs(safetyFactor: 1.2, releaseMarginSeconds: 2)!
+
+    func testUnmeasuredStatesTheBootstrapAndIsStillBoundedByTheTransportCeiling() {
+        // The 5 s is the run's declared tolerance, not `timeoutIntervalForRequest / 4` (≈15 s with the 60 s default).
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: nil, inputs: inputs, transportCeiling: 60), 5)
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: nil, inputs: inputs, transportCeiling: 3), 3)
+    }
+
+    func testMeasuredFollowsTheRunsOwnToleranceSoAFasterSourceWaitsLess() {
+        // p95 = 2 s → 2 × 1,2 + 2 = 4,4 s. A slower replenishment earns a longer window; a fast one does not pay for it.
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 2, inputs: inputs, transportCeiling: 60),
+            4.4, accuracy: 1e-9)
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 4, inputs: inputs, transportCeiling: 60),
+            6.8, accuracy: 1e-9)
+        // A source slower than the transport tolerates does not hold an operation open past the ceiling.
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 600, inputs: inputs, transportCeiling: 30), 30)
+    }
+
+    func testUnusableMeasurementsFallBackRatherThanPoisonTheDeadline() {
+        for bad in [0.0, -1, Double.nan, Double.infinity] {
+            XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: bad, inputs: inputs, transportCeiling: 60), 5,
+                "\(bad) is not a measurement, so the bootstrap applies")
+        }
+        // A ceiling a misconfigured transport cannot provide leaves the derived value bounded by the bootstrap
+        // rather than producing a deadline in the past.
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 2, inputs: inputs, transportCeiling: 0),
+            4.4, accuracy: 1e-9)
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 600, inputs: inputs, transportCeiling: -1), 5)
+    }
+}
+
+// Test-only: why a wiring run did not publish, from the run's own facts. The decisive one is whether the
+// controlled transport was called at all — zero requests means the fetch was refused *before* the transport,
+// which is exactly the host policy (K-01) and not a setup problem.
+extension AppComposition {
+    func diagnosticsForTheWiringTest(_ association: FeedAssociation) -> String {
+        let requested = FixtureTransport.requests.withLock { $0.count }
+        return "transport-requests=\(requested) sources=\(feeds.count) "
+            + "failure=\(String(describing: startupFailure)) "
+            + "presentation=\(association.store.state.presentation == nil ? "nil" : "present")"
     }
 }

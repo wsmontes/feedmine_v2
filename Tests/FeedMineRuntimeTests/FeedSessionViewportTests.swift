@@ -145,13 +145,30 @@ final class FeedSessionViewportTests: XCTestCase {
             XCTAssertEqual(shifted?.window.anchor, PresentationAnchor(cardID: cards[6].id, placement: .center))
             let current = await session.currentPresentation()
             XCTAssertEqual(current, shifted)
-            // Only a real gesture admits the next ready prefix, and it appends after the admitted tail.
+            // Only a real gesture admits the next ready prefix, and the frozen bounds (backwardCapacity 2,
+            // forwardCapacity 2) cut the surplus around the anchor: the anchor is cards[6], so the admitted
+            // window is cards[4...8] — the same shape the restore installed around cards[4].
             let admitted = try await session.admitPresentation(.forwardScroll(observation(cards[6])))
-            XCTAssertEqual(admitted?.window.items.map(\.id), Array(cards[2...8]).map(\.id))
+            XCTAssertEqual(admitted?.window.items.map(\.id), Array(cards[4...8]).map(\.id))
             let settled = await session.currentPresentation()
             XCTAssertEqual(settled, admitted)
-            XCTAssertEqual(Array(try XCTUnwrap(admitted).window.items.prefix(5)), shifted?.window.items,
+            // Under the bounded window the previously admitted list is not a prefix of the new one, so the
+            // surviving cards are compared with the previous projection instead: they keep identity, relative
+            // order and value, and only the cards past the backward bound left the window.
+            let previousWindow = try XCTUnwrap(shifted).window.items
+            let admittedWindow = try XCTUnwrap(admitted).window.items
+            let retained = previousWindow.filter { card in admittedWindow.contains { $0.id == card.id } }
+            XCTAssertEqual(retained.map(\.id), Array(cards[4...6]).map(\.id),
+                "Previously admitted cards keep identity and relative order")
+            XCTAssertEqual(Array(admittedWindow.prefix(retained.count)), retained,
                 "Previously admitted cards keep identity, order and value")
+            // Nothing was lost: the two cards cut off the front are still in the local store, and a following
+            // admission near that end reads them again, restoring exactly the window the checkpoint installed.
+            let reread = try await session.submitViewport(observation(cards[4]))
+            XCTAssertEqual(reread?.window.anchor, PresentationAnchor(cardID: cards[4].id, placement: .center))
+            let regained = try await session.admitPresentation(.backwardScroll(observation(cards[4])))
+            XCTAssertEqual(regained?.window.items.map(\.id), Array(cards[2...6]).map(\.id),
+                "Cards that left the window through the forward bound stay reachable")
         }
     }
 

@@ -164,6 +164,30 @@ No hosted CI. Practices must speed development up, not slow it down.
 
 **Acceptance.** In a mixed corpus with slow image, permanently broken image, transient link failure, dead link and several ready stories, the unready item disappears immediately from the *current publication queue*, occupies no reserved position and cannot stall selection cursor/progress; ready content progresses independently; recoverable candidates remain reachable and may later enter the feed, broken image becomes text-only only when justified, dead links never publish without real consumption, and previously published/admitted cards remain unchanged. This is not yet implementation evidence.
 
+---
+
+## PD-11 — "Menos de X" states the exclusion it performs (P1, registered 2026-10-11)
+
+**Decision (product owner, 2026-10-11).** The current copy is **incorrect** and must not be changed in round 10:
+register it and fix it later. The action labelled "Menos de X" does not reduce any ranking — it adds the subject
+to the discovery exclusions (`settings.discoveryProfile.topicPreferences["topic:<subject>"] = .less` →
+`excludedTopicNodeKeys`) and rebuilds the session so discovery looks elsewhere. The interface must never promise a
+softer behaviour than the product performs.
+
+**Chosen wording (for the correction, not applied yet).**
+- Button: **"Não quero mais sobre X"**
+- Confirmation: **"Entendido. Vamos excluir X das próximas descobertas."**
+- Way back: **"Desfazer"**
+
+**Rules of the correction.**
+1. The exclusion never removes already published cards retrospectively.
+2. No ranking mechanism is invented to justify the old copy.
+3. Round 10 does not touch the engine, the wording or ranking: this entry is the register the PO asked for.
+
+**Future distinction (product owner's direction, not this round).** Two different reader intentions should not
+share one semantics: *"Menos de X"* = reduce frequency without eliminating the subject; *"Não quero mais X"* =
+exclude the subject from discovery. Until that exists, the label must state the truth of what is implemented.
+
 
 ---
 

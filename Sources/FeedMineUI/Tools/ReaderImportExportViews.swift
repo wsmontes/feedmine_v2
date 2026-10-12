@@ -40,7 +40,17 @@ public struct ReaderExportView: View {
         self.onSave = onSave
         self.onClose = onClose
         _scope = State(initialValue: initial)
-        _format = State(initialValue: initialFormat)
+        // The scope decides which formats can be written (V1 hid the rest), so a request for one that is not
+        // available lands on the first that is instead of on a document about something else.
+        let allowed = ReaderExportFormat.available(for: initial.scope)
+        _format = State(initialValue: allowed.contains(initialFormat) ? initialFormat : (allowed.first ?? initialFormat))
+    }
+
+    /// What this scope can be written in: the host's own list, narrowed to the formats that scope has.
+    private var availableFormats: [ReaderExportFormat] {
+        let allowed = ReaderExportFormat.available(for: scope.scope)
+        let narrowed = formats.filter { allowed.contains($0) }
+        return narrowed.isEmpty ? formats : narrowed
     }
 
     public var body: some View {
@@ -49,6 +59,9 @@ public struct ReaderExportView: View {
                 ForEach(scopes) { choice in
                     Button {
                         scope = choice
+                        // A format the new scope cannot write is replaced by the first one it can, which is what
+                        // V1 did when the scope changed under it.
+                        if !availableFormats.contains(format) { format = availableFormats.first ?? format }
                         onSelect(choice, format)
                     } label: {
                         HStack {
@@ -69,7 +82,7 @@ public struct ReaderExportView: View {
                     format = value
                     onSelect(scope, value)
                 })) {
-                    ForEach(formats) { option in
+                    ForEach(availableFormats) { option in
                         Label(option.title, systemImage: option.systemImage).tag(option)
                     }
                 }

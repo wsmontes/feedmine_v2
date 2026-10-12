@@ -1,0 +1,3497 @@
+{
+  "sourceLanguage": "pt-BR",
+  "strings": {
+    "": {},
+    "%@ (%lld)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%lld)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@ (%2$lld)"
+          }
+        }
+      }
+    },
+    "%@ fontes disponíveis": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ sources available"
+          }
+        }
+      }
+    },
+    "%@.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@."
+          }
+        }
+      }
+    },
+    "%lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        }
+      }
+    },
+    "%lld adicionada(s)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld added"
+          }
+        }
+      }
+    },
+    "%lld artigos salvos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld saved articles"
+          }
+        }
+      }
+    },
+    "%lld de %lld fontes já trouxeram novidades": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld of %lld sources have brought news"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lld de %2$lld fontes já trouxeram novidades"
+          }
+        }
+      }
+    },
+    "%lld falhas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld failures"
+          }
+        }
+      }
+    },
+    "%lld feeds": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld feeds"
+          }
+        }
+      }
+    },
+    "%lld fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sources"
+          }
+        }
+      }
+    },
+    "%lld guardada(s) em %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld saved in %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lld guardada(s) em %2$@"
+          }
+        }
+      }
+    },
+    "%lld histórias prontas para você": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld stories ready for you"
+          }
+        }
+      }
+    },
+    "%lld ignoradas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld ignored"
+          }
+        }
+      }
+    },
+    "%lld já estava(m) nas suas fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld were already in your sources"
+          }
+        }
+      }
+    },
+    "%lld palavras": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld words"
+          }
+        }
+      }
+    },
+    "%lld países": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld countries"
+          }
+        }
+      }
+    },
+    "%lld países · %lld feeds": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld countries · %lld feeds"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lld países · %2$lld feeds"
+          }
+        }
+      }
+    },
+    "%lld recusada(s)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld rejected"
+          }
+        }
+      }
+    },
+    "%lld repetidas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld repeated"
+          }
+        }
+      }
+    },
+    "*Exportado pelo Feedmine*": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "*Exported by Feedmine*"
+          }
+        }
+      }
+    },
+    "A busca e os filtros atuais ficam guardados com este nome.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The current search and filters are saved under this name."
+          }
+        }
+      }
+    },
+    "Abrindo as caixas de salvos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opening the saved boxes"
+          }
+        }
+      }
+    },
+    "Abrindo as coleções": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opening collections"
+          }
+        }
+      }
+    },
+    "Abrindo as fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opening sources"
+          }
+        }
+      }
+    },
+    "Abrindo as primeiras fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opening your first sources"
+          }
+        }
+      }
+    },
+    "Abrindo feed local": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opening local feed"
+          }
+        }
+      }
+    },
+    "Abrindo o catálogo de fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opening the source catalogue"
+          }
+        }
+      }
+    },
+    "Abrindo os ajustes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opening settings"
+          }
+        }
+      }
+    },
+    "Abrir atualiza exatamente este conjunto de fontes e reúne o que elas publicaram.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open refreshes exactly this set of sources and gathers what they published."
+          }
+        }
+      }
+    },
+    "Abrir feed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open feed"
+          }
+        }
+      }
+    },
+    "Abrir meu feed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open my feed"
+          }
+        }
+      }
+    },
+    "Abrir o capô do feed curado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the hood of the curated feed"
+          }
+        }
+      }
+    },
+    "Abrir o feed da coleção": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the collection feed"
+          }
+        }
+      }
+    },
+    "Adicionar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add"
+          }
+        }
+      }
+    },
+    "Adicionar a": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to"
+          }
+        }
+      }
+    },
+    "Adicionar a %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to %@"
+          }
+        }
+      }
+    },
+    "Adicionar feed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add feed"
+          }
+        }
+      }
+    },
+    "Adicionar feed à coleção": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add feed to collection"
+          }
+        }
+      }
+    },
+    "Adicionar fonte a uma coleção": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a source to a collection"
+          }
+        }
+      }
+    },
+    "Adicionar fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add sources"
+          }
+        }
+      }
+    },
+    "Adicionar palavras…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add words…"
+          }
+        }
+      }
+    },
+    "Adicionar um termo · use -termo para excluir": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a term · use -term to exclude"
+          }
+        }
+      }
+    },
+    "Adicione fontes a partir de um card ou de um resultado.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add sources from a card or a result."
+          }
+        }
+      }
+    },
+    "Aguardando": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting"
+          }
+        }
+      }
+    },
+    "Ainda não encontramos conteúdo suficiente. Vamos tentar novamente em instantes.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We haven’t found enough content yet. We’ll try again in a moment."
+          }
+        }
+      }
+    },
+    "Ainda não encontramos histórias para você.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We haven’t found stories for you yet."
+          }
+        }
+      }
+    },
+    "Ajustar interesses": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adjust interests"
+          }
+        }
+      }
+    },
+    "Ajustes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        }
+      }
+    },
+    "Apagar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        }
+      }
+    },
+    "Apagar coleção": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete collection"
+          }
+        }
+      }
+    },
+    "Apagar “%@”?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete “%@”?"
+          }
+        }
+      }
+    },
+    "Aparência": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appearance"
+          }
+        }
+      }
+    },
+    "Armazenamento": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storage"
+          }
+        }
+      }
+    },
+    "Artigos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Articles"
+          }
+        }
+      }
+    },
+    "As coleções pessoais são as pastas em Coleções de fontes. As categorias do catálogo ficam à parte.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personal collections are the folders in Source collections. Catalogue categories are kept separate."
+          }
+        }
+      }
+    },
+    "As fontes e suas classificações continuam intactas.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The sources and their ratings stay intact."
+          }
+        }
+      }
+    },
+    "As regras abaixo estão sendo aplicadas.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The rules below are being applied."
+          }
+        }
+      }
+    },
+    "Assuntos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Topics"
+          }
+        }
+      }
+    },
+    "Assuntos prontos para esconder. Um modelo traz as palavras do seu idioma e as em inglês.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Topics ready to hide. A template brings the words from your language and the English ones."
+          }
+        }
+      }
+    },
+    "Assuntos que você pediu": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Topics you asked for"
+          }
+        }
+      }
+    },
+    "Ative países ou tópicos em Fontes para começar a ver conteúdo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn on countries or topics in Sources to start seeing content."
+          }
+        }
+      }
+    },
+    "Backup JSON": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JSON backup"
+          }
+        }
+      }
+    },
+    "Biblioteca local": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local library"
+          }
+        }
+      }
+    },
+    "Blogroll HTML": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTML blogroll"
+          }
+        }
+      }
+    },
+    "Botânico": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Botanical"
+          }
+        }
+      }
+    },
+    "Busca: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search: %@"
+          }
+        }
+      }
+    },
+    "Buscando novidades": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Looking for news"
+          }
+        }
+      }
+    },
+    "Buscar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search"
+          }
+        }
+      }
+    },
+    "Buscar tópicos…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search topics…"
+          }
+        }
+      }
+    },
+    "CAPÔ ABERTO": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HOOD OPEN"
+          }
+        }
+      }
+    },
+    "CSV": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CSV"
+          }
+        }
+      }
+    },
+    "Caixa de salvos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved box"
+          }
+        }
+      }
+    },
+    "Caixas de salvos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved boxes"
+          }
+        }
+      }
+    },
+    "Cancelar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "Carregando…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading…"
+          }
+        }
+      }
+    },
+    "Cartão social": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Social card"
+          }
+        }
+      }
+    },
+    "Colar da área de transferência": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste from clipboard"
+          }
+        }
+      }
+    },
+    "Cole endereços, links ou domínios…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste addresses, links or domains…"
+          }
+        }
+      }
+    },
+    "Cole qualquer link — sites, canais do YouTube, repositórios do GitHub, podcasts ou endereços de feed. Encontramos os feeds automaticamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste any link — websites, YouTube channels, GitHub repositories, podcasts or feed addresses. We find the feeds automatically."
+          }
+        }
+      }
+    },
+    "Coleção de fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source collection"
+          }
+        }
+      }
+    },
+    "Coleção pessoal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personal collection"
+          }
+        }
+      }
+    },
+    "Coleções de fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source collections"
+          }
+        }
+      }
+    },
+    "Coleções referenciam fontes pelo endereço do feed. Apagar uma remove apenas a lista, nunca a fonte.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collections reference sources by feed address. Deleting one removes only the list, never the source."
+          }
+        }
+      }
+    },
+    "Começar amplo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start broad"
+          }
+        }
+      }
+    },
+    "Compartilhar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share"
+          }
+        }
+      }
+    },
+    "Concluir": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        }
+      }
+    },
+    "Concluído": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed"
+          }
+        }
+      }
+    },
+    "Continuar aprendendo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep learning"
+          }
+        }
+      }
+    },
+    "Conversando com %lld fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Talking to %lld sources"
+          }
+        }
+      }
+    },
+    "Copiar link": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy link"
+          }
+        }
+      }
+    },
+    "Cores e tipografia mudam com a hora do dia. %@ %@ agora": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Colors and typography change with the time of day. %@ %@ now"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Cores e tipografia mudam com a hora do dia. %1$@ %2$@ agora"
+          }
+        }
+      }
+    },
+    "Criar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create"
+          }
+        }
+      }
+    },
+    "Criar coleção de fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create source collection"
+          }
+        }
+      }
+    },
+    "Criar feed com estas preferências": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create feed with these preferences"
+          }
+        }
+      }
+    },
+    "Criar feed curado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create curated feed"
+          }
+        }
+      }
+    },
+    "Criar não abre nada nem muda o que você está lendo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create opens nothing and doesn’t change what you’re reading."
+          }
+        }
+      }
+    },
+    "Criar um feed com estas preferências": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create a feed with these preferences"
+          }
+        }
+      }
+    },
+    "Crie uma lista reutilizável de fontes. Uma fonte pode pertencer a mais de uma coleção.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build a reusable list of sources. A source can belong to more than one collection."
+          }
+        }
+      }
+    },
+    "Céu frio": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cold sky"
+          }
+        }
+      }
+    },
+    "Descoberta": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discovery"
+          }
+        }
+      }
+    },
+    "Descoberta e aprendizado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discovery and learning"
+          }
+        }
+      }
+    },
+    "Descoberta é o que o FeedMine procura por você fora do seu feed: as respostas abaixo dizem onde olhar. Mudar uma resposta não mexe no que já está na sua tela.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discovery is what FeedMine looks for on your behalf outside your feed: the answers below say where to look. Changing an answer doesn’t touch what’s already on your screen."
+          }
+        }
+      }
+    },
+    "Descobrindo histórias para você…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finding stories for you…"
+          }
+        }
+      }
+    },
+    "Desempenho": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Performance"
+          }
+        }
+      }
+    },
+    "Desfazer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo"
+          }
+        }
+      }
+    },
+    "Design circadiano": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Circadian design"
+          }
+        }
+      }
+    },
+    "Desligado: as regras ficam guardadas e nada é escondido.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off: the rules stay saved and nothing is hidden."
+          }
+        }
+      }
+    },
+    "Dispensar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dismiss"
+          }
+        }
+      }
+    },
+    "Editar controles": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit controls"
+          }
+        }
+      }
+    },
+    "Edite o que o Feedmine aprendeu, ou desligue o aprendizado.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit what Feedmine has learned, or turn learning off."
+          }
+        }
+      }
+    },
+    "Editável": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editable"
+          }
+        }
+      }
+    },
+    "Episódio": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Episode"
+          }
+        }
+      }
+    },
+    "Episódio de teste": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test episode"
+          }
+        }
+      }
+    },
+    "Equilibrado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Balanced"
+          }
+        }
+      }
+    },
+    "Equilíbrio de fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source balance"
+          }
+        }
+      }
+    },
+    "Escolha idiomas e lugares": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose languages and places"
+          }
+        }
+      }
+    },
+    "Escolher fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose sources"
+          }
+        }
+      }
+    },
+    "Esconde artigos cujo título ou resumo contenha qualquer uma das palavras. Vale para títulos e resumos, em qualquer idioma.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hides articles whose title or summary contains any of the words. Applies to titles and summaries, in any language."
+          }
+        }
+      }
+    },
+    "Esconder dicas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide tips"
+          }
+        }
+      }
+    },
+    "Este arquivo não tem fontes para importar.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This file has no sources to import."
+          }
+        }
+      }
+    },
+    "Este card não está mais disponível": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This card is no longer available"
+          }
+        }
+      }
+    },
+    "Este card não tem o que tocar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This card has nothing to play"
+          }
+        }
+      }
+    },
+    "Este feed começou equilibrado. Ajuste os controles acima quando quiser.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This feed started balanced. Adjust the controls above whenever you like."
+          }
+        }
+      }
+    },
+    "Estilo da fonte": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Font style"
+          }
+        }
+      }
+    },
+    "Excluir": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        }
+      }
+    },
+    "Excluir este feed curado?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete this curated feed?"
+          }
+        }
+      }
+    },
+    "Excluir feed curado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete curated feed"
+          }
+        }
+      }
+    },
+    "Excluir marcador inteligente": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete smart bookmark"
+          }
+        }
+      }
+    },
+    "Exploratório": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exploratory"
+          }
+        }
+      }
+    },
+    "Exportado pelo Feedmine": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exported by Feedmine"
+          }
+        }
+      }
+    },
+    "Exportar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export"
+          }
+        }
+      }
+    },
+    "Exportar coleção": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export collection"
+          }
+        }
+      }
+    },
+    "Família de paleta": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Palette family"
+          }
+        }
+      }
+    },
+    "Fechar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        }
+      }
+    },
+    "Fechar busca": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close search"
+          }
+        }
+      }
+    },
+    "Feed curado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Curated feed"
+          }
+        }
+      }
+    },
+    "FeedMine sugere": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FeedMine suggests"
+          }
+        }
+      }
+    },
+    "Feedmine": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feedmine"
+          }
+        }
+      }
+    },
+    "Feeds": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feeds"
+          }
+        }
+      }
+    },
+    "Filtrar conteúdo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filter content"
+          }
+        }
+      }
+    },
+    "Filtros": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filters"
+          }
+        }
+      }
+    },
+    "Filtros de categoria, humor e tipo se reiniciam depois de 4 horas para você nunca abrir num feed vazio.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Category, mood and type filters reset after 4 hours so you never open an empty feed."
+          }
+        }
+      }
+    },
+    "Filtros de conteúdo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content filters"
+          }
+        }
+      }
+    },
+    "Focado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Focused"
+          }
+        }
+      }
+    },
+    "Fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sources"
+          }
+        }
+      }
+    },
+    "Fontes com falha": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed sources"
+          }
+        }
+      }
+    },
+    "Fontes desabilitadas não são consultadas na atualização. As mudanças valem a partir da próxima atualização.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disabled sources aren’t checked on refresh. Changes take effect from the next refresh."
+          }
+        }
+      }
+    },
+    "Fontes especializadas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Specialist sources"
+          }
+        }
+      }
+    },
+    "Formato": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Format"
+          }
+        }
+      }
+    },
+    "Georgia": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Georgia"
+          }
+        }
+      }
+    },
+    "Grande": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Large"
+          }
+        }
+      }
+    },
+    "Habilitadas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enabled"
+          }
+        }
+      }
+    },
+    "Hora lavanda": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lavender hour"
+          }
+        }
+      }
+    },
+    "Humor": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mood"
+          }
+        }
+      }
+    },
+    "Idioma": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language"
+          }
+        }
+      }
+    },
+    "Idioma não declarado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language not declared"
+          }
+        }
+      }
+    },
+    "Idiomas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Languages"
+          }
+        }
+      }
+    },
+    "Idiomas e tipos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Languages and types"
+          }
+        }
+      }
+    },
+    "Importadas %lld · já suas %lld · ignoradas %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imported %lld · already yours %lld · ignored %lld"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Importadas %1$lld · já suas %2$lld · ignoradas %3$lld"
+          }
+        }
+      }
+    },
+    "Importar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import"
+          }
+        }
+      }
+    },
+    "Importar OPML": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import OPML"
+          }
+        }
+      }
+    },
+    "Importar para a coleção": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import into collection"
+          }
+        }
+      }
+    },
+    "Indo atrás do que vale a pena ler": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Going after what’s worth reading"
+          }
+        }
+      }
+    },
+    "Interesses": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interests"
+          }
+        }
+      }
+    },
+    "Leitor de feeds com curadoria local e sem conta.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A feed reader with local curation and no account."
+          }
+        }
+      }
+    },
+    "Leitura": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading"
+          }
+        }
+      }
+    },
+    "Limpar filtros sozinho": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear filters on its own"
+          }
+        }
+      }
+    },
+    "Limpar todos os filtros": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear all filters"
+          }
+        }
+      }
+    },
+    "Link copiado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Link copied"
+          }
+        }
+      }
+    },
+    "Link de feed no clipboard": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feed link on the clipboard"
+          }
+        }
+      }
+    },
+    "Link para compartilhar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Link to share"
+          }
+        }
+      }
+    },
+    "Lugares": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Places"
+          }
+        }
+      }
+    },
+    "Mais": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More"
+          }
+        }
+      }
+    },
+    "Mais de %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More than %@"
+          }
+        }
+      }
+    },
+    "Markdown": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown"
+          }
+        }
+      }
+    },
+    "Menos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Less"
+          }
+        }
+      }
+    },
+    "Menos de %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Less than %@"
+          }
+        }
+      }
+    },
+    "Meu feed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My feed"
+          }
+        }
+      }
+    },
+    "Minhas fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My sources"
+          }
+        }
+      }
+    },
+    "Modelos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Templates"
+          }
+        }
+      }
+    },
+    "Modo noturno": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Night mode"
+          }
+        }
+      }
+    },
+    "Mono": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mono"
+          }
+        }
+      }
+    },
+    "Monocromático": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monochrome"
+          }
+        }
+      }
+    },
+    "Montar meu feed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build my feed"
+          }
+        }
+      }
+    },
+    "Mostrar tudo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show all"
+          }
+        }
+      }
+    },
+    "Médio": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Medium"
+          }
+        }
+      }
+    },
+    "Mídia indisponível nesta compilação": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Media unavailable in this build"
+          }
+        }
+      }
+    },
+    "Nada escondido aqui.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing hidden here."
+          }
+        }
+      }
+    },
+    "Nada para exportar.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing to export."
+          }
+        }
+      }
+    },
+    "Navegar por tópicos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse by topic"
+          }
+        }
+      }
+    },
+    "Nenhum artigo salvo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No saved articles"
+          }
+        }
+      }
+    },
+    "Nenhuma coleção": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No collections"
+          }
+        }
+      }
+    },
+    "Nenhuma coleção de fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No source collections"
+          }
+        }
+      }
+    },
+    "Nenhuma fonte habilitada": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No sources enabled"
+          }
+        }
+      }
+    },
+    "Nenhuma palavra sua ainda.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No words of yours yet."
+          }
+        }
+      }
+    },
+    "Nenhuma personalidade, religião, etnia, gênero, localização ou rótulo demográfico é inferido ou guardado.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No personality, religion, ethnicity, gender, location or demographic label is inferred or stored."
+          }
+        }
+      }
+    },
+    "New York": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New York"
+          }
+        }
+      }
+    },
+    "No aparelho": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On device"
+          }
+        }
+      }
+    },
+    "No nosso catálogo, esta fonte está em %@. Quer explorar mais fontes desse grupo?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In our catalogue, this source is in %@. Want to explore more sources in that group?"
+          }
+        }
+      }
+    },
+    "Nome": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
+          }
+        }
+      }
+    },
+    "Nome da coleção": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collection name"
+          }
+        }
+      }
+    },
+    "Nome do feed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feed name"
+          }
+        }
+      }
+    },
+    "Normal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normal"
+          }
+        }
+      }
+    },
+    "Nova caixa": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New box"
+          }
+        }
+      }
+    },
+    "Nova coleção": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New collection"
+          }
+        }
+      }
+    },
+    "Nova coleção de fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New source collection"
+          }
+        }
+      }
+    },
+    "Nova coleção…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New collection…"
+          }
+        }
+      }
+    },
+    "Nova regra": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New rule"
+          }
+        }
+      }
+    },
+    "Não conseguimos buscar novas histórias agora.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We can’t look for new stories right now."
+          }
+        }
+      }
+    },
+    "Não foi possível abrir a fonte": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t open the source"
+          }
+        }
+      }
+    },
+    "Não foi possível abrir esta parte do catálogo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t open this part of the catalogue."
+          }
+        }
+      }
+    },
+    "Não foi possível abrir este tópico.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t open this topic."
+          }
+        }
+      }
+    },
+    "Não foi possível abrir o catálogo de tópicos.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t open the topic catalogue."
+          }
+        }
+      }
+    },
+    "Não foi possível adicionar as fontes.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t add the sources."
+          }
+        }
+      }
+    },
+    "Não foi possível alterar a seleção de fontes.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t change the source selection."
+          }
+        }
+      }
+    },
+    "Não foi possível alterar as caixas de salvos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t change the saved boxes"
+          }
+        }
+      }
+    },
+    "Não foi possível alterar as caixas de salvos.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t change the saved boxes."
+          }
+        }
+      }
+    },
+    "Não foi possível alterar as coleções": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t change the collections"
+          }
+        }
+      }
+    },
+    "Não foi possível alterar as coleções.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t change the collections."
+          }
+        }
+      }
+    },
+    "Não foi possível atualizar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t refresh"
+          }
+        }
+      }
+    },
+    "Não foi possível buscar no catálogo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t search the catalogue."
+          }
+        }
+      }
+    },
+    "Não foi possível buscar tópicos.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t search topics."
+          }
+        }
+      }
+    },
+    "Não foi possível carregar as caixas de salvos.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t load the saved boxes."
+          }
+        }
+      }
+    },
+    "Não foi possível carregar as coleções.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t load the collections."
+          }
+        }
+      }
+    },
+    "Não foi possível conectar.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t connect."
+          }
+        }
+      }
+    },
+    "Não foi possível criar a coleção.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t create the collection."
+          }
+        }
+      }
+    },
+    "Não foi possível ler as preferências.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t read the preferences."
+          }
+        }
+      }
+    },
+    "Não foi possível ler o arquivo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t read the file"
+          }
+        }
+      }
+    },
+    "Não foi possível ler os filtros de conteúdo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t read the content filters."
+          }
+        }
+      }
+    },
+    "Não foi possível mudar de contexto agora.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t switch context right now."
+          }
+        }
+      }
+    },
+    "Não foi possível salvar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t save"
+          }
+        }
+      }
+    },
+    "Não foi possível salvar as preferências": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t save the preferences"
+          }
+        }
+      }
+    },
+    "Não foi possível salvar as preferências.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t save the preferences."
+          }
+        }
+      }
+    },
+    "Não foi possível salvar o filtro de conteúdo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t save the content filter."
+          }
+        }
+      }
+    },
+    "Não foi possível tocar esta mídia": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t play this media"
+          }
+        }
+      }
+    },
+    "Não foi possível tocar este card": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t play this card"
+          }
+        }
+      }
+    },
+    "Não serão importados": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Won’t be imported"
+          }
+        }
+      }
+    },
+    "O Feedmine reúne publicações independentes, podcasts, canais de vídeo e fontes públicas. Monte a mistura você mesmo — ou comece amplo e explore.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feedmine brings together independent publications, podcasts, video channels and public sources. Build the mix yourself — or start broad and explore."
+          }
+        }
+      }
+    },
+    "O catálogo de fontes não está disponível.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The source catalogue isn’t available."
+          }
+        }
+      }
+    },
+    "O marcador inteligente guardado com este nome será removido.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The smart bookmark saved under this name will be removed."
+          }
+        }
+      }
+    },
+    "O nome da coleção não pode ficar vazio.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The collection name can’t be empty."
+          }
+        }
+      }
+    },
+    "O que exportar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What to export"
+          }
+        }
+      }
+    },
+    "OK": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
+    "OPML": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OPML"
+          }
+        }
+      }
+    },
+    "Padrão": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default"
+          }
+        }
+      }
+    },
+    "Palavras (separadas por vírgula)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Words (comma-separated)"
+          }
+        }
+      }
+    },
+    "Palavras suas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your words"
+          }
+        }
+      }
+    },
+    "Paleta adaptativa": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adaptive palette"
+          }
+        }
+      }
+    },
+    "Pausar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause"
+          }
+        }
+      }
+    },
+    "Países": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Countries"
+          }
+        }
+      }
+    },
+    "Pequeno": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Small"
+          }
+        }
+      }
+    },
+    "Podcast": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Podcast"
+          }
+        }
+      }
+    },
+    "Podcasts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Podcasts"
+          }
+        }
+      }
+    },
+    "Preferências de descoberta": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discovery preferences"
+          }
+        }
+      }
+    },
+    "Preparando": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing"
+          }
+        }
+      }
+    },
+    "Preparando seu feed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing your feed."
+          }
+        }
+      }
+    },
+    "Principal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Main"
+          }
+        }
+      }
+    },
+    "Procurando mais novidades…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Looking for more news…"
+          }
+        }
+      }
+    },
+    "Pré-carregar imagens": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preload images"
+          }
+        }
+      }
+    },
+    "Pré-visualização (%lld)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview (%lld)"
+          }
+        }
+      }
+    },
+    "Prévia": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview"
+          }
+        }
+      }
+    },
+    "Quase pronto — %lld fontes já trouxeram novidades": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Almost ready — %lld sources have brought news"
+          }
+        }
+      }
+    },
+    "Referências estabelecidas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Established references"
+          }
+        }
+      }
+    },
+    "Região não especificada": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Region not specified"
+          }
+        }
+      }
+    },
+    "Regiões de %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regions of %@"
+          }
+        }
+      }
+    },
+    "Reiniciar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart"
+          }
+        }
+      }
+    },
+    "Remover": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        }
+      }
+    },
+    "Remover %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove %@"
+          }
+        }
+      }
+    },
+    "Remover dos salvos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from saved"
+          }
+        }
+      }
+    },
+    "Renomear": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename"
+          }
+        }
+      }
+    },
+    "Reordenar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reorder"
+          }
+        }
+      }
+    },
+    "Resultado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Result"
+          }
+        }
+      }
+    },
+    "Resultados": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Results"
+          }
+        }
+      }
+    },
+    "Reunir estas fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gather these sources"
+          }
+        }
+      }
+    },
+    "Salvar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
+        }
+      }
+    },
+    "Salvar arquivo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save file"
+          }
+        }
+      }
+    },
+    "Salvar artigo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save article"
+          }
+        }
+      }
+    },
+    "Salvar como marcador inteligente": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save as smart bookmark"
+          }
+        }
+      }
+    },
+    "Salve um artigo pelo menu do card para encontrá-lo aqui.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save an article from the card menu to find it here."
+          }
+        }
+      }
+    },
+    "Salvos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved"
+          }
+        }
+      }
+    },
+    "Sem conexão": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No connection"
+          }
+        }
+      }
+    },
+    "Sem conta": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No account"
+          }
+        }
+      }
+    },
+    "Sem dados de idioma disponíveis": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No language data available"
+          }
+        }
+      }
+    },
+    "Sem feed encontrado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No feed found"
+          }
+        }
+      }
+    },
+    "Sem histórias": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No stories"
+          }
+        }
+      }
+    },
+    "Sem título": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untitled"
+          }
+        }
+      }
+    },
+    "Seções": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sections"
+          }
+        }
+      }
+    },
+    "Sistema": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System"
+          }
+        }
+      }
+    },
+    "Sobre": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "About"
+          }
+        }
+      }
+    },
+    "Sua resposta orienta a busca por mais ou menos fontes desse grupo nas próximas descobertas. Você pode mudar de ideia.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your answer guides the search for more or fewer sources in that group in upcoming discoveries. You can change your mind."
+          }
+        }
+      }
+    },
+    "Sub-nós": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sub-nodes"
+          }
+        }
+      }
+    },
+    "Só escolhas explícitas — nunca uma rolagem de passagem.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only explicit choices — never a passing scroll."
+          }
+        }
+      }
+    },
+    "Tamanho do texto": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text size"
+          }
+        }
+      }
+    },
+    "Tentar novamente": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again"
+          }
+        }
+      }
+    },
+    "Terra quente": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warm earth"
+          }
+        }
+      }
+    },
+    "Texto": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text"
+          }
+        }
+      }
+    },
+    "Texto simples": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plain text"
+          }
+        }
+      }
+    },
+    "The open web,\narranged by ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The open web,\narranged by "
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A web aberta,\narrumada por "
+          }
+        }
+      }
+    },
+    "The open web, arranged by you.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The open web, arranged by you."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A web aberta, arrumada por você."
+          }
+        }
+      }
+    },
+    "Tipo de conteúdo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content type"
+          }
+        }
+      }
+    },
+    "Tipografia adaptativa": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adaptive typography"
+          }
+        }
+      }
+    },
+    "Tipos de conteúdo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content types"
+          }
+        }
+      }
+    },
+    "Tocar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play"
+          }
+        }
+      }
+    },
+    "Todos os idiomas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All languages"
+          }
+        }
+      }
+    },
+    "Todos os países": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All countries"
+          }
+        }
+      }
+    },
+    "Todos os salvos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All saved"
+          }
+        }
+      }
+    },
+    "Tudo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Everything"
+          }
+        }
+      }
+    },
+    "Tudo em %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Everything in %@"
+          }
+        }
+      }
+    },
+    "Tópicos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Topics"
+          }
+        }
+      }
+    },
+    "Uma coleção reúne as fontes do que você está lendo agora.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A collection gathers the sources of what you’re reading now."
+          }
+        }
+      }
+    },
+    "Uma fonte": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One source"
+          }
+        }
+      }
+    },
+    "Use como uma lista: misture fontes do catálogo e importadas.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use it as a list: mix catalogue and imported sources."
+          }
+        }
+      }
+    },
+    "Ver a fonte": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View source"
+          }
+        }
+      }
+    },
+    "Você entra no feed agora. Os assuntos, você responde dentro dele.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You go into the feed now. The topics, you answer inside it."
+          }
+        }
+      }
+    },
+    "Você pediu mais fontes em %@. Vamos procurar mais delas.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You asked for more sources in %@. We’ll look for more of them."
+          }
+        }
+      }
+    },
+    "Você pediu menos fontes em %@. Vamos procurar menos delas.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You asked for fewer sources in %@. We’ll look for fewer of them."
+          }
+        }
+      }
+    },
+    "Vozes independentes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Independent voices"
+          }
+        }
+      }
+    },
+    "Vídeo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video"
+          }
+        }
+      }
+    },
+    "amanhecer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "dawn"
+          }
+        }
+      }
+    },
+    "bookmarked": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bookmarked"
+          }
+        }
+      }
+    },
+    "categoria vazia": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "empty category"
+          }
+        }
+      }
+    },
+    "descoberta": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "discovery"
+          }
+        }
+      }
+    },
+    "desligado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "off"
+          }
+        }
+      }
+    },
+    "endereço inválido": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "invalid address"
+          }
+        }
+      }
+    },
+    "endereço não utilizável": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "unusable address"
+          }
+        }
+      }
+    },
+    "endereço recusado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "rejected address"
+          }
+        }
+      }
+    },
+    "escolhas": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "choices"
+          }
+        }
+      }
+    },
+    "fim de tarde": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "late afternoon"
+          }
+        }
+      }
+    },
+    "ligado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "on"
+          }
+        }
+      }
+    },
+    "manhã": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "morning"
+          }
+        }
+      }
+    },
+    "nenhum feed encontrado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no feed found"
+          }
+        }
+      }
+    },
+    "noite": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "night"
+          }
+        }
+      }
+    },
+    "not bookmarked": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "not bookmarked"
+          }
+        }
+      }
+    },
+    "not selected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "not selected"
+          }
+        }
+      }
+    },
+    "não foi possível alcançar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn’t reach"
+          }
+        }
+      }
+    },
+    "received=%lld completed=%lld backward=%lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "received=%lld completed=%lld backward=%lld"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "new",
+            "value": "received=%1$lld completed=%2$lld backward=%3$lld"
+          }
+        }
+      }
+    },
+    "selected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "selected"
+          }
+        }
+      }
+    },
+    "sinais": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "signals"
+          }
+        }
+      }
+    },
+    "tarde": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "afternoon"
+          }
+        }
+      }
+    },
+    "you": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "you"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "você"
+          }
+        }
+      }
+    },
+    "Última manchete: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latest headline: %@"
+          }
+        }
+      }
+    },
+    "Último aberto": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last opened"
+          }
+        }
+      }
+    },
+    "… e mais %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "… and %lld more"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
