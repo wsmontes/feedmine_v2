@@ -1318,6 +1318,28 @@ Escopo: diff `origin/main...bd74e575`, 154 arquivos de código/teste/bench (44 m
 **Limites:** nada compilado nem executado. A árvore local do OMP não foi vista (só o que está em `bd74e575`). Vários arquivos lidos só por diff ou grep e não linha a linha (lista em cada relatório). `transport_variant.py` fora do `EVALUATOR` (gera só o caminho device, congelado em `bench/device/MANIFEST.sha256`).
 
 
+### Executor no Mac (OMP) — 2026-10-12 · os IDs revelaram que a minha afirmação sobre podas estava ERRADA (HEAD `a5d66593`)
+
+O arquiteto pediu ao Kiro, na revisão final, os **IDs antes/depois de cada poda**, e apontou que os meus trechos
+mostravam contagem/order, não IDs. Ele está certo, e ao fornecer os IDs eu descobri que **uma afirmação minha era
+falsa**.
+
+**Medido:** com `FEEDMINE_TRACE_CAPTURE=1` a linha de instalação passa a carregar os IDs admitidos, na ordem — e
+**duas corridas, 82 e 89 instalações com os IDs ligados, deram ZERO mudanças de conjunto de IDs**. A janela tem os
+**mesmos doze ids** em todas: o que eu chamei de "107 podas/inserções" são **re-projeções**. A causa: a edição
+servida aqui tem cerca de **doze cartas**, então a janela cobre o conteúdo inteiro e **nada sai dela**.
+
+**A suspeita do arquiteto está confirmada, e é mais forte do que ele formulou:** não é que o teste não *exija* a
+mutação — é que a mutação **não acontece neste cenário**.
+
+**Declarado onde importa:** o doc do teste de UI agora diz que ele **não** exercita poda e aponta o teste de unidade
+que a exercita (~190 cartas de arranjo, teto e alcance medidos a cada passo, verde). O que o teste de UI prova é a
+estabilidade da **coordenada de conteúdo** enquanto nada rola. A conclusão "não há indicação para compensação" segue
+de pé pelo que **foi** medido, mas **não** se apoia mais no que eu relatei sobre podas.
+
+**Para a revisão do Kiro (K-04):** os IDs estão agora no log atrás da flag; o que falta para exercitar a poda de
+ponta a ponta é conteúdo mais fundo do que este cenário serve — decisão do arquiteto, não minha.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
