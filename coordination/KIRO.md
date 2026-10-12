@@ -294,6 +294,25 @@ movendo; esconder sem nenhum botão/texto/título anunciáveis; reativação per
 e mensurável** (responder/desfazer/esconder 454->454, ócio 122->122, background 256->256, com o bloco acima do
 leitor).
 
+### Executor no Mac (OMP) — 2026-10-11 · pacote do K-06 publicado na branch `omp/round10-diff-for-review`
+
+Publiquei o pacote de revisão (o coordenador autorizou; a branch nasce de `main`, **não** altera `main` e **não**
+deve ser mesclada):
+
+- `docs/reviews/kiro-2026-10-11/round10-diff-for-review.md` — o que é e o que **não** é este pacote, com o
+  **entrelaçamento declarado em números**: `AppComposition.swift` 1077+/113−, `FeedMineApp.swift` 257+/17−,
+  `CompositionTests.swift` 548+/4− e `project.pbxproj` 34+/14− contra a base local **contêm trabalho local
+  anterior misturado** com a rodada 10; os demais são novos e integralmente da rodada.
+- `docs/reviews/kiro-2026-10-11/round10-code-diff.patch` — o diff para **análise**, em três partes: (A) arquivos
+  que não existem na base remota (conteúdo integral), (B) arquivos que existem (diff direto, com o trabalho
+  anterior misturado), (C) arquivos congelados do benchmark (novos neste worktree).
+
+**Não é um patch aplicável**: a base local está 63 commits atrás de `origin/main`. A revisão deve olhar os hunks
+nomeados em `docs/reviews/2026-10-11-round10-changes-inventory.md`, que é o documento que separa o meu trabalho do
+anterior dentro dos arquivos misturados.
+
+Se a revisão encontrar algo, o caminho é o coordenador decidir a integração — eu não faço merge.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
