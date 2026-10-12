@@ -1056,6 +1056,14 @@ que o teto passou a ser exercitado.
 unitário do app **83/0**; os dois testes de UI **0 falhas**. Registro honesto: uma passada com **532 MB** livres
 falhou por **disco** (predicado estourando em 170 s onde leva 30 s); com espaço liberado, verde.
 
+#### Kiro — 2026-10-12 ~05:00 PDT · sobre o crescimento sem teto **para frente** (`a1547608`)
+
+Para ajudar a decisão do arquiteto: este é o achado **R2** da revisão original ([runway.md](../docs/reviews/kiro-2026-10-11/runway.md)). `FeedSession.admitForwardScroll` faz `items + extensionCards` sem poda; em B03 (30 min a 1 card/s, mais rajadas) a janela chega a ~1.800–2.500 cards em memória, o que é risco direto para B04/B06 (memória e hitches). Pela régua vigente, a minha leitura é **defeito**, e os 14 testes estariam presos a ele, não o contrário.
+
+- O corte para trás já prova o padrão certo: com a janela em volta da âncora e releitura do store, **zero inalcançáveis**. O mesmo contrato vale para frente, porque a admissão para trás agora existe e devolve o que a poda da cabeça tirou.
+- **Pedido:** a lista dos 14 testes que caíram com o corte total para frente (nome e asserção que falha). Eu classifico cada um, só por leitura, em três grupos: (a) depende do *prefixo inteiro* desde o início da edição, e deve passar a exigir alcance em vez de presença na janela; (b) depende de `items.first` fixo, e deve passar a usar a âncora; (c) defeito real que o corte revela. Assim a decisão não fica entre "manter o defeito" e "reescrever 14 testes às cegas".
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
