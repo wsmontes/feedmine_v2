@@ -92,6 +92,8 @@ K-01 a K-06 foram autorizados na coordenação anterior. K-07 a K-13 são o mand
 | K-11 | AUTORIZADO, AGUARDA HANDOFF OMP E2 | R1/R2/R3/R4, E3-02/E3-03/E3-06: revisar e corrigir preparação pendente sem publicação text-only indevida; não bloquear seleção; memória bounded; retomada do runway; alternância e origem congelada. | Sources/FeedMineRuntime, FeedMineEditorial, testes; AppComposition apenas com handoff | branch kiro/k-11; regressões e diagnóstico B03/B04 | Não duplicar implementação E2 do OMP. Priorizar comportamento e prova, não contagem verde. |
 | K-12 | AUTORIZADO, AGUARDA HANDOFF OMP E1 | D1/D2/D3/D5/A07: catálogo elegível progressivo além das 4 fontes, idiomas rígidos, starter best-effort, versão pública PD-10 e atualização segura; confirmar o que ainda falta. | Aquisição/catálogo/TrustedFeeds e scripts/fetch-catalog.sh, testes pertinentes | branch kiro/k-12 após comparar E1 local; provas de contato real com fontes | Não trocar 4 por shortlist fixa, não inventar outro scheduler, não declarar B01 PASS no Windows. |
 | K-13 | AUTORIZADO — TRIAGEM APÓS P0/P1 | Restante: D4/D6, R5–R9, E3-04/05/09/10/12, A08/A09 e 2 CompositionTests falhando. Classificar hipótese vs bug; corrigir somente defeitos reproduzidos e relevantes. | Arquivos mínimos separados por achado | relatório de triagem; branch kiro/k-13-ID para cada bug real | D4 pode ser intencional; 15% é régua B02, não quota runtime; A09 é micro-otimização. Pedir mensagens das asserções ao OMP. |
+| K-14 | PENDENTE | T-3 de [k13_triage.md](../docs/reviews/kiro-2026-10-11/k13_triage.md): o lease da cauda oculta deve proteger até o último card **admitido**, não só até o último visto. `PublicationStore.hiddenTail(editionID:protectingThrough:)`, com default que preserva o comportamento atual, mais um teste de Persistence. A linha em `AppComposition.background()` vai apenas como patch para o handoff K-10. | `Sources/FeedMinePersistence/PublicationStore.swift`, teste novo em `Tests/FeedMinePersistenceTests` | branch `kiro/k-14`, não compilado | |
+
 
 ## 5. Entregas do Kiro
 
@@ -180,7 +182,10 @@ Validação no Windows: Python/SQLite e harness. Nada em Swift foi compilado. Ca
 
 **AGUARDA HANDOFF OMP** (nada implementado, para não competir com o WIP local): K-02 (`CompositionTests` entrelaçado; `TrustedFeeds.swift` está livre, mas o teste exige rebase), K-10 (`AppComposition` quente), K-11 (E2), K-12 (E1).
 
-**Próximo (K-13, isolado):** triagem estática das duas falhas que o OMP reportou: `testS5…` (`restored.window != snapshot.window`) e `testASavedBox…` (exportação de caixa com cabeçalho de feeds), começando pelos owners remotos `ReaderImportExportCoordinator` e o restore de publicação.
+**K-13 triagem entregue:** [k13_triage.md](../docs/reviews/kiro-2026-10-11/k13_triage.md).
+- T-1 (`testASavedBox…`): **decisão de produto**. O código exporta fontes de propósito (`ReaderExport.swift`: "the sources the cards in it came from"); o teste local exige artigos. PO escolhe (a) ou (b).
+- T-2 (`testS5…`): hipótese principal H1, ainda não confirmada. A janela em memória cresce para trás sem poda (R2) e o restore corta em 8 cards antes da âncora. Há um diagnóstico de 3 `print` para rodar no Mac e separar H1 de H2.
+- T-3: **achado novo P1**. A cauda "oculta" que `background()` pode substituir começa depois do último card *visto*, não do último *admitido*, então cards desenhados abaixo da âncora podem mudar. Pedido **K-14** aberto (PENDENTE).
 
 ### K-04 — revisão de commits novos em `main`
 - `d0065fb` (coordenação, só este arquivo): sem objeção. Nenhum commit de código novo em `main` desde `aefa19f`.
