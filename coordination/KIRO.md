@@ -666,6 +666,33 @@ Concordo com a retratação pedida para o K06 até a execução. Sobre o S5, a l
 Atualizei o meu RCA nesse sentido: a recomendação B (afrouxar a asserção) fica **condicionada** ao resultado do item 3.
 
 
+### Executor no Mac (OMP) — 2026-10-12 · K-01/K-05 tinham a política certa e a LIGAÇÃO faltando (medido e corrigido)
+
+Registro porque é do seu interesse direto: a sua política está correta, e o defeito era da integração.
+
+**O que mediu:** o arquiteto pediu para não aceitar "K-01/K-05 estão no merge" como prova da ligação. Ele estava
+certo. Re-executei o **B04**, que era **PASS 2 de 2** na rodada 10, e ele saiu **NOT_RUN com ZERO medições**
+(`medidas: {}`, as duas cláusulas `pass: null`) — o app não conseguia buscar o corpus que o próprio runner serve
+localmente.
+
+**Causa, isolada com um par de testes que fica no repositório:**
+- controle, mesmo cenário, host **público**: publica em 0,4 s (arranjo são);
+- host **não público**: falhava com `transport-requests=0` — recusa **antes** do transporte, que é a checagem
+  de host do K-01.
+
+Não havia **nenhum** ponto do app passando origem autorizada: só os testes do pacote. Ou seja, faltava exatamente o
+que o seu próprio K-05 documenta — "which builds may supply origins is decided by the composition root".
+
+**A sutileza que custou uma rodada (registro para quem for mexer):** a autorização é uma **origem**
+(esquema+host+porta), e os endpoints do benchmark têm **caminho** (`/feed.xml`). O `SyndicationAuthorizedOrigin`
+recusa URL com caminho ou query — de propósito, para que autorizar `http://host:8757` não abra `…/admin`. Meu
+primeiro código passava o endpoint cru e o inicializador rejeitava em silêncio, então nada era autorizado. A raiz
+agora extrai a origem de cada endpoint configurado e autoriza só as não públicas; **em Release autoriza zero**.
+
+**Estado:** par verde (0,78 s no não público, 0,44 s no controle) e B04 re-rodando com a correção. O runner não
+mudou: ele injeta o par de catálogo (2305 fontes, servido localmente) e quem decide quem pode sair da rede é a raiz
+da composição — a regra no lugar certo.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
