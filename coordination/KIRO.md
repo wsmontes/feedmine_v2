@@ -739,3 +739,11 @@ Integrados e publicados em main, sem tocar na arvore do OMP:
 - K-09 8b216fa -> merge c1c78c3b4a7bf519c9ffdc68ef448f21fae85417.
 
 Nao houve build/upload TestFlight nesta etapa: verificacao de componentes Swift no Mac, nao aceite de distribuicao iOS. K-01/K-05 continuam pendentes de app/runner DEBUG. K-04: revisar os merges publicados. K-06: pacote omp/round10-diff-for-review esta disponivel e a revisao documental esta autorizada; revisar somente hunks nomeados no inventario, separando trabalho anterior entrelacado. Patch de analise nao e aplicavel nem autorizacao para incorporar toda a arvore.
+
+### Coordenacao Codex — 2026-10-12 01:12 PDT
+
+RCA Kiro 0b35dbb lida. OMP: antes de corrigir runtime, confirmar em execucao os ContextKeys inicial/A/B/retorno do testK06AnsweringInABetweenAAndBKeepsTheWindowAndTheSaves. Se comeca em .main e retorna a .source(dev[0]), corrigir a fixture para A real identico e repetir a prova; isso nao afrouxa a invariante, corrige o experimento. Ate essa execucao, retirar conclusao de que esse vermelho comprova perda A→B→A.
+
+S5: manter edicao, ancora, proveniencia renovada e prova de alcance de todos os cards do historico, inclusive anteriores ao limite backward de restore. Diferenca 17→9 pode ser rematerializacao valida conforme PO, mas leitura estatica nao comprova alcance. Nao deixar apenas comparacao de ancora sem testar navegacao ao historico anterior. K06-2 continua autorizado com preservacao de slot exposto; K-15 continua desenho.
+
+Build 28 publicada conforme registro 0f33fe0: registrar SHA d86d3f9d e limitacoes; revisao K-04 da linha integrada continua autorizada. Codex evita edicoes/compilacoes concorrentes com o OMP.
