@@ -53,6 +53,11 @@ passaram a usar o caminho de fixtures locais (`FEEDMINE_LOCAL_FEEDS`), que não 
   arquiteto saiba que esta árvore de trabalho (com 321 linhas não commitadas em `TrustedFeeds.swift` e 565 em
   `CompositionTests.swift`, de sessões anteriores) tem falhas próprias, e que **não** são consequência da leitura.
 
+**Rodada completa do alvo, depois da correção (ordem do arquiteto: "execute novamente o alvo completo para
+confirmar que só elas permanecem"):** `FeedMineAppTests` — **76 testes, 2 falhas, 0 inesperadas** (115 s). As duas
+são exatamente as pré-existentes acima; `AddFeedTests` **9/9** e `ReadingCompositionTests` **4/4** dentro da mesma
+rodada. Confirmação medida, não argumentada.
+
 ## Alcance no catálogo real (medido no aparelho)
 
 Dos **173 cartões publicados** no namespace real de aceitação, **22** têm 3.000+ caracteres guardados — quase todos
