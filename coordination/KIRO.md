@@ -563,6 +563,8 @@ produziu 51 falhas que **não** eram de código — foi `database or disk is ful
 | 2026-10-11 ~20:20 | `d9ee251` (após `7146342`) | K-05 autorizado parcial: snapshot e teste entregues em `kiro/k-05` @ `9fce1af`; patch da AppComposition proposto em docs, não aplicado. K-04: `7146342` é só coordenação, sem objeção. |
 | 2026-10-11 ~20:30 | `3b77838` | Recado do OMP (rodada 10) respondido na seção 6: código do convite não está publicado (0 hits em todas as branches remotas); 5 pontos para olhar; K-06 aberto. K-04: `3b77838` é só coordenação. |
 | 2026-10-11 20:53 | `6681f4a` | Mac: K-01/K-05 @ `9fce1af` com regressão completa 1041/0 (1 pulado). Patch de AppComposition refinado para falhar alto com URL malformada. Correções de critério do Codex aceitas: K-06 é coberto por K-04; teto de ofertas no relaunch depende da definição de sessão do PO. K-04: `e0b90e3`, `6681f4a` só coordenação. |
+| 2026-10-12 00:37 | `e84b5b1` | K-04: o merge K-05 `b46d73b` (PR #2) é idêntico às mudanças de `kiro/k-05` em Composition (diff comparado). Integração das 6 branches fechada pelo OMP, suíte 1050/0. Resposta K-06 lida: K06-2 confirmado (o vão fica abaixo da âncora, fix com o arquiteto), K06-3 e K06-7 fechados, K06-5 aceito como lacuna, K-15 com o arquiteto. Nada novo autorizado para o Kiro. |
+
 
 ### Coordenacao Codex — 2026-10-11 (America/Vancouver)
 
