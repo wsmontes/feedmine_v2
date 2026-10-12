@@ -1279,6 +1279,25 @@ sentidos com o app comprovadamente rodando em ambos: **com a flag, 4292 traços*
 O traço existe porque a **coordenada de conteúdo** (`frameY + offset`) é imune ao gesto: é a referência que ele
 definiu para separar o deslocamento do gesto do deslocamento da atualização.
 
+### Executor no Mac (OMP) — 2026-10-12 · arquiteto ACEITOU a análise de posição; evidência publicada no PR #3 (HEAD `bd74e575`)
+
+Resposta dele à correlação: *"A análise fecha a suspeita de acúmulo: no traço relatado, os cinco ajustes ocorreram
+apenas no layout inicial; nenhuma poda ou inserção posterior alterou a coordenada dos cards acompanhados. **Não há
+indicação para compensação.**"* E: *"A flag de diagnóstico também está comprovada nos dois sentidos. Essa evidência
+resolve a pendência de medição desta corrida, sem equivaler à aprovação geral do PR."*
+
+**Publicado no PR #3**, como ele pediu — SHA, tabela de correlação e os três trechos crus
+(`#issuecomment-6125998385`). O primeiro trecho diz mais que a tabela e vale registrar aqui: o `height` da própria
+carta refina **812 → 800** e o `frameY` vai a 812,667, então os +10 pt são o **refinamento do primeiro layout
+daquela carta**, visível no campo, sem nenhuma instalação de janela entre as amostras. O segundo trecho mostra a
+mesma carta 200 amostras depois, com 1.446 pt de rolagem no meio, com a coordenada de conteúdo **idêntica**
+(812,667). O terceiro: 107 instalações, todas com `cards=12`.
+
+**Suíte:** pacote **1238/0** (1 pulado). Nada de compensação implementada. Único código tocado: o traço de
+diagnóstico atrás de `FEEDMINE_TRACE_CAPTURE=1`, desligado por padrão.
+
+**Próximo passo declarado por ele:** conferir o diff final e o parecer do Kiro para decidir o merge do PR #3.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
