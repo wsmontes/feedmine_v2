@@ -639,6 +639,45 @@ final class CompositionTests: XCTestCase {
         try await assertAnswerDuringReconstruction(.preset)
     }
 
+    /// Kiro K-06, achado 5: o pacote da rodada 10 não exercitava A→B→A com uma resposta no meio, e essa era uma
+    /// lacuna de evidência (não uma correção de produto). Este é o teste que faltava: responder em A, ir a B e
+    /// voltar tem de devolver a **edição e a janela de A** (a âncora), manter o nível declarado e os salvos do
+    /// leitor. Se a volta a A re-ancorar, este teste é quem acusa.
+    func testK06AnsweringInABetweenAAndBKeepsTheWindowAndTheSaves() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        let a = try XCTUnwrap(root.association)
+        let aSnapshot = try XCTUnwrap(a.store.state.presentation)
+        let aCard = try XCTUnwrap(aSnapshot.window.items.first)
+
+        // A save the reader made in A, and the card they were reading there.
+        let publication = try PublicationStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+        try publication.toggleBookmark(cardID: aCard.id, at: Date())
+        await a.viewport(.init(anchor: .init(cardID: aCard.id, placement: .top)), activity: .forward)
+
+        let answered = await root.voteOnTopic(nodeKey: "04-technology-science", level: .more)
+        XCTAssertTrue(answered)
+
+        // Go to B, then come back to A.
+        try await root.selectContext(.source(TrustedFeed.development[1].sourceID))
+        let b = try XCTUnwrap(root.association)
+        XCTAssertFalse(b === a, "ir a B constrói outra associação")
+        try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+        let back = try XCTUnwrap(root.association)
+
+        let restored = try XCTUnwrap(back.store.state.presentation)
+        XCTAssertEqual(restored.editionID, aSnapshot.editionID, "voltar a A devolve a edição de A")
+        XCTAssertEqual(restored.window, aSnapshot.window,
+            "voltar a A devolve a mesma janela — a âncora de A não foi re-ancorada")
+        XCTAssertEqual(root.declaredLevel(forNode: "04-technology-science"), .more,
+            "a resposta dada em A sobrevive à ida a B e à volta")
+        XCTAssertTrue(try publication.bookmarkedCardIDs().contains(aCard.id),
+            "os salvos do leitor sobrevivem à ida e à volta")
+        await back.close()
+    }
+
     func testS3ReplacementAndS4OldCallbackCannotInstall() async throws {
         let (root, old) = try await launched()
         let oldStore = old.store
