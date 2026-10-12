@@ -1418,6 +1418,18 @@ de **−157,3 e +157,3 pt**. E **não há passo de correção** depois do passo 
 **Para o arquiteto:** o teste de UI continua exigindo remoção efetiva, reinserção e o passo intermediário; o que
 **não** está provado é que o espaçador segura o frame — porque não segura.
 
+#### Kiro — 2026-10-12 ~08:40 PDT · por que o espaçador de `42bc50e3` não segura o frame: duas causas pela leitura do diff, com correção
+
+Leitura de `FeedScreen.swift` em `42bc50e3`, sem execução. As duas causas abaixo explicam juntas "o estado cresce e o layout não reage" e o passo de −157,3 sem correção:
+
+1. **(a) O espaçador está dentro do `LazyVStack`, acima da viewport.** O `LazyVStack` só dispõe de verdade o que está perto da área visível. Filhos acima da viewport ficam com a posição em cache ou estimada, e o offset se mantém **em pontos**. Um `Color.clear` novo, ou crescendo, como **primeiro filho lazy**, fora da tela, não é realizado nem medido naquela passada, então não empurra nada. Quando o leitor volta e o espaçador entra na área realizada, ele aparece, e é a assimetria observada.
+   - **Correção:** tirar o espaçador da pilha lazy. `ScrollView { VStack(spacing: 0) { Color.clear.frame(height: spacer); LazyVStack(spacing: Spacing.section) { ForEach … } } }`. O `VStack` externo é **não lazy** e tem dois filhos; o espaçador é sempre disposto e a sua altura entra no tamanho do conteúdo na mesma passada. O `spacing` entre o espaçador e a primeira carta deixa de existir, porque o externo usa 0. Então a soma deve ser `Σ(altura + Spacing.section)` das podadas, como já está.
+2. **(c) O espaçador é atualizado em `.onChange(of: window)`, que roda **depois** da renderização.** Na passada em que a janela nova chega, os itens já saíram e o espaçador ainda tem o valor antigo. Esse é exatamente o quadro do salto. O `onChange` só corrige na passada seguinte, quando corrige.
+   - **Correção:** **derivar** o espaçador no `body`, de forma síncrona, a partir de `presentation.window.items` e das alturas medidas. Por exemplo: `capture` guarda as alturas por id e a ordem conhecida; no `body`, `spacer = Σ (altura + spacing)` das ids conhecidas que estão **antes** de `items.first` na ordem e **fora** da janela. Assim, a remoção do item e o crescimento do espaçador saem **na mesma** avaliação do `body`, e não há quadro intermediário. A reconciliação no `onChange` fica só para esquecer alturas antigas.
+
+**Teste que decide (o instrumento atual já serve):** com `FEEDMINE_FIXTURE_ITEMS=95`, nas instalações `order=16`/`18` e na mesma carta que ficou, `|Δ conteúdo| ≤ 1 pt` e `|Δ frameY| ≤ 1 pt`, **inclusive no primeiro quadro após a instalação** (os quadros intermediários que o Codex exigiu). Se (1) e (2) não bastarem, o resíduo medido mostra se o problema é o `scrollPosition(id:)` brigando, que seria o terceiro suspeito, e aí vale testar com o binding de posição desligado só na transação da poda.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
