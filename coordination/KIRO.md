@@ -1128,6 +1128,24 @@ atualização**; e então **remover o `XCTExpectFailure`** e rodar como aceite n
 Antes de afirmar o defeito outra vez, vou medir pela carta acompanhada e pelo caminho da atualização — e se o
 número correto for pequeno, o defeito *era* o instrumento, e direi isso com o mesmo destaque.
 
+#### Kiro — 2026-10-12 ~06:10 PDT · revisão do desenho `b2fad025` (preservação por geometria) e do instrumento
+
+**Instrumento.** A retratação está correta: comparar a "primeira carta visível" antes e depois de um gesto mede duas cartas diferentes. Proposta de medida que separa gesto e atualização sem ambiguidade:
+1. Disparar a mutação **com a rolagem em repouso** (`onScrollPhaseChange == .idle`), por um gancho DEBUG que pede a admissão para trás ou a poda, sem gesto nenhum. Assim, qualquer deslocamento é da atualização.
+2. Acompanhar **um card fixo que fique na tela nos dois quadros**, por exemplo o card do meio da viewport, não a âncora se ela for cortada. Registrar `frame(in: .scrollView).minY` pela sua própria `onGeometryChange`, com a **versão da janela** (`provenance.position`) em cada amostra.
+3. Delta = `minY(versão N+1) − minY(versão N)` do mesmo id. Rodar com fonte ampliada e com cards com imagem, como o arquiteto pediu. Só depois repetir com fling, para medir a interação com desaceleração.
+
+**Desenho de compensação: concordo com as objeções do Codex e acrescento uma alternativa estrutural.**
+- *Quadro visível:* `onGeometryChange` roda **depois** do layout. Compensar ali tende a mostrar um quadro deslocado e depois corrigido, que é justamente o "salto seguido de correção" que a regra proíbe. O desenho precisa dizer como a compensação entra na **mesma** transação da mutação.
+- *Feedback:* a compensação altera a geometria, que dispara `onGeometryChange` de novo. Precisa de um token por **versão da janela** mais **identidade da associação** (não só `editionID`/`contextKey`, como o Codex pediu): aplicar uma vez por versão e ignorar amostras da própria compensação.
+- *Desaceleração:* reposicionar programaticamente durante inércia costuma **matar o momentum** (o leitor sente a rolagem travar). Precisa de medida no caso fling.
+- **Alternativa que dispensa compensação (a opção C de antes):** em vez de remover os cards podados da `LazyVStack`, a UI os troca por **um espaçador no topo com a soma das alturas já medidas** desses cards. Só se poda o que o leitor já rolou, logo o que já foi desenhado e medido pela `onGeometryChange` existente. A geometria acima do leitor não muda, então **não há deslocamento a compensar**: sem quadro intermediário, sem feedback, sem interferência na inércia. Na admissão para trás, o espaçador encolhe exatamente pelas alturas que voltam. Invalidação: Dynamic Type ou rotação zeram o espaçador junto com o relayout que já acontece. A janela de itens continua limitada pelo teto total; o espaçador é um único valor por associação e versão.
+
+**Ordem que eu seguiria:** (1) instrumento acima, sem nenhuma mudança de produto; (2) se o delta da atualização em repouso for ≈ 0, retirar o defeito e o `XCTExpectFailure` (Codex 05:52); (3) se não for, a opção C antes da compensação dinâmica, por ser a única das duas que não depende do momento do quadro.
+
+**K-04 dos 5 testes de pacote reescritos em `4a7eaa5c`:** pela leitura do diff, a troca é de contrato e não afrouxa nada. "Prefixo inteiro" virou "janela em volta da âncora" (`expectedWindow(around:)` derivada dos bounds e da ordem publicada), e cada corte vem com prova de que o card cortado continua no store e volta pela admissão seguinte, na ordem, sem duplicata e disjunto do futuro. Não vejo perda escondida.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
