@@ -10,6 +10,21 @@ public enum SelectionError: Error, Equatable, Sendable {
     case exposureRequired
     case unexpectedExposure
     case exposureCoverageMismatch
+    case readinessCoverageMismatch
+}
+
+/// Facts about the examined revisions, supplied by preparation; Editorial never retrieves media.
+/// A revision absent from readyRevisionIDs cannot participate in this publication opportunity.
+public struct SelectionReadinessSnapshot: Hashable, Sendable {
+    public let requestedRevisionIDs: [OriginRevisionID]
+    public let readyRevisionIDs: Set<OriginRevisionID>
+
+    public init?(requestedRevisionIDs: [OriginRevisionID], readyRevisionIDs: Set<OriginRevisionID>) {
+        let requested = Set(requestedRevisionIDs)
+        guard requested.count == requestedRevisionIDs.count, readyRevisionIDs.isSubset(of: requested) else { return nil }
+        self.requestedRevisionIDs = requestedRevisionIDs
+        self.readyRevisionIDs = readyRevisionIDs
+    }
 }
 
 public struct SelectionSupplyReport: Hashable, Sendable {
@@ -53,10 +68,13 @@ public struct SelectionEngine: Sendable {
     /// PD-4 alternation also holds across segment boundaries.
     public func select(plan: FeedPlan, policy: ResolvedSelectionPolicy,
         window: CandidateSupplyWindow, exposure: SelectionExposureSnapshot?,
-        after neighbor: SelectionNeighbor?) throws -> SelectionResult {
+        after neighbor: SelectionNeighbor?, readiness: SelectionReadinessSnapshot? = nil) throws -> SelectionResult {
         guard policy.matches(plan.revision) else { throw SelectionError.policyMismatch }
         guard Set(window.candidates.map(\.originRecordID)).count == window.candidates.count else {
             throw SelectionError.duplicateCandidateIdentity
+        }
+        if let readiness, readiness.requestedRevisionIDs != window.candidates.map(\.originRevisionID) {
+            throw SelectionError.readinessCoverageMismatch
         }
         // Baseline no-ops are explicit executable behavior, not inferred versions.
         let sourceEligible: [Candidate]
@@ -91,6 +109,11 @@ public struct SelectionEngine: Sendable {
             }
             eligible = sourceEligible.filter { !exposure.alreadyPublished($0) }
         }
+        // Suspension precedes ranking and alternation: pending stories consume no source share,
+        // separator or position. Keep the original window for exposure coverage and structural progress.
+        let readyEligible = eligible.filter { candidate in
+            readiness?.readyRevisionIDs.contains(candidate.originRevisionID) ?? true
+        }
         /// The weight a candidate carries: the strongest of its sources' recipe weights, or 1 when the session
         /// is not weighting at all.
         func weight(_ candidate: Candidate) -> Double {
@@ -101,7 +124,7 @@ public struct SelectionEngine: Sendable {
         switch policy.sequencing {
         case .recencyDescending, .recencyAlternatingSources, .recencyAlternatingSourcesBySupplyShare,
              .recencyAlternatingSourcesByWeightedSupplyShare:
-            ordered = eligible.sorted { left, right in
+            ordered = readyEligible.sorted { left, right in
                 let leftWeight = weight(left), rightWeight = weight(right)
                 if leftWeight != rightWeight { return leftWeight > rightWeight }
                 if left.timestamp.value != right.timestamp.value {

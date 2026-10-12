@@ -18,6 +18,8 @@ public enum ReaderDestination: String, CaseIterable, Hashable, Sendable {
     case bookmarkBoxes
     case collections
     case addFeed
+    /// V1's own conditional entry: adding a feed straight into the collection the reader is looking at.
+    case addFeedToCollection
     case export
     case catalog
     case curatedOnboarding
@@ -71,7 +73,7 @@ public extension ReaderMenuEntry {
         .init(id: "import-collection", destination: .collectionImport,
             title: String(localized: "Importar para a coleção"),
             systemImage: "square.and.arrow.down"),
-        .init(id: "add-feed-to-collection", destination: .addFeed,
+        .init(id: "add-feed-to-collection", destination: .addFeedToCollection,
             title: String(localized: "Adicionar feed à coleção"), systemImage: "link.badge.plus"),
         .init(id: "delete-smart-bookmark", destination: .smartFeedDeletion,
             title: String(localized: "Excluir marcador inteligente"), systemImage: "trash",

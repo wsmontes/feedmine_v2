@@ -104,21 +104,24 @@ final class ReaderFilterStoreTests: XCTestCase {
             "a selected topic is part of the filter's identity")
     }
 
-    /// T6 sheet: the language rows carry the declared counts and the undeclared bucket's own label, and the
-    /// draft's criteria are what the sheet's controls flip — dismissal is the apply, as in V1.
+    /// T6 sheet + round 9: the language rows are one per language with the count the catalogue holds for it, and
+    /// the draft's criteria are what the sheet's controls flip — dismissal is the apply, as in V1.
     func testSheetLanguageRowsAndDraftControls() async throws {
-        let languages: [CatalogLanguageSummary] = [
-            .init(code: "en", displayName: "English", enabledSources: 15_820, totalSources: 17_962,
-                isUndeclared: false),
-            .init(code: "en-US", displayName: "English (US)", enabledSources: 6_592, totalSources: 7_028,
-                isUndeclared: false),
-            .init(code: "und", displayName: "Idioma não declarado", enabledSources: 26_644, totalSources: 27_741,
-                isUndeclared: true)
-        ]
-        let rows = FilterSheetView.languageRows(languages, selected: ["en-US"])
-        XCTAssertEqual(rows.map(\.code), ["en", "en-US", "und"], "the sheet follows the catalog's own order")
-        XCTAssertEqual(rows.map(\.isSelected), [false, true, false])
-        XCTAssertEqual(rows.map(\.enabledSources), [15_820, 6_592, 26_644])
+        let groups = CatalogLanguageGroup.groups([
+            .init(code: "en", displayName: "English", regionName: nil, enabledSources: 15_820,
+                totalSources: 17_962, isUndeclared: false),
+            .init(code: "en-US", displayName: "English", regionName: "United States", enabledSources: 6_592,
+                totalSources: 7_028, isUndeclared: false),
+            .init(code: "und", displayName: "Idioma não declarado", regionName: nil, enabledSources: 26_644,
+                totalSources: 27_741, isUndeclared: true)
+        ])
+        let rows = FilterSheetView.languageRows(groups, selected: ["en-US"])
+        XCTAssertEqual(rows.map(\.code), ["en", "und"], "one row per language, in the catalog's own order")
+        XCTAssertEqual(rows.map(\.isSelected), [true, false],
+            "a selection stored with a regional code is the language it belongs to")
+        XCTAssertEqual(rows.map(\.availableSources), [24_990, 27_741], "a row counts the language, not one code")
+        XCTAssertEqual(rows.first?.variants.map(\.code), ["en", "en-US"],
+            "the catalog's own codes stay, as the expansion's information")
         XCTAssertEqual(rows.last?.name, "Idioma não declarado",
             "the undeclared bucket states itself instead of pretending to be a language")
 
@@ -133,7 +136,8 @@ final class ReaderFilterStoreTests: XCTestCase {
         XCTAssertEqual(applied.count, 1)
         XCTAssertEqual(applied.first?.contentType, .audio)
         XCTAssertEqual(applied.first?.mood, .fun)
-        XCTAssertEqual(applied.first?.languages, ["en-US"])
+        XCTAssertEqual(applied.first?.languages, ["en"],
+            "the sheet stores the language, never the catalog's own code")
         XCTAssertFalse(subject.isDirty)
     }
 
@@ -141,11 +145,12 @@ final class ReaderFilterStoreTests: XCTestCase {
     func testLensChipsMirrorTheAppliedSelection() {
         let filter = ReaderFilter(regionIDs: ["br"], taxonomyNodeIDs: ["tech"], languages: ["en-US"],
             contentType: .audio, mood: .fun)
+        XCTAssertEqual(filter.languages, ["en"], "the criterion is the language, not the catalog's code")
         let chips = ReaderFilterLens.chips(filter: filter, preset: .collection("c1"), presetName: "Minha coleção",
-            searchQuery: "mercado", languageNames: ["en-US": "English (US)"],
+            searchQuery: "mercado", languageNames: ["en": "English"],
             taxonomyNames: ["tech": "Technology"], regionNames: ["br": "Brazil"])
         XCTAssertEqual(chips.map(\.label),
-            ["Minha coleção", "mercado", "Brazil", "Podcasts", "Technology", "English (US)", "Fun"])
+            ["Minha coleção", "mercado", "Brazil", "Podcasts", "Technology", "English", "Fun"])
         XCTAssertEqual(chips.map(\.kind), [.preset, .search, .region, .contentType, .topic, .language, .mood],
             "V1's chip order: preset, search, region, content type, topic, language, mood")
         XCTAssertNil(chips.first { $0.kind == .search }?.removal,

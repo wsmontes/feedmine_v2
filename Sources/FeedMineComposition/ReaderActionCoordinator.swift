@@ -40,9 +40,12 @@ public struct ReaderMediaTarget: Hashable, Sendable {
     public let url: URL
     public let mimeType: String?
     public let title: String?
+    /// The program the episode belongs to, as the card froze it: V1 put this on the lock screen as the artist,
+    /// and a listener needs to see the show, not only the episode.
+    public let source: String?
 
-    public init(url: URL, mimeType: String?, title: String?) {
-        self.url = url; self.mimeType = mimeType; self.title = title
+    public init(url: URL, mimeType: String?, title: String?, source: String? = nil) {
+        self.url = url; self.mimeType = mimeType; self.title = title; self.source = source
     }
 }
 
@@ -108,7 +111,9 @@ public struct ReaderActionCoordinator: Sendable {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
             throw ReaderActionError.unusableReference(reference)
         }
-        return ReaderMediaTarget(url: url, mimeType: card.mediaMimeType, title: Self.title(of: card))
+        let named = (card.sourceDisplayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return ReaderMediaTarget(url: url, mimeType: card.mediaMimeType, title: Self.title(of: card),
+            source: named.isEmpty ? nil : named)
     }
 
     static func title(of card: PublicationStore.CardRecord) -> String? {

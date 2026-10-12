@@ -56,6 +56,8 @@ public actor FeedSession {
             return try installFromCheckpoint(bounds)
         case .forwardScroll(let observation):
             return try admitForwardScroll(observation)
+        case .publishedGrowth:
+            return try admitPublishedGrowth()
         }
     }
 
@@ -142,6 +144,43 @@ public actor FeedSession {
         let (bounded, _) = try boundedResidency(items: items + extensionCards,
             editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
         guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else {
+            return current.presentation
+        }
+        let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
+            editionID: current.presentation.editionID, window: window)
+        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
+            bounds: current.bounds)
+        return snapshot
+    }
+
+    /// Appends cards already published beyond the admitted tail, without any reader observation and
+    /// without inventing one. Order, anchor and every already-admitted card are preserved; only the
+    /// end of the list grows, bounded by the frozen forward capacity.
+    private func admitPublishedGrowth() throws -> FeedPresentationSnapshot? {
+        guard let current = state else { return nil }
+        let items = current.presentation.window.items
+        guard let tail = items.last,
+            let anchorIndex = items.firstIndex(where: { $0.id == current.presentation.window.anchor.cardID }) else {
+            return current.presentation
+        }
+        // The admitted list is bounded by the frozen bounds *around the anchor*: growth fills the reader's
+        // forward window and never extends past it. That is also what makes a repeat growth a no-op — the
+        // extension cannot walk the tail past the bound however often it runs (measured: an unbounded tail
+        // walk grew a window past its own capacity and broke two composition tests).
+        let allowed = anchorIndex + current.bounds.forwardCapacity + 1
+        guard items.count < allowed else { return current.presentation }
+        let published = try publicationHistory.window(editionID: current.presentation.editionID,
+            around: FeedWindowAnchor(cardID: tail.id, placement: .center),
+            backwardCapacity: 0, forwardCapacity: current.bounds.forwardCapacity)
+        let admitted = Set(items.map(\.id))
+        let extensionCards = published.cards.dropFirst().filter { !admitted.contains($0.id) }
+            .prefix(allowed - items.count)
+            .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+        guard !extensionCards.isEmpty else { return current.presentation }
+        let anchor = current.presentation.window.anchor
+        let (bounded, _) = try boundedResidency(items: items + extensionCards,
+            editionID: current.presentation.editionID, around: anchor.cardID, bounds: current.bounds)
+        guard let window = FeedWindowSnapshot(items: bounded, anchor: anchor) else {
             return current.presentation
         }
         let snapshot = try projectWindow(contextKey: current.presentation.contextKey,

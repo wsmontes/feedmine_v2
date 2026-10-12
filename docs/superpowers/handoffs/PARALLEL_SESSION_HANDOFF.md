@@ -84,6 +84,19 @@ passed at `12d4b65`).
   If you prefer read-only, take the **T12 review** instead: audit T2–T6 against the plan's *Review Focus* list
   and write findings under `docs/reviews/`, changing no code.
 
+- **R7 — cross-session handoff: the S5 restore case (for whoever owns the restoration path).** Not a claim:
+  a case to hand over, at Codex's request (the round asks for the responsible owner's status, and the failure
+  stays open in the integrated acceptance until then). Minimal case and measurements are in
+  `docs/reviews/2026-10-11-s5-handoff-minimal-case.md`. Measured: the reader's window holds 17 cards;
+  reopening the same store restores 9 (anchor identical), while the window query itself returns 21 cards in
+  the same state — so the difference is in how the restoration *asks* for the window (capacity/cursor), not in
+  the query. `FeedMineApp/FeedMineAppTests/CompositionTests.swift` S5 is the failing test.
+  The `publishedGrowth` admission added in R4/R5/R6 does not touch that path (it is inert on restore).
+  **PO decision (rodada 7): NÃO BLOQUEANTE.** "O teste exige igualdade de tamanho entre janelas, algo que não
+  constitui requisito de produto." Mandato ao dono do caminho (sob coordenação do Codex): revisar a validade
+  dessa expectativa e adaptar o teste aos invariantes reais, se necessário — e **não** alterar o runtime apenas
+  para satisfazer igualdade artificial. Continua como pendência técnica, não como defeito de UX demonstrado.
+
 ## 3. Contracts you must not break
 
 These are consumed by already-committed code and tests; changing them means migrating every call site in the

@@ -92,21 +92,52 @@ public struct RunwayLocalSliceIntent: Hashable, Sendable {
     public let after: CandidateSupplyCursor?
     public let examinedCapacity: Int
     public let startedAt: RunwayMonotonicTime
-    public init(scope: RunwayScope, lane: RunwayProductionLane, after: CandidateSupplyCursor?, examinedCapacity: Int, startedAt: RunwayMonotonicTime) {
+    /// Evidence, not identity: the correlation id of the replenishment attempt this decision opened. It travels
+    /// inside the intent only so the executor that finishes the work can report the same operation at the arrival
+    /// and at the destination — `==` below deliberately ignores it, because the decisions that compare intents
+    /// (in-flight completion, acknowledgement) must keep exactly the meaning they had before it existed.
+    public let operation: FeedReplenishmentOperationID
+    public init(scope: RunwayScope, lane: RunwayProductionLane, after: CandidateSupplyCursor?,
+        examinedCapacity: Int, startedAt: RunwayMonotonicTime,
+        operation: FeedReplenishmentOperationID = FeedReplenishmentOperationID()) {
         self.scope = scope
         self.lane = lane
         self.after = after
         self.examinedCapacity = examinedCapacity
         self.startedAt = startedAt
+        self.operation = operation
+    }
+
+    public static func == (left: Self, right: Self) -> Bool {
+        left.scope == right.scope && left.lane == right.lane && left.after == right.after
+            && left.examinedCapacity == right.examinedCapacity && left.startedAt == right.startedAt
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(scope); hasher.combine(lane); hasher.combine(after)
+        hasher.combine(examinedCapacity); hasher.combine(startedAt)
     }
 }
 
 public struct RunwayAcquisitionIntent: Hashable, Sendable {
     public let scope: RunwayScope
     public let demand: AcquisitionDemand
-    public init(scope: RunwayScope, demand: AcquisitionDemand) {
+    /// Evidence, not identity — see `RunwayLocalSliceIntent.operation`. The acknowledgement guards compare two
+    /// intents for the **same demand**; a fresh correlation id must not make the same demand look like a new one.
+    public let operation: FeedReplenishmentOperationID
+    public init(scope: RunwayScope, demand: AcquisitionDemand,
+        operation: FeedReplenishmentOperationID = FeedReplenishmentOperationID()) {
         self.scope = scope
         self.demand = demand
+        self.operation = operation
+    }
+
+    public static func == (left: Self, right: Self) -> Bool {
+        left.scope == right.scope && left.demand == right.demand
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(scope); hasher.combine(demand)
     }
 }
 
@@ -158,6 +189,8 @@ public actor RunwayController {
         var exhausted = false
     }
     private let configuration: RunwayControllerConfiguration
+    /// Optional evidence of the path a replenishment attempt walks. Never read to decide anything.
+    private let trace: ReplenishmentTrace?
     private var scope: RunwayScope?
     private var latestObservation: RunwayObservation?
     private var lastMeasuredObservation: RunwayObservation?
@@ -215,7 +248,10 @@ public actor RunwayController {
         return RunwayAcquisitionIntent(scope: scope, demand: demand)
     }
 
-    public init(configuration: RunwayControllerConfiguration) { self.configuration = configuration }
+    public init(configuration: RunwayControllerConfiguration, trace: ReplenishmentTrace? = nil) {
+        self.configuration = configuration
+        self.trace = trace
+    }
 
     public func activate(_ scope: RunwayScope) {
         deactivate()
@@ -300,6 +336,10 @@ public actor RunwayController {
         if let intent = acquisitionIntentIfEligible(coverage: evaluation.coverage) {
             guard intent != outstandingAcquisitionIntent, intent != lastAcknowledgedAcquisitionIntent else { return .none }
             outstandingAcquisitionIntent = intent
+            if let trace {
+                trace.record(ReplenishmentEvent.requested, Self.requestFields(intent, coverage: evaluation.coverage,
+                    ready: readyAhead.amount))
+            }
             return .requestAcquisition(intent)
         }
         // Logical pressure still needs exact shortage evidence before handoff.
@@ -320,8 +360,56 @@ public actor RunwayController {
             inFlight = intent
             if attemptStartedAt == nil { attemptStartedAt = now }
             if evaluation.coverage == .unknown { bootstrapObservation = observation }
+            if let trace {
+                trace.record(ReplenishmentEvent.requested, Self.requestFields(intent, coverage: evaluation.coverage,
+                    ready: readyAhead.amount))
+            }
             return .runLocalSlice(intent)
         }
+    }
+
+    /// The facts the decision used, spelled once for both kinds of replenishment. Every value here was read to
+    /// decide — nothing is reconstructed after the fact.
+    private static func requestFields(operation: FeedReplenishmentOperationID, kind: String, scope: RunwayScope,
+        coverage: RunwayCoverage, ready: ReadyAheadAmount?) -> [String: String] {
+        var fields = ["op": operation.described, "kind": kind, "edition": scope.editionID.rawValue.uuidString,
+            "surface": scope.contextKey.surfaceIdentity]
+        switch coverage {
+        case .healthy: fields["coverage"] = "healthy"
+        case .pressured(let required): fields["coverage"] = "pressured"; fields["required_cards"] = String(required)
+        case .logicalPressure: fields["coverage"] = "logical_pressure"
+        case .unknown: fields["coverage"] = "unknown"
+        }
+        switch ready {
+        case .exact(let count): fields["ready"] = "exact"; fields["ready_cards"] = String(count)
+        case .atLeast(let bound): fields["ready"] = "at_least"; fields["ready_bound"] = String(bound)
+        case nil: fields["ready"] = "unknown"
+        }
+        return fields
+    }
+
+    private static func requestFields(_ intent: RunwayLocalSliceIntent, coverage: RunwayCoverage,
+        ready: ReadyAheadAmount?) -> [String: String] {
+        var fields = requestFields(operation: intent.operation, kind: "local", scope: intent.scope,
+            coverage: coverage, ready: ready)
+        fields["lane"] = intent.lane == .episode ? "episode" : "head_reconsideration"
+        fields["examined_capacity"] = String(intent.examinedCapacity)
+        return fields
+    }
+
+    private static func requestFields(_ intent: RunwayAcquisitionIntent, coverage: RunwayCoverage,
+        ready: ReadyAheadAmount?) -> [String: String] {
+        var fields = requestFields(operation: intent.operation, kind: "network", scope: intent.scope,
+            coverage: coverage, ready: ready)
+        switch intent.demand.pressure {
+        case .coverageDeficit(let required):
+            fields["pressure"] = "coverage_deficit"; fields["required_cards"] = String(required)
+        case .logicalTailPressure: fields["pressure"] = "logical_tail_pressure"
+        case .initialPublication: fields["pressure"] = "initial_publication"
+        case .selectedSourceCoverage: fields["pressure"] = "selected_source_coverage"
+        }
+        if let localSupply = intent.demand.localSupply { fields["local_supply"] = String(localSupply.readyCards) }
+        return fields
     }
 
     public func acceptMeasurement(_ measurement: RunwayMeasurement) throws {

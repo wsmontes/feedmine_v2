@@ -18,6 +18,9 @@ import FeedMineUI
 public enum ReaderImportExportError: Error, Equatable, Sendable {
     case nothingToWrite
     case unknownScope
+    /// The scope cannot be written in that format — V1 hid those combinations, and a surface that asks for one
+    /// anyway is refused instead of handed a document about something else.
+    case formatNotAvailable
 }
 
 public struct ReaderImportExportCoordinator: Sendable {
@@ -55,27 +58,21 @@ public struct ReaderImportExportCoordinator: Sendable {
     /// The document a request would produce, as text: what the export sheet previews, and what a share or a
     /// save hands over. An empty scope is reported rather than previewed as nothing.
     public func preview(_ request: ReaderExportRequest, at date: Date = Date()) throws -> String {
-        let entries = try entries(for: request.scope)
-        guard !entries.isEmpty else { throw ReaderImportExportError.nothingToWrite }
-        return try document(request: request, entries: entries, at: date).contents
+        try documentText(request, at: date)
     }
 
     /// The document's file name, for a share or a save.
     public func fileName(for request: ReaderExportRequest, at date: Date = Date()) throws -> String {
-        let entries = try entries(for: request.scope)
-        guard !entries.isEmpty else { throw ReaderImportExportError.nothingToWrite }
-        return try document(request: request, entries: entries, at: date).name
+        try document(for: request, at: date).name
     }
 
     /// Writes a document for the request and returns its local URL. The file is the artifact; showing it or
     /// sharing it belongs to the app.
     public func export(_ request: ReaderExportRequest, at date: Date = Date()) throws -> URL {
-        let entries = try entries(for: request.scope)
-        guard !entries.isEmpty else { throw ReaderImportExportError.nothingToWrite }
-        let (name, contents) = try document(request: request, entries: entries, at: date)
-        let url = exportDirectory.appendingPathComponent(name)
+        let document = try document(for: request, at: date)
+        let url = exportDirectory.appendingPathComponent(document.name)
         try FileManager.default.createDirectory(at: exportDirectory, withIntermediateDirectories: true)
-        try Data(contents.utf8).write(to: url, options: .atomic)
+        try Data(document.contents.utf8).write(to: url, options: .atomic)
         return url
     }
 
@@ -132,8 +129,36 @@ public struct ReaderImportExportCoordinator: Sendable {
         }
     }
 
-    /// The file's name and its contents, V1's scopes and formats.
-    private func document(request: ReaderExportRequest, entries: [ReaderImportEntry],
+    /// The file's name and its contents, V1's scopes and formats. A saved box is written from its **articles**
+    /// (V1's own rule) and only in the four formats an article list has; the other scopes are written from the
+    /// feeds they name.
+    private func document(for request: ReaderExportRequest, at date: Date) throws -> (name: String, contents: String) {
+        if case .bookmarkBox(let id) = request.scope {
+            let articles = try articles(inBox: id)
+            guard !articles.isEmpty else { throw ReaderImportExportError.nothingToWrite }
+            let title = Self.title(for: request.scope)
+            switch request.format {
+            case .csv: return (bookmarkName("csv", at: date), Self.articlesCSV(articles))
+            case .text: return (bookmarkName("txt", at: date), Self.articlesText(articles, title: title))
+            case .markdown: return (bookmarkName("md", at: date), Self.articlesMarkdown(articles, title: title))
+            case .html: return (bookmarkName("html", at: date), Self.articlesHTML(articles, title: title))
+            case .opml, .json, .shareLink, .socialCard:
+                // V1 offered exactly the four above for a box and hid the rest: an OPML of a box would be a list
+                // of feeds the reader never asked for, which is the document this build used to write.
+                throw ReaderImportExportError.formatNotAvailable
+            }
+        }
+        let entries = try entries(for: request.scope)
+        guard !entries.isEmpty else { throw ReaderImportExportError.nothingToWrite }
+        return try feedDocument(request: request, entries: entries, at: date)
+    }
+
+    private func documentText(_ request: ReaderExportRequest, at date: Date) throws -> String {
+        try document(for: request, at: date).contents
+    }
+
+    /// The file's name and its contents, for a scope that names feeds.
+    private func feedDocument(request: ReaderExportRequest, entries: [ReaderImportEntry],
         at date: Date) throws -> (name: String, contents: String) {
         let title = Self.title(for: request.scope)
         switch request.format {
@@ -157,9 +182,122 @@ public struct ReaderImportExportCoordinator: Sendable {
         }
     }
 
-    private func name(_ extension: String, at date: Date) -> String {
-        let stamp = ISO8601DateFormatter().string(from: date).replacingOccurrences(of: ":", with: "-")
-        return "feedmine-\(stamp).\(`extension`)"
+    /// One saved article, as V1's export carried it: what it says, where it is, whose it is and when it was
+    /// published. V2 states no per-article category, so the article's own source is what a grouped document
+    /// groups by.
+    struct ExportArticle: Hashable, Sendable {
+        let title: String
+        let url: String
+        let source: String
+        let date: Date?
+    }
+
+    /// The reader's saved articles in one box, most recently written first (the order the box itself lists them
+    /// in), which is what V1's `csvArticles`/`markdownArticles` sorted by publication.
+    func articles(inBox boxID: String) throws -> [ExportArticle] {
+        let library = ReaderLibraryStore(database: database)
+        let publication = PublicationStore(database: database)
+        var seen = Set<String>()
+        var articles: [ExportArticle] = []
+        for cardID in try library.bookmarkedCardIDs(inList: boxID).sorted(by: {
+            $0.rawValue.uuidString < $1.rawValue.uuidString
+        }) {
+            guard let card = try? publication.card(id: cardID), let reference = card.primaryActionReference,
+                let url = URL(string: reference), let host = url.host, !host.isEmpty else { continue }
+            guard seen.insert(cardID.rawValue.uuidString).inserted else { continue }
+            let named = (card.sourceDisplayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            articles.append(ExportArticle(title: (card.title ?? "").isEmpty ? reference : card.title!,
+                url: reference, source: named.isEmpty ? host : named, date: card.timestampValue))
+        }
+        return articles.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+    }
+
+    /// V1's file name for a box's export (`<name>-bookmarks.csv` and friends).
+    private func bookmarkName(_ `extension`: String, at date: Date) -> String {
+        "feedmine-\(Self.stamp(date))-bookmarks.\(`extension`)"
+    }
+
+    private func name(_ `extension`: String, at date: Date) -> String {
+        "feedmine-\(Self.stamp(date)).\(`extension`)"
+    }
+
+    private static func stamp(_ date: Date) -> String {
+        ISO8601DateFormatter().string(from: date).replacingOccurrences(of: ":", with: "-")
+    }
+
+    /// V1's `csvArticles`: title, url, source, date, category — V2 groups by nothing, so the fourth column is the
+    /// reader's own box and the category column is what the source is called here.
+    static func articlesCSV(_ articles: [ExportArticle]) -> String {
+        var lines = ["title,url,source,date,category"]
+        let formatter = ISO8601DateFormatter()
+        for article in articles {
+            let stamp = article.date.map { formatter.string(from: $0) } ?? ""
+            lines.append([article.title, article.url, article.source, stamp, article.source].map(csvField)
+                .joined(separator: ","))
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// V1's `plainTextArticles`, in the app's own language.
+    static func articlesText(_ articles: [ExportArticle], title: String) -> String {
+        var lines = [title, String(repeating: "=", count: title.count), ""]
+        lines.append(String(localized: "\(articles.count) artigos salvos"))
+        lines.append("")
+        for article in articles {
+            lines.append("• \(article.title)")
+            lines.append("  \(article.url)")
+            lines.append("  \(article.source)\(article.date.map { " · " + Self.mediumDate($0) } ?? "")")
+            lines.append("")
+        }
+        lines.append("---")
+        lines.append(String(localized: "Exportado pelo Feedmine"))
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// V1's `markdownArticles`: the count, then the articles grouped by where they came from, each with its own
+    /// link and date.
+    static func articlesMarkdown(_ articles: [ExportArticle], title: String) -> String {
+        var lines = ["# \(title)", "", "> \(String(localized: "\(articles.count) artigos salvos"))", ""]
+        let grouped = Dictionary(grouping: articles, by: \.source)
+        for (source, group) in grouped.sorted(by: { $0.key < $1.key }) {
+            lines.append("## \(source)")
+            lines.append("")
+            for article in group {
+                let when = article.date.map { " · \(Self.mediumDate($0))" } ?? ""
+                lines.append("- [\(article.title)](\(article.url)) — *\(source)*\(when)")
+            }
+            lines.append("")
+        }
+        lines.append("---")
+        lines.append(String(localized: "*Exportado pelo Feedmine*"))
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// V1's `htmlArticles`: a standalone reading list, in the app's own palette.
+    static func articlesHTML(_ articles: [ExportArticle], title: String) -> String {
+        var lines = ["<!DOCTYPE html>", "<html lang=\"\(Locale.current.language.languageCode?.identifier ?? "en")\">",
+            "<head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
+            "<title>\(escaped(title))</title>",
+            "<style>body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:#FAF8F5;color:#2c2c2c;line-height:1.6;max-width:700px;margin:0 auto;padding:40px 20px}h1{font-size:1.8rem;margin-bottom:8px}.count{color:#666;margin-bottom:32px}.article{padding:16px 0;border-bottom:1px solid #f0ebe4}.article:last-child{border-bottom:none}.article-title{font-weight:600;font-size:1rem}.article-title a{color:#2c2c2c;text-decoration:none}.article-meta{font-size:0.8rem;color:#888;margin-top:4px}@media (prefers-color-scheme: dark){body{background:#1c1c1e;color:#f2f2f7}.article{border-bottom-color:#2c2c2e}.article-title a{color:#f2f2f7}.count,.article-meta{color:#98989d}}</style>",
+            "</head>", "<body>", "<h1>\(escaped(title))</h1>",
+            "<p class=\"count\">\(escaped(String(localized: "\(articles.count) artigos salvos")))</p>"]
+        for article in articles {
+            lines.append("<div class=\"article\">")
+            lines.append("<div class=\"article-title\"><a href=\"\(escaped(article.url))\">\(escaped(article.title))</a></div>")
+            let when = article.date.map { " · \(escaped(Self.mediumDate($0)))" } ?? ""
+            lines.append("<div class=\"article-meta\">\(escaped(article.source))\(when)</div>")
+            lines.append("</div>")
+        }
+        lines.append(contentsOf: ["</body>", "</html>"])
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// V1's own article dates (`DateFormatter.dateStyle = .medium`).
+    static func mediumDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
     }
 
     static func title(for scope: ReaderExportScope) -> String {

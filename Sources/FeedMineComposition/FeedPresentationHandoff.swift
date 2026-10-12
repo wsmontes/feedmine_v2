@@ -17,8 +17,13 @@ public enum FeedPresentationHandoff {
         switch coldOutcome {
         case .published(let snapshot):
             return try state.receiving(snapshot).reporting(.idle)
-        case .localWorkRemaining, .noPublicationAfterAcquisition:
+        case .localWorkRemaining:
             return state.reporting(.idle)
+        case .noPublicationAfterAcquisition:
+            // R5/PO: the acquisition attempt finished without eligible stories. That is the reader's whole
+            // situation only when there is no presentation to preserve; with cards on screen the same fact
+            // stays quiet, so a working feed never acquires a "no stories" chip.
+            return state.reporting(state.presentation == nil ? .unavailable : .idle)
         case .unavailable:
             return state.reporting(.unavailable)
         case .deferred:

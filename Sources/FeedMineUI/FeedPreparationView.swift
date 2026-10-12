@@ -48,11 +48,19 @@ public struct FeedPreparationView: View {
 
     private var status: String {
         let contributing = progress.contributingSources
-        if progress.preparedCards > 0 { return "\(progress.preparedCards) histórias prontas para você" }
-        if progress.isNearlyReady { return "Quase pronto — \(contributing) fontes já trouxeram novidades" }
-        if contributing > 0 { return "\(contributing) de \(progress.sources.count) fontes já trouxeram novidades" }
-        if !progress.sources.isEmpty { return "Conversando com \(progress.sources.count) fontes" }
-        return "Abrindo as primeiras fontes"
+        if progress.preparedCards > 0 {
+            return String(localized: "\(progress.preparedCards) histórias prontas para você")
+        }
+        if progress.isNearlyReady {
+            return String(localized: "Quase pronto — \(contributing) fontes já trouxeram novidades")
+        }
+        if contributing > 0 {
+            return String(localized: "\(contributing) de \(progress.sources.count) fontes já trouxeram novidades")
+        }
+        if !progress.sources.isEmpty {
+            return String(localized: "Conversando com \(progress.sources.count) fontes")
+        }
+        return String(localized: "Abrindo as primeiras fontes")
     }
 
     /// Admitted headlines land on a loose deck as they arrive.
@@ -91,8 +99,10 @@ public struct FeedPreparationView: View {
     }
 
     private var accessibilitySummary: String {
-        var parts = ["Preparando seu feed.", status + "."]
-        if let first = progress.headlines.first { parts.append("Última manchete: " + first) }
+        var parts = [String(localized: "Preparando seu feed."), String(localized: "\(status).")]
+        if let first = progress.headlines.first {
+            parts.append(String(localized: "Última manchete: \(first)"))
+        }
         return parts.joined(separator: " ")
     }
 }

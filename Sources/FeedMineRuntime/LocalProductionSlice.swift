@@ -40,13 +40,20 @@ public struct LocalProductionSlice: Sendable {
     private let selectionEngine: SelectionEngine
     private let publicationHistory: PublicationHistory
     private let coordinator: PublicationCoordinator
+    private let readiness: MediaReadiness?
+    /// Optional evidence of the replenishment attempt this slice executes; nil records nothing.
+    private let trace: ReplenishmentTrace?
 
-    public init(database: RuntimeDatabase) {
+    /// Existing callers may supply their own intentional presentations. Media-dependent callers
+    /// must inject the same readiness index used by their preparation closure.
+    public init(database: RuntimeDatabase, readiness: MediaReadiness? = nil, trace: ReplenishmentTrace? = nil) {
+        self.readiness = readiness
+        self.trace = trace
         contentStore = ContentStore(database: database)
         candidateProvider = CandidateProvider(contentStore: contentStore)
         selectionEngine = SelectionEngine()
         publicationHistory = PublicationHistory(database: database)
-        coordinator = PublicationCoordinator(database: database)
+        coordinator = PublicationCoordinator(database: database, trace: trace)
     }
 
     public struct Request: Sendable {
@@ -60,11 +67,16 @@ public struct LocalProductionSlice: Sendable {
         public let segmentCreatedAt: Date
         /// Reader position; an origin with an occurrence after it is not published again (PD-1 rule 2).
         public let readerAnchorCardID: PublicationCardID?
+        /// The replenishment attempt this slice belongs to, when a host decided one; nil for work that is not a
+        /// replenishment (the first Edition, hidden tail maintenance).
+        public let operation: FeedReplenishmentOperationID?
 
         public init(plan: FeedPlan, policy: ResolvedSelectionPolicy, editionID: FeedEditionID,
             after: CandidateSupplyCursor?, examinedCapacity: Int, segmentID: FeedSegmentID,
-            segmentSeed: UInt64, segmentCreatedAt: Date, readerAnchorCardID: PublicationCardID? = nil) {
+            segmentSeed: UInt64, segmentCreatedAt: Date, readerAnchorCardID: PublicationCardID? = nil,
+            operation: FeedReplenishmentOperationID? = nil) {
             self.readerAnchorCardID = readerAnchorCardID
+            self.operation = operation
             self.plan = plan
             self.policy = policy
             self.editionID = editionID
@@ -83,7 +95,8 @@ public struct LocalProductionSlice: Sendable {
             throw LocalProductionSliceError.automaticExposurePolicyRequired
         }
         let window = try candidateProvider.candidates(for: request.plan,
-            after: request.after, examinedCapacity: request.examinedCapacity)
+            after: request.after, examinedCapacity: request.examinedCapacity,
+            operation: request.operation, consult: "slice", trace: trace)
         let facts = try publicationHistory.exposure(editionID: request.editionID,
             originIDs: window.candidates.map(\.originRecordID), readerAnchorCardID: request.readerAnchorCardID)
         guard facts.editionID == request.editionID,
@@ -92,20 +105,34 @@ public struct LocalProductionSlice: Sendable {
                 unseenOriginIDs: facts.unseenOriginIDs) else {
             throw LocalProductionSliceError.invalidExposureFacts
         }
+        let revisions = window.candidates.map(\.originRevisionID)
+        let readinessFacts: SelectionReadinessSnapshot?
+        if let readiness {
+            guard let snapshot = SelectionReadinessSnapshot(requestedRevisionIDs: revisions,
+                readyRevisionIDs: Set(readiness.presentations(for: revisions).keys)) else {
+                throw SelectionError.readinessCoverageMismatch
+            }
+            readinessFacts = snapshot
+        } else {
+            readinessFacts = nil
+        }
         // PD-4: the Edition tail precedes this segment, so alternation holds across segments.
         let selection = try selectionEngine.select(plan: request.plan, policy: request.policy,
             window: window, exposure: exposure,
-            after: try neighbor(editionID: request.editionID, tail: facts.observedTailCardID))
-        let report = selection.supplyReport
-        let progress = LocalProductionProgress(examinedCount: report.examinedCount,
-            nextCursor: report.nextCursor, exhausted: report.exhausted)
+            after: try neighbor(editionID: request.editionID, tail: facts.observedTailCardID), readiness: readinessFacts)
+        // Examination advances through structural supply, independently of editorial holds.
+        // A held candidate owns no occurrence or rank; a later supply reconsideration may
+        // revisit it under fresh exposure and readiness facts without rewinding this walk.
+        let progress = LocalProductionProgress(examinedCount: window.examinedCount,
+            nextCursor: window.nextCursor, exhausted: window.exhausted)
         guard !selection.orderedCandidates.isEmpty else { return .advancedWithoutPublication(progress) }
         let prepared = try prepare(selection)
         let drafts = try PublicationPreparation.drafts(selection: selection, inputs: prepared.inputs)
         let append = PublicationCoordinator.AppendRequest(selection: selection, drafts: drafts,
             editionID: request.editionID, segmentID: request.segmentID, segmentSeed: request.segmentSeed,
             segmentCreatedAt: request.segmentCreatedAt, cardIDs: prepared.cardIDs,
-            originRecurrence: request.policy.exposure == .excludePublishedMaterial ? .whenMaterialChanged : .forbidden)
+            originRecurrence: request.policy.exposure == .excludePublishedMaterial ? .whenMaterialChanged : .forbidden,
+            operation: request.operation)
         switch try coordinator.append(append, expectingTailCardID: facts.observedTailCardID) {
         case .published(let receipt): return .published(progress, receipt)
         case .nothingToPublish: throw LocalProductionSliceError.inconsistentPublicationOutcome

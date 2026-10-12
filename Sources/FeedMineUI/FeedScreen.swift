@@ -22,17 +22,31 @@ public struct FeedScreen: View {
     /// it is V1's own empty surface, so it takes precedence over both.
     private let hasSources: Bool
     private let onChooseSources: @MainActor () -> Void
+    /// R3: the host's recovery actions for the absence surface. "Tentar novamente" runs a real
+    /// attempt and "Ajustar interesses" opens the flow that owns the reader's interests; this view
+    /// executes neither.
+    private let onTryAgain: @MainActor () -> Void
+    private let onAdjustInterests: @MainActor () -> Void
+    /// The host's editorial row: offered between cards, and only where the host says there is something truthful
+    /// to ask. Nil — or a nil answer for a card — draws nothing, so the feed surface never invents an offer.
+    private let editorial: (@MainActor (PresentationCard, Int, PresentationCard?) -> AnyView?)?
     @State private var capture = FeedVisualCapture()
 
     public init(store: FeedScreenStore, appearance: ReaderAppearance = .standard,
         statusChip: AnyView? = nil, lens: AnyView? = nil, hasSources: Bool = true,
-        onChooseSources: @escaping @MainActor () -> Void = {}) {
+        onChooseSources: @escaping @MainActor () -> Void = {},
+        onTryAgain: @escaping @MainActor () -> Void = {},
+        onAdjustInterests: @escaping @MainActor () -> Void = {},
+        editorial: (@MainActor (PresentationCard, Int, PresentationCard?) -> AnyView?)? = nil) {
         self.store = store
         self.appearance = appearance
         self.customStatusChip = statusChip
         self.lens = lens
         self.hasSources = hasSources
         self.onChooseSources = onChooseSources
+        self.onTryAgain = onTryAgain
+        self.onAdjustInterests = onAdjustInterests
+        self.editorial = editorial
     }
 
     public var body: some View {
@@ -52,7 +66,8 @@ public struct FeedScreen: View {
                 feedBody
             }
         } else {
-            FeedLoadingView(work: store.state.work)
+            FeedLoadingView(work: store.state.work, onTryAgain: { onTryAgain() },
+                onAdjustInterests: { onAdjustInterests() })
         }
     }
 
@@ -69,8 +84,11 @@ public struct FeedScreen: View {
             if #available(iOS 18, macOS 15, *) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
-                        ForEach(presentation.window.items) { card in
-                            FeedItemView(card: card, appearance: appearance,
+                        ForEach(Array(presentation.window.items.enumerated()), id: \.element.id) { index, card in
+                          // A Group is transparent for layout: the card keeps the geometry the capture measures,
+                          // and the host's row is simply the next child of the stack.
+                            Group {
+                              FeedItemView(card: card, appearance: appearance,
                                 isBookmarked: store.bookmarkedIDs.contains(card.id),
                                 availableActions: store.availableActions,
                                 onAction: { store.perform($0) })
@@ -93,6 +111,8 @@ public struct FeedScreen: View {
                                         store.submitViewport(event.observation, activity: event.activity)
                                     }
                                 }
+                            if let row = editorial?(card, index, index > 0 ? presentation.window.items[index - 1] : nil) { row }
+                          }
                         }
                     }
                     .modifier(NativeFeedTargets())
@@ -109,11 +129,14 @@ public struct FeedScreen: View {
                 // macOS 14 renders local cards without automatic viewport capture.
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
-                        ForEach(presentation.window.items) { card in
-                            FeedItemView(card: card, appearance: appearance,
-                                isBookmarked: store.bookmarkedIDs.contains(card.id),
-                                availableActions: store.availableActions,
-                                onAction: { store.perform($0) })
+                        ForEach(Array(presentation.window.items.enumerated()), id: \.element.id) { index, card in
+                            Group {
+                                FeedItemView(card: card, appearance: appearance,
+                                    isBookmarked: store.bookmarkedIDs.contains(card.id),
+                                    availableActions: store.availableActions,
+                                    onAction: { store.perform($0) })
+                                if let row = editorial?(card, index, index > 0 ? presentation.window.items[index - 1] : nil) { row }
+                            }
                         }
                     }
                     .padding(FeedDesignTokens.Spacing.page)
@@ -125,7 +148,8 @@ public struct FeedScreen: View {
                 .overlay(alignment: .bottom) { workFeedback }
             }
         } else {
-            FeedLoadingView(work: store.state.work)
+            FeedLoadingView(work: store.state.work, onTryAgain: { onTryAgain() },
+                onAdjustInterests: { onAdjustInterests() })
         }
     }
 }
@@ -153,7 +177,7 @@ struct FeedWorkBadge: View {
         case .failed(let message):
             Label { Text(verbatim: message) } icon: { Image(systemName: "exclamationmark.triangle") }
                 .modifier(BadgeStyle())
-        case .idle, .unavailable, .deferred:
+        case .idle, .unavailable, .deferred, .unreachable:
             EmptyView()
         }
     }

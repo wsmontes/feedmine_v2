@@ -18,6 +18,18 @@ Abra `FeedMineApp/FeedMineApp.xcodeproj`, scheme `FeedMine`, simulador iOS 18+. 
 
 As fontes vêm do catálogo V1 empacotado (`TrustedFeeds.swift`: starter set de quatro fontes por key, IDs derivados de forma estável; fontes escolhidas persistem em `reader_preferences`). As duas BBC fixas são apenas fallback de Debug. Banco normal: Application Support/FeedMine/runtime.sqlite. Não apague esse diretório para testar reabertura. Nenhum backend FeedMine ou conta é necessário.
 
+## Catálogo do produto vs. corpus do benchmark
+
+Antes de qualquer avaliação de produto/UX de um build de simulador, confirme qual catálogo o bundle carrega:
+
+```sh
+scripts/verify_product_catalogue.sh "$(xcrun simctl get_app_container booted com.feedmine.development app)"
+```
+
+O `bench/run.sh` copia o catálogo reduzido do corpus para dentro do `FeedMine.app` **compilado** (e reescreve o `catalog.manifest.json` que o descreve) e o teste instala esse build instrumentado como `com.feedmine.development` no simulador de destino; nada devolvia o build de produto depois disso. Fora de uma corrida o transporte desse app — o servidor local em 127.0.0.1:8757 — não existe, então o app parece não publicar nada (medido em 2026-10-11, numa avaliação manual que rodou o build instrumentado sem perceber). O script lê `catalog_metadata` do catálogo que o bundle carrega: sai 0 e imprime a identidade quando não há chave `bench_corpus` e o `source_count` é o do catálogo V1 empacotado (77.443); sai 1 apontando a chave do corpus — ou um catálogo com identidade diferente, porque também não é o do produto — e como reinstalar o build de produto; sai 2 quando não há app ou catálogo para ler. Aceita o caminho do `FeedMine.app`, um container de dados, um UDID ou `booted`.
+
+Corridas do benchmark: sem dispositivo nomeado (`FEEDMINE_BENCH_DEVICE`/`FEEDMINE_BENCH_DEVICE_UDID` ausentes), o runner cria ou reusa um simulador próprio, **`FeedMine Bench`**, e instala o build instrumentado nele — o simulador compartilhado fica intocado. `FEEDMINE_BENCH_SHARED_DEVICE=1` restaura o comportamento antigo (o único simulador booted). Em qualquer desfecho — inclusive falha — o runner, e o `scripts/soak.py` (que sem `--device` mede nesse mesmo simulador próprio), imprimem o comando exato para reinstalar o build de produto: `xcodebuild … build` seguido de `xcrun simctl install <device> <FeedMine.app>`.
+
 ## Associação e oportunidades
 
 Uma FeedAssociation possui uma Session e um Store. A instalação chama Store.install; frescor/provenance permanecem no Runtime/PresentationState. Scroll e foreground usam o driver real e preservam a associação. Background salva o cursor e informa consumo inativo. Sem apresentação, o Cold se reagenda sozinho uma vez por oportunidade (expiração do cooldown ou um timeout de request), apenas com o app visível (F16/F09); um foreground também oferece oportunidade. Uma chamada Cold pendente não é duplicada.

@@ -31,6 +31,14 @@ public enum FeedPresentationAdmission: Hashable, Sendable {
     /// Extends the admitted prefix after real forward movement of the reader.
     /// Stationary, backward and layout-driven observations do not extend the boundary.
     case forwardScroll(ViewportObservation)
+    /// Extends the admitted prefix with cards **already published** beyond the admitted tail, owned by
+    /// the runtime rather than by a reader gesture (F05/R4: the first open shows what the local store
+    /// already holds instead of waiting for a scroll that no one made).
+    ///
+    /// It invents no observation: the anchor, the reader's position and every already-admitted card are
+    /// untouched, and cards are only ever appended after the current tail, bounded by the frozen
+    /// forward capacity of the installed presentation. A window with nothing new is a no-op.
+    case publishedGrowth
     /// Recovers a presentation for an association that has none (relaunch after a state loss).
     case restore(FeedPresentationBounds)
 }

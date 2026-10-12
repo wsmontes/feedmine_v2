@@ -93,8 +93,15 @@ public enum ReaderRecipeMediaType: String, CaseIterable, Codable, Sendable {
 public struct FeedRecipeDefinition: Hashable, Codable, Sendable {
     public static let currentModelVersion = 1
 
-    /// Language codes, lowercased to their primary subtag and sorted — V1 normalised them the same way.
-    public var languages: [String]
+    /// Language codes, lowercased to their primary subtag and sorted — V1 normalised them the same way. The
+    /// observer keeps that true for direct writes too: a chip that appends the catalogue's raw code cannot put a
+    /// second identity for the same language into a recipe.
+    public var languages: [String] {
+        didSet {
+            let normalized = ReaderLanguageCode.choices(languages).sorted()
+            if normalized != languages { languages = normalized }
+        }
+    }
     /// 0…1: how far outside the reader's own choices the feed may look.
     public var discoveryLevel: Double
     /// Catalog node keys the reader answered on, by level.
@@ -111,7 +118,7 @@ public struct FeedRecipeDefinition: Hashable, Codable, Sendable {
         editorialPreferences: [String: ReaderPreferenceLevel] = [:],
         mediaTypes: Set<ReaderRecipeMediaType> = [.article, .podcast, .video],
         adjustFromOpens: Bool = false, modelVersion: Int = FeedRecipeDefinition.currentModelVersion) {
-        self.languages = Array(Set(languages.map(Self.primarySubtag))).sorted()
+        self.languages = ReaderLanguageCode.choices(languages).sorted()
         self.discoveryLevel = min(1, max(0, discoveryLevel))
         self.topicPreferences = topicPreferences
         self.editorialPreferences = editorialPreferences
@@ -144,10 +151,6 @@ public struct FeedRecipeDefinition: Hashable, Codable, Sendable {
     public static func neutral(languages: [String] = []) -> FeedRecipeDefinition {
         FeedRecipeDefinition(languages: languages, discoveryLevel: 0.55, topicPreferences: [:],
             editorialPreferences: [:], mediaTypes: [.article, .podcast, .video], adjustFromOpens: false)
-    }
-
-    static func primarySubtag(_ code: String) -> String {
-        code.lowercased().split(separator: "-").first.map(String.init) ?? code.lowercased()
     }
 
     // MARK: - Weight keys

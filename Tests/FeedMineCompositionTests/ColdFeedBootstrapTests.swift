@@ -5,7 +5,7 @@ import FeedMinePersistence
 import FeedMineAcquisition
 import FeedMineEditorial
 import FeedMinePublication
-import FeedMineRuntime
+@testable import FeedMineRuntime
 import FeedMineComposition
 
 private final class ColdJournal: @unchecked Sendable {
@@ -487,9 +487,10 @@ final class ColdFeedBootstrapTests: XCTestCase {
     func testC21ResourcesHaveOnlyExplicitMechanicalBounds() {
         let value = resources(local: 3, targets: 2)
         XCTAssertEqual(value.localExaminedCapacity, 3); XCTAssertEqual(value.acquisition, planningResources(targets: 2))
-        XCTAssertEqual(Set(Mirror(reflecting: value).children.compactMap(\.label)), ["localExaminedCapacity", "acquisition"])
+        XCTAssertEqual(Set(Mirror(reflecting: value).children.compactMap(\.label)), ["localExaminedCapacity", "acquisition", "localWindowCapacity"])
         XCTAssertNil(ColdFeedBootstrapResources(localExaminedCapacity: 0, acquisition: planningResources()))
         XCTAssertNil(ColdFeedBootstrapResources(localExaminedCapacity: -1, acquisition: planningResources()))
+        XCTAssertNil(ColdFeedBootstrapResources(localExaminedCapacity: 1, acquisition: planningResources(), localWindowCapacity: 0))
     }
     func testC22ColdSuccessStopsAtInstalledPresentation() async throws {
         let f = try fixture(), id = identity()
@@ -521,6 +522,145 @@ final class ColdFeedBootstrapTests: XCTestCase {
         XCTAssertEqual(http.calls, 1); XCTAssertEqual(try canonical(f).count, 3)
         try assertAbsent(f, identity: id)
     }
+    func testColdWindowsShareOneMediaDeadlineAndTheNextOpportunityRenewsIt() async throws {
+        let f = try fixture(), id = identity()
+        try Self.seed(f.database, source: f.source, count: 10, time: 100)
+        let journal = ColdJournal(), readiness = MediaReadiness()
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) },
+            readiness: readiness, makeMediaOpportunity: {
+                journal.append("begin")
+                let start = journal.values.filter { $0 == "begin" }.count == 1 ? 100.0 : 200.0
+                return MediaPreparationOpportunity(waitSeconds: 4, startedAt: start) { _, deadline in
+                    journal.append(String(deadline))
+                }
+            })
+        let bounds = ColdFeedBootstrapResources(localExaminedCapacity: 1, acquisition: planningResources(), localWindowCapacity: 3)!
+        guard case .localWorkRemaining = try await bootstrap.run(identity: id, resources: bounds,
+            backwardCapacity: 0, forwardCapacity: 1) else { return XCTFail("Media remains pending") }
+        XCTAssertEqual(journal.values, ["begin", "104.0", "104.0", "104.0"])
+        guard case .localWorkRemaining = try await bootstrap.run(identity: id, resources: bounds,
+            backwardCapacity: 0, forwardCapacity: 1) else { return XCTFail("Media remains pending") }
+        XCTAssertEqual(journal.values, ["begin", "104.0", "104.0", "104.0", "begin", "204.0", "204.0", "204.0"])
+        try assertAbsent(f, identity: id)
+    }
+
+    func testScopedPendingMediaResumesFiniteWindowsWithoutReservingPublication() async throws {
+        let f = try fixture(), id = identity()
+        try Self.seed(f.database, source: f.source, time: 1)
+        let ready = try XCTUnwrap(canonical(f).first?.originRevisionID)
+        try Self.seed(f.database, source: f.source, count: 10, time: 100)
+        let readiness = MediaReadiness()
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) }, readiness: readiness,
+            prepareWindowMedia: { revisions in
+                // Head media remains pending; only this older revision is legitimately settled.
+                if revisions.contains(ready) { _ = readiness.record(ready, nil) }
+            })
+        let bounds = ColdFeedBootstrapResources(localExaminedCapacity: 1, acquisition: planningResources(), localWindowCapacity: 3)!
+        var previous: CandidateSupplyCursor?
+        for _ in 0..<3 {
+            let outcome = try await bootstrap.run(identity: id, resources: bounds, backwardCapacity: 0, forwardCapacity: 1)
+            guard case .localWorkRemaining(let progress) = outcome else { return XCTFail("Pending media cannot reserve a publication") }
+            XCTAssertNotEqual(progress.nextCursor, previous)
+            previous = progress.nextCursor
+            try assertAbsent(f, identity: id)
+        }
+        let snapshot = try published(await bootstrap.run(identity: id, resources: bounds, backwardCapacity: 0, forwardCapacity: 1))
+        XCTAssertEqual(snapshot.window.items.compactMap(\.title), ["Local 0"])
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: id.editionID).map(\.ordinal), [0])
+        XCTAssertEqual(f.http.calls, 0)
+    }
+
+    func testScopedContinuationYieldsAfterFiniteWindowsAndResumesCursor() async throws {
+        let f = try fixture(), id = identity()
+        try Self.seed(f.database, source: f.source, time: 1)
+        try Self.seed(f.database, source: SourceID(), count: 10, time: 100)
+        let r = f.plan.revision
+        let policy = ResolvedSelectionPolicy(contextKey: r.contextKey, userSelectionVersion: r.userSelectionVersion,
+            eligibilityPolicyVersion: r.eligibilityPolicyVersion, scoringPolicyVersion: r.scoringPolicyVersion,
+            sequencingPolicyVersion: r.sequencingPolicyVersion, exposurePolicyVersion: r.exposurePolicyVersion,
+            selectionSchemaVersion: r.selectionSchemaVersion, eligibility: .selectedSources([f.source]),
+            scoring: .equal, sequencing: .recencyDescending, exposure: .excludePublishedRevisions)
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) },
+            prepareWindowMedia: { _ in })
+        let first = try await bootstrap.run(identity: id, resources: resources(local: 1),
+            backwardCapacity: 0, forwardCapacity: 1)
+        guard case .localWorkRemaining(let progress) = first else {
+            return XCTFail("One opportunity must relinquish its finite examination budget")
+        }
+        XCTAssertFalse(progress.exhausted); XCTAssertNotNil(progress.nextCursor)
+        try assertAbsent(f, identity: id)
+        let second = try await bootstrap.run(identity: id, resources: resources(local: 1),
+            backwardCapacity: 0, forwardCapacity: 1)
+        XCTAssertEqual(try published(second).window.items.compactMap(\.title), ["Local 0"])
+        XCTAssertEqual(f.http.calls, 0)
+    }
+
+    func testScopedPreparationFailureRetainsResumedWindowAndPublicationIdentity() async throws {
+        let f = try fixture(), id = identity()
+        try Self.seed(f.database, source: f.source, time: 1)
+        let ready = try XCTUnwrap(canonical(f).first?.originRevisionID)
+        try Self.seed(f.database, source: f.source, time: 100)
+        let readiness = MediaReadiness(), journal = ColdJournal()
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { selection in
+                XCTAssertEqual(selection.orderedCandidates.map(\.originRevisionID), [ready])
+                journal.append("prepare")
+                if journal.values.count == 1 { throw Failure.preparation }
+                return Self.prepared(selection)
+            }, readiness: readiness, prepareWindowMedia: { revisions in
+                if revisions.contains(ready) { _ = readiness.record(ready, nil) }
+            })
+        let bounds = ColdFeedBootstrapResources(localExaminedCapacity: 1,
+            acquisition: planningResources(), localWindowCapacity: 1)!
+        guard case .localWorkRemaining = try await bootstrap.run(identity: id, resources: bounds,
+            backwardCapacity: 0, forwardCapacity: 1) else { return XCTFail("Pending head must advance examination") }
+        try assertAbsent(f, identity: id)
+        do {
+            _ = try await bootstrap.run(identity: id, resources: bounds, backwardCapacity: 0, forwardCapacity: 1)
+            XCTFail("Preparation must fail before publication")
+        } catch { XCTAssertEqual(error as? Failure, .preparation) }
+        try assertAbsent(f, identity: id)
+        let snapshot = try published(await bootstrap.run(identity: id, resources: bounds,
+            backwardCapacity: 0, forwardCapacity: 1))
+        XCTAssertEqual(snapshot.window.items.count, 1)
+        XCTAssertEqual(journal.values, ["prepare", "prepare"])
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: id.editionID).map(\.ordinal), [0])
+        XCTAssertEqual(try canonical(f).count, 2)
+        XCTAssertEqual(f.http.calls, 0)
+    }
+
+    func testClosedBootstrapCannotPublishAfterScopedLocalPreparation() async throws {
+        let f = try fixture(), id = identity()
+        try Self.seed(f.database, source: f.source)
+        let readiness = MediaReadiness()
+        let preparing = expectation(description: "Local window preparation suspended")
+        let (release, signal) = AsyncStream<Void>.makeStream()
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { _ in
+                XCTFail("Revoked bootstrap must not prepare publication")
+                throw Failure.preparation
+            }, readiness: readiness, prepareWindowMedia: { revisions in
+                preparing.fulfill()
+                for await _ in release { break }
+                for revision in revisions { _ = readiness.record(revision, nil) }
+            })
+        let bounds = resources()
+        let task = Task { try await bootstrap.run(identity: id, resources: bounds,
+            backwardCapacity: 0, forwardCapacity: 1) }
+        let waited = await XCTWaiter.fulfillment(of: [preparing], timeout: 5)
+        XCTAssertEqual(waited, .completed)
+        bootstrap.cancel()
+        signal.yield(()); signal.finish()
+        do { _ = try await task.value; XCTFail("Closed bootstrap published local supply") }
+        catch { XCTAssertEqual(error as? ColdFeedBootstrapError, .closed) }
+        try assertAbsent(f, identity: id)
+        XCTAssertEqual(try canonical(f).count, 1)
+        XCTAssertEqual(f.http.calls, 0)
+    }
+
     func testStaticFiniteControlFlowAndModuleBoundaries() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("Sources/FeedMineComposition/ColdFeedBootstrap.swift"), encoding: .utf8)

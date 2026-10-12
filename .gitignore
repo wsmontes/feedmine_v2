@@ -25,3 +25,11 @@ FeedMineApp/FeedMineApp/Resources/catalog.sqlite.download
 
 # V1 reference screenshots (T1): local evidence, kept out of Git on purpose.
 docs/evidence/
+
+# Benchmark artifacts (runs, generated corpus, device pulls) — the harness scripts stay.
+bench/run/
+bench/device/
+bench/corpus/
+__pycache__/
+*.xcresult
+tmp/

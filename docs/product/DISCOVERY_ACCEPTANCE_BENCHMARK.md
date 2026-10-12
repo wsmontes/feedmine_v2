@@ -121,7 +121,7 @@ O [registro atual de validação](../reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md
 - O próprio registro preserva como pendência teste prolongado e iPhone físico.
 - Aceitar a transferência de frontend como **marco interno** não é sinônimo de aceitar a promessa do produto para publicação.
 
-**Status provisório dos gates deste benchmark: B01 NOT_RUN, B02 NOT_RUN, B03 NOT_RUN, B04 NOT_RUN como protocolo completo (há testes parciais), B05 NOT_RUN como protocolo completo (há testes parciais), B06 NOT_RUN.** Não retroconverter testes parciais em aprovação.
+**Status dos gates deste benchmark (atualizado em 2026-10-11): B01 PASS, B02 PASS, B03 PASS, B04 PASS, B05 PASS, B06 NOT_RUN** (precisa de um iPhone físico nesta máquina). Os vereditos, as execuções e as medidas de cada cláusula estão no [registro de aceitação](../evidence/ACCEPTANCE_RECORD.md), e o que continua aberto — a configuração relativa ao runway (§5.3), a travessia de paginação ligada no host e uma cláusula do oráculo que passa medindo nada — está nomeado lá. O parágrafo acima permanece verdadeiro como **histórico**: em 2026-10-10 nada disso tinha veredito, e o ensaio de quatro minutos/135 cards não era prova de nada.
 
 ## 6. Execução autônoma sem rebaixar a barra
 

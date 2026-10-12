@@ -141,6 +141,7 @@ public actor AcquisitionCoordinator {
     /// in plan order; `onResult` sees each as it settles. A cancelled result stops starting new
     /// work; fatal errors propagate. A limit of 1 is exactly sequential.
     public nonisolated func executeConcurrently(_ work: [AcquisitionPlannedWork],
+        operation: FeedReplenishmentOperationID? = nil, trace: ReplenishmentTrace? = nil,
         onResult: @escaping @Sendable (AcquisitionExecutionResult) async throws -> Void) async throws -> [AcquisitionExecutionResult] {
         let limit = concurrentTargetLimit
         return try await withThrowingTaskGroup(of: (Int, AcquisitionExecutionResult).self) { group in
@@ -149,7 +150,7 @@ public actor AcquisitionCoordinator {
             func startMore() {
                 while !stopped, running < limit, next < work.count {
                     let index = next, item = work[index]
-                    group.addTask { (index, try await self.execute(item)) }
+                    group.addTask { (index, try await self.execute(item, operation: operation, trace: trace)) }
                     next += 1; running += 1
                 }
             }
@@ -196,7 +197,8 @@ public actor AcquisitionCoordinator {
         return result
     }
 
-    public func execute(_ work: AcquisitionPlannedWork) async throws -> AcquisitionExecutionResult {
+    public func execute(_ work: AcquisitionPlannedWork, operation: FeedReplenishmentOperationID? = nil,
+        trace: ReplenishmentTrace? = nil) async throws -> AcquisitionExecutionResult {
         let target: AcquisitionTarget
         switch work {
         case .start(let supplied, _), .joinActive(let supplied): target = supplied
@@ -217,7 +219,8 @@ public actor AcquisitionCoordinator {
         }
         let database = self.database
         let task = Task<AcquisitionExecutionResult, Error> {
-            try await Self.run(target: target, bounds: bounds, connector: connector, database: database)
+            try await Self.run(target: target, bounds: bounds, connector: connector, database: database,
+                operation: operation, trace: trace)
         }
         inFlight[target.id] = InFlight(generation: target.generation, task: task)
         // Only this creator removes the entry, on either result or error settlement.
@@ -230,13 +233,26 @@ public actor AcquisitionCoordinator {
     }
 
     private static func run(target: AcquisitionTarget, bounds: AcquisitionWorkBounds,
-        connector: any FeedConnector, database: RuntimeDatabase) async throws -> AcquisitionExecutionResult {
+        connector: any FeedConnector, database: RuntimeDatabase,
+        operation: FeedReplenishmentOperationID?, trace: ReplenishmentTrace?) async throws -> AcquisitionExecutionResult {
         let authority = AcquisitionTargetAuthority(database: database)
         let admission = AdmissionPolicy(database: database)
         var receipts: [AdmissionReceipt] = []
         var context = FeedConnectorExecutionContext()
+        var attempt = 0
         func result(_ stop: AcquisitionExecutionStop) -> AcquisitionExecutionResult {
             AcquisitionExecutionResult(targetID: target.id, generation: target.generation, stop: stop, receipts: receipts)
+        }
+        /// The return of **one** pull, stated where it happened: including empty, failure and cancellation, because
+        /// a pull that produced nothing is an outcome and not the absence of one. A joiner never reaches here — it
+        /// reads the result of the execution that actually pulled, which is the attempt the arrival belongs to.
+        func recordArrival(_ outcome: String, _ extra: [String: String] = [:]) {
+            guard let operation, let trace else { return }
+            var fields = ["op": operation.described, "kind": "network", "result": outcome,
+                "target": target.id.rawValue.uuidString, "generation": String(target.generation),
+                "attempt": String(attempt)]
+            fields.merge(extra) { _, new in new }
+            trace.record(ReplenishmentEvent.arrived, fields)
         }
         while receipts.count < bounds.batchCapacity {
             if Task.isCancelled { return result(.cancelled) }
@@ -255,20 +271,42 @@ public actor AcquisitionCoordinator {
             let request = FeedConnectorPull(targetID: current.id, targetGeneration: current.generation,
                 checkpointRevision: current.checkpointRevision, checkpoint: current.checkpoint,
                 observationCapacity: bounds.observationCapacityPerBatch, byteCapacity: bounds.byteCapacityPerBatch)!
+            attempt += 1
             let event: FeedConnectorEvent
             do { event = try await connector.pull(request, context: &context) }
-            catch is CancellationError { return result(.cancelled) }
-            catch let failure as ConnectorOperationalFailure { return result(.operationalFailure(failure)) }
-            if Task.isCancelled { return result(.cancelled) }
+            catch is CancellationError { recordArrival("cancelled"); return result(.cancelled) }
+            catch let failure as ConnectorOperationalFailure {
+                recordArrival("failure", ["failure": String(describing: failure)])
+                return result(.operationalFailure(failure))
+            }
+            if Task.isCancelled { recordArrival("cancelled"); return result(.cancelled) }
             switch event {
-            case .finished: return result(.finished)
-            case .upToDate: return result(.upToDate)
-            case .disconnected: return result(.disconnected)
-            case .cancelled: return result(.cancelled)
+            case .finished: recordArrival("finished"); return result(.finished)
+            case .upToDate: recordArrival("up_to_date"); return result(.upToDate)
+            case .disconnected: recordArrival("disconnected"); return result(.disconnected)
+            case .cancelled: recordArrival("cancelled"); return result(.cancelled)
             case .batch(let batch, let transportByteCount):
-                try validate(batch, transportByteCount: transportByteCount, request: request)
+                do { try validate(batch, transportByteCount: transportByteCount, request: request) }
+                catch {
+                    // The pull answered with bytes this build refuses: an outcome of the pull, named as such.
+                    recordArrival("invalid_batch", ["observations": String(batch.observations.count),
+                        "bytes": String(transportByteCount), "failure": String(describing: error)])
+                    throw error
+                }
+                recordArrival("batch", ["observations": String(batch.observations.count),
+                    "bytes": String(transportByteCount)])
                 // Admission is synchronous and durable; the next iteration rereads its settled checkpoint.
-                receipts.append(try admission.admit(batch))
+                let receipt = try admission.admit(batch)
+                if let operation, let trace {
+                    trace.record(ReplenishmentEvent.concluded, ["op": operation.described,
+                        "destination": "pool_admission", "target": receipt.targetID.rawValue.uuidString,
+                        "generation": String(target.generation), "attempt": String(attempt),
+                        "observations": String(batch.observations.count),
+                        "rejected": String(receipt.rejectedObservations.count),
+                        "checkpoint_advanced": receipt.checkpointAdvanced ? "true" : "false",
+                        "selectable_supply_changed": receipt.selectableSupplyChanged ? "true" : "false"])
+                }
+                receipts.append(receipt)
             }
         }
         return result(.capacityReached)

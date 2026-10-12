@@ -137,6 +137,33 @@ final class FeedPresentationAdmissionTests: XCTestCase {
         XCTAssertEqual(repeated, admitted, "An admission with nothing ready to add adds nothing")
     }
 
+    /// R4/F05: the runtime grows the admitted window with cards **already published**, without any
+    /// reader gesture and without inventing one. The anchor, the order and every admitted card stay
+    /// exactly as they were; only the end of the list moves.
+    func testPublishedGrowthAppendsWithoutAGestureAndKeepsTheAnchor() async throws {
+        let f = try fixture()
+        let before = try await admitted(f.session, .initial(f.bounds))
+        // Nothing published beyond the admitted tail yet: growth is a no-op, not a new projection.
+        let unchanged = try await f.session.admitPresentation(.publishedGrowth)
+        XCTAssertEqual(unchanged, before)
+        try f.publishTail()
+        let grown = try await admitted(f.session, .publishedGrowth)
+        XCTAssertGreaterThan(grown.window.items.count, before.window.items.count,
+            "Cards the store already published enter without a reader gesture")
+        let anchorIndex = try XCTUnwrap(grown.window.items.firstIndex { $0.id == grown.window.anchor.cardID })
+        XCTAssertLessThanOrEqual(grown.window.items.count, anchorIndex + f.bounds.forwardCapacity + 1,
+            "Growth fills the reader's forward window and stops at its frozen bound")
+        XCTAssertEqual(Array(grown.window.items.prefix(before.window.items.count)), before.window.items,
+            "Earlier cards keep identity, order and projection")
+        XCTAssertEqual(Set(grown.window.items.map(\.id)).count, grown.window.items.count,
+            "Growth appends once per card: no duplicates")
+        XCTAssertEqual(grown.window.anchor, before.window.anchor, "Growth never moves the reading point")
+        XCTAssertEqual(grown.contextKey, before.contextKey)
+        XCTAssertEqual(grown.editionID, before.editionID)
+        let repeated = try await f.session.admitPresentation(.publishedGrowth)
+        XCTAssertEqual(repeated, grown, "A repeat never walks the tail past the bound")
+    }
+
     /// An observation inside the admitted list moves the anchor without rebuilding anything.
     func testStationaryObservationMovesTheAnchorWithoutChangingTheList() async throws {
         let f = try fixture()

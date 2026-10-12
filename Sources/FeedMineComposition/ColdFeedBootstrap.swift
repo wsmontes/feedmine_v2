@@ -39,10 +39,12 @@ public struct ColdFeedPublicationIdentity: Hashable, Sendable {
 public struct ColdFeedBootstrapResources: Hashable, Sendable {
     public let localExaminedCapacity: Int
     public let acquisition: AcquisitionPlanningResources
+    public let localWindowCapacity: Int
 
-    public init?(localExaminedCapacity: Int, acquisition: AcquisitionPlanningResources) {
-        guard localExaminedCapacity > 0 else { return nil }
+    public init?(localExaminedCapacity: Int, acquisition: AcquisitionPlanningResources, localWindowCapacity: Int = 8) {
+        guard localExaminedCapacity > 0, localWindowCapacity > 0 else { return nil }
         self.localExaminedCapacity = localExaminedCapacity
+        self.localWindowCapacity = localWindowCapacity
         self.acquisition = acquisition
     }
 }
@@ -84,18 +86,36 @@ public enum ColdFeedBootstrapError: Error, Equatable, Sendable {
     case sessionAlreadyInstalled
     case inconsistentPublishedRestore
     case closed
+    case staleInitialExamination
 }
 
 /// Revocation and synchronous publication share one lock; close cannot race the commit boundary.
 private final class ColdPublicationAuthority: @unchecked Sendable {
     private let lock = NSLock()
     private var active = true
+    // Examination progress belongs to this bootstrap, not to a reserved Edition or checkpoint.
+    private var cursor: CandidateSupplyCursor?
     func cancel() { lock.lock(); active = false; lock.unlock() }
     func perform<T>(_ operation: () throws -> T) throws -> T {
         lock.lock(); defer { lock.unlock() }
         guard active else { throw ColdFeedBootstrapError.closed }
         try Task.checkCancellation()
         return try operation()
+    }
+
+    func currentCursor() throws -> CandidateSupplyCursor? { try perform { cursor } }
+    func restartExamination() throws { try perform { cursor = nil } }
+    func examine(after expectedCursor: CandidateSupplyCursor?,
+        _ operation: () throws -> InitialProductionSliceOutcome) throws -> InitialProductionSliceOutcome {
+        try perform {
+            guard cursor == expectedCursor else { throw ColdFeedBootstrapError.staleInitialExamination }
+            let outcome = try operation()
+            if case .advancedWithoutPublication(let progress) = outcome {
+                // A complete pass may be reconsidered on the next explicit opportunity.
+                cursor = progress.exhausted ? nil : progress.nextCursor
+            }
+            return outcome
+        }
     }
 }
 
@@ -110,6 +130,9 @@ public struct ColdFeedBootstrap: Sendable {
     private let coordinator: AcquisitionCoordinator
     private let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication
     private let prepareMedia: (@Sendable () async -> Void)?
+    private let makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)?
+    private let prepareWindowMedia: (@Sendable ([OriginRevisionID]) async -> Void)?
+    private let onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)?
     private let evidence: (@Sendable (ColdFeedEvidence) async -> Void)?
 
     /// The external composition supplies a coordinator over the snapshot's same runtime database.
@@ -117,29 +140,40 @@ public struct ColdFeedBootstrap: Sendable {
         acquisition: SyndicationAcquisitionSnapshot, coordinator: AcquisitionCoordinator,
         prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication,
         prepareMedia: (@Sendable () async -> Void)? = nil,
-        evidence: (@Sendable (ColdFeedEvidence) async -> Void)? = nil) throws {
+        evidence: (@Sendable (ColdFeedEvidence) async -> Void)? = nil,
+        readiness: MediaReadiness? = nil,
+        prepareWindowMedia: (@Sendable ([OriginRevisionID]) async -> Void)? = nil,
+        onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)? = nil,
+        makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw ColdFeedBootstrapError.policyContextMismatch }
+        self.makeMediaOpportunity = makeMediaOpportunity
+        self.onDiscoveryPage = onDiscoveryPage
         self.prepareMedia = prepareMedia
+        self.prepareWindowMedia = prepareWindowMedia
         self.evidence = evidence
         self.session = session
         self.plan = plan
         self.policy = policy
         self.acquisition = acquisition
         self.coordinator = coordinator
-        initialProductionSlice = InitialProductionSlice(database: acquisition.runtimeDatabase)
+        initialProductionSlice = InitialProductionSlice(database: acquisition.runtimeDatabase, readiness: readiness)
         self.prepare = prepare
     }
 
     public func run(identity: ColdFeedPublicationIdentity, resources: ColdFeedBootstrapResources,
         backwardCapacity: Int, forwardCapacity: Int) async throws -> ColdFeedBootstrapOutcome {
         guard await session.currentPresentation() == nil else { throw ColdFeedBootstrapError.sessionAlreadyInstalled }
-        let request = makeRequest(identity: identity, resources: resources)
+        if let page = try authority.perform({
+            try acquisition.advanceDiscovery(for: plan.context, examinedCapacity: resources.localExaminedCapacity)
+        }) {
+            await onDiscoveryPage?(page.entries)
+        }
+        let mediaOpportunity = await makeMediaOpportunity?()
         let firstProgress: LocalProductionProgress
-        switch try authority.perform({ try initialProductionSlice.run(request, prepare: prepare) }) {
-        case .published:
-            return try await installedPublication(identity: identity, backwardCapacity: backwardCapacity,
-                forwardCapacity: forwardCapacity)
-        case .advancedWithoutPublication(let progress):
+        switch try await attemptFirstPublication(identity: identity, resources: resources,
+            backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity, prepareLegacyMedia: false, mediaOpportunity: mediaOpportunity) {
+        case .published(let snapshot): return .published(snapshot)
+        case .notYet(let progress):
             guard progress.exhausted else { return .localWorkRemaining(progress) }
             firstProgress = progress
         }
@@ -156,6 +190,12 @@ public struct ColdFeedBootstrap: Sendable {
         }
         switch planning {
         case .disposition(.noEligibleTargets):
+            if eligibleTargets.isEmpty, let discovery = acquisition.discovery,
+                discovery.contextKey == plan.context.key, !discovery.exhausted {
+                // Canonical supply is exhausted, but local catalogue examination remains.
+                // A filtered resource page cannot establish product unavailability.
+                return .localWorkRemaining(firstProgress)
+            }
             // Review F08: only cooling down is a temporary denial, not unavailability.
             if !eligibleTargets.isEmpty, await coordinator.nextCoolingExpiry() != nil {
                 return .deferred(firstProgress, .resourceDenied)
@@ -179,8 +219,10 @@ public struct ColdFeedBootstrap: Sendable {
         let results = try await coordinator.executeConcurrently(acquisitionPlan.work) { result in
             await evidence?(.settled(result.targetID, stop: result.stop, supplyChanged: result.selectableSupplyChanged))
             guard result.selectableSupplyChanged, first.snapshot == nil else { return }
-            if case .published(let snapshot) = try await self.attemptFirstPublication(request, identity: identity,
-                backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity) {
+            // New canonical supply may precede the cursor. Only a real change reopens the head.
+            try self.authority.restartExamination()
+            if case .published(let snapshot) = try await self.attemptFirstPublication(identity: identity, resources: resources,
+                backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity, prepareLegacyMedia: true, mediaOpportunity: mediaOpportunity) {
                 first.snapshot = snapshot
                 await evidence?(.published(snapshot))
             }
@@ -188,23 +230,41 @@ public struct ColdFeedBootstrap: Sendable {
         if let snapshot = first.snapshot { return .published(snapshot) }
         let changed = results.contains { $0.selectableSupplyChanged }
         guard changed else { return .noPublicationAfterAcquisition(firstProgress, results) }
-        switch try await attemptFirstPublication(request, identity: identity,
-            backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity) {
+        switch try await attemptFirstPublication(identity: identity, resources: resources,
+            backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity, prepareLegacyMedia: true, mediaOpportunity: mediaOpportunity) {
         case .published(let snapshot): return .published(snapshot)
         case .notYet(let progress): return .noPublicationAfterAcquisition(progress, results)
         }
     }
 
-    /// One initial-slice attempt over current supply. Reuses the exact request: each initial slice
-    /// starts selection at the canonical head, and the durable first Edition is created at most once.
-    private func attemptFirstPublication(_ request: InitialProductionSlice.Request,
-        identity: ColdFeedPublicationIdentity, backwardCapacity: Int,
-        forwardCapacity: Int) async throws -> PublicationAttempt {
-        // PD-5/PD-6: give fresh supply a bounded chance to arrive with real images before the first
-        // screen; whatever is not ready is published as a designed text-only card.
-        if prepareMedia != nil { await evidence?(.preparingMedia) }
-        await prepareMedia?()
-        switch try authority.perform({ try initialProductionSlice.run(request, prepare: prepare) }) {
+    /// Scoped preparation examines a finite number of windows per explicit opportunity.
+    /// A pending head advances examination without reserving an Edition or reader position.
+    /// Legacy preparation retains its one-slice outcome.
+    private func attemptFirstPublication(identity: ColdFeedPublicationIdentity, resources: ColdFeedBootstrapResources,
+        backwardCapacity: Int, forwardCapacity: Int, prepareLegacyMedia: Bool,
+        remainingWindows: Int? = nil, mediaOpportunity: MediaPreparationOpportunity? = nil) async throws -> PublicationAttempt {
+        try Task.checkCancellation()
+        let remaining = remainingWindows ?? resources.localWindowCapacity
+        let after = try authority.currentCursor()
+        let request = try makeRequest(identity: identity, resources: resources, after: after)
+        let outcome: InitialProductionSliceOutcome
+        if let prepareWindowMedia = mediaOpportunity.map({ opportunity in
+            { @Sendable (revisions: [OriginRevisionID]) async in await opportunity.prepare(revisions) }
+        }) ?? prepareWindowMedia {
+            let revisions = try initialProductionSlice.revisionsToPrepare(for: request)
+            if !revisions.isEmpty {
+                await evidence?(.preparingMedia)
+                await prepareWindowMedia(revisions)
+            }
+            outcome = try authority.examine(after: after, { try initialProductionSlice.run(request, prepare: prepare) })
+        } else {
+            if prepareLegacyMedia, let prepareMedia {
+                await evidence?(.preparingMedia)
+                await prepareMedia()
+            }
+            outcome = try authority.examine(after: after, { try initialProductionSlice.run(request, prepare: prepare) })
+        }
+        switch outcome {
         case .published:
             guard case .published(let snapshot) = try await installedPublication(identity: identity,
                 backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity) else {
@@ -212,7 +272,12 @@ public struct ColdFeedBootstrap: Sendable {
             }
             return .published(snapshot)
         case .advancedWithoutPublication(let progress):
-            return .notYet(progress)
+            guard (mediaOpportunity != nil || prepareWindowMedia != nil), remaining > 1, !progress.exhausted,
+                progress.examinedCount > 0, progress.nextCursor != after else { return .notYet(progress) }
+            await Task.yield()
+            return try await attemptFirstPublication(identity: identity, resources: resources,
+                backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
+                prepareLegacyMedia: prepareLegacyMedia, remainingWindows: remaining - 1, mediaOpportunity: mediaOpportunity)
         }
     }
 
@@ -221,12 +286,12 @@ public struct ColdFeedBootstrap: Sendable {
     }
 
     private func makeRequest(identity: ColdFeedPublicationIdentity,
-        resources: ColdFeedBootstrapResources) -> InitialProductionSlice.Request {
-        .init(plan: plan, policy: policy, examinedCapacity: resources.localExaminedCapacity,
+        resources: ColdFeedBootstrapResources, after: CandidateSupplyCursor?) throws -> InitialProductionSlice.Request {
+        .init(plan: plan, policy: try acquisition.policyIncludingDiscovery(policy), examinedCapacity: resources.localExaminedCapacity,
             editionID: identity.editionID, publicationSchemaVersion: identity.publicationSchemaVersion,
             selectionSeed: identity.selectionSeed, editionCreatedAt: identity.editionCreatedAt,
             segmentID: identity.segmentID, segmentSeed: identity.segmentSeed, segmentCreatedAt: identity.segmentCreatedAt,
-            anchorPlacement: identity.anchorPlacement, checkpointedAt: identity.checkpointedAt)
+            anchorPlacement: identity.anchorPlacement, checkpointedAt: identity.checkpointedAt, after: after)
     }
 
     private func installedPublication(identity: ColdFeedPublicationIdentity, backwardCapacity: Int,

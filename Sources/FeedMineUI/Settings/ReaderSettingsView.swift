@@ -24,15 +24,37 @@ public struct ReaderSettingsView: View {
     private let period: ReaderPeriod
     /// The library file's size, when the host can measure it.
     private let storageDescription: String?
+    /// V1's content-filter surface, pushed from the reading section. The host builds it (the rules and the
+    /// templates are the composition's facts); a settings screen shown without one draws only the gate.
+    private let contentFilterStore: ReaderContentFilterStore?
+    /// What the discovery preferences can offer (the catalogue's languages, its sections and its places). The host
+    /// reads them from the catalogue, so the page never invents an answer the catalogue cannot honour.
+    private let discoveryLanguages: [OnboardingLanguage]
+    private let discoveryTopics: [OnboardingTopic]
+    private let discoveryPlaces: [OnboardingRegion]
+    /// Creating and opening "a feed with these preferences" — the host owns the store and the session.
+    private let onCreateCuratedFeed: (FeedRecipeDefinition, String) async -> ContextKey?
+    private let onOpenCuratedFeed: (ContextKey) async -> Void
     private let onClose: () -> Void
 
     public init(store: ReaderSettingsStore, appearance: ReaderAppearance = .standard,
         period: ReaderPeriod = .morning, storageDescription: String? = nil,
+        contentFilterStore: ReaderContentFilterStore? = nil,
+        discoveryLanguages: [OnboardingLanguage] = [], discoveryTopics: [OnboardingTopic] = [],
+        discoveryPlaces: [OnboardingRegion] = [],
+        onCreateCuratedFeed: @escaping (FeedRecipeDefinition, String) async -> ContextKey? = { _, _ in nil },
+        onOpenCuratedFeed: @escaping (ContextKey) async -> Void = { _ in },
         onClose: @escaping () -> Void = {}) {
         _store = State(initialValue: store)
         self.appearance = appearance
         self.period = period
         self.storageDescription = storageDescription
+        self.contentFilterStore = contentFilterStore
+        self.discoveryLanguages = discoveryLanguages
+        self.discoveryTopics = discoveryTopics
+        self.discoveryPlaces = discoveryPlaces
+        self.onCreateCuratedFeed = onCreateCuratedFeed
+        self.onOpenCuratedFeed = onOpenCuratedFeed
         self.onClose = onClose
     }
 
@@ -195,9 +217,27 @@ public struct ReaderSettingsView: View {
             Toggle(isOn: Binding(
                 get: { store.settings.contentFiltersEnabled },
                 set: { value in Task { await store.update { $0.contentFiltersEnabled = value } } })) {
-                Label(String(localized: "Filtros de conteúdo"), systemImage: "eye.slash")
+                Label(String(localized: "Filtrar conteúdo"), systemImage: "eye.slash")
             }
             .accessibilityIdentifier("settings-content-filters")
+            if let contentFilterStore {
+                NavigationLink {
+                    ReaderContentFilterView(store: contentFilterStore, appearance: appearance)
+                } label: {
+                    Label(String(localized: "Filtros de conteúdo"), systemImage: "text.badge.xmark")
+                }
+                .accessibilityIdentifier("settings-content-filter-rules")
+            }
+            // F02: the interests are declared in the feed; this is where they are read back and adjusted, in the
+            // same controls the first run shows. It is a page of its own — never the gate before the feed.
+            NavigationLink {
+                ReaderDiscoveryPreferencesView(store: store, languages: discoveryLanguages,
+                    topics: discoveryTopics, places: discoveryPlaces,
+                    onCreateFeed: onCreateCuratedFeed, onOpenFeed: onOpenCuratedFeed)
+            } label: {
+                Label(String(localized: "Preferências de descoberta"), systemImage: "safari")
+            }
+            .accessibilityIdentifier("settings-discovery-preferences")
         } header: {
             Text(verbatim: String(localized: "Leitura"))
         } footer: {

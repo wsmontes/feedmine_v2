@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import FeedMineUI
 import FeedMineDomain
+import FeedMinePersistence
 import FeedMineRuntime
 
 @main
@@ -25,6 +26,8 @@ struct FeedMineApp: App {
         case curatedHood
         case export
         case filters
+        /// V1's "Add Feeds": the reader's own composer for a pasted link.
+        case addFeed
         var id: String {
             switch self {
             case .sources: return "sources"
@@ -34,13 +37,16 @@ struct FeedMineApp: App {
             case .curatedHood: return "curatedHood"
             case .export: return "export"
             case .filters: return "filters"
+            case .addFeed: return "addFeed"
             }
         }
     }
 
     /// T9: the article the reader opened. A value: no storage handle, and no URL ever crosses back.
-    private struct ReaderPage: Equatable {
-        let url: URL
+    /// Two ways to read, one presentation: the site in the app's own browser, or text the app already holds.
+    private enum ReaderPage: Equatable {
+        case site(URL)
+        case local(FeedReadingContent)
     }
 
     /// U2: the surfaces the reader has up, oldest first. V1's reader returned to the surface it was opened
@@ -103,6 +109,7 @@ struct FeedMineApp: App {
     /// when the reader changes something, when the app comes back, and at launch — a clock moving the palette
     /// never rebuilds a session.
     @State private var settingsStore: ReaderSettingsStore?
+    @State private var addFeedStore: ReaderAddFeedStore?
     @State private var appearance: ReaderAppearance = .standard
     /// T10: the two tools. The export sheet shows a document the host produced; the import shows what a file
     /// offers before anything is written.
@@ -114,6 +121,19 @@ struct FeedMineApp: App {
     @State private var sharedExport: SharedLink?
     /// T11: the onboarding gate and the curated feed's own hood.
     @State private var showsOnboarding = false
+    /// What the reader answered in this session, so the block that asked shows the answer — and the way back —
+    /// where the question was, without waiting for anything to be reloaded.
+    @State private var inFeedAnswers: [String: ReaderPreferenceLevel] = [:]
+    /// Hiding the invitations is the reader's own choice and it takes effect at once: the preference is the
+    /// record, this is the session's answer to it.
+    @State private var editorialTipsHidden = false
+    /// What has been offered, on which card, and the cards the reader has really been exposed to. A plain
+    /// reference box, not observable state: the decision is taken while the feed is being drawn, and writing
+    /// observable state inside a view body is undefined behaviour. Round 10 moved the rules into
+    /// `EditorialInvitationCadence`, which states them and can be tested; this holds one instance for the whole
+    /// app run, and it keeps one session per context key — so a foreground, an internal session rebuild, and
+    /// coming back to a context the reader has already read resume the budget instead of renewing it.
+    @State private var cadence = EditorialInvitationCadence()
     @State private var showsCuratedHood = false
     @State private var promptName = ""
 
@@ -160,7 +180,17 @@ struct FeedMineApp: App {
                             statusChip: AnyView(contextChip(association)),
                             lens: AnyView(filterLens),
                             hasSources: composition.hasSelectedSources,
-                            onChooseSources: { present(.sources) })
+                            onChooseSources: { present(.sources) },
+                            onTryAgain: { Task { await composition.refreshFromTheReader() } },
+                            // R3: the flow that owns the reader's interests is the existing one.
+                            onAdjustInterests: { present(.settings) },
+                            editorial: { card, index, previous in
+                                editorialInvitation(for: card, index: index, previous: previous,
+                                    association: association)
+                            })
+                            .task(id: association.store.state.presentation?.window) {
+                                recordWindowFacts(of: association)
+                            }
                             .id(ObjectIdentifier(association))
                             #if DEBUG
                             .overlay(alignment: .topTrailing) {
@@ -199,7 +229,12 @@ struct FeedMineApp: App {
                     // A selection made in the source surface is adopted when it closes, never mid-list, and the
                     // appearance is re-derived because the settings surface may have changed it.
                     appearance = composition.currentAppearance()
-                    Task { await composition.adoptSelectionChange() }
+                    Task {
+                        await composition.adoptSelectionChange()
+                        // The settings' own content filters decide what every surface hides; a change there is a
+                        // change to what the session applies, so it is re-applied when that surface closes.
+                        await composition.reapplyReaderFilters()
+                    }
                 }) { surface in
                     switch surface {
                     case .sources:
@@ -227,6 +262,8 @@ struct FeedMineApp: App {
                         }
                     case .curatedHood:
                         curatedHood
+                    case .addFeed:
+                        addFeedSheet
                     case .export:
                         exportSheet
                     case .filters:
@@ -261,9 +298,23 @@ struct FeedMineApp: App {
                     case .settings:
                         NavigationStack {
                             if let store = settingsStore {
+                                // The options the discovery preferences offer come from the catalogue itself.
+                                let options = composition.onboardingOptions()
                                 ReaderSettingsView(store: store, appearance: appearance,
                                     period: ReaderPeriod.from(hour: Calendar.current.component(.hour, from: Date())),
                                     storageDescription: composition.libraryStorageDescription(),
+                                    contentFilterStore: composition.makeContentFilterStore(),
+                                    discoveryLanguages: options.languages, discoveryTopics: options.topics,
+                                    discoveryPlaces: options.regions,
+                                    // F02 keeps the reader's ability to state rules once and keep them: a feed of
+                                    // their own is created here, and creating never activates it.
+                                    onCreateCuratedFeed: { recipe, name in
+                                        try? composition.saveCuratedFeed(recipe, named: name)?.key
+                                    },
+                                    onOpenCuratedFeed: { key in
+                                        popSurface()
+                                        try? await composition.activateSavedPreset(key)
+                                    },
                                     onClose: { popSurface() })
                             } else {
                                 ProgressView("Abrindo os ajustes")
@@ -376,7 +427,16 @@ struct FeedMineApp: App {
                 composition.onExternalURL = { url in
                     // U2: the reader is pushed over the surface the reader is on — a card in the feed, or the
                     // saved list inside the boxes sheet — and closing it returns to exactly that surface.
-                    pushReader(ReaderPage(url: url))
+                    // This path is the *explicit* request for the site: a card action, a source page.
+                    pushReader(.site(url))
+                }
+                // U-reading: a card's tap asks the composition where it is read, and the answer may be text the
+                // app already holds. Opening it reads nothing: no acquisition, no extraction, no cache.
+                composition.onReading = { target in
+                    switch target {
+                    case .local(let content): pushReader(.local(content))
+                    case .site(let url): pushReader(.site(url))
+                    }
                 }
                 // T9: a card's share action opens the platform sheet; the app presents it, no renderer does.
                 composition.onShare = { link in sharedLink = link }
@@ -384,6 +444,7 @@ struct FeedMineApp: App {
                 boxesStore = composition.makeBookmarkBoxesStore()
                 collectionsStore = composition.makeCollectionsStore()
                 settingsStore = composition.makeReaderSettingsStore()
+                addFeedStore = composition.makeAddFeedStore()
                 appearance = composition.currentAppearance()
                 // T11: the first launch meets the app. V1 forced the gate in its own UI tests with launch
                 // arguments; a run that is testing something *else* says so and keeps the gate out of the way.
@@ -407,10 +468,16 @@ struct FeedMineApp: App {
                         present(.curatedHood)
                     case .curatedDeletion:
                         readerError = String(localized: "Excluir este feed curado?")
-                    case .export, .collectionExport, .addFeed:
+                    case .export, .collectionExport:
                         exportRequest = ReaderExportRequest(scope: .selection, format: .opml)
                         exportText = composition.exportPreview(exportRequest)
                         present(.export)
+                    case .addFeed, .addFeedToCollection:
+                        // V1's two entries open the same sheet; the collection's own entry starts with that
+                        // collection already chosen, which is what its label promises.
+                        addFeedStore?.selectedCollectionID = destination == .addFeedToCollection
+                            ? collectionPresetID : nil
+                        present(.addFeed)
                     case .collectionFromContextPrompt:
                         promptName = ""
                         libraryPrompt = .collectSources
@@ -445,6 +512,18 @@ struct FeedMineApp: App {
                     Task { await composition.foreground() }
                 }
             }
+            // Round 10: the invitations come back from the preferences that hid them ("Mostrar sugestões do
+            // FeedMine"), and the feed's own session flag is cleared with them — the reader's explicit act, not a
+            // timer, is what restores the offers. That single act also clears the penalty the hidden period left
+            // behind; the distance already read still counts, so re-enabling never drops a block on the reader.
+            .onChange(of: settingsStore?.settings.editorialTipsHidden) { _, hidden in
+                guard hidden == false else { return }
+                editorialTipsHidden = false
+                cadence.reenabled(cardsTraversed: composition.editorialExposure.count)
+            }
+            // One interface language for the whole app: the bundle's own resolution of the reader's device
+            // settings. Copy, dates and numbers all read from it, so a screen cannot mix two languages.
+            .environment(\.locale, CatalogLanguageNaming.interfaceLocale)
         }
     }
 
@@ -546,11 +625,20 @@ struct FeedMineApp: App {
     }
 
     /// T9: the article the reader opened, with the playback bar kept visible inside it (V1's own reader).
+    /// U-reading: the same presentation carries the local reading surface, so a card's text and a card's site are
+    /// one place to come back from — the surface that asked for them survives either way.
     @ViewBuilder private func readerBody(_ page: ReaderPage, close: @escaping () -> Void) -> some View {
         VStack(spacing: 0) {
-            // SafariServices owns the reader's close control, so its finish comes back here: the host owns the
-            // presentation, and the state it was presented from is what goes away.
-            InAppBrowser(url: page.url, onFinish: close)
+            switch page {
+            case .site(let url):
+                // SafariServices owns the reader's close control, so its finish comes back here: the host owns the
+                // presentation, and the state it was presented from is what goes away.
+                InAppBrowser(url: url, onFinish: close)
+            case .local(let content):
+                let openSite: (() -> Void)? = content.siteURL.map { url in { pushReader(.site(url)) } }
+                FeedReadingSurface(content: content, appearance: composition.currentAppearance(),
+                    onOpenSite: openSite, onClose: close)
+            }
             if composition.mediaState.item != nil {
                 MiniPlayerBar(state: composition.mediaState,
                     onToggle: { Task { await composition.toggleMedia() } },
@@ -565,10 +653,15 @@ struct FeedMineApp: App {
         let options = composition.onboardingOptions()
         ReaderOnboardingView(recipe: .neutral(languages: [Self.deviceLanguage]), isFirstRun: true,
             previewCards: composition.onboardingPreviewCards(),
-            topics: options.topics, languages: options.languages,
+            topics: options.topics, regions: options.regions, languages: options.languages,
             deviceLanguage: Self.deviceLanguage,
-            onSave: { recipe, name, isBroad in
-                Task { await completeOnboarding(with: recipe, named: name, isBroad: isBroad) }
+            // F02: the first run's answers are the reader's discovery profile, and the feed is the destination —
+            // no feed is created to be activated, and no name is asked for.
+            onSave: { recipe in
+                // The reader leaves the first run at once: the answers rebuild the session from the catalogue
+                // (a query measured in seconds), and nobody should be held on a cover while that happens.
+                showsOnboarding = false
+                Task { await composition.completeFirstRun(discovery: recipe) }
             },
             onClose: {
                 composition.completeOnboarding()
@@ -576,14 +669,145 @@ struct FeedMineApp: App {
             })
     }
 
-    /// Saving the Composer's recipe: the feed is stored, activated, and the reader has met the app.
-    private func completeOnboarding(with recipe: FeedRecipeDefinition, named name: String, isBroad: Bool) async {
-        if let preset = try? composition.saveCuratedFeed(recipe, named: name) {
-            try? await composition.activateSavedPreset(preset.key)
-        } else if isBroad {
-            // "Start broad" with nothing savable is still a start: the reader has met the app either way.
-            try? await composition.selectContext(.main)
+    /// F02: the feed presents what discovery found, and the reader answers **in place**. The invitation appears
+    /// where there is something truthful to ask — a card the app itself went and found, about a subject the reader
+    /// has not answered about yet — within a **budget over what they were really exposed to**, never in a flood,
+    /// and never on the reader's own sources.
+    ///
+    /// The budget is counted in cards the visual capture actually presented (`EditorialInvitationCadence`), so a
+    /// rendered window is not an exposure. `index` — the card's place in the admitted window — deliberately no
+    /// longer decides anything: what the reader was exposed to is what counts.
+    @MainActor private func editorialInvitation(for card: PresentationCard, index: Int,
+        previous: PresentationCard?, association: FeedAssociation) -> AnyView? {
+        let tipsHidden = editorialTipsHidden || composition.editorialTipsHidden
+        let traversed = composition.editorialExposure.count
+        // A session begins when the reader's context changes. A foreground and an internal rebuild of the same
+        // context — answering an invitation rebuilds the session — deliberately do not begin one.
+        cadence.beginSession(key: composition.currentContextKey, cardsTraversed: traversed)
+        cadence.setHidden(tipsHidden)
+        guard let source = card.sourceID,
+            let subject = composition.editorialSubject(for: source, in: association) else {
+            return nil
         }
+        // Codex's finding 1: a block that was offered keeps its card. The reader answered *there*, and that is
+        // where the way back lives.
+        if let hosted = cadence.hosts[card.id], hosted.subject == subject.nodeKey {
+            // The form travels with the offer: a block that comes back as the full question after the reader met
+            // the compact one would be a different offer than the one that was made. The **hidden** state applies
+            // here too — a block that was already offered is exactly the one the reader sees when they press
+            // "Esconder dicas", and wrapping only the newly offered ones left every visible block reachable
+            // (measured on the device, 2026-10-11).
+            return presented(invitation(subject, card: card, association: association,
+                isCompact: hosted.isCompact), tipsHidden: tipsHidden, on: card.id,
+                isCompact: hosted.isCompact)
+        }
+        // **Where the feed moves to a subject**, not on a clock: a fixed cadence offered the same subject over and
+        // over and, in one whole profile, never offered a second one (the acceptance driver could declare only one
+        // of the two answers the benchmark requires).
+        if let previous, previous.sourceID == source {
+            return nil
+        }
+        let answered = inFeedAnswers[subject.nodeKey] ?? composition.declaredLevel(forNode: subject.nodeKey)
+        // A subject answered in an earlier session is not asked about again; one answered **here** keeps its block,
+        // because that block is where the way back lives.
+        if answered != nil, inFeedAnswers[subject.nodeKey] == nil {
+            return nil
+        }
+        // The budget: how much was already offered, how many cards the reader has been exposed to since, and
+        // whether they asked for the offers to stop. Every refusal is stated by the policy, not by an unnamed
+        // `return nil`.
+        //
+        // A card the reader has **already been exposed to** is not offered on (architect, 2026-10-11): the window
+        // the feed renders reaches behind the reader, and a block placed there is one the reader will never see —
+        // measured on the real catalogue, where the app's own trace showed the offers being made while the walk
+        // never met them. An offer belongs where the reader is going.
+        guard !composition.editorialExposure.wasExposed(card.id) else { return nil }
+        guard cadence.decision(subject: subject.nodeKey, isAnswered: answered != nil,
+            cardsTraversed: traversed) == nil else { return nil }
+        // The session's first offer asks the full question; the ones after it are compact (the same actions in
+        // less space), which is what the PO's acceptance criteria asked for in so many words.
+        let isCompact = cadence.offersShown > 0
+        cadence.offered(subject: subject.nodeKey, on: card.id, cardsTraversed: traversed,
+            isCompact: isCompact)
+        composition.recordEditorialOffer(subject: subject.nodeKey, cardsTraversed: traversed,
+            offersShown: cadence.offersShown, interval: cadence.interval)
+        // Hidden means **invisible**, not removed: the layout slot is the reader's, and taking rows out of the feed
+        // moved their anchored card by 128 pt (measured twice). What the reader asked for was to stop seeing the
+        // invitations, not to have the feed shift under them. Hidden also leaves the accessibility tree, because a
+        // control nobody can see is not a control VoiceOver may offer.
+        let block = invitation(subject, card: card, association: association, isCompact: isCompact)
+        return presented(block, tipsHidden: tipsHidden, on: card.id, isCompact: isCompact)
+    }
+
+    /// A block as the reader has asked for it to be shown. Hidden means invisible **and out of the tree**: a
+    /// control nobody can see is not a control VoiceOver may offer, and `accessibilityHidden` alone left the
+    /// buttons reachable in the tree (measured on the device, 2026-10-11). The layout slot stays, because moving
+    /// rows out of the feed moved the reader's anchored card by 128 pt (measured twice).
+    @MainActor private func presented(_ block: AnyView, tipsHidden: Bool, on card: PublicationCardID,
+        isCompact: Bool) -> AnyView {
+        guard tipsHidden else {
+            // The block reports the room its content takes while it is really on screen, and it is drawn inside
+            // the slot it was given the first time: the reader's layout is theirs, so the block may not pull the
+            // cards under it up when its own form changes (answering makes it shorter — measured by B04).
+            let measured = cadence.height(of: card)
+            let measuredBlock = block.onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
+                cadence.remember(height: height, of: card, isCompact: isCompact)
+            }
+            guard let measured else { return AnyView(measuredBlock) }
+            return AnyView(measuredBlock.frame(height: measured, alignment: .leading))
+        }
+        // Nothing of the suggestion is drawn at all: not a control, not a word. Marking a block as hidden left
+        // both its buttons and its texts in the accessibility tree (measured on the device, 2026-10-11), and the
+        // reader asked for the invitations to stop — so the surface draws the room they took and nothing else.
+        return AnyView(Color.clear.frame(height: cadence.slotHeight(of: card, isCompact: isCompact) ?? 0))
+    }
+
+    /// The block itself, rendered wherever its host card is. It always reads the *current* answer, so voting and
+    /// taking it back are visible without the block moving.
+    @MainActor private func invitation(_ subject: AppComposition.EditorialSubject,
+        card: PresentationCard, association: FeedAssociation, isCompact: Bool) -> AnyView {
+        let answered = inFeedAnswers[subject.nodeKey] ?? composition.declaredLevel(forNode: subject.nodeKey)
+        return AnyView(FeedEditorialInvitationView(subjectName: subject.name, nodeKey: subject.nodeKey,
+            answered: answered, isCompact: isCompact,
+            // The surface shows the answer the app really has: a vote that could not be persisted or applied is
+            // taken back on screen, and the failure stays visible in the trace (Codex's finding 4).
+            onVote: { level in
+                inFeedAnswers[subject.nodeKey] = level
+                cadence.answered(subject: subject.nodeKey)
+                Task {
+                    if await composition.voteOnTopic(nodeKey: subject.nodeKey, level: level) == false {
+                        inFeedAnswers[subject.nodeKey] = nil
+                    }
+                }
+            },
+            onUndo: {
+                inFeedAnswers[subject.nodeKey] = nil
+                Task {
+                    if await composition.voteOnTopic(nodeKey: subject.nodeKey, level: .neutral) == false {
+                        inFeedAnswers[subject.nodeKey] = nil
+                    }
+                }
+            },
+            onHide: {
+                editorialTipsHidden = true
+                cadence.setHidden(true)
+                composition.setEditorialTipsHidden(true)
+            }))
+    }
+
+    /// The facts the invitation depends on, recorded once per window change — off the render path. The cards now
+    /// carry their own source, so this is arithmetic over a value, not a database read per card.
+    @MainActor private func recordWindowFacts(of association: FeedAssociation) {
+        let cards = association.store.state.presentation?.window.items ?? []
+        let resolved = cards.compactMap(\.sourceID)
+        let withSubject = resolved.filter { composition.editorialSubject(for: $0, in: association) != nil }.count
+        composition.recordWindowFacts(cards: cards.count, resolvedSources: resolved.count,
+            withSubject: withSubject, tipsHidden: composition.editorialTipsHidden,
+            traversed: composition.editorialExposure.count, offersShown: cadence.offersShown)
+    }
+
+    /// The reader has met the app without answering anything: the shortcut out of the first run.
+    private func completeOnboarding() async {
         composition.completeOnboarding()
         showsOnboarding = false
     }
@@ -651,6 +875,31 @@ struct FeedMineApp: App {
         }
     }
 
+    /// V1's "Add Feeds" sheet. The store (resolution, storage, collections) belongs to the composition; the
+    /// host only draws it and, when it closes, adopts the selection change it produced — the added feeds become
+    /// the session's own sources.
+    @ViewBuilder private var addFeedSheet: some View {
+        if let store = addFeedStore {
+            NavigationStack {
+                ReaderAddFeedView(store: store, appearance: appearance,
+                    targetCollectionName: targetCollectionName, onClose: { popSurface() })
+            }
+        } else {
+            ProgressView("Abrindo as fontes")
+        }
+    }
+
+    /// The collection the reader is reading, when the menu entry was the collection's own.
+    private var targetCollectionName: String? {
+        guard case .collection = composition.currentPreset, let id = collectionPresetID else { return nil }
+        return collectionsStore?.collections.first { $0.id == id }?.name
+    }
+
+    private var collectionPresetID: String? {
+        if case .collection(let id) = composition.currentPreset { return id }
+        return nil
+    }
+
     /// The exported file, as the platform share surface takes it: "Save to Files" comes with the same sheet.
     private func writtenExport() -> SharedLink? {
         guard let url = composition.writeExport(exportRequest) else { return nil }
@@ -711,7 +960,7 @@ struct FeedMineApp: App {
         let chips = ReaderFilterLens.chips(filter: filter, preset: composition.currentPreset,
             presetName: nil, searchQuery: nil,
             languageNames: Dictionary(uniqueKeysWithValues: composition.filterLanguages()
-                .map { ($0.code, $0.displayName) }))
+                .map { ($0.languageCode, $0.displayName) }))
         if hiddenLensSignature != signature(of: filter, chips) {
             ReaderFilterLens(chips: chips,
                 onRemove: { chip in
@@ -728,7 +977,16 @@ struct FeedMineApp: App {
     }
 
     private func switchContext(_ request: FeedContextRequest) {
-        Task { do { try await composition.selectContext(request) } catch { readerError = String(describing: error) } }
+        Task {
+            do { try await composition.selectContext(request) }
+            catch {
+                // R5: a raw error description is diagnostics, never the reader's copy.
+                #if DEBUG
+                print("context switch failed: \(String(describing: error))")
+                #endif
+                readerError = String(localized: "Não foi possível mudar de contexto agora.")
+            }
+        }
     }
 
     /// T5: the status chip carries the reading context. V1 stated the active context here and the
@@ -773,8 +1031,10 @@ struct FeedMineApp: App {
     private var activeContextLabel: String? {
         switch composition.currentContext {
         case .main: return nil
-        case .source(let id): return composition.feeds.first { $0.sourceID == id }?.displayName ?? "Uma fonte"
-        case .search(let context): return "Busca: \(context.query)"
+        case .source(let id):
+            return composition.feeds.first { $0.sourceID == id }?.displayName
+                ?? String(localized: "Uma fonte")
+        case .search(let context): return String(localized: "Busca: \(context.query)")
         }
     }
 }

@@ -5,25 +5,186 @@
 // imports Runtime, so these values must live here and not in Composition.
 
 import Foundation
+import FeedMineDomain
 
 /// One language the catalogue declares, as the reader's sheet shows it.
 public struct CatalogLanguageSummary: Hashable, Sendable, Identifiable {
     public let code: String
+    /// The language's own name in the interface language — never the code, never a region.
     public let displayName: String
+    /// The region this code names (`en-US` → the United States' name), nil when the code names a language only.
+    /// A region is information about a variant, never a second way to choose the same language.
+    public let regionName: String?
     /// Enabled (selected) sources for this language, and the total the catalog holds.
     public let enabledSources: Int
     public let totalSources: Int
     /// `und`/empty: a bucket, never a choice a reader makes.
     public let isUndeclared: Bool
 
-    public init(code: String, displayName: String, enabledSources: Int, totalSources: Int,
-        isUndeclared: Bool) {
-        self.code = code; self.displayName = displayName; self.enabledSources = enabledSources
+    public init(code: String, displayName: String, regionName: String? = nil, enabledSources: Int,
+        totalSources: Int, isUndeclared: Bool) {
+        self.code = code; self.displayName = displayName; self.regionName = regionName
+        self.enabledSources = enabledSources
         self.totalSources = totalSources; self.isUndeclared = isUndeclared
     }
 
     public var id: String { code }
-    public var primarySubtag: String { String(code.prefix(while: { $0 != "-" && $0 != "_" })).lowercased() }
+    public var primarySubtag: String { ReaderLanguageCode.choice(code) }
+    /// Whether this code names a region on top of the language (`en` does not, `en-US` does).
+    public var hasRegion: Bool { primarySubtag != code.lowercased() }
+    /// The label a variant row shows: the language, and its region when the code names one.
+    public var variantLabel: String { regionName.map { "\(displayName) (\($0))" } ?? displayName }
+}
+
+/// One language the reader chooses, with its regional variants kept as information.
+///
+/// The catalogue declares 257 codes (`en`, `en-US`, `en-GB`, `pt`, `pt-BR`…); a reader chooses a language, and
+/// the engine matches a source's own code by its primary subtag. A group is therefore the choice, and the
+/// variants are what the catalogue holds under it — never a second identity for the same language.
+public struct CatalogLanguageGroup: Hashable, Sendable, Identifiable {
+    /// The primary subtag: the identity every surface persists, and the one the engine matches.
+    public let languageCode: String
+    /// The language's name in the interface language.
+    public let displayName: String
+    /// Every source the catalogue holds for the variants: what "fontes disponíveis" counts.
+    public let availableSources: Int
+    /// The subset the reader's own source selection leaves enabled; a different fact, never shown as the same
+    /// number.
+    public let enabledSources: Int
+    /// `und`/empty: a bucket that says so, never a choice.
+    public let isUndeclared: Bool
+    /// The catalogue's own codes under this language, biggest first.
+    public let variants: [CatalogLanguageSummary]
+
+    public init(languageCode: String, displayName: String, availableSources: Int, enabledSources: Int,
+        isUndeclared: Bool, variants: [CatalogLanguageSummary]) {
+        self.languageCode = languageCode; self.displayName = displayName
+        self.availableSources = availableSources; self.enabledSources = enabledSources
+        self.isUndeclared = isUndeclared; self.variants = variants
+    }
+
+    public var id: String { languageCode }
+    /// True when naming the region adds something: a language declared once has nothing to expand.
+    public var hasRegionVariants: Bool { variants.contains { $0.hasRegion } }
+
+    /// The catalogue's rows as the reader's choices, in the order the catalogue gave them: biggest language
+    /// first, the undeclared bucket last. Order is the catalogue's own, so a group never jumps around as the
+    /// snapshot changes.
+    public static func groups(_ languages: [CatalogLanguageSummary]) -> [CatalogLanguageGroup] {
+        var order: [String] = []
+        var grouped: [String: [CatalogLanguageSummary]] = [:]
+        for language in languages {
+            let key = language.primarySubtag
+            if grouped[key] == nil { order.append(key) }
+            grouped[key, default: []].append(language)
+        }
+        return order.compactMap { key in
+            guard let variants = grouped[key], let first = variants.first else { return nil }
+            return CatalogLanguageGroup(
+                languageCode: key,
+                displayName: first.displayName,
+                availableSources: variants.reduce(0) { $0 + $1.totalSources },
+                enabledSources: variants.reduce(0) { $0 + $1.enabledSources },
+                isUndeclared: variants.allSatisfy(\.isUndeclared),
+                variants: variants)
+        }
+    }
+}
+
+/// The one place a language or region code becomes a label, so every surface names a language the same way.
+public enum CatalogLanguageNaming {
+    /// The language the interface is in: the bundle's own resolution of the reader's device settings, which is
+    /// what "the interface follows the device" means — the app's per-app override included, English when the
+    /// device asks for a language FeedMine does not ship.
+    public static var interfaceLocale: Locale {
+        Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en")
+    }
+
+    /// The language's name in the interface language. An undeclared or unknown code says so instead of
+    /// pretending to be a language nobody chose.
+    public static func displayName(forLanguageCode code: String,
+        in locale: Locale = CatalogLanguageNaming.interfaceLocale) -> String {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return String(localized: "Idioma não declarado") }
+        let primary = String(trimmed.prefix(while: { $0 != "-" && $0 != "_" })).lowercased()
+        guard primary != "und" else { return String(localized: "Idioma não declarado") }
+        return locale.localizedString(forLanguageCode: primary)?.capitalized ?? trimmed
+    }
+
+    /// The region a code names, in the interface language, or nil when the code names a language only.
+    public static func regionName(forLanguageCode code: String,
+        in locale: Locale = CatalogLanguageNaming.interfaceLocale) -> String? {
+        regionCode(forLanguageCode: code).flatMap { locale.localizedString(forRegionCode: $0) }
+    }
+
+    /// The region subtag (`en-US` → `US`), nil when the code carries none or carries a script.
+    public static func regionCode(forLanguageCode code: String) -> String? {
+        let parts = code.split(whereSeparator: { $0 == "-" || $0 == "_" }).dropFirst()
+        guard let region = parts.first(where: { $0.count == 2 && $0.allSatisfy(\.isLetter) }) else { return nil }
+        return region.uppercased()
+    }
+
+    /// A code as a choice: the primary subtag, lowercased — what every surface persists.
+    public static func choiceCode(_ code: String) -> String { ReaderLanguageCode.choice(code) }
+
+    /// The one number a language row shows — what the catalogue holds — under one name everywhere, so two
+    /// surfaces cannot count different things with the same words.
+    public static func availableSourcesLabel(_ count: Int,
+        in locale: Locale = CatalogLanguageNaming.interfaceLocale) -> String {
+        String(localized: "\(numberLabel(count, in: locale)) fontes disponíveis")
+    }
+
+    /// A plain count in the interface language's own grouping (`26.012` for pt-BR, `26,012` for en).
+    public static func numberLabel(_ count: Int,
+        in locale: Locale = CatalogLanguageNaming.interfaceLocale) -> String {
+        count.formatted(.number.locale(locale))
+    }
+}
+
+/// The one place a country the catalogue names becomes a label in the interface language.
+public enum CatalogRegionNaming {
+    /// A name the reversal cannot place keeps the catalogue's own: an untranslated label is honest, an invented
+    /// one is not.
+    public static func localizedName(_ catalogueName: String,
+        in locale: Locale = CatalogLanguageNaming.interfaceLocale) -> String {
+        guard let code = regionCode(forCatalogueName: catalogueName) else { return catalogueName }
+        return locale.localizedString(forRegionCode: code) ?? catalogueName
+    }
+
+    /// The catalogue names a country by its English name (`90_countries/south_africa`), so the reversal is
+    /// Foundation's own list of regions read backwards. Built once: 292 regions, no network, no table.
+    public static func regionCode(forCatalogueName name: String) -> String? { codesBySlug[slug(name)] }
+
+    private static let codesBySlug: [String: String] = {
+        let english = Locale(identifier: "en")
+        var map: [String: String] = [:]
+        for region in Locale.Region.isoRegions {
+            guard let name = english.localizedString(forRegionCode: region.identifier) else { continue }
+            let key = slug(name)
+            guard !key.isEmpty, map[key] == nil else { continue }
+            map[key] = region.identifier
+        }
+        return map
+    }()
+
+    /// `South Africa` and `south_africa` are the same name; accents and punctuation are the only difference
+    /// between the catalogue's slugs and Foundation's.
+    static func slug(_ name: String) -> String {
+        let folded = name.folding(options: [.diacriticInsensitive, .caseInsensitive],
+            locale: Locale(identifier: "en"))
+        var out = ""
+        var pendingSeparator = false
+        for scalar in folded.unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                if pendingSeparator, !out.isEmpty { out.append("_") }
+                pendingSeparator = false
+                out.unicodeScalars.append(scalar)
+            } else {
+                pendingSeparator = true
+            }
+        }
+        return out
+    }
 }
 
 /// One taxonomy node, as the reader's browser shows it.

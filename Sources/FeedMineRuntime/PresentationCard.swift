@@ -38,6 +38,10 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     public let title: String?
     public let primaryText: String?
     public let timestamp: PresentationTimestamp?
+    /// Which source this card came from: the frozen publication's own identity. A surface that wants to say
+    /// something about the source the reader is reading (F02's invitation) needs to know which one it is, and
+    /// asking the database per card during a render was both a cost and a race.
+    public let sourceID: SourceID?
     public let sourceDisplayName: String?
     public let providerDisplayName: String?
     public let layout: PresentationCardLayout
@@ -49,12 +53,14 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     /// Residency-only reconstruction: identical frozen values with different decoded pixels.
     /// Internal on purpose — no external snapshot factory crosses the Runtime boundary.
     init(id: PublicationCardID, title: String?, primaryText: String?, timestamp: PresentationTimestamp?,
-        sourceDisplayName: String?, providerDisplayName: String?, layout: PresentationCardLayout,
+        sourceID: SourceID?, sourceDisplayName: String?, providerDisplayName: String?,
+        layout: PresentationCardLayout,
         mediaAspectRatio: Double?, primaryActionKind: PresentationPrimaryActionKind?, image: PresentationImage?) {
         self.id = id
         self.title = title
         self.primaryText = primaryText
         self.timestamp = timestamp
+        self.sourceID = sourceID
         self.sourceDisplayName = sourceDisplayName
         self.providerDisplayName = providerDisplayName
         self.layout = layout
@@ -66,7 +72,7 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     /// The same frozen card with different decoded pixels. Identity, layout, aspect ratio, text and the
     /// action are untouched: decoded pixels are residency, never identity.
     func withDecodedImage(_ image: PresentationImage?) -> PresentationCard {
-        PresentationCard(id: id, title: title, primaryText: primaryText, timestamp: timestamp,
+        PresentationCard(id: id, title: title, primaryText: primaryText, timestamp: timestamp, sourceID: sourceID,
             sourceDisplayName: sourceDisplayName, providerDisplayName: providerDisplayName, layout: layout,
             mediaAspectRatio: mediaAspectRatio, primaryActionKind: primaryActionKind, image: image)
     }
@@ -82,6 +88,7 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
         id = publishedCard.id
         title = publishedCard.text.title
         primaryText = publishedCard.text.primaryText
+        sourceID = publishedCard.origin.sourceID
         sourceDisplayName = publishedCard.origin.sourceDisplayName
         providerDisplayName = publishedCard.origin.providerDisplayName
         timestamp = publishedCard.timestamp.map { timestamp in

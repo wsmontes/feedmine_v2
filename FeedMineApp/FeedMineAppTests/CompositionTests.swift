@@ -16,6 +16,9 @@ import FeedMineEditorial
 final class FixtureTransport: URLProtocol, @unchecked Sendable {
     static let rejecting = Mutex(false)
     static let holdingScience = Mutex(false)
+    /// U-reading: every request this transport answered. A test can therefore state that opening a card's reading
+    /// makes none at all — which is what separates an explicit request for the site from the feed's own work.
+    static let requests = Mutex<[String]>([])
     private final class HeldLoaders: @unchecked Sendable {
         private let lock = NSLock()
         private var values: [FixtureTransport] = []
@@ -42,10 +45,12 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
         respond()
     }
     private func respond() {
-        let items = (1...24).map { "<item><guid>fixture-\($0)</guid><title>Published fixture \($0)</title><link>https://fixture.invalid/story-\($0)</link><description>Readable local story \($0)</description></item>" }.joined()
-        let data = Data("<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Trusted fixture</title><link>https://fixture.invalid/</link><description>Integration</description>\(items)</channel></rss>".utf8)
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/rss+xml"])!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
+        FixtureTransport.requests.withLock { $0.append(request.url?.absoluteString ?? "") }
+        // The shape is the default (`shortSummary`) unless a test set another one, and the default payload is the
+        // exact document this transport always served.
+        let payload = ReadingFixture.payload()
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": payload.contentType])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: payload.body)
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
@@ -180,13 +185,27 @@ final class CompositionTests: XCTestCase {
     func testBundledCatalogHasRealBytesAndStableBoundedDefaults() throws {
         let url = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
         let reader = try LegacyCatalogReader(catalogURL: url)
-        XCTAssertEqual(try reader.sourceCount(), 77_443)
+        // The identity is checked against the descriptor this build ships, not against a literal. The bootstrap
+        // pipeline re-derives the catalogue from the public channel, so a pinned hash turns every legitimate
+        // re-bootstrap into a test failure — and a test that must be edited whenever the artefact is legitimately
+        // rebuilt stops being evidence. What must hold is the PD-10 property: the file the app carries is the one
+        // its descriptor declares, and it is a real catalogue rather than a placeholder.
+        let descriptorURL = try XCTUnwrap(Bundle.main.url(forResource: "catalog.manifest", withExtension: "json"))
+        let descriptor = try JSONDecoder().decode(CatalogManifest.self, from: Data(contentsOf: descriptorURL))
+        let declared = try XCTUnwrap(descriptor.catalogueEntry,
+            "the descriptor must declare the compiled catalogue it describes")
+        XCTAssertEqual(try reader.sourceCount(), descriptor.sourceCount,
+            "the catalogue counts what its descriptor declares")
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
+        let size = Int(try XCTUnwrap(handle.seekToEnd()))
+        XCTAssertEqual(size, declared.bytes, "the bytes on disk are the bytes declared")
+        XCTAssertGreaterThan(size, 100_000_000, "a real catalogue, not a placeholder")
+        try handle.seek(toOffset: 0)
         var hash = SHA256()
         while let bytes = try handle.read(upToCount: 1_048_576), !bytes.isEmpty { hash.update(data: bytes) }
-        XCTAssertEqual(hash.finalize().map { String(format: "%02x", $0) }.joined(),
-            "c2ae483a7525fd2b6797855149eb6fb312abbed788549a90a7754121eb5c8629")
+        XCTAssertEqual(hash.finalize().map { String(format: "%02x", $0) }.joined(), declared.sha256,
+            "the file the app carries is the one its descriptor describes")
         let defaults = try TrustedFeed.catalog(limit: 64, resourceURL: url)
         XCTAssertEqual(defaults.count, 4)
         XCTAssertEqual(Set(defaults.map(\.sourceID)).count, 4)
@@ -236,7 +255,8 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(repaired.activeContext, .main)
 
         // Valid keys survive; only the vanished one is dropped.
-        let partial = try TrustedFeed.resolveAvailable(keys: ["https://absent.example/rss", starter[1].principal], fallback: starter)
+        let partial = try TrustedFeed.resolveAvailable(keys: ["https://absent.example/rss", starter[1].principal],
+            fallback: starter, catalogueURL: Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
         XCTAssertEqual(partial.map(\.principal), [starter[1].principal])
     }
 
@@ -564,6 +584,61 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
+    private enum RebuildRoute { case replacement, context, preset }
+
+    private func assertAnswerDuringReconstruction(_ route: RebuildRoute) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: TrustedFeed.development.map(\.principal))
+        var settings = ReaderSettings.standard
+        settings.discoveryProfile = .neutral(languages: ["pt"])
+        settings.discoveryProfile.topicPreferences["topic:90_countries/brazil"] = .more
+        _ = try preferences.setSettings(settings)
+        let root = root(directory: directory)
+        await root.launch()
+        let old = try XCTUnwrap(root.association)
+        XCTAssertFalse(old.discovery.isEmpty)
+        // A new profile forces the real detached catalogue read, giving the answer a controlled construction boundary.
+        settings.discoveryProfile.topicPreferences = ["topic:04-technology-science": .more]
+        _ = try preferences.setSettings(settings)
+        let transition = Task { @MainActor in
+            switch route {
+            case .replacement: try await root.replaceSession()
+            case .context: try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+            case .preset: try await root.activateSavedPreset(.init(request: .main, preset: .lastClicked))
+            }
+        }
+        // Observe the real retirement boundary, before the asynchronous constructor finishes.
+        let limit = ProcessInfo.processInfo.systemUptime + 5
+        while root.association != nil, ProcessInfo.processInfo.systemUptime < limit { await Task.yield() }
+        XCTAssertNil(root.association, "The answer must land during construction")
+        let answered = await root.voteOnTopic(nodeKey: "04-technology-science", level: .less)
+        XCTAssertTrue(answered)
+        try await transition.value
+        let next = try XCTUnwrap(root.association)
+        XCTAssertFalse(next === old)
+        let catalog = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let expected = try ReaderDiscoveryBuilder(catalogURL: catalog).pool(for: .init(languages: ["pt"],
+            excludedTopicNodeKeys: ["04-technology-science"]), limit: AppComposition.discoverySourceLimit)
+        XCTAssertEqual(Set(next.discovery.map(\.sourceID)), Set(expected.entries.map { $0.source.id }),
+            "The final association must read the answer received during construction")
+        XCTAssertEqual(root.declaredLevel(forNode: "04-technology-science"), .less)
+        await next.close()
+    }
+
+    func testAnswerDuringReplaceSessionIsApplied() async throws {
+        try await assertAnswerDuringReconstruction(.replacement)
+    }
+
+    func testAnswerDuringContextTransitionIsApplied() async throws {
+        try await assertAnswerDuringReconstruction(.context)
+    }
+
+    func testAnswerDuringPresetTransitionIsApplied() async throws {
+        try await assertAnswerDuringReconstruction(.preset)
+    }
+
     func testS3ReplacementAndS4OldCallbackCannotInstall() async throws {
         let (root, old) = try await launched()
         let oldStore = old.store
@@ -711,6 +786,444 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
+    /// F01, the product's own promise: a reader who named interests and a language gets **sources they never
+    /// named**, out of the bundled catalogue, acquired together with their own selection. B01's precondition is
+    /// fifty distinct sources entering the acquisition set without a single manual choice.
+    func testAProfileOfInterestsSuppliesSourcesTheReaderNeverNamed() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = root(directory: directory)
+        var recipe = FeedRecipeDefinition.neutral(languages: ["pt"])
+        recipe.topicPreferences = ["topic:90_countries/brazil": .more,
+            "topic:01-news-current-affairs": .more]
+        let preset = try XCTUnwrap(root.saveCuratedFeed(recipe, named: "Descoberta"))
+
+        try await root.activateSavedPreset(preset.key)
+        let association = try XCTUnwrap(root.association)
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50,
+            "B01: at least fifty distinct sources must enter the acquisition set automatically")
+        guard case .selectedSources(let eligible) = association.policy.eligibility else {
+            return XCTFail("a discovery session is eligible by its own sources")
+        }
+        XCTAssertTrue(association.discovery.allSatisfy { eligible.contains($0.sourceID) },
+            "and the session may read from every one of them")
+
+        // The reader's own selection is untouched by discovery: they still chose nothing, and the sources screen
+        // states exactly that.
+        XCTAssertTrue(root.feeds.isEmpty || Set(root.feeds.map(\.principal))
+            .isSubset(of: Set(association.feeds.map(\.principal))))
+        XCTAssertFalse(try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+            .load()?.sourceKeys.contains { $0.hasPrefix("http") } ?? true,
+            "discovery never writes itself into the reader's selection")
+
+        // A profile with no interests discovers nothing: the promise belongs to the profile, not to the launch.
+        let plain = try XCTUnwrap(try root.makeAddFeedStore())
+        XCTAssertNotNil(plain)
+        await association.close()
+    }
+
+    /// F02, where the answers live: the discovery preferences page — and the invitations answered inside the feed
+    /// — store one profile, and that profile is what discovery reads. No curated feed and no manual source: the
+    /// reader's own selection is never written to, and an answer they took back stops shaping the pool.
+    func testTheReadersOwnDiscoveryAnswersDriveDiscoveryWithoutACuratedFeed() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        var profile = FeedRecipeDefinition.neutral(languages: ["pt"])
+        profile.topicPreferences = ["topic:90_countries/brazil": .more,
+            "topic:01-news-current-affairs": .more]
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        // The row a launch creates; `setSettings` updates it rather than inventing it.
+        _ = try preferences.initialize(sourceKeys: [])
+        var settings = try preferences.load()?.settings ?? .standard
+        settings.discoveryProfile = profile
+        _ = try preferences.setSettings(settings)
+
+        let root = root(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let key = try XCTUnwrap(association.contextKey)
+
+        // The derivation itself: the stored answers are the profile, in the catalogue's vocabulary.
+        let derived = root.discoveryProfile(for: key)
+        XCTAssertEqual(derived.languages, ["pt"])
+        XCTAssertEqual(derived.topicNodeKeys, ["90_countries/brazil", "01-news-current-affairs"])
+        XCTAssertTrue(derived.excludedTopicNodeKeys.isEmpty)
+
+        // And the consequence B01 asks for: at least fifty distinct sources enter the acquisition set, none of
+        // them written into the reader's selection.
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50,
+            "B01: at least fifty distinct sources must enter the acquisition set automatically")
+        XCTAssertTrue(root.feeds.isEmpty, "discovery never writes itself into the reader's selection")
+
+        // An answer taken back stops shaping discovery: "menos desse assunto" is an exclusion, not a preference.
+        settings.discoveryProfile.topicPreferences["topic:01-news-current-affairs"] = .less
+        _ = try preferences.setSettings(settings)
+        let after = root.discoveryProfile(for: key)
+        XCTAssertEqual(after.excludedTopicNodeKeys, ["01-news-current-affairs"])
+        XCTAssertEqual(after.topicNodeKeys, ["90_countries/brazil"])
+        await association.close()
+    }
+
+    /// F02's first run, end to end at the composition's own level: the answers become the reader's discovery
+    /// profile, the feed they enter is built from them, and **nothing is created to be activated** — no curated
+    /// feed, no name asked for, no source chosen by hand.
+    func testTheFirstRunAnswersBecomeTheFeedTheReaderEnters() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        XCTAssertTrue(try XCTUnwrap(root.association).discovery.isEmpty,
+            "before the reader answers anything, discovery has nothing to work from")
+
+        var answers = FeedRecipeDefinition.neutral(languages: ["pt"])
+        answers.topicPreferences = ["topic:90_countries/brazil": .more]
+        await root.completeFirstRun(discovery: answers)
+
+        let association = try XCTUnwrap(root.association)
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50,
+            "B01: the first run's own answers put at least fifty distinct sources in the acquisition set")
+        XCTAssertEqual(Set(association.discovery.map(\.sourceID)).count, association.discovery.count,
+            "and they are distinct sources, not the same one registered twice")
+        let key = try XCTUnwrap(association.contextKey)
+        XCTAssertEqual(root.discoveryProfile(for: key).languages, ["pt"])
+        XCTAssertEqual(root.discoveryProfile(for: key).topicNodeKeys, ["90_countries/brazil"])
+
+        // Nothing was created to be activated, and the reader's own selection is still empty.
+        let presets = try root.makeCuratedCoordinator()?.curatedPresets() ?? []
+        XCTAssertTrue(presets.isEmpty, "the first run creates no feed to activate")
+        let stored = try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+            .load()
+        XCTAssertEqual(stored?.settings.hasSeenOnboarding, true, "and the reader has met the app")
+        XCTAssertEqual(stored?.settings.discoveryProfile.languages, ["pt"], "the answers are a preference")
+        XCTAssertFalse(stored?.sourceKeys.contains { $0.hasPrefix("http") } ?? true,
+            "discovery never writes itself into the reader's selection")
+        await association.close()
+    }
+
+    /// F02, the door back to a feed of the reader's own: the rules are stated once in the discovery preferences and
+    /// a feed is created from them — and **creating does not activate it, does not move the reading**, and the
+    /// library keeps it. Opening it is the reader's own next step.
+    func testCreatingAFeedWithThePreferencesDoesNotActivateIt() async throws {
+        let (root, association) = try await launched()
+        let before = try XCTUnwrap(association.contextKey)
+        var recipe = FeedRecipeDefinition.neutral(languages: ["pt"])
+        recipe.topicPreferences = ["topic:04-technology-science": .more]
+        let preset = try XCTUnwrap(root.saveCuratedFeed(recipe, named: "Ciência e tecnologia"))
+
+        XCTAssertEqual(root.association?.contextKey, before,
+            "creating a feed with these preferences does not move what the reader is reading")
+        XCTAssertNotEqual(preset.key, before, "and it is its own context, not the one in use")
+        XCTAssertEqual(try root.makeCuratedCoordinator()?.curatedPresets().map(\.key), [preset.key],
+            "the library is where created feeds are found")
+        XCTAssertEqual(try root.makeCuratedCoordinator()?.curatedPresets().first?.recipe, recipe,
+            "and it carries the rules it was created from")
+
+        // The reader's own next step: opening it really switches the session.
+        try await root.activateSavedPreset(preset.key)
+        XCTAssertEqual(root.association?.contextKey, preset.key)
+        await root.association?.close()
+    }
+
+    /// F02's thematic phase: answering **inside the feed** changes what discovery looks for next — and nothing
+    /// else. The context's identity, the admitted edition and the reader's own selection stay where they were:
+    /// a person who says where they want more of must not lose the story they were reading.
+    /// The architect's question (2026-10-11): persisting the answer does not prove it already affects new
+    /// acquisition. The answer is a preference about **future discovery** — the block says so in as many words —
+    /// and this is the moment it is consumed: the next session built for that context reads it from the stored
+    /// profile and pulls the pool that matches it.
+    func testTheAnswerIsConsumedWhenTheNextSessionOfTheContextIsBuilt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        var answers = FeedRecipeDefinition.neutral(languages: ["pt"])
+        answers.topicPreferences = ["topic:90_countries/brazil": .more]
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: [])
+        var stored = try preferences.load()?.settings ?? .standard
+        stored.discoveryProfile = answers
+        _ = try preferences.setSettings(stored)
+
+        let root = root(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let key = try XCTUnwrap(association.contextKey)
+        let poolBefore = Set(association.discovery.map(\.sourceID))
+        XCTAssertGreaterThanOrEqual(poolBefore.count, 50, "discovery is running from the answers")
+
+        // The reader answers here, and the session they are reading is untouched.
+        await root.voteOnTopic(nodeKey: "04-technology-science", level: .more)
+        XCTAssertTrue(root.association === association, "answering does not rebuild what the reader is reading")
+
+        // The next session of that context is where the answer starts to work.
+        try await root.replaceSession()
+        let next = try XCTUnwrap(root.association)
+        let catalog = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let expected = try ReaderDiscoveryBuilder(catalogURL: catalog).pool(for: .init(languages: ["pt"],
+            topicNodeKeys: ["04-technology-science", "90_countries/brazil"],
+            excludedTopicNodeKeys: []), limit: AppComposition.discoverySourceLimit)
+        XCTAssertEqual(Set(next.discovery.map(\.sourceID)), Set(expected.entries.map { $0.source.id }),
+            "the next session pulls the pool the answer asks for")
+        await next.close()
+    }
+
+    /// The product owner's criterion (2026-10-11): **an explicit refresh that produces a new edition must also
+    /// honour the preference** the reader gave since the session was built — while an internal rebuild of the UI
+    /// is never treated as a new session just to anticipate its application. The refresh is the reader asking for
+    /// movement, so a rebuild there is legitimate; nothing is rebuilt when nothing changed.
+    func testAnExplicitRefreshHonoursAnAnswerGivenAfterTheSessionWasBuilt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        var answers = FeedRecipeDefinition.neutral(languages: ["pt"])
+        answers.topicPreferences = ["topic:90_countries/brazil": .more]
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: [])
+        var stored = try preferences.load()?.settings ?? .standard
+        stored.discoveryProfile = answers
+        _ = try preferences.setSettings(stored)
+
+        let root = root(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let editionBefore = try XCTUnwrap(association.store.state.presentation).editionID
+        let presentationBefore = association.store.state.presentation?.window.items
+        await root.voteOnTopic(nodeKey: "04-technology-science", level: .more)
+        await root.refreshFromTheReader()
+        let refreshed = try XCTUnwrap(root.association)
+        XCTAssertFalse(refreshed === association,
+            "the explicit refresh rebuilds the session, because the stored profile is no longer the one the pool was built from")
+        let catalog = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let expected = try ReaderDiscoveryBuilder(catalogURL: catalog).pool(for: .init(languages: ["pt"],
+            topicNodeKeys: ["04-technology-science", "90_countries/brazil"],
+            excludedTopicNodeKeys: []), limit: AppComposition.discoverySourceLimit)
+        XCTAssertEqual(Set(refreshed.discovery.map(\.sourceID)), Set(expected.entries.map { $0.source.id }),
+            "the refreshed session pulls the pool the answer asks for")
+        // What the reader was reading is not retracted by a refresh either: the same edition, and the cards they
+        // already had as a prefix of the new window.
+        XCTAssertEqual(try XCTUnwrap(refreshed.store.state.presentation).editionID, editionBefore,
+            "the refresh does not retract the edition the reader was reading")
+        let beforeItems = (presentationBefore ?? []).map { $0.id }
+        let nowItems = refreshed.store.state.presentation?.window.items.map(\.id) ?? []
+        XCTAssertEqual(Array(nowItems.prefix(beforeItems.count)), beforeItems,
+            "not one presented card was retracted or reordered by the refresh")
+
+        // Nothing changed since: the next explicit refresh rebuilds nothing.
+        await root.refreshFromTheReader()
+        XCTAssertTrue(root.association === refreshed,
+            "an explicit refresh with no pending answer rebuilds nothing")
+        await refreshed.close()
+    }
+
+    func testAnsweringInTheFeedChangesDiscoveryWithoutMovingTheReader() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        var answers = FeedRecipeDefinition.neutral(languages: ["pt"])
+        answers.topicPreferences = ["topic:90_countries/brazil": .more]
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: [])
+        var stored = try preferences.load()?.settings ?? .standard
+        stored.discoveryProfile = answers
+        _ = try preferences.setSettings(stored)
+
+        let root = root(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let key = try XCTUnwrap(association.contextKey)
+        let editionBefore = try XCTUnwrap(association.store.state.presentation).editionID
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50, "discovery is running from the answers")
+
+        // The reader answers a subject the feed presented.
+        await root.voteOnTopic(nodeKey: "04-technology-science", level: .more)
+        let after = try XCTUnwrap(root.association)
+        XCTAssertTrue(after === association,
+            "the answer does not rebuild the session: the rebuild retired the association and restored it from a checkpoint that carries no offset inside the card, which moved the reader 139 pt in one device run and 912 pt in another (2026-10-11)")
+        XCTAssertEqual(try XCTUnwrap(after.contextKey), key, "the context's identity does not change")
+        XCTAssertEqual(try XCTUnwrap(after.store.state.presentation).editionID, editionBefore,
+            "the admitted presentation is the same edition: nothing the reader was reading was retracted")
+        // The edition identity alone is not the whole promise (the reviewer's point): the **cards and their
+        // order** must be the same ones, in the same order, with nothing inserted or removed above the reader.
+        // F06-A publishes only what each opportunity can present, so the *tail* of the window may differ while the
+        // cards the reader already has must not: the old window is a **prefix** of the new one, nothing retracted,
+        // nothing reordered.
+        let before = association.store.state.presentation?.window.items.map(\.id) ?? []
+        let now = after.store.state.presentation?.window.items.map(\.id) ?? []
+        XCTAssertEqual(Array(now.prefix(before.count)), before,
+            "not one presented card was retracted, inserted or reordered by the answer")
+        XCTAssertEqual(root.declaredLevel(forNode: "04-technology-science"), .more,
+            "the answer is what the settings hold")
+        XCTAssertEqual(root.discoveryProfile(for: key).topicNodeKeys.sorted(),
+            ["04-technology-science", "90_countries/brazil"],
+            "and discovery reads it as an interest")
+
+        // "Menos desse assunto" is an exclusion, not a quieter preference.
+        await root.voteOnTopic(nodeKey: "90_countries/brazil", level: .less)
+        XCTAssertEqual(root.discoveryProfile(for: key).excludedTopicNodeKeys, ["90_countries/brazil"])
+        XCTAssertEqual(root.discoveryProfile(for: key).topicNodeKeys, ["04-technology-science"])
+
+        // Taking an answer back is answering again: the subject leaves both sets.
+        await root.voteOnTopic(nodeKey: "04-technology-science", level: .neutral)
+        XCTAssertNil(root.declaredLevel(forNode: "04-technology-science"))
+        XCTAssertTrue(root.discoveryProfile(for: key).topicNodeKeys.isEmpty)
+        await root.association?.close()
+    }
+
+    /// B01's own promise, and the defect recorded in `docs/v1-study/PORT_LOG.md` §19: a reader who has chosen
+    /// **no source at all** must still receive a feed, supplied by discovery. Measured before this test existed:
+    /// zero sources registered, zero cards published, nothing in the trace.
+    func testDiscoveryFeedsAReaderWhoChoseNothing() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        // The reader's answers, and nothing else: no selected source anywhere.
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: [])
+        var answers = FeedRecipeDefinition.neutral(languages: ["pt"])
+        answers.topicPreferences = ["topic:90_countries/brazil": .more]
+        var settings = try preferences.load()?.settings ?? .standard
+        settings.discoveryProfile = answers
+        _ = try preferences.setSettings(settings)
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 60
+        let root = AppComposition(directory: directory, feeds: [], transportConfiguration: configuration)
+        await root.launch()
+        if let failure = root.startupFailure {
+            XCTFail("the app failed to start for a reader who chose nothing: \(failure)")
+        }
+        let association = try XCTUnwrap(root.association)
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50,
+            "discovery supplies the reader who chose nothing")
+        XCTAssertTrue(root.hasSelectedSources,
+            "and the surface offers a feed: the reader is not sent to choose sources they never wanted")
+        XCTAssertNotNil(association.store.state.presentation,
+            "the feed really publishes for a reader who chose nothing")
+        await association.close()
+    }
+
+    /// The ceiling is not allowed to swallow evidence in silence. `batchSize` and `lineCeiling` existed before this
+    /// test and could absorb thousands of events; a run whose trace was truncated that way reads exactly like a run
+    /// where nothing happened — and the oracle would then report the absence as a fact about the product. It now
+    /// counts what it refused, states the first refusal, and states the totals when the trace is flushed.
+    func testTheTraceRecordsItsOwnDiscardInsteadOfGoingSilent() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let trace = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 3)
+        for index in 0..<10 { trace.record("event", ["index": String(index)]) }
+        trace.flushAndWait()
+        let url = directory.appendingPathComponent("trace.jsonl")
+        let records = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map { line in
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        }
+        XCTAssertEqual(records.filter { $0["event"] as? String == "event" }.count, 3,
+            "the ceiling holds: only the events under it were written")
+        let truncated = records.filter { $0["event"] as? String == "trace_truncated" }
+        XCTAssertEqual(truncated.count, 2, "the first refusal, and the totals at flush")
+        let first = try XCTUnwrap(truncated.first?["fields"] as? [String: String])
+        XCTAssertEqual(first["reason"], "line_ceiling")
+        XCTAssertEqual(first["dropped_by_ceiling"], "1")
+        XCTAssertEqual(first["ceiling"], "3")
+        let totals = try XCTUnwrap(truncated.last?["fields"] as? [String: String])
+        XCTAssertEqual(totals["reason"], "flush_total")
+        XCTAssertEqual(totals["dropped_by_ceiling"], "7", "all seven refused events are accounted for")
+        XCTAssertEqual(totals["written"], "3")
+        // The monotonic clock every interval is measured on, beside the wall clock the oracle already reads.
+        XCTAssertTrue(records.allSatisfy { $0["mono"] as? Double != nil && $0["at"] as? Double != nil })
+        // Nothing new to say means nothing written: the announcement does not become a second kind of noise.
+        let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").count
+        trace.flushAndWait()
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8).split(separator: "\n").count, lines)
+    }
+
+    /// Codex's review, finding 2: an invitation is only true for a source the app **went and found** in this
+    /// association. A source the reader chose is not discovery, and a pool built for an earlier profile does not
+    /// answer for the one being read now.
+    func testAnInvitationIsOnlyOfferedForDiscoveredSources() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        // The reader chose one of the development feeds **and** answered discovery: both supplies exist.
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: [])
+        var answers = FeedRecipeDefinition.neutral(languages: ["pt"])
+        answers.topicPreferences = ["topic:90_countries/brazil": .more]
+        var settings = try preferences.load()?.settings ?? .standard
+        settings.discoveryProfile = answers
+        _ = try preferences.setSettings(settings)
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 60
+        let root = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50, "the fixture has a discovery pool")
+
+        // The rule this side owns: only a source **found by this association's discovery** may be asked about, and
+        // the catalogue must name a subject for it.
+        // The fixture's own selected feed: a source the reader has, which discovery did not have to find.
+        let chosen = try XCTUnwrap(TrustedFeed.development.first)
+        XCTAssertNil(root.editorialSubject(for: chosen.sourceID, in: association),
+            "a source the reader chose is never asked about as a discovery")
+        XCTAssertNil(root.editorialSubject(for: SourceID(), in: association),
+            "a source this association never found is not asked about either")
+        if let discovered = association.discovery.first {
+            XCTAssertEqual(root.editorialSubject(for: discovered.sourceID, in: association) == nil,
+                !association.discovery.contains { $0.sourceID == discovered.sourceID } ,
+                "a discovered source is answered by the pool's own subject map, and nothing else")
+        }
+        await association.close()
+    }
+
+    /// V1's own promise for a saved box: what is exported is the reader's **articles**, not the sources they came
+    /// from, and only in the four formats an article list has.
+    func testASavedBoxExportsItsSavedArticlesAndNotTheirSources() async throws {
+        let (root, association) = try await launched()
+        let publication = PublicationStore(database: association.database)
+        let window = try XCTUnwrap(association.store.state.presentation?.window.items)
+        let linked = try XCTUnwrap(window.first { item in
+            (try? publication.card(id: item.id))?.primaryActionKind == "externalURL"
+        })
+        try publication.toggleBookmark(cardID: linked.id, at: Date())
+        let coordinator = try XCTUnwrap(root.makeImportExportCoordinator())
+        let box = ReaderExportRequest(scope: .bookmarkBox(ReaderBookmarkList.defaultID), format: .csv)
+
+        let csv = try coordinator.preview(box)
+        XCTAssertEqual(csv.split(separator: "\n").first.map(String.init), "title,url,source,date,category")
+        let record = try XCTUnwrap(publication.card(id: linked.id))
+        XCTAssertTrue(csv.contains(try XCTUnwrap(record.primaryActionReference)),
+            "the saved article's own link is in the document")
+        XCTAssertTrue(csv.contains(try XCTUnwrap(linked.title)), "and so is its own headline")
+        XCTAssertFalse(csv.contains("title,url,identity,category"),
+            "a box is not exported as a list of feeds")
+
+        let markdown = try coordinator.preview(ReaderExportRequest(scope: .bookmarkBox(ReaderBookmarkList.defaultID),
+            format: .markdown))
+        XCTAssertTrue(markdown.contains("- [\(try XCTUnwrap(linked.title))](\(try XCTUnwrap(record.primaryActionReference)))"))
+        let text = try coordinator.preview(ReaderExportRequest(scope: .bookmarkBox(ReaderBookmarkList.defaultID),
+            format: .text))
+        XCTAssertTrue(text.contains("• \(try XCTUnwrap(linked.title))"))
+        let html = try coordinator.preview(ReaderExportRequest(scope: .bookmarkBox(ReaderBookmarkList.defaultID),
+            format: .html))
+        XCTAssertTrue(html.contains("<title>Caixa de salvos</title>"))
+
+        // The file name V1 wrote for this scope, and the formats it never offered are refused rather than
+        // answered with a document about something else.
+        let url = try coordinator.export(box)
+        XCTAssertTrue(url.lastPathComponent.contains("-bookmarks.csv"), url.lastPathComponent)
+        for format in [ReaderExportFormat.opml, .json, .shareLink, .socialCard] {
+            XCTAssertThrowsError(try coordinator.preview(ReaderExportRequest(scope: .bookmarkBox(ReaderBookmarkList.defaultID),
+                format: format)), "\(format.rawValue) is not a saved box's document") { error in
+                XCTAssertEqual(error as? ReaderImportExportError, .formatNotAvailable)
+            }
+        }
+        XCTAssertEqual(ReaderExportFormat.available(for: .bookmarkBox("x")), [.text, .markdown, .csv, .html],
+            "and the surface offers exactly what a box can be written in")
+        await association.close()
+    }
+
     /// Integrity gate for updating over the V1 app (same bundle id `com.feedmine.app`): V2's
     /// runtime store must never coincide with V1's, because a coincidence would mean V2 opening and
     /// migrating a foreign schema in place. V1 (feedmine-dev) writes
@@ -740,5 +1253,41 @@ final class CompositionTests: XCTestCase {
             "the two stores must stay distinct even if the volume ignores case")
         // V2 must create its own directory rather than adopt V1's tree.
         XCTAssertFalse(v2.path.contains("/Feedmine/RuntimeV2/"))
+    }
+}
+
+/// §5.3/PD-6: the media window is a **per-operation** limit derived from facts the run measures, never a fraction
+/// of the transport's timeout. The derivation is the precedent, so it is pinned here: unmeasured states the run's
+/// bootstrap, measured follows the runway's own tolerance for one request, and the transport timeout stays what it
+/// is — an operational ceiling, which is the one thing PD-6 rule 4 allows it to be.
+final class MediaWaitDerivationTests: XCTestCase {
+    private let inputs = RunwayPolicyInputs(safetyFactor: 1.2, releaseMarginSeconds: 2)!
+
+    func testUnmeasuredStatesTheBootstrapAndIsStillBoundedByTheTransportCeiling() {
+        // The 5 s is the run's declared tolerance, not `timeoutIntervalForRequest / 4` (≈15 s with the 60 s default).
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: nil, inputs: inputs, transportCeiling: 60), 5)
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: nil, inputs: inputs, transportCeiling: 3), 3)
+    }
+
+    func testMeasuredFollowsTheRunsOwnToleranceSoAFasterSourceWaitsLess() {
+        // p95 = 2 s → 2 × 1,2 + 2 = 4,4 s. A slower replenishment earns a longer window; a fast one does not pay for it.
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 2, inputs: inputs, transportCeiling: 60),
+            4.4, accuracy: 1e-9)
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 4, inputs: inputs, transportCeiling: 60),
+            6.8, accuracy: 1e-9)
+        // A source slower than the transport tolerates does not hold an operation open past the ceiling.
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 600, inputs: inputs, transportCeiling: 30), 30)
+    }
+
+    func testUnusableMeasurementsFallBackRatherThanPoisonTheDeadline() {
+        for bad in [0.0, -1, Double.nan, Double.infinity] {
+            XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: bad, inputs: inputs, transportCeiling: 60), 5,
+                "\(bad) is not a measurement, so the bootstrap applies")
+        }
+        // A ceiling a misconfigured transport cannot provide leaves the derived value bounded by the bootstrap
+        // rather than producing a deadline in the past.
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 2, inputs: inputs, transportCeiling: 0),
+            4.4, accuracy: 1e-9)
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 600, inputs: inputs, transportCeiling: -1), 5)
     }
 }

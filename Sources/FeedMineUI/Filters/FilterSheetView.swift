@@ -14,16 +14,44 @@ import FeedMineRuntime
 
 /// One language row of the sheet.
 public struct FilterLanguageRow: Hashable, Sendable, Identifiable {
+    /// The primary subtag: the choice itself, and what the filter persists. The catalogue declares 257 codes and
+    /// a reader chooses a language — the variants are what it holds under it.
     public let code: String
     public let name: String
-    public let enabledSources: Int
+    /// Every source the catalogue holds under this language: the one number a row shows.
+    public let availableSources: Int
     public let isSelected: Bool
+    /// The catalogue's own codes under this language, biggest first. Information, never a second choice.
+    public let variants: [FilterLanguageVariant]
     /// V1's `LanguageInfo` carried a flag emoji from its own table; the catalog has only codes, and a
     /// two-letter *language* code is not a country (EN is not a country), so the sheet shows no flag
     /// instead of a wrong one.
-    public init(code: String, name: String, enabledSources: Int, isSelected: Bool) {
+    public init(code: String, name: String, availableSources: Int, isSelected: Bool,
+        variants: [FilterLanguageVariant] = []) {
         self.code = code; self.name = name
-        self.enabledSources = enabledSources; self.isSelected = isSelected
+        self.availableSources = availableSources; self.isSelected = isSelected
+        self.variants = variants
+    }
+
+    public var id: String { code }
+    /// Whether the expansion has something to say: a language the catalogue declares once has no regions.
+    public var hasVariants: Bool { variants.contains { $0.hasRegion } }
+    /// "26.012 fontes disponíveis" — the count every surface states the same way.
+    public var totalLabel: String { CatalogLanguageNaming.availableSourcesLabel(availableSources) }
+}
+
+/// One regional variant of a language, as the expansion shows it.
+public struct FilterLanguageVariant: Hashable, Sendable, Identifiable {
+    public let code: String
+    /// The language and its region, in the interface language.
+    public let label: String
+    public let availableSources: Int
+    /// Whether this code names a region on top of the language.
+    public let hasRegion: Bool
+
+    public init(code: String, label: String, availableSources: Int, hasRegion: Bool) {
+        self.code = code; self.label = label
+        self.availableSources = availableSources; self.hasRegion = hasRegion
     }
 
     public var id: String { code }
@@ -50,7 +78,9 @@ public struct FilterPresetRow: Hashable, Sendable, Identifiable {
 
 public struct FilterSheetView: View {
     @State private var store: ReaderFilterStore
-    private let languages: [CatalogLanguageSummary]
+    /// Which languages are showing their regional variants. One set, because the sheet is a list, not a menu.
+    @State private var expandedLanguages: Set<String> = []
+    private let languages: [CatalogLanguageGroup]
     private let presets: [FilterPresetRow]
     private let appearance: ReaderAppearance
     /// T8: a saved preset's selection is an activation, not a draft change.
@@ -62,7 +92,7 @@ public struct FilterSheetView: View {
     /// Builds the draft store from values, so the host never mutates state while rendering to open the sheet.
     /// `onApply` is the host's persist-and-activate step; the sheet closes only after it returns.
     public init(applying filter: ReaderFilter, preset: ReaderPresetID,
-        availableCriteria: Set<ReaderFilterCriterion>, languages: [CatalogLanguageSummary] = [],
+        availableCriteria: Set<ReaderFilterCriterion>, languages: [CatalogLanguageGroup] = [],
         presets: [FilterPresetRow] = FilterSheetView.defaultPresets, appearance: ReaderAppearance = .standard,
         onApply: @escaping @MainActor (ReaderFilter, ReaderPresetID) async throws -> Void,
         onActivate: @escaping @MainActor (ContextKey) async throws -> Void = { _ in },
@@ -79,7 +109,7 @@ public struct FilterSheetView: View {
         self.onDone = onDone
     }
 
-    public init(store: ReaderFilterStore, languages: [CatalogLanguageSummary] = [],
+    public init(store: ReaderFilterStore, languages: [CatalogLanguageGroup] = [],
         presets: [FilterPresetRow] = FilterSheetView.defaultPresets, appearance: ReaderAppearance = .standard,
         onActivate: @escaping @MainActor (ContextKey) async throws -> Void = { _ in },
         onShowCountries: @escaping () -> Void = {}, onShowTopics: @escaping () -> Void = {},
@@ -194,25 +224,46 @@ public struct FilterSheetView: View {
                             .font(.subheadline).foregroundStyle(.secondary)
                     } else {
                         ForEach(languageRows) { row in
-                            Button {
-                                store.toggleLanguage(row.code)
-                            } label: {
-                                HStack {
-                                    Text(verbatim: row.name).foregroundStyle(.primary)
-                                    Spacer(minLength: 0)
-                                    if row.isSelected {
-                                        Image(systemName: "checkmark").foregroundStyle(appearance.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 8) {
+                                    Button {
+                                        store.toggleLanguage(row.code)
+                                    } label: {
+                                        HStack {
+                                            Text(verbatim: row.name).foregroundStyle(.primary)
+                                            Spacer(minLength: 0)
+                                            if row.isSelected {
+                                                Image(systemName: "checkmark").foregroundStyle(appearance.accent)
+                                            }
+                                            Text(verbatim: row.totalLabel)
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        // A plain button in a List only hits its label's drawn area; the row itself
+                                        // must be the target, including the spacer.
+                                        .contentShape(Rectangle())
                                     }
-                                    Text(verbatim: "\(row.enabledSources) on")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                    .buttonStyle(.plain)
+                                    .accessibilityIdentifier("language-\(row.code)")
+                                    .accessibilityValue(row.isSelected ? "selected" : "not selected")
+                                    if row.hasVariants {
+                                        Button {
+                                            if expandedLanguages.contains(row.code) {
+                                                expandedLanguages.remove(row.code)
+                                            } else {
+                                                expandedLanguages.insert(row.code)
+                                            }
+                                        } label: {
+                                            Image(systemName: expandedLanguages.contains(row.code)
+                                                ? "chevron.down" : "chevron.right")
+                                                .font(.caption2).foregroundStyle(.tertiary)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityIdentifier("language-regions-\(row.code)")
+                                        .accessibilityLabel(Text(verbatim: String(localized: "Regiões de \(row.name)")))
+                                    }
                                 }
-                                // A plain button in a List only hits its label's drawn area; the row itself must
-                                // be the target, including the spacer.
-                                .contentShape(Rectangle())
+                                if expandedLanguages.contains(row.code) { variants(of: row) }
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("language-\(row.code)")
-                            .accessibilityValue(row.isSelected ? "selected" : "not selected")
                         }
                     }
                 }
@@ -257,17 +308,50 @@ public struct FilterSheetView: View {
         }
     }
 
-    /// Languages as the sheet shows them: declared ones by size, the undeclared bucket last.
+    /// Languages as the sheet shows them: one row per language, the catalogue's order kept, the undeclared
+    /// bucket last.
     public var languageRows: [FilterLanguageRow] {
         FilterSheetView.languageRows(languages, selected: Set(store.draft.languages))
     }
 
-    public static func languageRows(_ languages: [CatalogLanguageSummary],
+    public static func languageRows(_ languages: [CatalogLanguageGroup],
         selected: Set<String>) -> [FilterLanguageRow] {
-        languages.map { language in
-            FilterLanguageRow(code: language.code, name: language.displayName,
-                enabledSources: language.enabledSources, isSelected: selected.contains(language.code))
+        // A filter stored before the choice became the language itself can hold a regional code (`pt-BR`). It is
+        // the same language, and showing the row as unselected would say the filter is unset while it filters.
+        func isSelected(_ language: CatalogLanguageGroup) -> Bool {
+            selected.contains(language.languageCode)
+                || selected.contains { CatalogLanguageNaming.choiceCode($0) == language.languageCode }
         }
+        return languages.map { language in
+            // A language the catalogue declares once has nothing to expand unless that one code names a region.
+            let expands = language.variants.count > 1 || language.hasRegionVariants
+            return FilterLanguageRow(code: language.languageCode, name: language.displayName,
+                availableSources: language.availableSources, isSelected: isSelected(language),
+                variants: expands ? language.variants.map {
+                    FilterLanguageVariant(code: $0.code, label: $0.variantLabel,
+                        availableSources: $0.totalSources, hasRegion: $0.hasRegion)
+                } : [])
+        }
+    }
+
+    /// What the catalogue holds under the language: the regions its sources are declared in, named and counted.
+    /// There is no control here — choosing a region is a different feature from choosing a language.
+    @ViewBuilder private func variants(of row: FilterLanguageRow) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(row.variants) { variant in
+                HStack(spacing: 8) {
+                    Text(verbatim: variant.hasRegion
+                        ? variant.label : String(localized: "Região não especificada"))
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("language-variant-\(variant.code)")
+                    Spacer(minLength: 0)
+                    Text(verbatim: CatalogLanguageNaming.numberLabel(variant.availableSources))
+                        .font(.caption2).foregroundStyle(.tertiary)
+                        .accessibilityIdentifier("language-variant-count-\(variant.code)")
+                }
+            }
+        }
+        .padding(.leading, 4)
     }
 
     private func checkRow(_ title: String, icon: String, isSelected: Bool) -> some View {

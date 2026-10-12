@@ -17,7 +17,8 @@ public extension FeedPresentationState.Work {
         case .idle: ""
         case .pending: String(localized: "Buscando novidades")
         case .preparing: String(localized: "Preparando")
-        case .unavailable: String(localized: "Sem conexão")
+        case .unavailable: String(localized: "Sem histórias")
+        case .unreachable: String(localized: "Sem conexão")
         case .deferred: String(localized: "Aguardando")
         case .failed(let message): message
         }
@@ -30,6 +31,8 @@ public struct FeedPresentationState: Hashable, Sendable {
         case pending
         case unavailable
         case deferred
+        /// PO R3: a connection failure is its own state, stated only when the transport proves it.
+        case unreachable
         case failed(message: String)
         /// PD-3: first-launch preparation with real evidence of content arriving.
         case preparing(PreparationProgress)

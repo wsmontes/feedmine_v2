@@ -39,6 +39,19 @@ public struct ReaderSettings: Hashable, Codable, Sendable {
     public var prefetchesImages: Bool
     /// V1's `contentFiltersEnabled`: whether the reader's content exclusions hide anything at all.
     public var contentFiltersEnabled: Bool
+    /// V1's own filter rules the reader wrote themselves (`ContentFilterStore.addCustom`): the words that hide an
+    /// article. Stored normalized, exactly as they are applied.
+    public var contentFilterRules: [String]
+    /// The V1 templates the reader turned on, by template key. V1 kept them as filters of their own with their
+    /// keywords resolved per locale; V2 stores the key and resolves the same keywords from V1's own catalogue.
+    public var contentFilterTemplates: [String]
+    /// What the reader told discovery: languages and places to start from, and the interests they declared by
+    /// answering invitations **inside the feed** (F02). It is the reader's own answers, persisted as behaviour —
+    /// never part of a context's identity, so a new answer cannot move them out of what they are reading.
+    public var discoveryProfile: FeedRecipeDefinition
+    /// Whether the feed may present its own editorial invitations (F02). The reader can hide them — they are an
+    /// offer, not a toll — and bring them back from "Conhecer o FeedMine".
+    public var editorialTipsHidden: Bool
     /// V1's `filterAutoExpire`: the four-hour rule on the overlay selection (T6 owns the record it drives).
     public var filterAutoExpires: Bool
 
@@ -57,6 +70,8 @@ public struct ReaderSettings: Hashable, Codable, Sendable {
     public init(followsClock: Bool = true, paletteFamily: String = "warmEarth",
         followsClockTypography: Bool = true, fontStyle: String = "system", typeScale: String = "medium",
         nightMode: Bool = false, prefetchesImages: Bool = true, contentFiltersEnabled: Bool = true,
+        contentFilterRules: [String] = [], contentFilterTemplates: [String] = [],
+        discoveryProfile: FeedRecipeDefinition = .neutral(), editorialTipsHidden: Bool = false,
         filterAutoExpires: Bool = true, hasSeenOnboarding: Bool = false,
         schemaVersion: Int = ReaderSettings.currentSchemaVersion, carriedLegacyKeys: [String: String] = [:]) {
         self.followsClock = followsClock
@@ -67,6 +82,13 @@ public struct ReaderSettings: Hashable, Codable, Sendable {
         self.nightMode = nightMode
         self.prefetchesImages = prefetchesImages
         self.contentFiltersEnabled = contentFiltersEnabled
+        // Canonical order, like every other rule set in this build: the same rules are one value.
+        self.contentFilterRules = ReaderContentExclusions.normalize(contentFilterRules)
+        self.contentFilterTemplates = Array(Set(contentFilterTemplates.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })).sorted()
+        self.discoveryProfile = discoveryProfile
+        self.editorialTipsHidden = editorialTipsHidden
         self.filterAutoExpires = filterAutoExpires
         self.hasSeenOnboarding = hasSeenOnboarding
         self.schemaVersion = schemaVersion
@@ -90,6 +112,14 @@ public struct ReaderSettings: Hashable, Codable, Sendable {
                 ?? standard.prefetchesImages,
             contentFiltersEnabled: try container.decodeIfPresent(Bool.self, forKey: .contentFiltersEnabled)
                 ?? standard.contentFiltersEnabled,
+            contentFilterRules: try container.decodeIfPresent([String].self, forKey: .contentFilterRules)
+                ?? standard.contentFilterRules,
+            contentFilterTemplates: try container.decodeIfPresent([String].self, forKey: .contentFilterTemplates)
+                ?? standard.contentFilterTemplates,
+            discoveryProfile: try container.decodeIfPresent(FeedRecipeDefinition.self, forKey: .discoveryProfile)
+                ?? standard.discoveryProfile,
+            editorialTipsHidden: try container.decodeIfPresent(Bool.self, forKey: .editorialTipsHidden)
+                ?? standard.editorialTipsHidden,
             filterAutoExpires: try container.decodeIfPresent(Bool.self, forKey: .filterAutoExpires)
                 ?? standard.filterAutoExpires,
             hasSeenOnboarding: try container.decodeIfPresent(Bool.self, forKey: .hasSeenOnboarding)

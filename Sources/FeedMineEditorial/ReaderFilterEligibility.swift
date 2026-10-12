@@ -49,13 +49,13 @@ public struct ReaderFilterEligibility: Hashable, Sendable {
     }
 
     private func admitsLanguage(_ candidate: Candidate) -> Bool {
-        let languages = filter.languages
+        let languages = ReaderLanguageCode.choices(filter.languages)
         guard enforced.contains(.languages), !languages.isEmpty else { return true }
         guard let language = candidate.language?.trimmingCharacters(in: .whitespacesAndNewlines),
             !language.isEmpty else { return false }
-        // Compare on the primary subtag, as V1 did when it stored "pt" while a feed declared "pt-BR".
-        let primary = String(language.prefix(while: { $0 != "-" && $0 != "_" })).lowercased()
-        return languages.contains { $0.lowercased() == primary || $0.lowercased() == language.lowercased() }
+        // The choice is the language, not the code: a filter that named `pt` admits `pt-BR` and `pt-PT`, exactly
+        // as the discovery pool does.
+        return ReaderLanguageCode.answered(language, by: languages)
     }
 
     private func admitsMood(_ candidate: Candidate) -> Bool {

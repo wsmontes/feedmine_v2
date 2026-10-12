@@ -144,10 +144,12 @@ final class FeedScreenRenderingTests: XCTestCase {
 
     func testTimestampMeaningIsNotChangedToAuthorship() throws {
         // V1 shows the published date without re-labelling its kind. The card must not invent an
-        // authorship claim for a timestamp that has another meaning (T4 difference, recorded).
+        // authorship claim for a timestamp that has another meaning (T4 difference, recorded). The date itself
+        // is rendered in the interface language, so this pins that a date *is* rendered, not its formatting.
         for kind in [PublishedTimestampKind.authored, .modified, .observed] {
             let text = try renderedText(rendered(card(timestampKind: kind))).joined(separator: " ")
-            XCTAssertTrue(text.contains("2023"), text.description)
+            XCTAssertTrue(text.contains { $0.isNumber },
+                "the card states a date for a timestamp of any kind: " + text)
             for claim in ["Autoria", "Modificado", "Observado"] {
                 XCTAssertFalse(text.contains(claim), "the card must not label the timestamp: " + claim)
             }
@@ -211,21 +213,27 @@ final class FeedScreenRenderingTests: XCTestCase {
         let store = FeedScreenStore { _, _ in XCTFail("Automatic work") }
         try store.install(FeedPresentationHandoff.report(.pending, into: store.state))
         let text = try renderedText(FeedScreen(store: store).frame(height: 900))
-        XCTAssertEqual(text, ["Preparando apresentação local"])
+        XCTAssertEqual(text, ["Descobrindo histórias para você..."])
     }
 
     func testU10AllNonPresentationFactsRemainDistinctAndNonterminal() throws {
-        let cases: [(FeedPresentationState.Work, String)] = [
-            (.idle, "Nenhuma apresentação local recebida"),
-            (.unavailable, "Apresentação indisponível no momento"),
-            (.deferred, "Preparação adiada"),
-            (.failed(message: "Falha recebida da composição"), "Falha recebida da composição")
+        let cases: [(FeedPresentationState.Work, [String], [String])] = [
+            (.idle, ["Descobrindo histórias para você..."], ["Descobrindo histórias para você..."]),
+            (.pending, ["Descobrindo histórias para você..."], ["Descobrindo histórias para você..."]),
+            (.unavailable, ["Ainda não encontramos histórias para você.", "Tentar novamente", "Ajustar interesses"],
+                ["Ainda não encontramos histórias para você."]),
+            (.unreachable, ["Não foi possível conectar.", "Não conseguimos buscar novas histórias agora.", "Tentar novamente"],
+                ["Não foi possível conectar.", "Não conseguimos buscar novas histórias agora."]),
+            (.deferred, ["Procurando mais novidades...", "Ainda não encontramos conteúdo suficiente. Vamos tentar novamente em instantes."],
+                ["Procurando mais novidades...", "Ainda não encontramos conteúdo suficiente. Vamos tentar novamente em instantes."]),
+            (.failed(message: "Falha recebida da composição"),
+                ["Falha recebida da composição"], ["Falha recebida da composição"])
         ]
-        for (work, expected) in cases {
+        for (work, expectedScreen, expectedView) in cases {
             let store = FeedScreenStore { _, _ in XCTFail("Automatic work") }
             try store.install(FeedPresentationHandoff.report(work, into: store.state))
-            XCTAssertEqual(try renderedText(FeedScreen(store: store).frame(height: 900)), [expected])
-            XCTAssertEqual(try renderedText(FeedLoadingView(work: work).frame(height: 900)), [expected])
+            XCTAssertEqual(try renderedText(FeedScreen(store: store).frame(height: 900)), expectedScreen)
+            XCTAssertEqual(try renderedText(FeedLoadingView(work: work).frame(height: 900)), expectedView)
         }
     }
 
@@ -309,7 +317,7 @@ final class FeedScreenRenderingTests: XCTestCase {
         let f = try fixture(), first = try await snapshot(f)
         let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
         let hosted = host(FeedScreen(store: store))
-        XCTAssertEqual(try renderedText(hosted), ["Nenhuma apresentação local recebida"])
+        XCTAssertEqual(try renderedText(hosted), ["Descobrindo histórias para você..."])
         try store.install(try FeedPresentationHandoff.receive(snapshot: first, into: store.state))
         XCTAssertEqual(try renderedText(hosted).filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline"])
         try store.install(FeedPresentationHandoff.report(.pending, into: store.state))
@@ -346,9 +354,9 @@ private protocol PublishedCardSequence {
     var titles: [String?] { get }
 }
 
-extension ForEach: PublishedCardSequence where Data == [PresentationCard], ID == PublicationCardID {
-    fileprivate var occurrenceIDs: [PublicationCardID] { data.map(\.id) }
-    fileprivate var titles: [String?] { data.map(\.title) }
+extension ForEach: PublishedCardSequence where Data == [(offset: Int, element: PresentationCard)], ID == PublicationCardID {
+    fileprivate var occurrenceIDs: [PublicationCardID] { data.map(\.element.id) }
+    fileprivate var titles: [String?] { data.map(\.element.title) }
 }
 
 #endif

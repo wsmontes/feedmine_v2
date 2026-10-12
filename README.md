@@ -15,3 +15,5 @@ A rodada atual é verificada localmente, sem CI hospedada. Resultados e limitaç
 Verificação do pacote: `swift package describe`, `swift build`, `swift test`, `git diff --check`. A suíte do app roda no simulador pelo scheme **FeedMine**; os testes de UI de um caso por vez com `-only-testing:FeedMineUITests/FeedMineUITests/<nome>` (é assim que a evidência de cada superfície foi produzida), e a corrida completa do scheme é o portão final.
 
 Veja [execução iOS](docs/IOS_RUN.md) e [arquitetura](docs/architecture/ARCHITECTURE.md).
+
+Antes de avaliar UX/experiência em um build de simulador, rode `scripts/verify_product_catalogue.sh "$(xcrun simctl get_app_container booted com.feedmine.development app)"`: uma corrida do benchmark instala o app com o catálogo do corpus dentro dele e, fora da corrida, esse app parece não publicar nada (o script sai 1 e diz como reinstalar o build de produto).

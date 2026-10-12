@@ -13,6 +13,14 @@ private final class DriverClock: @unchecked Sendable {
     private var value: Double = 0
     func next() -> RunwayMonotonicTime { lock.withLock { value += 1; return .init(seconds:value)! } }
 }
+private final class DriverMediaJournal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [String] = []
+    func append(_ value: String) { lock.withLock { entries.append(value) } }
+    func reset() { lock.withLock { entries.removeAll() } }
+    var values: [String] { lock.withLock { entries } }
+}
+
 @MainActor
 final class FeedRunwayDriverTests: XCTestCase {
     private enum Failure: Error, Equatable { case preparation }
@@ -143,6 +151,31 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(after, before, file:file, line:line)
         XCTAssertEqual(f.http.calls, 2, file:file, line:line); XCTAssertEqual(f.otherHTTP.calls, 1, file:file, line:line)
     }
+    func testCausalDrainSharesOneMediaDeadlineAcrossLocalSlices() async throws {
+        let f = try fixture(seedLocal: true), journal = DriverMediaJournal(), clock = DriverClock()
+        let driver = try FeedRunwayDriver(session: f.session, runway: f.runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            makeSegmentIdentity: { .init(segmentID: .init(), segmentSeed: 1, segmentCreatedAt: Date())! },
+            prepare: Self.prepared, makeMediaOpportunity: {
+                journal.append("begin")
+                return MediaPreparationOpportunity(waitSeconds: 4, startedAt: clock.next().seconds) { _, deadline in
+                    _ = clock.next() // Time advances between windows, but their deadline cannot renew.
+                    journal.append(String(deadline))
+                }
+            })
+        let initial = try await driver.restoreAndActivate(backwardCapacity: 1, forwardCapacity: 4, resources: resources())
+        journal.reset()
+        _ = try await driver.submitViewport(.init(anchor: XCTUnwrap(initial).window.anchor),
+            activity: .explicitTailApproach, resources: resources())
+        XCTAssertEqual(journal.values.filter { $0 == "begin" }.count, 1)
+        let deadlines = journal.values.filter { $0 != "begin" }
+        XCTAssertGreaterThanOrEqual(deadlines.count, 2, "The opportunity must actually prepare several slices")
+        XCTAssertEqual(Set(deadlines).count, 1, "A later slice cannot earn a new media wait")
+        _ = try await driver.drive(resources: resources())
+        XCTAssertEqual(journal.values.filter { $0 == "begin" }.count, 2, "A new caller owns a new budget")
+    }
+
     func test01SemanticTailFullProductionLoop() async throws {
         let f = try fixture(),store = PublicationStore(database:f.database),before = try store.edition(id:f.edition)
         let p = try await restore(f); let installed = await f.session.currentPresentation()

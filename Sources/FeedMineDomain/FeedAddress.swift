@@ -29,6 +29,21 @@ public enum FeedAddress {
         transform(raw, forIdentity: false)
     }
 
+    /// Whether an address is a fetchable http(s) URL at all — the catalog builder's `valid_http_url`
+    /// (`scripts/catalog_identity.py`), the gate its scanner applies to every OPML `xmlUrl`. An outline whose
+    /// `xmlUrl` fails this is not a source: the builder drops it and counts it as an invalid source, so the same
+    /// gate has to exist on the compiler's side or the two disagree about what the tree contains.
+    ///
+    /// The address must be passed as authored (the scanner trims it first): the Python contract strips
+    /// surrounding whitespace inside `urlsplit`, and the SQLite catalogue is built from the trimmed attribute.
+    public static func isValidHTTPURL(_ raw: String) -> Bool {
+        let decoded = decodingEntities(raw)
+        guard let components = URLComponents(string: decoded), let host = components.host, !host.isEmpty,
+            let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
+        if let port = components.port, !(1...65_535).contains(port) { return false }
+        return validHost(host)
+    }
+
     /// Parameters that name a *visit*, not a feed. V1's own list, plus anything `x-amz-*` signs.
     static let identityQueryParameters: Set<String> = [
         "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "ref", "source",
@@ -148,7 +163,9 @@ public enum FeedAddress {
         return value
     }
 
-    private static func validHost(_ host: String) -> Bool {
+    /// The one host predicate: a host this build will address. Shared with `isValidHTTPURL`, because a second
+    /// copy of the rule is how identity and validity drift apart.
+    static func validHost(_ host: String) -> Bool {
         !host.isEmpty && !host.contains("%") && !host.contains("/") && !host.contains("@")
     }
 

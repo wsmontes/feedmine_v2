@@ -28,22 +28,26 @@ public struct ReaderOnboardingView: View {
 
     private let previewCards: [PresentationCard]
     private let topics: [OnboardingTopic]
+    /// The regions the reader can name: discovery's own promise is that the open internet is chosen by interest,
+    /// and a region is one of those interests (B01 of the acceptance benchmark asks for exactly this choice).
+    private let regions: [OnboardingRegion]
     private let languages: [OnboardingLanguage]
     private let isSaving: Bool
     private let deviceLanguage: String
-    private let onSave: (FeedRecipeDefinition, String, Bool) -> Void
+    private let onSave: (FeedRecipeDefinition) -> Void
     private let onClose: () -> Void
 
     /// `isFirstRun` starts at the welcome stage, as V1's gate did; a re-entry from the settings goes straight to
     /// the Composer, which is the stage that has something to change.
     public init(recipe: FeedRecipeDefinition = .neutral(), isFirstRun: Bool = true,
-        previewCards: [PresentationCard] = [], topics: [OnboardingTopic] = [],
+        previewCards: [PresentationCard] = [], topics: [OnboardingTopic] = [], regions: [OnboardingRegion] = [],
         languages: [OnboardingLanguage] = [], isSaving: Bool = false, deviceLanguage: String = "en",
-        onSave: @escaping (FeedRecipeDefinition, String, Bool) -> Void, onClose: @escaping () -> Void) {
+        onSave: @escaping (FeedRecipeDefinition) -> Void, onClose: @escaping () -> Void) {
         _stage = State(initialValue: isFirstRun ? .welcome : .composer)
         _recipe = State(initialValue: recipe)
         self.previewCards = previewCards
         self.topics = topics
+        self.regions = regions
         self.languages = languages
         self.isSaving = isSaving
         self.deviceLanguage = deviceLanguage
@@ -133,14 +137,16 @@ public struct ReaderOnboardingView: View {
             .accessibilityLabel(Text(verbatim: Self.welcomeHeadline))
             .overlay {
                 // V1 tints the last word with the accent colour; the words themselves are its own.
-                (Text("The open web,\narranged by ") + Text("you").foregroundColor(.accentColor) + Text("."))
+                (Text(String(localized: "The open web,\narranged by "))
+                    + Text(String(localized: "you")).foregroundColor(.accentColor)
+                    + Text(verbatim: "."))
                     .font(FeedDesignTokens.Typography.pageTitle)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
             }
     }
 
-    static let welcomeHeadline = "The open web, arranged by you."
+    static let welcomeHeadline = String(localized: "The open web, arranged by you.")
 
     private var trustBadges: some View {
         HStack(spacing: FeedDesignTokens.Spacing.deck) {
@@ -170,8 +176,7 @@ public struct ReaderOnboardingView: View {
             .controlSize(.large)
             .accessibilityIdentifier("welcome-shape")
             Button {
-                onSave(.neutral(languages: [deviceLanguage]), autoName(for: .neutral(languages: [deviceLanguage])),
-                    true)
+                onSave(.neutral(languages: [deviceLanguage]))
             } label: {
                 Text(verbatim: String(localized: "Começar amplo")).font(.subheadline)
             }
@@ -208,17 +213,16 @@ public struct ReaderOnboardingView: View {
                         closeButton
                     }
                     previewZone
-                    Text(verbatim: String(localized: "Monte seu primeiro feed"))
+                    Text(verbatim: String(localized: "Escolha idiomas e lugares"))
                         .font(FeedDesignTokens.Typography.pageTitle)
-                    Text(verbatim: String(localized: "Opcional. Mude tudo depois."))
+                    Text(verbatim: String(localized: "Você entra no feed agora. Os assuntos, você responde dentro dele."))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("composer-subtitle")
-                    languageControl
-                    discoveryControl
-                    balanceControl
-                    topicControl
-                    mediaControl
+                    // The same control set the settings page shows, over the same recipe value — scoped here to
+                    // the two answers the first run collects: the reader must not fill a form before discovering.
+                    ReaderDiscoveryControls(recipe: $recipe, languages: languages, topics: topics,
+                        places: regions, scope: .firstRun)
                 }
                 .padding(FeedDesignTokens.Spacing.page)
             }
@@ -254,129 +258,6 @@ public struct ReaderOnboardingView: View {
         }
     }
 
-    private var languageControl: some View {
-        OnboardingSection(title: String(localized: "Idiomas")) {
-            let available = languages.isEmpty
-                ? recipe.languages.map { OnboardingLanguage(code: $0, name: $0) }
-                : languages
-            FlowRow(items: available) { language in
-                let isOn = recipe.languages.contains(language.code)
-                Button {
-                    var next = recipe
-                    if isOn {
-                        // V1 kept at least one language: removing the last one is not a state it allowed.
-                        guard next.languages.count > 1 else { return }
-                        next.languages.removeAll { $0 == language.code }
-                    } else {
-                        next.languages = next.languages + [language.code]
-                    }
-                    recipe = next
-                } label: {
-                    chip(language.name, isOn: isOn)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("composer-language-\(language.code)")
-            }
-        }
-    }
-
-    private var discoveryControl: some View {
-        OnboardingSection(title: String(localized: "Descoberta")) {
-            VStack(alignment: .leading, spacing: 4) {
-                Slider(value: Binding(get: { recipe.discoveryLevel },
-                    set: { value in var next = recipe; next.discoveryLevel = value; recipe = next }), in: 0...1)
-                    .accessibilityIdentifier("composer-discovery")
-                HStack {
-                    Text(verbatim: String(localized: "Focado")).font(.caption2).foregroundStyle(.secondary)
-                    Spacer()
-                    Text(verbatim: String(localized: "Exploratório")).font(.caption2).foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    /// V1's "Source balance": three rows, each a Less/Balanced/More cycle on its own editorial key.
-    private var balanceControl: some View {
-        OnboardingSection(title: String(localized: "Equilíbrio de fontes")) {
-            VStack(spacing: 0) {
-                balanceRow(String(localized: "Referências estabelecidas"), key: "editorial:reference")
-                balanceRow(String(localized: "Fontes especializadas"), key: "editorial:specialist")
-                balanceRow(String(localized: "Vozes independentes"), key: "editorial:distinctive")
-            }
-        }
-    }
-
-    private func balanceRow(_ title: String, key: String) -> some View {
-        let level = recipe.editorialPreferences[key] ?? .neutral
-        return HStack {
-            Text(verbatim: title).font(.subheadline)
-            Spacer()
-            Button {
-                var next = recipe
-                next.editorialPreferences[key] = level.next()
-                recipe = next
-            } label: {
-                HStack(spacing: 6) {
-                    Text(verbatim: level.balanceLabel).font(.caption)
-                    Image(systemName: "chevron.right").font(.caption2)
-                }
-                .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("composer-balance-\(key)")
-        }
-        .padding(.vertical, 6)
-    }
-
-    private var topicControl: some View {
-        OnboardingSection(title: String(localized: "Tópicos")) {
-            VStack(spacing: 0) {
-                ForEach(topics) { topic in
-                    let level = recipe.topicPreferences[topic.key] ?? .neutral
-                    HStack {
-                        Text(verbatim: topic.name).font(.subheadline)
-                        Spacer()
-                        Button {
-                            var next = recipe
-                            next.topicPreferences[topic.key] = level.next()
-                            recipe = next
-                        } label: {
-                            Text(verbatim: level.topicLabel)
-                                .font(.caption)
-                                .padding(.horizontal, 10).padding(.vertical, 4)
-                                .background(chipBackground(level), in: Capsule())
-                                .foregroundStyle(level == .more ? Color.white : Color.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("composer-topic-\(topic.key)")
-                    }
-                    .padding(.vertical, 6)
-                }
-            }
-        }
-    }
-
-    private var mediaControl: some View {
-        OnboardingSection(title: String(localized: "Tipos de conteúdo")) {
-            VStack(spacing: 0) {
-                ForEach(ReaderRecipeMediaType.allCases, id: \.rawValue) { kind in
-                    Toggle(isOn: Binding(get: { recipe.mediaTypes.contains(kind) }, set: { value in
-                        var next = recipe
-                        if value { next.mediaTypes.insert(kind) } else { next.mediaTypes.remove(kind) }
-                        // V1 never let a recipe ask for nothing; the last kind cannot be switched off.
-                        guard !next.mediaTypes.isEmpty else { return }
-                        recipe = next
-                    })) {
-                        Text(verbatim: kind.displayName).font(.subheadline)
-                    }
-                    .tint(.green)
-                    .accessibilityIdentifier("composer-media-\(kind.rawValue)")
-                    .padding(.vertical, 2)
-                }
-            }
-        }
-    }
-
     private var composerFooter: some View {
         HStack(spacing: FeedDesignTokens.Spacing.tight) {
             Button(String(localized: "Reiniciar")) { recipe = .neutral(languages: [deviceLanguage]) }
@@ -384,12 +265,12 @@ public struct ReaderOnboardingView: View {
             Spacer()
             Button(String(localized: "Começar amplo")) {
                 let broad = FeedRecipeDefinition.neutral(languages: [deviceLanguage])
-                onSave(broad, autoName(for: broad), true)
+                onSave(broad)
             }
             .accessibilityIdentifier("composer-start-broad")
             Spacer()
             Button {
-                onSave(recipe, autoName(for: recipe), false)
+                onSave(recipe)
             } label: {
                 Text(verbatim: String(localized: "Abrir meu feed")).font(.body.weight(.medium))
             }
@@ -403,28 +284,6 @@ public struct ReaderOnboardingView: View {
 
     // MARK: - Pieces
 
-    private func chip(_ title: String, isOn: Bool) -> some View {
-        Text(verbatim: title)
-            .font(.caption)
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(isOn ? Color.accentColor.opacity(0.18) : Color.clear, in: Capsule())
-            .overlay(Capsule().stroke(isOn ? Color.accentColor : Color.secondary.opacity(0.4), lineWidth: 1))
-            .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
-    }
-
-    private func chipBackground(_ level: ReaderPreferenceLevel) -> Color {
-        switch level {
-        case .more: return .accentColor
-        case .neutral: return .clear
-        case .less: return .clear
-        }
-    }
-
-    /// V1's `autoName()`: the feed is named by what the reader asked for more of.
-    func autoName(for recipe: FeedRecipeDefinition) -> String {
-        let names = Dictionary(uniqueKeysWithValues: topics.map { ($0.key, $0.name) })
-        return FeedRecipeNaming.suggestedName(for: recipe, names: names)
-    }
 }
 
 /// One titled block of the Composer's sheet.
@@ -455,15 +314,65 @@ struct FlowRow<Item: Identifiable, Content: View>: View {
     }
 }
 
-/// A language the Composer can offer, as a value the host supplies from the catalogue.
+/// A language the Composer can offer, as a value the host supplies from the catalogue. The catalogue declares
+/// 257 codes and the reader chooses a language: the code here is the primary subtag, and the variants are what
+/// the catalogue holds under it — information, never a second way to choose the same language.
 public struct OnboardingLanguage: Hashable, Sendable, Identifiable {
     public let code: String
+    /// The language's name in the interface language — never a code.
     public let name: String
-    public init(code: String, name: String) { self.code = code; self.name = name }
+    /// Every source the catalogue holds for this language: what "fontes disponíveis" counts.
+    public let availableSources: Int
+    /// The catalogue's own codes under this language, biggest first.
+    public let variants: [OnboardingLanguageVariant]
+
+    public init(code: String, name: String, availableSources: Int = 0,
+        variants: [OnboardingLanguageVariant] = []) {
+        self.code = code; self.name = name
+        self.availableSources = availableSources; self.variants = variants
+    }
+
+    public var id: String { code }
+    /// Whether naming the region adds something: a language declared once has nothing to expand.
+    public var hasRegionVariants: Bool { variants.contains { $0.hasRegion } }
+
+    /// The catalogue's own row for a code the catalogue named only once (a recipe's own answer).
+    public init(recipeCode: String) {
+        self.init(code: CatalogLanguageNaming.choiceCode(recipeCode),
+            name: CatalogLanguageNaming.displayName(forLanguageCode: recipeCode))
+    }
+}
+
+/// One regional variant of a language, as the expansion shows it. Informative: there is no control here.
+public struct OnboardingLanguageVariant: Hashable, Sendable, Identifiable {
+    public let code: String
+    /// The language and its region, in the interface language.
+    public let label: String
+    public let availableSources: Int
+    /// Whether this code names a region on top of the language.
+    public let hasRegion: Bool
+
+    public init(code: String, label: String, availableSources: Int, hasRegion: Bool) {
+        self.code = code; self.label = label
+        self.availableSources = availableSources; self.hasRegion = hasRegion
+    }
+
     public var id: String { code }
 }
 
 /// A topic the Composer can offer, keyed by the catalogue's own node key.
+/// One region the Composer can name, by the catalogue's own country node key.
+public struct OnboardingRegion: Hashable, Sendable, Identifiable {
+    public let key: String
+    public let name: String
+
+    public init(key: String, name: String) { self.key = key; self.name = name }
+
+    public var id: String { key }
+    /// The recipe's own vocabulary: a region is a topic preference on the country's placement.
+    public var preferenceKey: String { "topic:\(key)" }
+}
+
 public struct OnboardingTopic: Hashable, Sendable, Identifiable {
     public let key: String
     public let name: String

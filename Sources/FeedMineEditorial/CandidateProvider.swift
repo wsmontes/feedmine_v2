@@ -32,12 +32,16 @@ public struct CandidateProvider: Sendable {
     public init(contentStore: ContentStore) { self.contentStore = contentStore }
 
     /// Uses only the plan context. Editorial policy versions are not executed in 3C.
-    public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?, examinedCapacity: Int) throws -> CandidateSupplyWindow {
-        try candidates(for: plan, after: cursor, examinedCapacity: examinedCapacity, originIDs: nil)
+    public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?, examinedCapacity: Int,
+        operation: FeedReplenishmentOperationID? = nil, consult: String = "slice",
+        trace: ReplenishmentTrace? = nil) throws -> CandidateSupplyWindow {
+        try candidates(for: plan, after: cursor, examinedCapacity: examinedCapacity, originIDs: nil,
+            operation: operation, consult: consult, trace: trace)
     }
 
     public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?,
-        examinedCapacity: Int, originIDs: [OriginRecordID]?) throws -> CandidateSupplyWindow {
+        examinedCapacity: Int, originIDs: [OriginRecordID]?, operation: FeedReplenishmentOperationID? = nil,
+        consult: String = "slice", trace: ReplenishmentTrace? = nil) throws -> CandidateSupplyWindow {
         let sourceID: SourceID?
         switch plan.context.request {
         case .main: sourceID = nil
@@ -70,9 +74,17 @@ public struct CandidateProvider: Sendable {
                 }
             }
         }
-        return CandidateSupplyWindow(candidates: candidates, examinedCount: window.examinedCount,
+        let supply = CandidateSupplyWindow(candidates: candidates, examinedCount: window.examinedCount,
             nextCursor: window.nextCursor.map { CandidateSupplyCursor(sortDate: $0.sortDate, originRecordID: $0.originRecordID) },
             exhausted: window.exhausted)
+        // The instant this consult returned, stated where it happened: the quantity it produced and whether the
+        // walk it was bounded to was exhausted. An empty window is an outcome, not silence — and so is a full one.
+        if let operation, let trace {
+            trace.record(ReplenishmentEvent.arrived, ["op": operation.described, "kind": "local",
+                "consult": consult, "result": "window", "candidates": String(supply.candidates.count),
+                "examined": String(supply.examinedCount), "exhausted": supply.exhausted ? "true" : "false"])
+        }
+        return supply
     }
 }
 

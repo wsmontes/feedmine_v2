@@ -1,0 +1,26 @@
+Building for debugging...
+[0/3] Write sources
+[1/3] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Emitting module FeedMineCompositionTests
+[4/5] Compiling FeedMineCompositionTests ReaderDiscoveryPoolTests.swift
+[4/6] Write Objects.LinkFileList
+[5/6] Linking FeedMinePackageTests
+Build complete! (7.82s)
+Test Suite 'Selected tests' started at 2026-10-11 00:42:41.900.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-10-11 00:42:41.901.
+Test Suite 'ReaderDiscoveryPoolTests' started at 2026-10-11 00:42:41.901.
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testRetainedDiscoveryUsesTheReplacementAssociationsTransport]' started.
+/Users/wagnermontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:147: error: -[FeedMineCompositionTests.ReaderDiscoveryPoolTests testRetainedDiscoveryUsesTheReplacementAssociationsTransport] : XCTAssertTrue failed - The replacement is offline; an older transport must not supply its sources
+/Users/wagnermontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:147: error: -[FeedMineCompositionTests.ReaderDiscoveryPoolTests testRetainedDiscoveryUsesTheReplacementAssociationsTransport] : XCTAssertTrue failed - The replacement is offline; an older transport must not supply its sources
+/Users/wagnermontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:147: error: -[FeedMineCompositionTests.ReaderDiscoveryPoolTests testRetainedDiscoveryUsesTheReplacementAssociationsTransport] : XCTAssertTrue failed - The replacement is offline; an older transport must not supply its sources
+Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testRetainedDiscoveryUsesTheReplacementAssociationsTransport]' failed (1.002 seconds).
+Test Suite 'ReaderDiscoveryPoolTests' failed at 2026-10-11 00:42:42.904.
+	 Executed 1 test, with 3 failures (0 unexpected) in 1.002 (1.002) seconds
+Test Suite 'FeedMinePackageTests.xctest' failed at 2026-10-11 00:42:42.904.
+	 Executed 1 test, with 3 failures (0 unexpected) in 1.002 (1.003) seconds
+Test Suite 'Selected tests' failed at 2026-10-11 00:42:42.904.
+	 Executed 1 test, with 3 failures (0 unexpected) in 1.002 (1.004) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

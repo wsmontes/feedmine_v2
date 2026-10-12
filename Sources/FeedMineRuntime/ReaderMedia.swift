@@ -18,9 +18,12 @@ public struct ReaderMediaItem: Hashable, Sendable, Identifiable {
     public let title: String?
     /// What the card says it is (`audio/mpeg`, `video/mp4`). Nil when the card did not declare one.
     public let mimeType: String?
+    /// The program the episode belongs to, as the card froze it. V1 stated it on the lock screen as the artist.
+    public let source: String?
 
-    public init(cardID: PublicationCardID, url: URL, title: String?, mimeType: String?) {
-        self.cardID = cardID; self.url = url; self.title = title; self.mimeType = mimeType
+    public init(cardID: PublicationCardID, url: URL, title: String?, mimeType: String?,
+        source: String? = nil) {
+        self.cardID = cardID; self.url = url; self.title = title; self.mimeType = mimeType; self.source = source
     }
 
     public var id: PublicationCardID { cardID }

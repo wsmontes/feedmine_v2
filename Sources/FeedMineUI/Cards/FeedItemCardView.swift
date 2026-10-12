@@ -79,34 +79,7 @@ public struct FeedItemCardView: View, Equatable {
                     .padding(.top, 14)
             }
 
-            Text(verbatim: card.title ?? "")
-                .font(appearance.font(.cardTitle))
-                .fontWeight(appearance.titleWeight)
-                .lineLimit(2)
-                .foregroundStyle(isRead ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-                .padding(.horizontal, appearance.contentPadding)
-                // Keyed on the reserved slot, never on whether bytes arrived: a late image must not move
-                // this line or anything below it.
-                .padding(.top, card.isImageBearing ? 10 : 6)
-
-            if let summary = card.primaryText, !summary.isEmpty {
-                Text(verbatim: summary)
-                    .font(appearance.font(.cardSummary))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                    .padding(.horizontal, appearance.contentPadding)
-                    .padding(.top, 6)
-            }
-
-            HStack {
-                Text(verbatim: Self.formatted(card.timestamp?.value))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, appearance.contentPadding)
-            .padding(.top, 8)
-            .padding(.bottom, appearance.cardPadding)
+            contentSurface
         }
         .frame(maxWidth: .infinity)
         .background(appearance.cardSurface)
@@ -115,6 +88,55 @@ public struct FeedItemCardView: View, Equatable {
             .stroke(appearance.cardBorder, lineWidth: appearance.borderWidth))
         .overlay(alignment: .leading) { accentBar(verticalInset: 12) }
         .contextMenu { contextMenu }
+    }
+
+    /// Wraps exactly the surface that opens the article, and nothing else. The reader's tap is answered by **this**
+    /// view and by no ancestor — the wrapper above stops taking touches — so a control placed as a *sibling* of this
+    /// surface keeps its own touch instead of competing for it. `buttonStyle(.plain)` because the label already
+    /// draws everything: the button adds a hit area, not chrome.
+    @ViewBuilder private func openingSurface<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        Button { emit(.open) } label: { content().contentShape(Rectangle()) }
+            .buttonStyle(.plain)
+    }
+
+    /// The surface that opens the article in the portrait card. Title, summary and date are a single target; the
+    /// source row — which carries the inline bookmark — sits **above** it as a sibling, so the bookmark keeps its
+    /// own touch. Measured before the separation: a 44×44 bookmark target reported *not hittable*, because the
+    /// wrapper's gesture sat above it, and the same layer swallowed the long press meant for the card's menu.
+    private var contentSurface: some View {
+        openingSurface {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(verbatim: card.title ?? "")
+                    .font(appearance.font(.cardTitle))
+                    .fontWeight(appearance.titleWeight)
+                    .lineLimit(2)
+                    .foregroundStyle(isRead ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                    .padding(.horizontal, appearance.contentPadding)
+                    // Keyed on the reserved slot, never on whether bytes arrived: a late image must not move
+                    // this line or anything below it.
+                    .padding(.top, card.isImageBearing ? 10 : 6)
+
+                if let summary = card.primaryText, !summary.isEmpty {
+                    Text(verbatim: summary)
+                        .font(appearance.font(.cardSummary))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .padding(.horizontal, appearance.contentPadding)
+                        .padding(.top, 6)
+                }
+
+                HStack {
+                    Text(verbatim: Self.formatted(card.timestamp?.value))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, appearance.contentPadding)
+                .padding(.top, 8)
+                .padding(.bottom, appearance.cardPadding)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     // MARK: - Landscape (V1 "band")
@@ -135,35 +157,7 @@ public struct FeedItemCardView: View, Equatable {
                 .clipShape(RoundedRectangle(cornerRadius: appearance.landscapeThumbnailRadius))
             }
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text(verbatim: card.sourceDisplayName ?? "")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-
-                Text(verbatim: card.title ?? "")
-                    .font(appearance.font(.cardTitle))
-                    .fontWeight(appearance.titleWeight)
-                    .lineLimit(2)
-                    .foregroundStyle(isRead ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-                    .padding(.top, 4)
-
-                if let summary = card.primaryText, !summary.isEmpty {
-                    Text(verbatim: summary)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .padding(.top, 3)
-                }
-
-                HStack {
-                    Text(verbatim: Self.formatted(card.timestamp?.value))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    Spacer(minLength: 0)
-                }
-                .padding(.top, 4)
-            }
+            openingSurface { landscapeContent }
         }
         .padding(appearance.contentPadding)
         .frame(maxWidth: .infinity)
@@ -173,6 +167,41 @@ public struct FeedItemCardView: View, Equatable {
             .stroke(appearance.cardBorder, lineWidth: appearance.borderWidth))
         .overlay(alignment: .leading) { accentBar(verticalInset: 10) }
         .contextMenu { contextMenu }
+    }
+
+    /// The band's texts, wrapped by `openingSurface` so the reader's tap opens the article. This presentation carries
+    /// no inline bookmark of its own — the compact row owns that — and its other controls are the hero's media
+    /// gesture and the card's menu, both of which keep their own touches because this surface is their sibling.
+    private var landscapeContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(verbatim: card.sourceDisplayName ?? "")
+                .font(.caption)
+                .fontWeight(.medium)
+                .lineLimit(1)
+
+            Text(verbatim: card.title ?? "")
+                .font(appearance.font(.cardTitle))
+                .fontWeight(appearance.titleWeight)
+                .lineLimit(2)
+                .foregroundStyle(isRead ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                .padding(.top, 4)
+
+            if let summary = card.primaryText, !summary.isEmpty {
+                Text(verbatim: summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .padding(.top, 3)
+            }
+
+            HStack {
+                Text(verbatim: Self.formatted(card.timestamp?.value))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 4)
+        }
     }
 
     // MARK: - Slots
@@ -189,7 +218,11 @@ public struct FeedItemCardView: View, Equatable {
             .overlay { decodedImage }
             .clipShape(RoundedRectangle(cornerRadius: appearance.mediaRadius))
             .contentShape(Rectangle())
-            .highPriorityGesture(isAudio ? TapGesture().onEnded { emit(.openMedia) } : nil)
+            // The hero answers its own tap: media plays for an audio card, and the article opens for the rest. With
+            // the wrapper no longer taking touches, an image that had no gesture here would open nothing at all.
+            .highPriorityGesture(isAudio
+                ? TapGesture().onEnded { emit(.openMedia) }
+                : TapGesture().onEnded { emit(.open) })
             .overlay { mediaOverlay }
             .overlay(alignment: .topTrailing) { bookmarkOverlay }
     }
@@ -267,20 +300,30 @@ public struct FeedItemCardView: View, Equatable {
         }
     }
 
+    /// The inline control's glyph. The icon is caption-sized **on purpose** — the fix for an unreachable target is
+    /// not a bigger picture. What grows is the *area*: 44 pt on each side, the minimum Apple's guidelines ask of a
+    /// control a reader has to hit, and `contentShape` makes that whole area hit-testable rather than only the
+    /// drawn glyph. Measured before the fix: `{{401.7, 189.0}, {8.0, 12.7}}` — eight by thirteen points, which no
+    /// finger hits reliably and no assistive technology can address at all.
+    private func inlineBookmarkGlyph(_ filled: Bool, tint: AnyShapeStyle) -> some View {
+        Image(systemName: filled ? "bookmark.fill" : "bookmark")
+            .font(.caption)
+            .foregroundStyle(tint)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+    }
+
     @ViewBuilder private var inlineBookmarkControl: some View {
         if !availableActions.contains(.save) {
             EmptyView()
         } else if isInBookmarkBox {
-            Button { emit(.save) } label: {
-                Image(systemName: "bookmark.fill").font(.caption).foregroundStyle(.yellow)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("card.bookmarkBox")
+            Button { emit(.save) } label: { inlineBookmarkGlyph(true, tint: AnyShapeStyle(.yellow)) }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("card.bookmarkBox")
         } else {
             Button { emit(.save) } label: {
-                Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                    .font(.caption)
-                    .foregroundStyle(isBookmarked ? AnyShapeStyle(.yellow) : AnyShapeStyle(.secondary))
+                inlineBookmarkGlyph(isBookmarked,
+                    tint: isBookmarked ? AnyShapeStyle(.yellow) : AnyShapeStyle(.secondary))
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("card.bookmark")
@@ -370,9 +413,12 @@ public struct FeedItemCardView: View, Equatable {
 
     // MARK: - Dates (V1 formatting)
 
+    // Both formatters state the interface language instead of taking the process default: a date is part of the
+    // interface, and it must not disagree with the copy around it.
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
+        formatter.locale = CatalogLanguageNaming.interfaceLocale
         return formatter
     }()
 
@@ -380,6 +426,7 @@ public struct FeedItemCardView: View, Equatable {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .none
+        formatter.locale = CatalogLanguageNaming.interfaceLocale
         return formatter
     }()
 
