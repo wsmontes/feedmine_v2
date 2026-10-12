@@ -721,6 +721,12 @@ final class CompositionTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let root = root(directory: directory)
         await root.launch()
+        // A **identidade** de A tem de ser a mesma na ida e na volta, senão o teste compara dois contextos e o
+        // produto cunhar uma edição nova é o comportamento CERTO (contexto novo, edição nova). Trocar por filtro
+        // é o controle que já provava isso: ele volta à mesma identidade e preserva.
+        if case .source = switchingBy {
+            try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+        }
         let a = try XCTUnwrap(root.association)
         let aSnapshot = try XCTUnwrap(a.store.state.presentation)
         let aCard = try XCTUnwrap(aSnapshot.window.items.first)
@@ -744,6 +750,7 @@ final class CompositionTests: XCTestCase {
         case .source: try await root.selectContext(.source(TrustedFeed.development[1].sourceID))
         case .filter: try await root.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
         }
+        // (B é uma identidade diferente de A nos dois casos: outra fonte, ou outro filtro.)
         let b = try XCTUnwrap(root.association)
         XCTAssertFalse(b === a, "ir a B constrói outra associação")
         switch switchingBy {
