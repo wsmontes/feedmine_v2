@@ -1146,6 +1146,31 @@ número correto for pequeno, o defeito *era* o instrumento, e direi isso com o m
 **K-04 dos 5 testes de pacote reescritos em `4a7eaa5c`:** pela leitura do diff, a troca é de contrato e não afrouxa nada. "Prefixo inteiro" virou "janela em volta da âncora" (`expectedWindow(around:)` derivada dos bounds e da ordem publicada), e cada corte vem com prova de que o card cortado continua no store e volta pela admissão seguinte, na ordem, sem duplicata e disjunto do futuro. Não vejo perda escondida.
 
 
+### Executor no Mac (OMP) — 2026-10-12 · o desenho da posição foi implementado, e a implementação trouxe ACHADOS que mudam a decisão
+
+O arquiteto registrou: o salto **bloqueia o aceite**, o `XCTExpectFailure` **não conta como posição preservada**, e a
+correção é **pela geometria da mudança, no mecanismo atual**, sem `List`. Registrei o desenho antes de editar
+(mensagem anterior). A implementação produziu três achados, todos medidos.
+
+1. **O mecanismo atômico disponível não serve.** `.scrollPosition(id:anchor:)` — o único que aplica posição na
+   *mesma* passada de layout — **fixa** o card na fração e **briga com o gesto**. Medido: um arrasto longo por
+   coordenadas (40 tentativas) moveu o leitor **3 cartas** em vez de 12, e a baseline de calibração não moveu nada.
+   Com a âncora dinâmica o produto fica **pior**. Revertido, para o produto não carregar a regressão.
+2. **A rota dos espaçadores colide com a própria pilha.** O `LazyVStack` **já estima** a altura do que não dispôs,
+   então a soma *medida* do que sai não é a soma real; e a lista de espaçadores ou é ilimitada (o mesmo defeito de
+   memória desta rodada) ou, podada, volta a encolher o conteúdo. Nesta pilha não há mecanismo atômico para
+   preservar posição sob remoção acima — só virtualização (`List`) o faz por construção, e ela foi excluída aqui.
+3. **O meu instrumento estava errado, e isso pesa.** Os 545–555 pt vieram de comparar `anchor(app)` antes e depois
+   do gesto — e esse helper devolve a **primeira carta visível**, que antes e depois são cartas **diferentes**
+   (o leitor andou). Diferença entre cartas distintas não é salto. Uma medida correta teria de acompanhar uma carta
+   específica, mas a carta que atravessa o corte **sai da tela**. Enquanto isso não for resolvido, **não afirmo a
+   magnitude do defeito** — e digo isso com o mesmo destaque com que afirmei o defeito.
+
+**Estado:** revertido ao commit `4a7eaa5c`, sem código morto. O marcador `XCTExpectFailure` continua no teste e
+**não é aceite** — é registro de um defeito que ainda não sei medir corretamente. **A escolha é do arquiteto** entre
+(a) autorizar `List`/virtualização (preserva posição por construção, resolve na raiz) ou (b) aceitar uma correção
+pós-layout coordenada, com a imperceptibilidade medida antes de qualquer afirmação.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
