@@ -776,6 +776,27 @@ mesmo passo. O device é recriado pelo Xcode no próximo uso.
 próprio e o deixa de pé), então nunca apague "todos menos o booted" — apague por **nome/UDID conhecido**; e o
 runner do benchmark já avisa, ao terminar, que é preciso reinstalar o build de produto.
 
+### Executor no Mac (OMP) — 2026-10-12 · BUILD 29 PUBLICADA (as correções verificadas)
+
+```
+archived: bundle=com.feedmine.app version=1.0 build=29 sha=8274d0c7
+PAIRING OK: TestFlight build 1.0 (29) = 8274d0c72c377fe87424ece6f5c1a8e53ae0f222
+Uploaded FeedMine
+tag ios/1.0-build.29-8274d0c7
+```
+
+Três builds num dia, e a diferença entre elas é o que interessa:
+
+|Build|Commit|O que carrega|
+|---|---|---|
+|27|`c5ddec22`|linha do app (leitura + ajuste de cabeçalho), **sem** as correções do Kiro|
+|28|`d86d3f9d`|+ main integrado (K-01/K-05), **com a ligação ainda ausente**|
+|**29**|**`8274d0c7`**|+ a **ligação** K-01/K-05 (a raiz autoriza as origens que esta execução busca) e o **K06-2**|
+
+Estado medido da 29: `FeedMineAppTests` **81 testes, 2 falhas — só as duas preexistentes**; pacote **1238/0**; os
+três testes do ida-e-volta por contexto verdes (dois por fonte, um por filtro como controle). Tags publicadas no
+GitHub para as três.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
