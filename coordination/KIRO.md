@@ -1094,6 +1094,40 @@ de acumulação ilimitada, e **investigar** o que indique perda real.
 (o visual com a falha esperada registrada). **Declarado:** uma corrida falhou por disco, e duas versões do
 instrumento visual mediam o próprio arrasto em vez do salto — corrigidas para medir o salto.
 
+### Executor no Mac (OMP) — 2026-10-12 · DESENHO: preservar a posição pela geometria medida (ordem do arquiteto)
+
+Decisão dele: o salto de 545–555 pt **bloqueia o aceite**, o `XCTExpectFailure` **não conta como posição
+preservada**, e a correção é **pela geometria da mudança, no mecanismo atual**, sem migrar para `List`. Ele ordenou
+registrar o desenho antes de editar. Aqui está, e ele inclui uma correção do meu próprio diagnóstico.
+
+**CORREÇÃO DO DIAGNÓSTICO — o instrumento também estava errado.** Os 545–555 pt vieram de comparar `anchor(app)`
+antes e depois do gesto, e esse helper escolhe a **primeira carta visível**: antes e depois são **cartas
+diferentes**, porque o leitor andou. A diferença entre duas cartas distintas não é salto. Um salto só é decidível
+acompanhando **uma carta específica** — e uma carta que atravessa o corte *sai da tela*, então a medida também
+precisa ser feita **no momento em que a atualização acontece**, não depois de um gesto longo. É isso que o desenho
+abaixo mede, e é por isso que ele é implementável: a **admissão é assíncrona e separada do gesto**, então o app
+consegue isolar o deslocamento *causado pela atualização* do deslocamento *causado pelo gesto*.
+
+**Desenho, nas quatro regras dele:**
+
+1. **Captura**: o card que ancora a leitura passa a reportar a própria geometria (`.onGeometryChange` na view do
+   card da âncora, o mesmo id que a sessão já publica como âncora). Guarda-se `anchorY` antes da mudança de janela,
+   na `FeedVisualCapture` — **em memória, transitória** (ele dispensou persistir offset).
+2. **Aplicação**: quando a janela muda (poda ou inserção), o app calcula `shift = anchorY(depois) − anchorY(antes)`
+   e compensa **no mesmo caminho de atualização**, pela posição de rolagem já usada hoje — de modo que o card
+   estável **não saia da posição visual**, sem salto seguido de correção.
+3. **Descarte**: a compensação é descartada em gesto novo, troca de associação (edition/contextKey) ou mudança de
+   layout — os três `onChange` que já existem.
+4. **Geometria medida**: nenhuma altura estimada; o número vem do próprio card.
+
+**Validação que ele pediu** (e que muda este teste): poda acima, inserção acima e percurso frente → trás → frente,
+**incluindo fonte ampliada e cards com imagens**; **separando deslocamento do gesto do deslocamento causado pela
+atualização**; e então **remover o `XCTExpectFailure`** e rodar como aceite normal.
+
+**Registro honesto:** este é o segundo instrumento que eu erro nesta medição (o primeiro media o próprio arrasto).
+Antes de afirmar o defeito outra vez, vou medir pela carta acompanhada e pelo caminho da atualização — e se o
+número correto for pequeno, o defeito *era* o instrumento, e direi isso com o mesmo destaque.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
