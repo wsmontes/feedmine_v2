@@ -797,6 +797,27 @@ Estado medido da 29: `FeedMineAppTests` **81 testes, 2 falhas — só as duas pr
 três testes do ida-e-volta por contexto verdes (dois por fonte, um por filtro como controle). Tags publicadas no
 GitHub para as três.
 
+#### Kiro — 2026-10-12 ~02:20 PDT · K-12 (leitura e relatório, autorizado): descoberta e catálogo na linha integrada @ `8274d0c`
+
+Relatório completo em [k12_report.md](../docs/reviews/kiro-2026-10-11/k12_report.md). Só leitura; nenhum número de runtime.
+
+- **D1 resolvido na linha do app.** O universo elegível é o catálogo, visitado **progressivamente** durante a sessão: uma página por oportunidade de runway (`FeedRunwayDriver.swift:177-180`, `ColdFeedBootstrap.swift:167/290`). `discoveryExaminedCapacity = 120` é tamanho de exame por página, não cota. **Ressalva:** perfil vazio, sem idioma e sem tema, volta às 4 do starter (`AppComposition.swift:1078`, `ReaderDiscoveryProfile.isEmpty`). Idioma ou lugar do onboarding já tornam o perfil não vazio.
+- **D2 resolvido.** Idioma é elegibilidade estrita na travessia e no pool (`ReaderDiscoveryBuilder.admits`).
+- **D5/A07 (PD-10) majoritariamente resolvidos.** Manifesto, instalação, updater e verificação ~24 h não bloqueante no foreground (`syncCatalogueIfDue`), com canal padrão `wawasoft/feed-repository`. Resíduo: `scripts/fetch-catalog.sh` continua baixando `wsmontes/feedmine_v2 catalog-v1`, e só o `CATALOG.md` o declara obsoleto.
+- **D3 continua aberto (confirmado):** `TrustedFeed.catalog(limit:)` mantém as 4 keys literais e lança `missingDefaultSource` se uma sumir do catálogo (`TrustedFeeds.swift:56`). Com o catálogo agora atualizável, isso pode acontecer numa atualização pública. `resolveAvailable` já descarta key ausente; `catalog(limit:)` não.
+- **PD-4 e fairness:** fontes descobertas entram na mesma elegibilidade e na mesma partilha proporcional que as selecionadas (`ReaderDiscoveryTraversal.swift:94`, `SelectionEngine.swift:146-149`).
+
+**O que falta para B01, por prioridade:**
+1. D3: starter best-effort (confirmado; proposta K-12a abaixo).
+2. Confirmar que o onboarding grava idioma ou lugar **antes** da primeira associação neutra (hipótese; não li `completeFirstRun`).
+3. Medir ≥50 elegíveis e ≥20 contribuintes nos primeiros 300 cards (precisa da corrida B01).
+4. PD-4 com oferta escassa no início (hipótese).
+
+**Propostas (PENDENTES, pequenas e isoladas):**
+- **K-12a:** `TrustedFeed.catalog(limit:)` descarta key ausente, como `resolveAvailable`, e só lança se **nenhuma** resolver. Mais um teste. Arquivo: `FeedMineApp/FeedMineApp/TrustedFeeds.swift`. O OMP disse antes que o arquivo estava livre do lado dele; preciso de confirmação na linha integrada.
+- **K-12b:** `scripts/fetch-catalog.sh` passa a falhar com mensagem apontando para `bootstrap_catalog.py`, ou é removido. Isso evita que alguém instale o snapshot V1 por engano (PD-10). Decisão do OMP ou do arquiteto.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
