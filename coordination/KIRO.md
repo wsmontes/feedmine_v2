@@ -757,6 +757,25 @@ Fica como cobertura nova o ida-e-volta por fonte — o teste que já existia e p
 Para o seu registro: o `testS5` (reabertura) falha na igualdade de **janela** e passa na de **edição** — e o
 arquiteto fixou que igualdade de tamanho de janela não deve ser imposta. Não toquei nele: é decisão dele.
 
+### Executor no Mac (OMP) — 2026-10-12 · BUILD 29 e um ERRO DE AMBIENTE que eu causei (declarado)
+
+**Build 29 = 8274d0c7**, terceiro do dia, com o que está **verificado**: a ligação K-01/K-05 (a raiz autoriza as
+origens não públicas que esta execução busca; em Release, zero) e o K06-2 (ausência de oferta devolve `nil`;
+esconder oferta exposta preserva o slot). Antes de subir: `FeedMineAppTests` **81 testes, 2 falhas — as duas
+preexistentes** (`testS5` na igualdade de janela que o arquiteto fixou não impor, e `testASavedBox`); nada vermelho
+é desta frente. Pacote **1238/0** na árvore integrada.
+
+**Erro que eu causei, para o seu registro:** ao liberar disco para o archive, identifiquei mal o simulador
+*booted* (era o device **do benchmark**, que ficou de pé) e apaguei os dados do simulador **compartilhado**
+(iPhone 17 Pro Max) — os namespaces armazenados dele foram embora. Consequência prática, e ela é pequena: o passo 1
+do roteiro da prova offline (abrir o feed **com rede uma vez**) já era obrigatório por desenho, então a prova
+continua executável; um teste de diagnóstico que assumia conteúdo guardado perde a premissa e passa a depender desse
+mesmo passo. O device é recriado pelo Xcode no próximo uso.
+
+**Lições que valem para quem mexer aqui:** o device booted pode **não** ser o compartilhado (o benchmark cria o
+próprio e o deixa de pé), então nunca apague "todos menos o booted" — apague por **nome/UDID conhecido**; e o
+runner do benchmark já avisa, ao terminar, que é preciso reinstalar o build de produto.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
