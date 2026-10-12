@@ -131,12 +131,14 @@ final class SyndicationHTTPTests: XCTestCase {
     }
     /// Development/benchmark builds authorize exact non-public origins; nothing else in private space opens.
     func test07fAuthorizedOriginIsExactSchemeHostPort() throws {
-        let origin = try XCTUnwrap(SyndicationAuthorizedOrigin(URL(string:"http://192.168.1.76:8757/bench/feed.xml")!))
+        let origin = try XCTUnwrap(SyndicationAuthorizedOrigin(URL(string:"http://192.168.1.76:8757")!))
         XCTAssertEqual(origin.scheme,"http"); XCTAssertEqual(origin.host,"192.168.1.76"); XCTAssertEqual(origin.port,8757)
-        XCTAssertEqual(SyndicationAuthorizedOrigin(URL(string:"https://bench.local/feed")!)?.port,443)
-        XCTAssertEqual(SyndicationAuthorizedOrigin(URL(string:"http://127.0.0.1/feed")!)?.port,80)
-        // A public host needs no authorization; userinfo and non-HTTP schemes are never authorizable.
-        for raw in ["https://example.test/feed","http://user:pw@192.168.1.76:8757/feed","ftp://192.168.1.76/feed"] {
+        XCTAssertEqual(SyndicationAuthorizedOrigin(URL(string:"https://bench.local/")!)?.port,443)
+        XCTAssertEqual(SyndicationAuthorizedOrigin(URL(string:"http://127.0.0.1")!)?.port,80)
+        // A public host needs no authorization; userinfo and non-HTTP schemes are never authorizable; an
+        // authorization is an origin, so a path, query or fragment is refused rather than trimmed.
+        for raw in ["https://example.test","http://user:pw@192.168.1.76:8757","ftp://192.168.1.76",
+            "http://192.168.1.76:8757/bench/feed.xml","http://192.168.1.76:8757/?token=x","http://192.168.1.76:8757/#frag"] {
             XCTAssertNil(SyndicationAuthorizedOrigin(URL(string:raw)!),raw)
         }
         let access = SyndicationHostAccess(authorizedOrigins:[origin])

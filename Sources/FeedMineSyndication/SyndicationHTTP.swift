@@ -111,16 +111,29 @@ public struct SyndicationAuthorizedOrigin: Hashable, Sendable {
     public let host: String
     public let port: Int
 
+    /// An authorization names an origin only: `scheme://host[:port]` with an empty or `/` path and no query,
+    /// fragment or userinfo (configuration that carries more is refused, never trimmed silently).
     public init?(_ url: URL) {
+        guard url.query == nil, url.fragment == nil, url.path.isEmpty || url.path == "/",
+            let origin = Self.origin(of: url) else { return nil }
+        self = origin
+    }
+
+    private init(scheme: String, host: String, port: Int) {
+        self.scheme = scheme
+        self.host = host
+        self.port = port
+    }
+
+    /// The non-public origin a request URL belongs to, or nil for public, non-HTTP or userinfo URLs.
+    static func origin(of url: URL) -> SyndicationAuthorizedOrigin? {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
             let host = url.host?.lowercased(), !host.isEmpty, url.user == nil, url.password == nil,
             !NetworkHostPolicy.isPubliclyRoutable(host) else { return nil }
-        self.scheme = scheme
-        self.host = host
-        self.port = url.port ?? (scheme == "https" ? 443 : 80)
+        return SyndicationAuthorizedOrigin(scheme: scheme, host: host, port: url.port ?? (scheme == "https" ? 443 : 80))
     }
 
-    func matches(_ url: URL) -> Bool { SyndicationAuthorizedOrigin(url) == self }
+    func matches(_ url: URL) -> Bool { Self.origin(of: url) == self }
 }
 
 internal protocol SyndicationHTTPTransport: Sendable {
