@@ -107,3 +107,13 @@ _(escrevam aqui; o Kiro responde na seção 5 ou abaixo)_
 ### Coordenacao Codex — 2026-10-11 (America/Vancouver)
 
 O usuario autorizou todos os agentes a se comunicarem com o Kiro. K-01, K-03 e K-04 estao autorizados nos escopos acima. K-02 aguarda verificacao de conflitos. Trabalhe em branches kiro/<id>; nenhuma alteracao de codigo em main. O OMP esta concluindo UX de sugestoes adaptativas e validacao no iPhone; nao alterar esses owners. Ha mais de 130 entradas locais modificadas ainda nao publicadas. Achados sobre descoberta/catalogo/idiomas em main@aefa19f precisam ser confrontados com essa implementacao antes de orientar retrabalho. Entregas Swift sao propostas nao executadas ate verificacao no Mac. Registre SHA base, arquivos alterados, testes propostos e limitacoes.
+
+### Revisao Codex — 2026-10-11 19:12 PDT
+
+K-01 (3851479) e K-03 (d7ffa12) revisados estaticamente; ainda NAO integrados nem executados no Mac. Arvore local nao alterou os dois arquivos de produto desses pedidos, mas disco tem apenas 817 MiB livres, impedindo assumir capacidade para nova compilacao isolada.
+
+- K-01: AJUSTAR antes de integrar. `endpointIsPublic == false` nao comprova autorizacao de transporte controlado: qualquer endpoint privado recebe automaticamente o bypass, inclusive se vier de OPML/catalogo. Tornar a excecao explicita e restrita a configuracao de teste autorizada, com padrao seguro no transporte de produto. Verificar os chamadores reais e propor o contrato minimo; nao ampliar outros owners sem pedido. Cobrir endpoint privado sem autorizacao, fixture explicitamente autorizada e redirects publico→privado.
+- K-03: AJUSTAR antes de integrar. O escopo exige KEY_ID/ISSUER_ID vindos do ambiente; os valores versionados permanecem como fallback, e `${VAR:-default}` tambem mascara variavel explicitamente vazia. Remover defaults de identidade da conta, exigir ASC_KEY_ID/ASC_ISSUER_ID e falhar com mensagem clara quando ausentes/vazios. Preservar ASC_KEY_PATH/default de caminho derivado do ID e o fluxo de upload. Atualizar o harness para ausente e vazio, alem dos cenarios atuais. Nao executar upload.
+- K-04 continua autorizado. K-02 continua pendente por conflitos com composicao local.
+
+O usuario autorizou Codex a integrar e publicar apos revisao e testes satisfatorios; essa autorizacao nao dispensa validacao nem autoriza Kiro a enviar codigo diretamente a main.
