@@ -38,9 +38,9 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
     private func work(_ target:AcquisitionTarget,capacity:Int = 4) -> AcquisitionPlannedWork {
         .start(target:target,bounds:.init(batchCapacity:1,observationCapacityPerBatch:capacity,byteCapacityPerBatch:100_000)!)
     }
-    private func response(items:Int = 1) -> BridgeHTTPResponse {
+    private func response(items:Int = 1,url:URL? = nil) -> BridgeHTTPResponse {
         let body = Data(("<rss version=\"2.0\"><channel><title>Feed</title>"+(0..<items).map { "<item><guid>item-\($0)</guid><title>Title \($0)</title></item>" }.joined()+"</channel></rss>").utf8)
-        let fixture = BridgeHTTPResponse(body:body)
+        let fixture = url.map { BridgeHTTPResponse(body:body,url:$0) } ?? BridgeHTTPResponse(body:body)
         addTeardownBlock { fixture.remove() }
         return fixture
     }
@@ -241,15 +241,65 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
     }
 }
 
+// Kiro K-05: a development composition may authorize the exact non-public origin of its own fixture
+// server; product snapshots (default) never contact non-public hosts.
+extension SyndicationAcquisitionSnapshotTests {
+    private func lanSnapshot(_ db:RuntimeDatabase,_ registration:SyndicationTargetRegistration,
+        origins:[URL]) throws -> SyndicationAcquisitionSnapshot {
+        let now = clock
+        return try .init(database:db,registrations:[registration],session:session(),redirectCapacity:0,
+            now:{ now },authorizedNonPublicOrigins:origins)
+    }
+    private func pullRequest(_ t:AcquisitionTarget) -> FeedConnectorPull {
+        FeedConnectorPull(targetID:t.id,targetGeneration:t.generation,checkpointRevision:t.checkpointRevision,
+            checkpoint:nil,observationCapacity:4,byteCapacity:100_000)!
+    }
+    func testK05AuthorizedBenchmarkOriginIsReachable() async throws {
+        let db = try database(),authority = AcquisitionTargetAuthority(database:db),b = binding()
+        let http = response(url:URL(string:"http://10.77.0.1:8757/bench/feed.xml")!)
+        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication,authorizedSources:[b.sourceID])
+        let s = try lanSnapshot(db,registration(id:t.id,endpoint:http.url,bindings:[b]),
+            origins:[URL(string:"http://10.77.0.1:8757")!])
+        let connector = try XCTUnwrap(s.connector(for:t))
+        guard case .batch = try await connector.pull(pullRequest(t)) else { return XCTFail("Expected batch from authorized origin") }
+        XCTAssertEqual(http.calls,1)
+    }
+    func testK05DefaultSnapshotRefusesNonPublicEndpointWithoutContact() async throws {
+        let db = try database(),authority = AcquisitionTargetAuthority(database:db),b = binding()
+        let http = response(url:URL(string:"http://10.77.0.2:8757/bench/feed.xml")!)
+        let t = try authority.register(id:AcquisitionTargetID(),connectorKind:.syndication,authorizedSources:[b.sourceID])
+        // Same LAN, other host: authorization is exact, so this behaves like the product default.
+        for origins in [[], [URL(string:"http://10.77.0.1:8757")!]] {
+            let s = try lanSnapshot(db,registration(id:t.id,endpoint:http.url,bindings:[b]),origins:origins)
+            let connector = try XCTUnwrap(s.connector(for:t))
+            do { _ = try await connector.pull(pullRequest(t)); XCTFail("Expected refusal") }
+            catch { XCTAssertEqual(error as? ConnectorOperationalFailure,.remoteResponse) }
+        }
+        XCTAssertEqual(http.calls,0)
+    }
+    func testK05InvalidAuthorizedOriginRefusesSnapshot() throws {
+        let db = try database()
+        for raw in ["https://example.test","ftp://10.77.0.1/feed","http://user:pw@10.77.0.1:8757",
+            "http://10.77.0.1:8757/bench/feed.xml","http://10.77.0.1:8757/?token=x"] {
+            let url = URL(string:raw)!
+            XCTAssertThrowsError(try lanSnapshot(db,registration(),origins:[url])) {
+                XCTAssertEqual($0 as? SyndicationAcquisitionSnapshotError,.invalidAuthorizedOrigin(url),raw)
+            }
+        }
+    }
+}
+
 // One local response per actual URLSession request; no live network or scheduling controls.
 private final class BridgeHTTPResponse: @unchecked Sendable {
     private static let registryLock = NSLock()
     nonisolated(unsafe) private static var registry:[String:BridgeHTTPResponse] = [:]
-    let url = URL(string:"https://bridge-"+UUID().uuidString.lowercased()+".test/feed")!
+    let url: URL
     let body:Data
     private let lock = NSLock()
     private var count = 0
-    init(body:Data) { self.body = body; Self.registryLock.withLock { Self.registry[url.host!] = self } }
+    init(body:Data,url:URL = URL(string:"https://bridge-"+UUID().uuidString.lowercased()+".test/feed")!) {
+        self.url = url; self.body = body; Self.registryLock.withLock { Self.registry[url.host!] = self }
+    }
     static func find(_ url:URL?) -> BridgeHTTPResponse? { registryLock.withLock { registry[url?.host ?? ""] } }
     func remove() { _ = Self.registryLock.withLock { Self.registry.removeValue(forKey:url.host!) } }
     var calls:Int { lock.withLock { count } }
