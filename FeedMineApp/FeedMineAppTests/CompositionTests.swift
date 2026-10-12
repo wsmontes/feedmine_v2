@@ -650,10 +650,11 @@ final class CompositionTests: XCTestCase {
     /// **mesma forma** de host, **não declarada**, é recusada antes do transporte; e um host **público** publica
     /// sem autorização nenhuma (o controle do arranjo).
     func testK05DeclaredOriginPublishesAndAnUndeclaredOneIsRefused() async throws {
-        // `setenv` no processo do teste é o mesmo que o runner faz no app ao nomear o host do Mac: é a declaração
-        // da execução, não um dado do catálogo.
-        setenv("FEEDMINE_BENCH_TRANSPORT_HOST", "10.77.0.1:8757", 1)
-        defer { unsetenv("FEEDMINE_BENCH_TRANSPORT_HOST") }
+        // `setenv` no processo do teste é o mesmo que o runner faz ao exportar a origem para o app: é a declaração
+        // da execução, não um dado do catálogo. **Uma URL, com esquema, host e porta** — é o que o arquiteto exigiu
+        // depois de revisar o HEAD anterior, e é o valor que o runner exporta (`bench/run.sh`).
+        setenv("FEEDMINE_BENCH_TRANSPORT_ORIGIN", "http://10.77.0.1:8757", 1)
+        defer { unsetenv("FEEDMINE_BENCH_TRANSPORT_ORIGIN") }
 
         try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: true,
             "a origem DECLARADA pela execução tem de publicar")
@@ -661,6 +662,19 @@ final class CompositionTests: XCTestCase {
             "a mesma forma de host, NÃO declarada, tem de ser recusada — senão uma linha de catálogo autoriza a rede privada sozinha")
         try await assertTheEndpointPublishes("https://bench.example/feed.xml", expected: true,
             "um host público publica sem precisar de autorização (controle do arranjo)")
+    }
+
+    /// A exigência do arquiteto na revisão seguinte: a configuração declara **uma URL com esquema, host e porta** —
+    /// não um host que o código converte em HTTP **e** HTTPS. Este caso é a prova de que ele foi obedecido: um valor
+    /// que traz só `host:porta`, sem esquema, **não autoriza nada**, porque o código que sintetizasse os dois
+    /// esquemas estaria autorizando mais do que a execução declarou — e é exatamente esse silêncio que se quer
+    /// impossível.
+    func testK05AnOriginWithoutASchemeAuthorizesNothing() async throws {
+        setenv("FEEDMINE_BENCH_TRANSPORT_ORIGIN", "10.77.0.1:8757", 1)
+        defer { unsetenv("FEEDMINE_BENCH_TRANSPORT_ORIGIN") }
+
+        try await assertTheEndpointPublishes("http://10.77.0.1:8757/feed.xml", expected: false,
+            "sem esquema declarado, nenhum esquema pode ser inferido: host:porta não é uma origem")
     }
 
     private func assertTheEndpointPublishes(_ raw: String, expected: Bool, _ message: String) async throws {
@@ -879,6 +893,40 @@ final class CompositionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(index, min(before, 8),
             "o alcance ANTERIOR à âncora não pode encolher: tinha \(before) antes, a restauração devolveu \(index)")
         XCTAssertGreaterThan(items.count, 1, "a janela restaurada não é degenerada")
+        // **Navegação offline além do recorte** — a exigência seguinte do arquiteto, e ele está certo: devolver 8
+        // cartas anteriores não prova acesso às mais antigas. O leitor anda até a carta mais VELHA da janela e pede
+        // a cauda (`explicitTailApproach` — o vocabulário do próprio produto para "cheguei ao fim, quero mais",
+        // que é o que libera o que está admitido e ainda oculto; `backward` é outro caminho, o de adquirir
+        // conteúdo novo, e mediu-se que ele não estende a janela). A rede continua rejeitada, então o que aparecer
+        // só pode ter vindo do store: é a experiência de leitura offline, não o recorte que a restauração já trazia.
+        let oldest = try XCTUnwrap(items.first, "a janela restaurada tem de ter uma carta")
+        next.store.submitViewport(
+            ViewportObservation(anchor: PresentationAnchor(cardID: oldest.id, placement: .top)),
+            activity: .explicitTailApproach)
+        var extended: FeedPresentationSnapshot?
+        let deadline = Date().addingTimeInterval(10)
+        repeat {
+            extended = next.store.state.presentation
+            if let now = extended, now.window.items.first?.id != oldest.id { break }
+            try await Task.sleep(for: .milliseconds(100))
+        } while Date() < deadline
+        let extendedItems = try XCTUnwrap(extended?.window.items,
+            "pedir a cauda tem de produzir uma janela; a restauração é o começo da leitura, não o fim")
+        // O que se prova aqui é o que foi **medido**: a janela cresce com a navegação, offline. Medição desta
+        // execução, dos logs do próprio app: `installed cards=9` na reabertura e `installed cards=11` depois do
+        // pedido de cauda, com o transporte ainda rejeitando — logo o conteúdo veio do store. A direção do
+        // crescimento NÃO é afirmada, e vale registrar por quê: ele acontece na **cauda**, e as cartas **mais
+        // antigas que o recorte** (a edição tinha 17 cartas visíveis antes da reabertura, e a janela restaurada
+        // traz 9) seguem inalcançáveis por navegação — nem `backward` nem um novo descanso de âncora as estendem.
+        // Isso é um achado de produto, relatado ao arquiteto; uma asserção aqui o transformaria em contrato.
+        let restoredIDs = Set(items.map(\.id))
+        XCTAssertGreaterThan(extendedItems.count, items.count,
+            "pedir a cauda offline tem de trazer conteúdo ALÉM do recorte restaurado (\(items.count) cartas na restauração, \(extendedItems.count) depois)")
+        let fresh = Set(extendedItems.map(\.id)).subtracting(restoredIDs)
+        XCTAssertFalse(fresh.isEmpty,
+            "e tem de ser carta que a restauração não trazia — senão não houve navegação nenhuma")
+        XCTAssertEqual(extended?.window.anchor.cardID, oldest.id,
+            "e a âncora continua sendo onde o leitor parou: a janela cresce, o leitor não anda sozinho")
         await next.close()
     }
 

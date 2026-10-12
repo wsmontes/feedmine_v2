@@ -1821,20 +1821,21 @@ final class FeedAssociation {
         // A debug build still authorizes only non-public origins (`SyndicationAuthorizedOrigin` refuses public
         // hosts, userinfo, non-HTTP schemes and any URL with a path or query); a Release build authorizes none.
         #if DEBUG
-        // **Ativação explícita** (o arquiteto pediu, na revisão do PR #3): a única origem não pública autorizada é
-        // a que **esta execução** nomeia como seu transporte. Nenhuma outra fonte autoriza nada — nem o catálogo
-        // (que nomeia os endpoints do corpus, e é justamente por isso que não pode ser a fonte), nem um OPML
-        // importado, nem a lista de feeds de desenvolvimento (cujas origens são públicas e nem passam o filtro
-        // abaixo). Sem a variável, a lista é vazia: um build Debug rodando o catálogo de produto não autoriza
-        // nada além do público.
+        // **Uma única URL, com esquema, host e porta** (exigência do arquiteto na revisão do PR #3: não um host
+        // convertido em HTTP e HTTPS, porque duas URLs derivadas de um nome é exatamente a ambiguidade que a
+        // autorização não pode ter). O que a execução nomeia é a origem; portas fora do padrão contam, e um valor
+        // só com host — sem esquema ou sem porta — **não autoriza nada**, porque autorizar "o host em qualquer
+        // porta e em qualquer esquema" é autorizar mais do que a execução declarou.
         let declared: [URL] = {
-            guard let host = ProcessInfo.processInfo.environment["FEEDMINE_BENCH_TRANSPORT_HOST"]?
-                .trimmingCharacters(in: .whitespaces), !host.isEmpty else { return [] }
-            return ["http", "https"].compactMap { URL(string: "\($0)://\(host)") }
+            guard let named = ProcessInfo.processInfo.environment["FEEDMINE_BENCH_TRANSPORT_ORIGIN"]?
+                .trimmingCharacters(in: .whitespaces), !named.isEmpty,
+                let parts = URLComponents(string: named) else { return [] }
+            return parts.url.map { [$0] } ?? []
         }()
         let authorizedNonPublicOrigins = declared.compactMap { endpoint -> URL? in
             guard var parts = URLComponents(url: endpoint, resolvingAgainstBaseURL: false),
-                parts.host != nil else { return nil }
+                let scheme = parts.scheme?.lowercased(), ["http", "https"].contains(scheme),
+                let host = parts.host, !host.isEmpty, parts.port != nil else { return nil }
             parts.path = ""
             parts.query = nil
             parts.fragment = nil
