@@ -240,6 +240,10 @@ struct FeedVisualCapture {
     // Diagnostic only: an unverified vector is never a direction authority or a global veto.
     private(set) var velocityUnverified = false
     #if DEBUG
+    /// Traço de diagnóstico do capture, **desligado por padrão** (ordem do arquiteto): liga com
+    /// `FEEDMINE_TRACE_CAPTURE=1`. A medição de posição precisa dele; a operação normal não paga o custo — uma
+    /// corrida de UI com o traço ligado passa de 1,4 milhão de linhas de log.
+    static let tracesCapture = ProcessInfo.processInfo.environment["FEEDMINE_TRACE_CAPTURE"] == "1"
     private var geometryLogged = false
     #endif
 
@@ -307,12 +311,13 @@ struct FeedVisualCapture {
 
     mutating func observeCard(_ proof: FeedVisualCardGeometry, isLast: Bool = false) -> FeedVisualEvent? {
         #if DEBUG
-        // Traço por carta e por leitura, com o id: a coordenada de conteúdo (`frameY + offset`) é imune ao gesto,
-        // então uma descontinuidade nela é o deslocamento causado pela ATUALIZAÇÃO da janela — a referência que o
-        // arquiteto definiu, medida sem estimar alturas. Antes este traço saía uma vez por captura e sem o id, o que
-        // não permitia acompanhar carta nenhuma ao longo do tempo. É #if DEBUG: diagnóstico, sem custo no produto.
-        Self.trace("native card observed id=\(proof.cardID.rawValue.uuidString) frameY=\(proof.frame.minY) "
-            + "offset=\(proof.offset) height=\(proof.height)")
+        // Traço por carta e por leitura, com o id, **só com a flag de diagnóstico ligada**: a coordenada de conteúdo
+        // (`frameY + offset`) é imune ao gesto, então uma descontinuidade nela é o deslocamento causado pela
+        // ATUALIZAÇÃO da janela — a referência que o arquiteto definiu, medida sem estimar alturas.
+        if Self.tracesCapture {
+            Self.trace("native card observed id=\(proof.cardID.rawValue.uuidString) frameY=\(proof.frame.minY) "
+                + "offset=\(proof.offset) height=\(proof.height)")
+        }
         #endif
         let intersects = proof.frame.height > 0 && proof.frame.maxY > 0 && proof.frame.minY < proof.height
         if isLast { tailOffset = intersects ? proof.offset : nil }

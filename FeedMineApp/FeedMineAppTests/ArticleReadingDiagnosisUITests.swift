@@ -184,6 +184,9 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        // Só o experimento liga o traço de diagnóstico: é o único que precisa da coordenada de conteúdo por carta, e
+        // ele é desligado por padrão justamente para a operação normal não pagar o custo.
+        app.launchEnvironment["FEEDMINE_TRACE_CAPTURE"] = "1"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 120), "o app tem de chegar ao feed")
         XCTAssertGreaterThan(waitForCards(app, within: 180), 3, "o arranjo precisa de cartas para admitir acima")
