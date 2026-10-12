@@ -88,27 +88,42 @@ final class SyndicationHTTPTests: XCTestCase {
         _ = try await fetch(t)
         let journal = await t.journal(); XCTAssertEqual(journal.count,2)
     }
-    /// Kiro K-01 (review R15 extended to feed documents): a public feed cannot redirect the
+    /// Kiro K-01 (review R15 applied to feed documents): a public feed cannot redirect the
     /// acquisition request into loopback, the local network or a cloud metadata address.
+    private let privateHosts = ["https://127.0.0.1/feed","https://10.0.0.1/feed","https://169.254.169.254/latest/meta-data/",
+        "https://[::1]/feed","https://localhost/feed","https://printer.local/feed","https://2130706433/feed",
+        "https://[::ffff:127.0.0.1]/feed","https://192.168.1.20:8443/feed"]
     func test07cRedirectIntoPrivateNetworkRefused() async throws {
-        for url in ["https://127.0.0.1/feed","https://10.0.0.1/feed","https://169.254.169.254/latest/meta-data/",
-            "https://[::1]/feed","https://localhost/feed","https://printer.local/feed","https://2130706433/feed",
-            "https://[::ffff:127.0.0.1]/feed"] {
+        for url in privateHosts {
             let t = ScriptedSyndicationTransport([hop(302,location:url),hop()])
-            await failure(t,expected:.invalidRedirectTarget)
+            await failure(t,expected:.nonPublicHost)
             let journal = await t.journal(); XCTAssertEqual(journal.count,1,"must not contact \(url)")
         }
         // The rule applies on every hop, not only the first one.
         let chained = ScriptedSyndicationTransport([hop(302,location:"https://cdn.example/feed"),
             hop(302,location:"https://192.168.1.1/feed"),hop()])
-        await failure(chained,expected:.invalidRedirectTarget)
+        await failure(chained,expected:.nonPublicHost)
         let chainedJournal = await chained.journal(); XCTAssertEqual(chainedJournal.count,2)
     }
-    /// An explicitly configured non-public endpoint (controlled fixture transport) keeps its
-    /// existing redirect behaviour; only escalation from public into private space is refused.
-    func test07dExplicitPrivateEndpointKeepsRedirects() async throws {
+    /// A non-public endpoint is refused by default even before any redirect: being private is not an
+    /// authorization (OPML imports and catalog rows are untrusted input). Nothing reaches the transport.
+    func test07dPrivateEndpointWithoutAuthorizationRefused() async throws {
+        for url in privateHosts {
+            let t = ScriptedSyndicationTransport([hop()])
+            do {
+                _ = try await SyndicationHTTPClient(transport:t,redirectCapacity:2)
+                    .fetch(endpoint:URL(string:url)!,checkpoint:SyndicationCheckpointCodec.empty,bodyByteCapacity:64)
+                XCTFail("Expected refusal for \(url)")
+            } catch { XCTAssertEqual(error as? SyndicationHTTPError,.nonPublicHost,url) }
+            let journal = await t.journal(); XCTAssertTrue(journal.isEmpty,"must not contact \(url)")
+        }
+    }
+    /// Only an explicit, internal opt-in (reachable from @testable tests, not from product composition)
+    /// lets a controlled fixture use a private endpoint and redirect within it.
+    func test07eExplicitControlledFixtureAuthorized() async throws {
+        XCTAssertEqual(SyndicationHTTPClient(transport:ScriptedSyndicationTransport([]),redirectCapacity:0).hostAccess,.publicOnly)
         let t = ScriptedSyndicationTransport([hop(302,location:"/moved"),hop()])
-        let outcome = try await SyndicationHTTPClient(transport:t,redirectCapacity:2)
+        let outcome = try await SyndicationHTTPClient(transport:t,redirectCapacity:2,hostAccess:.controlledFixture)
             .fetch(endpoint:URL(string:"http://127.0.0.1:8080/feed")!,checkpoint:SyndicationCheckpointCodec.empty,bodyByteCapacity:64)
         guard case .document(let d) = outcome else { return XCTFail("Expected document") }
         XCTAssertEqual(d.redirectCount,1)

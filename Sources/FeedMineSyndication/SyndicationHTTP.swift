@@ -72,6 +72,25 @@ public enum SyndicationHTTPError: Error, Equatable, Sendable {
     case redirectCapacityExceeded(Int)
     case notModifiedWithoutConditionalRequest
     case bodyTooLarge(limit: Int, actualAtLeast: Int)
+    /// Kiro K-01: the endpoint or a redirect hop is not publicly routable (loopback, LAN, metadata).
+    case nonPublicHost
+}
+
+/// Which hosts one feed-document opportunity may contact (Kiro K-01: review R15 applied to feed documents).
+/// Feed servers are untrusted and choose redirect targets; OPML and catalog rows are untrusted input too.
+internal enum SyndicationHostAccess: Sendable, Equatable {
+    /// Product behaviour: the endpoint and every redirect hop must be publicly routable.
+    case publicOnly
+    /// Explicit opt-in for a controlled test transport (scripted transport, URLProtocol fixture, local
+    /// server). Internal on purpose: only `@testable` tests can choose it; product composition cannot.
+    case controlledFixture
+
+    func permits(_ url: URL) -> Bool {
+        switch self {
+        case .controlledFixture: return true
+        case .publicOnly: return url.host.map { NetworkHostPolicy.isPubliclyRoutable($0) } ?? false
+        }
+    }
 }
 
 internal protocol SyndicationHTTPTransport: Sendable {
@@ -98,8 +117,10 @@ internal enum SyndicationHTTPOutcome: Sendable {
 internal struct SyndicationHTTPClient: Sendable {
     let transport: any SyndicationHTTPTransport
     let redirectCapacity: Int
+    var hostAccess: SyndicationHostAccess = .publicOnly
 
     func fetch(endpoint: URL, checkpoint: SyndicationCheckpointState, bodyByteCapacity: Int) async throws -> SyndicationHTTPOutcome {
+        guard hostAccess.permits(endpoint) else { throw SyndicationHTTPError.nonPublicHost }
         var request = URLRequest(url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = "GET"
         if checkpoint.nextItemIndex == 0 {
@@ -107,7 +128,6 @@ internal struct SyndicationHTTPClient: Sendable {
             request.setValue(checkpoint.lastModified, forHTTPHeaderField: "If-Modified-Since")
         }
         var redirects = 0
-        let endpointIsPublic = endpoint.host.map { NetworkHostPolicy.isPubliclyRoutable($0) } ?? false
         // Each traversal consumes an explicit redirect slot; no status starts a second opportunity.
         for _ in 0...redirectCapacity {
             try Task.checkCancellation()
@@ -140,14 +160,9 @@ internal struct SyndicationHTTPClient: Sendable {
                 if request.url?.scheme?.lowercased() == "https", scheme == "http" {
                     throw SyndicationHTTPError.invalidRedirectTarget
                 }
-                // Kiro K-01 (extends review R15 to feed documents): the redirect target is chosen by
-                // the remote server, so a chain that started on the public internet never moves to
-                // loopback, the local network or a metadata address. An endpoint that is itself
-                // non-public was configured explicitly (controlled fixture transport) and keeps its
-                // existing redirect behaviour; this rule only refuses escalation into private space.
-                if endpointIsPublic, !NetworkHostPolicy.isPubliclyRoutable(host) {
-                    throw SyndicationHTTPError.invalidRedirectTarget
-                }
+                // Kiro K-01 (review R15 applied to feed documents): the redirect target is chosen by the
+                // remote server, so every hop obeys the same host access as the endpoint itself.
+                guard hostAccess.permits(destination) else { throw SyndicationHTTPError.nonPublicHost }
                 request = URLRequest(url: destination, cachePolicy: .reloadIgnoringLocalCacheData)
                 request.httpMethod = "GET"
                 redirects += 1

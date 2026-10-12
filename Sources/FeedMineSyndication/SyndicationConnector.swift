@@ -62,7 +62,8 @@ public struct SyndicationConnector: FeedConnector, Sendable {
         }
         catch SyndicationHTTPError.unexpectedStatus, SyndicationHTTPError.nonHTTPResponse,
             SyndicationHTTPError.invalidRedirectTarget, SyndicationHTTPError.redirectCapacityExceeded,
-            SyndicationHTTPError.missingRedirectLocation, SyndicationHTTPError.notModifiedWithoutConditionalRequest {
+            SyndicationHTTPError.missingRedirectLocation, SyndicationHTTPError.notModifiedWithoutConditionalRequest,
+            SyndicationHTTPError.nonPublicHost {
             throw ConnectorOperationalFailure.remoteResponse
         }
         catch SyndicationHTTPError.bodyTooLarge { throw ConnectorOperationalFailure.remoteContent }
