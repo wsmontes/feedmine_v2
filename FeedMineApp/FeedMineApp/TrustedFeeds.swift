@@ -277,6 +277,16 @@ enum DevelopmentLocalFeeds {
 
     static var textShape: TextShape { TextShape.current }
 
+    /// **Quantos itens por feed esta execução serve.** O default (6) mantém todo documento byte-idêntico ao que este
+    /// transporte sempre serviu — seis itens por feed, dois feeds, doze cartas, que é *menos* que uma janela. Um teste
+    /// que precisa de histórico **mais fundo que uma janela** (para exercitar poda de verdade, e não a re-projeção da
+    /// mesma janela) pede mais por variável de ambiente. Autorizado pelo arquiteto: fixture configurável, default
+    /// existente preservado.
+    static var itemCount: Int {
+        let requested = Int(ProcessInfo.processInfo.environment["FEEDMINE_FIXTURE_ITEMS"] ?? "") ?? 6
+        return max(1, requested)
+    }
+
     /// Long enough to be read locally, and recognisable when it appears on screen.
     static var longText: String {
         (1...60).map { "Parágrafo \($0): o texto que a fonte publicou para este artigo de teste." }
@@ -299,7 +309,7 @@ enum DevelopmentLocalFeeds {
     static func jsonDocument(for url: URL) -> Data {
         let isScience = url.absoluteString.contains("science")
         let feedTitle = isScience ? "BBC Science" : "BBC World"
-        let items = (0..<6).map { index in
+        let items = (0..<itemCount).map { index in
             """
             {"id": "\(url.absoluteString)#\(index + 1)",
              "url": "https://example.test/\(isScience ? "science" : "world")/\(index + 1)",
@@ -322,7 +332,7 @@ enum DevelopmentLocalFeeds {
         // R5: with `FEEDMINE_EMPTY_FEEDS=1` the same transport answers with its channel and no stories —
         // the deterministic way to reach the surface a reader sees when the attempt finished without
         // eligible content, without pretending the network failed.
-        let items = answersWithNothing ? "" : (0..<6).map { index -> String in
+        let items = answersWithNothing ? "" : (0..<itemCount).map { index -> String in
             let stamp = isScience ? 900 - index * 60 : 950 - index * 60
             return """
             <item>

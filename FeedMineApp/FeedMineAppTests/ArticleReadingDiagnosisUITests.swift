@@ -169,18 +169,18 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         return containers(app).count
     }
 
-    /// **Experimento controlado** que o arquiteto pediu depois de eu retratar a medida anterior (ela comparava cartas
-    /// diferentes sob um gesto concorrente): leitor **parado**, **uma** carta visível identificada, e o frame dela
-    /// medido por vinte segundos sem gesto nenhum.
+    /// **Experimento controlado** que o arquiteto desenhou, depois de retirar duas medidas minhas: leitor parado,
+    /// **uma** carta visível identificada, e uma atualização que **poda** cartas acima dela.
     ///
-    /// **Limite medido, e ele corrige uma afirmação minha anterior:** neste cenário o app NÃO chega a podar. O log do
-    /// dispositivo, com os IDs de cada instalação ligados atrás da flag, mostra **82 (e 89, em outra corrida)
-    /// instalações com os MESMOS doze ids** — são **re-projeções**, não podas: a edição servida tem cerca de doze
-    /// cartas, então a janela cobre o conteúdo inteiro e nada sai dela. Eu havia chamado essas instalações de
-    /// "podas/inserções" e estava errado. Quem exercita a poda de verdade é o teste de unidade
-    /// `testLongNavigationKeepsTheTotalWindowBoundedAndEverythingReachable`, com arranjo de ~190 cartas, que mede o
-    /// teto e o alcance a cada passo. O que este teste prova, com o número em anexo, é a **estabilidade da
-    /// coordenada de conteúdo** de uma carta enquanto nada rola.
+    /// O que faz este cenário ser válido é o **arranjo**: o fixture do app serve seis itens por feed por padrão (dois
+    /// feeds, doze cartas), o que faz a janela cobrir o conteúdo inteiro — e uma corrida assim produziu 89
+    /// instalações com os MESMOS doze ids, isto é, re-projeções, não podas. Com `FEEDMINE_FIXTURE_ITEMS=95` a edição
+    /// passa de 190 cartas e a janela desliza de verdade.
+    ///
+    /// Por isso o teste **exige** a poda: a carta acompanhada está no topo, tem de **sair** da árvore quando a janela
+    /// desliza, e tem de **voltar** quando o leitor retorna. Sem a retirada a execução é **INCOMPLETA, nunca PASS** —
+    /// medir repouso numa janela que nunca mudou foi exatamente o erro que ele apontou. A estabilidade da coordenada
+    /// de conteúdo é medida depois, sem gesto, e o anexo casa frame e offset do MESMO card com a mutação.
     @MainActor
     func testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped() throws {
         let app = XCUIApplication()
@@ -191,69 +191,80 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         // Só o experimento liga o traço de diagnóstico: é o único que precisa da coordenada de conteúdo por carta, e
         // ele é desligado por padrão justamente para a operação normal não pagar o custo.
         app.launchEnvironment["FEEDMINE_TRACE_CAPTURE"] = "1"
+        // **Edição mais funda que uma janela**, e é isto que torna o teste válido: o fixture serve seis itens por
+        // feed por padrão (dois feeds, doze cartas), o que faz a janela cobrir o conteúdo INTEIRO — sem poda
+        // nenhuma, e o teste antigo passava sem exercitar nada. Noventa e cinco itens por feed dão ~190 cartas.
+        app.launchEnvironment["FEEDMINE_FIXTURE_ITEMS"] = "95"
         app.launch()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 120), "o app tem de chegar ao feed")
         XCTAssertGreaterThan(waitForCards(app, within: 180), 3, "o arranjo precisa de cartas para admitir acima")
 
-        // **Experimento controlado** (o arquiteto retirou a medida anterior: ela comparava cartas diferentes sob um
-        // gesto concorrente). O desenho agora é: avançar com gestos, **esperar a rolagem parar**, escolher UMA carta
-        // visível, e medir o frame dela **sem nenhum gesto** enquanto a atualização da janela chega. Como a admissão
-        // é assíncrona, qualquer mudança nesse trecho parado só pode ter vindo da atualização.
-
-        // 1. Avançar com gestos que o app REALMENTE processa, e **o bastante para forçar uma poda**: a janela desliza
-        //    quando o leitor passa de `backwardCapacity` = 8 cartas. O log do dispositivo mostrou que uma corrida com
-        //    avanço curto produziu 89 reinstalações com os MESMOS 12 ids — re-projeções, não podas — e o teste passava
-        //    sem exercitar o corte. Aqui o avanço vai a trinta gestos, e o anexo confirma pelo log quais ids saíram e
-        //    entraram.
-        var distinct: Set<String> = []
-        var guardCount = 0
-        while distinct.count < 12, guardCount < 30 {
-            app.scrollViews.firstMatch.swipeUp(velocity: .slow)
-            guardCount += 1
-            if let element = anchor(app), element.frame != .zero { distinct.insert(element.identifier) }
+        // **O arranjo tem de conter uma poda de verdade.** A edição servida é mais funda que uma janela (acima), então
+        // avançar faz a janela deslizar e **retirar** a carta que estava no topo. Sem essa retirada a execução é
+        // INCOMPLETA — nunca PASS —, porque medir repouso numa janela que nunca mudou foi exatamente o erro que o
+        // arquiteto apontou ao retirar a conclusão anterior.
+        guard let tracked = anchor(app), tracked.frame != .zero else {
+            return XCTFail("uma carta visível com identificador tem de existir antes do avanço")
         }
-        XCTAssertGreaterThanOrEqual(distinct.count, 2,
-            "o avanço tem de mover o leitor para haver uma admissão pendente (\(distinct.count) cartas distintas)")
+        let trackedID = tracked.identifier
 
-        // 2. Esperar a rolagem **parar**: três leituras consecutivas iguais do frame do topo visível. Sem isto a
-        //    medida teria gesto concorrente, que foi o que invalidou a anterior.
-        var stableName: String?
+        // 1. Avançar até a carta acompanhada SAIR da lista: ela está no topo, e a janela desliza acima dela.
+        var rounds = 0
+        var removed = false
+        while rounds < 40, !removed {
+            app.scrollViews.firstMatch.swipeUp(velocity: .slow)
+            rounds += 1
+            Thread.sleep(forTimeInterval: 0.4)
+            removed = containers(app).first { $0.identifier == trackedID } == nil
+        }
+        let removalShot = XCTAttachment(screenshot: app.screenshot())
+        removalShot.name = "after-tracked-card-was-pruned"
+        removalShot.lifetime = .keepAlways
+        add(removalShot)
+        XCTAssertTrue(removed,
+            "INCOMPLETO: a janela não retirou a carta acompanhada (\(trackedID)) em \(rounds) gestos — sem poda "
+                + "efetiva este cenário não prova nada, e execução incompleta nunca é PASS")
+
+        // 2. Voltar até ela REAPARECER: a reinserção é a outra metade da exigência.
+        var backRounds = 0
+        var restored = false
+        while backRounds < 40, !restored {
+            app.scrollViews.firstMatch.swipeDown(velocity: .slow)
+            backRounds += 1
+            Thread.sleep(forTimeInterval: 0.4)
+            restored = containers(app).first { $0.identifier == trackedID } != nil
+        }
+        XCTAssertTrue(restored,
+            "a carta retirada tem de VOLTAR quando o leitor retorna (\(trackedID) não reapareceu em \(backRounds) gestos)")
+
+        // 3. A rolagem assentou e a carta voltou: medir **sem nenhum gesto**, e exigir que a coordenada de conteúdo
+        //    dela não mude. As amostras e o instante ficam no anexo, onde o log do dispositivo casa frame e offset do
+        //    MESMO card com a mutação da janela.
         var stableY: CGFloat = 0
         var settled = false
         var seen: [CGFloat] = []
         let settleDeadline = Date().addingTimeInterval(30)
         while Date() < settleDeadline {
-            if let element = anchor(app), element.frame != .zero {
+            if let element = containers(app).first(where: { $0.identifier == trackedID }), element.frame != .zero {
                 if seen.last == element.frame.minY { seen.append(element.frame.minY) } else { seen = [element.frame.minY] }
-                if seen.count >= 3 {
-                    stableName = element.identifier
-                    stableY = element.frame.minY
-                    settled = true
-                    break
-                }
+                if seen.count >= 3 { stableY = element.frame.minY; settled = true; break }
             }
             Thread.sleep(forTimeInterval: 0.2)
         }
         XCTAssertTrue(settled, "a rolagem tem de parar para a medida ser sem gesto concorrente")
-        guard let trackedID = stableName, stableY != 0 else {
-            return XCTFail("uma carta visível com identificador tem de existir depois do avanço")
-        }
         let screenAtRest = XCTAttachment(screenshot: app.screenshot())
-        screenAtRest.name = "at-rest-before-window-update"
+        screenAtRest.name = "at-rest-after-reinsertion"
         screenAtRest.lifetime = .keepAlways
         add(screenAtRest)
 
-        // 3. Medir **sem nenhum gesto**. Nada rola aqui: qualquer mudança de frame só pode vir da atualização da
-        //    janela, porque a admissão do avanço é assíncrona e pode chegar depois de a rolagem assentar. Se a carta
-        //    sair da janela, a medida perdeu o objeto — e o teste diz isso em vez de fingir uma medida.
         var samples: [CGFloat] = [stableY]
-        var leftTheWindow = false
+        var leftAgain = false
         let watch = Date().addingTimeInterval(20)
         while Date() < watch {
             if let element = containers(app).first(where: { $0.identifier == trackedID }) {
                 if element.frame != .zero { samples.append(element.frame.minY) }
             } else {
-                leftTheWindow = true
+                leftAgain = true
                 break
             }
             Thread.sleep(forTimeInterval: 0.2)
@@ -261,16 +272,16 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         let low = samples.min() ?? stableY
         let high = samples.max() ?? stableY
         let shift = high - low
-        let evidence = XCTAttachment(string: "carta=\(trackedID) no-repouso=\(stableY) min=\(low) max=\(high) "
-            + "amostras=\(samples.count) saiu-da-janela=\(leftTheWindow) deslocamento=\(shift) pt "
-            + "cartas-distintas-no-avanco=\(distinct.count)")
-        evidence.name = "stable-card-shift-while-stopped"
+        let evidence = XCTAttachment(string: "carta=\(trackedID) retirada-em=\(rounds)-gestos "
+            + "reinserida-em=\(backRounds)-gestos no-repouso=\(stableY) min=\(low) max=\(high) "
+            + "amostras=\(samples.count) saiu-de-novo=\(leftAgain) deslocamento=\(shift) pt")
+        evidence.name = "prune-reinsert-and-stability"
         evidence.lifetime = .keepAlways
         add(evidence)
-        XCTAssertFalse(leftTheWindow,
+        XCTAssertFalse(leftAgain,
             "a carta acompanhada não pode sair da janela durante a medida — senão o objeto da medida se perdeu")
         XCTAssertLessThan(shift, 1,
-            "com o leitor PARADO, a atualização da janela moveu a carta visível em \(shift) pt, sem gesto concorrente")
+            "com o leitor PARADO, a janela moveu a carta visível em \(shift) pt, sem gesto concorrente")
     }
 
     /// Espera **rolando**, como o gate faz: numa folha preguiçosa o controle não EXISTE até aparecer, então
