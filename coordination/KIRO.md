@@ -205,6 +205,46 @@ O que dá para dizer agora, a partir do código de `main` e da descrição de vo
 
 O usuário autorizou expressamente resolver os achados. **Kiro, leia o mandato acima e comece por K-07, depois K-08 e K-09.** Não espere mais autorização individual para esses pedidos. Os demais estão autorizados com handoff obrigatório para owners locais do OMP. Em caso de colisão, registre AGUARDA HANDOFF OMP e avance ao próximo item independente. Publique branch/SHA/correção/teste; Mac valida e integra. K-04 continua revisão contínua; K-03 concluído; K-01/K-05 em handoff de integração. Não declarar PASS B01–B06 por leitura de código nem testes de componente.
 
+### Executor no Mac (OMP) — 2026-10-11 · handoff para K-02, K-10, K-11/K-12 e insumos para K-13
+
+Estado: tudo **local**, não commitado e não publicado. Nenhum merge feito por mim; o repo local está 63 commits atrás
+de `origin/main` e o trabalho da rodada 10 vive na árvore de trabalho. Quem tem o Mac decide o merge.
+
+**Arquivos que estou tocando agora (owners "quentes" — os pedidos que esperam handoff):**
+- `FeedMineApp/FeedMineApp/AppComposition.swift` (K-10): a resposta do leitor não reconstrói mais a sessão; a
+  exposição real passou a ser contada no `viewport(_:)`; o ledger de exposição é compartilhado com a associação;
+  `refreshFromTheReader()` reconstrói só quando o perfil armazenado mudou; `voteOnTopic` não chama `replaceSession`.
+- `FeedMineApp/FeedMineApp/FeedMineApp.swift` (K-05 tocaria aqui? não — este é o app view): orçamento das sugestões,
+  forma compacta, esconder desenha **nada** (slot medido), posição preservada.
+- `FeedMineApp/FeedMineAppTests/CompositionTests.swift` (K-02/K-10/K-13): **3 testes novos** e 1 reforçado, entre as
+  linhas ~925 e ~1010 (`testTheAnswerIsConsumedWhenTheNextSessionOfTheContextIsBuilt`,
+  `testAnExplicitRefreshHonoursAnAnswerGivenAfterTheSessionWasBuilt`,
+  `testAnsweringInTheFeedChangesDiscoveryWithoutMovingTheReader` agora exige `after === association`).
+  **K-02 deve rebasear**: o arquivo está entrelaçado, como o coordenador suspeitou.
+- `FeedMineApp/FeedMineApp/TrustedFeeds.swift` (K-02/K-12): **NÃO fui eu** — mtime 16:33, anterior às minhas edições.
+  Do meu lado o arquivo está livre.
+- `Sources/FeedMineUI/{FeedEditorialInvitationView,EditorialInvitationCadence}.swift`,
+  `Sources/FeedMineUI/Settings/ReaderDiscoveryPreferencesView.swift` (novos da rodada 10).
+- `FeedMineApp/FeedMineAppTests/{EditorialOfferBudgetUITests.swift}` (novo) e
+  `FeedMineApp/FeedMineApp.xcodeproj/project.pbxproj` (o novo arquivo de teste foi adicionado ao alvo
+  `FeedMineUITests` — quatro entradas coordenadas).
+- `bench/oracle.py` e `FeedMineApp/FeedMineAppTests/DiscoveryBenchmarkTests.swift`, com
+  `bench/EVALUATOR.sha256` **re-congelado** (autorizado pelo arquiteto): a medição de estabilidade passou a
+  acompanhar o card por identidade e a registrar três resultados — estável / instável / **não medível** (com
+  motivo), sendo que "não medível" deixa o gate incompleto, nunca PASS.
+
+**Insumo que o K-13 pediu — as duas asserções falhando em `CompositionTests` (pré-existentes, não são minhas):**
+1. `testASavedBoxExportsItsSavedArticlesAndNotTheirSources` — falha na asserção `XCTAssertFalse(csv.contains(
+   "title,url,identity,category"), "a box is not exported as a list of feeds")`: a exportação de uma caixa de
+   salvos está produzindo o cabeçalho de lista de **feeds**.
+2. `testS5OfflineReopenRestoresEditionWithFreshProvenance` — falha em
+   `XCTAssertEqual(restored.window, snapshot.window)`: depois do reopen offline a janela restaurada **difere** da
+   janela gravada no snapshot (mesmo `editionID`, `provenance.sequenceID` renovado como esperado).
+
+**K-06 (revisão estática do diff da rodada 10):** o diff **não está publicado** — a rodada 10 é local. Se o
+coordenador quiser essa revisão, eu gero o diff como arquivo em `docs/reviews/kiro-2026-10-11/` numa branch e aviso
+aqui; não publiquei nada por conta própria.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
