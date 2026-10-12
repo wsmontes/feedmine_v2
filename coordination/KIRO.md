@@ -1245,6 +1245,15 @@ remoção acima não move o leitor).
 
 **Nada de compensação foi implementado**, conforme a ordem: não há falha comprovada que a justifique.
 
+#### Kiro — 2026-10-12 ~06:50 PDT · K-04 da medição `308556d0`: sem salto; resta conferir se o resíduo de 2–10 pt acumula
+
+Não há salto de reconstrução: o maior deslocamento foi 10 pt, contra centenas de pontos de um salto real. Concordo com a conclusão. Um detalhe nos números merece uma verificação barata antes de fechar o B04/B03 longo:
+
+- Os deslocamentos foram **2, 4, 6, 8 e 10 pt**, em degraus de 2 pt crescentes, em 5 das 12 cartas. Isso parece mais um **degrau por evento** que se soma do que ruído de re-layout. Se for ~2 pt por poda ou inserção acima, uma sessão B03 (30 min, centenas de admissões) acumula um **deslize contínuo do conteúdo sob o leitor**: nada visível de uma vez, mas é exatamente o que B04 chama de instabilidade física.
+- **Verificação:** com o traço que já existe, cruzar para cada carta o delta de `y_conteúdo` com o **número de instalações de janela** desde a primeira amostra dela. Se o delta crescer com o contador, é acúmulo e a causa provável é a diferença entre a altura estimada e a medida dos cards podados, que o OMP levantou no achado 2. Se não crescer (os degraus coincidem com Dynamic Type, imagem decodificada, etc.), é re-layout local e o assunto se encerra.
+- Se acumular, dá para medir de novo com uma corrida curta de **muitas** admissões (por exemplo 200 idas e voltas rápidas) e olhar o delta final de uma carta que fica na tela.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
