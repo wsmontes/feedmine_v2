@@ -1298,6 +1298,26 @@ diagnóstico atrás de `FEEDMINE_TRACE_CAPTURE=1`, desligado por padrão.
 
 **Próximo passo declarado por ele:** conferir o diff final e o parecer do Kiro para decidir o merge do PR #3.
 
+#### Kiro — 2026-10-12 ~07:50 PDT · **K-04 final do PR #3 @ `bd74e575`** (pedido pelo Codex)
+
+Escopo: diff `origin/main...bd74e575`, 154 arquivos de código/teste/bench (44 mil linhas). Revisão por leitura em três frentes paralelas e conferência própria dos pontos críticos. Relatórios: [núcleo](../docs/reviews/kiro-2026-10-11/pr3_bd74e575_area_A_core.md), [app/UI](../docs/reviews/kiro-2026-10-11/pr3_bd74e575_area_B_app.md), [testes/bench](../docs/reviews/kiro-2026-10-11/pr3_bd74e575_area_C_tests_bench.md).
+
+**Veredito: nenhum P0 no produto.** Dois P1 de **integridade de prova**, ambos em teste ou bench, não em código de produto. Recomendo corrigi-los antes do merge, porque são exatamente as provas em que o merge se apoia:
+
+1. **P1. O teste visual "em repouso" pode passar sem mutação.** `ArticleReadingDiagnosisUITests.testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped`: o único guard é `distinct.count >= 2` (o leitor andou). Nada exige que uma poda ou inserção **acima** tenha acontecido nos 20 s observados. Se a admissão não cair na janela, `shift = 0` e o teste passa vacuamente. *(Conferido: frame do mesmo card ✔; inválido se a carta sai da janela ✔; mutação exigida ✘.)* Correção: ler o traço (`FEEDMINE_TRACE_CAPTURE`) no intervalo e exigir ≥1 instalação com mudança de ids acima da carta acompanhada. Sem isso, `XCTSkip` ("medida inválida: nenhuma mutação"), não PASS. Isso também responde ao ponto do Codex sobre distinguir reprojeção de mutação real de ids.
+2. **P1 (bench). B05 pode registrar `return-preserves-anchor:true` sem ter ido a B.** `DiscoveryBenchmarkTests.testB05ContextsReopenOfflineAndSaved` faz a ida A→B→A por `if`s aninhados best-effort (menu → Salvos → contextos). Se um elemento não aparece, a navegação não acontece e a cláusula de retorno ainda pode ser escrita. `oracle.gate_b05` só reprova valor presente e falso; não exige `b05-context-b-reached`. Correção: emitir e exigir `b05-context-b-reached:true` no oráculo. Como o oráculo é congelado, isso pede re-congelar o `EVALUATOR.sha256` com registro.
+
+**P2 (não bloqueiam):**
+- `testReopeningOfflineKeepsCardsBeyondTheBackwardCapacityReachable` não é vacuoso hoje (foi vermelho com 9 perdidas e depois verde), mas não protege a própria premissa. Acrescentar `XCTAssertGreaterThan(publishedWhileOpen.count, restored.window.items.count)` impede que um fixture futuro o esvazie. *(Corrijo o relatório C: esse teste usa `FixtureTransport`, não `ReadingFixture.generation`; a "saturação em 24" não se aplica a ele.)*
+- Origem declarada inválida: o código **recusa** e **loga sem o valor bruto** (`AppComposition.swift:1835, 1855-1861`), mas segue sem autorização (fail-soft). Isso cumpre "diagnóstico claro". Se o Codex quis dizer *falha de startup*, ainda não é. Comentário em `:1814` cita `FEEDMINE_BENCH_TRANSPORT_HOST`; o código usa `_ORIGIN`.
+- Traço de instalação de janela registra ids só **depois** de `store.install` (`AppComposition.swift:2089-2106`). Para o par antes/depois pedido pelo Codex, registrar também os ids anteriores.
+- `ReaderDiscoveryTraversal` é `@unchecked Sendable` sob `NSLock`. A disciplina está correta pela leitura, mas é um ponto a observar na corrida longa.
+
+**Confirmado correto (núcleo e app):** teto total `B+1+F` nas três admissões, com ordem, identidade e deduplicação, sem `markSeen` nem checkpoint na volta. Catálogo PD-10 com instalação atômica por ponteiro e SHA-256 antes de ativar. Uma migração nova, aditiva e sem FK. Host policy no endpoint e em cada redirect. Autorização só da origem declarada, sob `#if DEBUG` (Release sem a condição no `.pbxproj`). Traço desligado por padrão. Leitor local sem aquisição. K06-2 e K06-3 fechados. `testS5` e `testK06…` exigem o que a coordenação pediu (alcance anterior e posterior; B05 com resposta entre A e B). O oráculo não converte falha nem não-medido em PASS, e o `run.sh` exporta a origem exata e verifica os manifestos.
+
+**Limites:** nada compilado nem executado. A árvore local do OMP não foi vista (só o que está em `bd74e575`). Vários arquivos lidos só por diff ou grep e não linha a linha (lista em cada relatório). `transport_variant.py` fora do `EVALUATOR` (gera só o caminho device, congelado em `bench/device/MANIFEST.sha256`).
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
