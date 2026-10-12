@@ -2092,7 +2092,16 @@ final class FeedAssociation {
         try store.install(received)
         store.installBookmarks(try PublicationStore(database: database).bookmarkedCardIDs())
         if let snapshot = store.state.presentation {
-            Self.log("installed cards=\(snapshot.window.items.count) edition=\(snapshot.editionID.rawValue) sequence=\(snapshot.provenance.sequenceID) order=\(snapshot.provenance.position)")
+            // Com o diagnóstico ligado, a instalação também diz **quais** cartas ela admitiu, na ordem — é o que
+            // permite comparar os IDs antes e depois de cada poda, que o arquiteto pediu ao Kiro para concluir a
+            // revisão. Desligado por padrão, como o resto do traço.
+            #if DEBUG
+            let admittedIDs = ProcessInfo.processInfo.environment["FEEDMINE_TRACE_CAPTURE"] == "1"
+                ? " ids=[" + snapshot.window.items.map(\.id.rawValue.uuidString).joined(separator: ",") + "]" : ""
+            #else
+            let admittedIDs = ""
+            #endif
+            Self.log("installed cards=\(snapshot.window.items.count) edition=\(snapshot.editionID.rawValue) sequence=\(snapshot.provenance.sequenceID) order=\(snapshot.provenance.position)\(admittedIDs)")
             trace?.record("admitted", ["cards": String(snapshot.window.items.count),
                 "edition": snapshot.editionID.rawValue.uuidString,
                 "sequence": String(describing: snapshot.provenance.sequenceID),

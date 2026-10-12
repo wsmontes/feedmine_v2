@@ -170,13 +170,17 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
     }
 
     /// **Experimento controlado** que o arquiteto pediu depois de eu retratar a medida anterior (ela comparava cartas
-    /// diferentes sob um gesto concorrente): leitor **parado**, **uma** carta visível identificada e mantida na
-    /// janela, e uma atualização que **poda** cartas acima dela. A medida é o frame **dessa mesma carta** enquanto
-    /// nada rola — e, como a admissão é assíncrona, ela pode chegar depois de a rolagem assentar, que é a janela em
-    /// que a atualização fica isolada.
+    /// diferentes sob um gesto concorrente): leitor **parado**, **uma** carta visível identificada, e o frame dela
+    /// medido por vinte segundos sem gesto nenhum.
     ///
-    /// Se o frame mudar aqui, a atualização moveu o leitor: é **regressão real**, e o teste fica vermelho. Não há
-    /// marcador de falha esperada — o arquiteto o retirou por ele se basear na comparação inválida.
+    /// **Limite medido, e ele corrige uma afirmação minha anterior:** neste cenário o app NÃO chega a podar. O log do
+    /// dispositivo, com os IDs de cada instalação ligados atrás da flag, mostra **82 (e 89, em outra corrida)
+    /// instalações com os MESMOS doze ids** — são **re-projeções**, não podas: a edição servida tem cerca de doze
+    /// cartas, então a janela cobre o conteúdo inteiro e nada sai dela. Eu havia chamado essas instalações de
+    /// "podas/inserções" e estava errado. Quem exercita a poda de verdade é o teste de unidade
+    /// `testLongNavigationKeepsTheTotalWindowBoundedAndEverythingReachable`, com arranjo de ~190 cartas, que mede o
+    /// teto e o alcance a cada passo. O que este teste prova, com o número em anexo, é a **estabilidade da
+    /// coordenada de conteúdo** de uma carta enquanto nada rola.
     @MainActor
     func testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped() throws {
         let app = XCUIApplication()
@@ -196,13 +200,14 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         // visível, e medir o frame dela **sem nenhum gesto** enquanto a atualização da janela chega. Como a admissão
         // é assíncrona, qualquer mudança nesse trecho parado só pode ter vindo da atualização.
 
-        // 1. Avançar com gestos que o app REALMENTE processa. O log do dispositivo mostrou que os arrastos por
-        //    coordenadas (`press(thenDragTo:)`) não produzem nenhuma emissão — zero `viewport forwarded` na corrida
-        //    inteira —, então a janela nunca mudava e a medida comprovava repouso sem nada acontecendo. Com estes
-        //    swipes o app emite (é o que os logs das primeiras corridas mostram) e a admissão acontece.
+        // 1. Avançar com gestos que o app REALMENTE processa, e **o bastante para forçar uma poda**: a janela desliza
+        //    quando o leitor passa de `backwardCapacity` = 8 cartas. O log do dispositivo mostrou que uma corrida com
+        //    avanço curto produziu 89 reinstalações com os MESMOS 12 ids — re-projeções, não podas — e o teste passava
+        //    sem exercitar o corte. Aqui o avanço vai a trinta gestos, e o anexo confirma pelo log quais ids saíram e
+        //    entraram.
         var distinct: Set<String> = []
         var guardCount = 0
-        while distinct.count < 12, guardCount < 20 {
+        while distinct.count < 12, guardCount < 30 {
             app.scrollViews.firstMatch.swipeUp(velocity: .slow)
             guardCount += 1
             if let element = anchor(app), element.frame != .zero { distinct.insert(element.identifier) }
