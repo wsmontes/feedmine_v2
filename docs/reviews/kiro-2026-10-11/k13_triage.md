@@ -50,6 +50,31 @@ Leitura do resultado:
 - **Teste que provaria:** publicar com mídia pendente, admitir 16 cards abaixo da âncora, completar a mídia no `tidy`, chamar `background()` e verificar que os ids e layouts dos 16 admitidos não mudam.
 - Severidade: **P1** (B04/B05). É interação com R1, que vai sumir em grande parte quando R1 for corrigido (K-11), mas a regra do lease vale por si.
 
+## Atualização após a revisão Codex 21:32
+
+**T-1, evidência de produto (PRDs vigentes, não só comentário de código):**
+- `docs/product/F16_PERSONAL_LIBRARY_SMART_FEEDS_UX_PRD.md:14`: *"O código V2 de exportação da caixa atualmente **exporta fontes inferidas dos artigos**, não os próprios artigos: isto não serve como backup da caixa."*
+- `F16 R6` (linha 28): *"exportar somente Sources deve ser descrito como exportar Sources."*
+- `docs/product/F18_ADD_FEED_CLIPBOARD_OPML_PORTABILITY_PRD.md:14`: *"exportar uma `bookmarkBox` converte links dos artigos salvos em **fontes inferidas pelo host**, não em itens salvos. Isso não é backup de bookmarks."* `F18 UX18-C` exige restaurar "duas caixas com artigos específicos" item por item.
+
+Os dois PRDs ficam com o teste local: (a) a caixa exporta artigos. O comportamento atual é um defeito já registrado em produto. Fica para o PO só confirmar a prioridade e o formato. Proposta mínima: escopo `.bookmarkBox` com entradas de artigo (título do card, link, fonte, `added_at`) e nada de fontes inferidas, ou, se as fontes forem mantidas, rótulo "Fontes dos artigos salvos" (R6). Owner livre: `ReaderImportExportCoordinator`/`ReaderExport`. Não implementado.
+
+**T-2, acesso ao histórico anterior (verificado estaticamente):**
+- `FeedPresentationAdmission` tem só três casos: `.initial`, `.forwardScroll` e `.restore`. O comentário do tipo diz *"backward ... observations do not extend the boundary"*.
+- `FeedSession.submitViewport` só observa dentro de `items`.
+- `FeedPresentationBounds` são *"frozen for the life of that presentation: no later path may rematerialize the list"*.
+
+Na sessão restaurada não existe caminho para cards acima dos 8 de `backwardCapacity`. **Não verifiquei** se outra superfície (lista de Salvos, histórico) dá esse acesso, nem se isso é aceitável pelo PO. Continua sendo H1, à espera do diagnóstico de 3 prints.
+
+**T-3, reprodução proposta (não aplicada; CompositionTests e AppComposition estão quentes):** separar admitido, exposto e nunca visto. Hoje `markSeen` só recebe a âncora (`FeedSession.submitViewport`), então cards na tela abaixo da âncora `.top` contam como "nunca vistos" para o lease. Isso é intencional na Persistence: `SessionStoreTests` aceita substituir tudo depois do high-water. O risco está na composição, e só um teste de app o prova:
+
+1. `launched()`, depois `produceAndAdmit` (janela com âncora e até 16 admitidos abaixo).
+2. Trocar o `FixtureTransport` para servir os mesmos `guid` com `<title>` editado (nova revisão material) e `driver.drive(...)` (aquisição atualiza as revisões).
+3. `await association.background()` (lease mais `maintainTail`).
+4. `close`, reabrir com `rejecting = true` e comparar os ids dos cards que estavam admitidos abaixo da âncora com os restaurados.
+
+Ids diferentes: T-3 vira defeito executado. Ids iguais: T-3 é retirado. **Decisão de produto embutida:** um card editado que o leitor tinha na tela abaixo da âncora pode ser trocado enquanto o app está em background? O Kiro não decide isso; K-14 fica PENDENTE até o resultado.
+
 ## Pedidos/ações
 
 - T-1: aguardo decisão do PO, (a) ou (b).
