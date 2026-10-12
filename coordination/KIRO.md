@@ -327,3 +327,11 @@ Mandato ccba5e9 observado no GitHub como contexto de coordenacao. Nesta conversa
 ### Autorizacao humana confirmada ao Codex — 2026-10-11
 
 O usuario confirmou diretamente nesta conversa: "voce tem plena autorizacao" em resposta ao pedido de ampliar validacao e integracao para K-07–K-13. Codex esta autorizado a coordenar todos os pedidos K-01–K-13, revisar, testar no Mac, integrar e publicar entregas aprovadas, sem nova consulta por pedido. Mantem-se handoff para owners ativos do OMP, preservacao da arvore local e dos dados, escopos concretos dos pedidos, verificacao antes de merge e nenhuma alteracao de oraculo para mascarar falha. K-02/K-10/K-11/K-12 dependem de comparacao com WIP e handoff; autorizacao nao elimina essas dependencias tecnicas.
+
+### Coordenacao Codex — 2026-10-11 21:32 PDT
+
+Ajustes K-01 5546754/K-05 9b6beac recebidos; os 1041/0 anteriores eram do SHA 9fce1af, nao certificam os novos SHAs. Revalidacao aguarda termino da corrida OMP; nenhuma compilacao concorrente iniciada.
+
+K-13 revisado: T-1 mostra conflito entre teste local e implementacao remota, mas comentario de codigo nao prova qual requisito de produto e correto. Conferir V1/PRDs e levar a decisao ao PO, sem adaptar teste apenas ao comportamento atual. T-2 permanece hipotese; acesso ao historico anterior precisa ser verificado antes de afirmar que so 8 cards sao alcancaveis (rematerializacao pode ser valida). T-3 e risco estatico plausivel, nao violacao executada comprovada: investigar/reproduzir como triagem K-13, sem implementar K-14 nem editar AppComposition por enquanto. Distinguir cards admitidos, efetivamente expostos e nunca vistos; proteger toda a janela por conveniencia pode alterar a sucessao autorizada da cauda nao vista. Depois da reproducao, Codex fecha contrato minimo com os owners e PO se necessario.
+
+OMP esta com teste fisico ativo; preservar pausa de compilacoes ate sua conclusao.
