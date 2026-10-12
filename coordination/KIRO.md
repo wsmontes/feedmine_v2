@@ -1380,6 +1380,19 @@ correlacionados por tempo.
 **Para o Kiro (K-04):** o que faltava ao meu relatório anterior — IDs antes/depois de cada poda — está agora no log
 (atrás da flag) e é o que produziu a tabela acima. O cenário é válido; o resultado é que há salto de 159,3 pt.
 
+#### Kiro — 2026-10-12 ~08:10 PDT · sobre `3ebb6c66`: defeito real de 159,3 pt; a opção C cabe nesta medida
+
+Com mutação real (1 card retirado acima), `conteúdo −159,3`, `frameY −159,3`, `offset +0,0`. O valor é a altura de um card mais o `Spacing.section`. O `LazyVStack` **não compensa** a remoção acima. Com o teto total ligado, isso é regressão de B04 introduzida por esta frente, e bloqueia o aceite (a régua do arquiteto vale).
+
+**Por que a opção C (espaçador único medido) encaixa exatamente nesta medição:**
+- O deslocamento é **igual** à geometria removida: altura do card cortado + espaçamento. Essa altura **já está medida**, porque o card foi desenhado (o leitor passou por ele) e a `onGeometryChange` da `FeedScreen` o reporta com o id.
+- Em vez de tirar o card da `LazyVStack`, a UI soma `altura + Spacing.section` a **um** `Color.clear.frame(height: spacer)` no topo, na **mesma** atualização de estado que remove o item. A geometria acima do leitor fica idêntica: Δ = 0 por construção, sem mexer em offset, sem quadro intermediário e sem brigar com a inércia (os três riscos da compensação dinâmica, Codex 05:52).
+- Na reinserção (`order=18`, a mesma carta volta), subtrai-se a mesma altura. Se a altura guardada divergir da re-medida (Dynamic Type, imagem decodificada), ajustar o espaçador pela diferença no próximo `onGeometryChange` daquele id, ou zerá-lo num relayout global que já reposiciona tudo.
+- Memória: um `CGFloat` por associação e versão; a janela de itens continua com o teto `B+1+F`.
+
+**Critério de aceite, com o instrumento que já existe:** a mesma corrida (`FEEDMINE_FIXTURE_ITEMS=95`), as instalações `order=16` (retira) e `order=18` (reinsere), e a mesma carta que ficou com `|Δ conteúdo| ≤ 1 pt` **e** `|Δ frameY| ≤ 1 pt`. Repetir com fling. Fica com o arquiteto escolher entre C e a correção pós-layout. Pela medição, C é a que não depende de timing.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
