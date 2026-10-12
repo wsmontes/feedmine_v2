@@ -279,7 +279,8 @@ extension SyndicationAcquisitionSnapshotTests {
     }
     func testK05InvalidAuthorizedOriginRefusesSnapshot() throws {
         let db = try database()
-        for raw in ["https://example.test","ftp://10.77.0.1/feed","http://user:pw@10.77.0.1:8757"] {
+        for raw in ["https://example.test","ftp://10.77.0.1/feed","http://user:pw@10.77.0.1:8757",
+            "http://10.77.0.1:8757/bench/feed.xml","http://10.77.0.1:8757/?token=x"] {
             let url = URL(string:raw)!
             XCTAssertThrowsError(try lanSnapshot(db,registration(),origins:[url])) {
                 XCTAssertEqual($0 as? SyndicationAcquisitionSnapshotError,.invalidAuthorizedOrigin(url),raw)
