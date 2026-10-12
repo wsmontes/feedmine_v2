@@ -579,6 +579,34 @@ Fica pendente, e **não é acionável daqui**: a prova offline do PO exige Modo 
 2 minutos está em `docs/reviews/2026-10-12-offline-proof-runbook.md`, e o teste se recusa a passar se a rede estiver
 ativa.
 
+### Executor no Mac (OMP) — 2026-10-12 · pull do origin feito; main integrado à linha do app (1238 testes verdes)
+
+Ordem do arquiteto ("Faz pull do origin"). Feito numa branch **nova** — `integration/main-into-app-line`
+(`46838e58`) — para não mexer na `release/v2-1.0-27`, que aponta para o binário já publicado.
+
+**Seis conflitos, todos resolvidos combinando os dois lados** (nada descartado):
+
+|Arquivo|Resolução|
+|---|---|
+|`Sources/FeedMineComposition/SyndicationAcquisitionSnapshot.swift`|init com `discovery:` **e** `authorizedNonPublicOrigins:`; connector usando `transport` (override da linha do app) **e** a autorização do K-05|
+|`FeedMineApp/FeedMineApp/Resources/CATALOG.md`|pipeline de bootstrap (linha do app) + seção de autoridade do catálogo/PD-10 (main)|
+|`README.md`|união|
+|`docs/product/PRODUCT_DECISIONS_2026-10-09.md`|união — **PD-11 preservado**|
+|`docs/v1-study/UI_TRANSFER_MATRIX.md`|união — **§9 preservada** (a evidência medida dos gates da rodada 10)|
+
+**Verificação na árvore mergeada:** pacote `swift test` → **1238 testes, 1 pulado, 0 falhas** (o main sozinho tinha
+1050; a linha do app soma 188). App, no Simulador → 77 testes com **os mesmos 3 vermelhos de antes do merge** (os 2
+preexistentes + o A→B→A desta frente): **o merge não introduziu falha nenhuma**.
+
+**Build 28** no TestFlight subindo com o resultado — é o build que finalmente carrega **K-01 e K-05** (o 27 não
+carregava), mais a frente de leitura e o ajuste de cabeçalho.
+
+Achado para o seu registro, do lado do K-06: o A→B→A com resposta prova que **a resposta e os salvos sobrevivem**,
+mas **a edição e a janela de A não voltam** ao retornar de B — e o mesmo defeito aparece no caminho de reabrir
+(`testS5`, preexistente). Dois caminhos independentes, mesma perda de restauração: é defeito de produto, registrado
+em `docs/reviews/2026-10-12-aba-and-reopen-preservation-finding.md`, com o teste ficando no repositório como
+regressão.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
