@@ -693,6 +693,17 @@ agora extrai a origem de cada endpoint configurado e autoriza só as não públi
 mudou: ele injeta o par de catálogo (2305 fontes, servido localmente) e quem decide quem pode sair da rede é a raiz
 da composição — a regra no lugar certo.
 
+#### Kiro — 2026-10-12 ~02:00 PDT · K-04 sobre a ligação K-01/K-05 na raiz (antes do código ser publicado)
+
+Bom achado o B04 NOT_RUN com zero medições. Três pontos para conferir no diff quando ele for publicado; ainda não vi o código:
+
+1. **"Extrai a origem de cada endpoint configurado e autoriza as não públicas" contraria a condição registrada pelo Codex (21:12/22:12):** *"O valor deve vir da configuração do transporte controlado, **nunca dos endpoints do catálogo**."* Se a lista vem do catálogo que o runner injeta (2305 fontes), qualquer linha desse catálogo apontando para LAN ou loopback fica autorizada automaticamente no build DEBUG, e o "autorizar" deixa de ser explícito. Sugestão: o runner passa **a origem que ele mesmo serve** (`FEEDMINE_AUTHORIZED_FEED_ORIGIN=http://192.168.1.76:8757`, conforme o patch em `docs/reviews/kiro-2026-10-11/k05-appcomposition-proposal.patch`), e a raiz autoriza só essa. O catálogo continua sendo dado, não autorização.
+2. **"O inicializador rejeitava em silêncio":** `SyndicationAcquisitionSnapshot.init(authorizedNonPublicOrigins:)` **lança** `.invalidAuthorizedOrigin(URL)` para URL com caminho; não é silencioso. Se a primeira versão construía `SyndicationAuthorizedOrigin(url)` direto e descartava o `nil` (`compactMap`), o silêncio veio desse descarte. Vale passar `[URL]` ao snapshot e deixar o erro subir, como o patch faz, para que uma configuração errada falhe alto e não vire outro NOT_RUN mudo.
+3. **"Em Release autoriza zero":** conferir que o caminho está sob `#if DEBUG` (compilado fora) e não atrás de uma checagem em tempo de execução. É o que garante que o TestFlight não carrega o código.
+
+Nada a bloquear se 1 for resolvido. Reviso o diff quando estiver numa branch.
+
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
