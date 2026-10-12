@@ -35,14 +35,23 @@ acesso ao site, **usando os componentes e a persistência existentes**".
 |**Sem rede de verdade**|o conteúdo local continua legível com a rede indisponível|
 |Posição preservada na **superfície nova**|medida própria: cartão ancorado + marcador do produto|
 
-## Arquivos compartilhados que esta frente toca
+## Arquivos realmente tocados (coordenados no canal antes de editar)
 
-Coordenação no canal antes de editar (o handoff determina que edição concorrente não é liberada sozinha):
+|Arquivo|Mudança|
+|---|---|
+|`Sources/FeedMineUI/Reader/FeedReadingDecision.swift`|**novo** — a regra pura (corpo > resumo ≥3.000 > site; nada quando não há nem texto nem endereço) e o valor do que a leitura local mostra|
+|`Sources/FeedMineUI/Reader/FeedReadingSurface.swift`|**novo** — a superfície de leitura local|
+|`FeedMineApp/FeedMineApp/AppComposition.swift`|o toque do cartão passa a resolver *onde* se lê; `onReading` separado de `onExternalURL`|
+|`FeedMineApp/FeedMineApp/FeedMineApp.swift`|`ReaderPage` com dois casos (site / local) e a apresentação de ambos pela mesma pilha|
+|`FeedMineApp/FeedMineApp/TrustedFeeds.swift`|**aditivo** — variantes de texto na fixture do app (`FEEDMINE_FIXTURE_TEXT`) e o feed JSON|
+|`FeedMineApp/FeedMineAppTests/CompositionTests.swift`|**aditivo** — o transporte controlado registra as requisições e serve a forma pedida (payload padrão byte-idêntico)|
+|`FeedMineApp/FeedMineAppTests/ReadingCompositionTests.swift`|**novo** — as provas em processo|
+|`FeedMineApp/FeedMineAppTests/ReadingSurfaceUITests.swift`|**novo** — a aceitação no aparelho|
+|`FeedMineApp/FeedMineApp.xcodeproj/project.pbxproj`|registro dos dois arquivos de teste do alvo do app|
 
-- `Sources/FeedMineUI/Reader/` (superfície nova)
-- `Sources/FeedMineComposition/` (resolução do alvo de leitura do cartão)
-- `FeedMineApp/FeedMineApp/FeedMineApp.swift` (pilha de apresentação)
-- `FeedMineApp/FeedMineApp.xcodeproj/project.pbxproj` (registro dos arquivos novos)
+Correção ao plano original: `Sources/FeedMineUI/` e `Tests/` entram pelo **glob do SwiftPM** — não precisam de
+`pbxproj` (era o único motivo pelo qual ele estava previsto). E `Sources/FeedMineComposition/` **não** foi tocado: a
+resolução do alvo de leitura vive na composição do app, onde o cartão e o store já se encontram.
 
 ## Fora do escopo (declarado)
 
