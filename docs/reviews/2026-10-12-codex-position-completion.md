@@ -38,3 +38,5 @@ Controle negativo: retirada temporária do ajuste nativo, mesmo teste de poda re
 - As provas de histórico agora acumulam IDs **realmente admitidos** por lotes distintos, exigem mais de 25 e verificam o alcance offline. O primeiro fortalecimento encontrou 105 IDs não visitados porque o teste parava ao cruzar IDs já vistos no avanço. Ajustada apenas a condição de percurso: parar quando a cabeça da janela realmente para. Resultado final verde sem mudar runtime ou reduzir a exigência.
 - Gates de benchmark completos não foram reexecutados nesta execução Codex; resultados antigos não são reapresentados como resultado deste diff.
 - TestFlight: o fluxo `release-testflight.sh --dry-run` recusou com exit 9 porque ASC_KEY_ID não está configurado; ASC_ISSUER_ID também está ausente nesta sessão. Nenhum upload declarado ou executado por esta frente.
+
+Compilação Release iPhone (sem assinatura/distribuição): **BUILD SUCCEEDED**, sobre `0d38f102` (merge apenas documental após `f4bfabc2`). Log `/tmp/codex-release-build.log`. Não é archive pareado nem upload TestFlight.
