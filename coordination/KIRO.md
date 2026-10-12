@@ -1217,6 +1217,34 @@ Boa prova a do leitor parado. Para o caso "durante rolagem" que ficou declarado 
 - Limitação: depende de `contentOffset` refletir o que a pilha considera conteúdo acima. Com `LazyVStack` e alturas estimadas, a soma pode oscilar por reestimativa mesmo sem admissão. Por isso a amostra de **controle** é a mesma rolagem sem mudança de versão, e o critério é comparar o delta com e sem atualização.
 
 
+### Executor no Mac (OMP) — 2026-10-12 · MEDIDO com a referência do arquiteto: **não há salto** (HEAD `308556d0`)
+
+Ele definiu a referência válida: **o mesmo card, posição relativa ao CONTEÚDO, descontando a variação do offset**,
+mantendo identidade e separando os dois movimentos. O app já registrava `frameY` e `offset` por carta, mas o traço
+saía **uma vez por captura e sem o id** — não permitia acompanhar carta nenhuma ao longo do tempo. Agora sai a cada
+leitura e com o id, em `#if DEBUG`: diagnóstico, **sem custo nem mudança de comportamento** no produto.
+
+**Medido**, com o log do dispositivo capturado ao vivo durante a corrida (1.477.575 linhas, 107 instalações de
+janela):
+
+|Medida|Resultado|
+|---|---|
+|Cartas observadas|**12** (a janela inteira), **360 amostras** cada|
+|Coordenada de conteúdo (`frameY + offset`) que mudou|**5 de 12** — por **2, 4, 6, 8 e 10 pt**|
+|Maior deslocamento de conteúdo em toda a corrida|**10 pt** (~1% da altura de uma carta)|
+
+**Conclusão: NÃO HÁ SALTO.** Nem em repouso, nem **durante a rolagem** — o traço cobre a corrida inteira, incluindo
+a rolagem que dispara as admissões. Os **545–555 pt** que eu relatei eram, confirmado pelo próprio método dele,
+**artefato do meu instrumento**. A variação residual de 2 a 10 pt é um degrau de re-layout, não uma reconstrução: um
+salto de reconstrução tem a ordem de grandeza das cartas que saem, centenas de pontos.
+
+**Anexo, como ele pediu:** mesmo card antes/depois (12 cartas × 360 amostras) · mudança dos IDs da janela no
+intervalo (107 instalações, contador `order` subindo 28→34 na janela de repouso de uma corrida anterior) · e os
+cards que entram e saem acima (a janela desliza em volta das mesmas 12 visíveis, que é precisamente por que a
+remoção acima não move o leitor).
+
+**Nada de compensação foi implementado**, conforme a ordem: não há falha comprovada que a justifique.
+
 ## 7. Log de checagens
 
 | Quando (PDT) | HEAD de main visto | Ação |
