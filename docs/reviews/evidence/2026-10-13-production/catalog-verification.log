@@ -1,0 +1,50 @@
+
+[1/6] public manifest (pinned)
+       https://raw.githubusercontent.com/wawasoft/feed-repository/main/manifest.json
+       revision 5, schemaVersion 1, fileCount 118, sourceCount 77443
+       generatedAt '2026-08-03T23:35:34Z' (carried into the descriptor)
+       manifest sha256 2a4f754f8a8e839ee3650fb37ba4a693d81b17a148195bcac89b6526a3be4984 (21223 bytes)
+
+[2/6] OPML inventory
+       inventory 118/118 verified by size and SHA-256 (118 reused from disk, 0 downloaded, 62373804 bytes declared)
+       tree identity 846b17206806ee02dd3f0556e4aa3b9cf514374d591502879246361c36139550 (0.2s)
+
+[3/6] compile (legacy V1 compiler)
+       /opt/homebrew/opt/python@3.12/bin/python3.12 /Users/wagnermontes/Documents/GitHub/feedmine/scripts/build_catalog.py --feeds-root /Users/wagnermontes/Documents/GitHub/feedmine_v2/build/catalog-bootstrap/payload/Feeds --output /Users/wagnermontes/Documents/GitHub/feedmine_v2/build/catalog-bootstrap/.work/catalog.sqlite --manifest-output /Users/wagnermontes/Documents/GitHub/feedmine_v2/build/catalog-bootstrap/.work/build-report.json --json
+       reused: build inputs unchanged (tree identity 846b17206806ee02dd3f0556e4aa3b9cf514374d591502879246361c36139550, compiler sha256 e3c9fcf21ee30ab7dfc282def733ba4838337bb83c95d4d234b2e8a3e9a48df5)
+       reused: catalog.sqlite compiled at 2026-10-11T16:28:10Z — not re-run, so its checksum is unchanged
+
+[4/6] build report
+       {
+         "duplicate_occurrence_count": 0,
+         "failed_file_count": 0,
+         "file_count": 118,
+         "invalid_source_count": 0,
+         "node_count": 6450,
+         "output": "/Users/wagnermontes/Documents/GitHub/feedmine_v2/build/catalog-bootstrap/.work/catalog.sqlite",
+         "placement_count": 77443,
+         "size_bytes": 117993472,
+         "source_count": 77443
+       }
+       file_count 118 == manifest fileCount 118; source_count 77443 == manifest sourceCount 77443
+
+[5/6] bundled descriptor
+       /Users/wagnermontes/Documents/GitHub/feedmine_v2/build/catalog-bootstrap/catalog.manifest.json (unchanged)
+       not a copy of the public manifest: the 118 role=opml entries prove the inputs, the role=catalogue entry proves the artefact derived from them
+       derivedFrom: {"manifest": "https://raw.githubusercontent.com/wawasoft/feed-repository/main/manifest.json", "manifestSha256": "2a4f754f8a8e839ee3650fb37ba4a693d81b17a148195bcac89b6526a3be4984", "revision": 5, "opmlEntries": 118}
+       totals: fileCount 119 (118 OPML + 1 catalogue), sourceCount 77443
+       totals: 62373804 OPML bytes + 117993472 catalogue bytes = 180367276 bytes
+       first OPML entry: {"role": "opml", "path": "Feeds/01_News_&_Current_Affairs/01_News_&_Current_Affairs.opml", "bytes": 1137477, "sha256": "491909cb7e5c1544b4a9bfcdaf9d31a6650c0e70743ec22aecfb8d8dc786cf06"}
+       catalogue entry:  {"role": "catalogue", "path": "catalog.sqlite", "bytes": 117993472, "sha256": "72f066227958b482f365c88dd58320e75bc9ade9268b4e2ddaac9173908ecf71"}
+
+[6/6] staging
+       payload     /Users/wagnermontes/Documents/GitHub/feedmine_v2/build/catalog-bootstrap/payload  (118 OPML, paths exactly as declared)
+       catalogue   /Users/wagnermontes/Documents/GitHub/feedmine_v2/build/catalog-bootstrap/catalog.sqlite  (117993472 bytes, sha256 72f066227958b482f365c88dd58320e75bc9ade9268b4e2ddaac9173908ecf71)
+       descriptor  /Users/wagnermontes/Documents/GitHub/feedmine_v2/build/catalog-bootstrap/catalog.manifest.json  (119 entries)
+       report      /Users/wagnermontes/Documents/GitHub/feedmine_v2/build/catalog-bootstrap/build-report.json
+       provenance  /Users/wagnermontes/Documents/GitHub/feedmine_v2/build/catalog-bootstrap/provenance.json
+       state       /Users/wagnermontes/Documents/GitHub/feedmine_v2/build/catalog-bootstrap/state.json
+
+       This build wrote nothing outside its staging tree and nothing into the Xcode project.
+       The descriptor and the catalogue it declares are one pair: installing one without the other fails verification.
+       The release asset currently in FeedMineApp/FeedMineApp/Resources (117940224 bytes, sha256 c2ae483a7525fd2b6797855149eb6fb312abbed788549a90a7754121eb5c8629) is *not* described by this descriptor.
