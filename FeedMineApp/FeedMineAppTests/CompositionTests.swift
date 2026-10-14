@@ -1041,7 +1041,11 @@ final class CompositionTests: XCTestCase {
     /// as duas coisas: limitar *cada* extensão por `backwardCapacity - anchorIndex` não limita a janela **total** —
     /// dez passos para trás podem prepender dez lotes, e a lista cresce sem teto enquanto cada passo parece
     /// obediente. Aqui a janela é medida a cada passo.
-    func testLongNavigationKeepsTheTotalWindowBoundedAndEverythingReachable() async throws {
+    /// A decisão do dono (2026-10-13) mudou o que este teste afirma: a janela **não** é mais limitada nos dois
+    /// sentidos — nada acima do leitor é removido, então ela cresce com o quanto ele leu. O que continua valendo, e
+    /// é o que a V1 também garantia, é o teto **à frente** (a reserva a partir da âncora) e a acessibilidade de tudo
+    /// o que o leitor já alcançava.
+    func testLongNavigationKeepsTheForwardReserveBoundedAndEverythingReachable() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
@@ -1078,6 +1082,16 @@ final class CompositionTests: XCTestCase {
         XCTAssertLessThanOrEqual(restored.window.items.count, ceiling, "a janela instalada já respeita o teto")
 
         var reachable = Set(restored.window.items.map(\.id))
+        /// O teto que a decisão do dono preservou: a reserva **à frente** da âncora. O total não é mais limitado,
+        /// porque a cabeça é mantida.
+        func assertForwardReserveBounded(anchoredAt card: PublicationCardID, _ what: String) {
+            let window = next.store.state.presentation?.window.items ?? []
+            guard let anchorIndex = window.firstIndex(where: { $0.id == card }) else { return }
+            let ahead = window.count - anchorIndex - 1
+            XCTAssertLessThanOrEqual(ahead, 16, "\(what): a reserva à frente tinha \(ahead) cartas, acima do teto de 16")
+        }
+        /// A cabeça da janela: só anda para trás — um avanço nunca a remove.
+        var windowHead = restored.window.items.first?.id
         func observe(_ activity: RunwayActivity, at card: PublicationCardID) async throws -> [PublicationCardID] {
             let previous = next.store.state.presentation?.window.items.map(\.id) ?? []
             next.store.submitViewport(
@@ -1099,9 +1113,11 @@ final class CompositionTests: XCTestCase {
             guard let tail = next.store.state.presentation?.window.items.last else { break }
             let ids = try await observe(.explicitTailApproach, at: tail.id)
             reachable.formUnion(ids)
-            let count = next.store.state.presentation?.window.items.count ?? 0
-            XCTAssertLessThanOrEqual(count, ceiling,
-                "frente: a janela total tinha \(count) cartas, acima do teto de \(ceiling)")
+            let window = next.store.state.presentation?.window.items ?? []
+            XCTAssertEqual(window.first?.id, windowHead,
+                "frente: a cabeça da janela não se move — nada acima do leitor é removido")
+            assertForwardReserveBounded(anchoredAt: tail.id, "frente")
+            windowHead = window.first?.id
         }
         // Anda para trás **até não haver novidade**, e não um número fixo de passos: com uma edição de ~190 cartas e
         // oito por passo, dez passos não percorrem o histórico — foi assim que a versão anterior deste teste acusou
@@ -1111,22 +1127,27 @@ final class CompositionTests: XCTestCase {
             guard let head = next.store.state.presentation?.window.items.first else { break }
             let ids = try await observe(.backward, at: head.id)
             reachable.formUnion(ids)
-            let count = next.store.state.presentation?.window.items.count ?? 0
-            XCTAssertLessThanOrEqual(count, ceiling,
-                "passo \(step + 1) para trás: a janela total tinha \(count) cartas, acima do teto de \(ceiling)")
+            // Andar para trás estende a janela para trás; a carta que era a cabeça continua nela — nada acima do
+            // leitor é removido. A reserva à frente só é limitada por uma admissão, e aqui a âncora é a cabeça.
+            let window = next.store.state.presentation?.window.items ?? []
+            if let windowHead { XCTAssertTrue(window.contains(where: { $0.id == windowHead }),
+                "passo \(step + 1) para trás: a cabeça anterior saiu da janela") }
+            windowHead = window.first?.id
             step += 1
             // Previously visited IDs still need to be crossed on the way to older history.
             // Stop at the actual boundary, not when this step overlaps the earlier forward walk.
             if ids.first == head.id { break }
         }
-        // E de volta para frente, com a mesma exigência de teto.
+        // E de volta para frente: a cabeça continua onde estava e a reserva à frente continua limitada.
         for _ in 0..<10 {
             guard let tail = next.store.state.presentation?.window.items.last else { break }
             let ids = try await observe(.explicitTailApproach, at: tail.id)
             reachable.formUnion(ids)
-            let count = next.store.state.presentation?.window.items.count ?? 0
-            XCTAssertLessThanOrEqual(count, ceiling,
-                "volta para frente: a janela total tinha \(count) cartas, acima do teto de \(ceiling)")
+            let window = next.store.state.presentation?.window.items ?? []
+            XCTAssertEqual(window.first?.id, windowHead,
+                "volta para frente: a cabeça da janela não se move — nada acima do leitor é removido")
+            assertForwardReserveBounded(anchoredAt: tail.id, "volta para frente")
+            windowHead = window.first?.id
         }
         // **Acesso preservado**: tudo o que o leitor alcançava antes de fechar continua re-alcançável por gesto,
         // mesmo depois de a janela ter reciclado as cartas — sair da janela não é perder o conteúdo.

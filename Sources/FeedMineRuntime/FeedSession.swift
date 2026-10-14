@@ -78,9 +78,13 @@ public actor FeedSession {
                 // The reader is still looking at a previous presentation from this same association.
                 // Re-read only locally published IDs already admitted by one of these two values.
                 let allowed = Set(original.presentation.window.items.map(\.id) + evidence.admittedIDs)
+                // Com a cabeça mantida, a releitura tem de alcançar **toda** carta já admitida; com a regra do
+                // arquiteto basta a capacidade congelada. O filtro abaixo continua mantendo exatamente as
+                // identidades admitidas, então alargar a leitura não admite nada de novo.
+                let kept = original.bounds.keepsAdmittedHead ? allowed.count : original.bounds.backwardCapacity
                 let history = try publicationHistory.window(editionID: original.presentation.editionID,
                     around: FeedWindowAnchor(cardID: observation.anchor.cardID, placement: .center),
-                    backwardCapacity: original.bounds.backwardCapacity,
+                    backwardCapacity: kept,
                     forwardCapacity: original.bounds.forwardCapacity)
                 let cards = history.cards.filter { allowed.contains($0.id) }
                     .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }

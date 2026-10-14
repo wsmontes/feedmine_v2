@@ -742,7 +742,8 @@ final class AppComposition {
         guard let preferences, let current = try? preferences.load() else { return }
         var settings = current.settings
         settings.hasSeenOnboarding = true
-        _ = try? preferences.setSettings(settings)
+        guard (try? preferences.setSettings(settings)) != nil else { return }
+        noteReaderSettingsWritten(settings)
     }
 
     /// F02's first run: the answers it collects (languages and places) become the reader's **discovery profile** —
@@ -755,7 +756,7 @@ final class AppComposition {
             var settings = current.settings
             settings.discoveryProfile = recipe
             settings.hasSeenOnboarding = true
-            _ = try? preferences.setSettings(settings)
+            if (try? preferences.setSettings(settings)) != nil { noteReaderSettingsWritten(settings) }
         }
         try? await replaceSession()
     }
@@ -1186,6 +1187,7 @@ final class AppComposition {
         settings.discoveryProfile.topicPreferences["topic:\(node)"] = level == .neutral ? nil : level
         do {
             _ = try preferences.setSettings(settings)
+            noteReaderSettingsWritten(settings)
         } catch {
             trace?.record("answer_failed", ["subject": node, "stage": "persist"])
             return false
@@ -1221,10 +1223,38 @@ final class AppComposition {
             "offers_shown": String(offersShown), "interval": String(interval)])
     }
 
-    /// What the reader has already said about a subject, if anything: the feed does not ask twice.
+    /// The reader's stored settings, read **once** and reused until something writes them.
+    ///
+    /// V1's own lesson (`docs/release/review-feed-responsiveness-build-5.md`, finding 2): eligibility is an
+    /// immutable snapshot, rebuilt only when its revision changes. The feed asks "was this subject answered?" — and
+    /// "are the tips hidden?" — for every candidate card of every body evaluation, and answering from SQLite each
+    /// time is a synchronous read on the main actor per card per render: measured, `preferences.load()` was reached
+    /// once per card through the `||` short-circuit, plus one more per discovery candidate.
+    @ObservationIgnored private var readerSettingsSnapshot: ReaderSettings?
+    /// The per-subject answer, so a window of five hundred cards asks the database once per subject instead of once
+    /// per card. `.neutral` is remembered too: "nothing declared" is an answer worth caching.
+    @ObservationIgnored private var declaredLevels: [String: ReaderPreferenceLevel] = [:]
+
+    private func readerSettings() -> ReaderSettings? {
+        if let snapshot = readerSettingsSnapshot { return snapshot }
+        let settings = (try? preferences?.load())??.settings
+        readerSettingsSnapshot = settings
+        return settings
+    }
+
+    /// A write just happened: the cache now holds exactly what the database holds, without reading it back.
+    private func noteReaderSettingsWritten(_ settings: ReaderSettings) {
+        readerSettingsSnapshot = settings
+        declaredLevels.removeAll(keepingCapacity: true)
+    }
+
+    /// What the reader has already said about a subject, if anything: the feed does not ask twice. Answered from the
+    /// cached settings and remembered per subject — this is called for candidate cards of every render.
     func declaredLevel(forNode nodeKey: String) -> ReaderPreferenceLevel? {
         let node = nodeKey.hasPrefix("topic:") ? String(nodeKey.dropFirst("topic:".count)) : nodeKey
-        let level = ((try? preferences?.load())??.settings.discoveryProfile.topicPreferences["topic:\(node)"])
+        if let remembered = declaredLevels[node] { return remembered == .neutral ? nil : remembered }
+        let level = readerSettings()?.discoveryProfile.topicPreferences["topic:\(node)"] ?? .neutral
+        declaredLevels[node] = level
         return level == .neutral ? nil : level
     }
 
@@ -1242,16 +1272,19 @@ final class AppComposition {
         return discoverySubjects[sourceID]
     }
 
-    /// The reader hid the invitations: a preference, and the settings page is where they come back.
+    /// The reader hid the invitations: a preference, and the settings page is where they come back. Read from the
+    /// cached settings, because the feed asks it for every card of the window (the `||` short-circuit only skips it
+    /// while the reader's session-local answer is already true).
     var editorialTipsHidden: Bool {
-        ((try? preferences?.load())??.settings.editorialTipsHidden) ?? false
+        readerSettings()?.editorialTipsHidden ?? false
     }
 
     func setEditorialTipsHidden(_ hidden: Bool) {
         guard let preferences, let current = try? preferences.load() else { return }
         var settings = current.settings
         settings.editorialTipsHidden = hidden
-        _ = try? preferences.setSettings(settings)
+        guard (try? preferences.setSettings(settings)) != nil else { return }
+        noteReaderSettingsWritten(settings)
     }
 
     /// What the feed may ask about: a subject with the catalogue's own name for it.
@@ -2097,11 +2130,25 @@ final class FeedAssociation {
         return readiness.isSettled(revision) ? "textOnly" : "pending"
     }
 
+    /// The window the bookmark set was read for. A bookmark belongs to the reader's own cards, and the reader's own
+    /// toggle installs the set directly; a scroll advance that moved only the anchor has not changed them. Reading
+    /// the database per advance is a synchronous SQLite read on the main actor — exactly what V1's own rule keeps
+    /// off the scroll path (`docs/release/review-feed-responsiveness-build-5.md`: nothing per tick that memory can
+    /// already answer).
+    @ObservationIgnored private var bookmarksReadFor: (edition: FeedEditionID?, context: ContextKey?,
+        ids: [PublicationCardID]) = (nil, nil, [])
+
     func install(_ received: FeedPresentationState) throws {
         guard active else { throw FeedPresentationStateError.projectionSequenceMismatch }
         try store.install(received)
-        store.installBookmarks(try PublicationStore(database: database).bookmarkedCardIDs())
-        if let snapshot = store.state.presentation {
+        let installed = store.state.presentation
+        let window = (edition: installed?.editionID, context: installed?.contextKey,
+            ids: installed?.window.items.map(\.id) ?? [])
+        if window != bookmarksReadFor {
+            bookmarksReadFor = window
+            store.installBookmarks(try PublicationStore(database: database).bookmarkedCardIDs())
+        }
+        if let snapshot = installed {
             // Com o diagnóstico ligado, a instalação também diz **quais** cartas ela admitiu, na ordem — é o que
             // permite comparar os IDs antes e depois de cada poda, que o arquiteto pediu ao Kiro para concluir a
             // revisão. Desligado por padrão, como o resto do traço.
