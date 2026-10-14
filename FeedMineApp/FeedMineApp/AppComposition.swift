@@ -2403,7 +2403,9 @@ final class FeedAssociation {
                 onCommitted: { [weak self] committed in
                     await MainActor.run {
                         guard let self, self.active else { return }
-                        let received = FeedPresentationHandoff.receive(snapshot: committed, into: self.store.state)
+                        let received: FeedPresentationState
+                        do { received = try FeedPresentationHandoff.receive(snapshot: committed, into: self.store.state) }
+                        catch { Self.log("obsolete early viewport projection rejected"); return }
                         // Mesma regra do recebimento: só conteúdo chega à tela.
                         guard self.changesWhatTheReaderSees(received) else { return }
                         do { try self.install(received) }
