@@ -2146,8 +2146,17 @@ final class FeedAssociation {
     @ObservationIgnored private var bookmarksReadFor: (edition: FeedEditionID?, context: ContextKey?,
         ids: [PublicationCardID]) = (nil, nil, [])
 
+    /// Mede o que o dono sente e a suíte não vê (decisão de 2026-10-14). O trace da corrida passa a ter, por
+    /// segundo, quantos quadros passaram do orçamento e qual foi o pior — o **hitch ratio** que julga cada mudança
+    /// de fluidez, em vez de mais uma rodada de testes verdes.
+    @ObservationIgnored private lazy var frameMeter = FeedFrameMeter { [weak self] event, fields in
+        self?.trace?.record(event, fields)
+    }
+
     func install(_ received: FeedPresentationState) throws {
         guard active else { throw FeedPresentationStateError.projectionSequenceMismatch }
+        // O feed está em tela: a partir daqui o intervalo entre quadros é medido e escrito no trace.
+        frameMeter.start()
         try store.install(received)
         let installed = store.state.presentation
         let window = (edition: installed?.editionID, context: installed?.contextKey,
@@ -2446,6 +2455,8 @@ final class FeedAssociation {
         visible = false
         retryTask?.cancel()
         retryTask = nil
+        // O medidor de quadros para com a tela: o que interessa é o que o leitor sente enquanto rola.
+        frameMeter.stop()
         guard active else { return }
         do {
             _ = try await session.checkpointCurrentPosition(at: Date())

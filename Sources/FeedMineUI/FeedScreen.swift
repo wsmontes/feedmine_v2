@@ -92,17 +92,22 @@ public struct FeedScreen: View {
                                 isBookmarked: store.bookmarkedIDs.contains(card.id),
                                 availableActions: store.availableActions,
                                 onAction: { store.perform($0, rendered: presentation) })
-                                .onGeometryChange(for: FeedVisualCardGeometry?.self, of: { proxy in
-                                    guard let bounds = proxy.bounds(of: .scrollView(axis: .vertical)) else { return nil }
-                                    let frame = proxy.frame(in: .scrollView(axis: .vertical))
-                                    let local = proxy.frame(in: .named("feed-visual-content"))
-                                    return .init(cardID: card.id, frame: frame,
-                                        offset: local.minY - frame.minY, height: bounds.height)
-                                }) { proof in
+                                .onGeometryChange(for: CGRect?.self, of: { proxy in
+                                    // **Uma** conversão de coordenada por card por passada. A V1 não tinha sonda
+                                    // alguma por card (só um observer de limiar Bool); manter a sonda geométrica é
+                                    // o preço da prova de leitura, mas ela não precisa de três: a altura do viewport
+                                    // e o offset do conteúdo já são medidos a cada passo pelo
+                                    // `onScrollGeometryChange`, e a coordenada de conteúdo da prova é
+                                    // `frame.minY + offset`.
+                                    proxy.frame(in: .scrollView(axis: .vertical))
+                                }) { frame in
                                     guard capture.interaction.presentation(for: store)?.window == presentation.window,
                                         store.state.presentation?.editionID == presentation.editionID,
                                         store.state.presentation?.contextKey == presentation.contextKey,
-                                        let proof, presentation.window.items.contains(where: { $0.id == proof.cardID }) else { return }
+                                        let frame, let scroll = capture.motion.geometry,
+                                        presentation.window.items.contains(where: { $0.id == card.id }) else { return }
+                                    let proof = FeedVisualCardGeometry(cardID: card.id, frame: frame,
+                                        offset: scroll.offset, height: scroll.height)
                                     #if canImport(UIKit)
                                     if capture.nativeScrollOffset.observe(proof) {
                                         return
