@@ -68,6 +68,37 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
         XCTAssertNotEqual(try endpoints(["en"]), portuguese)
     }
 
+    /// A target discovered from a catalogue entry must carry its declared language into the
+    /// materialized registration, not rely on an outer snapshot to filter it a second time.
+    func testD2TraversalCarriesEntryLanguageIntoAcquisitionEligibility() throws {
+        let catalogURL = try catalog()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let db = try RuntimeDatabase(location: .init(directory: directory))
+        let transport = URLSession(configuration: .ephemeral)
+        addTeardownBlock { transport.invalidateAndCancel() }
+        let context = FeedContext(request: .main, filter: ReaderFilter(languages: ["en"]))
+        // Topic-only discovery visits entries in multiple languages; the context itself names English.
+        let traversal = ReaderDiscoveryTraversal(builder: ReaderDiscoveryBuilder(catalogURL: catalogURL),
+            profile: ReaderDiscoveryProfile(topicNodeKeys: ["topics/science"]), contextKey: context.key)
+        let acquisition = try SyndicationAcquisitionSnapshot(database: db, registrations: [],
+            session: transport, redirectCapacity: 0, discovery: traversal)
+        let page = try XCTUnwrap(acquisition.advanceDiscovery(for: context, examinedCapacity: 100))
+        XCTAssertTrue(page.entries.contains { $0.principal == "https://science.pt/feed" },
+            "The fixture must actually traverse a known mismatching language")
+        XCTAssertTrue(page.entries.contains { $0.principal == "https://science.en/feed" })
+        XCTAssertTrue(page.entries.contains { $0.principal == "https://science.unknown/feed" })
+
+        let targets = try traversal.targets(for: context)
+        func hasTarget(_ principal: String) -> Bool {
+            guard let entry = traversal.entries.first(where: { $0.principal == principal }) else { return false }
+            return targets.contains { $0.id == entry.targetID }
+        }
+        XCTAssertFalse(hasTarget("https://science.pt/feed"), "Known mismatch must be rejected by the materialized page")
+        XCTAssertTrue(hasTarget("https://science.en/feed"), "Known matching language must remain eligible")
+        XCTAssertTrue(hasTarget("https://science.unknown/feed"), "Unknown catalogue language must not be rejected")
+    }
+
     private struct ProgressiveFixture {
         let database: RuntimeDatabase
         let catalogURL: URL

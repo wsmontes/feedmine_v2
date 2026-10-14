@@ -83,7 +83,7 @@ extension SyndicationAcquisitionSnapshot {
                     externalPrincipal: .init(connectorKind: .syndication, namespace: LegacyCatalogImport.principalNamespace,
                         value: entry.principal, role: .principal), aliases: [], generation: 1, state: .enabled)!
                 return SyndicationTargetRegistration(targetID: target.id, targetGeneration: target.generation,
-                    endpoint: entry.endpoint, bindings: [binding])!
+                    endpoint: entry.endpoint, bindings: [binding], language: entry.language)!
             }
             return try discoverySnapshot(registrations: registrations)
         }
