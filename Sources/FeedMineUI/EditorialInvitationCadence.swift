@@ -15,6 +15,7 @@
 // Vocabulary, deliberately (architect, 2026-10-11): an **exposure** is a card the app presented to the reader; it
 // is not proof that the reader read it. The budget is counted in cards exposed/traversed, and the reports say so.
 import Foundation
+import Observation
 import FeedMineDomain
 import FeedMineRuntime
 
@@ -23,7 +24,7 @@ import FeedMineRuntime
 /// The feed's own visual capture publishes exactly this — the card at the reader's position — and the
 /// composition delivers it here. A window that was rendered but never shown is not an exposure, so the
 /// presentation's own window size is deliberately not a source for this count.
-public final class EditorialExposureLedger {
+@Observable public final class EditorialExposureLedger {
     private var seen: Set<PublicationCardID> = []
 
     public init() {}
@@ -33,6 +34,7 @@ public final class EditorialExposureLedger {
     public var count: Int { seen.count }
 
     public func expose(_ cardID: PublicationCardID) {
+        guard !seen.contains(cardID) else { return }
         seen.insert(cardID)
     }
 

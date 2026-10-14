@@ -10,6 +10,7 @@
 // These are the rules the PO accepted. The rendered height of the compact form and the VoiceOver behaviour of
 // the hidden block are not testable here; they belong to the simulator validation the acceptance requires.
 import XCTest
+import Observation
 import FeedMineDomain
 import FeedMineRuntime
 import FeedMineUI
@@ -55,6 +56,33 @@ final class EditorialInvitationCadenceTests: XCTestCase {
         XCTAssertTrue(ledger.wasExposed(card), "a card the reader has passed is one an offer may not be placed on")
         ledger.expose(PublicationCardID())
         XCTAssertEqual(ledger.count, 2)
+    }
+
+    func testNewExposureInvalidatesTheInvitationEligibilityReader() {
+        let ledger = EditorialExposureLedger()
+        let changed = expectation(description: "a new exposure updates the invitation's eligibility")
+        withObservationTracking {
+            _ = ledger.count
+        } onChange: {
+            changed.fulfill()
+        }
+        ledger.expose(PublicationCardID())
+        wait(for: [changed], timeout: 0.2)
+    }
+
+    func testRepeatedExposureDoesNotInvalidateTheInvitationEligibilityReader() {
+        let ledger = EditorialExposureLedger()
+        let card = PublicationCardID()
+        ledger.expose(card)
+        let changed = expectation(description: "the same card adds no exposure")
+        changed.isInverted = true
+        withObservationTracking {
+            _ = ledger.count
+        } onChange: {
+            changed.fulfill()
+        }
+        ledger.expose(card)
+        wait(for: [changed], timeout: 0.05)
     }
 
     func testNoOfferBeforeTheReaderHasReadEnoughCards() {
