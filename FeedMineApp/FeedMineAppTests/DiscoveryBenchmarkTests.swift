@@ -641,16 +641,27 @@ final class DiscoveryBenchmarkTests: XCTestCase {
             phases: phases)
         let feed = app.scrollViews.firstMatch
 
-        // A card the reader saves, and the anchor they are reading.
-        let bookmark = app.buttons.matching(identifier: "card.bookmark").firstMatch
-        guard bookmark.waitForExistence(timeout: 30) else {
+        // A card the reader saves, and the anchor they are reading. The card is **named first**, and its own
+        // control is then asked for **inside it**: `card.bookmark` is the same identifier on every card, so a
+        // `firstMatch` over the drawn list cannot tell one card from another (see the note on `presentedCard`), and
+        // it resolves to whatever the surface instantiated first — the reader's card while the admitted list was a
+        // band around them, and the Edition's first card once the head is kept. Measured 2026-10-14: the `firstMatch`
+        // sat 793 pt above the viewport, XCTest scrolled the feed to reach it, and the run saved the head card
+        // (`126C1A86`, index 0) instead of the card the driver was following (`BF12004E`, index 13) — the app
+        // recorded exactly the position it was left at, so the instrument, not the product, moved the reader.
+        guard let anchorBefore = presentedCard(app)?.identifier else {
             return XCTFail("the feed presented no card to save")
+        }
+        let bookmark = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", anchorBefore))
+            .firstMatch.buttons.matching(identifier: "card.bookmark").firstMatch
+        guard bookmark.waitForExistence(timeout: 30) else {
+            return XCTFail("the card the reader is on offers no save control")
         }
         bookmark.tap()
         Thread.sleep(forTimeInterval: 1.5)
         record("b05-saved:\(bookmark.value as? String == "bookmarked")", to: phases)
-        let anchorBefore = presentedCard(app)?.identifier
-        record("b05-anchor-before:\(anchorBefore ?? "none")", to: phases)
+        record("b05-anchor-before:\(anchorBefore)", to: phases)
 
         // A → B → A: another context and back. The reader's own feed must be the same one they left.
         // The reader's own overflow menu, as the header offers it.

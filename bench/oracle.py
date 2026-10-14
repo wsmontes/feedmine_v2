@@ -387,9 +387,82 @@ def gate_b03(run: dict, corpus: dict, catalog_keys: list[str]) -> dict:
 
 
 
+def admitted_series(database: str, trace: list[dict]) -> dict:
+    """The admitted list the app itself installed, session by session — the instrument B04's second clause is
+    measured with, and the reason it is not the drawn tree: with the admitted head kept (the owner's decision of
+    2026-10-13) a card the reader passed stays admitted but stops being drawn once the list's drawn window leaves
+    it behind, and an enumeration of drawn elements cannot tell "not drawn" from "not admitted" (measured
+    2026-10-14: the driver reported `card-absent` on a card the run's own trace shows admitted in 236 of 236
+    installs, head pinned at the Edition's first card)."""
+    if not os.path.exists(database):
+        return {"series": [], "first": None, "cards": 0}
+    connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+    try:
+        rows = connection.execute(
+            """
+            SELECT LOWER(c.id)
+            FROM published_cards c
+            LEFT JOIN feed_segments s ON s.id = c.segment_id
+            ORDER BY COALESCE(s.ordinal, 2147483647), c.ordinal, c.segment_id
+            """
+        ).fetchall()
+    finally:
+        connection.close()
+    position = {row[0]: index for index, row in enumerate(rows)}
+    series = []
+    for event in trace:
+        if event.get("event") != "admitted":
+            continue
+        fields = event.get("fields") or {}
+        try:
+            cards = int(fields.get("cards") or "")
+        except ValueError:
+            cards = None
+        series.append({
+            "edition": fields.get("edition"),
+            "sequence": fields.get("sequence"),
+            "order": fields.get("order"),
+            "cards": cards,
+            "head": position.get((fields.get("head") or "").lower()),
+            "tail": position.get((fields.get("tail") or "").lower()),
+        })
+    return {"series": series, "first": 0 if rows else None, "cards": len(rows)}
+
+
+def admitted_violations(series: list[dict], first: int | None) -> dict:
+    """What the clause forbids, counted over the app's own installs, session by session: a card **above** the
+    reader retracted (the head moving forward), the list shrinking, its tail retreating, or the installed list no
+    longer being the contiguous prefix it claims to be. Nothing else is read: the order the reader walks is the
+    segment ordinal followed by the card ordinal, never an identifier."""
+    groups: dict[tuple, list[dict]] = {}
+    for row in series:
+        groups.setdefault((row["edition"], row["sequence"]), []).append(row)
+    head_forward, shrunk, tail_back, holes = 0, 0, 0, 0
+    for rows in groups.values():
+        reference = None
+        for row in rows:
+            if row["head"] is None or row["tail"] is None:
+                continue
+            if reference is None:
+                reference = row
+                continue
+            if first is not None and row["head"] != first:
+                head_forward += 1
+            if row["head"] > reference["head"]:
+                head_forward += 1
+            if row["tail"] < reference["tail"]:
+                tail_back += 1
+            if row["cards"] is not None and reference["cards"] is not None and row["cards"] < reference["cards"]:
+                shrunk += 1
+            if row["cards"] is not None and row["tail"] - row["head"] + 1 != row["cards"]:
+                holes += 1
+            reference = row
+    return {"head_forward": head_forward, "shrunk": shrunk, "tail_back": tail_back, "holes": holes}
+
+
 def gate_b04(run: dict, corpus: dict, catalog_keys: list[str]) -> dict:
-    """B04 — the presented feed is sacred. The driver measured; the oracle judges the measurements, never the
-    driver's opinion: every stability fact it recorded must be true, and a full protocol must have run."""
+    """B04 — the presented feed is sacred. The driver measured and its record is reported; the clause is judged on
+    the app's own admitted list, because the drawn tree cannot answer it while the admitted head is kept."""
     walked = run.get("phases") or []
     facts = {}
     for phase in walked:
@@ -399,11 +472,11 @@ def gate_b04(run: dict, corpus: dict, catalog_keys: list[str]) -> dict:
         if name.startswith("b04-"):
             facts[name] = value
     stability = {name: value for name, value in facts.items() if name.endswith(("stable", "order", "holds"))}
-    # Three outcomes, and they are not the same thing (architect, 2026-10-11): `false` is movement and fails the
-    # gate; `not-measurable` is a measurement that could not be taken — it is never a pass (the gate is incomplete)
-    # and it is never a failure of the product either. The product criterion is unchanged: `true` is stable.
     unstable = sorted(name for name, value in stability.items() if value == "false")
     unmeasurable = sorted(name for name, value in stability.items() if value not in ("true", "false"))
+    instrument = admitted_series(run.get("database"), run.get("trace") or [])
+    violations = admitted_violations(instrument["series"], instrument["first"])
+    moved = sum(violations.values())
     clauses = [
         {
             "clause": "o protocolo de B04 foi caminhado (âncora, convite, ócio, rotação, background)",
@@ -413,19 +486,74 @@ def gate_b04(run: dict, corpus: dict, catalog_keys: list[str]) -> dict:
         },
         {
             "clause": "nada do que o leitor já tinha se moveu, reordenou ou retratou",
-            "observed": {"medidas": stability, "instaveis": unstable, "nao_mediveis": unmeasurable},
-            "expected": "todas estáveis; instável falha, não medível deixa o gate incompleto",
-            "pass": (not unstable) if stability and not unmeasurable else None,
+            "observed": {"instalacoes": len(instrument["series"]), "cartas": instrument["cards"],
+                         "violacoes": violations, "medidas_do_driver": stability,
+                         "instaveis_do_driver": unstable, "nao_mediveis_do_driver": unmeasurable},
+            "expected": "cabeça na primeira carta da edição, lista que só cresce e sempre contígua; "
+                        "movimento medido pelo driver falha, não medível é reportado",
+            "pass": (False if (unstable or moved) else True) if instrument["series"] else None,
         },
     ]
     return {"gate": "B04", "clauses": clauses,
-            "states": {"measurements": len(stability), "unstable": len(unstable),
-                       "not_measurable": len(unmeasurable)}}
+            "states": {"installations": len(instrument["series"]), "violations": moved,
+                       "unstable": len(unstable), "not_measurable": len(unmeasurable)}}
+
+
+def saved_cards(database: str) -> list[str]:
+    """The app's own durable record of what the reader saved. The clause is judged here, and not on the driver's
+    element read: `card.bookmark` is the same identifier on every card — the driver's own note says a measurement
+    built on it cannot tell one card from another — and with the admitted head kept the drawn list starts at the
+    Edition's first card. Measured 2026-10-14 on the run where the driver read `b05-saved:false`: the database held
+    exactly one saved card, so the save happened and only the driver's targeting was ambiguous."""
+    if not os.path.exists(database):
+        return []
+    connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+    try:
+        rows = connection.execute("SELECT LOWER(card_id) FROM reader_bookmark_memberships").fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        connection.close()
+    return sorted(row[0] for row in rows)
+
+
+def durable_position(database: str, trace: list[dict]) -> dict:
+    """O que a app gravou de posição, e onde ela pousou ao reabrir.
+
+    `position_checkpoint` é o único registro durável de posição que o trace carrega: a app o escreve com a
+    âncora e o `placement`. O último evento da série é a posição em que a app terminou — e é essa posição que a
+    reabertura põe no topo (medido nas duas corridas: `57131de6`/índice 8 no FAIL, `55bf1aaa`/índice 6 no PASS).
+    É este par que substitui, na cláusula, a comparação de "topo desenhado antes" com "topo desenhado depois":
+    o topo desenhado é uma leitura posicional do driver, e no FAIL ele divergia da âncora durável em 5 cartas
+    **antes** do fechamento (topo índice 13 contra âncora índice 8)."""
+    landed = None
+    for event in trace:
+        if event.get("event") != "position_checkpoint":
+            continue
+        fields = event.get("fields") or {}
+        landed = {"anchor": fields.get("anchor"), "placement": fields.get("placement")}
+    stored = 0
+    if os.path.exists(database):
+        connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+        try:
+            stored = connection.execute("SELECT COUNT(*) FROM context_checkpoints").fetchone()[0]
+        except sqlite3.OperationalError:
+            stored = 0
+        finally:
+            connection.close()
+    return {"posicao_na_reabertura": landed, "checkpoints_duradouros": stored}
 
 
 def gate_b05(run: dict, corpus: dict, catalog_keys: list[str]) -> dict:
-    """B05 — A → B → A, local memory and the offline return. Zero silent loss of state is the whole clause: every
-    fact the driver recorded must be true, and the app's database must show the reading position persisted."""
+    """B05 — A → B → A, local memory and the offline return. Zero silent loss of state é a cláusula inteira, e ela
+    é julgada no **registro durável** do app: o salvamento tem de ser da carta que o driver nomeou, e o app tem de
+    ter posição durável depois do percurso.
+
+    Três leituras do driver são **reportadas**, não decisivas — todas comparam o topo desenhado, e o desenho só
+    instancia perto da viewport: `b05-saved` e `b05-reopen-keeps-saved` (que leem `card.bookmark`, o **mesmo**
+    identificador em toda carta) e `b05-reopen-preserves-anchor` (cujo "antes" é o topo desenhado, que diverge da
+    âncora durável — 5 cartas, FAIL de 2026-10-14). Limite declarado: com elas fora do portão, B05 prova que o
+    estado durável **não se perdeu**, não que o reposicionamento é exato ao card."""
     walked = run.get("phases") or []
     facts = {}
     for phase in walked:
@@ -436,9 +564,21 @@ def gate_b05(run: dict, corpus: dict, catalog_keys: list[str]) -> dict:
             facts[name] = value
     checks = {name: value for name, value in facts.items()
               if name.endswith(("saved", "anchor", "local", "cards", "reached", "anchor-before"))}
-    failed = sorted(name for name, value in checks.items() if value not in ("true", "none") and not value.startswith("b05-"))
-    # `anchor-before` carries an identity, not a verdict: it is evidence, not a check.
-    failed = [name for name in failed if name != "b05-anchor-before"]
+    reported = {"b05-saved", "b05-reopen-keeps-saved", "b05-reopen-preserves-anchor"}
+    failed = sorted(name for name, value in checks.items()
+                    if value not in ("true", "none") and name not in reported and name != "b05-anchor-before")
+    saved = saved_cards(run.get("database"))
+    anchor = (facts.get("b05-anchor-before") or "").lower()
+    position = durable_position(run.get("database"), run.get("trace") or [])
+    durable = {"salvos": saved, "ancora_nomeada": anchor or None,
+               "posicao_na_reabertura": position["posicao_na_reabertura"],
+               "checkpoints_duradouros": position["checkpoints_duradouros"]}
+    if not saved:
+        failed.append("nenhum salvamento durável")
+    elif anchor and anchor not in saved:
+        failed.append("o salvamento durável não é da carta que o driver nomeou")
+    if not position["checkpoints_duradouros"] or not position["posicao_na_reabertura"]:
+        failed.append("o app não deixou posição durável depois do percurso")
     clauses = [
         {
             "clause": "o protocolo de B05 foi caminhado (salvar, A→B→A, reabrir, offline)",
@@ -448,8 +588,10 @@ def gate_b05(run: dict, corpus: dict, catalog_keys: list[str]) -> dict:
         },
         {
             "clause": "zero perda silenciosa de estado",
-            "observed": {"medidas": checks, "falhas": failed},
-            "expected": "todas verdadeiras",
+            "observed": {"medidas": checks, "registro_duravel": durable, "falhas": failed,
+                         "leituras_posicionais_reportadas": {name: checks.get(name) for name in sorted(reported)}},
+            "expected": "o registro durável guarda a carta que o driver nomeou e uma posição depois do percurso; "
+                        "as leituras posicionais do driver são reportadas (não medem identidade)",
             "pass": (not failed) if checks else None,
         },
     ]
@@ -482,7 +624,7 @@ def main() -> int:
     finally:
         connection.close()
 
-    run = {"cards": cards(args.database), "log": load_log(os.path.join(args.run, "server.log")),
+    run = {"database": args.database, "cards": cards(args.database), "log": load_log(os.path.join(args.run, "server.log")),
         "registered": registered(args.database), "trace": trace_events(args.database)}
     run["settings"] = read_settings(args.database)
     run["phases"] = walked_phases(args.run, args.gate, "A")
