@@ -1,0 +1,135 @@
+{
+  "criteria_thresholds": {
+    "B01": [
+      "No cenário rico do corpus, pelo menos 50 fontes distintas entram automaticamente no conjunto de aquisição elegível, e pelo menos 20 fontes distintas contribuem com os primeiros 300 cards."
+    ],
+    "B02": [
+      "≥80% dos 200 cards correspondem aos interesses/idiomas declarados, de acordo com o rótulo externo congelado; a distribuição de relevância por assunto/idioma é publicada junto do resultado.",
+      "≥20 fontes distintas aparecem; nenhuma fonte representa >15% dos cards quando o corpus oferece alternativas.",
+      "Zero pares de cards consecutivos da mesma fonte em contexto multi-fonte (PD-4), incluindo fronteiras de segmentos.",
+      "Zero duplicatas de artigo canônico apresentadas como descobertas novas na mesma edição; uma edição material segue a decisão PD-1 e é contada separadamente."
+    ],
+    "B03": [
+      "instalação limpa em contexto rico com ≥5.000 itens elegíveis; replay externo de 30 minutos de avanços efetivos, a 1 card por segundo, com rajadas de até 3 cards por segundo durante 20 segundos a cada 5 minutos, usando gestos/scroll nativos.",
+      "Zero fim artificial de feed, tela vazia, retorno ao início, repetição para disfarçar falta de supply ou loading que substitua a história visível enquanto ainda há conteúdo elegível disponível.",
+      "Zero paralisação visível ≥1 segundo causada por falta de runway, no ambiente controlado desta baseline do benchmark."
+    ]
+  },
+  "items_generated_at": "2026-10-10T21:41:27Z",
+  "items_per_profile": {
+    "A": 6885,
+    "B": 8112
+  },
+  "items_per_protocol": {
+    "atom": 4031,
+    "jsonfeed": 2968,
+    "rss": 8918
+  },
+  "items_total": 15917,
+  "profiles": {
+    "A": {
+      "eligible_items": 6885,
+      "eligible_sources": 942,
+      "interest_notes": "photography has no taxonomy node in the real catalog; the interest is expressed by the real `tags` column, so the third interest is a tag match, not a node key",
+      "interests": [
+        "04-technology-science",
+        "90_countries/brazil"
+      ],
+      "languages": [
+        "pt"
+      ],
+      "profile_id": "A",
+      "region": "90_countries/brazil",
+      "source_tags": [
+        "photography"
+      ]
+    },
+    "B": {
+      "eligible_items": 8112,
+      "eligible_sources": 1123,
+      "interest_notes": "profile B is section-scoped (world news + technology), not country-scoped, so it has no single country node key to offer as a region answer; region is null rather than invented",
+      "interests": [
+        "04-technology-science",
+        "01-news-current-affairs/world-news"
+      ],
+      "languages": [
+        "en"
+      ],
+      "profile_id": "B",
+      "region": null,
+      "source_tags": []
+    }
+  },
+  "sources_per_profile": {
+    "A": 942,
+    "B": 1123
+  },
+  "sources_per_protocol": {
+    "atom": 587,
+    "jsonfeed": 433,
+    "rss": 1285
+  },
+  "sources_total": 2305,
+  "totals": {
+    "behaviour_classes": {
+      "intermittent": 265,
+      "normal": 1622,
+      "slow": 287,
+      "timeout": 131
+    },
+    "canonical_articles_shared": 270,
+    "cross_publisher_duplicate_pairs": 270,
+    "distinct_headlines": 15917,
+    "eligible_items": {
+      "A": 6885,
+      "B": 8112
+    },
+    "eligible_sources": {
+      "A": 942,
+      "B": 1123
+    },
+    "empty_documents": 75,
+    "item_topics": {
+      "brazil-news": 6146,
+      "other": 814,
+      "photography": 14,
+      "science": 1550,
+      "technology": 4754,
+      "world-news": 2639
+    },
+    "items": 15917,
+    "material_revision_items": 75,
+    "media_kinds": {
+      "audio": 2949,
+      "image": 4785,
+      "none": 3204,
+      "video": 4979
+    },
+    "protocols": {
+      "atom": 587,
+      "jsonfeed": 433,
+      "rss": 1285
+    },
+    "slow_media_sources": 231,
+    "source_topics": {
+      "brazil-news": 845,
+      "other": 215,
+      "photography": 2,
+      "science": 215,
+      "technology": 659,
+      "world-news": 369
+    },
+    "sources": 2305
+  },
+  "trace": {
+    "baseline_cards_per_second": 1,
+    "burst_cards_per_second": 3,
+    "burst_period_seconds": 300,
+    "burst_seconds": 20,
+    "description": "B03 trace: 30 minutes of effective advances driven by an external replayer using native gestures. Baseline is 1 card per second, with bursts of up to 3 cards per second for 20 seconds every 5 minutes (5 or 6 burst windows inside the 30 minutes, depending on whether a window starts at the 30-minute boundary). Expected advances therefore lie between 2,000 and 2,040 distinct cards (1,800 baseline + 200-240 extra), which is the count the corpus must be able to serve from one profile's eligible supply.",
+    "duration_seconds": 1800,
+    "expected_advances_max": 2040,
+    "expected_advances_min": 2000
+  },
+  "transport_base_url": "http://127.0.0.1:8757"
+}

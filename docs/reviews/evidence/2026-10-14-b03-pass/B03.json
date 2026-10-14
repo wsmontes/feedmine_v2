@@ -1,0 +1,57 @@
+{
+  "gate": "B03",
+  "clauses": [
+    {
+      "clause": "trinta minutos de avanço com oferta suficiente",
+      "observed": 4834,
+      "expected": "1.800 avanços efetivos",
+      "pass": true
+    },
+    {
+      "clause": "zero repetição para disfarçar falta de oferta",
+      "observed": 0,
+      "expected": "0",
+      "pass": true
+    },
+    {
+      "clause": "zero pares consecutivos da mesma fonte no trace inteiro",
+      "observed": 0,
+      "expected": "0",
+      "pass": true
+    },
+    {
+      "clause": "zero paralisação visível ≥1 s por falta de runway",
+      "observed": {
+        "paradas": 0,
+        "regra": "avanço sem admissão em 1 s"
+      },
+      "expected": "0",
+      "pass": true
+    },
+    {
+      "clause": "a prontidão de cada candidato foi registrada",
+      "observed": {
+        "candidatos": 869,
+        "pendentes": 0,
+        "texto": 869,
+        "preparados": 0
+      },
+      "expected": "todo candidato examinado tem sua prontidão medida",
+      "pass": true
+    }
+  ],
+  "cards": 869,
+  "states": {
+    "advances": 4834,
+    "admissions": 10467,
+    "stalls": 0,
+    "candidates": 869,
+    "pending": 0
+  },
+  "verdict": "PASS",
+  "identity": {
+    "database": "bench/run/20261014T073006Z/container/Library/Application Support/FeedMine/C698F686-B990-42A4-8C19-919D6D4F3F63/runtime.sqlite",
+    "corpus_items": 15917,
+    "catalog_keys": 2305
+  }
+}
