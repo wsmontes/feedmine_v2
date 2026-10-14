@@ -120,6 +120,11 @@ public final class EditorialInvitationCadence {
         var pendingPlacement: PendingPlacement?
         /// The host cards the reader's own position has reached. A card met twice is one offer.
         var presentedHosts: Set<PublicationCardID> = []
+        /// How many answers the reader declared in this session. Only the **first** one shortens the wait.
+        var answers = 0
+        /// The distance the next offer must respect when a rule other than the ordinary one was just decided.
+        /// `nil` means the ordinary rule (first offer, then the base interval grown by ignored offers).
+        var nextInterval: Int?
     }
 
     private struct PendingPlacement {
@@ -166,6 +171,7 @@ public final class EditorialInvitationCadence {
     /// after an explicit re-enable) is governed by `firstOfferAfterCards`; afterwards the interval grows with
     /// every offer left unanswered, up to the ceiling.
     public var interval: Int {
+        if let decided = current.nextInterval { return decided }
         guard current.offersShown > 0 else { return budget.firstOfferAfterCards }
         var value = budget.baseInterval
         for _ in 0..<current.ignoredOffers {
@@ -221,6 +227,8 @@ public final class EditorialInvitationCadence {
         // subject may be placed again when the reader's position is right.
         session.pendingPlacement = nil
         session.lastOfferAt = cardsTraversed
+        // Re-enabling states its own distance; no earlier decision survives it.
+        session.nextInterval = nil
         current = session
     }
 
@@ -260,6 +268,8 @@ public final class EditorialInvitationCadence {
         session.offeredSubjects.insert(subject)
         session.hosts[card] = HostedOffer(subject: subject, isCompact: isCompact)
         session.pendingPlacement = PendingPlacement(card: card, subject: subject, placedAt: cardsTraversed)
+        // The decided interval was the distance to **this** opportunity; it is spent now.
+        session.nextInterval = nil
         current = session
     }
 
@@ -282,10 +292,20 @@ public final class EditorialInvitationCadence {
 
     /// The reader answered. Engagement is not punished: the penalty is cleared, so the next opportunity comes
     /// after a comfortable interval instead of a doubled one.
+    ///
+    /// The **first** answer of a session also buys the distance back down to the first-contact one (4 cards, not
+    /// the base 12): it is the strongest signal the product gets, it is what has to be acted on while the reader
+    /// is still reading, and the product needs more than one of them to steer discovery (F02: two declared
+    /// interests, and a positive vote must produce a perceptible difference). An answer must not cost more
+    /// distance than silence. Only the first — a reader who answers every invitation must still be reading a
+    /// feed, not filling a questionnaire (PO, 2026-10-14) — and the session cap and the one-offer-per-subject
+    /// rule keep bounding what can be placed.
     public func answered(subject: String) {
         var session = current
         if session.pendingAnswerSubject == subject { session.pendingAnswerSubject = nil }
         session.ignoredOffers = 0
+        session.answers += 1
+        session.nextInterval = session.answers == 1 ? budget.firstOfferAfterCards : nil
         current = session
     }
 }

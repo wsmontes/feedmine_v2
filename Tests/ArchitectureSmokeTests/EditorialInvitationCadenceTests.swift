@@ -156,7 +156,8 @@ final class EditorialInvitationCadenceTests: XCTestCase {
         XCTAssertEqual(cadence.interval, 96, "48 doubled is 96, which is the ceiling")
     }
 
-    /// R3: engagement is not punished.
+    /// R3: engagement is not punished, and the first answer of a session is acted on while the reader is still
+    /// reading — the next opportunity comes at the first-contact distance, not at the base interval.
     func testAnAnswerBringsTheNextOpportunityBackToAComfortableInterval() {
         let cadence = started()
         expectOffer(cadence, "topic:a", at: 4)
@@ -165,10 +166,27 @@ final class EditorialInvitationCadenceTests: XCTestCase {
 
         cadence.answered(subject: "topic:b")
         XCTAssertEqual(cadence.ignoredOffers, 0)
-        XCTAssertEqual(cadence.interval, 12, "after an answer the wait is the base interval again")
+        XCTAssertEqual(cadence.interval, 4, "the first answer buys back the first-contact distance")
 
-        expectRefusal(cadence, "topic:c", at: 27, .tooSoon(cardsRemaining: 1))
-        expectOffer(cadence, "topic:c", at: 28)
+        expectRefusal(cadence, "topic:c", at: 19, .tooSoon(cardsRemaining: 1))
+        expectOffer(cadence, "topic:c", at: 20)
+    }
+
+    /// PO, 2026-10-14: "não quero convite imediato: precisamos preservar espaço de leitura". Only the first
+    /// answer shortens the wait; a reader who answers every invitation is not filling a questionnaire.
+    func testOnlyTheFirstAnswerShortensTheWait() {
+        let cadence = started()
+        expectOffer(cadence, "topic:a", at: 4)
+        cadence.answered(subject: "topic:a")
+        XCTAssertEqual(cadence.interval, 4)
+        expectOffer(cadence, "topic:b", at: 8)
+        XCTAssertEqual(cadence.interval, 12, "the decided distance was spent on that opportunity")
+
+        cadence.answered(subject: "topic:b")
+        XCTAssertEqual(cadence.interval, 12, "a second answer does not shorten the wait again")
+        XCTAssertEqual(cadence.decision(subject: "topic:c", isAnswered: false, cardsTraversed: 19),
+            .tooSoon(cardsRemaining: 1))
+        expectOffer(cadence, "topic:c", at: 20)
     }
 
     /// R4 and R5: a subject is offered once, an answered subject is never asked, and the session's cap holds.
