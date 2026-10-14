@@ -2454,6 +2454,12 @@ final class FeedAssociation {
                 Self.log("rendered position reconciled locally")
                 return
             }
+            // PO 2026-10-14: a leitura que acabou de ser admitida e estabelecida passa a ser **durável** aqui. É
+            // este o momento que o fechamento à força usa para voltar ao mesmo card; a janela máxima de perda é a
+            // declarada em `FeedSession.settledPositionDebounceWindow`, e a escrita roda no ator da sessão — nunca
+            // no corpo de uma view nem no quadro que está sendo desenhado. Um repouso (`stationary`) é o fato que
+            // a decisão nomeia e grava na hora; as observações em movimento são as que a janela limita.
+            await recordSettledPosition(settled: activity == .stationary)
             // O fim é decidido **antes** de a janela crescer: se a admissão trouxe cards, o crescimento retrata o
             // fim na mesma oportunidade, em vez de o fim ser reinstalado por cima da retratação (revisão,
             // 2026-10-14).
@@ -2474,6 +2480,28 @@ final class FeedAssociation {
             reportFailure(error)
             if evidence?.isPositionReconciliation != true { await scheduleLocalRetryIfNeeded() }
         }
+    }
+
+    /// PO 2026-10-14: o último card admitido e estabelecido vira posição durável — a que um fechamento à força
+    /// recupera. O dono do cursor é a sessão (`FeedSession.recordSettledPosition`), que aplica a janela máxima de
+    /// perda declarada lá; aqui só se diz **quando**: depois de a observação do leitor ter sido admitida e
+    /// instalada, com o fato que o driver já traz — `activity == .stationary` é o leitor **chegando ao repouso**
+    /// (a própria captura emite esse evento uma vez por repouso), e um repouso nunca espera a janela. A escrita
+    /// roda no executor do ator da sessão, nunca no caminho de renderização. Uma falha de escrita é registrada e
+    /// não interrompe a leitura: o cursor anterior continua descrevendo o leitor, uma janela atrás, e a próxima
+    /// observação estabelecida tenta de novo.
+    private func recordSettledPosition(settled: Bool) async {
+        do {
+            // O `written` é o único desfecho que custa uma escrita; é ele que entra no registro da corrida, e é a
+            // contagem dessas linhas por minuto de leitura que mede o custo contra o orçamento de fluidez.
+            guard case .written(let cardID, let placement) = try await session.recordSettledPosition(
+                at: Date(), settled: settled) else { return }
+            let window = Int(FeedSession.settledPositionDebounceWindow)
+            Self.log("settled position checkpoint anchor=\(cardID.rawValue.uuidString) "
+                + "placement=\(placement.rawValue) window=\(window)s")
+            trace?.record("position_checkpoint", ["anchor": cardID.rawValue.uuidString,
+                "placement": placement.rawValue, "window_seconds": String(window)])
+        } catch { Self.log("settled position checkpoint failed \(error)") }
     }
 
     func foreground() async {

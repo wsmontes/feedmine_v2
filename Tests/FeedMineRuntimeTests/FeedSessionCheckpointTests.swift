@@ -175,4 +175,216 @@ final class FeedSessionCheckpointTests: XCTestCase {
             XCTAssertEqual(try SessionStore(database: database).checkpoint(), before)
         }
     }
+
+    // MARK: - PO 2026-10-14: a posição durável sobre o último card admitido e estabelecido
+
+    /// O defeito medido no B05: sem passar por nenhum milestone (troca de contexto, substituição de sessão,
+    /// background, criação da edição), o cursor durável continuava no primeiro card da edição e um fechamento à
+    /// força voltava para lá. A observação estabelecida do leitor passa a ser durável — com **identidade e
+    /// contexto** (o registro do contexto é o próprio registro), e sem nenhum milestone.
+    func testASettledObservationBecomesDurableWithoutAnyMilestone() async throws {
+        try await withLocation { location in
+            let (edition, cards) = try persist(location: location)
+            let settledTime = Date(timeIntervalSince1970: 500)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: try RuntimeDatabase(location: location)))
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            _ = try await session.submitViewport(ViewportObservation(
+                anchor: PresentationAnchor(cardID: cards[6].id, placement: .center)))
+            let recording = try await session.recordSettledPosition(at: settledTime)
+            XCTAssertEqual(recording, .written(cardID: cards[6].id, placement: .center))
+            let store = try SessionStore(database: try RuntimeDatabase(location: location))
+            let active = try XCTUnwrap(store.checkpoint())
+            XCTAssertEqual(active.editionID, edition.id)
+            XCTAssertEqual(active.cardID, cards[6].id)
+            XCTAssertEqual(active.anchorPlacement, "center")
+            XCTAssertEqual(active.updatedAt, settledTime)
+            XCTAssertEqual(try store.checkpoint(for: edition.contextKey)?.cardID, cards[6].id,
+                "the durable position carries the context's own identity, not a global one")
+        }
+    }
+
+    /// O fechamento à força: a sessão morre, uma nova abre o mesmo banco e volta para o card em que o leitor
+    /// estava — o último admitido e estabelecido, não o primeiro da edição.
+    func testAForcedCloseReopensOnTheSettledCard() async throws {
+        try await withLocation { location in
+            let (edition, cards) = try persist(location: location)
+            do {
+                let session = FeedSession(publicationHistory: PublicationHistory(
+                    database: try RuntimeDatabase(location: location)))
+                _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+                _ = try await session.submitViewport(ViewportObservation(
+                    anchor: PresentationAnchor(cardID: cards[6].id, placement: .top)))
+                _ = try await session.recordSettledPosition(at: Date(timeIntervalSince1970: 600))
+            }
+            let reopened = FeedSession(publicationHistory: PublicationHistory(
+                database: try RuntimeDatabase(location: location)))
+            let restored = try await reopened.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            XCTAssertEqual(restored?.window.anchor, PresentationAnchor(cardID: cards[6].id, placement: .top))
+            XCTAssertEqual(restored?.editionID, edition.id)
+            XCTAssertEqual(restored?.window.items.map(\.id), Array(cards[4...8]).map(\.id),
+                "a janela volta materializada em torno do card estabelecido")
+        }
+    }
+
+    /// A janela declarada, exercitada nas duas bordas: dentro dela nada é gravado (e o desfecho diz quanto
+    /// falta), na borda ela libera a escrita do card novo.
+    func testTheDeclaredWindowIsTheMaximumLossAndItIsWhatGatesTheWrite() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let window = FeedSession.settledPositionDebounceWindow
+            XCTAssertEqual(window, 20, "a janela máxima de perda declarada é 20 s (3 escritas por minuto)")
+            let first = Date(timeIntervalSince1970: 1_000)
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            _ = try await session.submitViewport(ViewportObservation(
+                anchor: PresentationAnchor(cardID: cards[6].id, placement: .center)))
+            let firstWrite = try await session.recordSettledPosition(at: first)
+            XCTAssertEqual(firstWrite, .written(cardID: cards[6].id, placement: .center))
+            let written = try XCTUnwrap(SessionStore(database: database).checkpoint())
+
+            // O leitor anda de novo, um segundo antes de a janela fechar: nada é gravado, e o desfecho diz a
+            // distância até a próxima escrita possível.
+            _ = try await session.submitViewport(ViewportObservation(
+                anchor: PresentationAnchor(cardID: cards[5].id, placement: .center)))
+            let insideTheWindow = try await session.recordSettledPosition(at: first.addingTimeInterval(window - 1))
+            XCTAssertEqual(insideTheWindow, .withinWindow(remaining: 1))
+            XCTAssertEqual(try SessionStore(database: database).checkpoint(), written,
+                "dentro da janela o cursor durável fica onde estava — é esta a perda máxima declarada")
+
+            // Na borda da janela, a escrita acontece — e é o card novo que passa a ser durável.
+            let atTheEdge = try await session.recordSettledPosition(at: first.addingTimeInterval(window))
+            XCTAssertEqual(atTheEdge, .written(cardID: cards[5].id, placement: .center))
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.cardID, cards[5].id)
+        }
+    }
+
+    /// O custo declarado tem de ser verdade para um leitor parado: a posição que já está durável nunca é
+    /// reescrita, nem muito depois da janela — descansar não produz escrita nenhuma.
+    func testAPositionAlreadyDurableIsNeverRewritten() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let first = Date(timeIntervalSince1970: 2_000)
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            _ = try await session.submitViewport(ViewportObservation(
+                anchor: PresentationAnchor(cardID: cards[6].id, placement: .center)))
+            _ = try await session.recordSettledPosition(at: first)
+            let written = try XCTUnwrap(SessionStore(database: database).checkpoint())
+            let later = first.addingTimeInterval(10 * FeedSession.settledPositionDebounceWindow)
+            let resting = try await session.recordSettledPosition(at: later)
+            XCTAssertEqual(resting, .alreadyDurable)
+            XCTAssertEqual(try SessionStore(database: database).checkpoint(), written,
+                "the same position is never rewritten, whatever the clock says")
+        }
+    }
+
+    /// A gravação de milestone continua sendo um milestone: a janela nunca a suprime, e ela também move o
+    /// relógio do debounce (a janela seguinte mede a partir do que o leitor realmente tornou durável).
+    func testAMilestoneIsNeverSuppressedByTheWindow() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let first = Date(timeIntervalSince1970: 3_000)
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            _ = try await session.submitViewport(ViewportObservation(
+                anchor: PresentationAnchor(cardID: cards[6].id, placement: .center)))
+            _ = try await session.recordSettledPosition(at: first)
+            _ = try await session.submitViewport(ViewportObservation(
+                anchor: PresentationAnchor(cardID: cards[5].id, placement: .top)))
+            let milestone = first.addingTimeInterval(1)
+            let milestoneSaved = try await session.checkpointCurrentPosition(at: milestone)
+            XCTAssertTrue(milestoneSaved)
+            let store = try SessionStore(database: database)
+            XCTAssertEqual(try store.checkpoint()?.cardID, cards[5].id)
+            XCTAssertEqual(try store.checkpoint()?.updatedAt, milestone)
+            // A posição gravada pelo milestone é a que a janela seguinte mede: uma observação nova logo depois
+            // volta a ser admitida como dentro da janela, não como uma primeira escrita.
+            _ = try await session.submitViewport(ViewportObservation(
+                anchor: PresentationAnchor(cardID: cards[6].id, placement: .center)))
+            guard case .withinWindow(let remaining) = try await session.recordSettledPosition(at: milestone.addingTimeInterval(1))
+            else { return XCTFail("a milestone must move the debounce's own clock") }
+            XCTAssertEqual(remaining, FeedSession.settledPositionDebounceWindow - 1, accuracy: 0.0001)
+        }
+    }
+
+    /// Sem apresentação admitida não há posição: o desfecho diz isso e nenhum registro é criado.
+    func testNoPresentationRecordsNothing() async throws {
+        try await withLocation { location in
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            let recording = try await session.recordSettledPosition(at: Date(timeIntervalSince1970: 10))
+            XCTAssertEqual(recording, .nothingToRecord)
+            XCTAssertNil(try SessionStore(database: database).checkpoint())
+        }
+    }
+
+    /// O contraste que a janela existe para declarar: **em movimento**, uma observação dentro da janela espera;
+    /// **no repouso**, a mesma observação é gravada na hora. É isso que faz a perda máxima declarada valer só para
+    /// a morte súbita durante a rolagem: quem chega ao repouso não perde nada.
+    func testARestIsRecordedImmediatelyWhileMovementWaitsForTheWindow() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let first = Date(timeIntervalSince1970: 5_000)
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            _ = try await session.submitViewport(ViewportObservation(
+                anchor: PresentationAnchor(cardID: cards[6].id, placement: .center)))
+            _ = try await session.recordSettledPosition(at: first, settled: true)
+            let written = try XCTUnwrap(SessionStore(database: database).checkpoint())
+
+            // Ainda se movendo, dentro da janela: espera.
+            _ = try await session.submitViewport(ViewportObservation(
+                anchor: PresentationAnchor(cardID: cards[5].id, placement: .center)))
+            let moving = try await session.recordSettledPosition(at: first.addingTimeInterval(1))
+            guard case .withinWindow = moving else {
+                return XCTFail("a moving observation inside the window must wait; observed \(moving)")
+            }
+            XCTAssertEqual(try SessionStore(database: database).checkpoint(), written)
+
+            // E o mesmo movimento, agora como repouso: grava na hora, sem esperar a janela.
+            let rest = try await session.recordSettledPosition(at: first.addingTimeInterval(2), settled: true)
+            XCTAssertEqual(rest, .written(cardID: cards[5].id, placement: .center))
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.cardID, cards[5].id)
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.updatedAt,
+                first.addingTimeInterval(2))
+        }
+    }
+
+    /// O custo medido, ao lado do orçamento: uma escrita é um upsert de uma linha, e o custo declarado é no
+    /// máximo `60 / janela` = 3 escritas por minuto de leitura. O número abaixo é medido nesta máquina, não
+    /// estimado — o teto da asserção é folgado de propósito (três quadros a 60 Hz), porque o que se afirma aqui
+    /// é a ordem de grandeza, não um microbenchmark.
+    func testTheDurabilityWriteCostsFarLessThanOneFramePerWindow() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            let window = FeedSession.settledPositionDebounceWindow
+            let base = Date(timeIntervalSince1970: 4_000)
+            var writes = 0
+            let started = ProcessInfo.processInfo.systemUptime
+            for step in 0..<200 {
+                let card = cards[3 + (step % 4)]
+                _ = try await session.submitViewport(ViewportObservation(
+                    anchor: PresentationAnchor(cardID: card.id, placement: .center)))
+                // Cada passo passa a janela declarada e muda de card, então cada passo é uma escrita — o pior caso
+                // que a regra permite (o leitor avançando sem parar, com o relógio sempre passando da janela).
+                guard case .written = try await session.recordSettledPosition(
+                    at: base.addingTimeInterval(window * Double(step))) else {
+                    return XCTFail("step \(step) must be a real write")
+                }
+                writes += 1
+            }
+            let average = (ProcessInfo.processInfo.systemUptime - started) / Double(max(writes, 1))
+            print("DURABILITY_COST writes=\(writes) average_write_ms=\(String(format: "%.3f", average * 1000))"
+                + " declared_writes_per_minute=\(Int(60 / window)) frame_budget_ms=16.67")
+            XCTAssertGreaterThan(writes, 100, "the measurement is about real writes")
+            XCTAssertLessThan(average, 0.05, "one write is far below a frame (16,67 ms)")
+        }
+    }
 }

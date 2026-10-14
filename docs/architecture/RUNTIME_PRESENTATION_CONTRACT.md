@@ -70,7 +70,7 @@ FeedSessionState contains exactly editorialRevisionID, presentation and the froz
 
 Decoded pixels are residency, not identity. Only cards inside the frozen bounds around the reader keep their `CGImage`; cards outside keep their frozen descriptor — layout, aspect ratio, text, action, source — and release the bitmap through `PresentationCard.releasingDecodedImage()`. Returning to one decodes the same local asset again (`withDecodedImage(_:)`), so a released card is never "upgraded": the layout decided at publication is what it renders, and no slot changes geometry. `releasedImageCards` records which cards were released on purpose, so a genuinely absent asset is not retried on every observation. Re-entering already-admitted history re-materializes decoded pixels only; it is not an admission. Actor isolation establishes one mutable state owner without locks, detached tasks or queues.
 
-Viewport movement updates the actor-owned current local session state but does not itself durably checkpoint that state. After moving from a saved P4/center to a current P6/center, reopening restores P4/center because ordinary scroll never writes the SQLite checkpoint. Placement-only changes are also memory-local.
+Viewport movement updates the actor-owned current local session state but does not itself durably checkpoint that state. After moving from a saved P4/center to a current P6/center, reopening restores P4/center **until the app wires the settled observation to the durability boundary below**; `submitViewport` itself never writes. Placement-only changes are also memory-local.
 
 ## 9. Explicit session checkpoint milestone
 
@@ -78,7 +78,18 @@ viewport movement = memory-local. checkpointCurrentPosition(at:) = explicit dura
 
 Without a milestone, scrolling from durable P4/center to current P6/center and reopening restores P4/center. With an explicit milestone after that scroll, reopening restores P6/center. Top placement remains top. An explicit milestone without movement may write the same logical position again with the supplied metadata time; no extra idempotency optimization is introduced.
 
-FeedSession does not decide when lifecycle milestones occur. App lifecycle wiring, automatic save policy, checkpoint batching, UI streams, exposure and Runway remain deferred.
+### 9a. Debounced durability of the settled position (PO, 2026-10-14)
+
+Requirement ratified by the owner: returning to the app must recover the reader's position **also after a forced close**. A forced close runs no lifecycle milestone at all, so a durable cursor written only by milestones recovers the beginning of the Edition instead of what the reader was reading (measured, B05 2026-10-14: `context_checkpoints.card_id` still pointed at the Edition's first card, `updated_at == feed_editions.created_at`).
+
+`recordSettledPosition(at:settled:)` is the second durability boundary of the same owner. It records the **last admitted and settled card** — the anchor of the window the reader's own observation produced — with the identity and context the record already carries (`context_checkpoints.context_identity` / `context_key_json`). The rule has two parts, and the second is what makes the declared tolerance small in practice:
+
+- **The reader coming to rest is recorded at once.** `settled: true` is the app's own semantic settle (`RunwayActivity.stationary`, emitted once per rest by the existing capture); it never waits for a window, so a reader who stops scrolling loses nothing.
+- **While the reader is moving**, a write happens at most once per `FeedSession.settledPositionDebounceWindow`. **Declared maximum debounce loss: 20 seconds** — a forced close *during movement* can lose at most the reading advance of the last 20 seconds of scrolling, and nothing more. The ordinary ways of leaving the app keep writing the exact position with no window at all (background/suspend, context switch, session replacement, edition creation), so the declared loss only covers sudden death while the reader is still moving.
+
+**Declared cost, against the fluidity budget** (the frame meter's 16,67 ms per frame at 60 Hz): at most `60 / 20` = **3 durable writes per minute while moving**, plus **one per rest** (a reader who never moves produces none), plus one on the first settled observation of each association, plus the milestone writes that already existed. Each write is a one-row upsert in SQLite executed on `FeedSession`'s own executor — never in a view body, never on the main actor, never inside a frame. Measured on this machine: 0,82 ms per write (`FeedMineRuntimeTests.FeedSessionCheckpointTests.testTheDurabilityWriteCostsFarLessThanOneFramePerWindow`, 200 writes). `SettledPositionRecording` states which of the four outcomes happened (nothing to record, already durable, inside the window with the remaining time, or written) so the run's own record can tell a skip from a write; the app writes a `position_checkpoint` trace event with the declared window beside the anchor.
+
+FeedSession does not decide when lifecycle milestones occur. App lifecycle wiring, automatic save policy, checkpoint batching, UI streams, exposure and Runway remain deferred — the app states *when* (a settled viewport opportunity it has admitted and installed) and this owner states *how often*.
 
 ## 10. Continuous-production boundary — Phase 3J design only
 

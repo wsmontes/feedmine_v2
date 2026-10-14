@@ -771,8 +771,10 @@ final class CompositionTests: XCTestCase {
         try publication.toggleBookmark(cardID: aCard.id, at: Date())
         await a.viewport(.init(anchor: .init(cardID: aCard.id, placement: .top)), activity: .forward)
         let aAnchor = try XCTUnwrap(a.store.state.presentation).window.anchor
-        // A posição durável antes de sair — é o que o teste de filtro faz, e é o que separa "voltar não restaura"
-        // de "não havia o que restaurar". Sem esta linha, o ida-e-volta não tem checkpoint de A para recuperar.
+        // A posição durável antes de sair. Desde 2026-10-14 a observação estabelecida do leitor já a torna
+        // durável (é o que um fechamento à força recupera), então este milestone não é mais o que a torna
+        // possível: ele fica como o controle explícito do teste, e prova que o caminho de milestone continua
+        // escrevendo a mesma posição.
         _ = try await a.session.checkpointCurrentPosition(at: Date())
 
         if answering {
