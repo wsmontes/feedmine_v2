@@ -82,6 +82,34 @@ final class RunwayPolicyTests: XCTestCase {
 }
 
 extension RunwayPolicyTests {
+    /// Decisão do dono (2026-10-14): um piso de reserva de **produto** vale mesmo com fatos medidos. O alvo derivado
+    /// do p95 descreve o reabastecimento típico e fica pequeno demais para o jitter de uma oportunidade lenta — era
+    /// isso que produzia o fim duro no aparelho. O piso nunca **reduz** um alvo medido maior que ele.
+    func testProductReserveFloorAppliesToMeasuredAndBootstrapCoverage() {
+        let resources = RunwayResourceFacts(localWorkAllowed: true, examinedCandidateCapacity: 8, readyProbeBound: 4,
+            readyProbeCeiling: 64, forwardAdvanceProbeBound: 8, reserveCards: 6)!
+        let floored = RunwayPolicyInputs(safetyFactor: 1, releaseMarginSeconds: 0, minimumReserveCards: 32)!
+        let plain = RunwayPolicyInputs(safetyFactor: 1, releaseMarginSeconds: 0)!
+        func evaluate(_ inputs: RunwayPolicyInputs, rate: Double?, latency: Double?,
+            ready: ReadyAheadAmount) -> RunwayPolicyEvaluation {
+            RunwayPolicy.evaluate(facts: RunwayFacts(consumption: ConsumptionFacts(cardsPerSecond: rate, forwardIntent: true,
+                explicitTailApproach: false)!, replenishment: ReplenishmentFacts(p95Seconds: latency)!, readyAmount: ready,
+                previouslyPressured: false, localSliceInFlight: false, unknownBootstrapAvailable: true),
+                inputs: inputs, resources: resources)
+        }
+        // Medido: 1 card/s com p95 de 2 s daria alvo 2 — o piso o leva a 32.
+        XCTAssertEqual(evaluate(plain, rate: 1, latency: 2, ready: .exact(20)).coverage, .healthy)
+        XCTAssertEqual(evaluate(floored, rate: 1, latency: 2, ready: .exact(20)).coverage,
+            .pressured(requiredCards: 32), "a reserva medida de 2 cartas é levada ao piso de produto")
+        XCTAssertEqual(evaluate(floored, rate: 1, latency: 2, ready: .exact(32)).coverage, .healthy)
+        // Um alvo medido maior que o piso permanece o medido.
+        XCTAssertEqual(evaluate(floored, rate: 8, latency: 5, ready: .exact(39)).coverage,
+            .pressured(requiredCards: 40))
+        // E sem amostras nenhuma, o piso vale no bootstrap.
+        XCTAssertEqual(evaluate(floored, rate: nil, latency: nil, ready: .exact(20)).coverage,
+            .pressured(requiredCards: 32))
+    }
+
     /// An unmeasured reader gets bootstrap coverage; a measured zero rate does not retain it.
     func testReserveFloorDrivesProactiveFillWithoutConsumptionSamples() {
         let inputs = RunwayPolicyInputs(safetyFactor: 1, releaseMarginSeconds: 0)!

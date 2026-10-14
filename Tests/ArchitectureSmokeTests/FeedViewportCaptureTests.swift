@@ -110,7 +110,7 @@ final class FeedViewportCaptureTests: XCTestCase {
         _ = capture.observeCard(.init(cardID: id, frame: .init(x: 0, y: 0, width: 300, height: 200), offset: 0, height: 200))
         XCTAssertNil(capture.observe(.init(offset: 400, extent: 1000, height: 200)))
         XCTAssertNil(capture.observeCard(.init(cardID: id, frame: .init(x: 0, y: -400, width: 300, height: 200), offset: 400, height: 200)))
-        XCTAssertNil(capture.lastEmission)
+        XCTAssertNil(capture.motion.lastEmission)
     }
 
     // N3–N6: independent streams have different endpoints and sampling intervals.
@@ -214,7 +214,7 @@ final class FeedViewportCaptureTests: XCTestCase {
             }
             // Same semantic anchor and direction are already delivered; no duplicate is required.
             XCTAssertNil(event)
-            XCTAssertEqual(capture.direction, .forward)
+            XCTAssertEqual(capture.motion.direction, .forward)
         }
     }
 
@@ -324,8 +324,8 @@ final class FeedViewportCaptureTests: XCTestCase {
 
     private static func move(_ capture: inout FeedVisualCapture, id: PublicationCardID,
         offset: CGFloat, extent: CGFloat = 1000, height: CGFloat = 200) -> FeedVisualEvent? {
-        let oldProof = capture.priorProof
-        if oldProof == nil, let old = capture.geometry, old.offset != offset {
+        let oldProof = capture.motion.priorProof
+        if oldProof == nil, let old = capture.motion.geometry, old.offset != offset {
             // Explicit stable-content fixture, sampled before the displacement.
             _ = capture.observeCard(.init(cardID: id,
                 frame: .init(x: 0, y: offset - old.offset, width: 300, height: height),
@@ -389,15 +389,15 @@ final class FeedViewportCaptureTests: XCTestCase {
             XCTAssertEqual(Self.move(&capture, id: id, offset: 30)?.activity, .forward)
             capture.phase(active: true, velocity: velocity) // continued deceleration context
             XCTAssertEqual(Self.move(&capture, id: id, offset: 10)?.activity, .backward)
-            XCTAssertEqual(capture.direction, .backward)
+            XCTAssertEqual(capture.motion.direction, .backward)
             capture.phase(active: true, velocity: nil)
-            XCTAssertEqual(capture.direction, .backward, "Missing velocity does not erase known direction")
+            XCTAssertEqual(capture.motion.direction, .backward, "Missing velocity does not erase known direction")
         }
         var insufficient = FeedVisualCapture()
         insufficient.phase(active: true, velocity: nil)
         _ = insufficient.observe(.init(offset: 0, extent: 1000, height: 200))
         XCTAssertNil(insufficient.observe(.init(offset: 50, extent: 1000, height: 200)))
-        XCTAssertNil(insufficient.direction)
+        XCTAssertNil(insufficient.motion.direction)
     }
 
     // D1-D4 tests a synthetic ambiguous vector, not its physical SDK orientation.
@@ -409,7 +409,7 @@ final class FeedViewportCaptureTests: XCTestCase {
             capture.phase(active: true, velocity: .init(dx: 0, dy: dy))
             XCTAssertEqual(Self.move(&capture, id: id, offset: 30)?.activity, .forward,
                 "N9 direction comes from stable visual displacement, never the unverified vector")
-            XCTAssertTrue(capture.velocityUnverified)
+            XCTAssertTrue(capture.motion.velocityUnverified)
             XCTAssertEqual(Self.move(&capture, id: id, offset: 10)?.activity, .backward)
             capture.invalidateLayout()
             _ = capture.observe(.init(offset: 10, extent: 1000, height: 200))
@@ -436,7 +436,7 @@ final class FeedViewportCaptureTests: XCTestCase {
                     XCTAssertNil(capture.observe(.init(offset: 40, extent: 1000, height: 200)))
                     XCTAssertNil(capture.observeCard(next))
                 }
-                XCTAssertNil(capture.lastEmission)
+                XCTAssertNil(capture.motion.lastEmission)
             }
         }
     }
@@ -456,7 +456,7 @@ final class FeedViewportCaptureTests: XCTestCase {
         XCTAssertNil(capture.observeCard(tail, isLast: true), "An old tail sample cannot regress C to B")
         capture = FeedVisualCapture() // the Edition/context fence resets the sole visual record
         XCTAssertNil(capture.observeCard(tail, isLast: true))
-        XCTAssertNil(capture.lastEmission)
+        XCTAssertNil(capture.motion.lastEmission)
     }
 
     func testNoDirectionAfterStationaryOrBeforeActiveContext() {
@@ -469,7 +469,7 @@ final class FeedViewportCaptureTests: XCTestCase {
         capture.reading = false
         XCTAssertEqual(capture.settle()?.activity, .stationary)
         XCTAssertNil(Self.move(&capture, id: id, offset: 60))
-        XCTAssertEqual(capture.lastEmission?.activity, .stationary)
+        XCTAssertEqual(capture.motion.lastEmission?.activity, .stationary)
     }
 
     func testLatestSampleSurvivesCoalescedCallbackStreams() {
@@ -545,7 +545,7 @@ final class FeedViewportCaptureTests: XCTestCase {
                     XCTAssertNil(capture.observe(.init(offset: latest.offset, extent: 1000, height: 200)))
                     XCTAssertNil(capture.observeCard(latest))
                 }
-                XCTAssertNil(capture.lastEmission, "Unsynchronized reversal is ambiguous, not net-direction evidence")
+                XCTAssertNil(capture.motion.lastEmission, "Unsynchronized reversal is ambiguous, not net-direction evidence")
             }
         }
     }

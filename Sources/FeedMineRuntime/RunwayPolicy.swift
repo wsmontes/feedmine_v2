@@ -26,11 +26,22 @@ public struct ReplenishmentFacts: Hashable, Sendable {
 public struct RunwayPolicyInputs: Hashable, Sendable {
     public let safetyFactor: Double
     public let releaseMarginSeconds: Double
-    public init?(safetyFactor: Double, releaseMarginSeconds: Double) {
+    /// Reserva mínima, em cartas apresentáveis, que o runway mantém à frente do leitor **independentemente** do
+    /// alvo derivado de latência.
+    ///
+    /// A decisão do dono (2026-10-14): a fórmula `taxa × (p95 × fator + margem)` mede o *reabastecimento típico*,
+    /// mas o leitor consome em tempo real e uma única oportunidade que demore mais que o p95 esgota a reserva — o
+    /// feed chegava ao fim duro e só depois era repovoado. A V1 não tinha esse sintoma porque sempre manteve um
+    /// buffer local profundo à frente do leitor. É um piso de **produto**, ajustável, não uma cota de aquisição:
+    /// `nil` (default) deixa a fórmula sozinha, como antes.
+    public let minimumReserveCards: Int?
+    public init?(safetyFactor: Double, releaseMarginSeconds: Double, minimumReserveCards: Int? = nil) {
         guard safetyFactor.isFinite, safetyFactor >= 1,
-            releaseMarginSeconds.isFinite, releaseMarginSeconds >= 0 else { return nil }
+            releaseMarginSeconds.isFinite, releaseMarginSeconds >= 0,
+            minimumReserveCards.map({ $0 > 0 }) ?? true else { return nil }
         self.safetyFactor = safetyFactor
         self.releaseMarginSeconds = releaseMarginSeconds
+        self.minimumReserveCards = minimumReserveCards
     }
 }
 
@@ -110,7 +121,10 @@ public enum RunwayPolicy {
             let duration = latency * inputs.safetyFactor + (facts.previouslyPressured ? inputs.releaseMarginSeconds : 0)
             let rawThreshold = ceil(rate * duration)
             // Out-of-representation measured coverage remains unknown, never clamped healthy.
-            if rawThreshold.isFinite, let threshold = Int(exactly: rawThreshold), threshold >= 0 {
+            if rawThreshold.isFinite, let measured = Int(exactly: rawThreshold), measured >= 0 {
+                // O piso de produto nunca é menor que o alvo medido: ele existe para o jitter de uma oportunidade
+                // que demora mais que o p95, não para substituir a medição.
+                let threshold = max(measured, inputs.minimumReserveCards ?? 0)
                 switch facts.readyAmount {
                 case .exact(let count):
                     coverage = count >= threshold ? .healthy : .pressured(requiredCards: threshold)
@@ -136,7 +150,9 @@ public enum RunwayPolicy {
         let needsBootstrap = consumption.cardsPerSecond == nil
             || (consumption.cardsPerSecond != 0 && facts.replenishment.p95Seconds == nil)
         var floored = coverage
-        if needsBootstrap, let reserve = resources.reserveCards {
+        let bootstrapReserve = needsBootstrap
+            ? [resources.reserveCards, inputs.minimumReserveCards].compactMap { $0 }.max() : nil
+        if let reserve = bootstrapReserve {
             switch facts.readyAmount {
             case .exact(let count) where count < reserve:
                 if case .pressured(let required) = floored { floored = .pressured(requiredCards: max(required, reserve)) }

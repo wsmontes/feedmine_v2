@@ -1698,6 +1698,13 @@ final class FeedAssociation {
     static let backwardWindowCards = 8
     static let forwardWindowCards = 16
 
+    /// Reserva mínima de produto: quantas cartas **apresentáveis** o runway mantém à frente do leitor, com ou sem
+    /// medição. O alvo derivado (`taxa × (p95 × 1.2 + 2 s)`) descreve o reabastecimento típico, e uma única
+    /// oportunidade mais lenta que o p95 esgotava uma reserva de poucas cartas — o feed chegava ao fim duro e só
+    /// depois era repovoado (relatado no aparelho, 2026-10-14). A V1 mantinha um buffer local profundo e não tinha o
+    /// sintoma. É um piso de produto, ajustável: 32 ≈ duas telas ≈ 32 s de leitura a 1 card/s.
+    static let runwayMinimumReserveCards = 32
+
     /// Structural bounds for this association's admitted presentation: a readable prefix and the
     /// reserve the reader may walk into. Frozen when the presentation is installed (plan T2/T3).
     ///
@@ -1971,7 +1978,8 @@ final class FeedAssociation {
         // transport's timeout pretending to be a strategy; PD-6 says the budget is computed, not configured. The
         // request timeout stays as the operational **ceiling** PD-6 rule 4 allows, and before any sample exists the
         // run states its bootstrap tolerance instead of inventing one.
-        let policyInputs = RunwayPolicyInputs(safetyFactor: 1.2, releaseMarginSeconds: 2)!
+        let policyInputs = RunwayPolicyInputs(safetyFactor: 1.2, releaseMarginSeconds: 2,
+            minimumReserveCards: Self.runwayMinimumReserveCards)!
         let runway = RunwayController(configuration: .init(policyInputs: policyInputs, consumptionSampleLimit: 8,
             replenishmentSampleLimit: 8,
             // M7: first retry after a failed local slice one second later, doubling per failure.
