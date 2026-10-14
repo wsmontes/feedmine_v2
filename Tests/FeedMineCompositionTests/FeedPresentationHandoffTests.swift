@@ -367,6 +367,40 @@ final class FeedPresentationHandoffTests: XCTestCase {
         XCTAssertEqual(source.components(separatedBy: "driver.submitViewport(").count - 1, 2)
         XCTAssertTrue(source.contains("if let evidence"))
     }
+    /// PO 2026-10-14: the end of the reader's eligible offer is proved by the real drain, not constructed.
+    /// With no registered target the local offer exhausts and the drain's own attempt finds no eligible
+    /// target — the only evidence that may state the end. The cards the reader already has do not move.
+    func testRealDrainEndsTheOfferOnlyWithTheFullEvidence() async throws {
+        let f = try fixture(registered: false), state = try await warm(f)
+        XCTAssertGreaterThanOrEqual(state.presentation?.window.items.count ?? 0, 2)
+        var driven = state
+        var settlement = await f.driver.settledEligibleOffer()
+        var attempts = 0
+        while settlement == nil, attempts < 4 {
+            attempts += 1
+            let last = try XCTUnwrap(driven.presentation?.window.items.last)
+            driven = try await FeedPresentationHandoff.submitViewport(.init(anchor: .init(cardID: last.id, placement: .top)),
+                activity: .explicitTailApproach, resources: resources(), driver: f.driver, into: driven)
+            settlement = await f.driver.settledEligibleOffer()
+        }
+        let settled = try XCTUnwrap(settlement)
+        XCTAssertEqual(settled.acquisition, .acceptedUnavailable(.noEligibleTargets))
+        XCTAssertTrue(settled.localSupplyExhausted)
+        XCTAssertTrue(settled.nothingInFlight)
+        XCTAssertTrue(settled.noOutstandingAcquisition)
+        XCTAssertTrue(settled.isEligibleOfferExhausted)
+        XCTAssertEqual(f.http.calls, 0)
+        // The handoff alone never claims the end: the composition states it from the settled evidence.
+        XCTAssertNotEqual(driven.work, .endOfContent)
+        let ended = FeedPresentationHandoff.receive(settledEligibleOffer: settled, into: driven)
+        XCTAssertEqual(ended.work, .endOfContent)
+        // The end changes nothing about the reader's cards: same window, same order, no new Edition.
+        XCTAssertEqual(ended.presentation, driven.presentation)
+        let window = driven.presentation?.window.items.map(\.id) ?? []
+        XCTAssertFalse(window.isEmpty)
+        XCTAssertEqual(window, f.cardIDs.filter { window.contains($0) })
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.editionID).count, 1)
+    }
 }
 
 private final class HandoffHTTPFixture: @unchecked Sendable {

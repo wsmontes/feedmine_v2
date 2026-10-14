@@ -138,6 +138,7 @@ public struct FeedScreen: View {
                             EditorialSlot { editorial?(card, index, index > 0 ? items[index - 1] : nil) }
                           }
                         }
+                        endOfContentBlock(items: items)
                     }
                     #if canImport(UIKit)
                     .background(FeedNativeScrollProbe(access: capture.nativeScrollOffset, ids: items.map(\.id)))
@@ -168,6 +169,7 @@ public struct FeedScreen: View {
                                 EditorialSlot { editorial?(card, index, index > 0 ? items[index - 1] : nil) }
                             }
                         }
+                        endOfContentBlock(items: items)
                     }
                     .padding(FeedDesignTokens.Spacing.page)
                     .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
@@ -180,6 +182,19 @@ public struct FeedScreen: View {
         } else {
             FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
                 onAdjustInterests: { onAdjustInterests() })
+        }
+    }
+
+    /// PO 2026-10-14: the end the composition asserted is **one more child of the list**, after the last
+    /// card — it never replaces the screen and is never inserted above a card. The three actions reuse what
+    /// this surface already owns: the host's interests and sources hooks, and, for "Voltar ao início", the
+    /// reading position itself (the first drawn card), so no session is rebuilt and the order never changes.
+    @ViewBuilder private func endOfContentBlock(items: [PresentationCard]) -> some View {
+        if store.work == .endOfContent {
+            FeedEndOfContentView(appearance: appearance,
+                onExploreSubjects: { onAdjustInterests() },
+                onWidenSources: { onChooseSources() },
+                onReturnToStart: { capture.positionID = items.first?.id })
         }
     }
 }
@@ -229,7 +244,7 @@ struct FeedWorkBadge: View {
         case .failed(let message):
             Label { Text(verbatim: message) } icon: { Image(systemName: "exclamationmark.triangle") }
                 .modifier(BadgeStyle())
-        case .idle, .unavailable, .deferred, .unreachable:
+        case .idle, .unavailable, .deferred, .unreachable, .endOfContent:
             EmptyView()
         }
     }

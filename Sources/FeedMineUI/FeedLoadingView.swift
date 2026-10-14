@@ -49,6 +49,10 @@ public struct FeedLoadingView: View {
                     }
                 case .failed(let message):
                     Text(verbatim: message)
+                case .endOfContent:
+                    // The end is drawn after the last card; with nothing drawn above it the reader is still
+                    // on the provisional surface, where the only honest statement is the ratified sentence.
+                    Text("Você chegou ao fim das histórias disponíveis para sua seleção.")
                 case .preparing(let progress):
                     FeedPreparationView(progress: progress)
                 }

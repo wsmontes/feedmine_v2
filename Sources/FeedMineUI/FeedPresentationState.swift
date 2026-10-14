@@ -21,6 +21,7 @@ public extension FeedPresentationState.Work {
         case .unreachable: String(localized: "Sem conexão")
         case .deferred: String(localized: "Aguardando")
         case .failed(let message): message
+        case .endOfContent: ""
         }
     }
 }
@@ -36,6 +37,12 @@ public struct FeedPresentationState: Hashable, Sendable {
         case failed(message: String)
         /// PD-3: first-launch preparation with real evidence of content arriving.
         case preparing(PreparationProgress)
+        /// PO 2026-10-14: the eligible offer for the reader's selection really ended — nothing is
+        /// awaiting preparation/publication and no acquisition can still replenish. The composition
+        /// states it only from the full settled evidence (`FeedEligibleOfferSettlement`); the feed draws
+        /// it as a block after the last card, so it never replaces the screen and stays distinguishable
+        /// from the provisional absence surface, which keeps its own vocabulary.
+        case endOfContent
     }
 
     public let presentation: FeedPresentationSnapshot?

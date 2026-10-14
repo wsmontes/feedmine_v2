@@ -50,6 +50,25 @@ public enum FeedPresentationHandoff {
         state.reporting(work)
     }
 
+    /// PO 2026-10-14: the end of the reader's eligible offer is decided here, and only from the full settled
+    /// evidence. A provisional report is kept provisional: an empty local window, a finished acquisition round
+    /// and an unavailable source each keep their own state, and none of them is the end.
+    public static func work(settledEligibleOffer settlement: FeedEligibleOfferSettlement) -> FeedPresentationState.Work {
+        guard settlement.isEligibleOfferExhausted else {
+            switch settlement.acquisition {
+            case .executed: return .idle
+            case .deferred: return .deferred
+            case .acceptedUnavailable: return .unavailable
+            }
+        }
+        return .endOfContent
+    }
+
+    public static func receive(settledEligibleOffer settlement: FeedEligibleOfferSettlement,
+        into state: FeedPresentationState) -> FeedPresentationState {
+        state.reporting(work(settledEligibleOffer: settlement))
+    }
+
     /// Forwards exact semantic inputs once and receives the driver's projection unchanged.
     /// Errors propagate; the caller retains its prior state and chooses any failure report.
     public static func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,

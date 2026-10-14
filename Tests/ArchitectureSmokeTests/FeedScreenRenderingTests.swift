@@ -77,21 +77,21 @@ final class FeedScreenRenderingTests: XCTestCase {
         let window: NSWindow
     }
 
-    private func host<V: View>(_ view: V, width: CGFloat = 720) -> Hosted {
+    private func host<V: View>(_ view: V, width: CGFloat = 720, height: CGFloat = 900) -> Hosted {
         _ = NSApplication.shared
         let hosting = NSHostingView(rootView: AnyView(view
             .environment(\.colorScheme, .light)
             .environment(\.locale, Locale(identifier: "pt_BR"))
-            .frame(width: width, height: 900)
+            .frame(width: width, height: height)
             .background(Color.white)))
-        hosting.frame = NSRect(x: 0, y: 0, width: width, height: 900)
+        hosting.frame = NSRect(x: 0, y: 0, width: width, height: height)
         let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = hosting
         return Hosted(view: hosting, window: window)
     }
 
-    private func renderedText<V: View>(_ view: V) throws -> [String] {
-        let hosted = host(view)
+    private func renderedText<V: View>(_ view: V, height: CGFloat = 900) throws -> [String] {
+        let hosted = host(view, height: height)
         return try renderedText(hosted)
     }
 
@@ -279,6 +279,34 @@ final class FeedScreenRenderingTests: XCTestCase {
         XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.editionID), segments)
         let current = await f.session.currentPresentation()
         XCTAssertEqual(current, first)
+    }
+
+    /// PO 2026-10-14: the end of the eligible offer is one more child of the list — after the last card, with
+    /// the ratified copy and the three actions — and the cards the reader already had keep their order.
+    func testEndOfContentBlockRendersAfterTheLastCardWithTheRatifiedActions() async throws {
+        let f = try fixture(), first = try await snapshot(f)
+        let store = FeedScreenStore { _, _ in XCTFail("Automatic viewport") }
+        let screen = FeedScreen(store: store)
+        try store.install(try FeedPresentationHandoff.receive(snapshot: first, into: store.state))
+        let admitted = try XCTUnwrap(publishedSequence(in: screen.body)).occurrenceIDs
+        XCTAssertEqual(admitted, Array(f.cardIDs.prefix(2)))
+        let before = try renderedText(screen, height: 1200)
+        XCTAssertEqual(before.filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline"])
+        XCTAssertFalse(before.contains { $0.contains("fim das histórias") }, before.description)
+        try store.install(FeedPresentationHandoff.report(.endOfContent, into: store.state))
+        let text = try renderedText(screen, height: 1200)
+        // The PO's ratified copy and the three actions are drawn...
+        XCTAssertTrue(text.joined(separator: " ").contains("Você chegou ao fim das histórias disponíveis para sua seleção"),
+            text.description)
+        XCTAssertTrue(text.contains { $0.contains(FeedEndOfContentView.exploreSubjectsTitle) }, text.description)
+        XCTAssertTrue(text.contains { $0.contains(FeedEndOfContentView.widenSourcesTitle) }, text.description)
+        XCTAssertTrue(text.contains { $0.contains(FeedEndOfContentView.returnToStartTitle) }, text.description)
+        // ...and the block comes after the last card, which did not move.
+        let lastCard = try XCTUnwrap(text.firstIndex(of: "Amber headline"))
+        let end = try XCTUnwrap(text.firstIndex { $0.contains("fim das histórias") })
+        XCTAssertGreaterThan(end, lastCard)
+        XCTAssertEqual(text.filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline"])
+        XCTAssertEqual(try XCTUnwrap(publishedSequence(in: screen.body)).occurrenceIDs, admitted)
     }
 
     func testU14UIBoundaryHasNoProductionImportsOrHiddenEffects() throws {

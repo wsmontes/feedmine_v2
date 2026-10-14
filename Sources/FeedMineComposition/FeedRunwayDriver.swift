@@ -60,6 +60,10 @@ public actor FeedRunwayDriver {
     private let candidateProvider: CandidateProvider
     /// Optional evidence of the replenishment attempts this driver executes; nil records nothing.
     private let trace: ReplenishmentTrace?
+    /// What the causal drain last settled: the acquisition it executed, or nil when it executed none.
+    /// It is read once — where the reader's whole situation is drawn — and carries no lifetime of its own:
+    /// the next drain clears it, and any newer observation or supply change moves the runway past it.
+    private var settledAcquisition: RunwayAcquisitionCycleOutcome?
 
     public init(session: FeedSession, runway: RunwayController, plan: FeedPlan, policy: ResolvedSelectionPolicy,
         acquisition: SyndicationAcquisitionSnapshot, coordinator: AcquisitionCoordinator,
@@ -178,6 +182,7 @@ public actor FeedRunwayDriver {
     private func executeAcquisition(_ intent: RunwayAcquisitionIntent, resources: FeedRunwayDriverResources) async throws -> Bool {
         let targets = try acquisition.eligibleTargets(for: plan.context)
         let outcome = try await acquisitionCycle.run(intent, eligibleTargets: targets, resources: resources.acquisition, preferUnattempted: selectedSourceCoverage != nil)
+        settledAcquisition = outcome
         return outcome.selectableSupplyChanged
     }
 
@@ -189,6 +194,7 @@ public actor FeedRunwayDriver {
         }
         // Claim before the first suspension, including scope validation.
         causalExecution = CausalExecution(resources: resources)
+        settledAcquisition = nil
         defer { causalExecution = nil }
         // One catalogue page per caller opportunity, outside the causal drain. Coverage may
         // settle this page through the existing planner; it cannot load the next page here.
@@ -345,6 +351,13 @@ public actor FeedRunwayDriver {
     }
 
     public func markConsumptionInactive() async { await runway.markConsumptionInactive() }
+    /// PO 2026-10-14: the evidence the composition needs to state the end of the reader's eligible offer —
+    /// the acquisition the last drain settled, read beside the runway's own facts. Nil when that drain
+    /// executed no acquisition, so a provisional drain never even offers the question.
+    public func settledEligibleOffer() async -> FeedEligibleOfferSettlement? {
+        guard let settledAcquisition else { return nil }
+        return FeedEligibleOfferSettlement(acquisition: settledAcquisition, runway: await runway.snapshot())
+    }
     /// Review M7: when a failed local slice becomes retryable without a new user signal.
     public func localRetryEligibleAt() async -> RunwayMonotonicTime? { await runway.snapshot().localRetryEligibleAt }
     /// Review F08: when a deferred acquisition intent can be resumed because a cooling target recovers.

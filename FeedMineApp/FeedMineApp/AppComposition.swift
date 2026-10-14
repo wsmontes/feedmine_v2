@@ -2231,6 +2231,8 @@ final class FeedAssociation {
             Self.log("published growth: admitted \(admittedBefore ?? 0) -> \(after)")
             if after != admittedBefore {
                 try install(FeedPresentationHandoff.receive(snapshot: grown, into: store.state))
+                // Cards arrived: whatever end the reader was shown is no longer true.
+                if store.state.work == .endOfContent { try install(store.state.reporting(.idle)) }
             }
             guard growthFollowUp > 0 else { return }
             growthFollowUp -= 1
@@ -2240,6 +2242,29 @@ final class FeedAssociation {
                 await self?.growAdmittedWindowIfPublished()
             }
         } catch { reportFailure(error) }
+    }
+
+    /// PO 2026-10-14: the end of the reader's eligible offer is stated only from the full settled evidence the
+    /// driver reports, and only here — this association owns the one screen value. It states nothing else: a
+    /// settled drain that is not the end may only take the end back (a later acquisition means content again),
+    /// so every provisional state keeps whatever the reader is already seeing.
+    private func installSettledEligibleOffer() async throws {
+        #if DEBUG
+        // Instrumentation for the end-of-content surface: the real evidence only settles once the engine has
+        // exhausted a corpus, which no single device or simulator run reaches. The hook injects the
+        // **evidence**, never the state — the rule, the handoff and the surface stay the product's own, and the
+        // proof that runs on it is a journey test over the real screen (`FEEDMINE_END_ELIGIBLE_OFFER=1`).
+        if ProcessInfo.processInfo.environment["FEEDMINE_END_ELIGIBLE_OFFER"] == "1" {
+            let settlement = FeedEligibleOfferSettlement(acquisition: .acceptedUnavailable(.noEligibleTargets),
+                localSupplyExhausted: true, nothingInFlight: true, noOutstandingAcquisition: true)
+            try install(store.state.reporting(FeedPresentationHandoff.work(settledEligibleOffer: settlement)))
+            return
+        }
+        #endif
+        guard let settlement = await driver.settledEligibleOffer() else { return }
+        let settled = FeedPresentationHandoff.work(settledEligibleOffer: settlement)
+        guard settled == .endOfContent || store.state.work == .endOfContent else { return }
+        try install(store.state.reporting(settled))
     }
 
     /// PO/R3: "Tentar novamente" runs a real attempt, not a repaint: the pending schedule is dropped
@@ -2292,6 +2317,7 @@ final class FeedAssociation {
         }
         let snapshot = try await driver.activateCurrentPresentation(resources: Self.resources)
         try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
+        try await installSettledEligibleOffer()
         // R5: growth belongs to a *fresh* presentation. A reopen shows exactly what the reader left (S5);
         // the reader's own window is extended later by the opportunities they trigger.
         if restored == nil { startGrowthFollowUp() }
@@ -2418,6 +2444,7 @@ final class FeedAssociation {
                 return
             }
             await growAdmittedWindowIfPublished()
+            try await installSettledEligibleOffer()
             await scheduleLocalRetryIfNeeded()
             #if DEBUG
             viewportCompleted += 1
@@ -2456,6 +2483,7 @@ final class FeedAssociation {
             let snapshot = try await driver.drive(resources: Self.resources)
             try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
             await growAdmittedWindowIfPublished()
+            try await installSettledEligibleOffer()
             await scheduleLocalRetryIfNeeded()
         } catch { reportFailure(error); await scheduleLocalRetryIfNeeded() }
     }
