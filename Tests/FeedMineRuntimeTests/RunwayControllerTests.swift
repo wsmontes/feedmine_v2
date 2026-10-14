@@ -233,6 +233,48 @@ final class RunwayControllerTests: XCTestCase {
         try await sut.acceptMeasurement(facts(later))
         let next = try await intent(sut,at: 102); XCTAssertEqual(next.after,cursor(1)); XCTAssertNotEqual(later.anchorCardID,o.anchorCardID)
     }
+    func testInactivePreservesLearnedConsumptionRateAndMeasuredRunway() async throws {
+        let sut = controller(), initial = try await start(sut)
+        let moved = observation(2, 2)
+        try await sut.submitObservation(moved)
+        try await sut.acceptMeasurement(facts(moved, amount: .exact(10),
+            from: initial.anchorCardID, advance: .forwardExact(8)))
+        let learned = await sut.snapshot()
+        XCTAssertEqual(learned.consumption.cardsPerSecond, 4)
+
+        let first = try await intent(sut, at: 10)
+        try await sut.completeLocalSlice(first, outcome: outcome(first, publish: true), at: time(15))
+        let measured = await sut.snapshot()
+        XCTAssertEqual(measured.replenishment.p95Seconds, 5)
+
+        await sut.markConsumptionInactive()
+        let inactive = await sut.snapshot()
+        XCTAssertNil(inactive.latestObservation)
+        XCTAssertNil(inactive.readyAhead)
+        XCTAssertEqual(inactive.consumption.cardsPerSecond, 4)
+
+        // A new foreground observation is a fresh baseline, not a 98-second sample.
+        let resumed = observation(3, 100)
+        try await sut.submitObservation(resumed)
+        let request = try await sut.reconsider(resources: resources(), at: time(101))
+        guard case .measure(let probe) = request else { return XCTFail("Expected a fresh measurement") }
+        XCTAssertNil(probe.advance)
+        try await sut.acceptMeasurement(facts(resumed, amount: .exact(10)))
+        let resumedFacts = await sut.snapshot()
+        XCTAssertEqual(resumedFacts.consumption.cardsPerSecond, 4)
+        XCTAssertEqual(resumedFacts.replenishment.p95Seconds, 5)
+
+        let action = try await sut.reconsider(resources: resources(), at: time(102))
+        guard case .runLocalSlice = action else { return XCTFail("Learned demand must replenish: \(action)") }
+        let pressured = await sut.snapshot()
+        XCTAssertEqual(pressured.lastCoverage, .pressured(requiredCards: 20))
+
+        // A genuinely new scope must not inherit the previous edition's history.
+        await sut.activate(scope(2))
+        let nextScope = await sut.snapshot()
+        XCTAssertNil(nextScope.consumption.cardsPerSecond)
+    }
+
     func testPublicationReMeasuresSameAnchorWithoutAnotherConsumptionSample() async throws {
         let sut = controller(), o = try await start(sut)
         let first = try await intent(sut,at: 10)
