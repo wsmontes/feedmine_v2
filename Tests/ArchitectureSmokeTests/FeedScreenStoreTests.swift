@@ -231,11 +231,19 @@ final class FeedScreenStoreTests: XCTestCase {
         XCTAssertEqual(store.state.work, .pending)
     }
 
+    /// The one admitted copy of presentation data: the projection the list draws (2026-10-14). It exists
+    /// because `state` changes on every advance (the anchor lives in it) and the list must not re-evaluate
+    /// for a position it does not draw. It is derived, never authored — `testS11ThePublishedProjectionCannotDrift`
+    /// proves it always equals what `install` accepted.
+    private static let publishedProjection: Set<String> = ["_renderedItems", "_renderedEditionID",
+        "_renderedContextKey", "_work"]
+
     func testS11OnlyOnePresentationValueAndNoParallelSemanticStorage() {
         let store = FeedScreenStore { _, _ in }
         let fields = Array(Mirror(reflecting: store).children)
         XCTAssertEqual(fields.filter { $0.value is FeedPresentationState }.count, 1)
         for field in fields {
+            guard let label = field.label, !Self.publishedProjection.contains(label) else { continue }
             XCTAssertFalse(field.value is FeedPresentationSnapshot)
             XCTAssertFalse(field.value is [PresentationCard])
             XCTAssertFalse(field.value is FeedEditionID)
@@ -248,7 +256,25 @@ final class FeedScreenStoreTests: XCTestCase {
         XCTAssertEqual(Set(fields.compactMap(\.label)), ["_state", "onViewport", "onAction", "availableActions",
             "_availableDestinations", "onSubmitSearch", "onNavigate", "_bookmarkedIDs", "_isSearching",
             "_searchQuery", "_toast", "_filterCount", "_bookmarkBoxActive", "_hasCommittedSearch",
-            "_$observationRegistrar", "onRenderedViewport", "viewportOrdinal", "_isReadingInteractionActive"])
+            "_$observationRegistrar", "onRenderedViewport", "viewportOrdinal", "_isReadingInteractionActive",
+            "_renderedItems", "_renderedEditionID", "_renderedContextKey", "_work"])
+    }
+
+    /// No drift is possible: every accepted install republishes the projection straight from the state the
+    /// handoff accepted, and an accepted absence (report-only) republishes it unchanged.
+    func testS11ThePublishedProjectionCannotDrift() async throws {
+        let f = try fixture(), published = try await snapshot(f)
+        let store = FeedScreenStore { _, _ in }
+        try store.install(try FeedPresentationHandoff.receive(snapshot: published, into: store.state))
+        XCTAssertEqual(store.renderedItems, store.state.presentation?.window.items ?? [])
+        XCTAssertEqual(store.renderedEditionID, store.state.presentation?.editionID)
+        XCTAssertEqual(store.renderedContextKey, store.state.presentation?.contextKey)
+        XCTAssertEqual(store.work, store.state.work)
+        try store.install(FeedPresentationHandoff.report(.pending, into: store.state))
+        XCTAssertEqual(store.renderedItems, store.state.presentation?.window.items ?? [])
+        XCTAssertEqual(store.renderedEditionID, store.state.presentation?.editionID)
+        XCTAssertEqual(store.renderedContextKey, store.state.presentation?.contextKey)
+        XCTAssertEqual(store.work, store.state.work)
     }
 
     func testS12ModuleBoundaryAndNoExecutionMechanisms() throws {
@@ -264,9 +290,15 @@ final class FeedScreenStoreTests: XCTestCase {
         let source = try String(contentsOf: ui.appendingPathComponent("FeedScreenStore.swift"), encoding: .utf8)
         for forbidden in ["URLSession", "HTTP", "ContentStore", "RuntimeDatabase", "AcquisitionCoordinator", "FeedRunwayDriver",
             "RunwayController", "SelectionEngine", "PublicationCoordinator", "PublicationStore", "Task", "Timer", "sleep",
-            "retry", "backoff", "scheduler", "cache", "generation", "checkpoint", "[PresentationCard]", "UUID(", "Date("] {
+            "retry", "backoff", "scheduler", "cache", "generation", "checkpoint", "UUID(", "Date("] {
             XCTAssertFalse(source.contains(forbidden), forbidden)
         }
+        // `[PresentationCard]` is admitted in exactly one place: the published list projection. It is never a
+        // second semantic store, and no other declaration, parameter or local may name it.
+        let cardLines = source.split(separator: "\n").filter { $0.contains("[PresentationCard]") }
+        XCTAssertEqual(cardLines.count, 1, "only the published projection may name [PresentationCard]")
+        XCTAssertTrue(cardLines.first?.contains("public private(set) var renderedItems") == true,
+            "the one holder of cards must be renderedItems")
     }
 
     func testS13ExternalAsyncConsumerMutatesOnlyOnMainActor() async throws {
