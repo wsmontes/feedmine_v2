@@ -29,14 +29,15 @@ private struct LocalSliceFixture: Sendable {
         let n = Int(candidate.originRevisionID.rawValue.uuidString.suffix(12),radix: 16)!
         return PublicationCardID(rawValue: uuid(10000+n))
     }
-    static func prepared(_ selection: SelectionResult, presentation: PublicationPresentation = .textOnly) -> LocalPreparedPublication {
+    static func prepared(_ selection: SelectionResult, presentation: PublicationPresentation = .textOnly,
+        sourceID: SourceID? = nil) -> LocalPreparedPublication {
         LocalPreparedPublication(inputs: selection.orderedCandidates.map { c in
             PublicationPreparationInput(origin: PublishedOrigin(originRecordID: c.originRecordID,originRevisionID: c.originRevisionID,
-                sourceID: nil,providerID: c.providerID,sourceDisplayName: "Caller Source",providerDisplayName: nil),
+                sourceID: sourceID,providerID: c.providerID,sourceDisplayName: "Caller Source",providerDisplayName: nil),
                 contentEntityID: nil,contentClusterID: nil,primaryAction: .localContentDetail,presentation: presentation)
         },cardIDs: selection.orderedCandidates.map(cardID))
     }
-    init(database: RuntimeDatabase, initial: [OriginRevision]) throws {
+    init(database: RuntimeDatabase, initial: [OriginRevision], initialSource: SourceID? = nil) throws {
         self.database = database
         let context = FeedContext(request: .main), version = PolicyVersion(rawValue: 1)
         plan = try XCTUnwrap(FeedPlan(context: context,revision: EditorialRevision(id: EditorialRevisionID(rawValue: Self.uuid(40000)),contextKey: context.key,
@@ -44,7 +45,7 @@ private struct LocalSliceFixture: Sendable {
             sequencingPolicyVersion: version,exposurePolicyVersion: version,selectionSchemaVersion: SelectionSchemaVersion(rawValue: 1))))
         editionID = FeedEditionID(rawValue: Self.uuid(41000))
         let selected = SelectionResult(editorialRevision: plan.revision,orderedCandidates: initial.map(Self.candidate),supplyReport: SelectionSupplyReport(examinedCount: 0,nextCursor: nil,exhausted: true))
-        let prepared = Self.prepared(selected)
+        let prepared = Self.prepared(selected, sourceID: initialSource)
         initialCardIDs = prepared.cardIDs
         _ = try PublicationCoordinator(database: database).createEdition(.init(selection: selected,
             drafts: PublicationPreparation.drafts(selection: selected,inputs: prepared.inputs),editionID: editionID,
@@ -89,10 +90,12 @@ private final class LocalPreparationCalls: @unchecked Sendable {
 
 final class LocalProductionSliceTests: XCTestCase {
     private enum PreparationFailure: Error { case refused }
-    private func fixture(initial: [OriginRevision] = [LocalSliceFixture.revision(900)]) throws -> LocalSliceFixture {
+    private func fixture(initial: [OriginRevision] = [LocalSliceFixture.revision(900)],
+        initialSource: SourceID? = nil) throws -> LocalSliceFixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        return try LocalSliceFixture(database: RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root)),initial: initial)
+        return try LocalSliceFixture(database: RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root)),initial: initial,
+            initialSource: initialSource)
     }
     private func published(_ outcome: LocalProductionSliceOutcome) throws -> (LocalProductionProgress,PublicationReceipt) {
         guard case .published(let progress,let receipt) = outcome else { throw PreparationFailure.refused }
@@ -538,6 +541,34 @@ extension LocalProductionSliceTests {
             sequencing: .recencyAlternatingSources)) { _ in throw PreparationFailure.refused }
         guard case .advancedWithoutPublication = replay else { return XCTFail("Published head recurred") }
         XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.editionID).count, 3)
+    }
+
+
+    /// PD-4 must not let a new supply membership rewrite an already-published segment boundary.
+    func testPublishedTailAlternationIsUnaffectedByLaterMemberships() throws {
+        let tailRevision = LocalSliceFixture.revision(900)
+        let nextRevision = LocalSliceFixture.revision(901)
+        let frozen = SourceID(rawValue: LocalSliceFixture.uuid(56001))
+        let later = SourceID(rawValue: LocalSliceFixture.uuid(56002))
+        let unchanged = try fixture(initial: [tailRevision], initialSource: frozen)
+        let changed = try fixture(initial: [tailRevision], initialSource: frozen)
+        for instance in [unchanged, changed] {
+            try instance.admit(nextRevision, source: later)
+        }
+        // The tail card was already published with its frozen SourceID when this membership arrived.
+        try changed.admit(tailRevision, source: later)
+        XCTAssertEqual(try ContentStore(database: changed.database)
+            .memberships(originRecordID: tailRevision.originRecordID).map(\.sourceID), [later])
+        let tail = try PublicationHistory(database: changed.database).window(
+            editionID: changed.editionID, around: .init(cardID: changed.initialCardIDs[0], placement: .top),
+            backwardCapacity: 0, forwardCapacity: 0)
+        XCTAssertEqual(tail.cards.first?.origin.sourceID, frozen)
+        for instance in [unchanged, changed] {
+            let (_, receipt) = try published(LocalProductionSlice(database: instance.database).run(
+                instance.request(sequencing: .recencyAlternatingSources)
+            ) { LocalSliceFixture.prepared($0) })
+            XCTAssertEqual(receipt.cardIDs, [LocalSliceFixture.cardID(LocalSliceFixture.candidate(nextRevision))])
+        }
     }
 
     func testF06ReadinessFactsCannotAuthorizeAnotherWindowOrUnknownRevisions() throws {
