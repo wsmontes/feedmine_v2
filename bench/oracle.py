@@ -86,12 +86,16 @@ def cards(database: str) -> list[dict]:
     connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
     connection.row_factory = sqlite3.Row
     try:
+        # The order is the reader's, not the database's: the segment's own ordinal first, then the card's. Ordering
+        # by `segment_id` put a random UUID v4 in charge of which cards are consecutive, and the clauses that count
+        # adjacency and "the first N cards" then measured boundaries and a prefix the reader never crosses.
         rows = connection.execute(
             """
             SELECT c.segment_id, c.ordinal, c.source_id, c.source_display_name, c.title,
                    c.primary_action_reference, c.origin_record_id, c.origin_revision_id, c.timestamp_value
             FROM published_cards c
-            ORDER BY c.segment_id, c.ordinal
+            LEFT JOIN feed_segments s ON s.id = c.segment_id
+            ORDER BY COALESCE(s.ordinal, 2147483647), c.ordinal, c.segment_id
             """
         ).fetchall()
     finally:
@@ -329,10 +333,13 @@ def trace_events(database: str) -> list[dict]:
 
 def gate_b03(run: dict, corpus: dict, catalog_keys: list[str]) -> dict:
     published = run["cards"]
-    segments: dict[str, list[dict]] = {}
-    for card in published:
-        segments.setdefault(card.get("segment_id") or "?", []).append(card)
-    ordered = [card for _, rows in sorted(segments.items()) for card in sorted(rows, key=lambda r: r["ordinal"])]
+    # Two cards are consecutive when the reader meets them that way, and `cards()` already hands them over in that
+    # order (the segment's ordinal, then the card's). Re-grouping by `segment_id` here — as this gate did until
+    # 2026-10-14 — re-ordered the whole feed by a random UUID v4 and judged boundaries that exist only in that
+    # order: measured over 29 run databases, this clause failed in 13 of them under the UUID order and in 0 under
+    # this one, and the sibling rule in gate_b02 was blind to a violation injected at a real boundary. A boundary
+    # is where the reader crosses one — including the segment boundaries the benchmark names.
+    ordered = published
     duplicates = len(ordered) - len({card.get("origin_revision_id") for card in ordered})
     adjacency = sum(1 for left, right in zip(ordered, ordered[1:])
                     if left.get("source_id") and left.get("source_id") == right.get("source_id"))
