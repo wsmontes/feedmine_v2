@@ -34,7 +34,9 @@ final class AppComposition {
     }
     private var replacingSession = false
     private let directory: URL
-    private(set) var feeds: [TrustedFeed]
+    /// The reader's persisted selection. The active session may instead show a collection.
+    private var selectedFeeds: [TrustedFeed]
+    var feeds: [TrustedFeed] { association?.feeds ?? selectedFeeds }
     /// The catalogue this launch reads: the URL the app's catalogue owner resolved for it, and the **only**
     /// source of that path in this composition. Before this, each reader re-derived it with the same
     /// `Bundle.main` lookup; one value, taken once at the top of `init`, is what makes the app read what
@@ -162,7 +164,7 @@ final class AppComposition {
         #else
         self.directory = directory ?? support
         #endif
-        self.feeds = feeds
+        self.selectedFeeds = feeds
         let config = transportConfiguration ?? .ephemeral
         if transportConfiguration == nil { config.timeoutIntervalForRequest = 20 }
         #if DEBUG
@@ -189,8 +191,8 @@ final class AppComposition {
         self.catalogueURL = snapshot?.catalogueURL
         // The player remembers where the reader stopped; the store opens with the rest of the reader's own state,
         // lazily, so the adapter can be built before the database is (a preview or a test never opens one).
-        mediaAdapter.positions = ReaderPlaybackPositionsAdapter(database: { [directory = self.directory] in
-            try? RuntimeDatabase(location: RuntimeDatabaseLocation(directory: directory))
+        mediaAdapter.positions = ReaderPlaybackPositionsAdapter(database: { [weak self] in
+            self?.libraryDatabase()
         })
         // F02/B01: a reader who has chosen nothing is **not** a failure. The feed can be supplied by discovery,
         // and when it cannot, the empty-sources surface states exactly that. What the app does have to report is a
@@ -222,10 +224,11 @@ final class AppComposition {
                 // is why it needs the saved selection to have had sources in the first place.
                 if resolved.isEmpty, !saved.sourceKeys.isEmpty { resolved = feeds }
                 if resolved.map(\.principal) != saved.sourceKeys { saved = try preferences.updateSources(resolved.map(\.principal)) }
-                if case .source(let id) = saved.activeContext, !resolved.contains(where: { $0.sourceID == id }) {
-                    saved = try preferences.setContext(.main)
+                self.selectedFeeds = resolved
+                let restored = try sessionState(for: saved.activeContextKey)
+                if restored.key != saved.activeContextKey {
+                    saved = try preferences.setContext(restored.key)
                 }
-                self.feeds = resolved
                 currentContextKey = saved.activeContextKey
                 selectionVersion = saved.selectionVersion
             } catch {
@@ -407,7 +410,7 @@ final class AppComposition {
     func searchSources(_ query: String) async throws {
         let searchID = UUID()
         sourceSearchID = searchID
-        var choices = feeds
+        var choices = selectedFeeds
         if let url = catalogueURL {
             let records = try await Task.detached {
                 try LegacyCatalogReader(catalogURL: url).matchingSources(query: query, limit: 50)
@@ -418,9 +421,16 @@ final class AppComposition {
         }
         guard searchID == sourceSearchID else { return }
         sourceChoices = Dictionary(choices.map { ($0.sourceID, $0) }, uniquingKeysWith: { first, _ in first })
-        let selected = Set(feeds.map(\.sourceID))
+        let selected = Set(selectedFeeds.map(\.sourceID))
         sourceOptions = sourceChoices.values.map { .init(id: $0.sourceID, name: $0.displayName, selected: selected.contains($0.sourceID)) }
             .sorted { left, right in left.selected != right.selected ? left.selected : left.name.localizedStandardCompare(right.name) == .orderedAscending }
+    }
+
+    /// Changing the reader's selection exits a collection: it cannot keep filtering against
+    /// collection membership while the newly selected sources belong to the reader's plain feed.
+    private func presetAfterSelectionChange() -> ReaderPresetID {
+        if case .collection = currentContextKey.preset { return .everything }
+        return currentContextKey.preset
     }
 
     func toggleSource(_ sourceID: SourceID) async throws {
@@ -428,7 +438,7 @@ final class AppComposition {
         replacingSession = true
         defer { replacingSession = false }
         guard let choice = sourceChoices[sourceID], let preferences else { throw ReaderPreferencesError.invalidSelection }
-        var next = feeds
+        var next = selectedFeeds
         if let index = next.firstIndex(where: { $0.sourceID == sourceID }) { next.remove(at: index) }
         else { next.append(choice) }
         guard !next.isEmpty else { throw ReaderPreferencesError.invalidSelection }
@@ -438,10 +448,10 @@ final class AppComposition {
         }
         association = nil
         let saved = try preferences.updateSources(next.map(\.principal))
-        feeds = next
+        selectedFeeds = next
         selectionVersion = saved.selectionVersion
         let request: FeedContextRequest = next.count == 1 ? .source(next[0].sourceID) : .main
-        currentContextKey = ContextKey(request: request, preset: currentContextKey.preset,
+        currentContextKey = ContextKey(request: request, preset: presetAfterSelectionChange(),
             filter: currentContextKey.filter)
         _ = try preferences.setContext(currentContextKey)
         let nextAssociation = try await association(contextKey: currentContextKey)
@@ -685,15 +695,43 @@ final class AppComposition {
         try await applyFilter(currentFilter, preset: .everything)
     }
 
-    /// Opens a collection as its own feed: a session over exactly its sources, with the collection as the
-    /// preset of its identity. The reader's own selection is not touched — V1's collection feed behaved the
-    /// same way, and a collection is a playlist, not a preference.
-    func openCollectionFeed(id: String) async throws {
-        guard let library = libraryCoordinator(), let preferences else { return }
+    /// Collection membership is already durable library state, not another mutable feed selection.
+    /// Resolve it again for rebuilds and cold restoration of a collection context.
+    private func collectionFeeds(id: String) throws -> [TrustedFeed] {
+        guard let library = libraryCoordinator() else { throw ReaderPreferencesError.invalidSelection }
         let keys = try library.sourceKeys(inCollection: id)
-        let resolved = try TrustedFeed.resolveAvailable(keys: Array(keys), fallback: feeds,
+        let resolved = try TrustedFeed.resolveAvailable(keys: Array(keys), fallback: selectedFeeds,
             readerSources: readerSourceEntries(), catalogueURL: catalogueURL)
-        guard !resolved.isEmpty else { throw ReaderPreferencesError.invalidSelection }
+        return resolved
+    }
+
+    /// A collection without any available members cannot be the active preset. The same
+    /// reconciliation is used on cold restore and on later rebuilds after collection edits.
+    private func sessionState(for proposed: ContextKey) throws -> (key: ContextKey, feeds: [TrustedFeed]) {
+        let activeFeeds: [TrustedFeed]
+        if case .collection(let id) = proposed.preset {
+            activeFeeds = try collectionFeeds(id: id)
+            if activeFeeds.isEmpty {
+                let request: FeedContextRequest = selectedFeeds.count == 1
+                    ? .source(selectedFeeds[0].sourceID) : .main
+                return (ContextKey(request: request, preset: .everything, filter: proposed.filter,
+                    searchScope: proposed.searchScope), selectedFeeds)
+            }
+        } else {
+            activeFeeds = selectedFeeds
+        }
+        if case .source(let id) = proposed.request,
+            !activeFeeds.contains(where: { $0.sourceID == id }) {
+            return (ContextKey(request: .main, preset: proposed.preset, filter: proposed.filter,
+                searchScope: proposed.searchScope), activeFeeds)
+        }
+        return (proposed, activeFeeds)
+    }
+
+    /// A collection is a session over its own sources, without changing the reader's selection.
+    func openCollectionFeed(id: String) async throws {
+        guard let preferences else { return }
+        guard !(try collectionFeeds(id: id)).isEmpty else { throw ReaderPreferencesError.invalidSelection }
         guard !replacingSession else { return }
         replacingSession = true
         defer { replacingSession = false }
@@ -702,18 +740,14 @@ final class AppComposition {
             await retired.close()
         }
         association = nil
-        // The selection is unchanged on disk; only this session's plan is over the collection's sources.
-        let sessionFeeds = feeds
-        feeds = resolved
+        // The session exposes its own feeds; the persisted selection is left untouched.
         currentContextKey = ContextKey(request: .main, preset: .collection(id),
             filter: .unrestricted)
         _ = try preferences.setContext(currentContextKey)
-        let next = try await association(contextKey: currentContextKey, sessionFeeds: resolved)
+        let next = try await association(contextKey: currentContextKey)
         association = next
         startupFailure = nil
         try await next.launch()
-        // Leaving the collection restores the reader's own selection, which is what the next transition reads.
-        feeds = sessionFeeds
     }
 
     /// T11: the hood of the feed the reader is on, when it is one of their own.
@@ -945,9 +979,7 @@ final class AppComposition {
     /// The media coordinator, over the same database file every other surface opens. When the composition
     /// itself failed to open one, the media surface says so instead of pretending to play.
     private var media: ReaderMediaCoordinator? {
-        guard let database = try? RuntimeDatabase(location: RuntimeDatabaseLocation(directory: directory)) else {
-            return nil
-        }
+        guard let database = libraryDatabase() else { return nil }
         return ReaderMediaCoordinator(database: database, player: mediaAdapter)
     }
 
@@ -968,7 +1000,7 @@ final class AppComposition {
     /// T7: the source surface's store, over the catalog coordinator. One store per presentation, so its
     /// levels and the reader's selection are one consistent picture while it is open.
     func makeSourceManagementStore() -> SourceManagementStore {
-        let database = try? RuntimeDatabase(location: RuntimeDatabaseLocation(directory: directory))
+        let database = libraryDatabase()
         return SourceManagementStore(backend: SourceCatalogBackend(
             coordinator: SourceManagementCoordinator(catalogURL: catalogueURL, database: database),
             healthProvider: { await self.sourceHealth() }))
@@ -981,7 +1013,7 @@ final class AppComposition {
         let observed = await association.coordinator.healthSnapshot()
         guard !observed.isEmpty else { return [:] }
         var health: [String: CatalogSourceHealth] = [:]
-        for feed in feeds {
+        for feed in association.feeds {
             guard let target = observed[feed.targetID] else { continue }
             health[feed.principal] = CatalogSourceHealth(state: target.consecutiveFailures > 0
                 ? .failing(consecutive: target.consecutiveFailures)
@@ -998,14 +1030,14 @@ final class AppComposition {
         guard let preferences, let record = try? preferences.load() else { return }
         guard record.selectionVersion != selectionVersion else { return }
         selectionVersion = record.selectionVersion
-        var resolved = (try? TrustedFeed.resolveAvailable(keys: record.sourceKeys, fallback: feeds,
+        var resolved = (try? TrustedFeed.resolveAvailable(keys: record.sourceKeys, fallback: selectedFeeds,
             readerSources: readerSourceEntries(), catalogueURL: catalogueURL)) ?? []
-        if resolved.isEmpty, !record.sourceKeys.isEmpty { resolved = feeds }
-        feeds = resolved
+        if resolved.isEmpty, !record.sourceKeys.isEmpty { resolved = selectedFeeds }
+        selectedFeeds = resolved
         // One selected source is its own surface, exactly as `toggleSource` decides; a context pointing at a
         // source that is no longer selected would be a fence around nothing.
         let request: FeedContextRequest = resolved.count == 1 ? .source(resolved[0].sourceID) : .main
-        currentContextKey = ContextKey(request: request, preset: currentContextKey.preset,
+        currentContextKey = ContextKey(request: request, preset: presetAfterSelectionChange(),
             filter: currentContextKey.filter)
         _ = try? preferences.setContext(currentContextKey)
         do { try await replaceSession() }
@@ -1055,8 +1087,13 @@ final class AppComposition {
     /// behaviour and any edit is a different one.
     /// The one place a session is built: every transition ranks with the context's own scoring. A collection's
     /// own feed passes its own sources; everything else is the reader's selection.
-    private func association(contextKey: ContextKey, sessionFeeds: [TrustedFeed]? = nil) async throws -> FeedAssociation {
-        let key = applied(contextKey)
+    private func association(contextKey: ContextKey) async throws -> FeedAssociation {
+        let session = try sessionState(for: contextKey)
+        if session.key != contextKey {
+            currentContextKey = session.key
+            _ = try preferences?.setContext(session.key)
+        }
+        let key = applied(session.key)
         let (scoring, version) = scoring(for: key)
         // The pair is resolved **once**, before any `await`: between the two awaits below the reader can answer a new
         // preference, and a pool built for the old profile together with a walk created for the new one would
@@ -1064,7 +1101,7 @@ final class AppComposition {
         // that lands while this is in flight is the rebuild path's business, and that path already remembers a
         // second answer instead of dropping it (finding 3).
         let profile = discoveryProfile(for: key)
-        return connecting(try FeedAssociation(directory: directory, feeds: sessionFeeds ?? feeds,
+        return connecting(try FeedAssociation(directory: directory, feeds: session.feeds,
             discovery: await discoveryFeeds(profile: profile),
             configuration: transportConfiguration, trace: trace, database: libraryDatabase(),
             discoveryTraversal: discoveryTraversal(for: key, profile: profile), contextKey: key,
@@ -1940,7 +1977,7 @@ final class FeedAssociation {
         self.coordinator = coordinator
         // PD-5/PD-6 media pipeline: one download owner, device-measured policy, slot-sized decoding.
         let assetDirectory = directory.appendingPathComponent("Media", isDirectory: true)
-        let device = DeviceMediaConditions.current()
+        let device = DeviceMediaConditions.currentOnMain()
         let readiness = MediaReadiness()
         let fetcher = MediaHTTPFetcher(session: transport)
         // F06-G/PD-6: one derived tolerance feeds both the preparation window and the byte budget below. The media
@@ -2587,7 +2624,7 @@ final class FeedAssociation {
             Self.log("lifecycle checkpoint")
             // What the trace saw leaves with it: a run cut short still says everything it observed.
             trace?.flush()
-            let lease = try store.state.presentation.map { try PublicationStore(database: database).hiddenTail(editionID: $0.editionID) } ?? nil
+            let lease = try store.state.presentation.map { try PublicationStore(database: database).hiddenTail(editionID: $0.editionID, protectingThrough: $0.window.items.last?.id) } ?? nil
             // PD-5: the screen is not visible now, so the house can be tidied: complete media for
             // the next cards and bring local media under the device-derived budget. Seen and visible
             // cards are never changed.
@@ -2682,11 +2719,6 @@ struct DeviceMediaConditions: Sendable {
         #else
         return .init(heroPointWidth: 600, thumbnailPointWidth: 88, scale: 2)
         #endif
-    }
-
-    static func current() -> DeviceMediaConditions {
-        if Thread.isMainThread { return MainActor.assumeIsolated { currentOnMain() } }
-        return DispatchQueue.main.sync { MainActor.assumeIsolated { currentOnMain() } }
     }
 
     static func policy(device: DeviceMediaConditions, measuredBytesPerSecond: Double?, assetDirectory: URL,
