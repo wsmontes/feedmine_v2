@@ -68,10 +68,20 @@ Uploaded FeedMine
 tag ios/1.0-build.33-e0459944 created (local, not pushed)
 ```
 
-Estado Apple consultado por API (`docs/reviews/evidence/2026-10-13-invitation-offer-accounting/testflight-status.jsonl`):
-a build 32 está `processingState=VALID` / `internalBuildState=IN_BETA_TESTING`; **a 33 ainda não constava na lista
-`builds` no momento da consulta** — processamento da Apple pendente, então a única afirmação honesta agora é
-"enviada". A confirmação de `VALID`/disponível para o grupo interno `WawaTesters` é um passo separado, abaixo.
+Estado Apple confirmado por API (`docs/reviews/evidence/2026-10-13-invitation-offer-accounting/testflight-status.jsonl`):
+
+| Rota | Resultado |
+|---|---|
+| `builds/45cb12ab-51a1-4c63-8ac4-c41bc6e3ea2a` | versão **33**, `uploadedDate` 2026-10-13T19:45:00-07:00, `expired: false`, `processingState: **VALID**`, `APP_STORE_ELIGIBLE` |
+| `builds/…/buildBetaDetail` | `internalBuildState: **IN_BETA_TESTING**`, `externalBuildState: READY_FOR_BETA_SUBMISSION`, `autoNotifyEnabled: true` |
+| `betaGroups` | grupo interno **WawaTesters** com `hasAccessToAllBuilds: true` |
+
+Ou seja: a build **1.0 (33)** está instalável pelo canal interno. A primeira consulta (imediatamente após o
+upload) ainda não listava a 33 — o documento anterior dizia "enviada, processamento pendente" e é essa a
+informação que agora fica corrigida, não antecipada.
+
+Acesso instalável confirmado, **não** instalação observada: nenhuma sessão desta rodada viu a build 33 rodando
+num iPhone físico do dono do produto.
 
 ## 5. O que isto NÃO prova
 
