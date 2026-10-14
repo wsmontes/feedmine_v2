@@ -60,13 +60,13 @@ public struct FeedScreen: View {
                 lens: { if let lens { lens } }) {
                 FeedSourcesEmptyStateView(appearance: appearance, onChooseSources: onChooseSources)
             }
-        } else if store.state.presentation != nil {
+        } else if !store.renderedItems.isEmpty {
             ReaderShell(store: store, appearance: appearance, status: { statusChip },
                 lens: { if let lens { lens } }) {
                 feedBody
             }
         } else {
-            FeedLoadingView(work: store.state.work, onTryAgain: { onTryAgain() },
+            FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
                 onAdjustInterests: { onAdjustInterests() })
         }
     }
@@ -74,24 +74,29 @@ public struct FeedScreen: View {
     /// The chip states the reader's situation. The host can replace it (T5 hook) because the host owns
     /// the counters; this default states only what the presentation value knows.
     @ViewBuilder private var statusChip: some View {
-        if let customStatusChip { customStatusChip } else { FeedWorkBadge(work: store.state.work) }
+        if let customStatusChip { customStatusChip } else { FeedWorkBadge(work: store.work) }
     }
 
-    private var workFeedback: some View { FeedWorkFeedback(work: store.state.work) }
+    private var workFeedback: some View { FeedWorkFeedback(work: store.work) }
 
     @ViewBuilder private var feedBody: some View {
-        if let presentation = capture.interaction.presentation(for: store) {
+        // A lista desenha **conteúdo**: os itens que a loja publica (mudam quando a janela muda) e, durante um
+        // gesto, a janela segurada. A posição do leitor **não** é lida aqui — era ela que fazia a lista inteira ser
+        // reavaliada a cada avanço (medido no aparelho, 2026-10-14: 12–14 instalações por segundo numa rajada).
+        // Princípio do dono: a UI é imediata; o backend corre atrás e se antecipa.
+        let items = capture.interaction.heldItems(matching: store) ?? store.renderedItems
+        if !items.isEmpty {
             if #available(iOS 18, macOS 15, *) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
-                        ForEach(Array(presentation.window.items.enumerated()), id: \.element.id) { index, card in
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, card in
                           // One stable lazy cell per publication ID. Measure the card itself;
                           // the optional invitation keeps the same spacing inside this cell.
                             VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
                               FeedItemView(card: card, appearance: appearance,
                                 isBookmarked: store.bookmarkedIDs.contains(card.id),
                                 availableActions: store.availableActions,
-                                onAction: { store.perform($0, rendered: presentation) })
+                                onAction: { store.perform($0, rendered: store.state.presentation) })
                                 .onGeometryChange(for: CGRect?.self, of: { proxy in
                                     // **Uma** conversão de coordenada por card por passada. A V1 não tinha sonda
                                     // alguma por card (só um observer de limiar Bool); manter a sonda geométrica é
@@ -101,11 +106,15 @@ public struct FeedScreen: View {
                                     // `frame.minY + offset`.
                                     proxy.frame(in: .scrollView(axis: .vertical))
                                 }) { frame in
-                                    guard capture.interaction.presentation(for: store)?.window == presentation.window,
-                                        store.state.presentation?.editionID == presentation.editionID,
-                                        store.state.presentation?.contextKey == presentation.contextKey,
-                                        let frame, let scroll = capture.motion.geometry,
-                                        presentation.window.items.contains(where: { $0.id == card.id }) else { return }
+                                    // A prova vale para uma carta que a lista desenha e para a apresentação que a loja
+                                    // tem agora — comparada pela **identidade publicada**, nunca pela posição do
+                                    // leitor (era essa leitura, dentro do corpo, que re-renderizava a lista a cada
+                                    // avanço).
+                                    guard store.renderedItems.contains(where: { $0.id == card.id }),
+                                        let current = store.state.presentation,
+                                        store.renderedEditionID == current.editionID,
+                                        store.renderedContextKey == current.contextKey,
+                                        let frame, let scroll = capture.motion.geometry else { return }
                                     let proof = FeedVisualCardGeometry(cardID: card.id, frame: frame,
                                         offset: scroll.offset, height: scroll.height)
                                     #if canImport(UIKit)
@@ -115,18 +124,18 @@ public struct FeedScreen: View {
                                     #endif
                                     if let event = capture.observeCard(proof,
                                         isLast: store.state.presentation?.window.items.last?.id == proof.cardID) {
-                                        store.submitViewport(event.observation, activity: event.activity, rendered: presentation)
+                                        store.submitViewport(event.observation, activity: event.activity, rendered: store.state.presentation)
                                     }
                                     if let event = capture.settle() {
-                                        store.submitViewport(event.observation, activity: event.activity, rendered: presentation)
+                                        store.submitViewport(event.observation, activity: event.activity, rendered: store.state.presentation)
                                     }
                                 }
-                            if let row = editorial?(card, index, index > 0 ? presentation.window.items[index - 1] : nil) { row }
+                            EditorialSlot { editorial?(card, index, index > 0 ? items[index - 1] : nil) }
                           }
                         }
                     }
                     #if canImport(UIKit)
-                    .background(FeedNativeScrollProbe(access: capture.nativeScrollOffset, ids: presentation.window.items.map(\.id)))
+                    .background(FeedNativeScrollProbe(access: capture.nativeScrollOffset, ids: items.map(\.id)))
                     #endif
                     .modifier(NativeFeedTargets())
                     // U1-F: one FeedScreen for every device; wide displays keep a readable column
@@ -134,9 +143,9 @@ public struct FeedScreen: View {
                     .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
                     .frame(maxWidth: .infinity)
                 }
-                .modifier(NativeFeedViewport(capture: $capture, store: store, presented: presentation))
+                .modifier(NativeFeedViewport(capture: $capture, store: store))
                 #if DEBUG && canImport(UIKit)
-                .modifier(FeedNativeWindowProof(ids: presentation.window.items.map(\.id), access: capture.nativeScrollOffset, deferredWindows: capture.interaction.deferredWindows))
+                .modifier(FeedNativeWindowProof(ids: items.map(\.id), access: capture.nativeScrollOffset, deferredWindows: capture.interaction.deferredWindows))
                 #endif
                 // T3: work feedback is an overlay of constant height that never takes touches, so the
                 // scroll viewport keeps exactly the geometry the reader was admitted into.
@@ -145,13 +154,13 @@ public struct FeedScreen: View {
                 // macOS 14 renders local cards without automatic viewport capture.
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
-                        ForEach(Array(presentation.window.items.enumerated()), id: \.element.id) { index, card in
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, card in
                             Group {
                                 FeedItemView(card: card, appearance: appearance,
                                     isBookmarked: store.bookmarkedIDs.contains(card.id),
                                     availableActions: store.availableActions,
-                                    onAction: { store.perform($0, rendered: presentation) })
-                                if let row = editorial?(card, index, index > 0 ? presentation.window.items[index - 1] : nil) { row }
+                                    onAction: { store.perform($0, rendered: store.state.presentation) })
+                                EditorialSlot { editorial?(card, index, index > 0 ? items[index - 1] : nil) }
                             }
                         }
                     }
@@ -164,9 +173,23 @@ public struct FeedScreen: View {
                 .overlay(alignment: .bottom) { workFeedback }
             }
         } else {
-            FeedLoadingView(work: store.state.work, onTryAgain: { onTryAgain() },
+            FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
                 onAdjustInterests: { onAdjustInterests() })
         }
+    }
+}
+
+/// A linha editorial desenhada no **próprio corpo**: o que ela lê (posição do leitor, orçamento de ofertas,
+/// preferências) invalida só ela, nunca a lista. A V1 tinha a mesma forma — a linha era uma view dentro da
+/// `LazyVStack`. Sem isso, a leitura de posição feita aqui dentro voltava a re-renderizar o feed a cada avanço.
+@MainActor
+struct EditorialSlot: View {
+    private let content: @MainActor () -> AnyView?
+
+    init(content: @escaping @MainActor () -> AnyView?) { self.content = content }
+
+    var body: some View {
+        if let content = content() { content }
     }
 }
 
@@ -441,7 +464,10 @@ struct FeedVisualCapture {
 private struct NativeFeedViewport: ViewModifier {
     @Binding var capture: FeedVisualCapture
     let store: FeedScreenStore
-    let presented: FeedPresentationSnapshot?
+
+    /// A apresentação que a posição segue. Lida **dentro** do modificador: assim um avanço reavalia este
+    /// modificador (barato) e não o corpo da lista, que é o desenho dos itens.
+    private var presented: FeedPresentationSnapshot? { store.state.presentation }
 
     private var matchesScope: Bool {
         guard let current = store.state.presentation, let presented else { return false }
@@ -463,7 +489,12 @@ private struct NativeFeedViewport: ViewModifier {
         return content
             .id(store.state.presentation?.editionID)
             .id(store.state.presentation?.contextKey)
-            .scrollPosition(id: Binding(get: { capture.positionID ?? presented?.window.anchor.cardID }, set: { id in
+            .scrollPosition(id: Binding(get: {
+                // A posição que o leitor está lendo vem da **prova geométrica** (o card onde ele está), não da
+                // âncora publicada: a âncora só é republicada quando o conteúdo muda, e usá-la aqui puxaria a lista
+                // de volta para uma posição antiga.
+                capture.positionID ?? capture.motion.readerCardID ?? presented?.window.anchor.cardID
+            }, set: { id in
                 guard matchesScope, let id, presented?.window.items.contains(where: { $0.id == id }) == true else { return }
                 capture.positionID = id
                 capture.motion.readerCardID = id

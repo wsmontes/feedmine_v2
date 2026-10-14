@@ -35,6 +35,17 @@ struct FeedInteractionPresentation {
             current.provenance.sequenceID == held.provenance.sequenceID else { return store.state.presentation }
         return held
     }
+
+    /// A janela **segurada** durante um gesto, quando ela ainda pertence ao que a loja publicou para a lista.
+    ///
+    /// A comparação é contra a identidade publicada (edição, contexto) e **não** contra a posição do leitor: durante
+    /// o gesto a lista não pode mudar sob o dedo, e fora dele quem manda é o conteúdo publicado. É esta leitura que
+    /// mantém a posição fora do corpo da lista (princípio do dono, 2026-10-14).
+    func heldItems(matching store: FeedScreenStore) -> [PresentationCard]? {
+        guard let held, owner == ObjectIdentifier(store),
+            held.contextKey == store.renderedContextKey, held.editionID == store.renderedEditionID else { return nil }
+        return held.window.items
+    }
     mutating func noteIncoming(_ store: FeedScreenStore) {
         guard let held else { return }
         guard presentation(for: store) == held, let current = store.state.presentation else {

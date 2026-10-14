@@ -121,7 +121,28 @@ public final class FeedScreenStore {
             presentationState = state
         }
         state = presentationState.reporting(received.work)
+        // **Só o que a lista desenha é republicado.** A posição do leitor e a proveniência continuam em `state`,
+        // que muda a cada avanço; a lista observa os itens, que mudam quando a janela muda. Sem isso, cada avanço
+        // re-renderizava a lista inteira — 12–14 vezes por segundo numa rajada (medido no aparelho, 2026-10-14).
+        // Princípio do dono: a UI é imediata; o backend corre atrás e se antecipa.
+        let rendered = presentationState.presentation?.window.items
+        if rendered != renderedItems { renderedItems = rendered ?? [] }
+        if received.work != work { work = received.work }
+        if presentationState.presentation?.editionID != renderedEditionID {
+            renderedEditionID = presentationState.presentation?.editionID
+        }
+        if presentationState.presentation?.contextKey != renderedContextKey {
+            renderedContextKey = presentationState.presentation?.contextKey
+        }
     }
+
+    /// O que a lista desenha, publicado **apenas quando muda**. Nenhuma leitura daqui depende da posição do leitor.
+    public private(set) var renderedItems: [PresentationCard] = []
+    public private(set) var renderedEditionID: FeedEditionID?
+    public private(set) var renderedContextKey: ContextKey?
+    /// O trabalho que a superfície está relatando, publicado **apenas quando muda** — pela mesma razão: a view lê
+    /// isto, e não `state`, para que um avanço não a reavalie.
+    public private(set) var work: FeedPresentationState.Work = .idle
 
     /// Emits one explicit user observation. The external consumer decides how to execute it.
     public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,

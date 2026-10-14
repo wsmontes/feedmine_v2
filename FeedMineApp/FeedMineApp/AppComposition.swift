@@ -2153,6 +2153,19 @@ final class FeedAssociation {
         self?.trace?.record(event, fields)
     }
 
+    /// Se o que o leitor **vê** mudou: a janela, a edição, o contexto ou o trabalho relatado. A âncora e a
+    /// proveniência mudam a cada avanço e **não** são motivo para republicar: a posição vive no
+    /// `FeedScreenStore.state`, que a lista deixou de observar. Princípio do dono (2026-10-14): a UI é imediata; o
+    /// backend corre atrás e se antecipa.
+    private func changesWhatTheReaderSees(_ received: FeedPresentationState) -> Bool {
+        guard let current = store.state.presentation else { return received.presentation != nil }
+        guard let next = received.presentation else { return false }
+        return next.window.items != current.window.items
+            || next.editionID != current.editionID
+            || next.contextKey != current.contextKey
+            || received.work != store.state.work
+    }
+
     func install(_ received: FeedPresentationState) throws {
         guard active else { throw FeedPresentationStateError.projectionSequenceMismatch }
         // O feed está em tela: a partir daqui o intervalo entre quadros é medido e escrito no trace.
@@ -2390,7 +2403,10 @@ final class FeedAssociation {
                 onCommitted: { [weak self] committed in
                     await MainActor.run {
                         guard let self, self.active else { return }
-                        do { try self.install(FeedPresentationHandoff.receive(snapshot: committed, into: self.store.state)) }
+                        let received = FeedPresentationHandoff.receive(snapshot: committed, into: self.store.state)
+                        // Mesma regra do recebimento: só conteúdo chega à tela.
+                        guard self.changesWhatTheReaderSees(received) else { return }
+                        do { try self.install(received) }
                         catch { Self.log("obsolete early viewport projection rejected") }
                     }
                 })
@@ -2401,8 +2417,13 @@ final class FeedAssociation {
                 candidate.provenance.sequenceID == current.provenance.sequenceID,
                 candidate.provenance.position < current.provenance.position {
                 Self.log("obsolete viewport receipt ignored")
-            } else {
+            } else if changesWhatTheReaderSees(received) {
                 try install(received)
+            } else {
+                // A posição já foi registrada na sessão pelo handoff — o backend corre atrás e se antecipa. Republicar
+                // aqui era a resposta síncrona do backend dentro da operação de UI (12–14 por segundo numa rajada,
+                // medido no aparelho em 2026-10-14).
+                Self.log("advance recorded behind the UI: nothing the reader sees changed")
             }
             if evidence?.isPositionReconciliation == true {
                 Self.log("rendered position reconciled locally")
