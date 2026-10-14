@@ -92,7 +92,11 @@ public struct ReaderHeader<Status: View, Lens: View>: View {
                     .readerHeaderButton(accent: appearance.accent)
             }
             .accessibilityIdentifier("bookmark-boxes-button")
-            .accessibilityLabel(String(localized: "Salvos"))
+            // The header control *opens* the saved boxes; `Salvos` names the surface itself and is the menu
+            // entry's own title. Two controls answering to the same string is also an accessibility problem —
+            // nothing tells them apart — and it makes a query for that string ambiguous while the menu is open
+            // (measured 2026-10-14: the frozen B05 driver's query for `Salvos` found both and could not tap).
+            .accessibilityLabel(String(localized: "Abrir salvos"))
             .overlay(alignment: .topTrailing) {
                 if bookmarkBoxActive {
                     Circle().fill(appearance.accent).frame(width: 6, height: 6)

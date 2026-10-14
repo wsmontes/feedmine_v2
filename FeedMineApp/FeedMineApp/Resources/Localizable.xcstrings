@@ -356,6 +356,16 @@
         }
       }
     },
+    "Abrir salvos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open saved"
+          }
+        }
+      }
+    },
     "Adicionar": {
       "localizations": {
         "en": {
