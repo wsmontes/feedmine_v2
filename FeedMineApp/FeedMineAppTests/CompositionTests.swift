@@ -60,12 +60,13 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
 @MainActor
 final class CompositionTests: XCTestCase {
 
-    private func root(requestTimeout: TimeInterval = 60, directory: URL? = nil) -> AppComposition {
+    private func root(requestTimeout: TimeInterval = 60, directory: URL? = nil,
+        feeds: [TrustedFeed] = TrustedFeed.development) -> AppComposition {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
         configuration.timeoutIntervalForRequest = requestTimeout
         return AppComposition(directory: directory ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
-            feeds: TrustedFeed.development, transportConfiguration: configuration)
+            feeds: feeds, transportConfiguration: configuration)
     }
 
     private func launched() async throws -> (AppComposition, FeedAssociation) {
@@ -1735,6 +1736,208 @@ final class CompositionTests: XCTestCase {
         // V2 must create its own directory rather than adopt V1's tree.
         XCTAssertFalse(v2.path.contains("/Feedmine/RuntimeV2/"))
     }
+
+    /// A02: three real composition routes retain the same RuntimeDatabase object, not
+    /// three pools over the same SQLite path. Media also reads a card published on that handle.
+    func testA02MediaSourcesAndPlaybackPositionsShareRetainedDatabase() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        XCTAssertNil(composition.startupFailure)
+        let association = try XCTUnwrap(composition.association)
+        let retained = association.database
+
+        // Inspect the objects actually constructed by the public surfaces, not Swift source text.
+        // RuntimeDatabase is a reference type; sharing a file would not pass the identity assertions.
+        func databaseHandle(in value: Any, depth: Int = 0) -> RuntimeDatabase? {
+            if let database = value as? RuntimeDatabase { return database }
+            guard depth < 10 else { return nil }
+            for child in Mirror(reflecting: value).children {
+                if let database = databaseHandle(in: child.value, depth: depth + 1) { return database }
+            }
+            return nil
+        }
+
+        let sources = composition.makeSourceManagementStore()
+        await sources.load()
+        XCTAssertNil(sources.errorMessage)
+        XCTAssertEqual(sources.selection,
+            Set(try XCTUnwrap(ReaderPreferencesStore(database: retained).load()).sourceKeys))
+        let sourcesDatabase = try XCTUnwrap(databaseHandle(in: sources),
+            "Source management must hold the runtime database")
+        XCTAssertTrue(sourcesDatabase === retained, "Source management opened a different pool")
+        let secondSources = composition.makeSourceManagementStore()
+        XCTAssertTrue(try XCTUnwrap(databaseHandle(in: secondSources)) === retained,
+            "Opening the source screen again must reuse the same handle")
+
+        let publication = PublicationStore(database: retained)
+        let cards = try XCTUnwrap(association.store.state.presentation?.window.items)
+        let cardID = try XCTUnwrap(cards.first {
+            (try? publication.card(id: $0.id))?.primaryActionKind == "externalURL"
+        }?.id, "The controlled feed must contain an existing, non-media card")
+
+        let positions = try XCTUnwrap(composition.mediaAdapter.positions as? ReaderPlaybackPositionsAdapter)
+        positions.save(position: 93, duration: 240, for: cardID)
+        XCTAssertEqual(try PlaybackPositionStore(database: retained).position(for: cardID)?.position, 93,
+            "A player position written through the adapter must reach the retained database")
+        XCTAssertEqual(positions.position(for: cardID), 93)
+        XCTAssertTrue(try XCTUnwrap(databaseHandle(in: positions)) === retained,
+            "The position adapter must cache the retained handle after its first write")
+
+        // The computed media coordinator is not retained by the composition. Exercise its real
+        // action instead: it must find the card above through the published database. A fresh,
+        // empty database would report 'card not found' rather than 'no media action'.
+        await composition.toggleMedia(cardID: cardID)
+        XCTAssertEqual(composition.mediaState.error, String(localized: "Este card não tem o que tocar"),
+            "Media must resolve the existing card through the same persisted publication")
+        await composition.association?.close()
+    }
+
+    func testA05CollectionFeedsTrackActiveSessionThroughRebuildAndRestore() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        let original = try XCTUnwrap(composition.association)
+        let selected = composition.feeds
+        XCTAssertGreaterThan(selected.count, 1)
+        let chosen = selected[1]
+        let collection = try XCTUnwrap(ReaderLibraryCoordinator(database: original.database)
+            .collectSources(named: "Only science", sourceKeys: [chosen.principal]))
+        try await composition.openCollectionFeed(id: collection.id)
+        let active = try XCTUnwrap(composition.association)
+        XCTAssertEqual(composition.feeds.map(\.principal), [chosen.principal],
+            "The app reports the sources its active association actually uses")
+        XCTAssertEqual(active.feeds.map(\.principal), [chosen.principal])
+        let observed = await active.coordinator.healthSnapshot()
+        let health = await composition.sourceHealth()
+        let expected = Set(active.feeds.filter { observed[$0.targetID] != nil }.map(\.principal))
+        XCTAssertEqual(Set(health.keys), expected, "Health must be mapped through the active session's sources")
+        XCTAssertEqual(try ReaderPreferencesStore(database: active.database).load()?.sourceKeys,
+            selected.map(\.principal), "Opening a collection never changes the reader's selection")
+
+        try await composition.replaceSession()
+        XCTAssertEqual(composition.feeds.map(\.principal), [chosen.principal],
+            "Rebuilding an open collection must not silently switch to the reader's selection")
+        await composition.association?.close()
+
+        let reopened = root(directory: directory)
+        await reopened.launch()
+        XCTAssertNil(reopened.startupFailure)
+        XCTAssertEqual(reopened.feeds.map(\.principal), [chosen.principal],
+            "A persisted collection context must restore with its own sources")
+        try await reopened.applyFilter(.unrestricted, preset: .everything)
+        XCTAssertEqual(reopened.feeds.map(\.principal), selected.map(\.principal),
+            "Leaving the collection recovers the selected sources without parallel state")
+        await reopened.association?.close()
+    }
+
+
+    /// A changed persisted selection is a plain/source context, not an intersection with the
+    /// collection previously open. A is selected, B is in the collection, and A never belongs to B.
+    func testA05AdoptingSelectionOutsideCollectionExitsCollectionPreset() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        let original = try XCTUnwrap(composition.association)
+        let selected = composition.feeds
+        XCTAssertGreaterThanOrEqual(selected.count, 2)
+        let a = selected[0], b = selected[1]
+        let library = ReaderLibraryCoordinator(database: original.database)
+        let collection = try library.collectSources(named: "Only B", sourceKeys: [b.principal])
+        try await composition.openCollectionFeed(id: collection.id)
+        XCTAssertEqual(composition.feeds.map(\.principal), [b.principal])
+
+        let preferences = ReaderPreferencesStore(database: original.database)
+        _ = try preferences.updateSources([a.principal])
+        await composition.adoptSelectionChange()
+        XCTAssertNil(composition.startupFailure)
+        XCTAssertEqual(composition.currentContextKey.preset, .everything)
+        XCTAssertEqual(composition.currentContextKey.request, .source(a.sourceID))
+        XCTAssertEqual(composition.feeds.map(\.principal), [a.principal])
+        XCTAssertEqual(composition.association?.feeds.map(\.principal), [a.principal])
+        XCTAssertEqual(try preferences.load()?.activeContextKey, composition.currentContextKey)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, [a.principal])
+        await composition.association?.close()
+    }
+
+    /// Deletion and removal of the final membership both make the stored collection context
+    /// unusable. The app must reopen the reader's persisted selection and repair the saved key.
+    func testA05DeletedOrEmptiedCollectionRestoresSelectionInsteadOfFailingLaunch() async throws {
+        for deleteCollection in [true, false] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+            let composition = root(directory: directory)
+            await composition.launch()
+            let original = try XCTUnwrap(composition.association)
+            let selected = composition.feeds
+            XCTAssertGreaterThanOrEqual(selected.count, 2)
+            let b = selected[1]
+            let library = ReaderLibraryCoordinator(database: original.database)
+            let collection = try library.collectSources(named: "Temporary B", sourceKeys: [b.principal])
+            try await composition.openCollectionFeed(id: collection.id)
+            XCTAssertEqual(composition.currentContextKey.preset, .collection(collection.id))
+
+            if deleteCollection {
+                XCTAssertTrue(try library.deleteCollection(id: collection.id))
+            } else {
+                try library.setCollectionMembership(sourceKey: b.principal,
+                    collectionID: collection.id, included: false)
+                XCTAssertTrue(try library.sourceKeys(inCollection: collection.id).isEmpty)
+            }
+            await composition.association?.close()
+            let restored = root(directory: directory)
+            await restored.launch()
+            XCTAssertNil(restored.startupFailure, "An unavailable collection must not break cold restore")
+            XCTAssertNotNil(restored.association)
+            XCTAssertEqual(restored.currentContextKey.preset, .everything)
+            XCTAssertEqual(restored.currentContextKey.request, .main)
+            XCTAssertEqual(restored.feeds.map(\.principal), selected.map(\.principal))
+            XCTAssertEqual(try ReaderPreferencesStore(database: try XCTUnwrap(restored.association).database)
+                .load()?.activeContextKey, restored.currentContextKey, "Reconciliation must be durable")
+            await restored.association?.close()
+        }
+    }
+
+    /// B is a real catalog source kept only in a collection: it is NOT part of the saved
+    /// selection A. The source(B) context must validate against the collection on relaunch.
+    func testA05RestoresSourceExclusiveToCollectionWithoutDiscardingPreset() async throws {
+        let catalog = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let available = try TrustedFeed.catalog(limit: 2, resourceURL: catalog)
+        XCTAssertEqual(available.count, 2)
+        let a = available[0], b = available[1]
+        XCTAssertNotEqual(a.sourceID, b.sourceID)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory, feeds: available)
+        await composition.launch()
+        let original = try XCTUnwrap(composition.association)
+        let preferences = ReaderPreferencesStore(database: original.database)
+        _ = try preferences.updateSources([a.principal])
+        await composition.adoptSelectionChange()
+        XCTAssertEqual(composition.feeds.map(\.principal), [a.principal])
+        let library = ReaderLibraryCoordinator(database: original.database)
+        let collection = try library.collectSources(named: "Only B", sourceKeys: [b.principal])
+        try await composition.openCollectionFeed(id: collection.id)
+        XCTAssertEqual(composition.feeds.map(\.principal), [b.principal])
+        try await composition.selectContext(.source(b.sourceID))
+        XCTAssertEqual(composition.currentContextKey.request, .source(b.sourceID))
+        XCTAssertEqual(composition.currentContextKey.preset, .collection(collection.id))
+        await composition.association?.close()
+
+        let reopened = root(directory: directory, feeds: available)
+        await reopened.launch()
+        XCTAssertNil(reopened.startupFailure)
+        XCTAssertEqual(reopened.currentContextKey.request, .source(b.sourceID))
+        XCTAssertEqual(reopened.currentContextKey.preset, .collection(collection.id))
+        XCTAssertEqual(reopened.feeds.map(\.principal), [b.principal])
+        XCTAssertEqual(try ReaderPreferencesStore(database: try XCTUnwrap(reopened.association).database)
+            .load()?.sourceKeys, [a.principal], "Collection navigation never rewrites the reader's selection")
+        await reopened.association?.close()
+    }
+
 }
 
 /// §5.3/PD-6: the media window is a **per-operation** limit derived from facts the run measures, never a fraction
