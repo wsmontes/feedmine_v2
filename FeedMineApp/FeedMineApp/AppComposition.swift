@@ -2587,7 +2587,7 @@ final class FeedAssociation {
             Self.log("lifecycle checkpoint")
             // What the trace saw leaves with it: a run cut short still says everything it observed.
             trace?.flush()
-            let lease = try store.state.presentation.map { try PublicationStore(database: database).hiddenTail(editionID: $0.editionID) } ?? nil
+            let lease = try store.state.presentation.map { try PublicationStore(database: database).hiddenTail(editionID: $0.editionID, protectingThrough: $0.window.items.last?.id) } ?? nil
             // PD-5: the screen is not visible now, so the house can be tidied: complete media for
             // the next cards and bring local media under the device-derived budget. Seen and visible
             // cards are never changed.
