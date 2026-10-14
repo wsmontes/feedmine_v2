@@ -1,0 +1,242 @@
+[0/1] Planning build
+Building for debugging...
+[0/3] Write sources
+[1/3] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Compiling FeedMineUI EditorialInvitationCadence.swift
+[4/5] Emitting module FeedMineUI
+[5/33] Compiling FeedMineComposition ReaderSourceIdentity.swift
+[6/33] Compiling FeedMineComposition RunwayAcquisitionCycle.swift
+[7/33] Compiling FeedMineComposition SourceCatalogBackend.swift
+[8/35] Compiling FeedMineComposition ReaderActionCoordinator.swift
+[9/35] Compiling FeedMineComposition ReaderAddFeedAdapter.swift
+[10/35] Compiling FeedMineComposition ReaderBookmarkBoxesBackend.swift
+[11/35] Emitting module FeedMineComposition
+[12/35] Compiling FeedMineComposition LegacyCatalogImport.swift
+[13/35] Compiling FeedMineComposition LegacyUserStateImport.swift
+[14/35] Compiling FeedMineComposition MediaHTTPFetcher.swift
+[15/35] Compiling FeedMineComposition ReaderLibraryCoordinator.swift
+[16/35] Compiling FeedMineComposition ReaderMediaCoordinator.swift
+[17/35] Compiling FeedMineComposition ReaderSettingsCoordinator.swift
+[18/35] Compiling FeedMineComposition CatalogUpdateChannel.swift
+[19/35] Compiling FeedMineComposition CatalogUpdater.swift
+[20/35] Compiling FeedMineComposition ColdFeedBootstrap.swift
+[21/35] Compiling FeedMineComposition ReaderDiscoveryPool.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineComposition/ReaderDiscoveryPool.swift:145:13: warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+143 |         let reader = try LegacyCatalogReader(catalogURL: catalogURL)
+144 | 
+145 |         var seen = Set<String>()
+    |             `- warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+146 |         var candidates: [LegacyCatalogSourceRecord] = []
+147 |         if profile.topicNodeKeys.isEmpty {
+[22/35] Compiling FeedMineComposition ReaderDiscoveryTraversal.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineComposition/ReaderDiscoveryPool.swift:145:13: warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+143 |         let reader = try LegacyCatalogReader(catalogURL: catalogURL)
+144 | 
+145 |         var seen = Set<String>()
+    |             `- warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+146 |         var candidates: [LegacyCatalogSourceRecord] = []
+147 |         if profile.topicNodeKeys.isEmpty {
+[23/35] Compiling FeedMineComposition ReaderImportExportCoordinator.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineComposition/ReaderDiscoveryPool.swift:145:13: warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+143 |         let reader = try LegacyCatalogReader(catalogURL: catalogURL)
+144 | 
+145 |         var seen = Set<String>()
+    |             `- warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+146 |         var candidates: [LegacyCatalogSourceRecord] = []
+147 |         if profile.topicNodeKeys.isEmpty {
+[24/35] Compiling FeedMineComposition SourceManagementCoordinator.swift
+[25/35] Compiling FeedMineComposition SyndicationAcquisitionSnapshot.swift
+[26/35] Compiling FeedMineComposition CuratedFeedCoordinator.swift
+[27/35] Compiling FeedMineComposition FeedPresentationHandoff.swift
+[28/35] Compiling FeedMineComposition FeedRunwayDriver.swift
+[29/35] Compiling FeedMineComposition ReaderCollectionsBackend.swift
+[30/35] Compiling FeedMineComposition ReaderContentFilterAdapter.swift
+[31/35] Compiling FeedMineComposition ReaderContentFilterTemplates.swift
+[32/35] Compiling FeedMineComposition CatalogInstallation.swift
+[33/35] Compiling FeedMineComposition CatalogManifest.swift
+[34/35] Compiling FeedMineComposition CatalogSyncPolicy.swift
+[35/82] Compiling FeedMineCompositionTests ColdFeedBootstrapTests.swift
+[36/82] Compiling FeedMineCompositionTests CuratedFeedCoordinatorTests.swift
+[37/83] Emitting module FeedMineCompositionTests
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/ColdFeedBootstrapTests.swift:68:62: warning: conformance of 'ColdURLProtocol' to protocol 'Sendable' is already unavailable
+ 66 |     }
+ 67 | }
+ 68 | private final class ColdURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                        `- warning: conformance of 'ColdURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'ColdURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+ 69 |     // Intercept every request; an unregistered endpoint fails locally instead of reaching the internet.
+ 70 |     override class func canInit(with request: URLRequest) -> Bool { true }
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/FeedPresentationHandoffTests.swift:412:65: warning: conformance of 'HandoffURLProtocol' to protocol 'Sendable' is already unavailable
+410 |     }
+411 | }
+412 | private final class HandoffURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                           `- warning: conformance of 'HandoffURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'HandoffURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+413 |     override class func canInit(with request: URLRequest) -> Bool { true }
+414 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/FeedRunwayDriverTests.swift:791:64: warning: conformance of 'DriverURLProtocol' to protocol 'Sendable' is already unavailable
+789 |     }
+790 | }
+791 | private final class DriverURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                          `- warning: conformance of 'DriverURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'DriverURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+792 |     override class func canInit(with request:URLRequest) -> Bool { DriverHTTPFixture.find(request.url) != nil }
+793 |     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:521:78: warning: conformance of 'ProgressiveDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+519 | }
+520 | 
+521 | private final class ProgressiveDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                                        `- warning: conformance of 'ProgressiveDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'ProgressiveDiscoveryURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+522 |     override class func canInit(with request: URLRequest) -> Bool { true }
+523 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:536:74: warning: conformance of 'OfflineDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+534 | }
+535 | 
+536 | private final class OfflineDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                                    `- warning: conformance of 'OfflineDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'OfflineDiscoveryURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+537 |     override class func canInit(with request: URLRequest) -> Bool { true }
+538 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SyndicationAcquisitionSnapshotTests.swift:314:65: warning: conformance of 'BridgeHTTPProtocol' to protocol 'Sendable' is already unavailable
+312 |     }
+313 | }
+314 | private final class BridgeHTTPProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                           `- warning: conformance of 'BridgeHTTPProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'BridgeHTTPProtocol' inherits conformance to protocol 'Sendable' from superclass here
+315 |     override class func canInit(with request:URLRequest) -> Bool { BridgeHTTPResponse.find(request.url) != nil }
+316 |     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
+[38/86] Compiling FeedMineCompositionTests MembershipAuthorityIntegrationTests.swift
+[39/86] Compiling FeedMineCompositionTests ReaderActionCoordinatorTests.swift
+[40/86] Compiling FeedMineCompositionTests ReaderAddFeedAdapterTests.swift
+[41/86] Compiling FeedMineCompositionTests CatalogPayloadChannelTests.swift
+[42/86] Compiling FeedMineCompositionTests CatalogSyncPolicyTests.swift
+[43/86] Compiling FeedMineCompositionTests CatalogUpdateChannelTests.swift
+[44/86] Compiling FeedMineCompositionTests CatalogUpdaterTests.swift
+[45/86] Compiling ArchitectureSmokeTests SourceManagementStoreTests.swift
+[46/86] Compiling FeedMineCompositionTests ReaderContentFilterPolicyTests.swift
+[47/86] Compiling FeedMineCompositionTests ReaderDiscoveryPoolTests.swift
+[48/86] Compiling FeedMineCompositionTests ReaderImportExportCoordinatorTests.swift
+[49/86] Compiling ArchitectureSmokeTests ReaderShellTests.swift
+[50/86] Compiling FeedMineCompositionTests FeedPresentationHandoffTests.swift
+[51/86] Compiling FeedMineCompositionTests FeedRunwayDriverTests.swift
+[52/86] Emitting module ArchitectureSmokeTests
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.swift:577:17: warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
+575 |         _ = capture.observe(FeedVisualGeometry(offset: 320, extent: 4_000, height: 800))
+576 |         // The card straddles the reference line (half the viewport) while its top edge is above it.
+577 |         capture.observeCard(FeedVisualCardGeometry(cardID: id,
+    |                 `- warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
+578 |             frame: CGRect(x: 0, y: -120, width: 400, height: 600), offset: 420, height: 800), isLast: false)
+579 |         let position = try XCTUnwrap(capture.position)
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.swift:577:17: warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
+575 |         _ = capture.observe(FeedVisualGeometry(offset: 320, extent: 4_000, height: 800))
+576 |         // The card straddles the reference line (half the viewport) while its top edge is above it.
+577 |         capture.observeCard(FeedVisualCardGeometry(cardID: id,
+    |                 `- warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
+578 |             frame: CGRect(x: 0, y: -120, width: 400, height: 600), offset: 420, height: 800), isLast: false)
+579 |         let position = try XCTUnwrap(capture.position)
+[55/86] Compiling FeedMineCompositionTests BookmarkBoxesBackendTests.swift
+[56/86] Compiling FeedMineCompositionTests CatalogAuthorityServer.swift
+[57/86] Compiling ArchitectureSmokeTests ReaderFilterStoreTests.swift
+[58/86] Compiling FeedMineCompositionTests LegacyCatalogImportTests.swift
+[59/86] Compiling FeedMineCompositionTests LegacyUserStateImportTests.swift
+[60/86] Compiling FeedMineCompositionTests CatalogInstallationTests.swift
+[61/86] Compiling FeedMineCompositionTests CatalogManifestTests.swift
+[68/86] Compiling FeedMineCompositionTests ReaderSettingsCoordinatorTests.swift
+[69/86] Compiling FeedMineCompositionTests ReaderSourceIdentityTests.swift
+[70/86] Compiling FeedMineCompositionTests ReplenishmentTraceTests.swift
+[71/86] Compiling FeedMineCompositionTests ReaderLibraryCoordinatorTests.swift
+[72/86] Compiling FeedMineCompositionTests ReaderMediaCoordinatorTests.swift
+[73/86] Compiling FeedMineCompositionTests ReaderPlaybackPositionsAdapterTests.swift
+[74/86] Compiling FeedMineCompositionTests RunwayAcquisitionCycleTests.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+244 |         let entered = expectation(description: "Coverage connector entered")
+245 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+246 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+247 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+248 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:252:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+250 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+251 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+252 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+253 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+254 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[75/86] Compiling FeedMineCompositionTests SelectedSourceCoverageTests.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+244 |         let entered = expectation(description: "Coverage connector entered")
+245 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+246 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+247 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+248 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:252:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+250 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+251 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+252 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+253 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+254 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[76/86] Compiling FeedMineCompositionTests SourceCatalogBackendTests.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+244 |         let entered = expectation(description: "Coverage connector entered")
+245 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+246 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+247 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+248 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:252:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+250 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+251 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+252 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+253 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+254 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[77/86] Compiling FeedMineCompositionTests SourceManagementCoordinatorTests.swift
+[78/86] Compiling FeedMineCompositionTests SyndicationAcquisitionSnapshotTests.swift
+[79/86] Compiling FeedMineCompositionTests TransferScenarioTests.swift
+[85/87] Write Objects.LinkFileList
+[86/87] Linking FeedMinePackageTests
+Build complete! (8.35s)
+Test Suite 'Selected tests' started at 2026-10-13 17:54:01.574.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-10-13 17:54:01.575.
+Test Suite 'EditorialInvitationCadenceTests' started at 2026-10-13 17:54:01.575.
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testAnAnswerBringsTheNextOpportunityBackToAComfortableInterval]' started.
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testAnAnswerBringsTheNextOpportunityBackToAComfortableInterval]' passed (0.004 seconds).
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testAnOfferLeftUnansweredLengthensTheWaitProgressively]' started.
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testAnOfferLeftUnansweredLengthensTheWaitProgressively]' passed (0.000 seconds).
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testASessionBeginsOnlyWhereTheContextChangesAndIsResumedWhenItComesBack]' started.
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testASessionBeginsOnlyWhereTheContextChangesAndIsResumedWhenItComesBack]' passed (0.000 seconds).
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testASubjectIsAskedOnceAndTheSessionHasACap]' started.
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testASubjectIsAskedOnceAndTheSessionHasACap]' passed (0.000 seconds).
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testHidingStopsTheOffersAndReenablingRestoresThem]' started.
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testHidingStopsTheOffersAndReenablingRestoresThem]' passed (0.000 seconds).
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testNewExposureInvalidatesTheInvitationEligibilityReader]' started.
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testNewExposureInvalidatesTheInvitationEligibilityReader]' passed (0.000 seconds).
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testNoOfferBeforeTheReaderHasReadEnoughCards]' started.
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testNoOfferBeforeTheReaderHasReadEnoughCards]' passed (0.000 seconds).
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testOnlyCardsTheReaderReallyPassedCount]' started.
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testOnlyCardsTheReaderReallyPassedCount]' passed (0.000 seconds).
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testReenablingNeverTakesTheSessionPastItsCap]' started.
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testReenablingNeverTakesTheSessionPastItsCap]' passed (0.000 seconds).
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testRepeatedExposureDoesNotInvalidateTheInvitationEligibilityReader]' started.
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testRepeatedExposureDoesNotInvalidateTheInvitationEligibilityReader]' passed (0.060 seconds).
+Test Suite 'EditorialInvitationCadenceTests' passed at 2026-10-13 17:54:01.642.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 0.066 (0.067) seconds
+Test Suite 'FeedMinePackageTests.xctest' passed at 2026-10-13 17:54:01.642.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 0.066 (0.067) seconds
+Test Suite 'Selected tests' passed at 2026-10-13 17:54:01.642.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 0.066 (0.068) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

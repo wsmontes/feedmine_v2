@@ -34,7 +34,7 @@ Primeira tentativa integral (anterior ao adapter de ambiente do app): `bench/run
 
 | Gate | Estado atual nesta sessão | Evidência / pendência |
 |---|---|---|
-| B01 | NOT_RUN nesta sessão (nova corrida pendente) | Descoberta e mudança de perfil |
+| B01 | NOT_RUN (`20261014T004301Z`) | Ambos perfis concluídos sem travar; perfil A respondeu um tema, abaixo dos dois exigidos; demais cláusulas avaliadas passaram |
 | B02 | NOT_RUN nesta sessão (nova corrida pendente) | Relevância, diversidade, mídia |
 | B03 | NOT_RUN nesta sessão (nova corrida pendente) | Trace integral de 30 minutos |
 | B04 | NOT_RUN nesta sessão (nova corrida pendente) | Estabilidade física; anterior 081619Z foi NOT_RUN |
@@ -55,5 +55,9 @@ Replay fiel do perfil B, full trace, `20261014T002900Z`: o teste nativo concluiu
 Regressões nativas seguintes: `testFastFlingWindowChangesDoNotWriteIntoAnActiveGesture`, `testWindowPruningPreservesPositionWithLargeText` e `testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped`: três testes, zero falhas, 227,255 segundos, `TEST SUCCEEDED`. Evidência em `layout-replay/viewport-regressions.log`; xcresult em `/tmp/codex-scroll-derived/Logs/Test/Test-FeedMine-2026.10.13_17-37-39--0700.xcresult`. Revisão independente do diff não encontrou achado acionável. B01 A+B foi reiniciado após liberar cache de compilação; duas recusas por espaço inferior a 3 GB não executaram jornadas e não alteraram o limite congelado.
 
 O diagnóstico fornecido pelo usuário em 2026-10-13 se refere ao snapshot V1 `b5c2f59`, de setembro. Na V2 atual, `ColdFeedBootstrap` distingue trabalho local restante, recurso negado e indisponibilidade; `FeedPresentationHandoff` preserva a apresentação ao receber ausência de nova projeção; `FeedPresentationAdmission` explicita a fronteira entre reserva produzida e lista admitida. Existem regressões para preservação durante aquisição, adiamento sem HTTP e retomada de mídia pendente. Essa correspondência não certifica por si só as jornadas atuais nem encerra a medição física B06. O relatório serve para conferir lacunas, não para transplantar hipóteses sobre `FeedStore`/`Reservoir` da V1 como bugs atuais.
+
+Corrida B01 A+B `20261014T004301Z`: ambos testes nativos concluíram sem travar. Oráculo: `NOT_RUN` por uma só resposta temática em A; demais cláusulas avaliadas passaram (475 fontes no conjunto de aquisição, 77 contribuindo com os primeiros cards, conjuntos A/B distintos). Veredito e fases em `b01-both-profiles/`. Não se mudou driver, corpus, duração nem critério para aceitar a jornada incompleta.
+
+A correção de cardinalidade do lazy layout foi integrada e publicada em `main` como `a681bf2b` (origem `da2b59fd`). Suíte Swift no código corrigido: 1.246 testes, um skipped, zero falhas, exit 0, 61,182 segundos; log `layout-replay/swift-full.log`. O próximo bloqueador observado é a elegibilidade/exposição dos convites: o ledger não é observável e a construção especulativa da view é contada como oferta mostrada. Ambos exigem prova e correção sem aumentar artificialmente o número de exposições.
 
 Revisão independente do adapter: sem novo defeito estático; falta confirmar requisições reais e colocação do xcresult. `swift package clean` recuperou espaço via limpeza nativa sem excluir evidências. Cache GRDB local verificado por `git fsck`, com a revisão fixada `b83108d10f42680d78f23fe4d4d80fc88dab3212`; usado para evitar novo download integral.

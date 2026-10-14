@@ -1,0 +1,775 @@
+Building for debugging...
+[0/31] /Users/wagnermontes/Documents/GitHub/feedmine_v2/.build/arm64-apple-macosx/debug/FeedMinePackageTests.derived/runner.swift
+[1/31] Write sources
+[5/31] Copying Info.plist
+[8/31] Write sources
+[11/31] Copying PrivacyInfo.xcprivacy
+[11/31] Write sources
+[11/31] Copying content_filter_templates.json
+[11/31] Write sources
+[28/31] Write swift-version--58304C5D6DBC2206.txt
+[30/225] Emitting module XMLKit
+[31/227] Compiling GRDB TableRecord+Association.swift
+[32/227] Compiling GRDB TableRecord+QueryInterfaceRequest.swift
+[33/227] Compiling GRDB Association.swift
+[34/227] Compiling GRDB AssociationAggregate.swift
+[35/227] Compiling GRDB MutablePersistableRecord+Insert.swift
+[36/227] Compiling GRDB MutablePersistableRecord+Save.swift
+[37/229] Compiling GRDB TableAlteration.swift
+[38/229] Compiling GRDB TableDefinition.swift
+[39/229] Compiling GRDB VirtualTableModule.swift
+[41/229] Compiling GRDB ForeignKey.swift
+[42/229] Compiling FeedMineDomain Source.swift
+[43/229] Compiling XMLKit XMLStringConvertible.swift
+[44/229] Compiling GRDB FetchableRecord.swift
+[45/229] Compiling GRDB MutablePersistableRecord+DAO.swift
+[46/229] Emitting module FeedMineDomain
+[47/229] Compiling GRDB IndexDefinition.swift
+[49/229] Compiling GRDB FetchableRecord+TableRecord.swift
+[52/229] Compiling GRDB EncodableRecord+Encodable.swift
+[56/229] Compiling GRDB MutablePersistableRecord+Delete.swift
+[57/229] Compiling GRDB Database+SchemaDefinition.swift
+[58/229] Compiling GRDB ForeignKeyDefinition.swift
+[62/229] Compiling GRDB EncodableRecord.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineDomain/OPMLDocument.swift:236:23: warning: result of call to 'popLast()' is unused [#no-usage]
+234 |         let hadChild = hasChild.isEmpty ? false : hasChild.removeLast()
+235 |         guard case .category(let title) = outline else { return }
+236 |         categoryStack.popLast()
+    |                       `- warning: result of call to 'popLast()' is unused [#no-usage]
+237 |         if !hadChild, !title.isEmpty {
+238 |             rejections.append(.init(title: title, rawAddress: nil, reason: .emptyCategory))
+[63/229] Compiling GRDB FetchableRecord+Decodable.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineDomain/OPMLDocument.swift:236:23: warning: result of call to 'popLast()' is unused [#no-usage]
+234 |         let hadChild = hasChild.isEmpty ? false : hasChild.removeLast()
+235 |         guard case .category(let title) = outline else { return }
+236 |         categoryStack.popLast()
+    |                       `- warning: result of call to 'popLast()' is unused [#no-usage]
+237 |         if !hadChild, !title.isEmpty {
+238 |             rejections.append(.init(title: title, rawAddress: nil, reason: .emptyCategory))
+[73/320] Compiling FeedKit RDFFeedChannel.swift
+[74/320] Compiling FeedKit RSSFeed.swift
+[75/335] Compiling GRDB MutablePersistableRecord+Update.swift
+[76/335] Compiling GRDB MutablePersistableRecord+Upsert.swift
+[77/335] Compiling GRDB MutablePersistableRecord.swift
+[78/335] Compiling GRDB PersistableRecord+Insert.swift
+[79/335] Compiling GRDB PersistableRecord+Save.swift
+[80/335] Compiling GRDB PersistableRecord+Upsert.swift
+[81/335] Compiling GRDB PersistableRecord.swift
+[82/335] Compiling GRDB Record.swift
+[83/335] Compiling GRDB TableRecord.swift
+[84/335] Compiling GRDB CaseInsensitiveIdentifier.swift
+[85/335] Compiling GRDB Inflections+English.swift
+[86/335] Compiling GRDB Inflections.swift
+[87/335] Compiling GRDB Mutex.swift
+[88/335] Compiling GRDB OnDemandFuture.swift
+[89/335] Compiling GRDB OrderedDictionary.swift
+[90/335] Compiling GRDB Pool.swift
+[91/335] Compiling GRDB FTS3Pattern.swift
+[92/335] Compiling GRDB FTS3TokenizerDescriptor.swift
+[93/335] Compiling GRDB FTS4.swift
+[94/335] Compiling GRDB FTS5.swift
+[95/335] Compiling GRDB FTS5CustomTokenizer.swift
+[96/335] Compiling GRDB FTS5Pattern.swift
+[97/335] Compiling GRDB FTS5Tokenizer.swift
+[98/335] Compiling GRDB FTS5TokenizerDescriptor.swift
+[99/335] Compiling GRDB FTS5WrapperTokenizer.swift
+[100/335] Compiling GRDB Fixits.swift
+[101/335] Compiling GRDB JSONColumn.swift
+[102/335] Compiling GRDB SQLJSONExpressible.swift
+[103/335] Compiling GRDB SQLJSONFunctions.swift
+[104/335] Compiling GRDB DatabaseMigrator.swift
+[105/335] Compiling GRDB Migration.swift
+[106/335] Compiling GRDB FTS3+QueryInterface.swift
+[107/335] Compiling GRDB FTS5+QueryInterface.swift
+[108/351] Compiling FeedKit MediaRating.swift
+[109/351] Compiling FeedKit MediaReponses.swift
+[110/351] Compiling FeedKit MediaRestriction.swift
+[111/351] Compiling FeedKit MediaRights.swift
+[112/351] Compiling FeedKit MediaScene.swift
+[113/351] Compiling FeedKit MediaScenes.swift
+[114/351] Compiling FeedKit MediaStarRating.swift
+[115/351] Compiling FeedKit MediaStatistics.swift
+[116/351] Compiling FeedKit MediaStatus.swift
+[117/351] Compiling FeedKit MediaSubTitle.swift
+[118/361] Compiling GRDB DatabaseValueConvertible+RawRepresentable.swift
+[119/361] Compiling GRDB JSONRequiredEncoder.swift
+[120/361] Compiling GRDB Optional.swift
+[121/361] Compiling GRDB StandardLibrary.swift
+[122/361] Compiling GRDB TransactionClock.swift
+[123/361] Compiling GRDB TransactionObserver.swift
+[124/361] Compiling GRDB WALSnapshot.swift
+[125/361] Compiling GRDB WALSnapshotTransaction.swift
+[126/361] Compiling GRDB Database+Dump.swift
+[127/361] Compiling GRDB DatabaseReader+dump.swift
+[128/361] Compiling GRDB DumpFormat.swift
+[129/361] Compiling GRDB DebugDumpFormat.swift
+[130/361] Compiling GRDB JSONDumpFormat.swift
+[131/361] Compiling GRDB LineDumpFormat.swift
+[132/361] Compiling GRDB ListDumpFormat.swift
+[133/361] Compiling GRDB QuoteDumpFormat.swift
+[134/361] Compiling GRDB FTS3.swift
+[135/361] Compiling FeedKit MediaDescription.swift
+[136/361] Compiling FeedKit MediaEmbed.swift
+[137/361] Compiling FeedKit MediaGroup.swift
+[138/361] Compiling FeedKit MediaHash.swift
+[139/361] Compiling FeedKit MediaLicence.swift
+[140/361] Compiling FeedKit MediaLocation.swift
+[141/361] Compiling FeedKit MediaParam.swift
+[142/361] Compiling FeedKit MediaPeerLink.swift
+[143/361] Compiling FeedKit MediaPlayer.swift
+[144/361] Compiling FeedKit MediaPrice.swift
+[145/361] Compiling FeedKit RSSFeedSource.swift
+[146/361] Compiling FeedKit RSSFeedTextInput.swift
+[147/361] Compiling FeedKit Atom.swift
+[148/361] Compiling FeedKit AtomLink.swift
+[149/361] Compiling FeedKit CommentAPI.swift
+[150/361] Compiling FeedKit Content.swift
+[151/361] Compiling FeedKit DublinCore.swift
+[152/361] Compiling FeedKit FeedHistory.swift
+[153/361] Compiling FeedKit GMLPoint.swift
+[154/361] Compiling FeedKit GeoRSS.swift
+[155/361] Compiling FeedKit PodcastTags.swift
+[156/361] Compiling FeedKit PodcastTranscript.swift
+[157/361] Compiling FeedKit FeedType.swift
+[158/361] Compiling FeedKit AtomFeed.swift
+[159/361] Compiling FeedKit AtomFeedAuthor.swift
+[160/361] Compiling FeedKit AtomFeedCategory.swift
+[161/361] Compiling FeedKit AtomFeedContent.swift
+[162/361] Compiling FeedKit AtomFeedContributor.swift
+[163/361] Compiling FeedKit AtomFeedEntry.swift
+[164/361] Compiling FeedKit AtomFeedGenerator.swift
+[165/361] Compiling FeedKit AtomFeedLink.swift
+[166/361] Compiling FeedKit AtomFeedSource.swift
+[172/361] Emitting module FeedKit
+[173/361] Compiling FeedKit GeoRSSSimple.swift
+[174/361] Compiling FeedKit GeoRSSSimplePoint.swift
+[175/361] Compiling FeedKit Media.swift
+[176/361] Compiling FeedKit MediaBacklinks.swift
+[177/361] Compiling FeedKit MediaCategory.swift
+[178/361] Compiling FeedKit MediaComments.swift
+[179/361] Compiling FeedKit MediaCommunity.swift
+[180/361] Compiling FeedKit MediaContent.swift
+[181/361] Compiling FeedKit MediaCopyright.swift
+[182/361] Compiling FeedKit MediaCredit.swift
+[193/361] Compiling FeedMineDomainTests FeedIntentTests.swift
+[194/361] Compiling FeedMineDomainTests FeedPlanTests.swift
+[195/361] Compiling FeedMineDomainTests FeedRecipeDefinitionTests.swift
+[196/361] Compiling FeedMineDomainTests IdentifierTests.swift
+[197/361] Compiling FeedMineDomainTests ContentTests.swift
+[198/361] Compiling FeedMineDomainTests ContextIdentityTests.swift
+[199/361] Compiling FeedMineDomainTests ContextTests.swift
+[200/361] Compiling FeedMineDomainTests FeedAddressTests.swift
+[201/361] Compiling FeedMineDomainTests MediaCandidateTests.swift
+[202/361] Compiling FeedMineDomainTests NetworkHostPolicyTests.swift
+[203/361] Compiling FeedKit AtomFeedSubtitle.swift
+[204/361] Compiling FeedKit AtomFeedSummary.swift
+[205/361] Compiling FeedKit AtomFeedTitle.swift
+[206/361] Compiling FeedKit JSONFeed.swift
+[207/361] Compiling FeedKit JSONFeedAttachment.swift
+[208/361] Compiling FeedKit JSONFeedAuthor.swift
+[209/361] Compiling FeedKit JSONFeedHub.swift
+[210/361] Compiling FeedKit JSONFeedItem.swift
+[211/361] Compiling FeedKit RDFFeed.swift
+[214/361] Compiling FeedKit RSSFeedCategory.swift
+[215/361] Compiling FeedKit RSSFeedChannel.swift
+[216/361] Compiling FeedKit RSSFeedCloud.swift
+[217/361] Compiling FeedKit RSSFeedEnclosure.swift
+[218/361] Compiling FeedKit RSSFeedGUID.swift
+[219/361] Compiling FeedKit RSSFeedImage.swift
+[220/361] Compiling FeedKit RSSFeedItem.swift
+[221/361] Compiling FeedKit RSSFeedSkipDay.swift
+[222/361] Compiling FeedKit RSSFeedSkipHours.swift
+[257/361] Compiling FeedKit PodcastValue.swift
+[258/361] Compiling FeedKit PodloveSimpleChapters.swift
+[259/361] Compiling FeedKit Syndication.swift
+[260/361] Compiling FeedKit SyndicationUpdatePeriod.swift
+[261/361] Compiling FeedKit Youtube.swift
+[262/361] Compiling FeedKit ITunes.swift
+[263/361] Compiling FeedKit iTunesCategory.swift
+[264/361] Compiling FeedKit iTunesImage.swift
+[265/361] Compiling FeedKit iTunesOwner.swift
+[266/361] Compiling FeedKit iTunesSubCategory.swift
+[293/361] Compiling FeedKit MediaTag.swift
+[294/361] Compiling FeedKit MediaText.swift
+[295/361] Compiling FeedKit MediaThumbnail.swift
+[296/361] Compiling FeedKit MediaTitle.swift
+[297/361] Compiling FeedKit Podcast.swift
+[298/361] Compiling FeedKit PodcastAlternateEnclosure.swift
+[299/361] Compiling FeedKit PodcastImage.swift
+[300/361] Compiling FeedKit PodcastLiveItem.swift
+[301/361] Emitting module GRDB
+[302/361] Compiling GRDB ReadWriteLock.swift
+[303/361] Compiling GRDB ReceiveValuesOn.swift
+[304/361] Compiling GRDB Refinable.swift
+[305/361] Compiling GRDB Utils.swift
+[306/361] Compiling GRDB DatabaseCancellable.swift
+[307/361] Compiling GRDB ValueConcurrentObserver.swift
+[308/361] Compiling GRDB ValueWriteOnlyObserver.swift
+[309/361] Compiling GRDB Fetch.swift
+[310/361] Compiling GRDB Map.swift
+[311/361] Compiling GRDB RemoveDuplicates.swift
+[312/361] Compiling GRDB Trace.swift
+[313/361] Compiling GRDB ValueReducer.swift
+[314/361] Compiling GRDB SharedValueObservation.swift
+[315/361] Compiling GRDB ValueObservation.swift
+[316/361] Compiling GRDB ValueObservationScheduler.swift
+[317/361] Compiling GRDB resource_bundle_accessor.swift
+[343/361] Compiling GRDB DatabaseRegionObservation.swift
+[344/361] Compiling GRDB DatabaseSchemaCache.swift
+[345/376] Compiling FeedMinePersistence RuntimeMigrations.swift
+[346/377] Compiling FeedMinePersistence SessionStore.swift
+[347/377] Compiling FeedMinePersistence RuntimeDatabase.swift
+[348/377] Compiling FeedMinePersistence ReaderLibraryStore.swift
+[349/377] Compiling FeedMinePersistence AcquisitionAdmissionStore.swift
+[350/377] Compiling FeedMinePersistence AcquisitionTargetStore.swift
+[351/377] Compiling FeedMinePersistence ReaderPreferencesStore.swift
+[352/377] Compiling FeedMinePersistence LegacyUserStateReader.swift
+[353/377] Compiling FeedMinePersistence PersistenceValueCoding.swift
+[354/377] Compiling FeedMinePersistence CatalogCompiler.swift
+[355/377] Compiling FeedMinePersistence CatalogOPMLScan.swift
+[356/377] Compiling FeedMinePersistence ContentStore.swift
+[357/377] Compiling FeedMinePersistence LegacyCatalogReader.swift
+[358/377] Emitting module FeedMinePersistence
+[359/377] Compiling FeedMinePersistence PlaybackPositionStore.swift
+[360/377] Compiling FeedMinePersistence PublicationStore.swift
+[361/407] Compiling FeedMineEditorial SelectionExposure.swift
+[362/408] Compiling FeedMineMedia PublishedMedia.swift
+[363/408] Compiling FeedMineEditorial ReaderFilterEligibility.swift
+[364/408] Compiling FeedMineMedia MediaPreparation.swift
+[365/408] Compiling FeedMineMedia MediaResolver.swift
+[366/408] Compiling FeedMineMedia MediaRetention.swift
+[367/408] Compiling FeedMineEditorial HTMLNamedEntities.swift
+[368/408] Compiling FeedMineMedia MediaPolicy.swift
+[369/408] Compiling FeedMineEditorial FeedPlanResolver.swift
+[370/408] Compiling FeedMineEditorial FeedRecipeResolution.swift
+[371/408] Compiling FeedMineMedia MediaHousekeeping.swift
+[372/408] Compiling FeedMineMedia ImageMaterializer.swift
+[373/408] Compiling FeedMineEditorial SelectionEngine.swift
+[374/408] Compiling FeedMineEditorial EditorialPolicy.swift
+[375/408] Compiling FeedMineEditorial FeedEditorialAssessment.swift
+[376/408] Compiling FeedMineAcquisition FeedConnector.swift
+[377/408] Compiling FeedMineAcquisition AcquisitionPlanner.swift
+[378/408] Emitting module FeedMineMedia
+[379/408] Compiling FeedMineMedia AssetStore.swift
+[380/408] Compiling FeedMineEditorial SourceAlternation.swift
+[381/414] Compiling FeedMineAcquisition AdmissionPolicy.swift
+[382/414] Compiling FeedMineAcquisition BootstrapPlan.swift
+[383/414] Compiling FeedMineAcquisition AcquisitionTarget.swift
+[384/414] Compiling FeedMineAcquisition AcquisitionModels.swift
+[385/414] Compiling FeedMineAcquisition AcquisitionBatch.swift
+[386/414] Compiling FeedMineAcquisition AcquisitionBackoff.swift
+[387/414] Emitting module FeedMineAcquisition
+[388/414] Compiling FeedMineAcquisition AcquisitionCoordinator.swift
+[389/414] Emitting module FeedMineEditorial
+[390/414] Compiling FeedMineEditorial Candidate.swift
+[391/414] Compiling FeedMineEditorial CandidateProvider.swift
+[392/452] Compiling FeedMinePublication PublishedOrigin.swift
+[393/453] Compiling FeedMinePublication PublishedPrimaryAction.swift
+[394/453] Compiling FeedMinePublication RenderContract.swift
+[395/453] Emitting module FeedMinePublication
+[396/453] Compiling FeedMinePublication PublicationRunwayFacts.swift
+[397/453] Compiling FeedMinePublication SessionCursor.swift
+[398/453] Compiling FeedMinePublication PublicationPersistenceMapping.swift
+[399/453] Compiling FeedMinePublication PublishedCard.swift
+[400/453] Compiling FeedMinePublication FeedEdition.swift
+[401/453] Compiling FeedMinePublication FeedSegment.swift
+[402/453] Compiling FeedMinePublication FeedWindow.swift
+[403/453] Compiling FeedMinePublication PublicationCardDraft.swift
+[404/453] Compiling FeedMinePublication PublicationCoordinator.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMinePublication/PublicationCoordinator.swift:161:17: warning: no calls to throwing functions occur within 'try' expression
+159 |         }
+160 |         let records = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
+161 |         return (try PublicationPersistenceMapping.record(edition), records.0, records.1)
+    |                 `- warning: no calls to throwing functions occur within 'try' expression
+162 |     }
+163 | 
+[405/453] Compiling FeedMinePublication PublicationHistory.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMinePublication/PublicationCoordinator.swift:161:17: warning: no calls to throwing functions occur within 'try' expression
+159 |         }
+160 |         let records = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
+161 |         return (try PublicationPersistenceMapping.record(edition), records.0, records.1)
+    |                 `- warning: no calls to throwing functions occur within 'try' expression
+162 |     }
+163 | 
+[406/453] Compiling FeedMineSyndication SyndicationMediaLocator.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:106:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type '[NSRegularExpression]', consider removing it
+104 |     // Immutable after construction; NSRegularExpression matching is thread-safe.
+105 |     // One expression per element (no back-reference), comments first so `<!-- <script> -->` cannot open one.
+106 |     nonisolated(unsafe) private static let hiddenMarkup: [NSRegularExpression] =
+    |     `- warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type '[NSRegularExpression]', consider removing it
+107 |         (["<!--[\\s\\S]*?(?:-->|\\z)"] + ["script", "style", "template", "iframe"].map { name in
+108 |             "<\(name)(?=[\\s/>])[^>]*>[\\s\\S]*?(?:</\(name)\\s*>|\\z)"
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:111:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+109 |         }).map { try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
+110 |     // Immutable after construction; NSRegularExpression matching is thread-safe.
+111 |     nonisolated(unsafe) private static let imgTag = try! NSRegularExpression(pattern: "<img\\b[^>]*>", options: [.caseInsensitive])
+    |     `- warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+112 |     nonisolated(unsafe) private static let attributePattern = try! NSRegularExpression(
+113 |         pattern: "([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", options: [])
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:112:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+110 |     // Immutable after construction; NSRegularExpression matching is thread-safe.
+111 |     nonisolated(unsafe) private static let imgTag = try! NSRegularExpression(pattern: "<img\\b[^>]*>", options: [.caseInsensitive])
+112 |     nonisolated(unsafe) private static let attributePattern = try! NSRegularExpression(
+    |     `- warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+113 |         pattern: "([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", options: [])
+114 |     // Two to four digits per side so aspect ratios such as 16x9 or 4x3 are never mistaken for sizes.
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:115:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+113 |         pattern: "([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", options: [])
+114 |     // Two to four digits per side so aspect ratios such as 16x9 or 4x3 are never mistaken for sizes.
+115 |     nonisolated(unsafe) private static let tinyDimension = try! NSRegularExpression(
+    |     `- warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+116 |         pattern: "(?:^|[-_./])(\\d{2,4})x(\\d{2,4})(?:[-_.?/&]|$)", options: [])
+117 | 
+[407/453] Compiling FeedMineSyndication SyndicationTranslator.swift
+[408/453] Compiling FeedMineSyndication SyndicationItemIdentity.swift
+[409/453] Emitting module FeedMineSyndication
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:106:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type '[NSRegularExpression]', consider removing it
+104 |     // Immutable after construction; NSRegularExpression matching is thread-safe.
+105 |     // One expression per element (no back-reference), comments first so `<!-- <script> -->` cannot open one.
+106 |     nonisolated(unsafe) private static let hiddenMarkup: [NSRegularExpression] =
+    |     `- warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type '[NSRegularExpression]', consider removing it
+107 |         (["<!--[\\s\\S]*?(?:-->|\\z)"] + ["script", "style", "template", "iframe"].map { name in
+108 |             "<\(name)(?=[\\s/>])[^>]*>[\\s\\S]*?(?:</\(name)\\s*>|\\z)"
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:111:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+109 |         }).map { try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
+110 |     // Immutable after construction; NSRegularExpression matching is thread-safe.
+111 |     nonisolated(unsafe) private static let imgTag = try! NSRegularExpression(pattern: "<img\\b[^>]*>", options: [.caseInsensitive])
+    |     `- warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+112 |     nonisolated(unsafe) private static let attributePattern = try! NSRegularExpression(
+113 |         pattern: "([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", options: [])
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:112:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+110 |     // Immutable after construction; NSRegularExpression matching is thread-safe.
+111 |     nonisolated(unsafe) private static let imgTag = try! NSRegularExpression(pattern: "<img\\b[^>]*>", options: [.caseInsensitive])
+112 |     nonisolated(unsafe) private static let attributePattern = try! NSRegularExpression(
+    |     `- warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+113 |         pattern: "([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", options: [])
+114 |     // Two to four digits per side so aspect ratios such as 16x9 or 4x3 are never mistaken for sizes.
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:115:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+113 |         pattern: "([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", options: [])
+114 |     // Two to four digits per side so aspect ratios such as 16x9 or 4x3 are never mistaken for sizes.
+115 |     nonisolated(unsafe) private static let tinyDimension = try! NSRegularExpression(
+    |     `- warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+116 |         pattern: "(?:^|[-_./])(\\d{2,4})x(\\d{2,4})(?:[-_.?/&]|$)", options: [])
+117 | 
+[410/453] Compiling FeedMineSyndication SyndicationHTTP.swift
+[411/453] Compiling FeedMineSyndication SyndicationConnector.swift
+[412/453] Compiling FeedMineSyndication FeedLinkInput.swift
+[413/453] Compiling FeedMineSyndication FeedDiscoveryTransport.swift
+[414/453] Compiling FeedMineSyndication FeedLinkResolver.swift
+[415/527] Compiling FeedMinePersistenceTests ContentStoreCandidateWindowScaleTests.swift
+[416/527] Compiling FeedMinePersistenceTests ContentStoreCandidateWindowTests.swift
+[417/527] Compiling FeedMinePersistenceTests ContentStoreMediaCandidateTests.swift
+[418/529] Compiling FeedMinePersistenceTests LegacyCatalogMetadataTests.swift
+[419/529] Compiling FeedMinePersistenceTests LegacyCatalogReaderTests.swift
+[420/529] Emitting module FeedMineRuntime
+[421/529] Compiling FeedMinePersistenceTests ContentStoreTests.swift
+[422/529] Compiling FeedMinePersistenceTests ContextIdentityPersistenceTests.swift
+[423/529] Compiling FeedMinePersistenceTests InitialPublicationAtomicityTests.swift
+[424/529] Compiling FeedMinePersistenceTests MediaCandidateSchemaTests.swift
+[425/529] Compiling FeedMinePersistenceTests PublicationSchemaTests.swift
+[426/529] Compiling FeedMinePersistenceTests PublicationStoreTests.swift
+[427/529] Compiling FeedMineRuntime RunwayPolicy.swift
+[428/529] Compiling FeedMineRuntime ViewportObservation.swift
+[429/529] Emitting module FeedMineEditorialTests
+[430/529] Compiling FeedMineAcquisitionTests FakeFiniteConnector.swift
+[431/529] Emitting module FeedMineAcquisitionTests
+[432/529] Emitting module FeedMinePersistenceTests
+[433/531] Compiling FeedMinePersistenceTests AcquisitionAdmissionStoreTests.swift
+[434/531] Compiling FeedMinePersistenceTests AcquisitionTargetStoreTests.swift
+[435/531] Compiling FeedMinePersistenceTests AvailabilityPrecedenceTests.swift
+[436/531] Compiling FeedMinePersistenceTests CanonicalSupplySchemaTests.swift
+[437/531] Compiling FeedMinePersistenceTests CatalogCompilerReferenceTests.swift
+[438/531] Compiling FeedMinePersistenceTests CatalogCompilerTests.swift
+[439/531] Compiling FeedMinePersistenceTests PlaybackPositionStoreTests.swift
+[440/531] Compiling FeedMinePersistenceTests PublicationMediaUseTests.swift
+[441/531] Compiling FeedMinePersistenceTests PublicationRunwayStoreTests.swift
+[442/531] Compiling FeedMineSyndicationTests SyndicationMediaLocatorHostTests.swift
+[443/532] Compiling FeedMinePersistenceTests RuntimeDatabaseTests.swift
+[444/532] Compiling FeedMinePersistenceTests RuntimeMigrationRebuildTests.swift
+[445/532] Compiling FeedMinePublicationTests RenderContractTests.swift
+[446/533] Compiling FeedMinePublicationTests PublishedOriginTests.swift
+[447/533] Compiling FeedMineDomainTests ReaderLanguageChoiceTests.swift
+[448/533] Compiling FeedMineDomainTests ReaderSettingsTests.swift
+[449/534] Compiling FeedMineAcquisitionTests FakeContinuousConnector.swift
+[450/534] Compiling FeedMineAcquisitionTests BootstrapPlanTests.swift
+[451/534] Compiling FeedMineEditorialTests WeightedScoringTests.swift
+[452/534] Compiling FeedMineDomainTests ReaderFilterTests.swift
+[455/534] Compiling FeedMineSyndicationTests SyndicationMediaLocatorHiddenMarkupTests.swift
+[456/534] Compiling FeedMinePublicationTests PublishedMediaTests.swift
+[457/534] Compiling FeedMinePublicationTests PublicationRunwayFactsTests.swift
+[458/534] Compiling FeedMinePublicationTests PublishedCardTests.swift
+[459/534] Compiling FeedMineEditorialTests ReaderFilterEligibilityTests.swift
+[460/534] Compiling FeedMineEditorialTests FeedRecipeResolutionTests.swift
+[469/534] Emitting module FeedMineDomainTests
+[470/534] Compiling FeedMineDomainTests OPMLDocumentTests.swift
+[471/534] Compiling FeedMineSyndicationTests SyndicationCheckpointTests.swift
+[472/534] Compiling FeedMineMediaTests MediaPreparationTests.swift
+[473/534] Compiling FeedMinePersistenceTests ReaderLibraryStoreTests.swift
+[474/534] Compiling FeedMinePersistenceTests ReaderPreferencesStoreTests.swift
+[475/534] Compiling FeedMineMediaTests ImageMaterializerTests.swift
+[477/534] Compiling FeedMineMediaTests MediaHousekeepingTests.swift
+[479/534] Compiling FeedMineMediaTests MediaPolicyResolverTests.swift
+[482/534] Emitting module FeedMineMediaTests
+[483/534] Compiling FeedMineMediaTests AssetStoreTests.swift
+[484/534] Compiling FeedMinePublicationTests SessionCursorTests.swift
+[485/534] Compiling FeedMineEditorialTests CandidateProviderTests.swift
+[486/554] Compiling FeedMineEditorialTests SelectionEngineTests.swift
+[487/554] Compiling FeedMineEditorialTests SourceDiversityContractTests.swift
+[488/554] Compiling FeedMineAcquisitionTests AdmissionPolicyTests.swift
+[489/554] Compiling FeedMineAcquisitionTests AcquisitionTargetTests.swift
+[490/601] Compiling FeedMineAcquisitionTests AcquisitionBackoffConcurrencyTests.swift
+[491/601] Compiling FeedMineUI EditorialInvitationCadence.swift
+[492/601] Compiling FeedMineUI FeedDesignTokens.swift
+[493/601] Compiling FeedMineAcquisitionTests AcquisitionPlannerTests.swift
+[494/601] Compiling FeedMineSyndicationTests ResidualOperationalFailureTests.swift
+[495/601] Compiling FeedMineSyndicationTests FeedLinkResolverTests.swift
+[496/601] Compiling FeedMineSyndicationTests SyndicationHTTPTests.swift
+[497/601] Compiling FeedMineUI FeedItemCardView.swift
+[498/601] Compiling FeedMineUI FeedItemRowView.swift
+[499/601] Compiling FeedMineDomainTests SourceTests.swift
+[500/601] Compiling FeedMineSyndicationTests SyndicationConnectorTests.swift
+[501/601] Compiling FeedMineUI TaxonomyBrowseView.swift
+[502/601] Compiling FeedMineUI MiniPlayerBar.swift
+[503/601] Compiling FeedMineUI ReaderFilterLens.swift
+[504/601] Compiling FeedMineUI ReaderFilterStore.swift
+[505/601] Compiling FeedMineUI ReaderSettingsStore.swift
+[506/601] Compiling FeedMineUI ReaderSettingsView.swift
+[507/601] Compiling FeedMineUI CuratedFeedInspectorView.swift
+[508/601] Compiling FeedMineUI ReaderDiscoveryPreferencesView.swift
+[509/601] Emitting module FeedMinePublicationTests
+[510/601] Compiling FeedMineUI ReaderAppearance.swift
+[511/601] Compiling FeedMineUI BookmarkBoxesStore.swift
+[512/601] Compiling FeedMineUI BookmarkBoxesView.swift
+[513/601] Compiling FeedMineUI FeedLoadingView.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:40:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 38 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 39 |         // columns, and its SQL text is not part of this comparison.
+ 40 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 41 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 42 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement", "updated_at"])
+[514/601] Compiling FeedMineUI FeedNativeScrollOffset.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:40:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 38 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 39 |         // columns, and its SQL text is not part of this comparison.
+ 40 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 41 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 42 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement", "updated_at"])
+[515/601] Compiling FeedMineUI FeedPreparationView.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:40:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 38 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
+ 39 |         // columns, and its SQL text is not part of this comparison.
+ 40 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
+    |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+ 41 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
+ 42 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement", "updated_at"])
+[516/601] Compiling FeedMineSyndicationTests CompletedDocumentFingerprintTests.swift
+[517/601] Emitting module FeedMineSyndicationTests
+[518/601] Compiling FeedMineSyndicationTests ExecutionDocumentReuseTests.swift
+[519/601] Compiling FeedMineSyndicationTests SyndicationTranslatorTests.swift
+[520/601] Compiling FeedMineUI FeedSourceOption.swift
+[521/601] Compiling FeedMineUI FeedEditorialInvitationView.swift
+[522/601] Compiling FeedMineUI FeedInteractionPresentation.swift
+[525/601] Compiling FeedMineUI CountriesListView.swift
+[526/601] Compiling FeedMineAcquisitionTests AcquisitionCoordinatorTests.swift
+[548/603] Emitting module FeedMineRuntimeTests
+[553/603] Compiling FeedMineUI ReaderHeader.swift
+[554/603] Compiling FeedMineUI ReaderMenu.swift
+[555/603] Compiling FeedMineUI ReaderNavigation.swift
+[556/603] Compiling FeedMineUI ReaderShell.swift
+[557/603] Compiling FeedMineUI ReaderContentFilterView.swift
+[558/603] Compiling FeedMineUI FeedWindowOffsetCorrection.swift
+[559/603] Compiling FeedMineUI ClipboardBanner.swift
+[560/603] Compiling FeedMineUI ToastView.swift
+[561/603] Compiling FeedMineUI FilterSheetView.swift
+[562/603] Compiling FeedMineUI ReaderFilterDraft.swift
+[578/608] Compiling FeedMineRuntimeTests RunwayPolicyTests.swift
+[579/608] Compiling FeedMineRuntimeTests ScrollAdmissionTests.swift
+[580/608] Compiling FeedMineUI ReaderCardAction.swift
+[581/608] Compiling FeedMineUI CollectionsStore.swift
+[582/608] Compiling FeedMineUI CollectionsView.swift
+[585/608] Emitting module FeedMineUI
+[592/608] Compiling FeedMineUI ReaderDiscoveryControls.swift
+[593/608] Compiling FeedMineUI ReaderOnboardingView.swift
+[594/608] Compiling FeedMineUI FeedReadingDecision.swift
+[595/608] Compiling FeedMineUI FeedReadingSurface.swift
+[596/608] Compiling FeedMineUI FeedScrollPosition.swift
+[597/608] Compiling FeedMineUI FeedPresentationState.swift
+[598/608] Compiling FeedMineUI FeedSavedListView.swift
+[599/608] Compiling FeedMineUI FeedScreen.swift
+[600/608] Compiling FeedMineUI FeedScreenStore.swift
+[601/608] Compiling FeedMineUI FeedSourcesEmptyStateView.swift
+[602/608] Compiling FeedMineUI NodeSourcesView.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+269 |             .buttonStyle(.plain)
+270 |             .accessibilityIdentifier("node-child-\(child.id)")
+271 |             Toggle("", isOn: Binding(get: { isEnabled }, set: onToggle))
+    |                                                               `- warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+272 |                 .labelsHidden()
+273 |                 .tint(.green)
+[603/608] Compiling FeedMineUI SourceManagementStore.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+269 |             .buttonStyle(.plain)
+270 |             .accessibilityIdentifier("node-child-\(child.id)")
+271 |             Toggle("", isOn: Binding(get: { isEnabled }, set: onToggle))
+    |                                                               `- warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+272 |                 .labelsHidden()
+273 |                 .tint(.green)
+[604/608] Compiling FeedMineUI SourceManagementView.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+269 |             .buttonStyle(.plain)
+270 |             .accessibilityIdentifier("node-child-\(child.id)")
+271 |             Toggle("", isOn: Binding(get: { isEnabled }, set: onToggle))
+    |                                                               `- warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+272 |                 .labelsHidden()
+273 |                 .tint(.green)
+[605/608] Compiling FeedMineUI ReaderAddFeedViews.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+269 |             .buttonStyle(.plain)
+270 |             .accessibilityIdentifier("node-child-\(child.id)")
+271 |             Toggle("", isOn: Binding(get: { isEnabled }, set: onToggle))
+    |                                                               `- warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+272 |                 .labelsHidden()
+273 |                 .tint(.green)
+[606/608] Compiling FeedMineUI ReaderImportExportViews.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+269 |             .buttonStyle(.plain)
+270 |             .accessibilityIdentifier("node-child-\(child.id)")
+271 |             Toggle("", isOn: Binding(get: { isEnabled }, set: onToggle))
+    |                                                               `- warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+272 |                 .labelsHidden()
+273 |                 .tint(.green)
+[607/641] Compiling FeedMineComposition ReaderMediaCoordinator.swift
+[608/641] Compiling FeedMineComposition ReaderPlaybackPositionsAdapter.swift
+[609/641] Compiling FeedMineComposition ReaderSettingsCoordinator.swift
+[610/644] Compiling FeedMineComposition ReaderAddFeedAdapter.swift
+[611/644] Compiling FeedMineComposition ReaderBookmarkBoxesBackend.swift
+[612/644] Compiling FeedMineComposition ReaderCollectionsBackend.swift
+[613/644] Compiling FeedMineComposition ReaderContentFilterAdapter.swift
+[614/644] Compiling FeedMineComposition ReaderSourceIdentity.swift
+[615/644] Compiling FeedMineComposition RunwayAcquisitionCycle.swift
+[616/644] Compiling FeedMineComposition SourceCatalogBackend.swift
+[617/644] Compiling FeedMineComposition ReaderContentFilterPolicy.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineComposition/ReaderDiscoveryPool.swift:145:13: warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+143 |         let reader = try LegacyCatalogReader(catalogURL: catalogURL)
+144 | 
+145 |         var seen = Set<String>()
+    |             `- warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+146 |         var candidates: [LegacyCatalogSourceRecord] = []
+147 |         if profile.topicNodeKeys.isEmpty {
+[618/644] Compiling FeedMineComposition ReaderContentFilterTemplates.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineComposition/ReaderDiscoveryPool.swift:145:13: warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+143 |         let reader = try LegacyCatalogReader(catalogURL: catalogURL)
+144 | 
+145 |         var seen = Set<String>()
+    |             `- warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+146 |         var candidates: [LegacyCatalogSourceRecord] = []
+147 |         if profile.topicNodeKeys.isEmpty {
+[619/644] Compiling FeedMineComposition ReaderDiscoveryPool.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineComposition/ReaderDiscoveryPool.swift:145:13: warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+143 |         let reader = try LegacyCatalogReader(catalogURL: catalogURL)
+144 | 
+145 |         var seen = Set<String>()
+    |             `- warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+146 |         var candidates: [LegacyCatalogSourceRecord] = []
+147 |         if profile.topicNodeKeys.isEmpty {
+[620/644] Compiling FeedMineComposition LegacyUserStateImport.swift
+[621/644] Compiling FeedMineComposition MediaHTTPFetcher.swift
+[622/644] Compiling FeedMineComposition MediaPreparationOpportunity.swift
+[623/644] Compiling FeedMineComposition ReaderActionCoordinator.swift
+[624/644] Compiling FeedMineComposition ReaderDiscoveryTraversal.swift
+[625/644] Compiling FeedMineComposition ReaderImportExportCoordinator.swift
+[626/644] Compiling FeedMineComposition ReaderLibraryCoordinator.swift
+[627/644] Compiling FeedMineComposition SourceManagementCoordinator.swift
+[628/644] Compiling FeedMineComposition SyndicationAcquisitionSnapshot.swift
+[629/644] Compiling FeedMineComposition resource_bundle_accessor.swift
+[630/644] Compiling FeedMineComposition CatalogUpdater.swift
+[631/644] Compiling FeedMineComposition ColdFeedBootstrap.swift
+[632/644] Compiling FeedMineComposition CuratedFeedCoordinator.swift
+[633/644] Compiling FeedMineComposition FeedMineBootstrap.swift
+[634/644] Emitting module FeedMineComposition
+[635/644] Compiling FeedMineComposition FeedMineEnvironment.swift
+[636/644] Compiling FeedMineComposition FeedPresentationHandoff.swift
+[637/644] Compiling FeedMineComposition FeedRunwayDriver.swift
+[638/644] Compiling FeedMineComposition LegacyCatalogImport.swift
+[639/644] Compiling FeedMineComposition CatalogInstallation.swift
+[640/644] Compiling FeedMineComposition CatalogManifest.swift
+[641/644] Compiling FeedMineComposition CatalogSyncPolicy.swift
+[642/644] Compiling FeedMineComposition CatalogUpdateChannel.swift
+[643/691] Compiling FeedMineCompositionTests ReaderLibraryCoordinatorTests.swift
+[644/691] Compiling FeedMineCompositionTests ReaderMediaCoordinatorTests.swift
+[645/691] Compiling FeedMineCompositionTests ReaderPlaybackPositionsAdapterTests.swift
+[646/694] Compiling FeedMineCompositionTests MembershipAuthorityIntegrationTests.swift
+[647/694] Compiling FeedMineCompositionTests ReaderActionCoordinatorTests.swift
+[648/694] Compiling FeedMineCompositionTests ReaderAddFeedAdapterTests.swift
+[649/694] Compiling FeedMineCompositionTests ReaderSettingsCoordinatorTests.swift
+[650/694] Compiling FeedMineCompositionTests ReaderSourceIdentityTests.swift
+[651/694] Compiling FeedMineCompositionTests ReplenishmentTraceTests.swift
+[652/694] Compiling FeedMineCompositionTests CatalogPayloadChannelTests.swift
+[653/694] Compiling FeedMineCompositionTests CatalogSyncPolicyTests.swift
+[654/694] Compiling FeedMineCompositionTests CatalogUpdateChannelTests.swift
+[655/694] Compiling FeedMineCompositionTests CatalogUpdaterTests.swift
+[656/694] Emitting module FeedMineCompositionTests
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/ColdFeedBootstrapTests.swift:68:62: warning: conformance of 'ColdURLProtocol' to protocol 'Sendable' is already unavailable
+ 66 |     }
+ 67 | }
+ 68 | private final class ColdURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                        `- warning: conformance of 'ColdURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'ColdURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+ 69 |     // Intercept every request; an unregistered endpoint fails locally instead of reaching the internet.
+ 70 |     override class func canInit(with request: URLRequest) -> Bool { true }
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/FeedPresentationHandoffTests.swift:412:65: warning: conformance of 'HandoffURLProtocol' to protocol 'Sendable' is already unavailable
+410 |     }
+411 | }
+412 | private final class HandoffURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                           `- warning: conformance of 'HandoffURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'HandoffURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+413 |     override class func canInit(with request: URLRequest) -> Bool { true }
+414 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/FeedRunwayDriverTests.swift:791:64: warning: conformance of 'DriverURLProtocol' to protocol 'Sendable' is already unavailable
+789 |     }
+790 | }
+791 | private final class DriverURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                          `- warning: conformance of 'DriverURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'DriverURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+792 |     override class func canInit(with request:URLRequest) -> Bool { DriverHTTPFixture.find(request.url) != nil }
+793 |     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:521:78: warning: conformance of 'ProgressiveDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+519 | }
+520 | 
+521 | private final class ProgressiveDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                                        `- warning: conformance of 'ProgressiveDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'ProgressiveDiscoveryURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+522 |     override class func canInit(with request: URLRequest) -> Bool { true }
+523 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:536:74: warning: conformance of 'OfflineDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+534 | }
+535 | 
+536 | private final class OfflineDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                                    `- warning: conformance of 'OfflineDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'OfflineDiscoveryURLProtocol' inherits conformance to protocol 'Sendable' from superclass here
+537 |     override class func canInit(with request: URLRequest) -> Bool { true }
+538 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SyndicationAcquisitionSnapshotTests.swift:314:65: warning: conformance of 'BridgeHTTPProtocol' to protocol 'Sendable' is already unavailable
+312 |     }
+313 | }
+314 | private final class BridgeHTTPProtocol: URLProtocol, @unchecked Sendable {
+    |                     |                                           `- warning: conformance of 'BridgeHTTPProtocol' to protocol 'Sendable' is already unavailable
+    |                     `- note: 'BridgeHTTPProtocol' inherits conformance to protocol 'Sendable' from superclass here
+315 |     override class func canInit(with request:URLRequest) -> Bool { BridgeHTTPResponse.find(request.url) != nil }
+316 |     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
+[657/694] Compiling FeedMineCompositionTests BookmarkBoxesBackendTests.swift
+[658/694] Compiling FeedMineCompositionTests CatalogAuthorityServer.swift
+[659/694] Compiling FeedMineCompositionTests CatalogInstallationTests.swift
+[660/694] Compiling FeedMineCompositionTests CatalogManifestTests.swift
+[661/694] Compiling FeedMineCompositionTests ReaderContentFilterPolicyTests.swift
+[662/694] Compiling FeedMineCompositionTests ReaderDiscoveryPoolTests.swift
+[663/694] Compiling FeedMineCompositionTests ReaderImportExportCoordinatorTests.swift
+[664/694] Compiling FeedMineCompositionTests SourceManagementCoordinatorTests.swift
+[665/694] Compiling FeedMineCompositionTests SyndicationAcquisitionSnapshotTests.swift
+[666/694] Compiling FeedMineCompositionTests TransferScenarioTests.swift
+[667/694] Compiling ArchitectureSmokeTests ReaderFilterStoreTests.swift
+[670/695] Compiling ArchitectureSmokeTests SourceManagementStoreTests.swift
+[671/695] Compiling FeedMineCompositionTests RunwayAcquisitionCycleTests.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+244 |         let entered = expectation(description: "Coverage connector entered")
+245 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+246 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+247 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+248 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:252:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+250 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+251 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+252 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+253 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+254 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[672/695] Compiling FeedMineCompositionTests SelectedSourceCoverageTests.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+244 |         let entered = expectation(description: "Coverage connector entered")
+245 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+246 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+247 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+248 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:252:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+250 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+251 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+252 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+253 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+254 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[673/695] Compiling FeedMineCompositionTests SourceCatalogBackendTests.swift
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+244 |         let entered = expectation(description: "Coverage connector entered")
+245 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
+246 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
+    |                                                                              `- warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+247 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
+248 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
+
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:252:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+250 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
+251 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
+252 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+    |             `- warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+253 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
+254 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
+[674/695] Compiling FeedMineCompositionTests FeedRunwayDriverTests.swift
+[675/695] Compiling FeedMineCompositionTests LegacyCatalogImportTests.swift
+[676/695] Compiling FeedMineCompositionTests LegacyUserStateImportTests.swift
+[677/695] Compiling FeedMineCompositionTests ColdFeedBootstrapTests.swift
+[678/695] Compiling FeedMineCompositionTests CuratedFeedCoordinatorTests.swift
+[679/695] Compiling FeedMineCompositionTests FeedPresentationHandoffTests.swift
+[680/695] Compiling ArchitectureSmokeTests ReaderShellTests.swift
+[681/695] Emitting module ArchitectureSmokeTests
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.swift:577:17: warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
+575 |         _ = capture.observe(FeedVisualGeometry(offset: 320, extent: 4_000, height: 800))
+576 |         // The card straddles the reference line (half the viewport) while its top edge is above it.
+577 |         capture.observeCard(FeedVisualCardGeometry(cardID: id,
+    |                 `- warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
+578 |             frame: CGRect(x: 0, y: -120, width: 400, height: 600), offset: 420, height: 800), isLast: false)
+579 |         let position = try XCTUnwrap(capture.position)
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.swift:577:17: warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
+575 |         _ = capture.observe(FeedVisualGeometry(offset: 320, extent: 4_000, height: 800))
+576 |         // The card straddles the reference line (half the viewport) while its top edge is above it.
+577 |         capture.observeCard(FeedVisualCardGeometry(cardID: id,
+    |                 `- warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
+578 |             frame: CGRect(x: 0, y: -120, width: 400, height: 600), offset: 420, height: 800), isLast: false)
+579 |         let position = try XCTUnwrap(capture.position)
+[694/697] Emitting module FeedMinePackageTests
+[695/697] Compiling FeedMinePackageTests runner.swift
+[695/697] Write Objects.LinkFileList
+[696/697] Linking FeedMinePackageTests
+Build complete! (54.59s)
+Test Suite 'Selected tests' started at 2026-10-13 17:53:39.788.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-10-13 17:53:39.789.
+Test Suite 'EditorialInvitationCadenceTests' started at 2026-10-13 17:53:39.789.
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testNewExposureInvalidatesTheInvitationEligibilityReader]' started.
+/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/ArchitectureSmokeTests/EditorialInvitationCadenceTests.swift:70: error: -[ArchitectureSmokeTests.EditorialInvitationCadenceTests testNewExposureInvalidatesTheInvitationEligibilityReader] : Asynchronous wait failed: Exceeded timeout of 0.2 seconds, with unfulfilled expectations: "a new exposure updates the invitation's eligibility".
+Test Case '-[ArchitectureSmokeTests.EditorialInvitationCadenceTests testNewExposureInvalidatesTheInvitationEligibilityReader]' failed (0.610 seconds).
+Test Suite 'EditorialInvitationCadenceTests' failed at 2026-10-13 17:53:40.399.
+	 Executed 1 test, with 1 failure (0 unexpected) in 0.610 (0.610) seconds
+Test Suite 'FeedMinePackageTests.xctest' failed at 2026-10-13 17:53:40.399.
+	 Executed 1 test, with 1 failure (0 unexpected) in 0.610 (0.610) seconds
+Test Suite 'Selected tests' failed at 2026-10-13 17:53:40.399.
+	 Executed 1 test, with 1 failure (0 unexpected) in 0.610 (0.611) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.
