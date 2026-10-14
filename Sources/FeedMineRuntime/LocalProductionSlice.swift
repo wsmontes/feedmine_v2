@@ -139,15 +139,14 @@ public struct LocalProductionSlice: Sendable {
         }
     }
 
-    /// Attribution of the published tail: its frozen source plus the origin's current memberships.
+    /// PD-4 uses the published tail's frozen attribution, not mutable supply memberships.
     private func neighbor(editionID: FeedEditionID, tail: PublicationCardID) throws -> SelectionNeighbor {
         let window = try publicationHistory.window(editionID: editionID,
             around: FeedWindowAnchor(cardID: tail, placement: .top), backwardCapacity: 0, forwardCapacity: 0)
         guard let card = window.cards.first(where: { $0.id == tail }) else {
             throw LocalProductionSliceError.invalidExposureFacts
         }
-        var sources = Set(try contentStore.memberships(originRecordID: card.origin.originRecordID).map(\.sourceID))
-        if let frozen = card.origin.sourceID { sources.insert(frozen) }
+        let sources = Set(card.origin.sourceID.map { [$0] } ?? [])
         return SelectionNeighbor(sourceIDs: sources, providerID: card.origin.providerID)
     }
 }
