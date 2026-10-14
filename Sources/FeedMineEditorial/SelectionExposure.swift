@@ -26,8 +26,10 @@ public struct SelectionExposureSnapshot: Hashable, Sendable {
     /// Whitespace-collapsed headline and summary plus the primary media locator. Must equal
     /// `PublicationStore.materialKey` over the published title/primary text (copied verbatim from
     /// the candidate) and the revision's ordinal-0 media locator.
-    public static func materialKey(headline: String?, summary: String?, primaryMedia: String? = nil) -> String {
-        MaterialContentIdentity.key(title: headline, text: summary, primaryMedia: primaryMedia)
+    public static func materialKey(headline: String?, summary: String?, primaryMedia: String? = nil,
+        declaredBody: String? = nil, bodyObserved: Bool = false) -> String {
+        MaterialContentIdentity.key(title: headline, text: summary, primaryMedia: primaryMedia,
+            declaredBody: declaredBody, bodyObserved: bodyObserved)
     }
 
     /// PD-1: an already-published origin is eligible again only with materially new content, and
@@ -37,6 +39,7 @@ public struct SelectionExposureSnapshot: Hashable, Sendable {
         if unseenOriginIDs.contains(candidate.originRecordID) { return true }
         guard let keys = publishedMaterialKeys[candidate.originRecordID] else { return true }
         return keys.contains(Self.materialKey(headline: candidate.headline, summary: candidate.summary,
-            primaryMedia: candidate.primaryMediaLocator))
+            primaryMedia: candidate.primaryMediaLocator, declaredBody: candidate.declaredBody,
+            bodyObserved: candidate.bodyObserved))
     }
 }

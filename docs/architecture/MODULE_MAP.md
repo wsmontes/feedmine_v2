@@ -5,7 +5,7 @@
 ## FeedMineDomain
 
 - purpose: Canonical semantic vocabulary. Phase 1A originally established identities/source/content; current Domain contains the subsequently implemented intent, context, plan, media-candidate and reader values as well. Phase labels here are provenance, not a claim that other Domain files remain scaffolds.
-- owns: Identifiers, context, intent, plans, sources, content, media evidence, interaction offers.
+- owns: Identifiers, context, intent, plans, sources, content, media evidence, interaction offers; shared conservative readable-text conversion (`ReadablePublicationText`) and the `HTMLNamedEntities` table. K-15 moved both from Editorial to Domain so Syndication and Editorial share one implementation without a forbidden dependency.
 - does not own: I/O, persistence, protocol implementations or UI.
 - allowed imports: Swift standard library and Foundation value types (UUID, Date, URL); no other FeedMine module.
 - downstream consumers: FeedMinePersistence, FeedMineAcquisition, FeedMineSyndication, FeedMineEditorial, FeedMineMedia, FeedMinePublication, FeedMineRuntime, FeedMineUI, FeedMineComposition.
@@ -37,7 +37,7 @@
 ## FeedMineEditorial
 
 - purpose: Selection for future publication from local supply.
-- owns: Plan resolution, candidate retrieval, editorial policy and deterministic selection.
+- owns: Plan resolution, candidate retrieval, editorial policy and deterministic selection. Uses Domain's `ReadablePublicationText`; it no longer owns that converter or `HTMLNamedEntities`.
 - does not own: Connectors, protocol SDK/JSON, media preparation or publication.
 - allowed imports: FeedMineDomain, FeedMinePersistence. Package dependency reality is documented in `Package.swift`; this is a module-boundary map, not a scaffold-status report.
 - downstream consumers: FeedMinePublication, FeedMineRuntime, FeedMineComposition.

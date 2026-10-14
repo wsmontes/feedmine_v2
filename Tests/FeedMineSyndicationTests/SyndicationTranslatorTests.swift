@@ -14,7 +14,7 @@ final class SyndicationTranslatorTests: XCTestCase {
     }
     private var prefix: String { "syndication:"+target.rawValue.uuidString.lowercased() }
     private func rss(_ items: String) -> Data {
-        Data("<rss version=\"2.0\" xmlns:itunes=\"http://www.itunes.com/dtds/podcast-1.0.dtd\" xmlns:media=\"http://search.yahoo.com/mrss/\"><channel><title>Feed</title><language>pt-BR</language>\(items)</channel></rss>".utf8)
+        Data("<rss version=\"2.0\" xmlns:itunes=\"http://www.itunes.com/dtds/podcast-1.0.dtd\" xmlns:media=\"http://search.yahoo.com/mrss/\" xmlns:content=\"http://purl.org/rss/1.0/modules/content/\"><channel><title>Feed</title><language>pt-BR</language>\(items)</channel></rss>".utf8)
     }
     private func atom(_ entries: String) -> Data {
         Data("<feed xmlns=\"http://www.w3.org/2005/Atom\" xmlns:media=\"http://search.yahoo.com/mrss/\"><title>Feed</title>\(entries)</feed>".utf8)
@@ -88,7 +88,7 @@ final class SyndicationTranslatorTests: XCTestCase {
         XCTAssertEqual(o.versionIdentity?.namespace,prefix+":atom-updated"); XCTAssertEqual(o.versionIdentity?.role,.version)
         XCTAssertEqual(o.versionIdentity?.value.hasPrefix(String(date("2020-01-02T00:00:00Z").timeIntervalSinceReferenceDate.bitPattern,radix: 16)+":"),true)
         XCTAssertEqual(o.authoredAt,date("2020-01-01T00:00:00Z")); XCTAssertEqual(o.modifiedAt,date("2020-01-02T00:00:00Z"))
-        XCTAssertEqual(o.primaryLink?.absoluteString,"https://example.test/article"); XCTAssertEqual(o.summary,"Summary"); XCTAssertNil(o.bodyText)
+        XCTAssertEqual(o.primaryLink?.absoluteString,"https://example.test/article"); XCTAssertEqual(o.summary,"Summary"); XCTAssertEqual(o.bodyText,"Not copied")
     }
     func test07AtomLinkFallback() throws {
         let o = try item(atom("<entry><link rel=\"enclosure\" href=\"https://example.test/audio\"/><link href=\"https://example.test/article\"/></entry>"))
@@ -327,4 +327,93 @@ final class SyndicationTranslatorTests: XCTestCase {
         let json2 = try item(json("{\"id\":\"j\",\"date_modified\":\"2020-01-02T00:00:00Z\",\"title\":\"B\"}"))
         XCTAssertNotEqual(json1.versionIdentity, json2.versionIdentity)
     }
+
+    // MARK: K-15 — RSS/Atom body and declared provenance
+    func testK15RSSContentEncodedPopulatesReadableBodyWithoutOverwritingSummary() throws {
+        let o = try item(rss("""
+            <item><guid>body</guid><description>Short &amp; distinct</description>
+            <content:encoded><![CDATA[<p>Full <strong>story</strong> &amp; detail.</p><p>Second paragraph.</p>]]></content:encoded></item>
+            """))
+        XCTAssertEqual(o.fingerprintGeneration, 2)
+        XCTAssertEqual(o.bodySourceElement, "content:encoded")
+        XCTAssertEqual(o.summary, "Short & distinct")
+        XCTAssertEqual(o.bodyText, "Full story & detail.\n\nSecond paragraph.")
+        XCTAssertNotEqual(o.summary, o.bodyText)
+        let summaryOnly = try item(rss("<item><guid>summary-only</guid><description>Summary</description></item>"))
+        XCTAssertEqual(summaryOnly.summary, "Summary")
+        XCTAssertNil(summaryOnly.bodyText)
+        XCTAssertNil(summaryOnly.bodySourceElement)
+    }
+
+    func testK15AtomHTMLContentPopulatesReadableBodyAndPreservesSummary() throws {
+        let o = try item(atom("""
+            <entry><id>urn:html</id><updated>2020-01-02T00:00:00Z</updated>
+            <summary>Brief summary</summary>
+            <content type="html">&lt;p&gt;Complete &amp;amp; distinct.&lt;/p&gt;</content></entry>
+            """))
+        XCTAssertEqual(o.summary, "Brief summary")
+        XCTAssertEqual(o.bodyText, "Complete & distinct.")
+        XCTAssertEqual(o.bodySourceElement, "content")
+        XCTAssertEqual(o.fingerprintGeneration, 2)
+        XCTAssertNotNil(o.legacyVersionIdentity)
+        XCTAssertNotEqual(o.versionIdentity, o.legacyVersionIdentity)
+    }
+
+    func testK15AtomXHTMLContentPopulatesBodyText() throws {
+        let o = try item(atom("""
+            <entry><id>urn:xhtml</id><summary>Short</summary>
+            <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>First <strong>section</strong>.</p><p>Second section.</p></div></content></entry>
+            """))
+        XCTAssertEqual(o.summary, "Short")
+        XCTAssertEqual(o.bodyText, "First section.\n\nSecond section.")
+        XCTAssertEqual(o.bodySourceElement, "content")
+    }
+
+    func testK15AtomRemoteAndBinaryContentNeverClaimsLocalBody() throws {
+        let remote = try item(atom("""
+            <entry><id>urn:remote</id><summary>Only summary</summary>
+            <content type="text/html" src="https://example.test/body"/></entry>
+            """))
+        let binary = try item(atom("""
+            <entry><id>urn:binary</id><summary>Only summary</summary>
+            <content type="application/octet-stream">AQID</content></entry>
+            """))
+        XCTAssertEqual(remote.summary, "Only summary")
+        XCTAssertNil(remote.bodyText); XCTAssertNil(remote.bodySourceElement)
+        XCTAssertEqual(binary.summary, "Only summary")
+        XCTAssertNil(binary.bodyText); XCTAssertNil(binary.bodySourceElement)
+    }
+
+    func testK15BodyOnlyAtomEditChangesGeneration2FingerprintButNotLegacyFingerprint() throws {
+        func xml(_ body: String) -> Data {
+            atom("<entry><id>urn:edit</id><updated>2020-01-02T00:00:00Z</updated>" +
+                "<summary>Same summary</summary><content type=\"text\">\(body)</content></entry>")
+        }
+        let a = try item(xml("Original")), b = try item(xml("Updated"))
+        XCTAssertEqual(a.legacyVersionIdentity, b.legacyVersionIdentity)
+        XCTAssertNotEqual(a.versionIdentity, b.versionIdentity)
+        XCTAssertEqual(a.summary, b.summary)
+    }
+
+
+    func testK15AtomPlainTextPreservesLiteralMarkupAndDistinctEdits() throws {
+        func content(_ escaped: String, type: String? = "text") throws -> AcquisitionObservation {
+            let attribute = type.map { " type=\"\($0)\"" } ?? ""
+            return try item(atom("""
+                <entry><id>urn:literal</id><updated>2020-01-02T00:00:00Z</updated>
+                <summary>Short summary</summary><content\(attribute)>\(escaped)</content></entry>
+                """))
+        }
+        let first = try content("&lt;script&gt;exemplo&lt;/script&gt;")
+        let changed = try content("&lt;script&gt;outro&lt;/script&gt;")
+        XCTAssertEqual(first.bodyText, "<script>exemplo</script>")
+        XCTAssertEqual(changed.bodyText, "<script>outro</script>")
+        XCTAssertEqual(first.summary, "Short summary")
+        XCTAssertNotEqual(first.versionIdentity, changed.versionIdentity)
+        XCTAssertEqual(try content("&lt;b&gt;literal&lt;/b&gt;", type: nil).bodyText, "<b>literal</b>")
+        XCTAssertEqual(try content("&lt;a&gt;literal&lt;/a&gt;", type: "text/plain").bodyText, "<a>literal</a>")
+        XCTAssertEqual(try content("one  \n   two", type: "text").bodyText, "one two")
+    }
+
+
 }
