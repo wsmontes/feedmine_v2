@@ -12,8 +12,11 @@ public struct SyndicationTargetRegistration: Hashable, Sendable {
     public let targetGeneration: UInt64
     public let endpoint: URL
     public let bindings: [SourceBinding]
+    /// An optional language declaration; nil, blank and `und` are unknown, not mismatches.
+    public let language: String?
 
-    public init?(targetID: AcquisitionTargetID, targetGeneration: UInt64, endpoint: URL, bindings: [SourceBinding]) {
+    public init?(targetID: AcquisitionTargetID, targetGeneration: UInt64, endpoint: URL, bindings: [SourceBinding],
+        language: String? = nil) {
         guard targetGeneration > 0, !bindings.isEmpty,
             bindings.allSatisfy({ $0.state == .enabled && $0.connectorKind == .syndication }),
             Set(bindings.map(\.id)).count == bindings.count,
@@ -24,6 +27,7 @@ public struct SyndicationTargetRegistration: Hashable, Sendable {
         self.targetGeneration = targetGeneration
         self.endpoint = endpoint
         self.bindings = bindings
+        self.language = language
     }
 
     fileprivate var configuration: SyndicationTargetConfiguration {
@@ -116,10 +120,24 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
         case .source(let source): sourceID = source
         case .search: return [] // Local search never starts remote acquisition.
         }
+        // The explicit context lens takes precedence; otherwise the saved discovery answer applies.
+        // No declared languages means unrestricted acquisition.
+        let languages: Set<String>
+        if !context.filter.languages.isEmpty {
+            languages = context.filter.languages
+        } else if discovery?.contextKey == context.key {
+            languages = discovery?.profile.languages ?? []
+        } else {
+            languages = []
+        }
         let authority = AcquisitionTargetAuthority(database: database)
         var targets: [AcquisitionTarget] = []
         for registration in registrations {
             if let sourceID, !registration.bindings.contains(where: { $0.sourceID == sourceID }) { continue }
+            // An undeclared language does not contradict an explicit choice. Reject only a known mismatch.
+            if !languages.isEmpty, let language = registration.language,
+                !ReaderLanguageCode.isUndeclared(language),
+                !ReaderLanguageCode.answered(language, by: languages) { continue }
             guard let target = try authority.target(id: registration.targetID) else {
                 throw SyndicationAcquisitionSnapshotError.missingDurableTarget(registration.targetID)
             }
@@ -136,7 +154,17 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
             if target.state == .enabled { targets.append(target) }
         }
         if let discovery, discovery.contextKey == context.key {
-            targets.append(contentsOf: try discovery.targets(for: context))
+            let discovered = try discovery.targets(for: context)
+            if languages.isEmpty {
+                targets.append(contentsOf: discovered)
+            } else {
+                let answering = Set(discovery.entries.filter { entry in
+                    guard let language = entry.language,
+                        !ReaderLanguageCode.isUndeclared(language) else { return true }
+                    return ReaderLanguageCode.answered(language, by: languages)
+                }.map(\.targetID))
+                targets.append(contentsOf: discovered.filter { answering.contains($0.id) })
+            }
         }
         var seen = Set<AcquisitionTargetID>()
         return targets.filter { seen.insert($0.id).inserted }
