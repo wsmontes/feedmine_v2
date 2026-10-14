@@ -294,6 +294,31 @@ final class ColdFeedBootstrapTests: XCTestCase {
         XCTAssertEqual(try ContentStore(database: f.database).memberships(originRecordID: origin.originRecordID).map(\.sourceID), [f.source])
         try await assertPublished(f, identity: id, snapshot: snapshot)
     }
+
+    /// The head-keeping rule has to survive the publication that matters: with nothing to publish locally the
+    /// first attempt returns `.notYet`, so the installed presentation comes from the retry after acquisition.
+    /// That retry used to omit `keepsAdmittedHead`, and the default `false` silently installed a list bounded
+    /// around the reader — the owner's decision was defeated on every cold launch that needed a fetch
+    /// (2026-10-14: the admitted head walked from the Edition's first card to the reader's own, and the card a
+    /// reader had passed left the drawn list).
+    func testRetryAfterAcquisitionKeepsTheAdmittedHead() async throws {
+        let f = try fixture(items: 30), id = identity()
+        let outcome = try await owner(f).run(identity: id, resources: resources(local: 30, targets: 1),
+            backwardCapacity: 0, forwardCapacity: 4, keepsAdmittedHead: true)
+        let installed = try published(outcome)
+        let head = try XCTUnwrap(installed.window.items.first?.id)
+        XCTAssertEqual(f.http.calls, 1, "the retry after acquisition is the path that installs")
+        let reader = try XCTUnwrap(installed.window.items.last)
+        let anchor = ViewportObservation(anchor: .init(cardID: reader.id, placement: .top))
+        _ = try await f.session.submitViewport(anchor)
+        let after = try await f.session.admitPresentation(.forwardScroll(anchor))
+        let moved = try XCTUnwrap(after)
+        XCTAssertGreaterThan(moved.window.items.count, installed.window.items.count,
+            "the move must extend the window, or the head assertion below is vacuous")
+        XCTAssertEqual(moved.window.items.first?.id, head,
+            "a presentation installed with keepsAdmittedHead keeps every card above the reader")
+        XCTAssertGreaterThanOrEqual(moved.window.items.count, installed.window.items.count)
+    }
     func testC3NonexhaustedLocalMissForbidsHTTPAndEligibility() async throws {
         let f = try fixture(sourceContext: true), id = identity()
         try Self.seed(f.database, source: SourceID(), count: 3)

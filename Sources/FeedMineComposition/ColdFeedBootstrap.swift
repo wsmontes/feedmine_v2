@@ -223,7 +223,8 @@ public struct ColdFeedBootstrap: Sendable {
             // New canonical supply may precede the cursor. Only a real change reopens the head.
             try self.authority.restartExamination()
             if case .published(let snapshot) = try await self.attemptFirstPublication(identity: identity, resources: resources,
-                backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity, prepareLegacyMedia: true, mediaOpportunity: mediaOpportunity) {
+                backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
+                keepsAdmittedHead: keepsAdmittedHead, prepareLegacyMedia: true, mediaOpportunity: mediaOpportunity) {
                 first.snapshot = snapshot
                 await evidence?(.published(snapshot))
             }
@@ -232,7 +233,8 @@ public struct ColdFeedBootstrap: Sendable {
         let changed = results.contains { $0.selectableSupplyChanged }
         guard changed else { return .noPublicationAfterAcquisition(firstProgress, results) }
         switch try await attemptFirstPublication(identity: identity, resources: resources,
-            backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity, prepareLegacyMedia: true, mediaOpportunity: mediaOpportunity) {
+            backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
+            keepsAdmittedHead: keepsAdmittedHead, prepareLegacyMedia: true, mediaOpportunity: mediaOpportunity) {
         case .published(let snapshot): return .published(snapshot)
         case .notYet(let progress): return .noPublicationAfterAcquisition(progress, results)
         }
@@ -242,7 +244,7 @@ public struct ColdFeedBootstrap: Sendable {
     /// A pending head advances examination without reserving an Edition or reader position.
     /// Legacy preparation retains its one-slice outcome.
     private func attemptFirstPublication(identity: ColdFeedPublicationIdentity, resources: ColdFeedBootstrapResources,
-        backwardCapacity: Int, forwardCapacity: Int, keepsAdmittedHead: Bool = false, prepareLegacyMedia: Bool,
+        backwardCapacity: Int, forwardCapacity: Int, keepsAdmittedHead: Bool, prepareLegacyMedia: Bool,
         remainingWindows: Int? = nil, mediaOpportunity: MediaPreparationOpportunity? = nil) async throws -> PublicationAttempt {
         try Task.checkCancellation()
         let remaining = remainingWindows ?? resources.localWindowCapacity
@@ -298,7 +300,7 @@ public struct ColdFeedBootstrap: Sendable {
     }
 
     private func installedPublication(identity: ColdFeedPublicationIdentity, backwardCapacity: Int,
-        forwardCapacity: Int, keepsAdmittedHead: Bool = false) async throws -> ColdFeedBootstrapOutcome {
+        forwardCapacity: Int, keepsAdmittedHead: Bool) async throws -> ColdFeedBootstrapOutcome {
         let bounds = FeedPresentationBounds(backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
             contextKey: plan.context.key, keepsAdmittedHead: keepsAdmittedHead)
         guard let snapshot = try await session.admitPresentation(.initial(bounds)),
