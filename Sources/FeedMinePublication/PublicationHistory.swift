@@ -90,7 +90,35 @@ public struct PublicationHistory: Sendable {
     }
 
     /// Nil means no saved session. Storage and mapping failures propagate unchanged.
+    ///
+    /// The window carries `backwardCapacity` cards behind the cursor: the bound of a presentation whose admitted
+    /// list is bounded **around** the reader, where a card cut behind the anchor stays reachable because the next
+    /// backward admission re-reads it from the local store.
     public func restore(backwardCapacity: Int, forwardCapacity: Int, contextKey: ContextKey? = nil) throws -> RestoredPublication? {
+        try restore(contextKey: contextKey) { edition, anchor in
+            try publicationStore.cards(editionID: edition.id, around: anchor.cardID,
+                backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity)
+        }
+    }
+
+    /// The same restore with the backward side **unbounded**: every card from the Edition's start up to the cursor,
+    /// plus `forwardCapacity` cards after it.
+    ///
+    /// This is the shape a presentation installed with `keepsAdmittedHead` had while it ran — it held every card
+    /// above the reader — so it is the shape a reopen must install. Restoring only a neighbourhood around the
+    /// cursor drops cards the reader had already passed, and a card they saved above the cursor is not drawn at all
+    /// (B05, 2026-10-14: the saved card sat 22 cards above the durable position and was absent after
+    /// terminate+launch). The reach is the Edition itself: a cap below it would be the same defect for a reader who
+    /// read past the cap, which is why there is none.
+    public func restoreFromEditionStart(forwardCapacity: Int, contextKey: ContextKey? = nil) throws -> RestoredPublication? {
+        try restore(contextKey: contextKey) { edition, anchor in
+            try publicationStore.cards(editionID: edition.id, fromEditionStartTo: anchor.cardID,
+                forwardCapacity: forwardCapacity)
+        }
+    }
+
+    private func restore(contextKey: ContextKey?,
+        read: (FeedEdition, FeedWindowAnchor) throws -> [PublicationStore.CardRecord]) throws -> RestoredPublication? {
         let saved = try contextKey.map { try sessionStore.checkpoint(for: $0) } ?? sessionStore.checkpoint()
         guard let checkpoint = saved else { return nil }
         let cursor = try PublicationPersistenceMapping.cursor(checkpoint)
@@ -98,8 +126,10 @@ public struct PublicationHistory: Sendable {
             throw PublicationHistoryError.missingEdition
         }
         let edition = try PublicationPersistenceMapping.edition(record)
-        let window = try window(editionID: edition.id, around: cursor.anchor,
-            backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity)
+        let cards = try read(edition, cursor.anchor).map(PublicationPersistenceMapping.card)
+        guard let window = FeedWindow(editionID: edition.id, cards: cards, anchor: cursor.anchor) else {
+            throw PublicationHistoryError.invalidWindow
+        }
         guard let restored = RestoredPublication(edition: edition, cursor: cursor, window: window) else {
             throw PublicationHistoryError.inconsistentRestore
         }

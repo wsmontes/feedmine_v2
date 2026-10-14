@@ -17,9 +17,9 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
         func increment() { lock.lock(); count += 1; lock.unlock() }
         var value: Int { lock.lock(); defer { lock.unlock() }; return count }
     }
-    func testRepeatedLocalRefreshMeasuresDecodeWork() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
+
+    /// One real PNG written at the media key's own path, as the pipeline stores it. Returns its digest.
+    private func writeLocalAsset(directory: URL) throws -> String {
         let context = try XCTUnwrap(CGContext(data: nil, width: 600, height: 400, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: 600, height: 400))
@@ -32,6 +32,101 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
         let assets = directory.appendingPathComponent("Media/sha256")
         try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
         try bytes.write(to: assets.appendingPathComponent(digest))
+        return digest
+    }
+
+    private func localAssetURL(directory: URL, digest: String) -> URL {
+        directory.appendingPathComponent("Media/sha256").appendingPathComponent(digest)
+    }
+
+    /// The run's own revision, shared by the measurements below.
+    private static func measuredEdition() -> PublicationStore.EditionRecord {
+        let v = PolicyVersion(rawValue: 1)
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: .init(request: .main),
+            catalogGeneration: .init(rawValue: 1), userSelectionVersion: v, eligibilityPolicyVersion: v, scoringPolicyVersion: v,
+            sequencingPolicyVersion: v, exposurePolicyVersion: v, selectionSchemaVersion: .init(rawValue: 1))
+        return PublicationStore.EditionRecord(id: FeedEditionID(), editorialRevision: revision, publicationSchemaVersion: 1,
+            selectionSeed: 1, createdAt: Date())
+    }
+
+    private static func measuredCard(digest: String) -> PublicationStore.CardRecord {
+        PublicationStore.CardRecord(id: PublicationCardID(), originRecordID: OriginRecordID(), originRevisionID: OriginRevisionID(),
+            sourceID: nil, providerID: nil, sourceDisplayName: nil, providerDisplayName: nil, contentEntityID: nil, contentClusterID: nil,
+            title: "Measured", primaryText: "Local image", timestampValue: nil, timestampKind: nil, mediaKey: "sha256:" + digest,
+            mediaPixelWidth: 600, mediaPixelHeight: 400, mediaMimeType: "image/png", renderLayout: "hero", renderMediaAspectRatio: 1.5,
+            primaryActionKind: nil, primaryActionReference: nil)
+    }
+
+    /// **O custo da restauração larga, medido** (B05, 2026-10-14). Com `keepsAdmittedHead` a reabertura admite a
+    /// cabeça da edição; o que ela **não** faz é decodificar um pixel por carta que o leitor já passou: a banda de
+    /// residência em volta da posição durável decide os pixels, como na sessão viva. A corrida imprime as duas
+    /// leituras no mesmo banco — a limitada (o que o reopen fazia) e a cabeça — para que a diferença de custo seja
+    /// o número medido, e não uma afirmação.
+    func testKeptHeadRestoreAdmitsTheEditionStartAndDecodesOnlyTheResidencyBand() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let digest = try writeLocalAsset(directory: directory)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let edition = Self.measuredEdition()
+        // A deep reader, the scale B03 reached (811 cards): the durable position stands at the 750th card, so the
+        // head the reopen admits is 766 cards long while the residency band stays the bound's 25.
+        let durable = 749
+        let cards = (0..<800).map { _ in Self.measuredCard(digest: digest) }
+        let head = Array(cards[...durable]), tail = Array(cards[(durable + 1)...])
+        let store = PublicationStore(database: database)
+        try store.createInitialEdition(edition,
+            firstSegment: .init(id: FeedSegmentID(), editionID: edition.id, ordinal: 0, segmentSeed: 1,
+                publicationSchemaVersion: 1, createdAt: Date(), cardIDs: head.map(\.id)),
+            cards: head,
+            initialCheckpoint: .init(editionID: edition.id, cardID: cards[durable].id, anchorPlacement: "center",
+                updatedAt: Date()))
+        try store.appendSegment(.init(id: FeedSegmentID(), editionID: edition.id, ordinal: 1, segmentSeed: 2,
+            publicationSchemaVersion: 1, createdAt: Date(), cardIDs: tail.map(\.id)), cards: tail)
+        let assets = directory.appendingPathComponent("Media")
+
+        let boundedCounter = Counter()
+        let boundedSession = FeedSession(publicationHistory: .init(database: database),
+            imageDecoder: .init(assetDirectory: assets, heroMaxPixel: 300, thumbnailMaxPixel: 88,
+                onDecode: { boundedCounter.increment() }))
+        var boundedStart = ProcessInfo.processInfo.systemUptime
+        let boundedValue = try await boundedSession.admitPresentation(
+            .restore(.init(backwardCapacity: 8, forwardCapacity: 16)))
+        let bounded = try XCTUnwrap(boundedValue)
+        let boundedMilliseconds = (ProcessInfo.processInfo.systemUptime - boundedStart) * 1000
+
+        let headCounter = Counter()
+        let headSession = FeedSession(publicationHistory: .init(database: database),
+            imageDecoder: .init(assetDirectory: assets, heroMaxPixel: 300, thumbnailMaxPixel: 88,
+                onDecode: { headCounter.increment() }))
+        boundedStart = ProcessInfo.processInfo.systemUptime
+        let restoredValue = try await headSession.admitPresentation(
+            .restore(.init(backwardCapacity: 8, forwardCapacity: 16, keepsAdmittedHead: true)))
+        let restored = try XCTUnwrap(restoredValue)
+        let headMilliseconds = (ProcessInfo.processInfo.systemUptime - boundedStart) * 1000
+        let band = 8 + 1 + 16
+        print("B05 restore cost: bounded cards=\(bounded.window.items.count) decodes=\(boundedCounter.value) "
+            + "ms=\(boundedMilliseconds) | head cards=\(restored.window.items.count) decodes=\(headCounter.value) "
+            + "ms=\(headMilliseconds) band=\(band)")
+
+        XCTAssertEqual(bounded.window.items.map(\.id), Array(cards[(durable - 8)...(durable + 16)]).map(\.id),
+            "a leitura limitada começa oito cartas antes da posição durável")
+        XCTAssertEqual(boundedCounter.value, band)
+        XCTAssertEqual(restored.window.items.map(\.id), Array(cards[0...(durable + 16)]).map(\.id),
+            "a cabeça admite da primeira carta da edição até a reserva à frente da âncora")
+        XCTAssertEqual(restored.window.items.first?.id, cards[0].id)
+        XCTAssertEqual(restored.window.anchor.cardID, cards[durable].id)
+        XCTAssertEqual(headCounter.value, band,
+            "só a banda em volta da posição durável decodifica: a cabeça não custa um pixel por carta passada")
+        XCTAssertEqual(restored.window.items.filter { $0.image != nil }.count, band,
+            "as cartas acima da banda mantêm seus valores congelados com o bitmap liberado")
+        XCTAssertTrue(restored.window.items[0].isImageBearing, "a residência nunca redefine o layout publicado")
+        XCTAssertEqual(restored.window.items[0].mediaAspectRatio, bounded.window.items.last?.mediaAspectRatio)
+    }
+
+    func testRepeatedLocalRefreshMeasuresDecodeWork() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let digest = try writeLocalAsset(directory: directory)
         let database = try RuntimeDatabase(location: .init(directory: directory))
         let v = PolicyVersion(rawValue: 1), revision = EditorialRevision(id: EditorialRevisionID(), contextKey: .init(request: .main),
             catalogGeneration: .init(rawValue: 1), userSelectionVersion: v, eligibilityPolicyVersion: v, scoringPolicyVersion: v,
@@ -67,7 +162,7 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
         print("T7 CPU user=\(userCPU)s system=\(systemCPU)s processMaxRSS=\(after.ru_maxrss) bytes")
         print("T7 projection 100 refresh: ms=\((ProcessInfo.processInfo.systemUptime - started) * 1000), decode=\(counter.value), decodedBytes=\(300 * 200 * 4)")
         XCTAssertEqual(counter.value, 1, "Unchanged visible card must reuse its prepared image")
-        try FileManager.default.removeItem(at: assets.appendingPathComponent(digest))
+        try FileManager.default.removeItem(at: localAssetURL(directory: directory, digest: digest))
         let retained = try await session.admitPresentation(.forwardScroll(anchor))
         XCTAssertEqual(retained?.window.items[0].image, initial.window.items[0].image, "Visible projection stays frozen")
         let reopened = FeedSession(publicationHistory: .init(database: database), imageDecoder: .init(assetDirectory: directory.appendingPathComponent("Media"), heroMaxPixel: 300, thumbnailMaxPixel: 88))

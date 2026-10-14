@@ -190,18 +190,24 @@ final class FeedPresentationAdmissionTests: XCTestCase {
     /// Decisão do dono (2026-10-13): a lista pode **manter a cabeça**. Continua limitada à frente, mas nada acima
     /// do leitor é removido — é o comportamento da V1, e é o que deixa o corretor de offset sem nada a corrigir.
     /// O default preserva a regra do arquiteto (limitada nos dois sentidos), provada logo acima.
+    ///
+    /// A admissão inicial é uma restauração do cursor durável, e com a cabeça mantida ela recupera a **cabeça da
+    /// edição** — não a vizinhança do cursor: as cartas `cards[0...1]` estão acima do leitor e ele já as tinha
+    /// (2026-10-14, B05: a carta salva ficava 22 cartas acima da posição durável e não era desenhada depois de
+    /// terminate+launch).
     func testKeptHeadNeverRemovesTheCardsBehindTheReader() async throws {
         let f = try fixture()
         XCTAssertFalse(f.bounds.keepsAdmittedHead, "o default do bounds continua a regra do arquiteto")
         let bounds = FeedPresentationBounds(backwardCapacity: f.bounds.backwardCapacity,
             forwardCapacity: f.bounds.forwardCapacity, keepsAdmittedHead: true)
         let before = try await admitted(f.session, .initial(bounds))
-        XCTAssertEqual(before.window.items.map(\.id), Array(f.cards[1...3]).map(\.id))
+        XCTAssertEqual(before.window.items.map(\.id), Array(f.cards[0...3]).map(\.id),
+            "a restauração com a cabeça mantida recomeça na primeira carta da edição")
         try f.publishTail()
         let observed = observation(f.cards[3], placement: .top)
         _ = try await f.session.submitViewport(observed)
         let forward = try await admitted(f.session, .forwardScroll(observed))
-        XCTAssertEqual(forward.window.items.map(\.id), Array(f.cards[1...5]).map(\.id),
+        XCTAssertEqual(forward.window.items.map(\.id), Array(f.cards[0...5]).map(\.id),
             "com a cabeça mantida, a carta que o leitor já passou continua na lista")
         XCTAssertEqual(Set(forward.window.items.map(\.id)).count, forward.window.items.count)
         XCTAssertEqual(forward.window.anchor, .init(cardID: f.cards[3].id, placement: .top))
@@ -223,14 +229,14 @@ final class FeedPresentationAdmissionTests: XCTestCase {
         let bounds = FeedPresentationBounds(backwardCapacity: f.bounds.backwardCapacity,
             forwardCapacity: f.bounds.forwardCapacity, keepsAdmittedHead: true)
         let before = try await admitted(f.session, .initial(bounds))
-        XCTAssertEqual(before.window.items.map(\.id), Array(f.cards[1...3]).map(\.id))
+        XCTAssertEqual(before.window.items.map(\.id), Array(f.cards[0...3]).map(\.id))
         try f.publishTail()
 
         // O runtime — não um gesto — estende a cauda com o que já foi publicado.
         let grown = try await admitted(f.session, .publishedGrowth)
-        XCTAssertEqual(grown.window.items.map(\.id), Array(f.cards[1...4]).map(\.id),
+        XCTAssertEqual(grown.window.items.map(\.id), Array(f.cards[0...4]).map(\.id),
             "a reposição preenche a reserva à frente da âncora")
-        XCTAssertEqual(grown.window.items.first?.id, f.cards[1].id, "e não mexe na cabeça")
+        XCTAssertEqual(grown.window.items.first?.id, f.cards[0].id, "e não mexe na cabeça")
         // Repetir não estende além do teto.
         let repeated = try await f.session.admitPresentation(.publishedGrowth)
         XCTAssertEqual(repeated, grown, "uma reposição sem espaço é um no-op")
@@ -239,7 +245,7 @@ final class FeedPresentationAdmissionTests: XCTestCase {
         let observed = observation(f.cards[3], placement: .center)
         _ = try await f.session.submitViewport(observed)
         let refilled = try await admitted(f.session, .publishedGrowth)
-        XCTAssertEqual(refilled.window.items.map(\.id), Array(f.cards[1...5]).map(\.id),
+        XCTAssertEqual(refilled.window.items.map(\.id), Array(f.cards[0...5]).map(\.id),
             "a cauda é repovoada conforme o leitor avança, com a cabeça no lugar")
         XCTAssertEqual(refilled.window.anchor.cardID, f.cards[3].id)
     }

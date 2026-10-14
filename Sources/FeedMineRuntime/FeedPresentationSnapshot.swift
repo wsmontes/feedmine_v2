@@ -64,12 +64,23 @@ public struct FeedWindowSnapshot: Hashable, Sendable {
     init(publishedWindow: FeedWindow, decoder: PresentationImageDecoder? = nil,
         reusable: [PublicationCardID: PresentationCard] = [:]) {
         items = publishedWindow.cards.map { reusable[$0.id] ?? PresentationCard(publishedCard: $0, decoder: decoder) }
-        let placement: PresentationAnchorPlacement
-        switch publishedWindow.anchor.placement {
-        case .top: placement = .top
-        case .center: placement = .center
-        }
-        anchor = PresentationAnchor(cardID: publishedWindow.anchor.cardID, placement: placement)
+        anchor = Self.anchor(for: publishedWindow.anchor)
+    }
+
+    /// The same projection with the pixel decision already made: `items` are exactly the card values the caller
+    /// built (some carrying decoded pixels, some released), against the published anchor. A restore that admits a
+    /// head wider than the residency band decides per card whether to decode one, which the projection above cannot
+    /// express — it is the band, not the window, that owns pixels.
+    init?(items: [PresentationCard], publishedAnchor: FeedWindowAnchor) {
+        guard !items.isEmpty,
+            Set(items.map(\.id)).count == items.count,
+            items.contains(where: { $0.id == publishedAnchor.cardID }) else { return nil }
+        self.items = items
+        self.anchor = Self.anchor(for: publishedAnchor)
+    }
+
+    private static func anchor(for anchor: FeedWindowAnchor) -> PresentationAnchor {
+        PresentationAnchor(cardID: anchor.cardID, placement: anchor.placement == .top ? .top : .center)
     }
 }
 

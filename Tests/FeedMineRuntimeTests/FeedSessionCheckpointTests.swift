@@ -123,6 +123,39 @@ final class FeedSessionCheckpointTests: XCTestCase {
         }
     }
 
+    /// 2026-10-14: **a reabertura de uma lista que mantém a cabeça recupera a cabeça da edição.**
+    ///
+    /// A restauração lia a vizinhança do cursor (`backwardCapacity` cartas antes dele), então a própria reabertura
+    /// removia tudo que o leitor já tinha passado — o oposto do que `keepsAdmittedHead` prometeu — e uma carta
+    /// salva acima da posição durável não era desenhada (B05: 22 cartas acima, ausente depois de
+    /// terminate+launch). A âncora durável, a reserva à frente e a navegação não mudam: só a cabeça volta.
+    func testKeptHeadReopenRestoresTheEditionStartBehindTheReader() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 2,
+                forwardCapacity: 2, keepsAdmittedHead: true)))
+            let snapshot = try XCTUnwrap(restored)
+            XCTAssertEqual(snapshot.window.items.map(\.id), Array(cards[0...6]).map(\.id),
+                "a cabeça da edição volta junto com a reserva à frente da posição durável")
+            XCTAssertEqual(snapshot.window.anchor, PresentationAnchor(cardID: cards[4].id, placement: .center),
+                "a posição durável continua sendo a âncora")
+            let anchorPosition = try XCTUnwrap(snapshot.window.items.firstIndex { $0.id == cards[4].id })
+            XCTAssertEqual(snapshot.window.items.count - anchorPosition - 1, 2,
+                "a reserva à frente continua limitada pelo bound congelado")
+            // Navegar não remove a cabeça; e a reposição de cauda continua preenchendo só a reserva à frente.
+            let moved = try await session.submitViewport(ViewportObservation(
+                anchor: PresentationAnchor(cardID: cards[6].id, placement: .center)))
+            XCTAssertEqual(moved?.window.items.map(\.id), Array(cards[0...6]).map(\.id))
+            XCTAssertEqual(moved?.window.items.first?.id, cards[0].id)
+            let grown = try await session.admitPresentation(.publishedGrowth)
+            XCTAssertEqual(grown?.window.items.map(\.id), Array(cards[0...8]).map(\.id))
+            XCTAssertEqual(grown?.window.items.first?.id, cards[0].id)
+            XCTAssertEqual(grown?.window.anchor, PresentationAnchor(cardID: cards[6].id, placement: .center))
+        }
+    }
+
     func testStorageFailurePreservesMemoryP6AndDurableP4() async throws {
         try await withLocation { location in
             let (_, cards) = try persist(location: location)

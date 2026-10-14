@@ -325,9 +325,21 @@ public actor FeedSession {
 
     /// Reads the durable checkpoint and installs it as the admitted presentation.
     /// A failed read preserves existing state; no checkpoint clears local state.
+    ///
+    /// **What shape is restored is the presentation's own bound, not a neighbourhood of the cursor.** A list
+    /// installed with `keepsAdmittedHead` holds every card above the reader for the life of the session, so the
+    /// same list has to come back: restoring only `backwardCapacity` cards behind the cursor dropped everything the
+    /// reader had already passed — `keepsAdmittedHead` promised the opposite, and a card they had saved above the
+    /// cursor was not drawn at all after a reopen (B05, 2026-10-14: the saved card stood 22 cards above the durable
+    /// position). A list bounded around the reader keeps its bounded restore: there a card cut behind the anchor is
+    /// reachable by the next backward admission.
     private func installFromCheckpoint(_ bounds: FeedPresentationBounds) throws -> FeedPresentationSnapshot? {
-        guard let restored = try publicationHistory.restore(backwardCapacity: bounds.backwardCapacity,
-            forwardCapacity: bounds.forwardCapacity, contextKey: bounds.contextKey) else {
+        let restored = bounds.keepsAdmittedHead
+            ? try publicationHistory.restoreFromEditionStart(forwardCapacity: bounds.forwardCapacity,
+                contextKey: bounds.contextKey)
+            : try publicationHistory.restore(backwardCapacity: bounds.backwardCapacity,
+                forwardCapacity: bounds.forwardCapacity, contextKey: bounds.contextKey)
+        guard let restored else {
             state = nil
             return nil
         }
@@ -337,12 +349,45 @@ public actor FeedSession {
             snapshot.contextKey == restored.edition.contextKey && snapshot.editionID == restored.edition.id
                 ? Dictionary(uniqueKeysWithValues: snapshot.window.items.map { ($0.id, $0) }) : nil
         } ?? [:]
-        let window = FeedWindowSnapshot(publishedWindow: restored.window, decoder: imageDecoder, reusable: reusable)
+        let window = restoredWindow(restored.window, bounds: bounds, reusable: reusable)
         let snapshot = try projectWindow(contextKey: restored.edition.contextKey,
             editionID: restored.edition.id, window: window)
         state = FeedSessionState(editorialRevisionID: restored.edition.editorialRevision.id,
             presentation: snapshot, bounds: bounds)
         return snapshot
+    }
+
+    /// The restored window as a presentation, with the pixel decision made the way the running session makes it.
+    ///
+    /// `boundedResidency` keeps decoded pixels only in the band around the reader and releases every card outside
+    /// it (`releasedImageCards` is what re-decodes them when the reader comes back). A restore that decoded a pixel
+    /// for **every** admitted card would therefore hold — and pay, in one actor hop — one image per card the reader
+    /// had ever passed, a state the session it restores never reached. So the band is decoded and the rest keeps
+    /// its frozen values with the bitmap released, which is exactly what those cards had before the close.
+    private func restoredWindow(_ published: FeedWindow, bounds: FeedPresentationBounds,
+        reusable: [PublicationCardID: PresentationCard]) -> FeedWindowSnapshot {
+        // FeedWindow guarantees its anchor is one of its cards; a window without a numbered band would have no
+        // outside to release, so the plain projection is the total answer.
+        guard let anchorIndex = published.cards.firstIndex(where: { $0.id == published.anchor.cardID }) else {
+            return FeedWindowSnapshot(publishedWindow: published, decoder: imageDecoder, reusable: reusable)
+        }
+        let first = max(0, anchorIndex - bounds.backwardCapacity)
+        let last = min(published.cards.count - 1, anchorIndex + bounds.forwardCapacity)
+        var items: [PresentationCard] = []
+        items.reserveCapacity(published.cards.count)
+        for (index, card) in published.cards.enumerated() {
+            if let existing = reusable[card.id] {
+                items.append(existing)
+            } else if first...last ~= index {
+                items.append(PresentationCard(publishedCard: card, decoder: imageDecoder))
+            } else {
+                let released = PresentationCard(publishedCard: card)
+                releasedImageCards.insert(released.id)
+                items.append(released)
+            }
+        }
+        return FeedWindowSnapshot(items: items, publishedAnchor: published.anchor)
+            ?? FeedWindowSnapshot(publishedWindow: published, decoder: imageDecoder, reusable: reusable)
     }
 
     /// Allocate only after a successful read, alongside the actor's synchronous state transition.

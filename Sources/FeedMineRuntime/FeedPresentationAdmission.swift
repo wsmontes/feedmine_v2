@@ -22,6 +22,13 @@ public struct FeedPresentationBounds: Hashable, Sendable {
     /// removed, so a forward read never changes the content above them — and the native offset correction, which
     /// exists to hide exactly that shift, has nothing to correct. The cost is memory: the admitted list grows with
     /// how far the reader has read, which is bounded by the session and by nothing else.
+    ///
+    /// **A restore honours the same bound.** A list that keeps every card above the reader cannot come back from a
+    /// close narrower than it was: with `true`, the checkpoint read reaches back to the Edition's first card
+    /// (`PublicationHistory.restoreFromEditionStart`) instead of the `backwardCapacity` cards behind the cursor, so
+    /// what the reader had above them — including a card they saved — is drawn again (B05, 2026-10-14: the saved
+    /// card stood 22 cards above the durable position and was absent after terminate+launch). `backwardCapacity`
+    /// then still bounds decoded-image residency and backward navigation, not the admitted head.
     public let keepsAdmittedHead: Bool
 
     public init(backwardCapacity: Int, forwardCapacity: Int, contextKey: ContextKey? = nil,

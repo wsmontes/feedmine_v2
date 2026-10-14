@@ -98,6 +98,13 @@ final class FeedNativeScrollOffset {
             maximumVisualResidual = max(maximumVisualResidual, abs(proof.frame.minY - witness.expectedY))
             measuredCorrections += 1
             visualWitness = nil
+            // A correção **terminou**: esta é a geometria corrigida, reportada pelo próprio layout. Enquanto a
+            // supressão ficasse de pé depois disso — ela só era desfeita por um gesto —, todo callback de carta era
+            // consumido aqui e toda mudança de geometria saía pelo ramo de correção, então a captura nunca
+            // reaprendia o que o desenho mostrava: a posição do viewport congelava na carta anterior à correção e a
+            // durabilidade gravava uma posição que a tela não exibia (medido em B05, 2026-10-14: o cursor durável
+            // sete cartas à frente da carta do topo que o driver mediu, e a reabertura desenhando outra tela).
+            suppressCorrectionEvents = false
         }
         let prior = correction.pendingProof
         guard let delta = correction.observe(proof) else { return isCorrecting }

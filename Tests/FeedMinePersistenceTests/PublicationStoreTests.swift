@@ -51,6 +51,15 @@ final class PublicationStoreTests: XCTestCase {
         XCTAssertEqual(try store.cards(editionID: edition.id, around: cards[4].id, backwardCapacity: 2, forwardCapacity: 1), Array(cards[2...5]))
         XCTAssertEqual(try store.cards(editionID: edition.id, around: cards[4].id, backwardCapacity: 0, forwardCapacity: 0), [cards[4]])
         XCTAssertThrowsError(try store.cards(editionID: edition.id, around: cards[4].id, backwardCapacity: -1, forwardCapacity: 0))
+        // The head read is the same query with the backward limit omitted: it crosses every Segment back to the
+        // Edition's first card, and the forward side keeps its own bound.
+        XCTAssertEqual(try store.cards(editionID: edition.id, fromEditionStartTo: cards[4].id, forwardCapacity: 1),
+            Array(cards[0...5]))
+        XCTAssertEqual(try store.cards(editionID: edition.id, fromEditionStartTo: cards[1].id, forwardCapacity: 0),
+            Array(cards[0...1]))
+        XCTAssertEqual(try store.cards(editionID: edition.id, fromEditionStartTo: cards[5].id, forwardCapacity: 3),
+            Array(cards[0...5]))
+        XCTAssertThrowsError(try store.cards(editionID: edition.id, fromEditionStartTo: cards[4].id, forwardCapacity: -1))
         let raw = try database.read { try String.fetchOne($0, sql: "SELECT id FROM feed_editions") }
         XCTAssertEqual(raw, edition.id.rawValue.uuidString.lowercased())
         XCTAssertEqual(try database.read { try Int64.fetchOne($0, sql: "SELECT selection_seed FROM feed_editions") }, -1)

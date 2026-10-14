@@ -515,7 +515,25 @@ public struct PublicationStore: Sendable {
 
     public func cards(editionID: FeedEditionID, around anchorID: PublicationCardID, backwardCapacity: Int, forwardCapacity: Int) throws -> [CardRecord] {
         guard backwardCapacity >= 0, forwardCapacity >= 0 else { throw PublicationStoreError.invalidCapacity }
-        return try database.read { db in
+        return try cards(editionID: editionID, around: anchorID, backwardLimit: backwardCapacity,
+            forwardCapacity: forwardCapacity)
+    }
+
+    /// The same read with **no backward limit**: every card of the Edition from its first Segment up to and
+    /// including `anchorID`, then `forwardCapacity` cards after it. One query, one owner, two reaches — the
+    /// backward `LIMIT` is what differs.
+    ///
+    /// The caller that needs this is a restore of a presentation installed with `keepsAdmittedHead`: that list held
+    /// every card above the reader for the life of the session, so the head is what the reader had, not a bound to
+    /// be recomputed at the reopen.
+    public func cards(editionID: FeedEditionID, fromEditionStartTo anchorID: PublicationCardID, forwardCapacity: Int) throws -> [CardRecord] {
+        guard forwardCapacity >= 0 else { throw PublicationStoreError.invalidCapacity }
+        return try cards(editionID: editionID, around: anchorID, backwardLimit: nil, forwardCapacity: forwardCapacity)
+    }
+
+    private func cards(editionID: FeedEditionID, around anchorID: PublicationCardID, backwardLimit: Int?,
+        forwardCapacity: Int) throws -> [CardRecord] {
+        try database.read { db in
             let editionKey = PersistenceValueCoding.uuid(editionID.rawValue)
             guard let editionRow = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?", arguments: [editionKey]) else {
                 throw PublicationStoreError.missingEdition
@@ -538,8 +556,14 @@ public struct PublicationStore: Sendable {
             let count = try sf.integer("count"), low = try sf.integer("low"), high = try sf.integer("high")
             guard count > 0, low == 0, high == count - 1 else { throw PublicationStoreError.corruption("segment continuity") }
             let query = "SELECT c.*, s.ordinal AS segment_ordinal FROM feed_segments s JOIN published_cards c ON c.segment_id = s.id WHERE s.edition_id = ? AND (s.ordinal, c.ordinal) "
-            let backward = try Row.fetchAll(db, sql: query + "< (?, ?) ORDER BY s.ordinal DESC, c.ordinal DESC LIMIT ?",
-                arguments: [editionKey, segmentOrdinal, cardOrdinal, backwardCapacity])
+            let backward: [Row]
+            if let backwardLimit {
+                backward = try Row.fetchAll(db, sql: query + "< (?, ?) ORDER BY s.ordinal DESC, c.ordinal DESC LIMIT ?",
+                    arguments: [editionKey, segmentOrdinal, cardOrdinal, backwardLimit])
+            } else {
+                backward = try Row.fetchAll(db, sql: query + "< (?, ?) ORDER BY s.ordinal DESC, c.ordinal DESC",
+                    arguments: [editionKey, segmentOrdinal, cardOrdinal])
+            }
             let forward = try Row.fetchAll(db, sql: query + "> (?, ?) ORDER BY s.ordinal ASC, c.ordinal ASC LIMIT ?",
                 arguments: [editionKey, segmentOrdinal, cardOrdinal, forwardCapacity])
             let rows = Array(backward.reversed()) + [anchor] + forward
@@ -558,7 +582,8 @@ public struct PublicationStore: Sendable {
             let lastPosition = try PublicationRecordFields(rows.last!).integer("segment_ordinal")
             // An exhausted requested side traversed to the Edition boundary even if
             // an empty Segment produced no joined card row. Validate that full interval.
-            let requiredFirst = backward.count < backwardCapacity ? 0 : firstPosition
+            // With no backward limit there is no request to fall short of: the read reached the Edition's start.
+            let requiredFirst = backwardLimit.map { backward.count < $0 ? 0 : firstPosition } ?? 0
             let requiredLast = forward.count < forwardCapacity ? high : lastPosition
             let crossed = try Row.fetchAll(db, sql: "SELECT * FROM feed_segments WHERE edition_id = ? AND ordinal BETWEEN ? AND ? ORDER BY ordinal", arguments: [editionKey, requiredFirst, requiredLast])
             for row in crossed {
