@@ -52,3 +52,32 @@ sonda que publique as identidades da janela antes e depois de 12 s de ócio, e e
 
 - Nada sobre memória, energia, térmica ou hitches (isso é B06, em aparelho físico).
 - Nada sobre a frequência de convites: a corrida colocou 1 oferta e registrou 2 respostas em 132 s.
+
+## Leitura fina: o caminho exato do `not-measurable`
+
+O driver mede `b04-after-hide-stable` com a carta **em `y=383` — dentro da viewport** (`0,122`–`440,956`).
+Na sequência, o bloco do ócio faz: se a carta não está na tela, traz de volta; senão mede o quadro
+antes, dorme **12 s sem nenhum input**, e mede de novo. O motivo registrado é `card-absent`, que só
+vem do segundo caminho: **a carta estava lá antes do sono e não estava na árvore depois dele**.
+
+Isso muda a leitura de "o driver não achou a carta" para "**a carta saiu de onde estava durante 12 s
+sem input**" — que é precisamente o fato que a cláusula 2 existe para negar (`nada do que o leitor já
+tinha se moveu`). O gate não o pontua porque a carta **sai da árvore** em vez de se mover: ausente não
+é `false`, é `not-measurable`.
+
+## A janela não é o problema
+
+Contando o traço das três corridas (`window.cards` = tamanho da lista desenhada):
+
+| Corrida | `cards` (máx) | percorridos |
+|---|---:|---:|
+| B03 (30 min) | **811** | 866 |
+| B01 perfil A | 127 | 167 |
+| B01 perfil B | 238 | 232 |
+| B04 | 26 | 33 |
+
+A janela cresce com o leitor — a cabeça admitida é conservada, e `card-absent` não é dado removido.
+O que falta é saber **por que** a carta desce/sai durante o ócio: uma sonda que publique as
+identidades da janela e o quadro da carta antes e depois dos 12 s decide entre "a lista rolou sob o
+leitor" e "a lista foi reconstruída". Está na fila, e é a próxima investigação depois do estado de
+fim de conteúdo.
