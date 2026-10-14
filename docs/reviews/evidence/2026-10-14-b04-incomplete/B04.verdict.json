@@ -1,0 +1,50 @@
+{
+  "gate": "B04",
+  "verdict": "NOT_RUN",
+  "clauses": [
+    {
+      "clause": "o protocolo de B04 foi caminhado (âncora, convite, ócio, rotação, background)",
+      "observed": [
+        "b04-after-answer-frames",
+        "b04-after-answer-order",
+        "b04-after-answer-stable",
+        "b04-after-hide-frames",
+        "b04-after-hide-stable",
+        "b04-after-undo-frames",
+        "b04-after-undo-stable",
+        "b04-anchor0",
+        "b04-background-frames",
+        "b04-background-same-topmost",
+        "b04-background-stable",
+        "b04-block-above-reader",
+        "b04-cycle-attempts",
+        "b04-idle-frames",
+        "b04-idle-stable",
+        "b04-rotation-counters",
+        "b04-rotation-holds"
+      ],
+      "expected": "as medições de B04 no registro de fases",
+      "pass": true
+    },
+    {
+      "clause": "nada do que o leitor já tinha se moveu, reordenou ou retratou",
+      "observed": {
+        "medidas": {
+          "b04-after-answer-stable": "true",
+          "b04-after-answer-order": "true",
+          "b04-after-undo-stable": "true",
+          "b04-after-hide-stable": "true",
+          "b04-idle-stable": "not-measurable",
+          "b04-rotation-holds": "true",
+          "b04-background-stable": "true"
+        },
+        "instaveis": [],
+        "nao_mediveis": [
+          "b04-idle-stable"
+        ]
+      },
+      "expected": "todas estáveis; instável falha, não medível deixa o gate incompleto",
+      "pass": null
+    }
+  ]
+}

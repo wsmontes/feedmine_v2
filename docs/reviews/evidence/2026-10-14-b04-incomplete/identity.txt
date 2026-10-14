@@ -1,0 +1,9 @@
+stamp: 20261014T083321Z
+commit: a9d37c1254957f42d6ce57c39101d52573bae2f8
+dirty: 0 files
+device: FeedMine Bench (16DA3DB5-C9E0-4190-AF2F-AFAADC7EB7AE, dedicated to the benchmark)
+    FeedMine Bench (16DA3DB5-C9E0-4190-AF2F-AFAADC7EB7AE) (Booted) 
+shared device: 0 (an unnamed run owns 'FeedMine Bench' unless FEEDMINE_BENCH_SHARED_DEVICE=1)
+bundle id: com.feedmine.development.benchmark (the instrumented build; com.feedmine.development is the product's and this run never installs it)
+Xcode 26.6
+Build version 17F113
