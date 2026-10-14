@@ -25,7 +25,9 @@ final class EditorialInvitationCadenceTests: XCTestCase {
         return cadence
     }
 
-    /// Places an offer the way the feed does: the decision first, the offer only when it was allowed.
+    /// Places an offer the way the feed does: the decision first, the block only when it was allowed — and then
+    /// the reader's own position reaching that card, which is what makes it an offer that was **shown**. Placing
+    /// is not showing: the window draws behind and ahead of the reader (`presented(on:cardsTraversed:)`).
     @discardableResult
     private func expectOffer(_ cadence: EditorialInvitationCadence, _ subject: String, at cards: Int,
         on card: PublicationCardID = PublicationCardID(),
@@ -33,6 +35,8 @@ final class EditorialInvitationCadenceTests: XCTestCase {
         XCTAssertNil(cadence.decision(subject: subject, isAnswered: false, cardsTraversed: cards),
             "expected the budget to allow an offer for \(subject) at \(cards) cards exposed", file: file, line: line)
         cadence.offered(subject: subject, on: card, cardsTraversed: cards)
+        XCTAssertTrue(cadence.presented(on: card, cardsTraversed: cards),
+            "the reader's position reached the block that was placed", file: file, line: line)
         return card
     }
 
@@ -41,6 +45,44 @@ final class EditorialInvitationCadenceTests: XCTestCase {
         file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(cadence.decision(subject: subject, isAnswered: false, cardsTraversed: cards), expected,
             "at \(cards) cards exposed", file: file, line: line)
+    }
+
+    /// R1, second half (2026-10-13): a block the window placed and the reader never reached is **not** an offer
+    /// shown. The window draws behind and ahead of the reader, so placement and presentation are different events;
+    /// one placement stands at a time, and an unreached one is released after an interval — nothing is spent.
+    func testAnOfferTheReaderNeverReachedIsNotAnOfferShown() {
+        let cadence = started()
+        let card = PublicationCardID()
+        XCTAssertNil(cadence.decision(subject: "topic:a", isAnswered: false, cardsTraversed: 4))
+        cadence.offered(subject: "topic:a", on: card, cardsTraversed: 4)
+
+        XCTAssertEqual(cadence.offersShown, 0, "placing a block is not showing it")
+        XCTAssertEqual(cadence.interval, 4, "no offer was shown, so the first offer's own distance still governs")
+        XCTAssertEqual(cadence.decision(subject: "topic:b", isAnswered: false, cardsTraversed: 5),
+            .offerNotYetReached(cardsRemaining: 3), "one placement stands at a time")
+        XCTAssertEqual(cadence.ignoredOffers, 0, "an offer nobody met was not left unanswered")
+
+        // The reader walked past it without meeting it: the block is released and its subject is placeable again.
+        XCTAssertNil(cadence.decision(subject: "topic:b", isAnswered: false, cardsTraversed: 8),
+            "the placement expired, so a new one is allowed")
+        XCTAssertTrue(cadence.offeredSubjects.isEmpty, "a released placement spends nothing")
+        XCTAssertNil(cadence.hosts[card])
+        XCTAssertNil(cadence.decision(subject: "topic:a", isAnswered: false, cardsTraversed: 8),
+            "the released subject is offered again when the reader's position is right")
+    }
+
+    /// The reader reaching the host card counts the offer — once. Turning back to the same block is one offer.
+    func testReachingTheHostCardCountsTheOfferExactlyOnce() {
+        let cadence = started()
+        let card = PublicationCardID()
+        cadence.offered(subject: "topic:a", on: card, cardsTraversed: 4)
+        XCTAssertTrue(cadence.presented(on: card, cardsTraversed: 5))
+        XCTAssertEqual(cadence.offersShown, 1)
+        XCTAssertFalse(cadence.presented(on: card, cardsTraversed: 6), "a card met twice is one offer shown")
+        XCTAssertEqual(cadence.offersShown, 1)
+        XCTAssertEqual(cadence.ignoredOffers, 0)
+        XCTAssertEqual(cadence.interval, 12)
+        XCTAssertFalse(cadence.presented(on: PublicationCardID(), cardsTraversed: 7), "nothing was placed there")
     }
 
     /// R1: the budget counts cards the reader actually passed — the exposure ledger is its unit — and a card seen

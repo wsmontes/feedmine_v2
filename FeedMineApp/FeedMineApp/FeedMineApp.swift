@@ -685,6 +685,16 @@ struct FeedMineApp: App {
         // context — answering an invitation rebuilds the session — deliberately do not begin one.
         cadence.beginSession(key: composition.currentContextKey, cardsTraversed: traversed)
         cadence.setHidden(tipsHidden)
+        // **Where an offer becomes an offer.** The window the feed draws reaches behind and ahead of the reader,
+        // so placing a block is not showing it: the card the reader's own position is at is the only one whose
+        // block has been met. Counting at placement counted blocks the reader never reached (the ledger's own
+        // unit is the cards they really passed), and the frequency clause then read offers that no one saw.
+        if let anchorCardID = association.store.state.presentation?.window.anchor.cardID,
+            anchorCardID == card.id, let hosted = cadence.hosts[card.id],
+            cadence.presented(on: card.id, cardsTraversed: traversed) {
+            composition.recordEditorialOffer(subject: hosted.subject, cardsTraversed: traversed,
+                offersShown: cadence.offersShown, interval: cadence.interval)
+        }
         guard let source = card.sourceID,
             let subject = composition.editorialSubject(for: source, in: association) else {
             return nil
@@ -734,8 +744,6 @@ struct FeedMineApp: App {
         let isCompact = cadence.offersShown > 0
         cadence.offered(subject: subject.nodeKey, on: card.id, cardsTraversed: traversed,
             isCompact: isCompact)
-        composition.recordEditorialOffer(subject: subject.nodeKey, cardsTraversed: traversed,
-            offersShown: cadence.offersShown, interval: cadence.interval)
         // Hidden means **invisible**, not removed: the layout slot is the reader's, and taking rows out of the feed
         // moved their anchored card by 128 pt (measured twice). What the reader asked for was to stop seeing the
         // invitations, not to have the feed shift under them. Hidden also leaves the accessibility tree, because a

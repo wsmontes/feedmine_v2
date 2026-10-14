@@ -85,6 +85,8 @@ public final class EditorialInvitationCadence {
         case subjectAlreadyOffered
         case sessionCapReached
         case tooSoon(cardsRemaining: Int)
+        /// A block was placed and the reader has not reached its card yet. One placement stands at a time.
+        case offerNotYetReached(cardsRemaining: Int)
     }
 
     /// A block that was offered, and the form it was offered in. The form travels with the offer because the feed
@@ -107,9 +109,23 @@ public final class EditorialInvitationCadence {
         var lastOfferAt: Int?
         var offersShown = 0
         var ignoredOffers = 0
-        var pendingSubject: String?
+        /// The offer the reader has **met** and not answered. Reaching the next one is what counts it as ignored —
+        /// a block merely drawn ahead of the reader is not an offer the reader left unanswered.
+        var pendingAnswerSubject: String?
         var offeredSubjects: Set<String> = []
         var hosts: [PublicationCardID: HostedOffer] = [:]
+        /// The placement the reader has not reached yet. At most one stands at a time, so a window rendered ahead
+        /// of the reader cannot place a block per eligible card; it expires after one interval, because an offer
+        /// the reader never met was never made — and its subject becomes placeable again.
+        var pendingPlacement: PendingPlacement?
+        /// The host cards the reader's own position has reached. A card met twice is one offer.
+        var presentedHosts: Set<PublicationCardID> = []
+    }
+
+    private struct PendingPlacement {
+        let card: PublicationCardID
+        let subject: String
+        let placedAt: Int
     }
 
     public let budget: Budget
@@ -200,7 +216,10 @@ public final class EditorialInvitationCadence {
         hidden = false
         var session = current
         session.ignoredOffers = 0
-        session.pendingSubject = nil
+        session.pendingAnswerSubject = nil
+        // An offer the reader never met was not made: re-enabling releases the outstanding placement, and its
+        // subject may be placed again when the reader's position is right.
+        session.pendingPlacement = nil
         session.lastOfferAt = cardsTraversed
         current = session
     }
@@ -209,33 +228,63 @@ public final class EditorialInvitationCadence {
     public func decision(subject: String, isAnswered: Bool, cardsTraversed: Int) -> Refusal? {
         if hidden { return .hidden }
         if isAnswered { return .subjectAnswered }
-        let session = current
+        var session = current
         if session.offeredSubjects.contains(subject) { return .subjectAlreadyOffered }
         if session.offersShown >= budget.sessionOfferCap { return .sessionCapReached }
+        // One placement at a time: a window drawn ahead of the reader must not place a block per eligible card.
+        // A placement the reader never met expires after one interval and its subject becomes placeable again —
+        // the block was released, so it is not an offer anyone was shown.
+        if let pending = session.pendingPlacement {
+            let waited = cardsTraversed - pending.placedAt
+            guard waited >= interval else { return .offerNotYetReached(cardsRemaining: interval - waited) }
+            session.offeredSubjects.remove(pending.subject)
+            session.hosts[pending.card] = nil
+            session.pendingPlacement = nil
+            current = session
+        }
         let since = cardsTraversed - (session.lastOfferAt ?? session.baseline)
         if since < interval { return .tooSoon(cardsRemaining: interval - since) }
         return nil
     }
 
-    /// Places an offer: binds it to the card it was made on, and counts the previous offer as unanswered when
-    /// the reader reached the next one without answering it.
+    /// Places an offer on the card it was made on: the block is bound to its host, so the feed's constant
+    /// re-rendering neither moves it nor changes its form, and the subject is spent for this session.
+    ///
+    /// **Placement is not an offer shown.** The window the feed draws reaches behind and ahead of the reader, so a
+    /// block placed now may never be met. The budget advances in `presented(on:cardsTraversed:)`, when the reader's
+    /// own position reaches the host card — which is round 10's own unit ("cards the reader really passed"). Only
+    /// one placement stands at a time, which is what keeps one window pass from placing a block per eligible card.
     public func offered(subject: String, on card: PublicationCardID, cardsTraversed: Int,
         isCompact: Bool = false) {
         var session = current
-        if session.pendingSubject != nil { session.ignoredOffers += 1 }
         session.offeredSubjects.insert(subject)
         session.hosts[card] = HostedOffer(subject: subject, isCompact: isCompact)
-        session.lastOfferAt = cardsTraversed
-        session.offersShown += 1
-        session.pendingSubject = subject
+        session.pendingPlacement = PendingPlacement(card: card, subject: subject, placedAt: cardsTraversed)
         current = session
+    }
+
+    /// The reader's position reached the card that hosts this block: **now** the offer was shown, and this is the
+    /// only place the budget's numbers advance. `false` when the card hosts nothing or was already presented —
+    /// turning back and forth to the same block is one offer.
+    @discardableResult
+    public func presented(on card: PublicationCardID, cardsTraversed: Int) -> Bool {
+        var session = current
+        guard let host = session.hosts[card], !session.presentedHosts.contains(card) else { return false }
+        session.presentedHosts.insert(card)
+        if session.pendingAnswerSubject != nil { session.ignoredOffers += 1 }
+        session.pendingAnswerSubject = host.subject
+        session.offersShown += 1
+        session.lastOfferAt = cardsTraversed
+        if session.pendingPlacement?.card == card { session.pendingPlacement = nil }
+        current = session
+        return true
     }
 
     /// The reader answered. Engagement is not punished: the penalty is cleared, so the next opportunity comes
     /// after a comfortable interval instead of a doubled one.
     public func answered(subject: String) {
         var session = current
-        if session.pendingSubject == subject { session.pendingSubject = nil }
+        if session.pendingAnswerSubject == subject { session.pendingAnswerSubject = nil }
         session.ignoredOffers = 0
         current = session
     }
