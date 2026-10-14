@@ -97,15 +97,16 @@ public struct FeedScreen: View {
                                 isBookmarked: store.bookmarkedIDs.contains(card.id),
                                 availableActions: store.availableActions,
                                 onAction: { store.perform($0, rendered: store.state.presentation) })
-                                .onGeometryChange(for: CGRect?.self, of: { proxy in
-                                    // **Uma** conversão de coordenada por card por passada. A V1 não tinha sonda
-                                    // alguma por card (só um observer de limiar Bool); manter a sonda geométrica é
-                                    // o preço da prova de leitura, mas ela não precisa de três: a altura do viewport
-                                    // e o offset do conteúdo já são medidos a cada passo pelo
-                                    // `onScrollGeometryChange`, e a coordenada de conteúdo da prova é
-                                    // `frame.minY + offset`.
-                                    proxy.frame(in: .scrollView(axis: .vertical))
-                                }) { frame in
+                                .onGeometryChange(for: FeedVisualCardGeometry?.self, of: { proxy in
+                                    guard let bounds = proxy.bounds(of: .scrollView(axis: .vertical)) else { return nil }
+                                    let frame = proxy.frame(in: .scrollView(axis: .vertical))
+                                    let local = proxy.frame(in: .named("feed-visual-content"))
+                                    return .init(cardID: card.id, frame: frame,
+                                        offset: local.minY - frame.minY, height: bounds.height)
+                                }) { proof in
+                                    #if DEBUG
+                                    FeedVisualCapture.probeEntries += 1
+                                    #endif
                                     // A prova vale para uma carta que a lista desenha e para a apresentação que a loja
                                     // tem agora — comparada pela **identidade publicada**, nunca pela posição do
                                     // leitor (era essa leitura, dentro do corpo, que re-renderizava a lista a cada
@@ -114,9 +115,10 @@ public struct FeedScreen: View {
                                         let current = store.state.presentation,
                                         store.renderedEditionID == current.editionID,
                                         store.renderedContextKey == current.contextKey,
-                                        let frame, let scroll = capture.motion.geometry else { return }
-                                    let proof = FeedVisualCardGeometry(cardID: card.id, frame: frame,
-                                        offset: scroll.offset, height: scroll.height)
+                                        let proof else { return }
+                                    #if DEBUG
+                                    FeedVisualCapture.probeGuards += 1
+                                    #endif
                                     #if canImport(UIKit)
                                     if capture.nativeScrollOffset.observe(proof) {
                                         return
@@ -124,6 +126,9 @@ public struct FeedScreen: View {
                                     #endif
                                     if let event = capture.observeCard(proof,
                                         isLast: store.state.presentation?.window.items.last?.id == proof.cardID) {
+                                        #if DEBUG
+                                        FeedVisualCapture.submissions += 1
+                                        #endif
                                         store.submitViewport(event.observation, activity: event.activity, rendered: store.state.presentation)
                                     }
                                     if let event = capture.settle() {
@@ -177,6 +182,14 @@ public struct FeedScreen: View {
                 onAdjustInterests: { onAdjustInterests() })
         }
     }
+}
+
+/// Contadores de fluxo que o **host** também precisa ler (a instalação é decidida lá). Públicos de propósito,
+/// só de diagnóstico: uma janela que não cresce é uma instalação rejeitada a mais.
+public enum FeedFlowCounters {
+    public nonisolated(unsafe) static var installAttempts = 0
+    public nonisolated(unsafe) static var installAccepts = 0
+    public nonisolated(unsafe) static var installRejects = 0
 }
 
 /// A linha editorial desenhada no **próprio corpo**: o que ela lê (posição do leitor, orçamento de ofertas,
@@ -307,6 +320,17 @@ struct FeedVisualCapture {
     /// `FEEDMINE_TRACE_CAPTURE=1`. A medição de posição precisa dele; a operação normal não paga o custo — uma
     /// corrida de UI com o traço ligado passa de 1,4 milhão de linhas de log.
     static let tracesCapture = ProcessInfo.processInfo.environment["FEEDMINE_TRACE_CAPTURE"] == "1"
+    /// Contadores de fluxo: onde a cadeia para quando o leitor rola. Cada um é um portão da emissão de posição.
+    nonisolated(unsafe) static var geometryObservations = 0
+    nonisolated(unsafe) static var probeEntries = 0
+    nonisolated(unsafe) static var probeGuards = 0
+    nonisolated(unsafe) static var cardObservations = 0
+    nonisolated(unsafe) static var emissions = 0
+    nonisolated(unsafe) static var submissions = 0
+    nonisolated(unsafe) static var scrollGeometryEvents = 0
+    nonisolated(unsafe) static var scrollPhaseEvents = 0
+    nonisolated(unsafe) static var scopeRejections = 0
+
     #endif
 
     mutating func phase(active: Bool, velocity: CGVector?) {
@@ -346,6 +370,7 @@ struct FeedVisualCapture {
 
     func observe(_ next: FeedVisualGeometry) -> FeedVisualEvent? {
         #if DEBUG
+        Self.geometryObservations += 1
         if !motion.geometryLogged {
             Self.trace("native geometry offset=\(next.offset) extent=\(next.extent) height=\(next.height)")
             motion.geometryLogged = true
@@ -373,6 +398,7 @@ struct FeedVisualCapture {
 
     func observeCard(_ proof: FeedVisualCardGeometry, isLast: Bool = false) -> FeedVisualEvent? {
         #if DEBUG
+        Self.cardObservations += 1
         // Traço por carta e por leitura, com o id, **só com a flag de diagnóstico ligada**: a coordenada de conteúdo
         // (`frameY + offset`) é imune ao gesto, então uma descontinuidade nela é o deslocamento causado pela
         // ATUALIZAÇÃO da janela — a referência que o arquiteto definiu, medida sem estimar alturas.
@@ -444,6 +470,9 @@ struct FeedVisualCapture {
         if activity == .explicitTailApproach { motion.tailReported = true }
         let event = FeedVisualEvent(observation: .init(anchor: .init(cardID: proof.cardID, placement: .center)), activity: activity)
         guard event != motion.lastEmission else { return nil }
+        #if DEBUG
+        Self.emissions += 1
+        #endif
         motion.lastEmission = event
         motion.readerCardID = event.observation.anchor.cardID
         #if DEBUG
@@ -490,16 +519,16 @@ private struct NativeFeedViewport: ViewModifier {
             .id(store.state.presentation?.editionID)
             .id(store.state.presentation?.contextKey)
             .scrollPosition(id: Binding(get: {
-                // A posição que o leitor está lendo vem da **prova geométrica** (o card onde ele está), não da
-                // âncora publicada: a âncora só é republicada quando o conteúdo muda, e usá-la aqui puxaria a lista
-                // de volta para uma posição antiga.
-                capture.positionID ?? capture.motion.readerCardID ?? presented?.window.anchor.cardID
+                capture.positionID ?? presented?.window.anchor.cardID
             }, set: { id in
                 guard matchesScope, let id, presented?.window.items.contains(where: { $0.id == id }) == true else { return }
                 capture.positionID = id
                 capture.motion.readerCardID = id
             }))
             .onScrollPhaseChange { oldPhase, phase, context in
+                #if DEBUG
+                FeedVisualCapture.scrollPhaseEvents += 1
+                #endif
                 guard matchesScope else { return }
                 #if DEBUG
                 if FeedVisualCapture.tracesCapture {
@@ -549,7 +578,15 @@ private struct NativeFeedViewport: ViewModifier {
             .onScrollGeometryChange(for: FeedVisualGeometry.self, of: { geometry in
                 visualGeometry(geometry)
             }) { _, geometry in
-                guard matchesScope else { return }
+                #if DEBUG
+                FeedVisualCapture.scrollGeometryEvents += 1
+                #endif
+                guard matchesScope else {
+                    #if DEBUG
+                    FeedVisualCapture.scopeRejections += 1
+                    #endif
+                    return
+                }
                 #if canImport(UIKit)
                 if capture.nativeScrollOffset.isCorrecting {
                     capture.invalidateLayout()

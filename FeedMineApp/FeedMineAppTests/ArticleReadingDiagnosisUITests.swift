@@ -193,7 +193,11 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         app.launch()
         XCTAssertGreaterThan(waitForCards(app, within: 180), 3)
         let initial = app.staticTexts["feed-window-proof"].label
+        let sv = app.scrollViews.firstMatch
+        print("DIAG scrollviews=\(app.scrollViews.count) exists=\(sv.exists) hittable=\(sv.isHittable) frame=\(sv.frame) window=\(app.windows.firstMatch.frame)")
+        print("DIAG cards=\(app.buttons.matching(identifier: "card.bookmark").count) otherElements=\(app.scrollViews.count)")
         for _ in 0..<8 { app.scrollViews.firstMatch.swipeUp(velocity: .fast) }
+        print("DIAG after swipes scrollviews=\(app.scrollViews.count) proof=\(app.staticTexts["feed-window-proof"].label.prefix(60))")
         Thread.sleep(forTimeInterval: 1)
         let final = app.staticTexts["feed-window-proof"].label
         let evidence = XCTAttachment(string: "initial=\(initial)\nfinal=\(final)")

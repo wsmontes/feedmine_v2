@@ -2153,24 +2153,13 @@ final class FeedAssociation {
         self?.trace?.record(event, fields)
     }
 
-    /// Se o que o leitor **vê** mudou: a janela, a edição, o contexto ou o trabalho relatado. A âncora e a
-    /// proveniência mudam a cada avanço e **não** são motivo para republicar: a posição vive no
-    /// `FeedScreenStore.state`, que a lista deixou de observar. Princípio do dono (2026-10-14): a UI é imediata; o
-    /// backend corre atrás e se antecipa.
-    private func changesWhatTheReaderSees(_ received: FeedPresentationState) -> Bool {
-        guard let current = store.state.presentation else { return received.presentation != nil }
-        guard let next = received.presentation else { return false }
-        return next.window.items != current.window.items
-            || next.editionID != current.editionID
-            || next.contextKey != current.contextKey
-            || received.work != store.state.work
-    }
-
     func install(_ received: FeedPresentationState) throws {
+        FeedFlowCounters.installAttempts += 1
         guard active else { throw FeedPresentationStateError.projectionSequenceMismatch }
+        do { try store.install(received); FeedFlowCounters.installAccepts += 1 }
+        catch { FeedFlowCounters.installRejects += 1; throw error }
         // O feed está em tela: a partir daqui o intervalo entre quadros é medido e escrito no trace.
         frameMeter.start()
-        try store.install(received)
         let installed = store.state.presentation
         let window = (edition: installed?.editionID, context: installed?.contextKey,
             ids: installed?.window.items.map(\.id) ?? [])
@@ -2406,8 +2395,6 @@ final class FeedAssociation {
                         let received: FeedPresentationState
                         do { received = try FeedPresentationHandoff.receive(snapshot: committed, into: self.store.state) }
                         catch { Self.log("obsolete early viewport projection rejected"); return }
-                        // Mesma regra do recebimento: só conteúdo chega à tela.
-                        guard self.changesWhatTheReaderSees(received) else { return }
                         do { try self.install(received) }
                         catch { Self.log("obsolete early viewport projection rejected") }
                     }
@@ -2419,13 +2406,12 @@ final class FeedAssociation {
                 candidate.provenance.sequenceID == current.provenance.sequenceID,
                 candidate.provenance.position < current.provenance.position {
                 Self.log("obsolete viewport receipt ignored")
-            } else if changesWhatTheReaderSees(received) {
-                try install(received)
             } else {
-                // A posição já foi registrada na sessão pelo handoff — o backend corre atrás e se antecipa. Republicar
-                // aqui era a resposta síncrona do backend dentro da operação de UI (12–14 por segundo numa rajada,
-                // medido no aparelho em 2026-10-14).
-                Self.log("advance recorded behind the UI: nothing the reader sees changed")
+                // Republicar por avanço é o que mantém a sessão e a tela no mesmo valor; a **lista** já não re-renderiza
+                // por causa disso (ela observa `renderedItems`, não a posição). A supressão desta instalação foi
+                // medida e **estrangulou a produção** (2026-10-14): sem instalações o handoff e o runway paravam de
+                // ser alimentados.
+                try install(received)
             }
             if evidence?.isPositionReconciliation == true {
                 Self.log("rendered position reconciled locally")
