@@ -1667,8 +1667,14 @@ final class FeedAssociation {
 
     /// Structural bounds for this association's admitted presentation: a readable prefix and the
     /// reserve the reader may walk into. Frozen when the presentation is installed (plan T2/T3).
+    ///
+    /// `keepsAdmittedHead: true` is the owner's decision of 2026-10-13 (V1's behaviour): the list is still bounded
+    /// forward, but a card the reader has passed is never removed, so nothing above the reader changes while they
+    /// read and the offset corrector has nothing to hide. The architect's rule (bounded around the anchor in both
+    /// directions) remains the library default: `FeedPresentationBounds.keepsAdmittedHead = false`.
     static func presentationBounds(_ contextKey: ContextKey) -> FeedPresentationBounds {
-        .init(backwardCapacity: backwardWindowCards, forwardCapacity: forwardWindowCards, contextKey: contextKey)
+        .init(backwardCapacity: backwardWindowCards, forwardCapacity: forwardWindowCards, contextKey: contextKey,
+            keepsAdmittedHead: true)
     }
 
     /// T6: whether a restored Edition may be shown for the identity the reader is on. It must belong to that
@@ -2200,7 +2206,7 @@ final class FeedAssociation {
                 selectionSeed: 1, editionCreatedAt: now, segmentID: FeedSegmentID(), segmentSeed: 1,
                 segmentCreatedAt: now, anchorPlacement: .top, checkpointedAt: now)!,
                 resources: .init(localExaminedCapacity: 32, acquisition: Self.resources.acquisition)!,
-                backwardCapacity: 8, forwardCapacity: 16)
+                backwardCapacity: 8, forwardCapacity: 16, keepsAdmittedHead: true)
             try install(FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state))
             Self.log("cold bootstrap settled")
             if case .published = outcome {

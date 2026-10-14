@@ -187,6 +187,34 @@ final class FeedPresentationAdmissionTests: XCTestCase {
             "The same anchored bound cuts both ends: the far card leaves while the cut one returns")
     }
 
+    /// Decisão do dono (2026-10-13): a lista pode **manter a cabeça**. Continua limitada à frente, mas nada acima
+    /// do leitor é removido — é o comportamento da V1, e é o que deixa o corretor de offset sem nada a corrigir.
+    /// O default preserva a regra do arquiteto (limitada nos dois sentidos), provada logo acima.
+    func testKeptHeadNeverRemovesTheCardsBehindTheReader() async throws {
+        let f = try fixture()
+        XCTAssertFalse(f.bounds.keepsAdmittedHead, "o default do bounds continua a regra do arquiteto")
+        let bounds = FeedPresentationBounds(backwardCapacity: f.bounds.backwardCapacity,
+            forwardCapacity: f.bounds.forwardCapacity, keepsAdmittedHead: true)
+        let before = try await admitted(f.session, .initial(bounds))
+        XCTAssertEqual(before.window.items.map(\.id), Array(f.cards[1...3]).map(\.id))
+        try f.publishTail()
+        let observed = observation(f.cards[3], placement: .top)
+        _ = try await f.session.submitViewport(observed)
+        let forward = try await admitted(f.session, .forwardScroll(observed))
+        XCTAssertEqual(forward.window.items.map(\.id), Array(f.cards[1...5]).map(\.id),
+            "com a cabeça mantida, a carta que o leitor já passou continua na lista")
+        XCTAssertEqual(Set(forward.window.items.map(\.id)).count, forward.window.items.count)
+        XCTAssertEqual(forward.window.anchor, .init(cardID: f.cards[3].id, placement: .top))
+        // O teto à frente continua valendo: a cauda é exatamente a âncora mais a reserva congelada.
+        let anchorPosition = try XCTUnwrap(forward.window.items.firstIndex { $0.id == f.cards[3].id })
+        XCTAssertEqual(forward.window.items.count - anchorPosition - 1, f.bounds.forwardCapacity,
+            "a reserva à frente permanece limitada")
+        // E a cabeça não se move: as cartas admitidas antes continuam idênticas, na mesma ordem, no mesmo lugar.
+        let kept = before.window.items.filter { forward.window.items.contains($0) }
+        XCTAssertEqual(Array(forward.window.items.prefix(kept.count)), kept,
+            "nada acima do leitor muda quando a lista cresce para frente")
+    }
+
     /// R4/F05: the runtime grows the admitted window with cards **already published**, without any
     /// reader gesture and without inventing one. The anchor, the order and every admitted card stay
     /// exactly as they were; only the end of the list moves.

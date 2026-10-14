@@ -12,11 +12,24 @@ public struct FeedPresentationBounds: Hashable, Sendable {
     public let backwardCapacity: Int
     public let forwardCapacity: Int
     public let contextKey: ContextKey?
+    /// Whether the admitted list keeps every card the reader has already passed instead of cutting them behind the
+    /// anchor.
+    ///
+    /// `false` is the architect's rule: the list is bounded **around** the anchor in both directions, and a card cut
+    /// behind stays reachable because the next admission near that end re-reads it from the local store.
+    ///
+    /// `true` is V1's behaviour, which the owner asked to feel (2026-10-13): nothing above the reader is ever
+    /// removed, so a forward read never changes the content above them — and the native offset correction, which
+    /// exists to hide exactly that shift, has nothing to correct. The cost is memory: the admitted list grows with
+    /// how far the reader has read, which is bounded by the session and by nothing else.
+    public let keepsAdmittedHead: Bool
 
-    public init(backwardCapacity: Int, forwardCapacity: Int, contextKey: ContextKey? = nil) {
+    public init(backwardCapacity: Int, forwardCapacity: Int, contextKey: ContextKey? = nil,
+        keepsAdmittedHead: Bool = false) {
         self.backwardCapacity = backwardCapacity
         self.forwardCapacity = forwardCapacity
         self.contextKey = contextKey
+        self.keepsAdmittedHead = keepsAdmittedHead
     }
 }
 

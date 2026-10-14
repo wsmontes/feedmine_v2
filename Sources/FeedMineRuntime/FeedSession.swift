@@ -193,7 +193,10 @@ public actor FeedSession {
     private func boundedToTotalWindow(_ items: [PresentationCard], around anchorCardID: PublicationCardID,
         bounds: FeedPresentationBounds) -> [PresentationCard] {
         guard let anchorIndex = items.firstIndex(where: { $0.id == anchorCardID }) else { return items }
-        let first = max(0, anchorIndex - bounds.backwardCapacity)
+        // Both directions by default; the **head is kept** when the presentation was installed that way (the
+        // owner's experiment, 2026-10-13): nothing above the reader is removed, so a forward read never changes the
+        // content above them and the offset corrector has nothing to hide. The forward reserve is bounded either way.
+        let first = bounds.keepsAdmittedHead ? 0 : max(0, anchorIndex - bounds.backwardCapacity)
         let last = min(items.count - 1, anchorIndex + bounds.forwardCapacity)
         guard first > 0 || last < items.count - 1 else { return items }
         return Array(items[first...last])

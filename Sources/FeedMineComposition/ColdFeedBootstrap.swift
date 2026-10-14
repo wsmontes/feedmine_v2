@@ -161,7 +161,7 @@ public struct ColdFeedBootstrap: Sendable {
     }
 
     public func run(identity: ColdFeedPublicationIdentity, resources: ColdFeedBootstrapResources,
-        backwardCapacity: Int, forwardCapacity: Int) async throws -> ColdFeedBootstrapOutcome {
+        backwardCapacity: Int, forwardCapacity: Int, keepsAdmittedHead: Bool = false) async throws -> ColdFeedBootstrapOutcome {
         guard await session.currentPresentation() == nil else { throw ColdFeedBootstrapError.sessionAlreadyInstalled }
         if let page = try authority.perform({
             try acquisition.advanceDiscovery(for: plan.context, examinedCapacity: resources.localExaminedCapacity)
@@ -171,7 +171,8 @@ public struct ColdFeedBootstrap: Sendable {
         let mediaOpportunity = await makeMediaOpportunity?()
         let firstProgress: LocalProductionProgress
         switch try await attemptFirstPublication(identity: identity, resources: resources,
-            backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity, prepareLegacyMedia: false, mediaOpportunity: mediaOpportunity) {
+            backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
+            keepsAdmittedHead: keepsAdmittedHead, prepareLegacyMedia: false, mediaOpportunity: mediaOpportunity) {
         case .published(let snapshot): return .published(snapshot)
         case .notYet(let progress):
             guard progress.exhausted else { return .localWorkRemaining(progress) }
@@ -241,7 +242,7 @@ public struct ColdFeedBootstrap: Sendable {
     /// A pending head advances examination without reserving an Edition or reader position.
     /// Legacy preparation retains its one-slice outcome.
     private func attemptFirstPublication(identity: ColdFeedPublicationIdentity, resources: ColdFeedBootstrapResources,
-        backwardCapacity: Int, forwardCapacity: Int, prepareLegacyMedia: Bool,
+        backwardCapacity: Int, forwardCapacity: Int, keepsAdmittedHead: Bool = false, prepareLegacyMedia: Bool,
         remainingWindows: Int? = nil, mediaOpportunity: MediaPreparationOpportunity? = nil) async throws -> PublicationAttempt {
         try Task.checkCancellation()
         let remaining = remainingWindows ?? resources.localWindowCapacity
@@ -267,7 +268,8 @@ public struct ColdFeedBootstrap: Sendable {
         switch outcome {
         case .published:
             guard case .published(let snapshot) = try await installedPublication(identity: identity,
-                backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity) else {
+                backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
+                keepsAdmittedHead: keepsAdmittedHead) else {
                 throw ColdFeedBootstrapError.inconsistentPublishedRestore
             }
             return .published(snapshot)
@@ -277,6 +279,7 @@ public struct ColdFeedBootstrap: Sendable {
             await Task.yield()
             return try await attemptFirstPublication(identity: identity, resources: resources,
                 backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
+                keepsAdmittedHead: keepsAdmittedHead,
                 prepareLegacyMedia: prepareLegacyMedia, remainingWindows: remaining - 1, mediaOpportunity: mediaOpportunity)
         }
     }
@@ -295,9 +298,9 @@ public struct ColdFeedBootstrap: Sendable {
     }
 
     private func installedPublication(identity: ColdFeedPublicationIdentity, backwardCapacity: Int,
-        forwardCapacity: Int) async throws -> ColdFeedBootstrapOutcome {
+        forwardCapacity: Int, keepsAdmittedHead: Bool = false) async throws -> ColdFeedBootstrapOutcome {
         let bounds = FeedPresentationBounds(backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity,
-            contextKey: plan.context.key)
+            contextKey: plan.context.key, keepsAdmittedHead: keepsAdmittedHead)
         guard let snapshot = try await session.admitPresentation(.initial(bounds)),
             snapshot.editionID == identity.editionID else {
             throw ColdFeedBootstrapError.inconsistentPublishedRestore
