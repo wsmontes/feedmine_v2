@@ -60,12 +60,13 @@ de medir o que pretendiam, nenhuma delas por defeito do produto:
 
 **O que muda:** `gate_b04` passa a medir a cláusula na **lista admitida** que o trace registra
 (`admitted_series`/`admitted_violations`: cabeça na primeira carta da edição, lista contígua e que só
-cresce — `head_forward`, `tail_back`, `shrunk`, `holes`); `gate_b05` passa a medir no **registro
-durável** do app (`reader_bookmark_memberships` guarda a carta que o driver nomeou; o par de
-`position_checkpoint` diz onde a app pousou), e três leituras posicionais do driver
-(`b05-saved`, `b05-reopen-keeps-saved`, `b05-reopen-preserves-anchor`) ficam **reportadas**, com o
-limite declarado: B05 prova que o estado durável não se perdeu, não que o reposicionamento é exato ao
-card. O driver passa a **nomear a carta antes de salvar** e a pedir o controle dentro dela.
+cresce — `head_forward`, `tail_back`, `shrunk`, `holes`); `gate_b05` passa a julgar por **duas
+testemunhas**: todos os fatos que o driver mediu continuam valendo (só `b05-anchor-before` fica fora,
+porque é identidade e não veredito) **e** o registro durável do app tem de guardar a carta que o driver
+nomeou, com posição durável depois do percurso. Nada foi rebaixado: a cláusula ficou **mais estrita**.
+O driver passa a **nomear a carta antes de salvar** e a pedir o controle dentro dela — sem isso o toque
+ficava 793 pt acima da viewport, o XCTest rolava o feed para alcançá-lo e o salvamento caía na primeira
+carta desenhada.
 
 **Controlos, medidos antes de aplicar:**
 

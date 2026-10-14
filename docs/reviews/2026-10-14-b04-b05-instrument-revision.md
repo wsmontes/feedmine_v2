@@ -25,7 +25,10 @@ medir o que pretendiam**, e nenhuma delas por defeito do produto:
 A causa física do B05 foi medida no log: o controle estava a **y = −793 pt** (duas tentativas "Not hittable"),
 o XCTest rolou o feed para alcançá-lo, e o toque caiu na **primeira carta desenhada** — que passou a ser a
 cabeça da edição. Os `position_checkpoint` do trace registram `idx 0` no instante do salvamento e `idx 8` logo
-depois: **a app gravou exatamente a posição em que o driver a deixou.** O instrumento moveu o leitor, não a app.
+depois, **enquanto o `b05-anchor-before` do próprio driver, gravado no mesmo instante, dizia `idx 13`**: os dois
+registros não coincidem, e o que o dado sustenta é mais estreito — a app registrou a posição **resultante
+daquele arrasto**, e quem moveu o leitor foi o instrumento. É por isso que a correção é do driver, e não uma
+razão para desqualificar a medida.
 
 ## O que muda
 
@@ -38,24 +41,25 @@ e por sessão, o que a cláusula proíbe: `head_forward` (uma carta acima do lei
 **reportadas**; um `false` dele continua **falhando** o portão; um `not-measurable` deixa de torná-lo incompleto,
 porque o instrumento da cláusula é agora a lista que a app instalou.
 
-### 2. `gate_b05` — a cláusula passa a ser medida pelo registro durável
+### 2. `gate_b05` — a cláusula ganha uma segunda testemunha, e nada é rebaixado
 
-O salvamento tem de existir **e** ser da carta que o driver nomeou (`reader_bookmark_memberships`), e a app tem
-de ter deixado posição durável depois do percurso (`context_checkpoints` + o `position_checkpoint` final do
-trace, que é a posição em que ela pousou na reabertura). Três leituras **posicionais** do driver — `b05-saved`,
-`b05-reopen-keeps-saved` e `b05-reopen-preserves-anchor` — passam a **reportadas**, e isto é uma decisão
-explícita, não um efeito colateral:
+A cláusula passa a ser julgada por **duas testemunhas**, e é **mais estrita** do que era:
 
-- as duas primeiras leem `card.bookmark`, o **mesmo** identificador em toda carta (o próprio driver admite em
-  `DiscoveryBenchmarkTests.swift:104-108`), e varrem "algum controle da árvore" em vez da carta nomeada;
-- a terceira compara "topo desenhado antes" com "topo desenhado depois", e medido em `20261014T180639Z` o topo
-  desenhado (índice 13) divergia da âncora durável (índice 8) **antes** do fechamento — o desenho só instancia
-  perto da viewport, e no mesmo trace a própria app andou para trás (14→9→5→0→8).
+- **todas** as medidas do driver continuam valendo — `b05-saved`, `b05-reopen-keeps-saved`,
+  `b05-reopen-preserves-anchor` inclusive; só `b05-anchor-before` fica fora do portão, porque é identidade e
+  não veredito (o oráculo já fazia assim);
+- **acrescenta-se** o registro durável do app: o salvamento tem de existir **e** ser da carta que o driver
+  nomeou (`reader_bookmark_memberships`), e a app tem de ter deixado posição durável depois do percurso
+  (`context_checkpoints` + o `position_checkpoint` final do trace).
 
-O que fica no lugar: a comparação **durável** (a posição que a app gravou é a posição em que ela pousou) e o
-estado durável do salvamento. **Limite declarado:** com essas três fora do portão, B05 prova que o estado
-durável **não se perdeu**; ele **não** prova reposicionamento exato ao card. Quem quiser essa segunda prova
-precisa de um instrumento de identidade no driver — a carta nomeada é comparável por id, o "topo" não é.
+A segunda testemunha é o que o driver, sozinho, não conseguia responder: `card.bookmark` é o **mesmo**
+identificador em toda carta (nota do próprio driver em `DiscoveryBenchmarkTests.swift:104-108`), então uma
+varredura da árvore pode dizer "algo está salvo" sem dizer **qual**. E as leituras posicionais voltam a ser
+legítimas porque o driver deixou de arrastar o feed: a carta é nomeada antes do toque e o controle é procurado
+**dentro dela**, de modo que o XCTest não precisa rolar a lista para alcançá-lo — que era a causa física do
+`b05-saved:false` (controle a 793 pt acima da viewport). Se a corrida nova, com o driver escopado, ainda
+mostrar `b05-reopen-preserves-anchor:false`, isso é achado de produto e vai ser investigado — não desqualificado
+como medida.
 
 ### 3. Driver — o salvamento passa a nomear a carta
 

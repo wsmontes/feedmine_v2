@@ -647,8 +647,9 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         // it resolves to whatever the surface instantiated first — the reader's card while the admitted list was a
         // band around them, and the Edition's first card once the head is kept. Measured 2026-10-14: the `firstMatch`
         // sat 793 pt above the viewport, XCTest scrolled the feed to reach it, and the run saved the head card
-        // (`126C1A86`, index 0) instead of the card the driver was following (`BF12004E`, index 13) — the app
-        // recorded exactly the position it was left at, so the instrument, not the product, moved the reader.
+        // (`126C1A86`, index 0) instead of the card the driver was following (`BF12004E`, index 13), while the
+        // app's own position checkpoints recorded where that scroll left it (index 0 at the tap, index 8 just
+        // after) — the instrument moved the reader, not the product.
         guard let anchorBefore = presentedCard(app)?.identifier else {
             return XCTFail("the feed presented no card to save")
         }

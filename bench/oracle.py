@@ -544,16 +544,41 @@ def durable_position(database: str, trace: list[dict]) -> dict:
     return {"posicao_na_reabertura": landed, "checkpoints_duradouros": stored}
 
 
+def durable_position(database: str, trace: list[dict]) -> dict:
+    """O que a app gravou de posição, e onde ela pousou ao reabrir.
+
+    `position_checkpoint` é o registro durável de posição que o trace carrega (âncora + `placement`), e o último
+    evento da série é a posição em que a app terminou — medido: `57131de6`/índice 8 no FAIL de 2026-10-14 e
+    `55bf1aaa`/índice 6 no PASS. Ele entra na cláusula como **evidência durável ao lado** das medidas do driver,
+    não no lugar delas: o que a app gravou e o que o driver viu não coincidem necessariamente no mesmo instante
+    (no FAIL, `b05-anchor-before` dizia índice 13 enquanto os checkpoints diziam 0 e 8), e é por isso que a
+    comparação posicional do driver só vale depois que o driver deixou de arrastar o feed ao tocar o controle."""
+    landed = None
+    for event in trace:
+        if event.get("event") != "position_checkpoint":
+            continue
+        fields = event.get("fields") or {}
+        landed = {"anchor": fields.get("anchor"), "placement": fields.get("placement")}
+    stored = 0
+    if os.path.exists(database):
+        connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+        try:
+            stored = connection.execute("SELECT COUNT(*) FROM context_checkpoints").fetchone()[0]
+        except sqlite3.OperationalError:
+            stored = 0
+        finally:
+            connection.close()
+    return {"posicao_na_reabertura": landed, "checkpoints_duradouros": stored}
+
+
 def gate_b05(run: dict, corpus: dict, catalog_keys: list[str]) -> dict:
     """B05 — A → B → A, local memory and the offline return. Zero silent loss of state é a cláusula inteira, e ela
-    é julgada no **registro durável** do app: o salvamento tem de ser da carta que o driver nomeou, e o app tem de
-    ter posição durável depois do percurso.
-
-    Três leituras do driver são **reportadas**, não decisivas — todas comparam o topo desenhado, e o desenho só
-    instancia perto da viewport: `b05-saved` e `b05-reopen-keeps-saved` (que leem `card.bookmark`, o **mesmo**
-    identificador em toda carta) e `b05-reopen-preserves-anchor` (cujo "antes" é o topo desenhado, que diverge da
-    âncora durável — 5 cartas, FAIL de 2026-10-14). Limite declarado: com elas fora do portão, B05 prova que o
-    estado durável **não se perdeu**, não que o reposicionamento é exato ao card."""
+    é julgada por **duas** testemunhas: o que o driver mediu (todos os fatos menos `b05-anchor-before`, que é
+    identidade e não veredito) e o registro durável do app — o salvamento tem de existir **e** ser da carta que o
+    driver nomeou. A segunda é o que o driver, sozinho, não conseguia responder: `card.bookmark` é o **mesmo**
+    identificador em toda carta (nota do próprio driver, :104-108), então uma varredura da árvore pode dizer "algo
+    está salvo" sem dizer **qual**; com o driver nomeando a carta antes de salvar, as duas testemunhas concordam
+    ou a divergência é achado."""
     walked = run.get("phases") or []
     facts = {}
     for phase in walked:
@@ -564,9 +589,8 @@ def gate_b05(run: dict, corpus: dict, catalog_keys: list[str]) -> dict:
             facts[name] = value
     checks = {name: value for name, value in facts.items()
               if name.endswith(("saved", "anchor", "local", "cards", "reached", "anchor-before"))}
-    reported = {"b05-saved", "b05-reopen-keeps-saved", "b05-reopen-preserves-anchor"}
     failed = sorted(name for name, value in checks.items()
-                    if value not in ("true", "none") and name not in reported and name != "b05-anchor-before")
+                    if value not in ("true", "none") and name != "b05-anchor-before")
     saved = saved_cards(run.get("database"))
     anchor = (facts.get("b05-anchor-before") or "").lower()
     position = durable_position(run.get("database"), run.get("trace") or [])
@@ -588,10 +612,9 @@ def gate_b05(run: dict, corpus: dict, catalog_keys: list[str]) -> dict:
         },
         {
             "clause": "zero perda silenciosa de estado",
-            "observed": {"medidas": checks, "registro_duravel": durable, "falhas": failed,
-                         "leituras_posicionais_reportadas": {name: checks.get(name) for name in sorted(reported)}},
-            "expected": "o registro durável guarda a carta que o driver nomeou e uma posição depois do percurso; "
-                        "as leituras posicionais do driver são reportadas (não medem identidade)",
+            "observed": {"medidas": checks, "registro_duravel": durable, "falhas": failed},
+            "expected": "todas as medidas verdadeiras **e** o registro durável guardando a carta que o driver "
+                        "nomeou, com posição durável depois do percurso",
             "pass": (not failed) if checks else None,
         },
     ]
