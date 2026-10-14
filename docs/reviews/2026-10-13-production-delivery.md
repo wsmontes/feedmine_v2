@@ -1,8 +1,8 @@
 # Entrega de produção e TestFlight — 2026-10-13
 
-## Build 32 enviada — processamento Apple pendente
+## Build 32 disponível no TestFlight interno
 
-Envio concluído em 2026-10-13 18:02 PDT: `EXPORT SUCCEEDED`, `Upload succeeded`. Upload UUID `0b3e3454-78cd-4bfc-b1a8-0a3673832345`, versão **1.0 (32)**, plataforma iOS; consulta autenticada confirmou `PROCESSING`, sem erros ou avisos naquele momento. Ainda não é prova de disponibilidade instalável.
+Envio concluído em 2026-10-13 18:02 PDT: `EXPORT SUCCEEDED`, `Upload succeeded`. Upload UUID `0b3e3454-78cd-4bfc-b1a8-0a3673832345`, versão **1.0 (32)**, plataforma iOS. A consulta posterior confirmou upload `COMPLETE`, build `VALID`, não expirada, `internalBuildState=IN_BETA_TESTING`; o grupo **WawaTesters** inclui explicitamente essa build. Disponibilidade interna instalável confirmada por `build32/testflight-status.jsonl`; instalação no aparelho de um tester não foi observada nesta sessão.
 
 Binário pareado ao commit `c6de80b7decca9a81a4888333521b696f84cf761`, tag anotada `ios/1.0-build.32-c6de80b7`; ambos publicados no GitHub. O archive concluiu em Release, bundle `com.feedmine.app`, SHA embutido `c6de80b7`, assinatura verificada (`codesign --verify --deep --strict`, exit 0). Catálogo dentro do archive: 117.993.472 bytes, SHA `72f066227958b482f365c88dd58320e75bc9ade9268b4e2ddaac9173908ecf71`.
 
@@ -48,7 +48,7 @@ Primeira tentativa integral (anterior ao adapter de ambiente do app): `bench/run
 | B04 | NOT_RUN nesta sessão (nova corrida pendente) | Estabilidade física; anterior 081619Z foi NOT_RUN |
 | B05 | NOT_RUN nesta sessão (nova corrida pendente) | Preservar o PASS histórico relatado sem atribuí-lo ao HEAD atual |
 | B06 | NOT_RUN | iPhone 14 Plus disponível/pareado; ainda faltam corrida integral e medidas controladas de memória, energia, térmica e hitches |
-| TestFlight interno | 31 disponível; 32 enviada/processando | 31 VALID / IN_BETA_TESTING; upload32 PROCESSING, acesso instalável ainda não confirmado |
+| TestFlight interno | Build32 disponível | Apple VALID / IN_BETA_TESTING; grupo WawaTesters inclui32; tag e commit publicados |
 
 **Produção ainda não certificada.** Permanecem os gates integrais e a triagem K-14/K-15 (proteção da cauda admitida; enriquecimento de corpo RSS/Atom com compatibilidade de identidade material). Disponibilidade no TestFlight não fecha essas pendências.
 
