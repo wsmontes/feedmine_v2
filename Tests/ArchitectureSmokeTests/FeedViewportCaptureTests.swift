@@ -102,6 +102,83 @@ final class FeedViewportCaptureTests: XCTestCase {
             frame: CGRect(x: 0, y: 100, width: 600, height: 400), offset: 150, height: 400)))
     }
 
+    /// PO 2026-10-14: a captura relata **onde o viewport começa** — o primeiro card cuja borda superior está dentro
+    /// do viewport —, e não (só) o card em que o leitor está: é esse card do topo que a durabilidade grava, porque é
+    /// ele que uma restauração reproduz exatamente. A escolha é feita em **coordenadas de conteúdo**, invariantes à
+    /// rolagem: comparar bordas medidas no viewport, em passadas diferentes do layout, foi o defeito medido em B05
+    /// (2026-10-14) — seis posições distintas num único repouso, e o cursor terminando num card que não era o topo.
+    func testPresentedTopIsTheFirstCardStartingInsideTheViewport() {
+        var capture = FeedVisualCapture()
+        let above = PublicationCardID(), top = PublicationCardID(), below = PublicationCardID()
+        // Conteúdo: cada carta ocupa 400 de altura, e o viewport começa no conteúdo 120.
+        _ = capture.observe(.init(offset: 120, extent: 2_000, height: 800))
+        capture.observeCard(.init(cardID: above,
+            frame: .init(x: 0, y: -120, width: 400, height: 200), offset: 120, height: 800))
+        XCTAssertNil(capture.presentedAnchor, "uma carta que começa acima da borda não é o card do topo")
+        capture.observeCard(.init(cardID: top,
+            frame: .init(x: 0, y: 280, width: 400, height: 200), offset: 120, height: 800))
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: top, placement: .top))
+        capture.observeCard(.init(cardID: below,
+            frame: .init(x: 0, y: 680, width: 400, height: 200), offset: 120, height: 800))
+        XCTAssertEqual(capture.presentedAnchor?.cardID, top, "cartas abaixo nunca substituem o topo")
+        // Rolar não move o conteúdo: a escolha passa a ser a próxima carta que começa dentro do viewport.
+        _ = capture.observe(.init(offset: 600, extent: 2_000, height: 800))
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: below, placement: .top))
+        // Uma mudança de geometria — a janela ganha cartas, ou o layout muda — **não** esvazia a base: as
+        // coordenadas de conteúdo das cartas já medidas continuam válidas, e cada carta corrige a sua própria
+        // entrada quando o layout a desloca.
+        _ = capture.observe(.init(offset: 600, extent: 2_100, height: 800))
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: below, placement: .top))
+        // E uma carta que o layout subiu para dentro do viewport passa a ser a escolha: a sua própria entrada
+        // corrigida é o que a base usa, sem ninguém precisar esvaziá-la.
+        capture.observeCard(.init(cardID: top,
+            frame: .init(x: 0, y: 10, width: 400, height: 200), offset: 600, height: 800))
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: top, placement: .top))
+    }
+
+    /// O repouso semântico do desenho: nenhum gesto, nenhum hold emprestado, nenhuma animação programática. É ele
+    /// que deixa uma posição **distinta** do viewport virar durável na hora — e uma animação do sistema não é
+    /// repouso, por mais que o leitor não esteja tocando a tela.
+    func testTheRenderingIsAtRestOnlyWithoutAGestureOrAProgrammaticAnimation() {
+        var capture = FeedVisualCapture()
+        XCTAssertTrue(capture.isRenderingAtRest)
+        capture.reading = true
+        XCTAssertFalse(capture.isRenderingAtRest, "um gesto em curso não é repouso")
+        capture.reading = false
+        capture.motion.animating = true
+        XCTAssertFalse(capture.isRenderingAtRest, "uma animação programática não é repouso")
+        capture.motion.animating = false
+        XCTAssertTrue(capture.isRenderingAtRest)
+    }
+
+    /// A posição é dita **quando muda** e **uma vez por repouso**: um passo de rolagem que não cruza a fronteira de
+    /// um card não é uma posição nova, e a posição em que o leitor parou ainda precisa ser dita em repouso — é ela
+    /// que vira escrita, e uma posição dita só em movimento não é gravada.
+    func testPresentedPositionIsReportedOnChangeAndOncePerRest() {
+        var capture = FeedVisualCapture()
+        var events: [(PresentationAnchor, Bool)] = []
+        let first = PublicationCardID(), second = PublicationCardID()
+        capture.motion.presentedTop = first
+        capture.reportPresentedPosition { events.append(($0, $1)) }
+        XCTAssertEqual(events.map(\.1), [true], "em repouso, uma posição nova é dita na hora")
+        capture.reportPresentedPosition { events.append(($0, $1)) }
+        XCTAssertEqual(events.count, 1, "a mesma posição em repouso não é dita duas vezes")
+        // Um gesto em curso: a posição nova é dita como um fato que ainda **não** está em repouso.
+        capture.reading = true
+        capture.motion.presentedTop = second
+        capture.reportPresentedPosition { events.append(($0, $1)) }
+        XCTAssertEqual(events.map(\.1), [true, false], "em movimento a posição não é um repouso")
+        // E o repouso na mesma posição ainda é dito: é ele que faz a escrita.
+        capture.reading = false
+        capture.reportPresentedPosition { events.append(($0, $1)) }
+        XCTAssertEqual(events.map(\.1), [true, false, true])
+        XCTAssertEqual(events.map(\.0), [PresentationAnchor(cardID: first, placement: .top),
+            PresentationAnchor(cardID: second, placement: .top),
+            PresentationAnchor(cardID: second, placement: .top)])
+        capture.reportPresentedPosition { events.append(($0, $1)) }
+        XCTAssertEqual(events.count, 3, "o repouso não repete a mesma posição")
+    }
+
     func testN3OffscreenReferenceNeverBecomesVisibleAnchor() {
         var capture = FeedVisualCapture()
         let id = PublicationCardID()

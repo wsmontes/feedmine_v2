@@ -24,6 +24,10 @@ final class FeedNativeScrollOffset {
     }
     // Reading this property must not mutate the capture or cancel reader activity.
     var isCorrecting: Bool { suppressCorrectionEvents && !nativeGestureActive }
+    /// Uma rolagem animada — programática, de acessibilidade ou do sistema — ainda está a caminho do destino. É o
+    /// sinal nativo de que nada do que o desenho mostrar agora é uma posição em repouso: um gesto não aparece aqui
+    /// (`isDragging`/`isDecelerating` o dizem), e por isso ele fecha o caso de uma tela que se move **sem** o leitor.
+    var isAnimatingScroll: Bool { scrollView?.isScrollAnimating ?? false }
     #if DEBUG
     private(set) var activeWrites = 0
     private(set) var activeWindowChanges = 0

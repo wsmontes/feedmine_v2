@@ -1482,7 +1482,11 @@ final class FeedAssociation {
         }
     }, availableDestinations: Self.readerDestinations(for: contextKey),
         onSubmitSearch: { [weak self] term in self?.onSearch?(term) },
-        onNavigate: { [weak self] destination in self?.onNavigate?(destination) })
+        onNavigate: { [weak self] destination in self?.onNavigate?(destination) },
+        onPresentedPosition: { [weak self] anchor, atRest in
+            guard let self, self.active else { return }
+            Task { await self.notePresentedPosition(anchor, atRest: atRest) }
+        })
 
     /// T9: the card actions this host executes. Resolution is the action coordinator's (the occurrence's own
     /// frozen target); what happens next — a browser, a clipboard, a share sheet — is here, and nowhere near a
@@ -2482,26 +2486,54 @@ final class FeedAssociation {
         }
     }
 
-    /// PO 2026-10-14: o último card admitido e estabelecido vira posição durável — a que um fechamento à força
-    /// recupera. O dono do cursor é a sessão (`FeedSession.recordSettledPosition`), que aplica a janela máxima de
-    /// perda declarada lá; aqui só se diz **quando**: depois de a observação do leitor ter sido admitida e
-    /// instalada, com o fato que o driver já traz — `activity == .stationary` é o leitor **chegando ao repouso**
-    /// (a própria captura emite esse evento uma vez por repouso), e um repouso nunca espera a janela. A escrita
-    /// roda no executor do ator da sessão, nunca no caminho de renderização. Uma falha de escrita é registrada e
-    /// não interrompe a leitura: o cursor anterior continua descrevendo o leitor, uma janela atrás, e a próxima
-    /// observação estabelecida tenta de novo.
+    /// PO 2026-10-14: a última posição **admitida e estabelecida** do leitor vira posição durável — a que um
+    /// fechamento à força recupera. O dono do cursor é a sessão (`FeedSession.recordSettledPosition`), que aplica a
+    /// janela máxima de perda declarada lá; aqui só se diz **quando**:
+    ///
+    /// - Depois de a observação do leitor ter sido admitida e instalada, com o fato que o driver já traz —
+    ///   `activity == .stationary` é o leitor **chegando ao repouso** (a própria captura emite esse evento uma vez
+    ///   por repouso), e um repouso nunca espera a janela.
+    /// - E pelo repouso do próprio **desenho** (`FeedScreenStore.publishPresentedPosition(_:atRest:)` →
+    ///   `notePresentedPosition`), que é o único caminho por onde uma tela movida **sem** gesto — uma rolagem de
+    ///   acessibilidade, uma animação do sistema — vira posição durável: sem ele, o leitor que morre depois de uma
+    ///   dessas volta a uma posição que ele já tinha deixado (medido: B05 2026-10-14, o `presentedCard` que o driver
+    ///   mediu antes do `terminate` estava a oito cards do cursor durável).
+    ///
+    /// **O quê** já não é dito aqui: a sessão lembra a posição que o desenho relatou (`notePresentedPosition`) e
+    /// grava o card em que o viewport começa, não o card em que o leitor está — ver
+    /// `FeedSession.recordSettledPosition(at:settled:)`. Os dois fatos acima chegam ao mesmo dono e ao mesmo
+    /// registro, então a observação do leitor e o repouso do desenho não podem discordar sobre a posição.
+    ///
+    /// A escrita roda no executor do ator da sessão, nunca no caminho de renderização. Uma falha de escrita é
+    /// registrada e não interrompe a leitura: o cursor anterior continua descrevendo o leitor, uma janela atrás, e a
+    /// próxima observação estabelecida tenta de novo.
     private func recordSettledPosition(settled: Bool) async {
         do {
-            // O `written` é o único desfecho que custa uma escrita; é ele que entra no registro da corrida, e é a
-            // contagem dessas linhas por minuto de leitura que mede o custo contra o orçamento de fluidez.
-            guard case .written(let cardID, let placement) = try await session.recordSettledPosition(
-                at: Date(), settled: settled) else { return }
-            let window = Int(FeedSession.settledPositionDebounceWindow)
-            Self.log("settled position checkpoint anchor=\(cardID.rawValue.uuidString) "
-                + "placement=\(placement.rawValue) window=\(window)s")
-            trace?.record("position_checkpoint", ["anchor": cardID.rawValue.uuidString,
-                "placement": placement.rawValue, "window_seconds": String(window)])
+            report(checkpoint: try await session.recordSettledPosition(at: Date(), settled: settled))
         } catch { Self.log("settled position checkpoint failed \(error)") }
+    }
+
+    /// O mesmo dono, o mesmo registro: o app relata **onde o viewport desenhado começa** e se o desenho está em
+    /// repouso nele. É por aqui que uma tela movida **sem** gesto — uma rolagem de acessibilidade, uma animação do
+    /// sistema — vira posição durável; sem esse fato, o leitor que morre depois de uma dessas volta a uma posição
+    /// que já tinha deixado (medido: B05 2026-10-14, o `presentedCard` que o driver mediu antes do `terminate`
+    /// estava a oito cards do cursor durável). Em movimento o fato é só lembrado pela sessão, que aplica a janela
+    /// máxima de perda declarada lá.
+    private func notePresentedPosition(_ anchor: PresentationAnchor, atRest: Bool) async {
+        do {
+            report(checkpoint: try await session.notePresentedPosition(anchor, atRest: atRest))
+        } catch { Self.log("settled position checkpoint failed \(error)") }
+    }
+
+    /// O `written` é o único desfecho que custa uma escrita; é ele que entra no registro da corrida, e é a contagem
+    /// dessas linhas por minuto de leitura que mede o custo contra o orçamento de fluidez.
+    private func report(checkpoint recording: SettledPositionRecording?) {
+        guard case .written(let cardID, let placement) = recording else { return }
+        let window = Int(FeedSession.settledPositionDebounceWindow)
+        Self.log("settled position checkpoint anchor=\(cardID.rawValue.uuidString) "
+            + "placement=\(placement.rawValue) window=\(window)s")
+        trace?.record("position_checkpoint", ["anchor": cardID.rawValue.uuidString,
+            "placement": placement.rawValue, "window_seconds": String(window)])
     }
 
     func foreground() async {

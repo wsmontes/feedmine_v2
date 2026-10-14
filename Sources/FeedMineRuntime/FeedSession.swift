@@ -35,6 +35,11 @@ public actor FeedSession {
     /// What this association last made durable: the anchor the record holds and when it was written. It is the
     /// debounce's whole state — one rule, one owner, no timer and no second clock (PO 2026-10-14).
     private var durablePosition: (anchor: FeedWindowAnchor, at: Date)?
+    /// Where the app says the reader's **rendered** viewport starts (see `notePresentedPosition(_:atRest:)`): the
+    /// card the screen begins at, not the card the reader's observation anchors on. Memory-local until a rest makes
+    /// it durable, and never a second presentation: it names one card and one placement, and a card the admitted
+    /// window does not hold is ignored at the only place it is ever read.
+    private var presentedPosition: PresentationAnchor?
 
     /// Composition-only exception: accepts the semantic Publication boundary.
     /// UI consumes Runtime presentation results without importing Publication.
@@ -357,7 +362,7 @@ public actor FeedSession {
     /// The caller decides when a milestone occurs; date validation belongs to Persistence.
     public func checkpointCurrentPosition(at date: Date) throws -> Bool {
         guard let current = state else { return false }
-        let anchor = Self.durableAnchor(of: current.presentation.window.anchor)
+        let anchor = recordedPosition(of: current)
         try publicationHistory.saveCursor(
             SessionCursor(editionID: current.presentation.editionID, anchor: anchor), updatedAt: date)
         // A milestone is a durable write of the same record: it also moves the debounce's own clock, so the
@@ -367,12 +372,18 @@ public actor FeedSession {
     }
 
     /// PO 2026-10-14, ratificado: retornar ao app tem de recuperar a posição **também depois de um fechamento à
-    /// força**. O cursor durável passa a ser gravado sobre o último card **admitido e estabelecido** — a âncora da
-    /// janela que a própria observação do leitor produziu — e não só nos milestones (troca de contexto,
-    /// substituição de sessão, ida para background, criação da edição): um leitor que morre sem passar por nenhum
-    /// deles voltava ao **início da edição**, porque o cursor nunca tinha sido reescrito.
+    /// força**. O cursor durável passa a ser gravado sobre o último card **admitido e estabelecido** — e não só nos
+    /// milestones (troca de contexto, substituição de sessão, ida para background, criação da edição): um leitor que
+    /// morre sem passar por nenhum deles voltava ao **início da edição**, porque o cursor nunca tinha sido reescrito.
     ///
-    /// A regra tem duas partes, e as duas existem para que a **perda máxima declarada** seja pequena de verdade:
+    /// **O que o registro nomeia** é a posição do *viewport* do leitor — o card em que a tela dele começa, preso à
+    /// borda superior —, não o card em que ele está: ver `recordSettledPosition(at:settled:)` e
+    /// `notePresentedPosition(_:atRest:)` para a medição que separa os dois. A perda espacial declarada é **o
+    /// deslocamento dentro do primeiro card** (até uma altura de card), porque o contrato nunca carrega pixels; a
+    /// identidade do card do topo é reproduzida exatamente, e é ela que a aceitação mede.
+    ///
+    /// A regra temporal tem duas partes, e as duas existem para que a **perda máxima declarada** seja pequena de
+    /// verdade:
     ///
     /// - **O leitor chegando ao repouso é gravado na hora.** `settled: true` é o próprio fato que a decisão nomeia
     ///   (o último card *estabelecido*); ele nunca espera janela nenhuma, então quem para de rolar não perde nada.
@@ -385,26 +396,28 @@ public actor FeedSession {
     ///
     /// Custo declarado, ao lado do orçamento de performance (a fluidez medida pelo medidor de quadros: 16,67 ms por
     /// quadro a 60 Hz): **no máximo `60 / settledPositionDebounceWindow` = 3 escritas por minuto em movimento**,
-    /// mais **uma por repouso** (o leitor que para é quem produz escritas; quem não se mexe não produz nenhuma),
-    /// mais uma na primeira observação estabelecida de cada associação, mais os milestones que já existiam. Cada
-    /// escrita é um upsert de uma linha no SQLite, executado no executor deste ator — nunca no corpo de uma view,
-    /// nunca no ator principal e nunca no caminho de renderização — e mede 0,82 ms nesta máquina.
+    /// mais **uma por posição de repouso distinta** (o leitor que para é quem produz escritas; quem não se mexe não
+    /// produz nenhuma), mais uma na primeira observação estabelecida de cada associação, mais os milestones que já
+    /// existiam. Cada escrita é um upsert de uma linha no SQLite, executado no executor deste ator — nunca no corpo
+    /// de uma view, nunca no ator principal e nunca no caminho de renderização — e mede 0,82 ms nesta máquina.
     public static let settledPositionDebounceWindow: TimeInterval = 20
 
     /// Records the admitted, settled position durably, under the declared debounce window.
     ///
     /// The caller states *when* the reader's own move happened and whether it was a **rest**; this owner states
-    /// *how often* it may reach storage while the reader is still moving. A position already durable is never
-    /// rewritten, so a resting reader produces no writes at all. Nothing changes the current presentation, and a
-    /// failed write propagates with both the memory state and the previous durable cursor intact — the same
+    /// *how often* it may reach storage while the reader is still moving, and — from the rendered position the app
+    /// has stated (`notePresentedPosition(_:atRest:)`) — *what* the record names. A position already durable is
+    /// never rewritten, so a resting reader produces no writes at all. Nothing changes the current presentation,
+    /// and a failed write propagates with both the memory state and the previous durable cursor intact — the same
     /// contract as the milestone write.
     ///
     /// - Parameter settled: the reader has come to rest (`RunwayActivity.stationary`, the app's own semantic
-    ///   settle). A rest is always recorded; a moving observation is recorded only once the window has passed.
+    ///   settle, or the rendering resting at a distinct position). A rest is always recorded; a moving observation
+    ///   is recorded only once the window has passed.
     @discardableResult
     public func recordSettledPosition(at date: Date, settled: Bool = false) throws -> SettledPositionRecording {
         guard let current = state else { return .nothingToRecord }
-        let anchor = Self.durableAnchor(of: current.presentation.window.anchor)
+        let anchor = recordedPosition(of: current)
         if let durable = durablePosition {
             if durable.anchor == anchor { return .alreadyDurable }
             let elapsed = date.timeIntervalSince(durable.at)
@@ -415,18 +428,64 @@ public actor FeedSession {
         try publicationHistory.saveCursor(
             SessionCursor(editionID: current.presentation.editionID, anchor: anchor), updatedAt: date)
         durablePosition = (anchor, date)
-        return .written(cardID: anchor.cardID, placement: current.presentation.window.anchor.placement)
+        return .written(cardID: anchor.cardID, placement: Self.presentationPlacement(of: anchor.placement))
     }
 
-    /// The durable form of a presentation anchor: card and placement, nothing else. Both the milestone and the
-    /// debounced write state the position through this one mapping, so the two can never disagree about what "the
-    /// reader's position" means.
+    /// The app states where the reader's **rendered viewport starts** — the first card whose top edge is at or
+    /// below the viewport's top edge. That is the position a restore can honour **exactly** (pin the card's top
+    /// edge to the viewport's top edge), which is why the durable record states it with `.top` instead of the
+    /// admitted window's own anchor. The window's anchor is the card the reader is *on* — the one straddling the
+    /// capture's reference line — and the record is **incomplete** for it: the distance from that line to the
+    /// card's top edge is not part of a record that never carries pixels, so a restore that honours the anchor card
+    /// lands on a neighbouring card (measured 2026-10-14, B05: with the reader's card at y=399 and the top card at
+    /// y=234 inside an 834 pt viewport, the cold start drew a viewport whose top card sat four to five cards away
+    /// from the one measured before the forced close).
+    ///
+    /// The fact is memory-local on its own: it becomes durable only when the rendering is **at rest** at it, and
+    /// that is also the occasion a viewport moved **without any gesture** (an accessibility scroll, a system
+    /// animation, a programmatic scroll) becomes a durable position — without it, a reader who dies after such a
+    /// move returns to a position they had already left (measured in the same run: the app registered no
+    /// observation for the driver's own scroll-to-visible, so the record stayed eight cards behind the screen).
+    ///
+    /// - Returns: the recording, when `atRest` made this a write attempt; `nil` when the position was only
+    ///   remembered (the reader or the rendering is still moving).
+    @discardableResult
+    public func notePresentedPosition(_ anchor: PresentationAnchor, atRest: Bool,
+        at date: Date = Date()) throws -> SettledPositionRecording? {
+        presentedPosition = anchor
+        guard atRest else { return nil }
+        return try recordSettledPosition(at: date, settled: true)
+    }
+
+    /// The position a durable write states. The app's presented top card wins **only when this admitted window
+    /// holds it**: a record may never name a card the reader's own window does not carry, so a stale rendering
+    /// fact (another context, another Edition, a card the window trimmed) falls back to the window's own anchor
+    /// instead of writing a position nobody can restore. Both boundaries state the position through this one
+    /// mapping, so they can never disagree about what "the reader's position" is.
+    private func recordedPosition(of current: FeedSessionState) -> FeedWindowAnchor {
+        guard let presentedTop = presentedPosition?.cardID,
+            current.presentation.window.items.contains(where: { $0.id == presentedTop })
+        else { return Self.durableAnchor(of: current.presentation.window.anchor) }
+        return FeedWindowAnchor(cardID: presentedTop, placement: .top)
+    }
+
+    /// The durable form of a presentation anchor: card and placement, nothing else. Used when the app states no
+    /// rendered position, so the record keeps naming the card the reader's own observation produced.
     private static func durableAnchor(of anchor: PresentationAnchor) -> FeedWindowAnchor {
-        let placement: AnchorPlacement
-        switch anchor.placement {
-        case .top: placement = .top
-        case .center: placement = .center
+        FeedWindowAnchor(cardID: anchor.cardID, placement: placement(of: anchor.placement))
+    }
+
+    private static func placement(of placement: PresentationAnchorPlacement) -> AnchorPlacement {
+        switch placement {
+        case .top: return .top
+        case .center: return .center
         }
-        return FeedWindowAnchor(cardID: anchor.cardID, placement: placement)
+    }
+
+    private static func presentationPlacement(of placement: AnchorPlacement) -> PresentationAnchorPlacement {
+        switch placement {
+        case .top: return .top
+        case .center: return .center
+        }
     }
 }

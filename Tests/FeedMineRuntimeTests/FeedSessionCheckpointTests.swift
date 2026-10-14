@@ -387,4 +387,87 @@ final class FeedSessionCheckpointTests: XCTestCase {
             XCTAssertLessThan(average, 0.05, "one write is far below a frame (16,67 ms)")
         }
     }
+
+    /// PO 2026-10-14: o registro durável nomeia **o card em que o viewport do leitor começa** — o do topo —, preso
+    /// à borda de cima, e não o card em que ele está. Só a primeira forma é *completa*: o card em que o leitor está
+    /// é o que a captura escolhe pela linha de referência, e a distância dessa linha até a borda do card não faz
+    /// parte de um registro que nunca carrega pixels (medido em B05, 2026-10-14: o registro nomeava o card do leitor
+    /// e o cold start desenhava o viewport quatro cards adiante). Em movimento o fato é apenas lembrado.
+    func testThePresentedTopCardBecomesTheDurablePositionPinnedToTheTopEdge() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            let moving = try await session.notePresentedPosition(
+                PresentationAnchor(cardID: cards[3].id, placement: .top), atRest: false)
+            XCTAssertNil(moving, "em movimento o fato é lembrado, não gravado")
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.cardID, cards[4].id)
+            let written = try await session.notePresentedPosition(
+                PresentationAnchor(cardID: cards[3].id, placement: .top), atRest: true)
+            XCTAssertEqual(written, .written(cardID: cards[3].id, placement: .top))
+            let checkpoint = try XCTUnwrap(SessionStore(database: database).checkpoint())
+            XCTAssertEqual(checkpoint.cardID, cards[3].id)
+            XCTAssertEqual(checkpoint.anchorPlacement, "top", "o topo é gravado como topo")
+        }
+    }
+
+    /// Um registro nunca nomeia um card que a janela admitida não carrega: um fato de desenho velho (outro
+    /// contexto, outra edição, um card que a janela cortou) volta à âncora da própria janela em vez de gravar uma
+    /// posição que ninguém consegue restaurar — e repetir o mesmo fato não reescreve nada.
+    func testAStaleOrForeignPresentedCardFallsBackToTheWindowAnchor() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            // A janela restaurada é cards[2...6]: cards[9] e cards[0] estão fora dela.
+            let outsideTheTail = try await session.notePresentedPosition(
+                PresentationAnchor(cardID: cards[9].id, placement: .top), atRest: true)
+            XCTAssertEqual(outsideTheTail, .written(cardID: cards[4].id, placement: .center))
+            let again = try await session.notePresentedPosition(
+                PresentationAnchor(cardID: cards[9].id, placement: .top), atRest: true)
+            XCTAssertEqual(again, .alreadyDurable, "a mesma posição relatada de novo não reescreve o cursor")
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.cardID, cards[4].id)
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.anchorPlacement, "center")
+        }
+    }
+
+    /// E o fato que a restauração mede: o card do topo volta preso à borda de cima — a mesma identidade no topo da
+    /// tela —, com a janela materializada em volta dele.
+    func testThePresentedTopCardSurvivesACloseAndReopen() async throws {
+        try await withLocation { location in
+            let (edition, cards) = try persist(location: location)
+            do {
+                let database = try RuntimeDatabase(location: location)
+                let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+                _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+                _ = try await session.notePresentedPosition(
+                    PresentationAnchor(cardID: cards[3].id, placement: .top), atRest: true)
+            }
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            XCTAssertEqual(restored?.window.anchor, PresentationAnchor(cardID: cards[3].id, placement: .top))
+            XCTAssertEqual(restored?.window.items.map(\.id), Array(cards[1...5]).map(\.id))
+            XCTAssertEqual(restored?.editionID, edition.id)
+        }
+    }
+
+    /// O milestone grava a mesma posição que o repouso, pelo mesmo mapeamento: com o card do topo relatado, o
+    /// registro nomeia o topo; sem ele, a âncora da janela (o comportamento de antes).
+    func testAMilestoneStatesThePresentedTopWhenTheAppHasOne() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            _ = try await session.notePresentedPosition(
+                PresentationAnchor(cardID: cards[6].id, placement: .top), atRest: false)
+            let saved = try await session.checkpointCurrentPosition(at: milestoneTime)
+            XCTAssertTrue(saved)
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.cardID, cards[6].id)
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.anchorPlacement, "top")
+        }
+    }
 }

@@ -38,6 +38,25 @@ public final class FeedScreenStore {
     @ObservationIgnored private let onSubmitSearch: @MainActor (String) -> Void
     @ObservationIgnored private let onNavigate: @MainActor (ReaderDestination) -> Void
     @ObservationIgnored private let onAction: @MainActor (ReaderCardActionEvent) -> Void
+    /// Onde o viewport desenhado começa, e se o desenho está em **repouso** nele. É o fato que o host usa para
+    /// tornar a posição durável na hora; ver `publishPresentedPosition`. Este store não guarda a posição: ele
+    /// repassa uma entrada explícita, como todas as outras, e quem é dono do cursor (a sessão) é quem lembra dela.
+    @ObservationIgnored private let onPresentedPosition: (@MainActor (PresentationAnchor, Bool) -> Void)?
+
+    /// Publica onde o viewport desenhado começa: o primeiro card cuja borda superior está dentro do viewport, preso
+    /// à borda de cima. É uma posição que o leitor realmente teve na tela — inclusive quando a tela se moveu sem
+    /// gesto nenhum (uma rolagem de acessibilidade, uma animação do sistema) —, e é ela que a durabilidade grava: o
+    /// card em que o leitor *está* não determina o viewport (a distância da linha de referência da captura até a
+    /// borda do card não faz parte de um registro que nunca carrega pixels), então uma restauração que o nomeasse
+    /// podia desenhar o viewport do card vizinho (medido 2026-10-14, B05).
+    ///
+    /// `atRest` é o repouso semântico do próprio desenho (sem gesto, sem hold emprestado, sem animação
+    /// programática): uma posição sob repouso é uma posição que o leitor realmente segura. Quem decide **quanto**
+    /// isso custa é o dono do cursor (`FeedSession.notePresentedPosition(_:atRest:)`): uma posição já durável não é
+    /// reescrita, e em movimento a janela declarada em `FeedSession.settledPositionDebounceWindow` segue valendo.
+    public func publishPresentedPosition(_ anchor: PresentationAnchor, atRest: Bool) {
+        onPresentedPosition?(anchor, atRest)
+    }
 
     /// `onAction` receives one semantic request per user interaction (review F10): the occurrence and
     /// what the reader asked for. No URL, player, pasteboard or sheet crosses into UI; external
@@ -48,7 +67,8 @@ public final class FeedScreenStore {
         onAction: @escaping @MainActor (ReaderCardActionEvent) -> Void = { _ in },
         availableDestinations: Set<ReaderDestination> = [],
         onSubmitSearch: @escaping @MainActor (String) -> Void = { _ in },
-        onNavigate: @escaping @MainActor (ReaderDestination) -> Void = { _ in }) {
+        onNavigate: @escaping @MainActor (ReaderDestination) -> Void = { _ in },
+        onPresentedPosition: (@MainActor (PresentationAnchor, Bool) -> Void)? = nil) {
         state = FeedPresentationState(presentation: nil)
         self.onViewport = onViewport
         self.onRenderedViewport = onRenderedViewport
@@ -57,6 +77,7 @@ public final class FeedScreenStore {
         self.availableDestinations = availableDestinations
         self.onSubmitSearch = onSubmitSearch
         self.onNavigate = onNavigate
+        self.onPresentedPosition = onPresentedPosition
     }
 
     /// V1's menu order, limited to what this host can present.

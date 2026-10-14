@@ -134,6 +134,13 @@ public struct FeedScreen: View {
                                     if let event = capture.settle() {
                                         store.submitViewport(event.observation, activity: event.activity, rendered: store.state.presentation)
                                     }
+                                    // Onde o viewport **começa** vai para o host: é a posição que a durabilidade
+                                    // grava, porque é a única que uma restauração reproduz exatamente. O store a
+                                    // repassa — quem a lembra é a sessão — e a captura só fala quando a posição
+                                    // muda ou chega ao repouso.
+                                    capture.reportPresentedPosition { anchor, atRest in
+                                        store.publishPresentedPosition(anchor, atRest: atRest)
+                                    }
                                 }
                             EditorialSlot { editorial?(card, index, index > 0 ? items[index - 1] : nil) }
                           }
@@ -312,6 +319,24 @@ final class FeedVisualMotion {
     var settled = false
     var tailReported = false
     var readerCardID: PublicationCardID?
+    /// Onde o **viewport começa**: o card do topo. Ele é escolhido em **coordenadas de conteúdo**, invariantes à
+    /// rolagem — duas cartas medidas em passadas diferentes do layout não são comparáveis em coordenadas do
+    /// viewport, e foi isso que fez a primeira versão publicar seis posições distintas num único repouso (medido em
+    /// B05, 2026-10-14: o cursor terminou num card que não era o do topo da tela).
+    var presentedTop: PublicationCardID?
+    /// A borda superior de cada carta **no conteúdo** (`frame.minY + offset`), que não se move quando o leitor rola.
+    /// É a base da escolha acima; podada ao redor do viewport, porque uma carta a mais de uma tela de distância
+    /// nunca é o topo e volta a reportar quando se aproxima.
+    var cardContentTops: [PublicationCardID: CGFloat] = [:]
+    /// Uma animação programática (não um gesto do leitor) está em curso: nada do que o desenho mostrar enquanto ela
+    /// durar é uma posição em repouso.
+    var animating = false
+    /// A última posição publicada ao host, e a última que o host reconheceu **em repouso**. As duas juntas evitam
+    /// duas coisas: submeter uma posição por quadro (um passo de rolagem que não cruza a fronteira de um card não é
+    /// uma posição nova) e perder a posição em que o leitor parou (a mesma posição muda de valor quando o desenho
+    /// passa ao repouso).
+    var publishedPresentedTop: PublicationCardID?
+    var acknowledgedPresentedTop: PublicationCardID?
     // Diagnóstico apenas: um vetor não verificado nunca é autoridade de direção nem veto global.
     var velocityUnverified = false
     #if DEBUG
@@ -368,6 +393,38 @@ struct FeedVisualCapture {
             cardHeight: proof.height)
     }
 
+    /// Onde o **viewport desenhado começa**, na forma que uma restauração honra exatamente: o primeiro card cuja
+    /// borda superior está dentro do viewport, preso à borda de cima. É a posição que o host publica e grava — nunca
+    /// pixels, e nunca o card em que o leitor *está* (esse não determina o viewport).
+    var presentedAnchor: PresentationAnchor? {
+        motion.presentedTop.map { PresentationAnchor(cardID: $0, placement: .top) }
+    }
+
+    /// O repouso semântico do próprio desenho: nenhum gesto em curso, nenhum hold emprestado, nenhuma animação
+    /// programática e nenhuma correção de offset em curso. É o fato que deixa uma posição distinta virar durável.
+    var isRenderingAtRest: Bool {
+        guard !reading, !interaction.isHolding, !motion.animating else { return false }
+        #if canImport(UIKit)
+        return !nativeScrollOffset.isCorrecting && !nativeScrollOffset.isAnimatingScroll
+        #else
+        return true
+        #endif
+    }
+
+    /// Diz ao host onde o viewport começa — quando a posição **muda**, e quando ela é a mesma mas chegou ao
+    /// **repouso**. Fora desses dois casos não há submissão: um passo de rolagem que não cruza a fronteira de um card
+    /// não é uma posição nova, e uma submissão por quadro custaria um salto de ator por quadro no caminho de
+    /// renderização (o mesmo custo que a lista deixou de pagar por avanço, 2026-10-14).
+    func reportPresentedPosition(to host: @MainActor (PresentationAnchor, Bool) -> Void) {
+        guard let anchor = presentedAnchor else { return }
+        let atRest = isRenderingAtRest
+        if motion.publishedPresentedTop == anchor.cardID,
+            !atRest || motion.acknowledgedPresentedTop == anchor.cardID { return }
+        motion.publishedPresentedTop = anchor.cardID
+        if atRest { motion.acknowledgedPresentedTop = anchor.cardID }
+        host(anchor, atRest)
+    }
+
     func invalidateLayout() {
         motion.geometry = nil
         motion.visibleProof = nil
@@ -378,6 +435,9 @@ struct FeedVisualCapture {
         motion.tailOffset = nil
         motion.settled = false
         motion.tailReported = false
+        // A base da posição do viewport **não** é descartada aqui: `invalidateLayout` também é chamado quando uma
+        // janela muda ou um gesto começa, e em nenhum desses casos as coordenadas de conteúdo das cartas deixaram de
+        // valer. Quem a descarta é a única coisa que as invalida: uma mudança real de layout (ver `observe`).
         #if DEBUG
         motion.geometryLogged = false
         #endif
@@ -393,10 +453,17 @@ struct FeedVisualCapture {
         #endif
         let previous = motion.geometry
         motion.geometry = next
-        guard let previous else { return nil }
+        guard let previous else { refreshPresentedTop(offset: next.offset, reach: next.height); return nil }
         guard previous.extent == next.extent, previous.height == next.height, previous.width == next.width else {
             invalidateLayout()
             motion.geometry = next
+            // A base da posição **sobrevive** a esta mudança: a extensão muda também quando a janela ganha cartas,
+            // e nesse caso as coordenadas de conteúdo das cartas que já estavam medidas estão intactas. Uma carta
+            // que o layout desloque corrige a sua própria entrada quando reporta de novo, então a base se
+            // auto-corrige; esvaziá-la aqui fazia a escolha do topo recomeçar carta a carta e publicar posições
+            // transitórias — medido em B05 (2026-10-14): o cursor durável **regrediu** para um card de cima e o
+            // cold start desenhou outra tela.
+            refreshPresentedTop(offset: next.offset, reach: next.height)
             return nil
         }
         if next.offset != previous.offset {
@@ -408,7 +475,22 @@ struct FeedVisualCapture {
                 motion.cardMotion = nil
             }
         }
+        refreshPresentedTop(offset: next.offset, reach: next.height)
         return reconsider()
+    }
+
+    /// O card em que o **viewport começa**, decidido em coordenadas de conteúdo: o de menor borda superior entre os
+    /// que começam dentro do viewport (a mesma regra da aceitação, com a mesma tolerância de um ponto). A escolha
+    /// depende só do conteúdo acumulado e do offset atual, então repetir o mesmo estado devolve o mesmo card — é
+    /// isso que impede um repouso de publicar seis posições diferentes.
+    private func refreshPresentedTop(offset: CGFloat, reach: CGFloat) {
+        if motion.cardContentTops.count > 64 {
+            // Uma carta a mais de um viewport acima do leitor nunca é o topo, e volta a reportar ao se aproximar.
+            motion.cardContentTops = motion.cardContentTops.filter { $0.value >= offset - reach }
+        }
+        motion.presentedTop = motion.cardContentTops
+            .filter { $0.value >= offset - 1 }
+            .min { $0.value < $1.value }?.key
     }
 
     func observeCard(_ proof: FeedVisualCardGeometry, isLast: Bool = false) -> FeedVisualEvent? {
@@ -424,6 +506,16 @@ struct FeedVisualCapture {
         #endif
         let intersects = proof.frame.height > 0 && proof.frame.maxY > 0 && proof.frame.minY < proof.height
         if isLast { motion.tailOffset = intersects ? proof.offset : nil }
+        // **Onde o viewport começa.** A carta entra na base com a sua borda superior **no conteúdo**
+        // (`frame.minY + offset`), que a rolagem não move: é o que torna as cartas comparáveis entre passadas
+        // diferentes do layout. A escolha em si só pode mudar quando a carta medida entra acima da escolhida, e as
+        // duas decisões são O(1) — a lista de topo é lida uma vez por mudança de geometria do scroll, não por carta.
+        let contentTop = proof.frame.minY + proof.offset
+        motion.cardContentTops[proof.cardID] = contentTop
+        let offset = motion.geometry?.offset ?? proof.offset
+        let reach = motion.geometry?.height ?? proof.height
+        let aboveTheChoice = motion.presentedTop.flatMap { motion.cardContentTops[$0] }.map { contentTop < $0 } ?? true
+        if contentTop >= offset - 1, aboveTheChoice { refreshPresentedTop(offset: offset, reach: reach) }
         if let old = motion.priorProof, old.cardID == proof.cardID {
             let stable = old.frame.size == proof.frame.size && old.height == proof.height &&
                 abs((old.frame.minY + old.offset) - (proof.frame.minY + proof.offset)) <= 0.5
@@ -540,6 +632,15 @@ private struct NativeFeedViewport: ViewModifier {
         return content
             .id(store.state.presentation?.editionID)
             .id(store.state.presentation?.contextKey)
+            // A restauração honra a colocação que o registro carrega: o `scrollPosition` sem âncora alinha o card
+            // identificado à borda de **cima** do viewport (medido duas vezes em 2026-10-14: o card da âncora
+            // pousou com a borda superior exatamente na borda do viewport), que é o que a colocação `.top` — a
+            // única que o registro durável agora escreve — significa. Uma linha antiga (`.center`, o card do leitor)
+            // continua pousando presa no topo, exatamente como o build anterior fazia, e o próximo repouso a
+            // reescreve como `.top`. Não passar uma âncora explícita é deliberado: com `anchor: .top` o SwiftUI
+            // re-alinha o card identificado a cada mutação de janela, e a posição visível do leitor anda — medido em
+            // `Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.testNativeHostedLayoutPreservesPositionWithoutInventingReading`
+            // (440 -> 369) quando a âncora explícita foi tentada.
             .scrollPosition(id: Binding(get: {
                 capture.positionID ?? presented?.window.anchor.cardID
             }, set: { id in
@@ -551,6 +652,9 @@ private struct NativeFeedViewport: ViewModifier {
                 #if DEBUG
                 FeedVisualCapture.scrollPhaseEvents += 1
                 #endif
+                // Uma animação programática não é um gesto do leitor: enquanto ela corre, o desenho não está em
+                // repouso e nada do que ele mostrar no meio vira posição durável.
+                capture.motion.animating = phase == .animating
                 guard matchesScope else { return }
                 #if DEBUG
                 if FeedVisualCapture.tracesCapture {
@@ -596,6 +700,14 @@ private struct NativeFeedViewport: ViewModifier {
                 if phase == .idle, let event = capture.settle() {
                     store.submitViewport(event.observation, activity: event.activity, rendered: presented)
                 }
+                if phase == .idle {
+                    // A chegada ao repouso é o momento em que a posição do viewport passa a ser uma posição que o
+                    // leitor realmente segura — **inclusive** quando a tela se moveu sem gesto nenhum (uma rolagem
+                    // de acessibilidade, uma animação do sistema): o host a grava pelo mesmo dono do cursor.
+                    capture.reportPresentedPosition { anchor, atRest in
+                        store.publishPresentedPosition(anchor, atRest: atRest)
+                    }
+                }
             }
             .onScrollGeometryChange(for: FeedVisualGeometry.self, of: { geometry in
                 visualGeometry(geometry)
@@ -618,6 +730,14 @@ private struct NativeFeedViewport: ViewModifier {
                 #endif
                 if let event = capture.observe(geometry) {
                     store.submitViewport(event.observation, activity: event.activity, rendered: presented)
+                }
+                // Toda mudança da geometria do scroll é um movimento do viewport — inclusive os que **nenhum gesto**
+                // produziu (uma rolagem de acessibilidade, uma re-layout do sistema, uma animação programática). A
+                // posição onde o viewport começa é publicada aqui: em movimento o dono do cursor só a lembra, e no
+                // repouso ela vira escrita. Sem isto, o leitor que morre depois de uma dessas volta a uma posição
+                // que já tinha deixado (medido em B05, 2026-10-14: oito cards atrás da tela que o driver mediu).
+                capture.reportPresentedPosition { anchor, atRest in
+                    store.publishPresentedPosition(anchor, atRest: atRest)
                 }
             }
             .onChange(of: presented?.window) { old, new in
