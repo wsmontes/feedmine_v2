@@ -43,8 +43,8 @@ final class AppComposition {
     @ObservationIgnored private let catalogueURL: URL?
     @ObservationIgnored private var preferences: ReaderPreferencesStore?
     /// The reader's **real** exposures: the cards the visual capture actually presented as the reader's own
-    /// position, in the order they happened. It is deliberately not observable state — a scroll must not
-    /// invalidate a view — and it is deliberately app-scoped rather than session-scoped: a session rebuilt for
+    /// position, in the order they happened. The ledger observes new identities so invitation eligibility can
+    /// update; repeated positions are a no-op. It is app-scoped rather than session-scoped: a session rebuilt for
     /// the same context (answering an invitation rebuilds it) must not look like a reader who never read
     /// anything. F02's budget reads it; nothing else does.
     @ObservationIgnored let editorialExposure = EditorialExposureLedger()
