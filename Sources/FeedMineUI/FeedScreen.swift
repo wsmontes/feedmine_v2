@@ -327,7 +327,11 @@ final class FeedVisualMotion {
     /// A borda superior de cada carta **no conteúdo** (`frame.minY + offset`), que não se move quando o leitor rola.
     /// É a base da escolha acima; podada ao redor do viewport, porque uma carta a mais de uma tela de distância
     /// nunca é o topo e volta a reportar quando se aproxima.
-    var cardContentTops: [PublicationCardID: CGFloat] = [:]
+    ///
+    /// O **offset em que ela foi medida** anda junto porque os dois números juntos distinguem o que moveu a carta:
+    /// numa rolagem só o offset anda; num inserto/retirada de conteúdo **acima** dela os dois andam o mesmo tanto —
+    /// e é esse segundo caso que envelhece as entradas das cartas que não voltaram a reportar.
+    var cardContentTops: [PublicationCardID: (top: CGFloat, offset: CGFloat)] = [:]
     /// Uma animação programática (não um gesto do leitor) está em curso: nada do que o desenho mostrar enquanto ela
     /// durar é uma posição em repouso.
     var animating = false
@@ -486,11 +490,11 @@ struct FeedVisualCapture {
     private func refreshPresentedTop(offset: CGFloat, reach: CGFloat) {
         if motion.cardContentTops.count > 64 {
             // Uma carta a mais de um viewport acima do leitor nunca é o topo, e volta a reportar ao se aproximar.
-            motion.cardContentTops = motion.cardContentTops.filter { $0.value >= offset - reach }
+            motion.cardContentTops = motion.cardContentTops.filter { $0.value.top >= offset - reach }
         }
         motion.presentedTop = motion.cardContentTops
-            .filter { $0.value >= offset - 1 }
-            .min { $0.value < $1.value }?.key
+            .filter { $0.value.top >= offset - 1 }
+            .min { $0.value.top < $1.value.top }?.key
     }
 
     func observeCard(_ proof: FeedVisualCardGeometry, isLast: Bool = false) -> FeedVisualEvent? {
@@ -511,10 +515,27 @@ struct FeedVisualCapture {
         // diferentes do layout. A escolha em si só pode mudar quando a carta medida entra acima da escolhida, e as
         // duas decisões são O(1) — a lista de topo é lida uma vez por mudança de geometria do scroll, não por carta.
         let contentTop = proof.frame.minY + proof.offset
-        motion.cardContentTops[proof.cardID] = contentTop
+        // **Um inserto (ou uma retirada) de conteúdo acima da leitora move todas as coordenadas abaixo dele — e as
+        // cartas que não voltam a reportar ficam com a coordenada velha.** O sinal é a carta que reporta: numa
+        // rolagem só o offset anda (a coordenada de conteúdo é imune a ela); num inserto os **dois** andam o mesmo
+        // tanto. Aplicar esse mesmo deslocamento ao mapa inteiro realinha as entradas que não foram remedidas, e sem
+        // isso a carta verdadeira do topo é descartada pelo filtro (`top >= offset - 1` — a entrada velha herda uma
+        // posição acima do viewport), a escolha cai numa carta mais funda e a posição publicada nomeia o que a tela
+        // **não** mostra. Medido, e reproduzido no teste determinístico desta rodada: 8 onde a tela mostra 6.
+        if let previous = motion.cardContentTops[proof.cardID] {
+            let shift = proof.offset - previous.offset
+            let moved = contentTop - previous.top
+            if abs(shift) > 0.5, abs(moved - shift) <= 0.5 {
+                motion.cardContentTops = motion.cardContentTops.mapValues {
+                    (top: $0.top + shift, offset: $0.offset + shift)
+                }
+                refreshPresentedTop(offset: proof.offset, reach: motion.geometry?.height ?? proof.height)
+            }
+        }
+        motion.cardContentTops[proof.cardID] = (top: contentTop, offset: proof.offset)
         let offset = motion.geometry?.offset ?? proof.offset
         let reach = motion.geometry?.height ?? proof.height
-        let aboveTheChoice = motion.presentedTop.flatMap { motion.cardContentTops[$0] }.map { contentTop < $0 } ?? true
+        let aboveTheChoice = motion.presentedTop.flatMap { motion.cardContentTops[$0] }.map { contentTop < $0.top } ?? true
         if contentTop >= offset - 1, aboveTheChoice { refreshPresentedTop(offset: offset, reach: reach) }
         if let old = motion.priorProof, old.cardID == proof.cardID {
             let stable = old.frame.size == proof.frame.size && old.height == proof.height &&

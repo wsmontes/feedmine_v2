@@ -136,6 +136,34 @@ final class FeedViewportCaptureTests: XCTestCase {
         XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: top, placement: .top))
     }
 
+
+    /// **Teste decisivo da sonda de 2026-10-14** (lead): uma janela cuja **cabeça cresce acima da escolha**, com a
+    /// carta acima que **não** volta a reportar — e o `gap` que isso produz.
+    ///
+    /// A forma é a medida no B05: a carta do topo (posição 6) e a de baixo dela não voltam a ser medidas, a carta
+    /// mais funda (posição 8) sim, e a geometria muda de forma (a extensão cresceu com o inserto). O filtro do
+    /// topo (`top >= offset - 1`) descarta a entrada **velha** da verdadeira carta do topo — ela parece acima do
+    /// viewport —, e a escolha cai na carta mais funda: 8 onde a tela mostra 6, duas cartas fora.
+    func testWindowHeadThatGrowsAboveTheChoiceMustNotMoveThePresentedTop() {
+        var capture = FeedVisualCapture()
+        // Layout 1: a leitora no topo da carta A (posição 6), com B e C abaixo. Cada linha ocupa 190 pt.
+        _ = capture.observe(.init(offset: 0, extent: 1_000, height: 800))
+        let above = PublicationCardID(), a = PublicationCardID(), b = PublicationCardID(), c = PublicationCardID()
+        capture.observeCard(.init(cardID: above, frame: .init(x: 0, y: -190, width: 400, height: 190), offset: 0, height: 800))
+        capture.observeCard(.init(cardID: a, frame: .init(x: 0, y: 0, width: 400, height: 190), offset: 0, height: 800))
+        capture.observeCard(.init(cardID: b, frame: .init(x: 0, y: 190, width: 400, height: 190), offset: 0, height: 800))
+        capture.observeCard(.init(cardID: c, frame: .init(x: 0, y: 380, width: 400, height: 190), offset: 0, height: 800))
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: a, placement: .top),
+            "a verdade: o viewport começa na carta A")
+        // Layout 2: a cabeça cresce 380 pt (duas linhas acima de A). O desenho mantém a leitora no lugar, então o
+        // offset do conteúdo vai a 380 e as coordenadas de **todas** as cartas abaixo do inserto andam 380.
+        // `above` e `a` **não** voltam a reportar; `c` reporta (a coordenada dela e o offset andaram juntos).
+        _ = capture.observe(.init(offset: 380, extent: 1_380, height: 800))
+        capture.observeCard(.init(cardID: c, frame: .init(x: 0, y: 380, width: 400, height: 190), offset: 380, height: 800))
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: a, placement: .top),
+            "a carta do topo continua sendo A: uma carta que não voltou a ser medida não pode virar a escolha só porque o inserto acima dela envelheceu a coordenada guardada")
+    }
+
     /// O repouso semântico do desenho: nenhum gesto, nenhum hold emprestado, nenhuma animação programática. É ele
     /// que deixa uma posição **distinta** do viewport virar durável na hora — e uma animação do sistema não é
     /// repouso, por mais que o leitor não esteja tocando a tela.
