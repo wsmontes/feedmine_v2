@@ -737,8 +737,16 @@ struct FeedMineApp: App {
         // measured on the real catalogue, where the app's own trace showed the offers being made while the walk
         // never met them. An offer belongs where the reader is going.
         guard !composition.editorialExposure.wasExposed(card.id) else { return nil }
-        guard cadence.decision(subject: subject.nodeKey, isAnswered: answered != nil,
-            cardsTraversed: traversed) == nil else { return nil }
+        // The budget's own reason is recorded, not swallowed. A trace that shows only the offers that happened
+        // cannot answer the frequency question the PO asked ("did the cadence become a questionnaire?"), and it
+        // cannot explain an offer that did *not* arrive — the same kind of gap as B04's unmeasurable idle
+        // (QA, 2026-10-14). The reason is the policy's, never an unnamed `return nil`.
+        if let refusal = cadence.decision(subject: subject.nodeKey, isAnswered: answered != nil,
+            cardsTraversed: traversed) {
+            composition.recordEditorialRefusal(refusal: String(describing: refusal), subject: subject.nodeKey,
+                cardsTraversed: traversed, offersShown: cadence.offersShown, interval: cadence.interval)
+            return nil
+        }
         // The session's first offer asks the full question; the ones after it are compact (the same actions in
         // less space), which is what the PO's acceptance criteria asked for in so many words.
         let isCompact = cadence.offersShown > 0
