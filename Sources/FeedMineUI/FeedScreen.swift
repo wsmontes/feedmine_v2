@@ -494,9 +494,16 @@ private struct NativeFeedViewport: ViewModifier {
     @Binding var capture: FeedVisualCapture
     let store: FeedScreenStore
 
-    /// A apresentação que a posição segue. Lida **dentro** do modificador: assim um avanço reavalia este
-    /// modificador (barato) e não o corpo da lista, que é o desenho dos itens.
-    private var presented: FeedPresentationSnapshot? { store.state.presentation }
+    /// A apresentação que a posição **segue**: a janela segurada enquanto um gesto está em curso, e a publicada
+    /// fora dele — a mesma leitura que a lista fazia antes do desacoplamento, agora lida **dentro** do modificador
+    /// (assim um avanço reavalia este modificador, barato, e não o corpo da lista, que é o desenho dos itens).
+    ///
+    /// Não trocar por `store.state.presentation`. Com o valor publicado aqui, o teste de escopo
+    /// (`presentation(for:)?.window == presented.window`) passa a comparar a janela **segurada** com a **publicada**:
+    /// a primeira atualização de janela que chega durante o gesto torna o escopo falso para sempre, e a saída do
+    /// hold (ramo `phase == .idle`) mora atrás desse mesmo guard — medido no simulador em 2026-10-14: 8 flings
+    /// rápidos produziram 1 avanço e nenhuma mudança da lista desenhada.
+    private var presented: FeedPresentationSnapshot? { capture.interaction.presentation(for: store) }
 
     private var matchesScope: Bool {
         guard let current = store.state.presentation, let presented else { return false }
