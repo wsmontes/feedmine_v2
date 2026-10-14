@@ -178,10 +178,15 @@ struct FeedNativeWindowProof: ViewModifier {
     let ids: [PublicationCardID]
     let access: FeedNativeScrollOffset
     let deferredWindows: Int
+    /// How many times the feed surface has re-evaluated in this process. DEBUG evidence, deliberately a
+    /// plain counter: the number the scroll-stability work is judged by is "how often does the surface
+    /// rebuild per fling", and without it that cost is argued instead of measured.
+    nonisolated(unsafe) static var surfaceEvaluations = 0
     func body(content: Content) -> some View {
-        content.overlay(alignment: .topLeading) {
+        FeedNativeWindowProof.surfaceEvaluations += 1
+        return content.overlay(alignment: .topLeading) {
             if FeedVisualCapture.tracesCapture {
-                Text("ids=\(ids.map { $0.rawValue.uuidString }.joined(separator: ","));corrections=\(access.appliedCount);residual=\(access.maximumResidual);measured=\(access.measuredCorrections);visualResidual=\(access.maximumVisualResidual);activeWrites=\(access.activeWrites);activeWindows=\(access.activeWindowChanges);activeLayoutSteps=\(access.activeLayoutSteps);activeLayoutStep=\(access.maximumActiveLayoutStep);deferredWindows=\(deferredWindows)")
+                Text("ids=\(ids.map { $0.rawValue.uuidString }.joined(separator: ","));corrections=\(access.appliedCount);residual=\(access.maximumResidual);measured=\(access.measuredCorrections);visualResidual=\(access.maximumVisualResidual);activeWrites=\(access.activeWrites);activeWindows=\(access.activeWindowChanges);activeLayoutSteps=\(access.activeLayoutSteps);activeLayoutStep=\(access.maximumActiveLayoutStep);deferredWindows=\(deferredWindows);surfaceEvals=\(FeedNativeWindowProof.surfaceEvaluations)")
                     .font(.system(size: 1)).frame(width: 1, height: 1).opacity(0)
                     .allowsHitTesting(false).accessibilityIdentifier("feed-window-proof")
             }

@@ -204,6 +204,14 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
             let prefix = key + "="
             return Int(final.components(separatedBy: ";").first { $0.hasPrefix(prefix) }?.dropFirst(prefix.count) ?? "-1") ?? -1
         }
+        // The correction machinery's own magnitude, stated rather than assumed: how many offset corrections the
+        // eight fast flings applied, how far the retained visible card moved when they did, and how often the
+        // feed surface re-evaluated while they ran. The ids are dropped: they are the whole window and make the
+        // line unreadable.
+        func counters(_ label: String) -> String {
+            label.components(separatedBy: ";").dropFirst().joined(separator: ";")
+        }
+        print("WINDOW_PROOF initial \(counters(initial))\nWINDOW_PROOF final \(counters(final))")
         XCTAssertNotEqual(initial.components(separatedBy: ";").first, final.components(separatedBy: ";").first,
             "the admitted IDs must change; a fling in a static window cannot reproduce this regression")
         XCTAssertGreaterThan(value("deferredWindows"), 0,
