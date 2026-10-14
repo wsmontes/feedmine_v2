@@ -85,9 +85,9 @@ public struct FeedScreen: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
                         ForEach(Array(presentation.window.items.enumerated()), id: \.element.id) { index, card in
-                          // A Group is transparent for layout: the card keeps the geometry the capture measures,
-                          // and the host's row is simply the next child of the stack.
-                            Group {
+                          // One stable lazy cell per publication ID. Measure the card itself;
+                          // the optional invitation keeps the same spacing inside this cell.
+                            VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.section) {
                               FeedItemView(card: card, appearance: appearance,
                                 isBookmarked: store.bookmarkedIDs.contains(card.id),
                                 availableActions: store.availableActions,
