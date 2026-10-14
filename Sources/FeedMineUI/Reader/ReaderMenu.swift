@@ -31,6 +31,9 @@ public struct ReaderMenu: View {
                 } label: {
                     Label(entry.title, systemImage: entry.systemImage)
                 }
+                // Addressed by the visible title unless the entry states its own identifier — the behaviour
+                // every existing query relies on, and the one that keeps a translated menu reachable.
+                .accessibilityIdentifier(entry.accessibilityID ?? entry.title)
                 if isSeparator(after: index) { Divider() }
             }
         } label: {

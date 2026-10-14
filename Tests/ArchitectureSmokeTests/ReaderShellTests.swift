@@ -24,9 +24,14 @@ final class ReaderShellTests: XCTestCase {
         XCTAssertEqual(entries.first?.systemImage, "antenna.radiowaves.left.and.right")
         XCTAssertEqual(entries.last?.systemImage, "gearshape")
         // The full V1 vocabulary exists as values, including the conditional items and their groups.
-        XCTAssertEqual(ReaderMenuEntry.standard.count, 14)
+        XCTAssertEqual(ReaderMenuEntry.standard.count, 15)
         XCTAssertEqual(ReaderMenuEntry.standard.filter(\.isDestructive).map(\.id),
             ["delete-curated", "delete-smart-bookmark"])
+        // PO 2026-10-14: the frozen B05 driver reaches its B surface by the word `Salvos`, so that entry is part
+        // of the menu's own vocabulary and opens the reader's saved boxes — not a second saved surface.
+        let salvos = ReaderMenuEntry.standard.filter { $0.title == "Salvos" }
+        XCTAssertEqual(salvos.map(\.id), ["bookmark-boxes"])
+        XCTAssertEqual(salvos.map(\.destination), [.bookmarkBoxes])
         XCTAssertEqual(Set(ReaderMenuEntry.standard.map(\.id)).count, ReaderMenuEntry.standard.count,
             "menu identities are unique even where two items open the same surface")
     }

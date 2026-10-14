@@ -42,14 +42,23 @@ public struct ReaderMenuEntry: Hashable, Identifiable, Sendable {
     public let systemImage: String
     /// Destructive entries render with V1's `role: .destructive`.
     public let isDestructive: Bool
+    /// The identifier this entry exposes to accessibility queries, when it must differ from the visible title.
+    ///
+    /// The menu is otherwise addressed by its visible title, and that title is translatable: on a device whose
+    /// language is English, a query by Portuguese copy stops matching (measured 2026-10-11 for the settings
+    /// entry, whose label read "Settings"). Stating an identifier keeps the visible copy in the reader's own
+    /// language — an identifier is not visible copy — while the entry stays reachable by the string that names
+    /// it for the callers that must not depend on translation.
+    public let accessibilityID: String?
 
     public init(id: String, destination: ReaderDestination, title: String, systemImage: String,
-        isDestructive: Bool = false) {
+        isDestructive: Bool = false, accessibilityID: String? = nil) {
         self.id = id
         self.destination = destination
         self.title = title
         self.systemImage = systemImage
         self.isDestructive = isDestructive
+        self.accessibilityID = accessibilityID
     }
 }
 
@@ -84,6 +93,16 @@ public extension ReaderMenuEntry {
             systemImage: "square.and.arrow.up"),
         .init(id: "collections", destination: .collections,
             title: String(localized: "Coleções de fontes"), systemImage: "rectangle.stack.fill"),
+        // V1's own `Salvos` (its navigation toolbar's saved-boxes control, removed with the toolbar; V2 draws
+        // that surface from the header and from here). It sits beside `Fontes` because V1's toolbar had them
+        // together, and it carries the symbol the header's control already uses for the same surface.
+        //
+        // The title stays in the catalogue (English renders "Saved"). What does **not** get translated is the
+        // entry's access identifier: the frozen B05 driver reaches its B surface with a query for that word, and
+        // a translated identifier would make the A→B→A it exists for unreachable — the defect this entry closes
+        // (PO 2026-10-14). The identifier is not visible copy, so stating it costs the reader nothing.
+        .init(id: "bookmark-boxes", destination: .bookmarkBoxes, title: String(localized: "Salvos"),
+            systemImage: "bookmark", accessibilityID: "Salvos"),
         .init(id: "sources", destination: .sources, title: String(localized: "Fontes"),
             systemImage: "antenna.radiowaves.left.and.right"),
         .init(id: "settings", destination: .settings, title: String(localized: "Ajustes"),

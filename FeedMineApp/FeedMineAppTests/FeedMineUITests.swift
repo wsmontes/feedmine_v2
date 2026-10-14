@@ -714,8 +714,8 @@ final class FeedMineUITests: XCTestCase {
         // The filter the reader applied is still applied, and the lens states the criterion it kept.
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'lens-chip-language-'"))
             .firstMatch.waitForExistence(timeout: 15), "the filter survives an offline relaunch")
-        // The saved card is still saved: the header's own saved surfaces list it. (The overflow menu has no
-        // saved entry — `Salvos` is the header's bookmark control, whose label is the same word.)
+        // The saved card is still saved: the header's own saved surfaces list it. (The overflow menu offers that
+        // same surface as `Salvos` too — this test keeps proving the header control's own path.)
         app.buttons["bookmark-boxes-button"].tap()
         XCTAssertTrue(app.buttons["Todos os salvos"].waitForExistence(timeout: 15))
         app.buttons["Todos os salvos"].tap()
@@ -727,6 +727,100 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.buttons["bookmarkBoxes.done"].waitForExistence(timeout: 15))
         app.buttons["bookmarkBoxes.done"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+    }
+
+    /// PO 2026-10-14: `Salvos` é uma navegação (o menu do cabeçalho passa a oferecê-la, com a palavra que o
+    /// driver congelado do B05 procura), e ir até ela e voltar **preserva a âncora**. A superfície de salvos é
+    /// uma apresentação sobre o feed: nem troca de contexto, nem sessão nova.
+    @MainActor
+    func testSalvosFromTheOverflowMenuPreservesTheReadingPoint() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        // A reading point that is not the top of the feed: the reader's own scroll, and the opportunity it
+        // completed is what makes the position real.
+        scroll.swipeUp()
+        let delivered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label MATCHES %@",
+            ".*completed=[1-9][0-9]*.*"), object: proof)
+        XCTAssertEqual(XCTWaiter.wait(for: [delivered], timeout: 20), .completed,
+            "a real scroll must complete a real opportunity; observed: \(proof.label)")
+        let counters = proof.label
+        let anchor = try XCTUnwrap(topmostCardIdentifier(app: app, scroll: scroll),
+            "a card must be visible inside the viewport")
+        // The overflow menu offers V1's `Salvos`, and choosing it opens the reader's saved boxes.
+        openMenu(app)
+        XCTAssertTrue(app.buttons["Salvos"].waitForExistence(timeout: 10),
+            "the overflow menu must offer the saved surface the header's own control offers")
+        app.buttons["Salvos"].tap()
+        XCTAssertTrue(app.buttons["bookmarkBoxes.done"].waitForExistence(timeout: 15),
+            "choosing Salvos must open the reader's saved boxes")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "salvos-from-the-overflow-menu"
+        shot.lifetime = .keepAlways
+        add(shot)
+        // And coming back: closing that surface returns to the feed, on the same card, with the same session.
+        app.buttons["bookmarkBoxes.done"].tap()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 20), "closing the saved surface returns to the feed")
+        XCTAssertEqual(proof.label, counters, "visiting the saved surface must not replace the association")
+        XCTAssertEqual(topmostCardIdentifier(app: app, scroll: scroll), anchor,
+            "going to Salvos and coming back must preserve the reading point")
+    }
+
+    /// PO 2026-10-14: um **fechamento à força** — sem nenhum milestone de ciclo de vida — devolve o leitor ao
+    /// card que estava lendo, e o card que ele salvou aparece **desenhado**. A posição durável passa a ser o
+    /// último card admitido e estabelecido, sob a janela máxima de perda declarada em
+    /// `FeedSession.settledPositionDebounceWindow`.
+    @MainActor
+    func testAForcedCloseReopensOnTheCardTheReaderWasReading() throws {
+        let namespace = UUID().uuidString
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        scroll.swipeUp()
+        let delivered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label MATCHES %@",
+            ".*completed=[1-9][0-9]*.*"), object: proof)
+        XCTAssertEqual(XCTWaiter.wait(for: [delivered], timeout: 20), .completed,
+            "a real scroll must complete a real opportunity; observed: \(proof.label)")
+        let anchor = try XCTUnwrap(topmostCardIdentifier(app: app, scroll: scroll),
+            "a card must be visible inside the viewport")
+        // The reader saves the card they are on: the same card the reopen has to draw as saved.
+        let card = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", anchor)).firstMatch
+        let bookmark = card.buttons["card.bookmark"]
+        XCTAssertTrue(bookmark.waitForExistence(timeout: 15), "the card the reader is on offers saving")
+        XCTAssertEqual(bookmark.value as? String, "not bookmarked", "the card starts unsaved")
+        bookmark.tap()
+        XCTAssertEqual(bookmark.value as? String, "bookmarked", "saving the card records its state")
+        Thread.sleep(forTimeInterval: 2)
+        // A forced close. `terminate()` runs no lifecycle milestone at all — measured: it writes no lifecycle
+        // checkpoint — so what comes back can only be what the settled observation made durable.
+        app.terminate()
+        Thread.sleep(forTimeInterval: 2)
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60),
+            "the feed returns after a forced close")
+        Thread.sleep(forTimeInterval: 4)
+        XCTAssertEqual(topmostCardIdentifier(app: app, scroll: app.scrollViews.firstMatch), anchor,
+            "a forced close must reopen on the card the reader was reading")
+        let reopened = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", anchor)).firstMatch
+        XCTAssertTrue(reopened.waitForExistence(timeout: 15), "the card the reader was on is drawn again")
+        XCTAssertEqual(reopened.buttons["card.bookmark"].value as? String, "bookmarked",
+            "and the card they saved is drawn as saved")
     }
 
     @MainActor
