@@ -261,6 +261,8 @@ public actor RunwayController {
     public func deactivate() {
         scope = nil
         markConsumptionInactive()
+        // Learned consumption belongs to a scope, not to a foreground interval.
+        consumptionSamples = []
         latencySamples = []
         inFlight = nil
         attemptStartedAt = nil
@@ -281,7 +283,6 @@ public actor RunwayController {
         lastMeasuredObservation = nil
         readyAhead = nil
         highWater = nil
-        consumptionSamples = []
         bootstrapObservation = nil
     }
 
