@@ -1,0 +1,335 @@
+benchmark launch: exact transport origin configured for UI target app
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test-without-building -destination "platform=iOS Simulator,id=16DA3DB5-C9E0-4190-AF2F-AFAADC7EB7AE" -derivedDataPath /Users/wagnermontes/Documents/GitHub/feedmine_v2/bench/run/20261013T235704Z/derived "-only-testing:FeedMineUITests/DiscoveryBenchmarkTests/testB01DiscoveryWithoutASubscription" -xctestrun /Users/wagnermontes/Documents/GitHub/feedmine_v2/bench/run/20261013T235704Z/derived/Build/Products/FeedMine_iphonesimulator26.5-arm64.xctestrun
+
+2026-10-13 17:02:16.710 xcodebuild[3613:53102797] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-13 17:02:16.714 xcodebuild[3613:53102797] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-13 17:02:18.300 xcodebuild[3613:53102797] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-13 17:02:19.852243-0700 FeedMineUITests-Runner[3617:53103026] [Default] Running tests...
+2026-10-13 17:02:19.896225-0700 FeedMineUITests-Runner[3617:53103074] [General] Failed to send CA Event for app launch measurements for ca_event_type: 0 event_name: com.apple.app_launch_measurement.FirstFramePresentationMetric
+    t =      nans Interface orientation changed to Portrait
+Test Suite 'Selected tests' started at 2026-10-13 17:02:20.745.
+Test Suite 'FeedMineUITests.xctest' started at 2026-10-13 17:02:20.746.
+Test Suite 'DiscoveryBenchmarkTests' started at 2026-10-13 17:02:20.746.
+Test Case '-[FeedMineUITests.DiscoveryBenchmarkTests testB01DiscoveryWithoutASubscription]' started.
+    t =     0.00s Start Test at 2026-10-13 17:02:20.747
+    t =     0.02s Set Up
+    t =     0.03s Open com.feedmine.development.benchmark
+    t =     0.03s     Launch com.feedmine.development.benchmark
+2026-10-13 17:02:20.826 xcodebuild[3613:53102797] [MT] IDELaunchParametersSnapshot: The operation couldn’t be completed. (DebuggerLLDB.DebuggerVersionStore.StoreError error 0.)
+2026-10-13 17:02:20.826 xcodebuild[3613:53102797] [MT] IDELaunchParametersSnapshot: no debugger version
+2026-10-13 17:02:20.792592-0700 FeedMineUITests-Runner[3617:53103076] [General] Failed to send CA Event for app launch measurements for ca_event_type: 1 event_name: com.apple.app_launch_measurement.ExtendedLaunchMetrics
+    t =     0.93s         Setting up automation session
+objc[3617]: Class UIAccessibilityLoaderWebShared is implemented in both /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebCore.axbundle/WebCore (0x1064d8310) and /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebKit.axbundle/WebKit (0x105db0398). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+    t =     2.27s         Wait for com.feedmine.development.benchmark to idle
+    t =     3.75s Waiting 90.0s for "welcome-headline" StaticText to exist
+    t =     4.78s     Checking `Expect predicate `existsNoRetry == 1` for object "welcome-headline" StaticText`
+    t =     4.78s         Checking existence of `"welcome-headline" StaticText`
+    t =     4.85s Tap "welcome-shape" Button
+    t =     4.85s     Wait for com.feedmine.development.benchmark to idle
+    t =     4.85s     Find the "welcome-shape" Button
+    t =     4.87s     Check for interrupting elements affecting "welcome-shape" Button
+    t =     4.89s     Synthesize event
+    t =     5.19s     Wait for com.feedmine.development.benchmark to idle
+    t =     5.19s Waiting 30.0s for "composer-subtitle" StaticText to exist
+    t =     6.22s     Checking `Expect predicate `existsNoRetry == 1` for object "composer-subtitle" StaticText`
+    t =     6.22s         Checking existence of `"composer-subtitle" StaticText`
+    t =     6.27s Get number of matches for: Elements matching predicate 'identifier BEGINSWITH "composer-language-"'
+    t =     6.30s Checking existence of `Button (Element at index 0)`
+    t =     6.32s Find the Button (Element at index 0)
+    t =     6.35s Find the "composer-language-en" Button
+    t =     6.38s Checking existence of `Button (Element at index 1)`
+    t =     6.41s Find the Button (Element at index 1)
+    t =     6.44s Find the "composer-language-regions-en" Button
+    t =     6.47s Find the "composer-language-regions-en" Button
+    t =     6.50s Tap "composer-language-regions-en" Button
+    t =     6.50s     Wait for com.feedmine.development.benchmark to idle
+    t =     6.50s     Find the "composer-language-regions-en" Button
+    t =     6.53s     Check for interrupting elements affecting "composer-language-regions-en" Button
+    t =     6.56s     Synthesize event
+    t =     6.85s     Wait for com.feedmine.development.benchmark to idle
+    t =     6.85s Checking existence of `Button (Element at index 2)`
+    t =     6.89s Find the Button (Element at index 2)
+    t =     6.92s Find the "composer-language-pt" Button
+    t =     6.96s Find the "composer-language-pt" Button
+    t =     6.99s Checking existence of `Button (Element at index 3)`
+    t =     7.03s Find the Button (Element at index 3)
+    t =     7.06s Find the "composer-language-regions-pt" Button
+    t =     7.10s Find the "composer-language-regions-pt" Button
+    t =     7.13s Checking existence of `Button (Element at index 4)`
+    t =     7.17s Find the Button (Element at index 4)
+    t =     7.20s Find the "composer-language-es" Button
+    t =     7.24s Find the "composer-language-es" Button
+    t =     7.27s Checking existence of `Button (Element at index 5)`
+    t =     7.30s Find the Button (Element at index 5)
+    t =     7.34s Find the "composer-language-regions-es" Button
+    t =     7.37s Find the "composer-language-regions-es" Button
+    t =     7.40s Checking existence of `Button (Element at index 6)`
+    t =     7.43s Find the Button (Element at index 6)
+    t =     7.47s Find the "composer-language-de" Button
+    t =     7.51s Find the "composer-language-de" Button
+    t =     7.54s Checking existence of `Button (Element at index 7)`
+    t =     7.57s Find the Button (Element at index 7)
+    t =     7.60s Find the "composer-language-regions-de" Button
+    t =     7.64s Find the "composer-language-regions-de" Button
+    t =     7.67s Checking existence of `Button (Element at index 8)`
+    t =     7.70s Find the Button (Element at index 8)
+    t =     7.74s Find the "composer-language-fr" Button
+    t =     7.77s Find the "composer-language-fr" Button
+    t =     7.81s Checking existence of `Button (Element at index 9)`
+    t =     7.84s Find the Button (Element at index 9)
+    t =     7.87s Find the "composer-language-regions-fr" Button
+    t =     7.91s Find the "composer-language-regions-fr" Button
+    t =     7.94s Waiting 20.0s for ScrollView (First Match) to exist
+    t =     8.98s     Checking `Expect predicate `existsNoRetry == 1` for object ScrollView (First Match)`
+    t =     8.98s         Checking existence of `ScrollView (First Match)`
+    t =     9.00s Get number of matches for: Elements matching predicate 'identifier BEGINSWITH "composer-topic-"'
+    t =     9.03s Find the "composer-open-feed" Button
+    t =     9.07s Find the "composer-open-feed" Button
+    t =     9.12s Find the "composer-open-feed" Button
+    t =     9.16s Find the "composer-open-feed" Button
+    t =     9.21s Find the "composer-open-feed" Button
+    t =     9.26s Find the "composer-open-feed" Button
+    t =     9.30s Find the "composer-open-feed" Button
+    t =     9.35s Tap "composer-open-feed" Button
+    t =     9.35s     Wait for com.feedmine.development.benchmark to idle
+    t =     9.36s     Find the "composer-open-feed" Button
+    t =     9.40s     Check for interrupting elements affecting "composer-open-feed" Button
+    t =     9.43s     Synthesize event
+    t =     9.73s     Wait for com.feedmine.development.benchmark to idle
+    t =    10.06s Waiting 180.0s for ScrollView (First Match) to exist
+    t =    11.10s     Checking `Expect predicate `existsNoRetry == 1` for object ScrollView (First Match)`
+    t =    11.10s         Checking existence of `ScrollView (First Match)`
+    t =    11.11s Swipe down ScrollView (First Match)
+    t =    11.11s     Wait for com.feedmine.development.benchmark to idle
+    t =    11.11s     Find the ScrollView (First Match)
+    t =    11.12s     Check for interrupting elements affecting ScrollView
+    t =    11.16s     Synthesize event
+    t =    11.60s     Wait for com.feedmine.development.benchmark to idle
+    t =    12.09s Swipe down ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    12.10s     Wait for com.feedmine.development.benchmark to idle
+    t =    12.10s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    12.11s     Check for interrupting elements affecting ScrollView
+    t =    12.14s     Synthesize event
+    t =    12.58s     Wait for com.feedmine.development.benchmark to idle
+    t =    13.06s Swipe down ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    13.06s     Wait for com.feedmine.development.benchmark to idle
+    t =    13.07s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    13.08s     Check for interrupting elements affecting ScrollView
+    t =    13.11s     Synthesize event
+    t =    13.55s     Wait for com.feedmine.development.benchmark to idle
+    t =    14.03s Swipe down ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    14.03s     Wait for com.feedmine.development.benchmark to idle
+    t =    14.03s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    14.04s     Check for interrupting elements affecting ScrollView
+    t =    14.07s     Synthesize event
+    t =    14.52s     Wait for com.feedmine.development.benchmark to idle
+    t =    15.01s Swipe down ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    15.01s     Wait for com.feedmine.development.benchmark to idle
+    t =    15.02s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    15.03s     Check for interrupting elements affecting ScrollView
+    t =    15.06s     Synthesize event
+    t =    15.50s     Wait for com.feedmine.development.benchmark to idle
+    t =    15.98s Swipe down ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    15.98s     Wait for com.feedmine.development.benchmark to idle
+    t =    15.98s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    16.00s     Check for interrupting elements affecting ScrollView
+    t =    16.04s     Synthesize event
+    t =    16.49s     Wait for com.feedmine.development.benchmark to idle
+    t =    16.98s Swipe down ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    16.98s     Wait for com.feedmine.development.benchmark to idle
+    t =    16.98s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    17.00s     Check for interrupting elements affecting ScrollView
+    t =    17.03s     Synthesize event
+    t =    17.47s     Wait for com.feedmine.development.benchmark to idle
+    t =    17.96s Swipe down ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    17.96s     Wait for com.feedmine.development.benchmark to idle
+    t =    17.97s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    17.98s     Check for interrupting elements affecting ScrollView
+    t =    18.01s     Synthesize event
+    t =    18.45s     Wait for com.feedmine.development.benchmark to idle
+    t =    18.95s Swipe down ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    18.95s     Wait for com.feedmine.development.benchmark to idle
+    t =    18.95s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    18.96s     Check for interrupting elements affecting ScrollView
+    t =    18.99s     Synthesize event
+    t =    19.43s     Wait for com.feedmine.development.benchmark to idle
+    t =    19.93s Swipe down ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    19.93s     Wait for com.feedmine.development.benchmark to idle
+    t =    19.93s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    19.94s     Check for interrupting elements affecting ScrollView
+    t =    19.97s     Synthesize event
+    t =    20.42s     Wait for com.feedmine.development.benchmark to idle
+    t =    20.91s Swipe down ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    20.91s     Wait for com.feedmine.development.benchmark to idle
+    t =    20.92s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    20.93s     Check for interrupting elements affecting ScrollView
+    t =    20.96s     Synthesize event
+    t =    21.41s     Wait for com.feedmine.development.benchmark to idle
+    t =    21.90s Swipe down ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    21.90s     Wait for com.feedmine.development.benchmark to idle
+    t =    21.90s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    21.91s     Check for interrupting elements affecting ScrollView
+    t =    21.94s     Synthesize event
+    t =    22.39s     Wait for com.feedmine.development.benchmark to idle
+    t =    22.88s Checking existence of `Button (First Match)`
+    t =    22.94s Checking existence of `Button (First Match)`
+    t =    22.99s Swipe up ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    22.99s     Wait for com.feedmine.development.benchmark to idle
+    t =    22.99s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    23.00s     Check for interrupting elements affecting ScrollView
+    t =    23.04s     Synthesize event
+    t =    23.47s     Wait for com.feedmine.development.benchmark to idle
+    t =    26.10s Checking existence of `Button (First Match)`
+    t =    26.13s Find the Button (First Match)
+    t =    26.17s Checking existence of `"feed-invitation-more-04-technology-science/software-computing" Button`
+    t =    26.19s Find the "feed-invitation-more-04-technology-science/software-computing" Button
+    t =    26.22s Find the "feed-invitation-more-04-technology-science/software-computing" Button
+    t =    26.25s Tap "feed-invitation-more-04-technology-science/software-computing" Button
+    t =    26.25s     Wait for com.feedmine.development.benchmark to idle
+    t =    26.25s     Find the "feed-invitation-more-04-technology-science/software-computing" Button
+    t =    26.27s     Check for interrupting elements affecting "feed-invitation-more-04-technology-science/software-computing" Button
+    t =    26.31s     Synthesize event
+    t =    26.61s     Wait for com.feedmine.development.benchmark to idle
+    t =    29.61s Checking existence of `Button (First Match)`
+    t =    29.68s Checking existence of `Button (First Match)`
+    t =    29.74s Swipe up ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    29.74s     Wait for com.feedmine.development.benchmark to idle
+    t =    29.74s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    29.75s     Check for interrupting elements affecting ScrollView
+    t =    29.79s     Synthesize event
+    t =    30.23s     Wait for com.feedmine.development.benchmark to idle
+    t =    32.89s Checking existence of `Button (First Match)`
+    t =    32.96s Swipe up ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    32.96s     Wait for com.feedmine.development.benchmark to idle
+    t =    32.97s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    32.98s     Check for interrupting elements affecting ScrollView
+    t =    33.02s     Synthesize event
+    t =    33.46s     Wait for com.feedmine.development.benchmark to idle
+    t =    36.07s Checking existence of `Button (First Match)`
+    t =    36.14s Swipe up ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    36.14s     Wait for com.feedmine.development.benchmark to idle
+    t =    36.14s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    36.15s     Check for interrupting elements affecting ScrollView
+    t =    36.19s     Synthesize event
+    t =    36.63s     Wait for com.feedmine.development.benchmark to idle
+    t =    39.25s Checking existence of `Button (First Match)`
+    t =    39.31s Swipe up ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    39.31s     Wait for com.feedmine.development.benchmark to idle
+    t =    39.31s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    39.32s     Check for interrupting elements affecting ScrollView
+    t =    39.35s     Synthesize event
+    t =    39.79s     Wait for com.feedmine.development.benchmark to idle
+    t =    41.18s Checking existence of `Button (First Match)`
+    t =    41.21s Find the Button (First Match)
+    t =    41.24s Swipe up ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    41.24s     Wait for com.feedmine.development.benchmark to idle
+    t =    41.24s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    41.25s     Check for interrupting elements affecting ScrollView
+    t =    41.28s     Synthesize event
+    t =    41.73s     Wait for com.feedmine.development.benchmark to idle
+    t =    42.70s Checking existence of `"feed-invitation-more-04-technology-science/space-astronomy" Button`
+    t =    42.73s Find the "feed-invitation-more-04-technology-science/space-astronomy" Button
+    t =    42.76s Checking existence of `"feed-invitation-more-04-technology-science/space-astronomy" Button`
+    t =    42.79s Find the "feed-invitation-more-04-technology-science/space-astronomy" Button
+    t =    42.83s Find the "feed-invitation-more-04-technology-science/space-astronomy" Button
+    t =    42.86s Tap "feed-invitation-more-04-technology-science/space-astronomy" Button
+    t =    42.86s     Wait for com.feedmine.development.benchmark to idle
+    t =    42.86s     Find the "feed-invitation-more-04-technology-science/space-astronomy" Button
+    t =    42.89s     Check for interrupting elements affecting "feed-invitation-more-04-technology-science/space-astronomy" Button
+    t =    42.92s     Synthesize event
+    t =    43.22s     Wait for com.feedmine.development.benchmark to idle
+    t =    46.23s Checking existence of `ScrollView (First Match)`
+    t =    46.24s Find the ScrollView (First Match)
+    t =    46.25s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    46.27s Find the Any (Element at index 0)
+    t =    46.30s Find the "4F72E8C7-1246-4CFE-861D-116099506099" Other
+    t =    46.33s Find the Any (Element at index 1)
+    t =    46.36s Find the "6FF01D8C-1049-45DA-9FD4-CF929395DF9A" Other
+    t =    46.39s Find the Any (Element at index 2)
+    t =    46.42s Find the "8F36AE65-FEB9-4868-A4EA-74EB2BCDAE98" Other
+    t =    46.44s Find the Any (Element at index 3)
+    t =    46.47s Find the "798B7B09-29BA-4533-8C8C-1C273890F8BB" Other
+    t =    46.50s Find the Any (Element at index 4)
+    t =    46.53s Find the "5DB9F46C-1B7D-47D4-B97B-465E61239F99" Other
+    t =    46.56s Find the Any (Element at index 5)
+    t =    46.59s Find the "9BEA68CA-816A-4816-81A5-98889BF73D27" Other
+    t =    46.61s Find the Any (Element at index 6)
+    t =    46.65s Find the "ED2E26AB-60D2-46EE-8CAE-0633FA835FAC" Other
+    t =    46.68s Find the Any (Element at index 7)
+    t =    46.81s Find the "4B731287-5FF7-4FBA-BBBB-97AF019116B3" Other
+    t =    46.84s Find the "ED2E26AB-60D2-46EE-8CAE-0633FA835FAC" Other
+    t =    46.88s Find the "9BEA68CA-816A-4816-81A5-98889BF73D27" Other
+    t =    46.91s Find the "4B731287-5FF7-4FBA-BBBB-97AF019116B3" Other
+    t =    46.94s Find the "ED2E26AB-60D2-46EE-8CAE-0633FA835FAC" Other
+    t =    46.97s Get all elements bound by index for: Elements matching predicate 'identifier BEGINSWITH "feed-invitation-hide-"'
+    t =    46.99s Checking existence of `Button (Element at index 0)`
+    t =    47.02s Find the Button (Element at index 0)
+    t =    47.05s Find the "9BEA68CA-816A-4816-81A5-98889BF73D27" Other
+    t =    47.08s Find the "9BEA68CA-816A-4816-81A5-98889BF73D27" Other
+    t =    47.11s Tap "feed-invitation-hide-04-technology-science/space-astronomy" Button
+    t =    47.11s     Wait for com.feedmine.development.benchmark to idle
+    t =    47.12s     Find the "feed-invitation-hide-04-technology-science/space-astronomy" Button
+    t =    47.14s     Check for interrupting elements affecting "feed-invitation-hide-04-technology-science/space-astronomy" Button
+    t =    47.17s     Synthesize event
+    t =    47.46s     Wait for com.feedmine.development.benchmark to idle
+    t =    50.47s Get all elements bound by index for: Elements matching predicate 'identifier MATCHES "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"'
+    t =    50.50s Checking existence of `Any (Element at index 0)`
+    t =    50.52s Find the Any (Element at index 0)
+    t =    50.55s Find the "4F72E8C7-1246-4CFE-861D-116099506099" Other
+    t =    50.57s Checking existence of `Any (Element at index 1)`
+    t =    50.59s Find the Any (Element at index 1)
+    t =    50.62s Find the "6FF01D8C-1049-45DA-9FD4-CF929395DF9A" Other
+    t =    50.64s Checking existence of `Any (Element at index 2)`
+    t =    50.66s Find the Any (Element at index 2)
+    t =    50.69s Find the "8F36AE65-FEB9-4868-A4EA-74EB2BCDAE98" Other
+    t =    50.72s Checking existence of `Any (Element at index 3)`
+    t =    50.74s Find the Any (Element at index 3)
+    t =    50.77s Find the "798B7B09-29BA-4533-8C8C-1C273890F8BB" Other
+    t =    50.80s Checking existence of `Any (Element at index 4)`
+    t =    50.82s Find the Any (Element at index 4)
+    t =    50.85s Find the "5DB9F46C-1B7D-47D4-B97B-465E61239F99" Other
+    t =    50.88s Checking existence of `Any (Element at index 5)`
+    t =    50.90s Find the Any (Element at index 5)
+    t =    50.93s Find the "9BEA68CA-816A-4816-81A5-98889BF73D27" Other
+    t =    50.96s Find the "9BEA68CA-816A-4816-81A5-98889BF73D27" Other
+    t =    50.99s Checking existence of `Button (First Match)`
+    t =    51.04s Swipe up ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    51.04s     Wait for com.feedmine.development.benchmark to idle
+    t =    51.04s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    51.05s     Check for interrupting elements affecting ScrollView
+    t =    51.08s     Synthesize event
+    t =    51.52s     Wait for com.feedmine.development.benchmark to idle
+    t =    52.51s Checking existence of `Button (First Match)`
+    t =    52.57s Swipe up ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    52.57s     Wait for com.feedmine.development.benchmark to idle
+    t =    52.58s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    52.59s     Check for interrupting elements affecting ScrollView
+    t =    52.62s     Synthesize event
+    t =    53.06s     Wait for com.feedmine.development.benchmark to idle
+    t =    53.87s Checking existence of `Button (First Match)`
+    t =    53.93s Swipe up ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    53.93s     Wait for com.feedmine.development.benchmark to idle
+    t =    53.93s     Find the ScrollView at {{0.0, 122.0}, {440.0, 834.0}}
+    t =    53.94s     Check for interrupting elements affecting ScrollView
+    t =    53.97s     Synthesize event
+    t =    54.42s     Wait for com.feedmine.development.benchmark to idle
+2026-10-13 17:03:22.621 xcodebuild[3613:53102797] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-13 17:03:24.430 xcodebuild[3613:53102797] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-13 17:03:24.842 xcodebuild[3613:53102797] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-13 17:03:25.625 xcodebuild[3613:53102797] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-10-13 17:03:32.802 xcodebuild[3613:53102797] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+    t =   114.43s         App event loop idle notification not received, will attempt to continue.
+    t =   114.94s Checking existence of `Button (First Match)`
+    t =   145.96s Checking existence of `Button (First Match)` (retry 1)
+    t =   176.97s Checking existence of `Button (First Match)` (retry 2)
+<unknown>:0: error: -[FeedMineUITests.DiscoveryBenchmarkTests testB01DiscoveryWithoutASubscription] : Failed to get matching snapshots: Timed out while evaluating UI query.
+    t =   207.05s Tear Down
+    t =   207.05s     Added attachment named 'phases'
+Test Case '-[FeedMineUITests.DiscoveryBenchmarkTests testB01DiscoveryWithoutASubscription]' failed (207.509 seconds).
+Test Suite 'DiscoveryBenchmarkTests' failed at 2026-10-13 17:05:48.256.
+	 Executed 1 test, with 1 failure (0 unexpected) in 207.509 (207.509) seconds
+Test Suite 'FeedMineUITests.xctest' failed at 2026-10-13 17:05:48.256.
+	 Executed 1 test, with 1 failure (0 unexpected) in 207.509 (207.510) seconds
+Test Suite 'Selected tests' failed at 2026-10-13 17:05:48.256.
+	 Executed 1 test, with 1 failure (0 unexpected) in 207.509 (207.511) seconds

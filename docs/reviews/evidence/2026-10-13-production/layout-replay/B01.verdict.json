@@ -1,0 +1,12 @@
+{
+  "gate": "B01",
+  "verdict": "NOT_RUN",
+  "clauses": [
+    {
+      "clause": "a execução deixou um banco de leitura do app",
+      "observed": "/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/bench/run/20261014T002900Z/container/Library/Application Support/FeedMine/A74A4EDD-6BD7-44DD-B5E8-FE7D08D17941/runtime.sqlite",
+      "expected": "um banco em modo leitura com o que a jornada publicou",
+      "pass": null
+    }
+  ]
+}
