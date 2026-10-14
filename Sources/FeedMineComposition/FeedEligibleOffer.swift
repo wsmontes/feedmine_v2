@@ -25,26 +25,36 @@ public struct FeedEligibleOfferSettlement: Hashable, Sendable {
     public let nothingInFlight: Bool
     /// No acquisition is still outstanding and able to replenish.
     public let noOutstandingAcquisition: Bool
+    /// Nothing ready is still waiting to be published ahead of the reader. `readyAhead` is the runway's own
+    /// reserve ahead of the reader's position: a count above zero (or an unknown amount) means stories the reader
+    /// has not reached yet, so the end may not be stated. This is the second half of the ratified rule — "no
+    /// eligible items awaiting preparation/publication" — and without it the block could be drawn after a card
+    /// that is not the last one, with published stories still ahead (review, 2026-10-14).
+    public let noStoryAhead: Bool
 
     /// Reads the runway's facts once, at the moment the acquisition settled.
     public init(acquisition: RunwayAcquisitionCycleOutcome, runway: RunwayControllerSnapshot) {
+        let ready: Bool
+        if let ahead = runway.readyAhead, case .exact(0) = ahead.amount { ready = true } else { ready = false }
         self.init(acquisition: acquisition, localSupplyExhausted: runway.localSupplyExhausted,
             nothingInFlight: !runway.localSliceInFlight,
-            noOutstandingAcquisition: runway.outstandingAcquisition == nil)
+            noOutstandingAcquisition: runway.outstandingAcquisition == nil, noStoryAhead: ready)
     }
 
     public init(acquisition: RunwayAcquisitionCycleOutcome, localSupplyExhausted: Bool,
-        nothingInFlight: Bool, noOutstandingAcquisition: Bool) {
+        nothingInFlight: Bool, noOutstandingAcquisition: Bool, noStoryAhead: Bool) {
         self.acquisition = acquisition
         self.localSupplyExhausted = localSupplyExhausted
         self.nothingInFlight = nothingInFlight
         self.noOutstandingAcquisition = noOutstandingAcquisition
+        self.noStoryAhead = noStoryAhead
     }
 
     /// True only with the full evidence: the attempt found no eligible target **and** nothing is awaiting
-    /// preparation/publication **and** no acquisition can still replenish.
+    /// preparation/publication **and** no acquisition can still replenish **and** the reader has genuinely
+    /// reached the last published story.
     public var isEligibleOfferExhausted: Bool {
         guard acquisition == .acceptedUnavailable(.noEligibleTargets) else { return false }
-        return localSupplyExhausted && nothingInFlight && noOutstandingAcquisition
+        return localSupplyExhausted && nothingInFlight && noOutstandingAcquisition && noStoryAhead
     }
 }

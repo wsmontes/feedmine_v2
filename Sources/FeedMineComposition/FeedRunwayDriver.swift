@@ -355,7 +355,10 @@ public actor FeedRunwayDriver {
     /// the acquisition the last drain settled, read beside the runway's own facts. Nil when that drain
     /// executed no acquisition, so a provisional drain never even offers the question.
     public func settledEligibleOffer() async -> FeedEligibleOfferSettlement? {
-        guard let settledAcquisition else { return nil }
+        // Read only after the drain released ownership: a second opportunity must not install the end from an
+        // unfinished drain, pairing an acquisition that drain may still act on with live runway facts (review,
+        // 2026-10-14).
+        guard causalExecution == nil, let settledAcquisition else { return nil }
         return FeedEligibleOfferSettlement(acquisition: settledAcquisition, runway: await runway.snapshot())
     }
     /// Review M7: when a failed local slice becomes retryable without a new user signal.

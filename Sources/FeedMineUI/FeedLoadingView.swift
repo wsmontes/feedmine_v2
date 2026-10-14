@@ -9,13 +9,21 @@ public struct FeedLoadingView: View {
     private let work: FeedPresentationState.Work
     private let onTryAgain: (() -> Void)?
     private let onAdjustInterests: (() -> Void)?
+    private let onChooseSources: (() -> Void)?
     @Environment(\.colorScheme) private var colorScheme
 
     public init(work: FeedPresentationState.Work, onTryAgain: (() -> Void)? = nil,
-        onAdjustInterests: (() -> Void)? = nil) {
+        onAdjustInterests: (() -> Void)? = nil, onChooseSources: (() -> Void)? = nil) {
         self.work = work
         self.onTryAgain = onTryAgain
         self.onAdjustInterests = onAdjustInterests
+        self.onChooseSources = onChooseSources
+    }
+
+    /// The host's closure as an action the end block may take on the main actor.
+    private func mainActorAction(_ action: (() -> Void)?) -> (@MainActor () -> Void)? {
+        guard let action else { return nil }
+        return { @MainActor in action() }
     }
 
     public var body: some View {
@@ -50,9 +58,12 @@ public struct FeedLoadingView: View {
                 case .failed(let message):
                     Text(verbatim: message)
                 case .endOfContent:
-                    // The end is drawn after the last card; with nothing drawn above it the reader is still
-                    // on the provisional surface, where the only honest statement is the ratified sentence.
-                    Text("Você chegou ao fim das histórias disponíveis para sua seleção.")
+                    // Nothing is drawn above the end: the reader has no cards at all. The state is still stated
+                    // with the ratified view and copy, offering only the routes that can act here — never one that
+                    // promises a position there is nothing to return to (review, 2026-10-14). The sentence lives
+                    // in exactly one place, so the two surfaces cannot drift.
+                    FeedEndOfContentView(onExploreSubjects: mainActorAction(onAdjustInterests),
+                        onWidenSources: mainActorAction(onChooseSources))
                 case .preparing(let progress):
                     FeedPreparationView(progress: progress)
                 }

@@ -13,19 +13,27 @@ import FeedMineComposition
 
 final class FeedEligibleOfferTests: XCTestCase {
     private func settled(_ acquisition: RunwayAcquisitionCycleOutcome, localSupplyExhausted: Bool = true,
-        nothingInFlight: Bool = true, noOutstandingAcquisition: Bool = true) -> FeedPresentationState.Work {
+        nothingInFlight: Bool = true, noOutstandingAcquisition: Bool = true,
+        noStoryAhead: Bool = true) -> FeedPresentationState.Work {
         FeedPresentationHandoff.work(settledEligibleOffer: FeedEligibleOfferSettlement(acquisition: acquisition,
             localSupplyExhausted: localSupplyExhausted, nothingInFlight: nothingInFlight,
-            noOutstandingAcquisition: noOutstandingAcquisition))
+            noOutstandingAcquisition: noOutstandingAcquisition, noStoryAhead: noStoryAhead))
     }
 
     /// The only evidence that can state the end: an attempt that found no eligible target, nothing being
-    /// prepared, and no acquisition still outstanding.
+    /// prepared, no acquisition still outstanding, and nothing ready still waiting to be published ahead.
     func testEndIsStatedOnlyWithTheFullEvidence() {
         let full = FeedEligibleOfferSettlement(acquisition: .acceptedUnavailable(.noEligibleTargets),
-            localSupplyExhausted: true, nothingInFlight: true, noOutstandingAcquisition: true)
+            localSupplyExhausted: true, nothingInFlight: true, noOutstandingAcquisition: true, noStoryAhead: true)
         XCTAssertTrue(full.isEligibleOfferExhausted)
         XCTAssertEqual(FeedPresentationHandoff.work(settledEligibleOffer: full), .endOfContent)
+    }
+
+    /// Review 2026-10-14: stories still waiting ahead of the reader are not the end, whatever the acquisition
+    /// found. Without this fact the block could be drawn after a card that is not the last one, and the reader
+    /// would meet the rest of the stories above it.
+    func testStoriesStillAheadAreNotTheEnd() {
+        XCTAssertEqual(settled(.acceptedUnavailable(.noEligibleTargets), noStoryAhead: false), .unavailable)
     }
 
     /// An empty local window is the provisional state: the local supply is not exhausted yet.

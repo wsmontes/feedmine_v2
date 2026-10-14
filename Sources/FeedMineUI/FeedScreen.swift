@@ -67,7 +67,7 @@ public struct FeedScreen: View {
             }
         } else {
             FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
-                onAdjustInterests: { onAdjustInterests() })
+                onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() })
         }
     }
 
@@ -181,7 +181,7 @@ public struct FeedScreen: View {
             }
         } else {
             FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
-                onAdjustInterests: { onAdjustInterests() })
+                onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() })
         }
     }
 

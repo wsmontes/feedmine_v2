@@ -1223,6 +1223,16 @@ final class AppComposition {
             "offers_shown": String(offersShown), "interval": String(interval)])
     }
 
+    /// One line per invitation the budget **refused**, with the policy's own reason. The frequency clause is
+    /// auditable only if both sides are recorded: without this, the trace shows the offers that happened and says
+    /// nothing about the ones that did not (QA, 2026-10-14).
+    func recordEditorialRefusal(refusal: String, subject: String, cardsTraversed: Int, offersShown: Int,
+        interval: Int) {
+        trace?.record("editorial_refusal", ["reason": refusal, "subject": subject,
+            "cards_traversed": String(cardsTraversed), "offers_shown": String(offersShown),
+            "interval": String(interval)])
+    }
+
     /// The reader's stored settings, read **once** and reused until something writes them.
     ///
     /// V1's own lesson (`docs/release/review-feed-responsiveness-build-5.md`, finding 2): eligibility is an
@@ -2256,7 +2266,8 @@ final class FeedAssociation {
         // proof that runs on it is a journey test over the real screen (`FEEDMINE_END_ELIGIBLE_OFFER=1`).
         if ProcessInfo.processInfo.environment["FEEDMINE_END_ELIGIBLE_OFFER"] == "1" {
             let settlement = FeedEligibleOfferSettlement(acquisition: .acceptedUnavailable(.noEligibleTargets),
-                localSupplyExhausted: true, nothingInFlight: true, noOutstandingAcquisition: true)
+                localSupplyExhausted: true, nothingInFlight: true, noOutstandingAcquisition: true,
+                noStoryAhead: true)
             try install(store.state.reporting(FeedPresentationHandoff.work(settledEligibleOffer: settlement)))
             return
         }
@@ -2443,8 +2454,11 @@ final class FeedAssociation {
                 Self.log("rendered position reconciled locally")
                 return
             }
-            await growAdmittedWindowIfPublished()
+            // O fim é decidido **antes** de a janela crescer: se a admissão trouxe cards, o crescimento retrata o
+            // fim na mesma oportunidade, em vez de o fim ser reinstalado por cima da retratação (revisão,
+            // 2026-10-14).
             try await installSettledEligibleOffer()
+            await growAdmittedWindowIfPublished()
             await scheduleLocalRetryIfNeeded()
             #if DEBUG
             viewportCompleted += 1
@@ -2482,8 +2496,11 @@ final class FeedAssociation {
             }
             let snapshot = try await driver.drive(resources: Self.resources)
             try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
-            await growAdmittedWindowIfPublished()
+            // O fim é decidido **antes** de a janela crescer: se a admissão trouxe cards, o crescimento retrata o
+            // fim na mesma oportunidade, em vez de o fim ser reinstalado por cima da retratação (revisão,
+            // 2026-10-14).
             try await installSettledEligibleOffer()
+            await growAdmittedWindowIfPublished()
             await scheduleLocalRetryIfNeeded()
         } catch { reportFailure(error); await scheduleLocalRetryIfNeeded() }
     }
