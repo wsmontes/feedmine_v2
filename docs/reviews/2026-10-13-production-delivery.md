@@ -1,12 +1,20 @@
 # Entrega de produção e TestFlight — 2026-10-13
 
+## Build 32 enviada — processamento Apple pendente
+
+Envio concluído em 2026-10-13 18:02 PDT: `EXPORT SUCCEEDED`, `Upload succeeded`. Upload UUID `0b3e3454-78cd-4bfc-b1a8-0a3673832345`, versão **1.0 (32)**, plataforma iOS; consulta autenticada confirmou `PROCESSING`, sem erros ou avisos naquele momento. Ainda não é prova de disponibilidade instalável.
+
+Binário pareado ao commit `c6de80b7decca9a81a4888333521b696f84cf761`, tag anotada `ios/1.0-build.32-c6de80b7`; ambos publicados no GitHub. O archive concluiu em Release, bundle `com.feedmine.app`, SHA embutido `c6de80b7`, assinatura verificada (`codesign --verify --deep --strict`, exit 0). Catálogo dentro do archive: 117.993.472 bytes, SHA `72f066227958b482f365c88dd58320e75bc9ade9268b4e2ddaac9173908ecf71`.
+
+Esta entrega interna contém a correção do travamento por cardinalidade variável de filhos no lazy layout. A correção separada de observação das exposições (`0664c5d9`, no worktree) **não** faz parte da build 32 e ainda aguarda jornada nativa. Os gates completos continuam pendentes; não certificar produção por sucesso do upload. Evidências em `evidence/2026-10-13-production/build32/`.
+
 ## Canal instalável confirmado
 
-Consulta autenticada à API App Store Connect, em 2026-10-13 (America/Vancouver):
+Consulta inicial autenticada à API App Store Connect, em 2026-10-13 (America/Vancouver), antes do novo envio:
 
 - Aplicativo ASC 6793279758; versão **1.0 (31)**, bundle `com.feedmine.app`.
 - Build UUID `117e8d27-6e68-4d39-86b7-8f23af029b19`: `VALID`, não expirada; `internalBuildState=IN_BETA_TESTING`.
-- Upload anterior: 2026-10-12 17:39:28 PDT. Esta sessão **não realizou novo upload**.
+- Upload anterior: 2026-10-12 17:39:28 PDT. A etapa inicial não realizou novo upload; a build 32 foi enviada na continuação descrita acima.
 - Grupo interno **WawaTesters**, com acesso a todas as builds; a consulta aos builds do grupo inclui explicitamente a build 31. Tester Wagner consta `INSTALLED` (estado do cadastro, não prova de qual versão está no seu iPhone).
 - Pareamento local: tag anotada `ios/1.0-build.31-5dcc4cab` aponta para `5dcc4cab0de8c88a0afe23a23009b368a3de5615`. A API Apple não expõe o SHA binário; a tag é o registro do fluxo anterior.
 - Mudança visível da build: correção F06 de gesto/rolagem; preservação da janela desenhada enquanto há interação nativa, seguida da reconciliação em repouso.
@@ -40,7 +48,7 @@ Primeira tentativa integral (anterior ao adapter de ambiente do app): `bench/run
 | B04 | NOT_RUN nesta sessão (nova corrida pendente) | Estabilidade física; anterior 081619Z foi NOT_RUN |
 | B05 | NOT_RUN nesta sessão (nova corrida pendente) | Preservar o PASS histórico relatado sem atribuí-lo ao HEAD atual |
 | B06 | NOT_RUN | iPhone 14 Plus disponível/pareado; ainda faltam corrida integral e medidas controladas de memória, energia, térmica e hitches |
-| TestFlight interno | Disponível | Apple VALID / IN_BETA_TESTING, grupo com build31 |
+| TestFlight interno | 31 disponível; 32 enviada/processando | 31 VALID / IN_BETA_TESTING; upload32 PROCESSING, acesso instalável ainda não confirmado |
 
 **Produção ainda não certificada.** Permanecem os gates integrais e a triagem K-14/K-15 (proteção da cauda admitida; enriquecimento de corpo RSS/Atom com compatibilidade de identidade material). Disponibilidade no TestFlight não fecha essas pendências.
 

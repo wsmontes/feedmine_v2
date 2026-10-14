@@ -1,0 +1,11 @@
+{
+  "checked_at": "2026-10-14T01:02:57.172578+00:00",
+  "version": "1.0",
+  "build": "32",
+  "bundle_id": "com.feedmine.app",
+  "git_sha": "c6de80b7",
+  "source_commit": "c6de80b7decca9a81a4888333521b696f84cf761",
+  "catalog_bytes": 117993472,
+  "catalog_sha256": "72f066227958b482f365c88dd58320e75bc9ade9268b4e2ddaac9173908ecf71",
+  "codesign_verify_exit": 0
+}

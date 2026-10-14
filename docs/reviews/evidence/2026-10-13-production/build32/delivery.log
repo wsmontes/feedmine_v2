@@ -1,0 +1,6 @@
+== archiving 1.0 (32) from c6de80b7 ==
+archived: bundle=com.feedmine.app version=1.0 build=32 sha=c6de80b7
+PAIRING OK: TestFlight build 1.0 (32) = c6de80b7decca9a81a4888333521b696f84cf761
+Uploaded FeedMine
+tag ios/1.0-build.32-c6de80b7 created (local, not pushed)
+BUILD 1.0 (32) = c6de80b7decca9a81a4888333521b696f84cf761  (tag ios/1.0-build.32-c6de80b7)
