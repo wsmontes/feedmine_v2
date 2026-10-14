@@ -19,6 +19,10 @@ public enum SettledPositionRecording: Hashable, Sendable {
     case withinWindow(remaining: TimeInterval)
     /// Written: the durable cursor now holds this card and placement, under this context's own identity.
     case written(cardID: PublicationCardID, placement: PresentationAnchorPlacement)
+    /// The statement was **incomplete** — the window's anchor, the card the reader is *on* — and the durable record
+    /// is **exact** (the card the viewport starts at, `.top`, same Edition): nothing was written and the exact
+    /// record stands (lead, 2026-10-14). `cardID` is what the record holds.
+    case keptExactRecord(cardID: PublicationCardID)
 }
 
 public actor FeedSession {
@@ -405,6 +409,13 @@ public actor FeedSession {
 
     /// Makes the existing logical position durable without changing current presentation.
     /// The caller decides when a milestone occurs; date validation belongs to Persistence.
+    ///
+    /// This is an **explicit caller statement** — "this is the reader's position now" — so it writes the position it
+    /// is asked to write, including the window's anchor when the app has stated no presented position: §9's contract
+    /// ("an explicit milestone after that scroll reopens at the new position") and
+    /// `PresentationProjectionOrderingTests.testO15ReopenStartsIndependentMemorySequenceAndPreservesHistory` pin it.
+    /// The rule that keeps an incomplete statement from replacing an exact record belongs to the **automatic**
+    /// boundary, which fires from the rendering on its own — `recordSettledPosition(at:settled:)`.
     public func checkpointCurrentPosition(at date: Date) throws -> Bool {
         guard let current = state else { return false }
         let anchor = recordedPosition(of: current)
@@ -414,6 +425,31 @@ public actor FeedSession {
         // window that follows it measures from what the reader actually last made durable.
         durablePosition = (anchor, date)
         return true
+    }
+
+    /// Whether this statement may be written, and what stands when it may not: **an incomplete statement never
+    /// replaces an exact one** (lead, 2026-10-14). It applies to this **automatic** boundary — the one that fires
+    /// from the rendering on every rest and on every gesture-less move — and not to an explicit milestone, which is
+    /// a caller decision with its own pinned contract (§9, `testO15…`).
+    ///
+    /// An **exact** record is the one the rendering stated — the card the viewport starts at, written as `.top`. An
+    /// **incomplete** statement is the window's anchor, which `recordedPosition(of:)` falls back to when the app has
+    /// stated no presented position: it is the card the reader is *on*, and §9a documents it as a record a restore
+    /// can only honour by approximation. The two competing as equals is what let an association rebuilt by the
+    /// A→B→A return overwrite the reader's exact position with its own restore point, 145 ms after the rendering had
+    /// stated it (B05, 2026-10-14: the durable card became 15 while the top card drawn was 7). Returns the card the
+    /// exact record holds when the write must be skipped, `nil` when it may proceed.
+    ///
+    /// The comparison reads the record **a restore would read** — the context's own, else the singleton — one
+    /// single-row read, and **only** on the incomplete path: an exact statement is written without reading anything.
+    /// Two incomplete statements still compete as they always did (the newer wins), a record for another Edition is
+    /// not a competing statement, and neither is no record at all.
+    private func exactRecordStanding(_ anchor: FeedWindowAnchor, editionID: FeedEditionID,
+        contextKey: ContextKey?) throws -> PublicationCardID? {
+        guard case .center = anchor.placement else { return nil }
+        guard let saved = try publicationHistory.savedCursor(contextKey: contextKey) else { return nil }
+        guard saved.editionID == editionID, case .top = saved.anchor.placement else { return nil }
+        return saved.anchor.cardID
     }
 
     /// PO 2026-10-14, ratificado: retornar ao app tem de recuperar a posição **também depois de um fechamento à
@@ -456,6 +492,12 @@ public actor FeedSession {
     /// and a failed write propagates with both the memory state and the previous durable cursor intact — the same
     /// contract as the milestone write.
     ///
+    /// One statement is refused without writing: an **incomplete** one — the window's anchor, because the app has
+    /// stated no presented position — when the durable record is **exact** (`.top`, the card the viewport starts at,
+    /// same Edition). Nothing is lost by keeping it: the exact record names the position a reopen honours exactly,
+    /// while the window's anchor is the card the reader is *on*. That comparison is the one read this owner makes,
+    /// and only here.
+    ///
     /// - Parameter settled: the reader has come to rest (`RunwayActivity.stationary`, the app's own semantic
     ///   settle, or the rendering resting at a distinct position). A rest is always recorded; a moving observation
     ///   is recorded only once the window has passed.
@@ -470,6 +512,13 @@ public actor FeedSession {
                 return .withinWindow(remaining: Self.settledPositionDebounceWindow - elapsed)
             }
         }
+        // Uma afirmação **incompleta** — a âncora da janela, quando o app não declarou posição apresentada — não
+        // substitui um registro **exato** da mesma edição: a carta do topo que o desenho gravou fica (lead,
+        // 2026-10-14). A comparação custa uma leitura de uma linha, e só neste caminho: uma afirmação exata escreve
+        // sem ler nada.
+        let stands = try exactRecordStanding(anchor, editionID: current.presentation.editionID,
+            contextKey: current.bounds.contextKey)
+        if let stands { return .keptExactRecord(cardID: stands) }
         try publicationHistory.saveCursor(
             SessionCursor(editionID: current.presentation.editionID, anchor: anchor), updatedAt: date)
         durablePosition = (anchor, date)

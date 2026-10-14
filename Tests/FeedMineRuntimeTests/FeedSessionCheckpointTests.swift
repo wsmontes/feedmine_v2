@@ -156,6 +156,69 @@ final class FeedSessionCheckpointTests: XCTestCase {
         }
     }
 
+    /// Lead, 2026-10-14: **uma afirmação incompleta não substitui uma exata.** O registro exato é a carta do topo do
+    /// viewport, afirmada pelo desenho (`.top`); a afirmação incompleta é a âncora da janela, o card em que o leitor
+    /// *está*, que esta sessão só declara quando o app não declarou posição apresentada. Elas competindo como iguais
+    /// foi o que deixou a associação reconstruída pela volta A→B→A sobrescrever a posição exata do leitor com o seu
+    /// próprio ponto de restauração, 145 ms depois de o desenho tê-la afirmado (B05: o cursor durável ficou no card
+    /// 15 enquanto a carta do topo desenhada era a 7).
+    func testAnIncompleteStatementDoesNotReplaceAnExactRecord() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            // A associação reconstruída restaura o registro que existia então — a âncora da janela, sem posição
+            // apresentada própria: a única afirmação que ela tem é incompleta.
+            let rebuilt = FeedSession(publicationHistory: PublicationHistory(database: try RuntimeDatabase(location: location)))
+            _ = try await rebuilt.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 6)))
+            // Enquanto ela vive, o desenho da sessão do leitor afirma a carta do topo: o registro fica exato.
+            let reading = FeedSession(publicationHistory: PublicationHistory(database: try RuntimeDatabase(location: location)))
+            _ = try await reading.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 6)))
+            _ = try await reading.notePresentedPosition(
+                PresentationAnchor(cardID: cards[6].id, placement: .top), atRest: true)
+            let exact = try XCTUnwrap(SessionStore(database: try RuntimeDatabase(location: location)).checkpoint())
+            XCTAssertEqual(exact.cardID, cards[6].id)
+            XCTAssertEqual(exact.anchorPlacement, "top")
+            // E agora o milestone da reconstruída, 145 ms depois na corrida medida, não o substitui.
+            let recorded = try await rebuilt.recordSettledPosition(at: Date(timeIntervalSince1970: 900), settled: true)
+            XCTAssertEqual(recorded, .keptExactRecord(cardID: cards[6].id),
+                "a afirmação incompleta diz qual registro exato ficou de pé")
+            let after = try XCTUnwrap(SessionStore(database: try RuntimeDatabase(location: location)).checkpoint())
+            XCTAssertEqual(after.cardID, cards[6].id, "a carta do topo fica")
+            XCTAssertEqual(after.anchorPlacement, "top", "e fica exata")
+            XCTAssertEqual(after.updatedAt, exact.updatedAt, "nada foi reescrito")
+            // O milestone da reconstruída é uma afirmação **explícita** do chamador, com contrato próprio (§9): ele
+            // escreve a posição que declara. A regra vale para o limite automático, que é o que dispara sozinho.
+            let milestone = try await rebuilt.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 901))
+            XCTAssertTrue(milestone, "um milestone explícito continua escrevendo")
+            XCTAssertEqual(try XCTUnwrap(SessionStore(database: try RuntimeDatabase(location: location)).checkpoint())
+                .updatedAt, Date(timeIntervalSince1970: 901))
+        }
+    }
+
+    /// A outra metade da regra, e o caso em que ela **não** se aplica: uma afirmação exata vence por ser mais nova, e
+    /// duas aproximadas continuam competindo entre si (a mais nova vence) — bloquear isso congelaria um registro
+    /// aproximado para sempre, mesmo com o leitor se movendo de verdade.
+    func testAnExactStatementWinsAndTwoIncompleteStatementsStillCompete() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let database = try RuntimeDatabase(location: location)
+            // A âncora da janela (incompleta) escrita sobre outra incompleta: escreve, porque o registro era
+            // aproximado.
+            let window = FeedSession(publicationHistory: PublicationHistory(database: database))
+            _ = try await window.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 6)))
+            let milestone = try await window.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 700))
+            XCTAssertTrue(milestone)
+            let approximated = try XCTUnwrap(SessionStore(database: database).checkpoint())
+            XCTAssertEqual(approximated.anchorPlacement, "center")
+            XCTAssertEqual(approximated.updatedAt, Date(timeIntervalSince1970: 700))
+            // Uma afirmação exata do desenho substitui a aproximada — é mais nova e mais precisa.
+            _ = try await window.notePresentedPosition(
+                PresentationAnchor(cardID: cards[5].id, placement: .top), atRest: true)
+            let exact = try XCTUnwrap(SessionStore(database: database).checkpoint())
+            XCTAssertEqual(exact.cardID, cards[5].id)
+            XCTAssertEqual(exact.anchorPlacement, "top")
+        }
+    }
+
     func testStorageFailurePreservesMemoryP6AndDurableP4() async throws {
         try await withLocation { location in
             let (_, cards) = try persist(location: location)
@@ -414,10 +477,28 @@ final class FeedSessionCheckpointTests: XCTestCase {
                 writes += 1
             }
             let average = (ProcessInfo.processInfo.systemUptime - started) / Double(max(writes, 1))
+            // O caminho **comum** — uma afirmação exata (a carta do topo, declarada pelo desenho) — decide sem ler
+            // nada; o caminho incompleto (a âncora da janela) paga a comparação do registro. Medidos lado a lado,
+            // porque é isso que a regra do lead exige saber.
+            var exactWrites = 0
+            let exactStarted = ProcessInfo.processInfo.systemUptime
+            for step in 0..<200 {
+                let card = cards[2 + (step % 5)]
+                guard case .written = try await session.notePresentedPosition(
+                    PresentationAnchor(cardID: card.id, placement: .top), atRest: true,
+                    at: base.addingTimeInterval(window * Double(step))) else {
+                    return XCTFail("step \(step) must be a real exact write")
+                }
+                exactWrites += 1
+            }
+            let exactAverage = (ProcessInfo.processInfo.systemUptime - exactStarted) / Double(max(exactWrites, 1))
             print("DURABILITY_COST writes=\(writes) average_write_ms=\(String(format: "%.3f", average * 1000))"
+                + " exact_writes=\(exactWrites) average_exact_ms=\(String(format: "%.3f", exactAverage * 1000))"
                 + " declared_writes_per_minute=\(Int(60 / window)) frame_budget_ms=16.67")
             XCTAssertGreaterThan(writes, 100, "the measurement is about real writes")
+            XCTAssertGreaterThan(exactWrites, 100, "and about real exact writes")
             XCTAssertLessThan(average, 0.05, "one write is far below a frame (16,67 ms)")
+            XCTAssertLessThan(exactAverage, 0.05, "one exact write is far below a frame (16,67 ms)")
         }
     }
 

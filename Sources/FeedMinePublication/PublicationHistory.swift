@@ -141,6 +141,16 @@ public struct PublicationHistory: Sendable {
         try sessionStore.saveCheckpoint(PublicationPersistenceMapping.checkpoint(cursor, updatedAt: updatedAt))
     }
 
+    /// The durable cursor a restore would read for this identity — nothing more: no Edition lookup, no window and no
+    /// card materialization. It is the record the conditional durability write compares its own statement against
+    /// (`FeedSession`), so what that rule protects is exactly what a reopen would honour.
+    /// Nil means no saved session. Storage and mapping failures propagate unchanged.
+    public func savedCursor(contextKey: ContextKey? = nil) throws -> SessionCursor? {
+        guard let checkpoint = try contextKey.map { try sessionStore.checkpoint(for: $0) } ?? sessionStore.checkpoint()
+        else { return nil }
+        return try PublicationPersistenceMapping.cursor(checkpoint)
+    }
+
     /// Materializes another immutable projection without changing the durable checkpoint.
     /// Capacity validation belongs to PublicationStore.
     public func window(

@@ -2526,14 +2526,23 @@ final class FeedAssociation {
     }
 
     /// O `written` é o único desfecho que custa uma escrita; é ele que entra no registro da corrida, e é a contagem
-    /// dessas linhas por minuto de leitura que mede o custo contra o orçamento de fluidez.
+    /// dessas linhas por minuto de leitura que mede o custo contra o orçamento de fluidez. O `keptExactRecord` é o
+    /// outro desfecho que o registro da corrida precisa dizer: uma afirmação incompleta destas associações não
+    /// substituiu a carta do topo que o desenho já havia gravado (lead, 2026-10-14).
     private func report(checkpoint recording: SettledPositionRecording?) {
-        guard case .written(let cardID, let placement) = recording else { return }
-        let window = Int(FeedSession.settledPositionDebounceWindow)
-        Self.log("settled position checkpoint anchor=\(cardID.rawValue.uuidString) "
-            + "placement=\(placement.rawValue) window=\(window)s")
-        trace?.record("position_checkpoint", ["anchor": cardID.rawValue.uuidString,
-            "placement": placement.rawValue, "window_seconds": String(window)])
+        switch recording {
+        case .some(.written(let cardID, let placement)):
+            let window = Int(FeedSession.settledPositionDebounceWindow)
+            Self.log("settled position checkpoint anchor=\(cardID.rawValue.uuidString) "
+                + "placement=\(placement.rawValue) window=\(window)s")
+            trace?.record("position_checkpoint", ["anchor": cardID.rawValue.uuidString,
+                "placement": placement.rawValue, "window_seconds": String(window)])
+        case .some(.keptExactRecord(let cardID)):
+            Self.log("settled position kept exact anchor=\(cardID.rawValue.uuidString)")
+            trace?.record("position_kept_exact", ["anchor": cardID.rawValue.uuidString])
+        case .some(.nothingToRecord), .some(.alreadyDurable), .some(.withinWindow), .none:
+            return
+        }
     }
 
     func foreground() async {
