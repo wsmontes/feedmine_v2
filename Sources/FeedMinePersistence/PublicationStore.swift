@@ -257,6 +257,8 @@ public struct PublicationStore: Sendable {
         public let editionID: FeedEditionID
         public let generation: Int64
         public let highWaterCardID: PublicationCardID
+        /// Last card that may not be replaced; never earlier than the seen high water.
+        public let protectedThroughCardID: PublicationCardID
         public let expectedTailCardID: PublicationCardID
     }
     public enum TailSuccessionResult: Hashable, Sendable { case applied; case stale; case ineligible }
@@ -299,15 +301,23 @@ public struct PublicationStore: Sendable {
                 arguments: [visible ? 1 : 0, PersistenceValueCoding.uuid(editionID.rawValue)])
         }
     }
-    public func hiddenTail(editionID: FeedEditionID) throws -> HiddenTailLease? {
+    public func hiddenTail(editionID: FeedEditionID, protectingThrough admittedCardID: PublicationCardID? = nil) throws -> HiddenTailLease? {
         try database.write { db in
             let key = PersistenceValueCoding.uuid(editionID.rawValue)
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM edition_reading_state WHERE edition_id = ?", arguments: [key]) else { return nil }
             let card = PublicationCardID(rawValue: try PublicationValueCoding.uuid(row["high_water_card_id"], field: "high_water_card_id"))
             let generation: Int64 = row["generation"]
-            let tail = try Self.historyTail(editionKey: key, schema: Self.historySchema(key, in: db), in: db)
+            let schema = try Self.historySchema(key, in: db)
+            let tail = try Self.historyTail(editionKey: key, schema: schema, in: db)
+            var protectedCard = card
+            if let admittedCardID {
+                let seen = try Self.historyPosition(card, editionKey: key, schema: schema, in: db)
+                let admitted = try Self.historyPosition(admittedCardID, editionKey: key, schema: schema, in: db)
+                if seen.isBefore(admitted) { protectedCard = admittedCardID }
+            }
             try db.execute(sql: "UPDATE edition_reading_state SET visible = 0, generation = generation + 1 WHERE edition_id = ?", arguments: [key])
-            return HiddenTailLease(editionID: editionID, generation: generation + 1, highWaterCardID: card, expectedTailCardID: tail.cardID)
+            return HiddenTailLease(editionID: editionID, generation: generation + 1,
+                highWaterCardID: card, protectedThroughCardID: protectedCard, expectedTailCardID: tail.cardID)
         }
     }
     /// Archives only a non-visible, unseen suffix. Every fence is checked inside the writer.
@@ -320,7 +330,7 @@ public struct PublicationStore: Sendable {
             let schema = try Self.historySchema(key, in: db)
             let tail = try Self.historyTail(editionKey: key, schema: schema, in: db)
             guard tail.cardID == lease.expectedTailCardID else { return .stale }
-            let high = try Self.historyPosition(lease.highWaterCardID, editionKey: key, schema: schema, in: db)
+            let high = try Self.historyPosition(lease.protectedThroughCardID, editionKey: key, schema: schema, in: db)
             guard high.isBefore(tail), !cards.isEmpty else { return .ineligible }
             let segment = SegmentRecord(id: segmentID, editionID: lease.editionID, ordinal: high.segmentOrdinal + 1,
                 segmentSeed: 1, publicationSchemaVersion: schema, createdAt: createdAt, cardIDs: cards.map(\.id))
