@@ -115,38 +115,42 @@ public actor FeedSession {
     /// pixels; everything else keeps the frozen descriptor and releases the bitmap, which is decoded
     /// again from the same local asset when the reader returns. Returns the items and whether anything
     /// actually changed, so an unmoved window allocates nothing.
+    ///
+    /// **Only the two boundaries change.** Rewriting the whole list per advance builds a new `PresentationCard` for
+    /// every admitted card on every step — and with the head kept that list grows with how far the reader has read,
+    /// so the cost grew with the session (reported on the device as stutter that gets worse the longer one reads).
+    /// The unchanged cards keep their identity, which also keeps the feed's own diff small.
     private func boundedResidency(items: [PresentationCard], editionID: FeedEditionID,
         around anchorCardID: PublicationCardID, bounds: FeedPresentationBounds) throws -> ([PresentationCard], Bool) {
         guard let anchorIndex = items.firstIndex(where: { $0.id == anchorCardID }) else { return (items, false) }
         let first = max(0, anchorIndex - bounds.backwardCapacity)
         let last = min(items.count - 1, anchorIndex + bounds.forwardCapacity)
         let inside = first...last
-        let wantsDecode = items[inside].contains { releasedImageCards.contains($0.id) }
-        let wantsRelease = items.enumerated().contains { index, item in
-            !inside.contains(index) && item.image != nil
+        // Cards that must hand their pixels back: outside the band, still holding an image.
+        let leaving = items.indices.filter { !inside.contains($0) && items[$0].image != nil }
+        // Cards that come back into the band having released theirs.
+        let returning = inside.filter { releasedImageCards.contains(items[$0].id) }
+        guard !leaving.isEmpty || !returning.isEmpty else { return (items, false) }
+        var next = items
+        for index in leaving {
+            next[index] = next[index].releasingDecodedImage()
+            releasedImageCards.insert(next[index].id)
         }
-        guard wantsDecode || wantsRelease else { return (items, false) }
-        var decoded: [PublicationCardID: PresentationCard] = [:]
-        if wantsDecode, let imageDecoder {
+        if !returning.isEmpty, let imageDecoder {
+            // One read for the band, and only the returning cards are rebuilt from it.
             let published = try publicationHistory.window(editionID: editionID,
                 around: FeedWindowAnchor(cardID: items[first].id, placement: .center),
                 backwardCapacity: 0, forwardCapacity: last - first)
-            for card in published.cards {
-                decoded[card.id] = PresentationCard(publishedCard: card, decoder: imageDecoder)
+            let decoded = Dictionary(uniqueKeysWithValues: published.cards.map {
+                ($0.id, PresentationCard(publishedCard: $0, decoder: imageDecoder))
+            })
+            for index in returning {
+                guard let fresh = decoded[items[index].id] else { continue }
+                next[index] = fresh
+                releasedImageCards.remove(items[index].id)
             }
         }
-        var nextReleased = releasedImageCards
-        let rebalanced = items.enumerated().map { index, item -> PresentationCard in
-            if inside.contains(index) {
-                guard let fresh = decoded[item.id] else { return item }
-                nextReleased.remove(item.id)
-                return fresh
-            }
-            if item.image != nil { nextReleased.insert(item.id) }
-            return item.releasingDecodedImage()
-        }
-        releasedImageCards = nextReleased
-        return (rebalanced, true)
+        return (next, true)
     }
 
     /// Extends the admitted prefix with already-published cards that follow the admitted tail.

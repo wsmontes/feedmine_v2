@@ -215,6 +215,35 @@ final class FeedPresentationAdmissionTests: XCTestCase {
             "nada acima do leitor muda quando a lista cresce para frente")
     }
 
+    /// Reposição de cauda com a cabeça mantida: a guarda de crescimento compara a **distância da âncora**, não o
+    /// tamanho total da lista. Sob a política nova o total já é maior que essa distância, e ler o total ali recusaria
+    /// toda reposição — no aparelho o sintoma foi "o scroll chega ao fim antes de ser repovoado".
+    func testPublishedGrowthStillRefillsTheTailWithTheHeadKept() async throws {
+        let f = try fixture()
+        let bounds = FeedPresentationBounds(backwardCapacity: f.bounds.backwardCapacity,
+            forwardCapacity: f.bounds.forwardCapacity, keepsAdmittedHead: true)
+        let before = try await admitted(f.session, .initial(bounds))
+        XCTAssertEqual(before.window.items.map(\.id), Array(f.cards[1...3]).map(\.id))
+        try f.publishTail()
+
+        // O runtime — não um gesto — estende a cauda com o que já foi publicado.
+        let grown = try await admitted(f.session, .publishedGrowth)
+        XCTAssertEqual(grown.window.items.map(\.id), Array(f.cards[1...4]).map(\.id),
+            "a reposição preenche a reserva à frente da âncora")
+        XCTAssertEqual(grown.window.items.first?.id, f.cards[1].id, "e não mexe na cabeça")
+        // Repetir não estende além do teto.
+        let repeated = try await f.session.admitPresentation(.publishedGrowth)
+        XCTAssertEqual(repeated, grown, "uma reposição sem espaço é um no-op")
+
+        // O leitor avança dentro da reserva: a âncora anda, e a reposição volta a ter espaço.
+        let observed = observation(f.cards[3], placement: .center)
+        _ = try await f.session.submitViewport(observed)
+        let refilled = try await admitted(f.session, .publishedGrowth)
+        XCTAssertEqual(refilled.window.items.map(\.id), Array(f.cards[1...5]).map(\.id),
+            "a cauda é repovoada conforme o leitor avança, com a cabeça no lugar")
+        XCTAssertEqual(refilled.window.anchor.cardID, f.cards[3].id)
+    }
+
     /// R4/F05: the runtime grows the admitted window with cards **already published**, without any
     /// reader gesture and without inventing one. The anchor, the order and every admitted card stay
     /// exactly as they were; only the end of the list moves.
