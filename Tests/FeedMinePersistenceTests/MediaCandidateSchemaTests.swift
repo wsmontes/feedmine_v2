@@ -163,12 +163,32 @@ final class MediaCandidateSchemaTests: XCTestCase {
             try tables.map { table in try Row.fetchAll(db, sql: "SELECT * FROM \(table) ORDER BY 1").map { row in
                 row.filter { column in
                     if table == "origin_records" { return column.0 != "availability_observed_at" }
+                    if table == "origin_revisions" {
+                        return column.0 != "fingerprint_generation" && column.0 != "body_source_element"
+                    }
                     if table == "feed_editions" { return column.0 != "context_identity" && column.0 != "context_key_json" }
                     return true
                 }.map { $0.1 }
             } }
         }
-        XCTAssertEqual(after, before) // Every preexisting value remains exact; the additive column is checked separately.
+        XCTAssertEqual(after, before) // Original values exact; only two additive columns excluded.
+        try database.read { db in
+            let fields = try Row.fetchAll(db, sql: "PRAGMA table_info('origin_revisions')")
+            XCTAssertEqual(fields.suffix(2).map { $0["name"] as String },
+                ["fingerprint_generation", "body_source_element"])
+            let generation = try XCTUnwrap(fields.first { ($0["name"] as String) == "fingerprint_generation" })
+            XCTAssertEqual(generation["type"] as String, "INTEGER")
+            XCTAssertEqual(generation["notnull"] as Int, 1)
+            XCTAssertEqual(generation["dflt_value"] as String?, "1")
+            XCTAssertEqual(generation["pk"] as Int, 0)
+            let provenance = try XCTUnwrap(fields.first { ($0["name"] as String) == "body_source_element" })
+            XCTAssertEqual(provenance["type"] as String, "TEXT")
+            XCTAssertEqual(provenance["notnull"] as Int, 0)
+            XCTAssertNil(provenance["dflt_value"] as String?)
+            XCTAssertEqual(provenance["pk"] as Int, 0)
+            XCTAssertEqual(try Int.fetchOne(db, sql: "SELECT fingerprint_generation FROM origin_revisions WHERE id = ?", arguments: [r]), 1)
+            XCTAssertNil(try String.fetchOne(db, sql: "SELECT body_source_element FROM origin_revisions WHERE id = ?", arguments: [r]))
+        }
         XCTAssertEqual(try database.read { try Double.fetchOne($0,sql: "SELECT availability_observed_at FROM origin_records") },1)
         // T6: the pre-existing Edition acquires the default-surface identity of the context it recorded.
         XCTAssertEqual(try database.read { try String.fetchOne($0, sql: "SELECT context_identity FROM feed_editions") },

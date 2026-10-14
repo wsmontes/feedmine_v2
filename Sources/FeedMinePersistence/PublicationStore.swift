@@ -205,8 +205,31 @@ public struct PublicationStore: Sendable {
     /// Material identity of an occurrence: whitespace-collapsed title and primary text, plus the
     /// revision's primary media locator (review F07 / PD-1: a new primary image is material).
     /// Editorial computes the identical key from candidate facts (`SelectionExposureSnapshot`).
-    public static func materialKey(title: String?, primaryText: String?, primaryMedia: String? = nil) -> String {
-        MaterialContentIdentity.key(title: title, text: primaryText, primaryMedia: primaryMedia)
+    public static func materialKey(title: String?, primaryText: String?, primaryMedia: String? = nil,
+        declaredBody: String? = nil, bodyObserved: Bool = false) -> String {
+        MaterialContentIdentity.key(title: title, text: primaryText, primaryMedia: primaryMedia,
+            declaredBody: declaredBody, bodyObserved: bodyObserved)
+    }
+
+    /// Body material for the append guard, using the same three states as the editorial
+    /// candidate and published-exposure queries; no published card or revision is rewritten.
+    private static func materialBody(_ revision: OriginRevisionID, in db: Database) throws
+        -> (text: String?, observed: Bool) {
+        guard let row = try Row.fetchOne(db, sql: """
+            SELECT CASE WHEN r.fingerprint_generation = 2 THEN r.body_text
+                        WHEN e.origin_revision_id IS NOT NULL THEN e.body_text
+                        ELSE NULL END AS declared_body,
+                   CASE WHEN r.fingerprint_generation = 2 OR e.origin_revision_id IS NOT NULL
+                        THEN 1 ELSE 0 END AS body_observed
+            FROM origin_revisions r
+            LEFT JOIN origin_revision_body_enrichment e ON e.origin_revision_id = r.id
+            WHERE r.id = ?
+            """, arguments: [PersistenceValueCoding.uuid(revision.rawValue)]) else {
+            return (nil, false) // Historical publication fixture without a canonical revision.
+        }
+        let body: String? = row["declared_body"]
+        let observed: Int = row["body_observed"]
+        return (body, observed == 1)
     }
 
     /// Ordinal-0 canonical media locator of a revision; immutable, so both sides agree.
@@ -243,10 +266,14 @@ public struct PublicationStore: Sendable {
                 }
             case .whenMaterialChanged:
                 let published = try Self.publishedMaterial(cards.map(\.originRecordID), editionID: segment.editionID, in: db)
-                for card in cards where published[card.originRecordID]?
-                    .contains(Self.materialKey(title: card.title, primaryText: card.primaryText,
-                        primaryMedia: try Self.primaryMediaLocator(card.originRevisionID, in: db))) == true {
-                    throw PublicationStoreError.duplicateOriginInEdition
+                for card in cards {
+                    let body = try Self.materialBody(card.originRevisionID, in: db)
+                    if published[card.originRecordID]?
+                        .contains(Self.materialKey(title: card.title, primaryText: card.primaryText,
+                            primaryMedia: try Self.primaryMediaLocator(card.originRevisionID, in: db),
+                            declaredBody: body.text, bodyObserved: body.observed)) == true {
+                        throw PublicationStoreError.duplicateOriginInEdition
+                    }
                 }
             }
             try Self.insertSegment(segment, cards: cards, db: db)
@@ -363,8 +390,15 @@ public struct PublicationStore: Sendable {
                 let group = Array(keys[start..<min(start + capacity, keys.count)])
                 let parameters = Array(repeating: "?", count: group.count).joined(separator: ",")
                 let rows = try Row.fetchAll(db, sql: """
-                    SELECT c.origin_record_id, c.title, c.primary_text, m.remote_locator AS primary_media
+                    SELECT c.origin_record_id, c.title, c.primary_text, m.remote_locator AS primary_media,
+                        CASE WHEN r.fingerprint_generation = 2 THEN r.body_text
+                             WHEN e.origin_revision_id IS NOT NULL THEN e.body_text
+                             ELSE NULL END AS declared_body,
+                        CASE WHEN r.fingerprint_generation = 2 OR e.origin_revision_id IS NOT NULL
+                             THEN 1 ELSE 0 END AS body_observed
                     FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+                    LEFT JOIN origin_revisions r ON r.id = c.origin_revision_id
+                    LEFT JOIN origin_revision_body_enrichment e ON e.origin_revision_id = c.origin_revision_id
                     LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0 AND m.media_class = 'image'
                     WHERE s.edition_id = ? AND (s.ordinal, c.ordinal) <= (?, ?) AND c.origin_record_id IN (\(parameters))
                     """, arguments: StatementArguments([key as DatabaseValueConvertible, Int64(high.segmentOrdinal), Int64(high.cardOrdinal)] + group.map { $0 as DatabaseValueConvertible }))
@@ -372,7 +406,9 @@ public struct PublicationStore: Sendable {
                     let fields = PublicationRecordFields(row)
                     let origin = OriginRecordID(rawValue: try fields.uuid("origin_record_id"))
                     result[origin, default: []].insert(Self.materialKey(title: try fields.optionalString("title"),
-                        primaryText: try fields.optionalString("primary_text"), primaryMedia: try fields.optionalString("primary_media")))
+                        primaryText: try fields.optionalString("primary_text"), primaryMedia: try fields.optionalString("primary_media"),
+                        declaredBody: try fields.optionalString("declared_body"),
+                        bodyObserved: (try fields.integer("body_observed")) == 1))
                 }
             }
             return result
@@ -683,8 +719,15 @@ public struct PublicationStore: Sendable {
             let group = Array(keys[start..<min(start + capacity, keys.count)])
             let placeholders = Array(repeating: "?", count: group.count).joined(separator: ",")
             let rows = try Row.fetchAll(db, sql: """
-                SELECT c.origin_record_id, c.title, c.primary_text, m.remote_locator AS primary_media FROM published_cards c
+                SELECT c.origin_record_id, c.title, c.primary_text, m.remote_locator AS primary_media,
+                        CASE WHEN r.fingerprint_generation = 2 THEN r.body_text
+                             WHEN e.origin_revision_id IS NOT NULL THEN e.body_text
+                             ELSE NULL END AS declared_body,
+                        CASE WHEN r.fingerprint_generation = 2 OR e.origin_revision_id IS NOT NULL
+                             THEN 1 ELSE 0 END AS body_observed FROM published_cards c
                 JOIN feed_segments s ON s.id = c.segment_id
+                LEFT JOIN origin_revisions r ON r.id = c.origin_revision_id
+                    LEFT JOIN origin_revision_body_enrichment e ON e.origin_revision_id = c.origin_revision_id
                 LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0 AND m.media_class = 'image'
                 WHERE c.origin_record_id IN (\(placeholders)) AND s.edition_id = ?
                 """, arguments: StatementArguments(group + [PersistenceValueCoding.uuid(editionID.rawValue)]))
@@ -692,7 +735,9 @@ public struct PublicationStore: Sendable {
                 let fields = PublicationRecordFields(row)
                 let origin = OriginRecordID(rawValue: try fields.uuid("origin_record_id"))
                 found[origin, default: []].insert(materialKey(title: try fields.optionalString("title"),
-                    primaryText: try fields.optionalString("primary_text"), primaryMedia: try fields.optionalString("primary_media")))
+                    primaryText: try fields.optionalString("primary_text"), primaryMedia: try fields.optionalString("primary_media"),
+                        declaredBody: try fields.optionalString("declared_body"),
+                        bodyObserved: (try fields.integer("body_observed")) == 1))
             }
         }
         return found

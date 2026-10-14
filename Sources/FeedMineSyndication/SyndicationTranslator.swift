@@ -43,7 +43,8 @@ public struct SyndicationTranslator: Sendable {
             .init(connectorKind: .syndication, namespace: prefix + ":" + suffix, value: value, role: role)
         }
         func observation(_ object: ExternalIdentity?, version: ExternalIdentity? = nil, title: String?, summary: String?,
-            body: String? = nil, authored: Date?, modified: Date? = nil, language: String? = nil, link: String?,
+            body: String? = nil, bodySourceElement: String? = nil, fingerprintGeneration: Int = 1,
+            authored: Date?, modified: Date? = nil, language: String? = nil, link: String?,
             media: [AcquisitionMediaCandidateClaim]) -> Result<AcquisitionObservation, ItemFailure> {
             guard let object else { return .failure(.missingStableIdentity) }
             // v1 lesson IN-4 / review M12: a future-dated item would pin itself to the top of a
@@ -53,15 +54,27 @@ public struct SyndicationTranslator: Sendable {
             // `date_modified`. The version identity is the claimed date plus a fingerprint of the
             // material content, so a real edit is a genuinely new version and identical replay is
             // still recognized. Whitespace churn is not material.
-            let materialVersion = version.map { claimed in
+            let legacyVersion = version.map { claimed in
                 ExternalIdentity(connectorKind: claimed.connectorKind, namespace: claimed.namespace,
-                    value: claimed.value + ":" + Self.materialFingerprint(title: title, summary: summary, body: body,
-                        link: link, media: media), role: claimed.role)
+                    value: claimed.value + ":" + Self.materialFingerprint(title: title, summary: summary,
+                        body: fingerprintGeneration == 2 ? nil : body, link: link, media: media), role: claimed.role)
+            }
+            let materialVersion: ExternalIdentity?
+            if fingerprintGeneration == 2 {
+                materialVersion = version.map { claimed in
+                    ExternalIdentity(connectorKind: claimed.connectorKind, namespace: claimed.namespace,
+                        value: claimed.value + ":g2:" + Self.materialFingerprint(title: title, summary: summary,
+                            body: body, link: link, media: media, sourceElement: bodySourceElement), role: claimed.role)
+                }
+            } else {
+                materialVersion = legacyVersion
             }
             guard let value = AcquisitionObservation(objectIdentity: object, versionIdentity: materialVersion, precedence: .makeCurrent,
                 availability: .available, headline: title, summary: summary, bodyText: body, authoredAt: clamped(authored),
                 modifiedAt: clamped(modified), observedAt: observedAt, language: language, primaryLink: Self.webURL(link),
-                searchProjection: nil, providerID: nil, memberships: configuration.memberships, mediaCandidates: media)
+                searchProjection: nil, providerID: nil, memberships: configuration.memberships, mediaCandidates: media,
+                fingerprintGeneration: fingerprintGeneration, legacyVersionIdentity: fingerprintGeneration == 2 ? legacyVersion : nil,
+                bodySourceElement: bodySourceElement)
             else { return .failure(.invalidCanonicalObservation) }
             return .success(value)
         }
@@ -82,8 +95,10 @@ public struct SyndicationTranslator: Sendable {
                 let playable = Self.playback(enclosure.url, base: base, mimeType: enclosure.type) {
                 media.append(playable)
             }
-            return observation(object, title: item.title, summary: item.description, authored: item.pubDate,
-                language: language, link: item.link, media: Self.unique(media))
+            let body = Self.readableBody(item.content?.encoded)
+            return observation(object, title: item.title, summary: item.description, body: body,
+                bodySourceElement: body == nil ? nil : "content:encoded", fingerprintGeneration: 2,
+                authored: item.pubDate, language: language, link: item.link, media: Self.unique(media))
         }
         switch feed {
         case .rss(let document):
@@ -117,7 +132,24 @@ public struct SyndicationTranslator: Sendable {
                     if let playable = Self.playback(enclosure.attributes?.href, base: base,
                         mimeType: enclosure.attributes?.type) { media.append(playable) }
                 }
+                // Atom src is an external resource, not content provided by the feed.
+                let contentType = (item.content?.attributes?.type ?? "text").lowercased()
+                let body: String?
+                if item.content?.attributes?.src != nil {
+                    body = nil
+                } else {
+                    switch contentType {
+                    case "text", "text/plain":
+                        // Atom text constructs carry literal text; do not interpret escaped angle brackets.
+                        body = Self.literalBody(item.content?.text)
+                    case "html", "xhtml", "text/html", "application/xhtml+xml":
+                        body = Self.readableBody(item.content?.text)
+                    default:
+                        body = nil
+                    }
+                }
                 return observation(object, version: version, title: item.title, summary: item.summary?.text,
+                    body: body, bodySourceElement: body == nil ? nil : "content", fingerprintGeneration: 2,
                     authored: item.published, modified: item.updated, link: link, media: Self.unique(media))
             }
         case .json(let document):
@@ -161,14 +193,25 @@ public struct SyndicationTranslator: Sendable {
             declaredItemCount: items.count, examinedItemCount: examined, nextItemIndex: end < items.count ? end : nil)
     }
     private static func nonempty(_ value: String?) -> String? { value.flatMap { $0.utf8.isEmpty ? nil : $0 } }
+    private static func literalBody(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return normalized.isEmpty ? nil : normalized
+    }
+    private static func readableBody(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let result = ReadablePublicationText.convert(value).trimmingCharacters(in: .whitespacesAndNewlines)
+        return result.isEmpty ? nil : result
+    }
     /// First 16 hex digits of SHA-256 over whitespace-collapsed material fields.
     static func materialFingerprint(title: String?, summary: String?, body: String?, link: String?,
-        media: [AcquisitionMediaCandidateClaim]) -> String {
+        media: [AcquisitionMediaCandidateClaim], sourceElement: String? = nil) -> String {
         func collapse(_ text: String?) -> String {
             (text ?? "").split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         }
         let material = [collapse(title), collapse(summary), collapse(body), collapse(link)]
             + media.map(\.remoteURL.absoluteString)
+            + (sourceElement.map { ["sourceElement", $0] } ?? [])
         let digest = SHA256.hash(data: Data(material.joined(separator: "\u{1F}").utf8))
         return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
     }

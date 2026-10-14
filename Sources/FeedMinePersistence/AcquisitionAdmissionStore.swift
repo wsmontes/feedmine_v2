@@ -61,6 +61,9 @@ public struct AcquisitionAdmissionStore: Sendable {
     public struct ObservationCommand: Hashable, Sendable {
         public let objectIdentity: ExternalIdentity
         public let versionIdentity: ExternalIdentity?
+        public let legacyVersionIdentity: ExternalIdentity?
+        public let fingerprintGeneration: Int
+        public let bodySourceElement: String?
         public let precedence: PrecedenceCommand
         public let availability: OriginAvailability
         public let headline: String?
@@ -79,9 +82,13 @@ public struct AcquisitionAdmissionStore: Sendable {
             precedence: PrecedenceCommand, availability: OriginAvailability, headline: String?, summary: String?,
             bodyText: String?, authoredAt: Date?, modifiedAt: Date?, observedAt: Date, language: String?,
             primaryLink: URL?, searchProjection: String?, providerID: ProviderID?, memberships: [MembershipCommand],
-            mediaCandidates: [MediaCandidateCommand]) {
+            mediaCandidates: [MediaCandidateCommand], fingerprintGeneration: Int = 1,
+            legacyVersionIdentity: ExternalIdentity? = nil, bodySourceElement: String? = nil) {
             self.objectIdentity = objectIdentity
             self.versionIdentity = versionIdentity
+            self.legacyVersionIdentity = legacyVersionIdentity
+            self.fingerprintGeneration = fingerprintGeneration
+            self.bodySourceElement = bodySourceElement
             self.precedence = precedence
             self.availability = availability
             self.headline = headline
@@ -155,6 +162,7 @@ public struct AcquisitionAdmissionStore: Sendable {
                     throw AcquisitionAdmissionStoreError.unauthorizedSource(index: index, targetID: target.id, sourceID: membership.sourceID)
                 }
             }
+            let activeFingerprintGeneration = try contentStore.admissionCurrentFingerprintGeneration(in: db)
             var before: [OriginRecordID: SupplyFingerprint] = [:]
             var rejections: [ObservationRejection] = []
             for (index, observation) in command.observations.enumerated() {
@@ -164,6 +172,51 @@ public struct AcquisitionAdmissionStore: Sendable {
                 let current = try record.flatMap { try contentStore.admissionCurrentRevision(for: $0, in: db) }
                 let knownVersion = try observation.versionIdentity.flatMap {
                     try contentStore.admissionRevision(originRecordID: recordID, matching: $0, in: db)
+                }
+                // K-15: the new parser may discover body in bytes that created a generation-1 revision.
+                // Match that exact legacy identity first; its persisted revision never changes. The first
+                // declared body is a baseline enrichment, and only a subsequent different body is an edit.
+                if knownVersion == nil, observation.fingerprintGeneration == activeFingerprintGeneration {
+                    let historical = try observation.legacyVersionIdentity.flatMap {
+                        try contentStore.admissionRevision(originRecordID: recordID, matching: $0, in: db)
+                    } ?? (observation.versionIdentity == nil && current?.externalVersionIdentity == nil ? current : nil)
+                    if let historical, try contentStore.admissionFingerprintGeneration(of: historical.id, in: db) == 1,
+                        Self.sameExceptBody(observation, historical) {
+                        let storedMedia = try contentStore.admissionMediaCandidates(originRevisionID: historical.id, in: db)
+                        let proposedMedia = try Self.media(observation, revisionID: historical.id, reusing: storedMedia, index: index)
+                        let sameMedia = proposedMedia.count == storedMedia.count
+                            && zip(proposedMedia, storedMedia).allSatisfy {
+                                ContentStore.admissionSameMediaCandidate($0.0, $0.1)
+                            }
+                        if sameMedia {
+                            let enrichment = try contentStore.admissionEnrichedBody(of: historical.id, in: db)
+                            // "absent" is meaningful evidence: if generation 2 already observed
+                            // no body, its later appearance is a publisher edit, not parser enrichment.
+                            let source = observation.bodySourceElement ?? "absent"
+                            let sameBody: Bool
+                            if let enrichment {
+                                sameBody = enrichment.source == source && enrichment.text == observation.bodyText
+                            } else {
+                                sameBody = historical.bodyText == observation.bodyText
+                            }
+                            if sameBody || (enrichment == nil && historical.bodyText == nil) {
+                                if enrichment == nil && historical.bodyText == nil {
+                                    try contentStore.admissionAddBodyEnrichment(observation.bodyText,
+                                        source: source, revisionID: historical.id, in: db)
+                                }
+                                try contentStore.apply(ContentStore.CanonicalChange(recordID: recordID,
+                                    externalObjectIdentity: observation.objectIdentity, revision: historical,
+                                    mediaCandidates: storedMedia, availability: observation.availability,
+                                    observedAt: observation.observedAt,
+                                    expectedCurrent: current.map { .revision($0.id) } ?? .none,
+                                    currentUpdate: .unchanged,
+                                    membershipMutations: observation.memberships.map {
+                                        .upsert(sourceID: $0.sourceID, kind: $0.kind, observedAt: observation.observedAt)
+                                    }), in: db)
+                                continue
+                            }
+                        }
+                    }
                 }
                 let revision: OriginRevision
                 let media: [MediaCandidate]
@@ -220,7 +273,8 @@ public struct AcquisitionAdmissionStore: Sendable {
                     expectedCurrent: current.map { .revision($0.id) } ?? .none, currentUpdate: update,
                     membershipMutations: observation.memberships.map {
                         .upsert(sourceID: $0.sourceID, kind: $0.kind, observedAt: observation.observedAt)
-                    }), in: db)
+                    }, fingerprintGeneration: observation.fingerprintGeneration,
+                    bodySourceElement: observation.bodySourceElement), in: db)
             }
             var supplyChanged = false
             for (id, fingerprint) in before {
@@ -241,6 +295,19 @@ public struct AcquisitionAdmissionStore: Sendable {
         guard value.objectIdentity.connectorKind.rawValue.utf8.elementsEqual(connectorKind.rawValue.utf8) else {
             throw AcquisitionAdmissionStoreError.connectorMismatch(index: index)
         }
+        guard value.fingerprintGeneration == 1 || value.fingerprintGeneration == 2 else {
+            throw invalid("fingerprintGeneration")
+        }
+        guard value.bodySourceElement == nil
+            || (value.fingerprintGeneration == 2 && value.bodyText != nil) else {
+            throw invalid("bodySourceElement")
+        }
+        if let legacy = value.legacyVersionIdentity {
+            guard value.fingerprintGeneration == 2, legacy.role == .version,
+                legacy.connectorKind == value.objectIdentity.connectorKind else {
+                throw invalid("legacyVersionIdentity")
+            }
+        }
         if let version = value.versionIdentity {
             guard version.role == .version else { throw invalid("versionIdentity.role") }
             guard version.connectorKind.rawValue.utf8.elementsEqual(value.objectIdentity.connectorKind.rawValue.utf8) else {
@@ -253,6 +320,13 @@ public struct AcquisitionAdmissionStore: Sendable {
         guard value.observedAt.timeIntervalSince1970.isFinite else { throw invalid("observedAt") }
         guard value.authoredAt.map({ $0.timeIntervalSince1970.isFinite }) ?? true else { throw invalid("authoredAt") }
         guard value.modifiedAt.map({ $0.timeIntervalSince1970.isFinite }) ?? true else { throw invalid("modifiedAt") }
+    }
+
+    private static func sameExceptBody(_ incoming: ObservationCommand, _ old: OriginRevision) -> Bool {
+        incoming.headline == old.headline && incoming.summary == old.summary
+            && incoming.authoredAt == old.authoredAt && incoming.modifiedAt == old.modifiedAt
+            && incoming.language == old.language && incoming.primaryLink == old.primaryLink
+            && incoming.searchProjection == old.searchProjection && incoming.providerID == old.providerID
     }
 
     private static func revision(_ value: ObservationCommand, recordID: OriginRecordID,

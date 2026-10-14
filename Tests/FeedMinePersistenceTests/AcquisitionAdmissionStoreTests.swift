@@ -443,4 +443,181 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
         _ = try f.store.admit(f.command([observation(f)],checkpoint: checkpoint()))
         XCTAssertEqual(try schema(),before)
     }
+
+    // MARK: - K-15 fingerprint generation and legacy enrichment compatibility
+    func testK15MigrationPersistsFingerprintGenerationWithoutRecalculatingV1() throws {
+        let f = try fixture()
+        _ = try f.store.admit(f.command([observation(f, version: "original-version", body: nil)]))
+        let previousIdentity = try XCTUnwrap(f.current()?.externalVersionIdentity)
+        let generation = try f.database.read { db in
+            try Int.fetchOne(db, sql: "SELECT generation FROM content_fingerprint_policy WHERE id = 1")
+        }
+        XCTAssertEqual(generation, 2)
+        let stored = try f.database.read { db in
+            try Int.fetchOne(db, sql: "SELECT fingerprint_generation FROM origin_revisions LIMIT 1")
+        }
+        XCTAssertEqual(stored, 1)
+        XCTAssertEqual(try f.current()?.externalVersionIdentity, previousIdentity)
+    }
+
+    func testK15LegacyRSSFirstBodyIsEnrichmentNotNewRevision() throws {
+        let f = try fixture()
+        let old = observation(f, version: nil, body: nil)
+        _ = try f.store.admit(f.command([old]))
+        let original = try XCTUnwrap(f.current())
+        // Published history is an immutable occurrence: enrichment must not mutate its
+        // snapshot, its action or the Edition's exposure material.
+        let publication = PublicationStore(database: f.database)
+        let edition = StorageFixture.edition()
+        let published = PublicationStore.CardRecord(id: PublicationCardID(),
+            originRecordID: original.originRecordID, originRevisionID: original.id,
+            sourceID: f.sourceID, providerID: nil, sourceDisplayName: "News",
+            providerDisplayName: nil, contentEntityID: nil, contentClusterID: nil,
+            title: original.headline, primaryText: original.summary,
+            timestampValue: nil, timestampKind: nil, mediaKey: nil,
+            mediaPixelWidth: nil, mediaPixelHeight: nil, mediaMimeType: nil,
+            renderLayout: "textOnly", renderMediaAspectRatio: nil,
+            primaryActionKind: "externalURL", primaryActionReference: original.primaryLink?.absoluteString)
+        try publication.createEdition(edition, firstSegment: StorageFixture.segment(edition, [published]),
+            cards: [published])
+        let exposureBefore = try publication.exposure(editionID: edition.id,
+            originIDs: [original.originRecordID]).publishedMaterialKeys
+        let new = observation(f, version: nil, body: "Readable body", time: 20)
+        let enriched = Store.ObservationCommand(objectIdentity: new.objectIdentity, versionIdentity: nil,
+            precedence: new.precedence, availability: new.availability, headline: new.headline,
+            summary: new.summary, bodyText: new.bodyText, authoredAt: new.authoredAt, modifiedAt: new.modifiedAt,
+            observedAt: new.observedAt, language: new.language, primaryLink: new.primaryLink,
+            searchProjection: new.searchProjection, providerID: new.providerID,
+            memberships: new.memberships, mediaCandidates: new.mediaCandidates,
+            fingerprintGeneration: 2, bodySourceElement: "content:encoded")
+        XCTAssertFalse(try f.store.admit(f.command([enriched])).selectableSupplyChanged)
+        XCTAssertEqual(try f.count("origin_revisions"), 1)
+        XCTAssertEqual(try f.current(), original)
+        XCTAssertEqual(try f.content.originRevision(id: original.id)?.bodyText, "Readable body")
+        XCTAssertNil(try f.database.read { db in
+            try String.fetchOne(db, sql: "SELECT body_text FROM origin_revisions WHERE id = ?",
+                arguments: [original.id.rawValue.uuidString.lowercased()])
+        })
+        let text = try f.database.read { db in
+            try String.fetchOne(db, sql: "SELECT body_text FROM origin_revision_body_enrichment WHERE origin_revision_id = ?",
+                arguments: [original.id.rawValue.uuidString.lowercased()])
+        }
+        XCTAssertEqual(text, "Readable body")
+        XCTAssertFalse(try f.store.admit(f.command([enriched])).selectableSupplyChanged)
+        XCTAssertEqual(try f.count("origin_revisions"), 1)
+        XCTAssertEqual(try f.count("origin_revision_body_enrichment"), 1)
+        XCTAssertEqual(try publication.card(id: published.id), published)
+        XCTAssertEqual(try publication.segments(editionID: edition.id).flatMap(\.cardIDs), [published.id])
+        let exposureAfter = try publication.exposure(editionID: edition.id,
+            originIDs: [original.originRecordID]).publishedMaterialKeys
+        // The fixture has an ordinal-0 image; both sides of the golden key must
+        // include its canonical locator, just like the publication query does.
+        let primaryMedia = "https://example.test/one"
+        XCTAssertEqual(try publication.mediaLocator(cardID: published.id), primaryMedia)
+        XCTAssertEqual(exposureBefore[original.originRecordID],
+            [PublicationStore.materialKey(title: published.title, primaryText: published.primaryText,
+                primaryMedia: primaryMedia)])
+        XCTAssertEqual(exposureAfter[original.originRecordID],
+            [PublicationStore.materialKey(title: published.title, primaryText: published.primaryText,
+                primaryMedia: primaryMedia, declaredBody: "Readable body", bodyObserved: true)])
+        XCTAssertNotEqual(exposureAfter, exposureBefore,
+            "only the derived comparison includes the new baseline; the published card remains unchanged")
+    }
+
+    func testK15RealRSSContentEncodedEditCreatesNewRevisionAfterBaseline() throws {
+        let f = try fixture()
+        _ = try f.store.admit(f.command([observation(f, version: nil, body: nil)]))
+        let original = try XCTUnwrap(f.current())
+        func incoming(_ body: String) -> Store.ObservationCommand {
+            let old = observation(f, version: nil, body: body)
+            return .init(objectIdentity: old.objectIdentity, versionIdentity: nil, precedence: old.precedence,
+                availability: old.availability, headline: old.headline, summary: old.summary, bodyText: body,
+                authoredAt: old.authoredAt, modifiedAt: old.modifiedAt, observedAt: old.observedAt,
+                language: old.language, primaryLink: old.primaryLink, searchProjection: old.searchProjection,
+                providerID: old.providerID, memberships: old.memberships, mediaCandidates: old.mediaCandidates,
+                fingerprintGeneration: 2, bodySourceElement: "content:encoded")
+        }
+        _ = try f.store.admit(f.command([incoming("First body")]))
+        XCTAssertEqual(try f.current()?.id, original.id)
+        XCTAssertTrue(try f.store.admit(f.command([incoming("Edited body")])).selectableSupplyChanged)
+        let edited = try XCTUnwrap(f.current())
+        XCTAssertNotEqual(edited.id, original.id)
+        XCTAssertEqual(edited.bodyText, "Edited body")
+        XCTAssertEqual(edited.summary, original.summary)
+        XCTAssertEqual(try f.content.originRevision(id: original.id)?.bodyText, "First body")
+        XCTAssertEqual(try f.content.originRevision(id: original.id)?.externalVersionIdentity, original.externalVersionIdentity)
+        XCTAssertEqual(try f.count("origin_revisions"), 2)
+        let generation = try f.database.read { db in
+            try Int.fetchOne(db, sql: "SELECT fingerprint_generation FROM origin_revisions WHERE id = ?",
+                arguments: [edited.id.rawValue.uuidString.lowercased()])
+        }
+        XCTAssertEqual(generation, 2)
+    }
+
+    func testK15AtomLegacyVersionIdentityRemainsValidThenBodyEditIsNewVersion() throws {
+        let f = try fixture()
+        let old = observation(f, version: "atom-stamp:g1", body: nil)
+        _ = try f.store.admit(f.command([old]))
+        let original = try XCTUnwrap(f.current())
+        func incoming(_ body: String) -> Store.ObservationCommand {
+            let source = observation(f, version: "atom-stamp:g2:body", body: body)
+            return .init(objectIdentity: source.objectIdentity, versionIdentity: source.versionIdentity,
+                precedence: source.precedence, availability: source.availability, headline: source.headline,
+                summary: source.summary, bodyText: body, authoredAt: source.authoredAt,
+                modifiedAt: source.modifiedAt, observedAt: source.observedAt, language: source.language,
+                primaryLink: source.primaryLink, searchProjection: source.searchProjection,
+                providerID: source.providerID, memberships: source.memberships, mediaCandidates: source.mediaCandidates,
+                fingerprintGeneration: 2,
+                legacyVersionIdentity: Self.identity("atom-stamp:g1", role: .version),
+                bodySourceElement: "content")
+        }
+        XCTAssertFalse(try f.store.admit(f.command([incoming("First body")])).selectableSupplyChanged)
+        XCTAssertEqual(try f.current(), original)
+        XCTAssertEqual(try f.count("origin_revisions"), 1)
+        XCTAssertNotNil(try f.revision("atom-stamp:g1"))
+        // A changed body has a different new-generation fingerprint identity.
+        let firstEdited = incoming("Updated body")
+        let changed = Store.ObservationCommand(objectIdentity: firstEdited.objectIdentity,
+            versionIdentity: Self.identity("atom-stamp:g2:updated", role: .version),
+            precedence: firstEdited.precedence, availability: firstEdited.availability,
+            headline: firstEdited.headline, summary: firstEdited.summary, bodyText: firstEdited.bodyText,
+            authoredAt: firstEdited.authoredAt, modifiedAt: firstEdited.modifiedAt,
+            observedAt: firstEdited.observedAt, language: firstEdited.language,
+            primaryLink: firstEdited.primaryLink, searchProjection: firstEdited.searchProjection,
+            providerID: firstEdited.providerID, memberships: firstEdited.memberships,
+            mediaCandidates: firstEdited.mediaCandidates, fingerprintGeneration: 2,
+            legacyVersionIdentity: Self.identity("atom-stamp:g1", role: .version),
+            bodySourceElement: "content")
+        XCTAssertTrue(try f.store.admit(f.command([changed])).selectableSupplyChanged)
+        XCTAssertEqual(try f.count("origin_revisions"), 2)
+        XCTAssertEqual(try f.current()?.bodyText, "Updated body")
+        XCTAssertEqual(try f.content.originRevision(id: original.id)?.bodyText, "First body")
+        XCTAssertEqual(try f.content.originRevision(id: original.id)?.externalVersionIdentity, original.externalVersionIdentity)
+    }
+
+
+    func testK15AbsentBodyBaselineThenPublisherAddsBodyIsNewRevision() throws {
+        let f = try fixture()
+        _ = try f.store.admit(f.command([observation(f, version: nil, body: nil)]))
+        let previous = try XCTUnwrap(f.current())
+        func generation2(_ body: String?, source: String?) -> Store.ObservationCommand {
+            let seed = observation(f, version: nil, body: body)
+            return .init(objectIdentity: seed.objectIdentity, versionIdentity: nil,
+                precedence: seed.precedence, availability: seed.availability, headline: seed.headline,
+                summary: seed.summary, bodyText: body, authoredAt: seed.authoredAt,
+                modifiedAt: seed.modifiedAt, observedAt: seed.observedAt, language: seed.language,
+                primaryLink: seed.primaryLink, searchProjection: seed.searchProjection,
+                providerID: seed.providerID, memberships: seed.memberships,
+                mediaCandidates: seed.mediaCandidates, fingerprintGeneration: 2, bodySourceElement: source)
+        }
+        XCTAssertFalse(try f.store.admit(f.command([generation2(nil, source: nil)])).selectableSupplyChanged)
+        XCTAssertEqual(try f.count("origin_revisions"), 1)
+        XCTAssertEqual(try f.count("origin_revision_body_enrichment"), 1)
+        XCTAssertTrue(try f.store.admit(f.command([generation2("Publisher added body", source: "content:encoded")])).selectableSupplyChanged)
+        XCTAssertNotEqual(try f.current()?.id, previous.id)
+        XCTAssertEqual(try f.current()?.bodyText, "Publisher added body")
+        XCTAssertEqual(try f.content.originRevision(id: previous.id), previous)
+        XCTAssertEqual(try f.count("origin_revisions"), 2)
+    }
+
 }
