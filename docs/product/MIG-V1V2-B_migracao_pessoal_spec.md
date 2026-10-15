@@ -266,3 +266,22 @@ fechamento do gate. Foi por isso que esta Emenda 2 vive aqui, e não no `main`.
 **Consequência para a auditoria:** o diff do gate é medido contra **`801f017d`**
 (`git diff --name-only 801f017d HEAD`), nunca contra `dee94e2e` nem `a0623a6d`. Comparar contra os SHAs
 anteriores misturaria commits de documentação com o delta do implementador.
+
+---
+
+## Nota de auditoria — caminho protegido com módulo errado (2026-10-15)
+
+Conferência dos **18 caminhos da allowlist** e dos **protegidos** contra a árvore real de `801f017d`:
+
+- **Allowlist: 17 de 18 existem.** O único ausente é o próprio arquivo de evidência
+  (`docs/reviews/MIG-V1V2-B_PERSONAL_MIGRATION_EVIDENCE.md`), que a spec declara como **novo** — correto.
+- **Protegidos: 7 de 8 existem.** O ausente é o caminho
+  `Sources/FeedMinePersistence/CatalogInstallation.swift`, citado no §5 — **o módulo está errado**. O arquivo
+  real é **`Sources/FeedMineComposition/CatalogInstallation.swift`** (e há o teste irmão
+  `Tests/FeedMineCompositionTests/CatalogInstallationTests.swift`).
+
+**Interpretação:** o **efeito** pretendido continua valendo, porque o §5 fecha com a cláusula catch-all —
+*"qualquer outro caminho não incluído entre os 18 da allowlist"* é protegido — e o caminho real **não** está
+entre os 18. Mas o erro de módulo fica registrado aqui para não ser citado como autorização implícita: **o
+protecido é `FeedMineComposition/CatalogInstallation.swift`**, não a variante inexistente em `Persistence`.
+Nenhum dos 18 caminhos da allowlist aponta para módulo errado.
