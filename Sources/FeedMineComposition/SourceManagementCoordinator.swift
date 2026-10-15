@@ -43,6 +43,10 @@ public struct SourceManagementCoordinator: Sendable {
         preferences = database.map(ReaderPreferencesStore.init(database:))
     }
 
+    /// The installer's already committed fingerprint is the sole revision authority for UI reads.
+    /// Fixed test catalogues have no replaceable revision and therefore return nil.
+    public func catalogueFingerprint() -> String? { installation?.activeFingerprint() }
+
     public var hasCatalog: Bool { catalog != nil }
 
     public func languages() throws -> [CatalogLanguageSummary] {

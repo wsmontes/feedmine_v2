@@ -11,6 +11,9 @@ import FeedMineRuntime
 /// What the source surface needs from its backend. Every method is async and may throw: the store turns a
 /// failure into a stated message instead of leaving the surface silently empty.
 public protocol SourceManagementBackend: Sendable {
+    /// Identity of the committed public catalogue snapshot used by new read operations.
+    /// Nil for a fixed or absent catalogue; no periodic observer or secondary catalogue state.
+    func catalogueFingerprint() async -> String?
     func languages() async throws -> [CatalogLanguageSummary]
     func sections() async throws -> [CatalogNodeSummary]
     func countries() async throws -> [CatalogNodeSummary]
@@ -33,6 +36,8 @@ public protocol SourceManagementBackend: Sendable {
 }
 
 public extension SourceManagementBackend {
+    func catalogueFingerprint() async -> String? { nil }
+
     func setEnabledTree(node: CatalogNodeSummary, enabled: Bool) async throws {
         try await setEnabled(node: node, enabled: enabled)
     }
@@ -70,18 +75,28 @@ public final class SourceManagementStore {
 
     /// Loads what the surface shows on appear: languages, sections and the current selection.
     public func load() async {
+        let fingerprint = await backend.catalogueFingerprint()
         isLoading = true
         defer { isLoading = false }
         do {
-            languages = try await backend.languages()
-            sections = try await backend.sections()
-            countries = try await backend.countries()
-            countryKeys = try await backend.countryKeys()
-            selection = Set(try await backend.selection())
-            health = try await backend.health()
+            let languages = try await backend.languages()
+            let sections = try await backend.sections()
+            let countries = try await backend.countries()
+            let countryKeys = try await backend.countryKeys()
+            let selection = Set(try await backend.selection())
+            let health = try await backend.health()
+            guard await backend.catalogueFingerprint() == fingerprint else { return }
+            // Publish one coherent read, never a mix of fields from two catalogue revisions.
+            self.languages = languages
+            self.sections = sections
+            self.countries = countries
+            self.countryKeys = countryKeys
+            self.selection = selection
+            self.health = health
             hasCatalog = true
             errorMessage = nil
         } catch {
+            guard await backend.catalogueFingerprint() == fingerprint else { return }
             // The catalog is an optional shipped asset; its absence is a state, not an empty list.
             hasCatalog = false
             errorMessage = String(localized: "O catálogo de fontes não está disponível.")
@@ -92,8 +107,19 @@ public final class SourceManagementStore {
         query = text
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { results = []; return }
-        do { results = try await backend.searchSources(trimmed); errorMessage = nil }
-        catch { errorMessage = String(localized: "Não foi possível buscar no catálogo.") }
+        let fingerprint = await backend.catalogueFingerprint()
+        guard query == text else { return }
+        do {
+            let found = try await backend.searchSources(trimmed)
+            let current = await backend.catalogueFingerprint()
+            guard query == text, current == fingerprint else { return }
+            results = found
+            errorMessage = nil
+        } catch {
+            let current = await backend.catalogueFingerprint()
+            guard query == text, current == fingerprint else { return }
+            errorMessage = String(localized: "Não foi possível buscar no catálogo.")
+        }
     }
 
     public func clearSearch() async {
@@ -103,17 +129,30 @@ public final class SourceManagementStore {
 
     /// Opens a node: its children become the visible level and its sources become the list underneath.
     public func open(_ node: CatalogNodeSummary) async {
+        openNode = node
+        let fingerprint = await backend.catalogueFingerprint()
+        guard openNode?.key == node.key else { return }
         isLoading = true
         defer { isLoading = false }
         do {
-            openNode = node
-            children = node.hasChildren ? try await backend.children(of: node) : []
-            breadcrumb = try await backend.breadcrumb(of: node)
-            sources = try await backend.sources(in: node)
-            nodeChildKeys = children.isEmpty ? [:] : try await backend.childKeys(of: node)
-            health = try await backend.health()
+            let children = node.hasChildren ? try await backend.children(of: node) : []
+            let breadcrumb = try await backend.breadcrumb(of: node)
+            let sources = try await backend.sources(in: node)
+            let nodeChildKeys = children.isEmpty ? [:] : try await backend.childKeys(of: node)
+            let health = try await backend.health()
+            let current = await backend.catalogueFingerprint()
+            guard openNode?.key == node.key, current == fingerprint else { return }
+            self.children = children
+            self.breadcrumb = breadcrumb
+            self.sources = sources
+            self.nodeChildKeys = nodeChildKeys
+            self.health = health
             errorMessage = nil
-        } catch { errorMessage = String(localized: "Não foi possível abrir esta parte do catálogo.") }
+        } catch {
+            let current = await backend.catalogueFingerprint()
+            guard openNode?.key == node.key, current == fingerprint else { return }
+            errorMessage = String(localized: "Não foi possível abrir esta parte do catálogo.")
+        }
     }
 
     /// Adds or removes one source from the reader's selection. The list is refreshed from the backend, so the

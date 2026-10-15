@@ -59,6 +59,67 @@ final class SourceManagementStoreTests: XCTestCase {
         }
     }
 
+    /// Explicitly delayed backend calls, with a changing *existing* catalogue fingerprint.
+    /// No clock or randomized scheduling: tests decide which rev-5/rev-6 response completes first.
+    private actor DeferredBackend: SourceManagementBackend {
+        private var fingerprint = "rev-5"
+        private var searches: [String: [CheckedContinuation<[CatalogSourceSummary], Never>]] = [:]
+        private var nodes: [String: CheckedContinuation<[CatalogNodeSummary], Never>] = [:]
+        private var searchAwaiters: [(query: String, count: Int, resume: CheckedContinuation<Void, Never>)] = []
+        private var nodeAwaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+
+        func catalogueFingerprint() async -> String? { fingerprint }
+        func activate(_ revision: String) { fingerprint = revision }
+
+        func searchSources(_ query: String) async throws -> [CatalogSourceSummary] {
+            await withCheckedContinuation { continuation in
+                searches[query, default: []].append(continuation)
+                let ready = searchAwaiters.filter { $0.query == query
+                    && (searches[query]?.count ?? 0) >= $0.count }
+                searchAwaiters.removeAll { $0.query == query
+                    && (searches[query]?.count ?? 0) >= $0.count }
+                for waiter in ready { waiter.resume.resume() }
+            }
+        }
+        func waitForSearch(_ query: String, count: Int = 1) async {
+            if (searches[query]?.count ?? 0) >= count { return }
+            await withCheckedContinuation { searchAwaiters.append((query, count, $0)) }
+        }
+        func finishSearch(_ query: String, with values: [CatalogSourceSummary], newest: Bool = false) {
+            guard var pending = searches[query], !pending.isEmpty else { return }
+            let callback = newest ? pending.removeLast() : pending.removeFirst()
+            if pending.isEmpty { searches.removeValue(forKey: query) }
+            else { searches[query] = pending }
+            callback.resume(returning: values)
+        }
+
+        func children(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary] {
+            await withCheckedContinuation { continuation in
+                nodes[node.key] = continuation
+                for waiter in nodeAwaiters.removeValue(forKey: node.key) ?? [] { waiter.resume() }
+            }
+        }
+        func waitForNode(_ key: String) async {
+            if nodes[key] != nil { return }
+            await withCheckedContinuation { nodeAwaiters[key, default: []].append($0) }
+        }
+        func finishNode(_ key: String, with values: [CatalogNodeSummary]) {
+            nodes.removeValue(forKey: key)?.resume(returning: values)
+        }
+
+        func languages() async throws -> [CatalogLanguageSummary] { [] }
+        func sections() async throws -> [CatalogNodeSummary] { [] }
+        func countries() async throws -> [CatalogNodeSummary] { [] }
+        func breadcrumb(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary] { [] }
+        func sources(in node: CatalogNodeSummary) async throws -> [CatalogSourceSummary] { [] }
+        func countryKeys() async throws -> [Int64: Set<String>] { [:] }
+        func childKeys(of node: CatalogNodeSummary) async throws -> [Int64: Set<String>] { [:] }
+        func health() async throws -> [String: CatalogSourceHealth] { [:] }
+        func selection() async throws -> [String] { [] }
+        func setSelection(_ keys: [String]) async throws {}
+        func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws {}
+    }
+
     private enum SourceManagementErrorDouble: Error { case unavailable, invalid }
 
     private func node(_ id: Int64, _ name: String, kind: CatalogNodeSummary.Kind = .topic,
@@ -217,6 +278,74 @@ final class SourceManagementStoreTests: XCTestCase {
         XCTAssertEqual(rows?.map(\.id), ["a", "b"])
         XCTAssertEqual(rows?.first?.health?.failures, 3)
         XCTAssertNil(rows?.last?.health, "the second source was never attempted")
+    }
+
+    /// PD10-B2 UI: a previously issued search for the same text must not publish a rev-5
+    /// answer after activation. A new explicit search then reads and publishes rev-6 data.
+    func testPD10B2SearchChecksCommittedRevisionBeforePublishing() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let old = CatalogSourceSummary(id: "old", title: "Revision 5",
+            language: "en", mediaKind: "text", defaultEnabled: true)
+        let current = CatalogSourceSummary(id: "new", title: "Revision 6",
+            language: "pt", mediaKind: "text", defaultEnabled: true)
+
+        let previousRequest = Task { await store.search("same") }
+        await backend.waitForSearch("same")
+        await backend.activate("rev-6")
+        let currentRequest = Task { await store.search("same") }
+        await backend.waitForSearch("same", count: 2)
+        await backend.finishSearch("same", with: [current], newest: true)
+        await currentRequest.value
+        await backend.finishSearch("same", with: [old])
+        await previousRequest.value
+        XCTAssertEqual(store.results.map(\.id), ["new"],
+            "a rev-5 response arriving after the rev-6 response must never overwrite it")
+    }
+
+    /// PD10-B2 UI: changing the query while the old network/database operation is suspended
+    /// must never replace the newer displayed answer, even if the first call completes last.
+    func testPD10B2OldQueryCannotOverwriteNewSearch() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let oldRequest = Task { await store.search("earlier") }
+        await backend.waitForSearch("earlier")
+        let newRequest = Task { await store.search("later") }
+        await backend.waitForSearch("later")
+        await backend.finishSearch("later", with: [
+            CatalogSourceSummary(id: "later", title: "Latest", language: "pt",
+                mediaKind: "text", defaultEnabled: true)
+        ])
+        await newRequest.value
+        await backend.finishSearch("earlier", with: [
+            CatalogSourceSummary(id: "earlier", title: "Stale", language: "en",
+                mediaKind: "text", defaultEnabled: true)
+        ])
+        await oldRequest.value
+        XCTAssertEqual(store.query, "later")
+        XCTAssertEqual(store.results.map(\.id), ["later"])
+    }
+
+    /// PD10-B2 UI: an old node fetch must not install breadcrumbs/children after the source
+    /// surface opens a different node under a promoted catalogue.
+    func testPD10B2OldNodeCannotOverwriteNewNavigation() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let earlier = node(1, "Old", children: true)
+        let later = node(2, "Current", children: true)
+        let child = node(3, "Current child")
+        let oldRequest = Task { await store.open(earlier) }
+        await backend.waitForNode(earlier.key)
+        await backend.activate("rev-6")
+        let newRequest = Task { await store.open(later) }
+        await backend.waitForNode(later.key)
+        await backend.finishNode(later.key, with: [child])
+        await newRequest.value
+        await backend.finishNode(earlier.key, with: [node(4, "Stale child")])
+        await oldRequest.value
+        XCTAssertEqual(store.openNode?.key, later.key)
+        XCTAssertEqual(store.children.map(\.key), [child.key])
+        XCTAssertTrue(store.breadcrumb.isEmpty)
     }
 
     func testSearchTrimsAndClears() async {

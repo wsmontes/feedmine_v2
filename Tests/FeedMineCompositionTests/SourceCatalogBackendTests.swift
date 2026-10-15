@@ -69,6 +69,9 @@ final class SourceCatalogBackendTests: XCTestCase {
         _ = try ReaderPreferencesStore(database: runtime).initialize(sourceKeys: [])
         let coordinator = SourceManagementCoordinator(installation: installation, database: runtime)
         let backend = SourceCatalogBackend(coordinator: coordinator)
+        let initialFingerprint = await backend.catalogueFingerprint()
+        XCTAssertEqual(initialFingerprint, installation.activeFingerprint(),
+            "the UI adapter must expose the installed authority's exact existing identity")
         let store = SourceManagementStore(backend: backend)
         await store.load()
         await store.search("Exemplo 1")
@@ -82,6 +85,9 @@ final class SourceCatalogBackendTests: XCTestCase {
             next, revision: 6, sources: 1), catalogue: next) else {
             return XCTFail("new snapshot must activate")
         }
+        let promotedFingerprint = await backend.catalogueFingerprint()
+        XCTAssertEqual(promotedFingerprint, installation.activeFingerprint())
+        XCTAssertNotEqual(promotedFingerprint, initialFingerprint)
         XCTAssertEqual(store.results.map(\.id), visible.map(\.id),
             "activation must not rewrite previously displayed source identities")
         XCTAssertEqual(store.results.map(\.title), visible.map(\.title),

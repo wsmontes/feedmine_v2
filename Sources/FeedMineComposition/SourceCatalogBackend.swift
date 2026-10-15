@@ -28,6 +28,9 @@ public struct SourceCatalogBackend: SourceManagementBackend {
         self.healthProvider = healthProvider
     }
 
+    /// Checked by the existing store before publishing an asynchronously completed read.
+    public func catalogueFingerprint() async -> String? { coordinator.catalogueFingerprint() }
+
     public func languages() async throws -> [CatalogLanguageSummary] { try coordinator.languages() }
 
     public func sections() async throws -> [CatalogNodeSummary] { try coordinator.sections() }
