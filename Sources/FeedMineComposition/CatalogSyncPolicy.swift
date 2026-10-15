@@ -83,6 +83,12 @@ public enum CatalogOffer {
         guard let active else { return .accept(remote.revision) }
         if remote.revision > active.revision { return .accept(remote.revision) }
         if remote.revision < active.revision { return .stale(remote.revision) }
-        return remote == active ? .upToDate(remote.revision) : .collision(remote.revision)
+        // The public authority declares OPML inputs; an installed snapshot additionally declares the
+        // locally compiled SQLite. That derived artifact is not an editorial change to the public revision.
+        // Compare the actual public declaration, not the two different layers' full manifests.
+        let samePublicDeclaration = remote.schemaVersion == active.schemaVersion
+            && remote.sourceCount == active.sourceCount
+            && remote.opmlEntries == active.opmlEntries
+        return samePublicDeclaration ? .upToDate(remote.revision) : .collision(remote.revision)
     }
 }

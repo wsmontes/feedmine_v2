@@ -57,6 +57,43 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
+/// Standard-public-URL test transport. Only the manifest request is intercepted; all RSS and OPML requests
+/// still pass through FixtureTransport. Unlike FEEDMINE_CATALOGUE_AUTHORITY, this exercises the release path.
+final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
+    static let etag = "\"bundle-test\""
+    static let manifest = Mutex<Data?>(nil)
+    static let requests = Mutex<[String?]>([])
+    static let force304 = Mutex(false)
+
+    static func prepare(_ data: Data, unsolicited304: Bool = false) {
+        manifest.withLock { $0 = data }
+        requests.withLock { $0 = [] }
+        force304.withLock { $0 = unsolicited304 }
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url == CatalogUpdateChannel.publicManifestURL
+    }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let conditional = request.value(forHTTPHeaderField: "If-None-Match")
+        Self.requests.withLock { $0.append(conditional) }
+        guard let data = Self.manifest.withLock({ $0 }) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        let status = Self.force304.withLock { $0 } || conditional == Self.etag ? 304 : 200
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
+            headerFields: status == 200 ? ["ETag": Self.etag] : [:])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        if status == 200 { client?.urlProtocol(self, didLoad: data) }
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
 @MainActor
 final class CompositionTests: XCTestCase {
 
@@ -182,6 +219,173 @@ final class CompositionTests: XCTestCase {
             XCTAssertNotEqual(left.sourceDisplayName, right.sourceDisplayName)
         }
         await association.close()
+    }
+
+    // MARK: - PD10-P0A: public sync contract, through the production URL and the real composition root
+
+    private func publicCatalogueRoot(directory: URL) -> AppComposition {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StandardCatalogueTransport.self, FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 10
+        return AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration)
+    }
+
+    private func bundledPublicManifest() throws -> CatalogManifest {
+        let url = try XCTUnwrap(Bundle.main.url(forResource: "catalog.manifest", withExtension: "json"))
+        let bundled = try CatalogManifest.decode(Data(contentsOf: url))
+        return CatalogManifest(revision: bundled.revision, schemaVersion: bundled.schemaVersion,
+            generatedAt: bundled.generatedAt, sourceCount: bundled.sourceCount,
+            fileCount: bundled.opmlEntries.count, files: bundled.opmlEntries)
+    }
+
+    private func syncRecordURL(_ directory: URL) -> URL {
+        directory.appendingPathComponent("catalogue/sync.json")
+    }
+
+    private func readSyncRecord(_ directory: URL) throws -> CatalogSyncRecord {
+        try JSONDecoder().decode(CatalogSyncRecord.self, from: Data(contentsOf: syncRecordURL(directory)))
+    }
+
+    private func writeSyncRecord(_ record: CatalogSyncRecord, to directory: URL) throws {
+        try JSONEncoder().encode(record).write(to: syncRecordURL(directory), options: .atomic)
+    }
+
+    /// Criteria 1/3/7: a locally verified, published feed appears before *any* manifest GET. The first
+    /// foreground really consults the STANDARD public URL, recognizes the same 118 OPML inputs against
+    /// the installed 119-entry descriptor, and leaves the active snapshot and visible cards untouched.
+    func testPD10StandardPublicAuthorityChecksFirstForegroundAfterLocalPaint() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manifest = try bundledPublicManifest()
+        XCTAssertFalse(manifest.opmlEntries.isEmpty)
+        StandardCatalogueTransport.prepare(try manifest.encoded())
+        let composition = publicCatalogueRoot(directory: directory)
+        await composition.launch()
+        let association = try XCTUnwrap(composition.association)
+        let before = try XCTUnwrap(association.store.state.presentation)
+        let visible = before.window.items.map(\.id)
+        let activeBefore = try XCTUnwrap(CatalogInstallation(appDirectory: directory).activeSnapshot())
+
+        XCTAssertTrue(StandardCatalogueTransport.requests.withLock { $0.isEmpty },
+            "the local first paint must never depend on a remote manifest request")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: syncRecordURL(directory).path),
+            "local bootstrap must not start the remote verification window")
+
+        await composition.foreground()
+
+        let requests = StandardCatalogueTransport.requests.withLock { $0 }
+        XCTAssertEqual(requests.count, 1, "the release authority must be checked on the first opportunity")
+        XCTAssertNil(try XCTUnwrap(requests.first), "the first GET has no conditional validator")
+        let recorded = try readSyncRecord(directory)
+        XCTAssertEqual(recorded.verifiedRevision, manifest.revision)
+        XCTAssertEqual(recorded.remoteRevision, manifest.revision)
+        XCTAssertNotNil(recorded.verifiedAt)
+        XCTAssertEqual(recorded.etag, StandardCatalogueTransport.etag)
+        let activeAfter = try XCTUnwrap(CatalogInstallation(appDirectory: directory).activeSnapshot())
+        XCTAssertEqual(activeAfter.fingerprint, activeBefore.fingerprint,
+            "equal public revision is not downloaded, compiled or replaced")
+        XCTAssertTrue(CatalogInstallation(appDirectory: directory).ledger().allSatisfy { $0.outcome != .activated })
+        XCTAssertTrue(composition.association === association, "checking does not rebuild the visible session")
+        let after = association.store.state.presentation?.window.items.map(\.id) ?? []
+        XCTAssertEqual(Array(after.prefix(visible.count)), visible, "published cards remain in place")
+        await association.close()
+    }
+
+    /// Criteria 2/6/7: the durable clock is from the remote check, not from any subsequent local bootstrap;
+    /// a 23-hour relaunch skips while a 25-hour relaunch sends a conditional GET and valid 304 renews the clock.
+    func testPD10RelaunchRespects23And25HourWindowAndConsistent304() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manifest = try bundledPublicManifest()
+        StandardCatalogueTransport.prepare(try manifest.encoded())
+        let first = publicCatalogueRoot(directory: directory)
+        await first.launch()
+        await first.foreground()
+        let verified = try readSyncRecord(directory)
+        XCTAssertNotNil(verified.verifiedAt)
+        await first.association?.close()
+
+        let at23 = Date().addingTimeInterval(-23 * 3600)
+        try writeSyncRecord(CatalogSyncRecord(verifiedRevision: verified.verifiedRevision, verifiedAt: at23,
+            remoteRevision: verified.remoteRevision, etag: verified.etag), to: directory)
+        StandardCatalogueTransport.requests.withLock { $0 = [] }
+        let second = publicCatalogueRoot(directory: directory)
+        await second.launch()
+        XCTAssertTrue(StandardCatalogueTransport.requests.withLock { $0.isEmpty })
+        await second.foreground()
+        XCTAssertTrue(StandardCatalogueTransport.requests.withLock { $0.isEmpty },
+            "relaunch after 23 hours must not restart the window or consult the authority")
+        XCTAssertEqual(try XCTUnwrap(readSyncRecord(directory).verifiedAt).timeIntervalSince1970,
+            at23.timeIntervalSince1970, accuracy: 0.001,
+            "skip must not rewrite the successful remote-verification timestamp")
+        await second.association?.close()
+
+        let at25 = Date().addingTimeInterval(-25 * 3600)
+        try writeSyncRecord(CatalogSyncRecord(verifiedRevision: verified.verifiedRevision, verifiedAt: at25,
+            remoteRevision: verified.remoteRevision, etag: verified.etag), to: directory)
+        let third = publicCatalogueRoot(directory: directory)
+        await third.launch()
+        XCTAssertTrue(StandardCatalogueTransport.requests.withLock { $0.isEmpty })
+        await third.foreground()
+        let requests = StandardCatalogueTransport.requests.withLock { $0 }
+        XCTAssertEqual(requests.count, 1, "the 25-hour window expires even after a local relaunch")
+        XCTAssertEqual(requests.first ?? nil, StandardCatalogueTransport.etag,
+            "the 304 must be conditional on the last successfully committed validator")
+        let renewed = try readSyncRecord(directory)
+        XCTAssertEqual(renewed.verifiedRevision, manifest.revision)
+        XCTAssertEqual(renewed.remoteRevision, manifest.revision)
+        XCTAssertEqual(renewed.etag, StandardCatalogueTransport.etag)
+        XCTAssertGreaterThan(try XCTUnwrap(renewed.verifiedAt), at25,
+            "304 with a matching installed revision and prior verification renews the clock")
+        await third.association?.close()
+    }
+
+    /// Criterion 5: a 200 for a newer revision, followed by a payload rejection, must be retried with a
+    /// fresh unconditional GET; the uninstalled ETag may not turn the next opportunity into a 304.
+    func testPD10FailedInstallNeverPersistsTheOfferedETag() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let bundled = try bundledPublicManifest()
+        let invalid = CatalogManifest(revision: bundled.revision + 1, sourceCount: 1, fileCount: 1,
+            files: [CatalogManifestEntry(path: "Feeds/invalid.opml", bytes: 5,
+                sha256: String(repeating: "a", count: 64))])
+        StandardCatalogueTransport.prepare(try invalid.encoded())
+        // Requests for invalid.opml fall through to FixtureTransport and serve bytes that fail SHA/size.
+        let composition = publicCatalogueRoot(directory: directory)
+        await composition.launch()
+        let initial = try XCTUnwrap(CatalogInstallation(appDirectory: directory).activeSnapshot())
+        await composition.foreground()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: syncRecordURL(directory).path),
+            "a failed install must not persist either ETag or verification timestamp")
+        await composition.foreground()
+        let requests = StandardCatalogueTransport.requests.withLock { $0 }
+        XCTAssertEqual(requests.count, 2, "the second foreground must retry the authority")
+        XCTAssertTrue(requests.allSatisfy { $0 == nil }, "neither request may carry the uncommitted ETag")
+        let installation = CatalogInstallation(appDirectory: directory)
+        XCTAssertEqual(installation.activeSnapshot()?.fingerprint, initial.fingerprint)
+        XCTAssertTrue(installation.ledger().contains { $0.outcome == .rejected })
+        XCTAssertFalse(installation.ledger().contains { $0.outcome == .activated })
+        await composition.association?.close()
+    }
+
+    /// Criterion 6: an unsolicited 304 after a mismatched durable record must NOT refresh that record.
+    func testPD10Unsolicited304CannotRenewAnInconsistentRecord() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manifest = try bundledPublicManifest()
+        StandardCatalogueTransport.prepare(try manifest.encoded(), unsolicited304: true)
+        let composition = publicCatalogueRoot(directory: directory)
+        await composition.launch()
+        let previous = CatalogSyncRecord(verifiedRevision: manifest.revision, verifiedAt: Date().addingTimeInterval(-25 * 3600),
+            remoteRevision: manifest.revision + 1, etag: StandardCatalogueTransport.etag)
+        try writeSyncRecord(previous, to: directory)
+        await composition.foreground()
+        XCTAssertEqual(StandardCatalogueTransport.requests.withLock { $0 }, [nil],
+            "a mismatched verification record must never send its validator")
+        XCTAssertEqual(try readSyncRecord(directory), previous,
+            "the unsolicited 304 must not renew verifiedAt or bless a mismatched revision")
+        await composition.association?.close()
     }
 
     func testBundledCatalogHasRealBytesAndStableBoundedDefaults() throws {

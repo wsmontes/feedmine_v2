@@ -39,25 +39,16 @@ final class CatalogUpdateChannelTests: XCTestCase {
         override func stopLoading() {}
     }
 
-    /// A box a `@Sendable` stub can write to; the test reads it after the fetch completes.
-    private final class Box: @unchecked Sendable {
-        private let lock = NSLock()
-        private var value: String?
-        var last: String? { lock.withLock { value } }
-        func set(_ new: String?) { lock.withLock { value = new } }
-    }
-
     private let manifestJSON = """
     {"schemaVersion":1,"revision":5,"generatedAt":"2026-08-03T23:35:34Z","sourceCount":77443,"fileCount":1,
      "files":[{"path":"catalog.sqlite","bytes":10,"sha256":"\(String(repeating: "a", count: 64))"}]}
     """
 
-    private func channel(etag: String? = nil, store: @escaping @Sendable (String?) -> Void = { _ in })
-        -> CatalogUpdateChannel {
+    private func channel(etag: String? = nil) -> CatalogUpdateChannel {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [Stub.self]
         return CatalogUpdateChannel(manifestURL: URL(string: "https://exemplo.test/manifest.json")!,
-            session: URLSession(configuration: configuration), storedETag: { etag }, storeETag: store)
+            session: URLSession(configuration: configuration), storedETag: { etag })
     }
 
     override func setUp() {
@@ -68,11 +59,13 @@ final class CatalogUpdateChannelTests: XCTestCase {
     func testAModifiedManifestIsHandedBackByteForByte() async throws {
         let body = Data(manifestJSON.utf8)
         Stub.handler = { _ in .answer(200, ["ETag": "\"v5\""], body) }
-        let stored = Box()
-        let result = await channel(store: { stored.set($0) }).fetch()
-        guard case .manifest(let data) = result else { return XCTFail("a 200 with a manifest body is a manifest") }
+        let result = await channel().fetch()
+        guard case .manifest(let data, let etag) = result else {
+            return XCTFail("a 200 with a manifest body is a manifest")
+        }
         XCTAssertEqual(data, body, "the authority's own bytes are handed on")
-        XCTAssertEqual(stored.last, "\"v5\"", "the validator is stored for the next conditional request")
+        XCTAssertEqual(etag, "\"v5\"", "the validator is offered but NOT persisted before installation")
+        XCTAssertTrue(Stub.requests.allSatisfy { $0.value(forHTTPHeaderField: "If-None-Match") == nil })
         XCTAssertEqual(try CatalogManifest.decode(data).revision, 5)
     }
 
@@ -85,8 +78,33 @@ final class CatalogUpdateChannelTests: XCTestCase {
 
     func testANotModifiedAnswerIsNotAManifest() async {
         Stub.handler = { _ in .answer(304, [:], Data()) }
-        let result = await channel().fetch()
+        let result = await channel(etag: "\"v5\"").fetch()
         XCTAssertEqual(result, .notModified)
+    }
+
+    /// Criterion 6: a server's unsolicited 304 is not evidence of any previous verified response.
+    func testAnUnconditional304CannotVerifyAnything() async {
+        Stub.handler = { _ in .answer(304, [:], Data()) }
+        guard case .unavailable(let why) = await channel().fetch() else {
+            return XCTFail("304 without a sent validator is not a verification")
+        }
+        XCTAssertTrue(why.contains("304"), why)
+    }
+
+    /// Criterion 5 (channel half): failed installation does not feed a 200 ETag back to the next GET.
+    func testTwoUncommitted200OffersBothFetchManifestWithoutConditionalValidator() async {
+        let body = Data(manifestJSON.utf8)
+        Stub.handler = { _ in .answer(200, ["ETag": "\"v6\""], body) }
+        let first = await channel().fetch()
+        let second = await channel().fetch()
+        guard case .manifest(_, let firstETag) = first,
+            case .manifest(_, let secondETag) = second else {
+            return XCTFail("both attempts must receive the offered manifest")
+        }
+        XCTAssertEqual(firstETag, "\"v6\"")
+        XCTAssertEqual(secondETag, "\"v6\"")
+        XCTAssertEqual(Stub.requests.count, 2)
+        XCTAssertTrue(Stub.requests.allSatisfy { $0.value(forHTTPHeaderField: "If-None-Match") == nil })
     }
 
     func testANon200AnswerIsUnavailableWithTheStatusCode() async {

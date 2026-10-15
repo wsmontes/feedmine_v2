@@ -60,6 +60,35 @@ final class CatalogSyncPolicyTests: XCTestCase {
         XCTAssertEqual(CatalogOffer.decide(remote: remote, active: active), .collision(5))
     }
 
+    /// Criterion 3: the published revision has 118 OPML entries; the device descriptor has those same
+    /// entries plus a locally derived SQLite with an unrelated digest. That is not a collision.
+    func testThe118PublicOpmlEntriesEqualThe119EntryLocalDescriptor() {
+        let opml = (0..<118).map { index in
+            CatalogManifestEntry(path: String(format: "Feeds/%03d.opml", index), bytes: 10,
+                sha256: String(repeating: "a", count: 64))
+        }
+        let derived = CatalogManifestEntry(path: "catalog.sqlite", bytes: 8_000,
+            sha256: String(repeating: "b", count: 64))
+        let publicManifest = CatalogManifest(revision: 5, generatedAt: "public", sourceCount: 77_443,
+            fileCount: 118, files: opml)
+        let localDescriptor = CatalogManifest(revision: 5, generatedAt: "derived", sourceCount: 77_443,
+            fileCount: 119, files: opml + [derived])
+        XCTAssertEqual(CatalogOffer.decide(remote: publicManifest, active: localDescriptor), .upToDate(5))
+    }
+
+    /// Criterion 4: ignoring the derived SQLite may not ignore any material OPML change.
+    func testSameRevisionWithChangedPublicOpmlDigestIsStillCollision() {
+        let original = CatalogManifestEntry(path: "Feeds/01.opml", bytes: 10,
+            sha256: String(repeating: "a", count: 64))
+        let modified = CatalogManifestEntry(path: "Feeds/01.opml", bytes: 10,
+            sha256: String(repeating: "c", count: 64))
+        let derived = entry()
+        let active = CatalogManifest(revision: 5, sourceCount: 10, fileCount: 2,
+            files: [original, derived])
+        let remote = CatalogManifest(revision: 5, sourceCount: 10, fileCount: 1, files: [modified])
+        XCTAssertEqual(CatalogOffer.decide(remote: remote, active: active), .collision(5))
+    }
+
     func testAnOlderRevisionIsStale() {
         let remote = CatalogManifest(revision: 4, sourceCount: 10, fileCount: 1, files: [entry()])
         let active = CatalogManifest(revision: 5, sourceCount: 10, fileCount: 1, files: [entry()])

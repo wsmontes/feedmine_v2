@@ -21,8 +21,8 @@ import Foundation
 /// The manifest the app asked for, or the reason it did not get one.
 public enum CatalogUpdateFetch: Hashable, Sendable {
     /// The manifest changed (or was fetched without a validator). The bytes are the authority's.
-    case manifest(Data)
-    /// The server answered 304 or the ETag was unchanged: nothing to parse, nothing to rebuild.
+    case manifest(Data, etag: String?)
+    /// The server answered 304 to a conditional request: nothing to parse, nothing to rebuild.
     case notModified
     /// No manifest this time, and why. Never treated as a verified state.
     case unavailable(String)
@@ -62,17 +62,15 @@ public struct CatalogUpdateChannel: Sendable {
 
     private let manifestURL: URL
     private let session: URLSession
-    /// The ETag of the last manifest this app parsed, so a repeat check costs one conditional request.
+    /// A validator from a previously *completed* verification. A 200's new ETag is returned to the caller,
+    /// never persisted here: the caller knows whether this revision was accepted or successfully installed.
     private let storedETag: @Sendable () -> String?
-    private let storeETag: @Sendable (String?) -> Void
 
     public init(manifestURL: URL = CatalogUpdateChannel.publicManifestURL, session: URLSession,
-        storedETag: @escaping @Sendable () -> String? = { nil },
-        storeETag: @escaping @Sendable (String?) -> Void = { _ in }) {
+        storedETag: @escaping @Sendable () -> String? = { nil }) {
         self.manifestURL = manifestURL
         self.session = session
         self.storedETag = storedETag
-        self.storeETag = storeETag
     }
 
     /// One conditional GET. A failure — offline, timeout, non-200 — is `.unavailable`, which the caller treats
@@ -81,21 +79,24 @@ public struct CatalogUpdateChannel: Sendable {
         var request = URLRequest(url: manifestURL)
         request.timeoutInterval = 20
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        if let etag = storedETag() { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
+        let validator = storedETag()
+        if let validator { request.setValue(validator, forHTTPHeaderField: "If-None-Match") }
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else { return .unavailable("no HTTP response") }
             switch http.statusCode {
             case 304:
+                guard validator != nil else {
+                    return .unavailable("304 without a conditional manifest request")
+                }
                 return .notModified
             case 200:
-                storeETag(http.value(forHTTPHeaderField: "ETag"))
                 // The authority's own bytes are handed on: the caller parses and hashes exactly what was served,
-                // never a re-encode of it.
+                // never a re-encode of it. An ETag is only a candidate until the caller verifies the offer.
                 guard (try? CatalogManifest.decode(data)) != nil else {
                     return .unavailable("manifest is not readable in the published shape")
                 }
-                return .manifest(data)
+                return .manifest(data, etag: http.value(forHTTPHeaderField: "ETag"))
             default:
                 return .unavailable("manifest request answered \(http.statusCode)")
             }
