@@ -19,7 +19,10 @@ class ReleasePreflightTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / "scripts").mkdir()
         (self.root / "FeedMineApp/FeedMineApp/Resources").mkdir(parents=True)
-        (self.root / "FeedMineApp/FeedMineApp/Info.plist").write_text("not reached")
+        # A syntactically valid plist is required: release-testflight reads
+        # CFBundleVersion/CFBundleShortVersionString *before* any preflight.
+        with (self.root / "FeedMineApp/FeedMineApp/Info.plist").open("wb") as stream:
+            plistlib.dump({"CFBundleVersion": "46", "CFBundleShortVersionString": "1.0"}, stream)
         shutil.copy2(ROOT / "scripts/release-testflight.sh", self.root / "scripts/release-testflight.sh")
         shutil.copy2(ROOT / "scripts/verify_product_catalogue.sh", self.root / "scripts/verify_product_catalogue.sh")
         (self.root / "scripts/release-testflight.sh").chmod(0o755)
@@ -118,7 +121,7 @@ class ReleasePreflightTests(unittest.TestCase):
         (resources / "catalog.manifest.json").write_text("{}")
         self.commit()
         log = self.release()
-        self.assertTrue("verification failed before archive" in log or "REFUSED" in log)
+        self.assertIn("product catalogue verification failed before archive", log)
 
 
 if __name__ == "__main__":

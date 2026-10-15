@@ -10,11 +10,11 @@
 # The verdict is by identity, never by a number remembered in this file:
 #   * `catalog_metadata` must not carry a `bench_corpus` key — the benchmark's own declaration of what it is;
 #   * the catalogue beside the descriptor must be the one that descriptor declares: same byte count, same SHA-256,
-#     and the descriptor's `sourceCount` must be the `source_count` the catalogue declares about itself;
-#   * the catalogue's own claims must be sane: `catalog_version` a positive 64-bit microsecond stamp (the value the
+#   # physical `COUNT(*) FROM catalog_source` must match descriptor and metadata;
+#   * the reader-required SQLite tables must exist, and the catalogue's own claims must be sane: `catalog_version`\n#     a positive 64-bit microsecond stamp (the value the
 #     app's compiler stamps), `schema_version` the one this build reads;
 #   * that descriptor must be the descriptor the repository ships beside its own catalogue — same `revision`, same
-#     `sourceCount`, same `fileCount`, same `files[0]` and same catalogue entry — so a *different* catalogue cannot
+#     `sourceCount`, same `fileCount`, full OPML inventory and same catalogue entry — so a *different* catalogue cannot
 #     masquerade as the expected one by carrying a descriptor that agrees with itself.
 #
 # Handed a `.app`, it checks the bundle. Handed a data container for which no product bundle resolves, it verifies
@@ -51,7 +51,6 @@ if [[ ! -f "$REPO_MANIFEST" ]]; then
   echo "  it is the expected identity every build is compared against; without it nothing can be verified" >&2
   exit 2
 fi
-command -v sqlite3 >/dev/null 2>&1 || { echo "REFUSED: sqlite3 is not available to read a catalogue" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "REFUSED: python3 is not available to read the descriptors" >&2; exit 2; }
 
 # The expected identity, read from the repository descriptor rather than remembered here.
@@ -92,8 +91,11 @@ bundle_from_device() {
 # evidence; the app's own recorded fingerprint is reported, never trusted on its own.
 verify_container_catalogue() {
   local container="$1"
-  python3 - "$container" "$REPO_MANIFEST" <<'PY'
-import glob, hashlib, json, os, sys
+  python3 - "$container" "$REPO_MANIFEST" "$ROOT/scripts" <<'PY'
+import glob, json, os, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[3])
+from bootstrap_catalog import sha256_file
 
 container, repository = sys.argv[1:3]
 namespace_root = os.path.join(container, "Library/Application Support/FeedMine")
@@ -105,16 +107,8 @@ def load(path):
 
 
 def sha256_and_size(path):
-    hasher = hashlib.sha256()
-    size = 0
-    with open(path, "rb") as handle:
-        while True:
-            chunk = handle.read(1 << 20)
-            if not chunk:
-                break
-            hasher.update(chunk)
-            size += len(chunk)
-    return size, hasher.hexdigest()
+    # One shared SHA-256 implementation for bootstrap and product/archive checks.
+    return os.path.getsize(path), sha256_file(Path(path))
 
 
 try:
@@ -200,8 +194,44 @@ fi
 
 # The table is the app's own declaration of what it carries: read it, never infer it from the descriptor, which the
 # injection rewrites too.
-ROWS="$(sqlite3 -readonly "$DB" "SELECT key || '=' || value FROM catalog_metadata ORDER BY key;" 2>&1)" || {
-  echo "REFUSED: $DB is not a readable catalogue (corrupted): $ROWS" >&2
+# Match LegacyCatalogReader's mechanical table gate and physical sourceCount().
+# Python's sqlite3 is read-only; no secondary SQLite validator or cache is introduced.
+# This runs for both Resources preflight and the actual archived .app.
+ROWS="$(python3 - "$DB" "$REPO_SOURCE_COUNT" <<'PY'
+import sqlite3
+import sys
+from pathlib import Path
+
+db_path, expected_sources = sys.argv[1:]
+try:
+    connection = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+    with connection:
+        tables = {row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        required = {"catalog_source", "catalog_node", "catalog_placement"}
+        missing = sorted(required - tables)
+        if missing:
+            raise ValueError("required reader tables missing: " + ", ".join(missing))
+        if "catalog_metadata" not in tables:
+            raise ValueError("catalog_metadata table missing")
+        actual = connection.execute("SELECT COUNT(*) FROM catalog_source").fetchone()[0]
+        if actual != int(expected_sources):
+            raise ValueError(
+                f"catalog_source physical COUNT(*) {actual} differs from descriptor sourceCount {expected_sources}")
+        metadata = connection.execute("SELECT key, value FROM catalog_metadata ORDER BY key").fetchall()
+        declared = dict(metadata).get("source_count")
+        if declared is None or str(actual) != str(declared):
+            raise ValueError(
+                f"catalog_source physical COUNT(*) {actual} differs from catalog_metadata.source_count {declared!r}")
+        for key, value in metadata:
+            print(f"{key}={value}")
+    connection.close()
+except (sqlite3.Error, ValueError, OSError) as error:
+    print(f"REFUSED: SQLite reader compatibility: {error}", file=sys.stderr)
+    sys.exit(1)
+PY
+)" || {
+  echo "REFUSED: $DB did not pass physical SQLite reader validation" >&2
   exit 1
 }
 if [[ -z "$ROWS" ]]; then
@@ -243,8 +273,11 @@ fi
 
 # The descriptor beside the catalogue is what makes the copy verifiable, so the identity, integrity and structure
 # checks all happen in one place and print what they compared.
-if python3 - "$APP" "$REPO_MANIFEST" "$SOURCE_COUNT" "$CATALOG_VERSION" "$SCHEMA_VERSION" <<'PY'
-import hashlib, json, os, sys
+if python3 - "$APP" "$REPO_MANIFEST" "$SOURCE_COUNT" "$CATALOG_VERSION" "$SCHEMA_VERSION" "$ROOT/scripts" <<'PY'
+import json, os, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[6])
+from bootstrap_catalog import sha256_file
 
 app, repository, source_count, catalog_version, schema_version = sys.argv[1:6]
 catalogue = os.path.join(app, "catalog.sqlite")
@@ -262,16 +295,8 @@ def load(path):
 
 
 def sha256_and_size(path):
-    hasher = hashlib.sha256()
-    size = 0
-    with open(path, "rb") as handle:
-        while True:
-            chunk = handle.read(1 << 20)
-            if not chunk:
-                break
-            hasher.update(chunk)
-            size += len(chunk)
-    return size, hasher.hexdigest()
+    # One shared SHA-256 implementation for bootstrap and product/archive checks.
+    return os.path.getsize(path), sha256_file(Path(path))
 
 
 def catalogue_entry(descriptor):
@@ -389,8 +414,8 @@ print(f"  identity: schemaVersion {declared.get('schemaVersion')}, revision {dec
 print(f"  declared by the catalogue: source_count {int(source_count)}, catalog_version {int(catalog_version)},"
       f" schema_version {int(schema_version)}")
 print("  checked: descriptor schema and structure · catalogue bytes and sha256 against the descriptor's entry ·"
-      " descriptor sourceCount against the catalogue's own source_count · catalog_version a positive microsecond"
-      " stamp · descriptor files[0] and catalogue entry against the repository descriptor · no bench_corpus key")
+      " reader tables and physical source COUNT(*) · descriptor sourceCount against catalogue metadata · catalog_version"
+      " stamp · full OPML inventory and catalogue entry against repository descriptor · no bench_corpus key")
 sys.exit(0)
 PY
 then

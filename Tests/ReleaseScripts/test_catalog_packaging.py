@@ -96,14 +96,38 @@ class PackagingTests(unittest.TestCase):
         return release.verify_chain(self.resources, self.staging, self.manifest_path)
 
     def refuse(self, message):
-        with self.assertRaisesRegex(release.Refused, message):
-            self.chain()
+        # The test must establish a non-zero *process exit*, not only that a
+        # Python helper raises internally. This is the release CLI boundary.
+        process = subprocess.run([
+            sys.executable, str(ROOT / "scripts/verify_catalog_release.py"),
+            "preflight", "--resources", str(self.resources),
+            "--staging", str(self.staging), "--head", "c" * 40,
+            "--public-manifest", str(self.manifest_path),
+            "--evidence-dir", str(self.root / "cli-evidence")
+        ], capture_output=True, text=True, cwd=ROOT)
+        self.assertNotEqual(process.returncode, 0,
+                            "invalid catalogue must never be approved by the CLI")
+        self.assertIn("REFUSED P0C:", process.stderr)
+        self.assertRegex(process.stderr, message)
 
     def test_valid_chain_and_idempotent_identity(self):
         first = self.chain()
         self.assertEqual(first["publicManifest"]["revision"], 11)
         self.assertEqual(first["publicManifest"]["sha256"], catalog.sha256_file(self.manifest_path))
         self.assertEqual(first, self.chain())
+
+    def test_compiler_command_path_alias_is_canonicalized(self):
+        # Emulates macOS /var/... versus /private/var/... for the same bytes.
+        alias = self.root / "alias"
+        alias.symlink_to(self.root, target_is_directory=True)
+        command = list(self.provenance["compiler"]["command"])
+        command[1] = str(alias / "legacy/scripts/build_catalog.py")
+        command[3] = str(alias / "staging/payload/Feeds")
+        command[5] = str(alias / "staging/.work/catalog.sqlite")
+        command[7] = str(alias / "staging/.work/build-report.json")
+        self.provenance["compiler"]["command"] = command
+        self.save_evidence()
+        self.assertEqual(self.chain()["publicManifest"]["revision"], 11)
 
     def test_bootstrap_reuses_exact_verified_compiler_outputs(self):
         reused = catalog.reuse_state(
@@ -229,7 +253,6 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaisesRegex(release.Refused, "archive descriptor differs"):
             release.verify_archive(archive, self.resources, chain, full_sha, "1.0", "46")
 
-    @unittest.skipUnless(shutil.which("sqlite3"), "requires system sqlite3 CLI (Mac)")
     def test_benchmark_marker_is_rejected_by_canonical_verifier(self):
         fixture = self.root / "verification"
         resources = fixture / "FeedMineApp/FeedMineApp/Resources"
@@ -239,9 +262,14 @@ class PackagingTests(unittest.TestCase):
             directory.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "scripts/verify_product_catalogue.sh",
                      scripts / "verify_product_catalogue.sh")
+        shutil.copy2(ROOT / "scripts/bootstrap_catalog.py",
+                     scripts / "bootstrap_catalog.py")
         db = app / "catalog.sqlite"
         connection = sqlite3.connect(db)
         connection.execute("CREATE TABLE catalog_metadata (key TEXT PRIMARY KEY, value TEXT)")
+        for table in ("catalog_source", "catalog_node", "catalog_placement"):
+            connection.execute(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY)")
+        connection.execute("INSERT INTO catalog_source (id) VALUES (1)")
         connection.executemany("INSERT INTO catalog_metadata VALUES (?, ?)", [
             ("schema_version", "2"), ("catalog_version", "1791736083355950"),
             ("source_count", "1"), ("bench_corpus", "injected"),
@@ -257,6 +285,98 @@ class PackagingTests(unittest.TestCase):
                                    text=True, capture_output=True)
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("benchmark corpus", completed.stdout + completed.stderr)
+
+    def test_sqlite_reader_structure_and_real_source_count_via_cli(self):
+        """The canonical shell verifier is the actual C4/C5 gate."""
+        from contextlib import closing
+
+        wrapper = self.root / "verifier"
+        script_root = wrapper / "scripts"
+        script_root.mkdir(parents=True)
+        shutil.copy2(ROOT / "scripts/verify_product_catalogue.sh",
+                     script_root / "verify_product_catalogue.sh")
+        shutil.copy2(ROOT / "scripts/bootstrap_catalog.py",
+                     script_root / "bootstrap_catalog.py")
+        expected_dir = wrapper / "FeedMineApp/FeedMineApp/Resources"
+        expected_dir.mkdir(parents=True)
+        app = wrapper / "FeedMine.app"
+        app.mkdir()
+
+        def make_database(*, tables=True, count=1, declared_count="1"):
+            path = app / "catalog.sqlite"
+            if path.exists():
+                path.unlink()
+            with closing(sqlite3.connect(path)) as db:
+                db.execute("CREATE TABLE catalog_metadata (key TEXT PRIMARY KEY, value TEXT)")
+                db.executemany("INSERT INTO catalog_metadata VALUES (?, ?)", [
+                    ("schema_version", "2"),
+                    ("catalog_version", "1791736083355950"),
+                    ("source_count", declared_count),
+                ])
+                if tables:
+                    db.execute("CREATE TABLE catalog_source (id INTEGER PRIMARY KEY)")
+                    db.execute("CREATE TABLE catalog_node (id INTEGER PRIMARY KEY)")
+                    db.execute("CREATE TABLE catalog_placement (id INTEGER PRIMARY KEY)")
+                    db.executemany("INSERT INTO catalog_source(id) VALUES (?)",
+                                   ((i + 1,) for i in range(count)))
+                db.commit()
+            descriptor = catalog.descriptor_from(
+                self.manifest, [self.entry], self.file_id(path),
+                release.PUBLIC_URL, catalog.sha256_file(self.manifest_path))
+            catalog.write_json(expected_dir / "catalog.manifest.json", descriptor)
+            catalog.write_json(app / "catalog.manifest.json", descriptor)
+
+        def invoke():
+            return subprocess.run(["bash", str(script_root / "verify_product_catalogue.sh"), str(app)],
+                                  capture_output=True, text=True, cwd=wrapper)
+
+        make_database()
+        ok = invoke()
+        self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+
+        make_database(tables=False)
+        missing = invoke()
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("required reader tables missing", missing.stdout + missing.stderr)
+
+        make_database(count=2)
+        extra = invoke()
+        self.assertNotEqual(extra.returncode, 0)
+        self.assertIn("physical COUNT(*) 2", extra.stdout + extra.stderr)
+
+        make_database(count=1, declared_count="2")
+        metadata = invoke()
+        self.assertNotEqual(metadata.returncode, 0)
+        self.assertIn("catalog_metadata.source_count", metadata.stdout + metadata.stderr)
+
+    def test_archive_cli_refuses_mutated_sqlite_bytes(self):
+        chain = self.chain()
+        archive = self.root / "tampered.xcarchive"
+        app = archive / "Products/Applications/FeedMine.app"
+        app.mkdir(parents=True)
+        for name in ("catalog.sqlite", "catalog.manifest.json"):
+            shutil.copy2(self.resources / name, app / name)
+        head = "c" * 40
+        with (app / "Info.plist").open("wb") as stream:
+            plistlib.dump({"CFBundleIdentifier": "com.feedmine.app",
+                           "CFBundleVersion": "46", "CFBundleShortVersionString": "1.0",
+                           "FeedmineGitSHA": head[:7]}, stream)
+        evidence = self.root / "verified-evidence"
+        release.run(argparse.Namespace(
+            command="preflight", resources=self.resources, staging=self.staging,
+            public_manifest=self.manifest_path, evidence_dir=evidence,
+            head=head, archive=None, version=None, build=None))
+        (app / "catalog.sqlite").write_bytes(b"mutated archive")
+        process = subprocess.run([
+            sys.executable, str(ROOT / "scripts/verify_catalog_release.py"),
+            "archive", "--resources", str(self.resources),
+            "--staging", str(self.staging), "--head", head,
+            "--public-manifest", str(self.manifest_path),
+            "--evidence-dir", str(evidence), "--archive", str(archive),
+            "--version", "1.0", "--build", "46"
+        ], capture_output=True, text=True, cwd=ROOT)
+        self.assertNotEqual(process.returncode, 0)
+        self.assertIn("archive SQLite differs", process.stderr)
 
     def test_archive_git_pairing(self):
         chain = self.chain()

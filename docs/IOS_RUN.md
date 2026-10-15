@@ -313,3 +313,17 @@ A preparação de novo catálogo público ocorre separadamente com
 e hashes de ambos os scripts legados. Só `--apply` altera o checkout local de destino;
 nenhum commit/push ou cópia para Resources é automático. O README externo ainda
 requer correção em gate próprio: `P0C-PUBLISH-DOC — EXTERNAL BLOCKER`.
+
+### PD10-P0C: validação física do banco (audit follow-up)
+
+`verify_product_catalogue.sh` confere em modo SQLite read-only as mesmas tabelas
+requeridas por `LegacyCatalogReader` (`catalog_source`, `catalog_node`,
+`catalog_placement`) e a contagem real `COUNT(*) FROM catalog_source`.
+Essa contagem deve concordar tanto com `catalog_metadata.source_count` quanto com
+`catalog.manifest.json.sourceCount`. A verificação é executada para Resources
+antes do archive e novamente no `.app` real depois dele. As regressões Python
+incluem ausência de tabela, divergência física/descritor, divergência física/metadados
+e prova de exit não zero. O SHA-256 usado pelos heredocs do verificador é delegado
+à mesma `bootstrap_catalog.sha256_file` usada pelo bootstrap e pelo helper de release;
+não há uma implementação independente de hash. O helper de release continua apenas
+como orquestrador do manifesto atual, compilador, staging, preflight e archive.

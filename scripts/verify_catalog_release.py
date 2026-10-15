@@ -123,12 +123,19 @@ def verify_chain(resources: Path, staging: Path, public_manifest: Path | None) -
     need(state.get("compiler") == {k: compiler[k] for k in
          ("path", "sha256", "dependency", "gitCommit", "python")},
          "compiler identity differs from recorded reuse state")
+    # macOS temporary paths often spell the same directory as /var/... and
+    # /private/var/.... Compare canonical filesystem identities rather than
+    # raw path strings, while retaining strict argv flags and output locations.
     command = compiler.get("command")
-    need(isinstance(command, list) and len(command) >= 8 and
-         command[1] == compiler["path"] and
-         command[2:4] == ["--feeds-root", str(staging / "payload" / "Feeds")] and
-         command[4:6] == ["--output", str(staging / ".work" / catalog.SQLITE_NAME)] and
-         command[6:8] == ["--manifest-output", str(staging / ".work" / catalog.REPORT_NAME)],
+    need(isinstance(command, list) and len(command) == 9 and
+         all(isinstance(part, str) and part for part in command) and
+         command[2] == "--feeds-root" and command[4] == "--output" and
+         command[6] == "--manifest-output" and command[8] == "--json",
+         "recorded compiler command has an invalid argument contract")
+    need(Path(command[1]).resolve() == Path(compiler["path"]).resolve() and
+         Path(command[3]).resolve() == (staging / "payload" / "Feeds").resolve() and
+         Path(command[5]).resolve() == (staging / ".work" / catalog.SQLITE_NAME).resolve() and
+         Path(command[7]).resolve() == (staging / ".work" / catalog.REPORT_NAME).resolve(),
          "recorded compiler command does not describe verified inputs/outputs")
     need(compiler.get("python"), "compiler Python version missing")
 
