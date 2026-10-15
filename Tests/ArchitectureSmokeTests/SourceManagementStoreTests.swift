@@ -67,11 +67,14 @@ final class SourceManagementStoreTests: XCTestCase {
     /// Explicitly delayed backend calls, with a changing *existing* catalogue fingerprint.
     /// No clock or randomized scheduling: tests decide which rev-5/rev-6 response completes first.
     private actor DeferredBackend: SourceManagementBackend {
+        private enum RefreshFailure: Error { case requested }
         private var fingerprint = "rev-5"
+        private var savedSelection: [String] = []
+        private var failingNodeKeys: Set<String> = []
         private var latestNodes: [String: CatalogNodeSummary] = [:]
         private var sourceRows: [String: [CatalogSourceSummary]] = [:]
         private var heldSourceKeys: Set<String> = []
-        private var sourceReads: [String: CheckedContinuation<[CatalogSourceSummary], Never>] = [:]
+        private var sourceReads: [String: CheckedContinuation<[CatalogSourceSummary], any Error>] = [:]
         private var sourceAwaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
         private var searches: [String: [CheckedContinuation<[CatalogSourceSummary], Never>]] = [:]
         private var nodes: [String: CheckedContinuation<[CatalogNodeSummary], Never>] = [:]
@@ -81,17 +84,22 @@ final class SourceManagementStoreTests: XCTestCase {
         func catalogueFingerprint() async -> String? { fingerprint }
         func activate(_ revision: String) { fingerprint = revision }
         func updateNode(_ node: CatalogNodeSummary) { latestNodes[node.key] = node }
+        func failNodeResolution(for key: String) { failingNodeKeys.insert(key) }
         func currentNode(for node: CatalogNodeSummary) async throws -> CatalogNodeSummary? {
-            latestNodes[node.key] ?? node
+            if failingNodeKeys.contains(node.key) { throw RefreshFailure.requested }
+            return latestNodes[node.key] ?? node
         }
+        func durableSelection() -> Set<String> { Set(savedSelection) }
         func setSourceRows(_ rows: [CatalogSourceSummary], for key: String) { sourceRows[key] = rows }
         func holdSourceReads(for key: String) { heldSourceKeys.insert(key) }
         func waitForSourceRead(_ key: String) async {
             if sourceReads[key] != nil { return }
             await withCheckedContinuation { sourceAwaiters[key, default: []].append($0) }
         }
-        func finishSourceRead(_ key: String, rows: [CatalogSourceSummary]) {
-            sourceReads.removeValue(forKey: key)?.resume(returning: rows)
+        func finishSourceRead(_ key: String, rows: [CatalogSourceSummary], fails: Bool = false) {
+            guard let continuation = sourceReads.removeValue(forKey: key) else { return }
+            if fails { continuation.resume(throwing: RefreshFailure.requested) }
+            else { continuation.resume(returning: rows) }
         }
 
         func searchSources(_ query: String) async throws -> [CatalogSourceSummary] {
@@ -136,7 +144,7 @@ final class SourceManagementStoreTests: XCTestCase {
         func breadcrumb(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary] { [] }
         func sources(in node: CatalogNodeSummary) async throws -> [CatalogSourceSummary] {
             guard heldSourceKeys.contains(node.key) else { return sourceRows[node.key] ?? [] }
-            return await withCheckedContinuation { continuation in
+            return try await withCheckedThrowingContinuation { continuation in
                 sourceReads[node.key] = continuation
                 for waiter in sourceAwaiters.removeValue(forKey: node.key) ?? [] { waiter.resume() }
             }
@@ -144,9 +152,15 @@ final class SourceManagementStoreTests: XCTestCase {
         func countryKeys() async throws -> [Int64: Set<String>] { [:] }
         func childKeys(of node: CatalogNodeSummary) async throws -> [Int64: Set<String>] { [:] }
         func health() async throws -> [String: CatalogSourceHealth] { [:] }
-        func selection() async throws -> [String] { [] }
-        func setSelection(_ keys: [String]) async throws {}
-        func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws {}
+        func selection() async throws -> [String] { savedSelection }
+        func setSelection(_ keys: [String]) async throws { savedSelection = keys }
+        func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws {
+            if enabled {
+                if !savedSelection.contains(node.key) { savedSelection.append(node.key) }
+            } else {
+                savedSelection.removeAll { $0 == node.key }
+            }
+        }
     }
 
     private enum SourceManagementErrorDouble: Error { case unavailable, invalid }
@@ -468,6 +482,108 @@ final class SourceManagementStoreTests: XCTestCase {
         await toggling.value
         XCTAssertEqual(store.openNode?.key, next.key)
         XCTAssertEqual(store.sources.map(\.id), ["current"])
+    }
+
+    /// PD10-B2: write S1 is confirmed before its display refresh. Another reader intent
+    /// persists and publishes S2 while that refresh is held; the old refresh must not reinstate S1.
+    func testPD10B2ConcurrentSelectionCannotBeRevertedByOldRefresh() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let current = node(18, "Current")
+        await store.open(current)
+        await backend.holdSourceReads(for: current.key)
+        let first = Task { await store.setEnabled(current, enabled: true) }
+        await backend.waitForSourceRead(current.key)
+        XCTAssertEqual(store.selection, [current.key], "S1 must already be published before refreshing")
+
+        let extra = CatalogSourceSummary(id: "reader-owned", title: "Reader choice",
+            language: "pt", mediaKind: "text", defaultEnabled: true)
+        await store.toggle(extra)
+        let newerSelection: Set<String> = [current.key, extra.id]
+        let persistedSelection1 = await backend.durableSelection()
+
+        XCTAssertEqual(persistedSelection1, newerSelection, "S2 must be durable")
+        XCTAssertEqual(store.selection, newerSelection, "S2 must be shown before the old refresh finishes")
+
+        await backend.finishSourceRead(current.key, rows: [
+            .init(id: "rev5-row", title: "Original", language: "pt",
+                mediaKind: "text", defaultEnabled: true)
+        ])
+        await first.value
+        XCTAssertEqual(store.selection, newerSelection,
+            "S1 cannot be republished after the S2 confirmation")
+        let persistedSelection2 = await backend.durableSelection()
+
+        XCTAssertEqual(persistedSelection2, newerSelection)
+    }
+
+    /// PD10-B2: node resolution is a fallible *read*. A successful selection write is not an
+    /// alteration failure just because this read throws afterwards.
+    func testPD10B2SuccessfulWriteWithNodeResolutionFailureKeepsSelection() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let current = node(19, "Current")
+        await store.open(current)
+        await backend.failNodeResolution(for: current.key)
+        await store.setEnabled(current, enabled: true)
+        let persistedSelection3 = await backend.durableSelection()
+
+        XCTAssertEqual(persistedSelection3, [current.key])
+        XCTAssertEqual(store.selection, [current.key])
+        XCTAssertEqual(store.openNode, current)
+        XCTAssertEqual(store.errorMessage,
+            "A seleção foi salva, mas não foi possível atualizar as fontes exibidas.")
+    }
+
+    /// PD10-B2: source refresh fails after the write was confirmed, with no catalogue change.
+    /// It is a presentation failure, not a rollback or failure of the reader's durable selection.
+    func testPD10B2SuccessfulWriteWithLateSourceFailureKeepsSelection() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let current = node(20, "Current")
+        let visible = CatalogSourceSummary(id: "visible", title: "Previously published",
+            language: "pt", mediaKind: "text", defaultEnabled: true)
+        await backend.setSourceRows([visible], for: current.key)
+        await store.open(current)
+        await backend.holdSourceReads(for: current.key)
+        let setting = Task { await store.setEnabled(current, enabled: true) }
+        await backend.waitForSourceRead(current.key)
+        XCTAssertEqual(store.selection, [current.key], "selection must be confirmed before refresh")
+        await backend.finishSourceRead(current.key, rows: [], fails: true)
+        await setting.value
+        let persistedSelection4 = await backend.durableSelection()
+
+        XCTAssertEqual(persistedSelection4, [current.key])
+        XCTAssertEqual(store.selection, [current.key])
+        XCTAssertEqual(store.sources.map(\.id), [visible.id], "the last published rows are retained")
+        XCTAssertEqual(store.errorMessage,
+            "A seleção foi salva, mas não foi possível atualizar as fontes exibidas.")
+    }
+
+    /// PD10-B2: a stale presentation error must not obscure a newer successful selection
+    /// after S2 was persisted while the first refresh was suspended.
+    func testPD10B2LateRefreshErrorDoesNotMaskNewerConfirmedSelection() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let current = node(21, "Current")
+        await store.open(current)
+        await backend.holdSourceReads(for: current.key)
+        let first = Task { await store.setEnabled(current, enabled: true) }
+        await backend.waitForSourceRead(current.key)
+
+        let more = CatalogSourceSummary(id: "new-choice", title: "Reader choice",
+            language: "pt", mediaKind: "text", defaultEnabled: true)
+        await store.toggle(more)
+        let expected: Set<String> = [current.key, more.id]
+        XCTAssertEqual(store.selection, expected)
+        XCTAssertNil(store.errorMessage)
+
+        await backend.finishSourceRead(current.key, rows: [], fails: true)
+        await first.value
+        let persisted = await backend.durableSelection()
+        XCTAssertEqual(persisted, expected)
+        XCTAssertEqual(store.selection, expected)
+        XCTAssertNil(store.errorMessage, "a failed refresh for S1 must not report an S2 write failure")
     }
 
     func testSearchTrimsAndClears() async {

@@ -188,32 +188,42 @@ public final class SourceManagementStore {
         let fingerprint = await backend.catalogueFingerprint()
         isLoading = true
         defer { isLoading = false }
+
+        // Commit and confirmation are independent of the fallible catalogue presentation refresh.
         do {
             try await backend.setEnabledTree(node: node, enabled: enabled)
-            let acceptedSelection = Set(try await backend.selection())
-            // Persisted selection is reader-owned. A refresh is presentation work and must resolve
-            // the visible node using the current catalogue's key, not a stale numeric id.
-            let visibleKey = openNode?.key
-            var resolved: CatalogNodeSummary?
-            var refreshedSources: [CatalogSourceSummary]?
-            if visibleKey == node.key {
-                resolved = try await backend.currentNode(for: node)
-                if let resolved {
-                    refreshedSources = try await backend.sources(in: resolved)
-                }
-            }
+        } catch {
+            errorMessage = String(localized: "Não foi possível alterar a seleção de fontes.")
+            return
+        }
+
+        let confirmedSelection: Set<String>
+        do {
+            confirmedSelection = Set(try await backend.selection())
+        } catch {
+            errorMessage = String(localized: "A alteração foi salva, mas não foi possível atualizar a seleção exibida.")
+            return
+        }
+        selection = confirmedSelection
+        errorMessage = nil
+
+        // Never hold a captured selection across this suspension and publish it again: another
+        // accepted action may persist S2 while the source rows for S1 are being fetched.
+        guard openNode?.key == node.key else { return }
+        do {
+            guard let resolved = try await backend.currentNode(for: node) else { return }
+            let refreshedSources = try await backend.sources(in: resolved)
             let current = await backend.catalogueFingerprint()
-            guard current == fingerprint else { return }
-            selection = acceptedSelection
-            if openNode?.key == node.key, let resolved, let refreshedSources {
-                openNode = resolved
-                sources = refreshedSources
-            }
-            errorMessage = nil
+            guard current == fingerprint, openNode?.key == node.key,
+                selection == confirmedSelection else { return }
+            openNode = resolved
+            sources = refreshedSources
         } catch {
             let current = await backend.catalogueFingerprint()
-            guard current == fingerprint else { return }
-            errorMessage = String(localized: "Não foi possível alterar a seleção de fontes.")
+            guard current == fingerprint, openNode?.key == node.key,
+                selection == confirmedSelection else { return }
+            // Only the refresh failed. The durable selection write and its confirmation succeeded.
+            errorMessage = String(localized: "A seleção foi salva, mas não foi possível atualizar as fontes exibidas.")
         }
     }
 
