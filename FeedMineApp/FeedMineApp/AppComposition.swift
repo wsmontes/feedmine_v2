@@ -1987,7 +1987,8 @@ final class FeedAssociation {
         let acquisition = try SyndicationAcquisitionSnapshot(database: db, registrations: registrations,
             session: transport, redirectCapacity: 4, discovery: discoveryTraversal,
             authorizedNonPublicOrigins: authorizedNonPublicOrigins,
-            selectedSourceIDs: Set(feeds.map(\.sourceID)))
+            selectedSourceIDs: Set(feeds.map(\.sourceID)),
+            installation: CatalogInstallation(appDirectory: directory))
         self.acquisition = acquisition
         // H2: a feed that keeps failing cools down for a doubling window that starts at what one
         // failed attempt may already cost (the request timeout) and is capped by the resource

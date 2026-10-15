@@ -25,8 +25,8 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
     private var finished = false
 
     /// The existing materialized page runway, with each page's entries kept beside its acquisition
-    /// snapshot. A promoted catalogue retains only entries whose full catalog identity is still equal.
-    /// No second traversal/cache is created and no durable target is revoked (in-flight pulls may finish).
+    /// snapshot. A promotion retains stable target/endpoint identities, refreshing their source metadata
+    /// and acquisition eligibility. No second traversal/cache or durable target revocation is introduced.
     private var pages: [(entries: [LegacyCatalogEntry], snapshot: SyndicationAcquisitionSnapshot)] = []
 
     public init(builder: ReaderDiscoveryBuilder, profile: ReaderDiscoveryProfile, contextKey: ContextKey,
@@ -58,7 +58,11 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
                 // already published cards. A changed endpoint needs a fresh registration.
                 return updated
             }
-            return compatible.isEmpty ? nil : (entries: compatible, snapshot: old.snapshot)
+            // A retained page is reusable supply, but its original registration still contains
+            // the old language. Rebind that immutable value to the promoted entry's metadata;
+            // otherwise eligibility excludes e.g. en -> pt even though the entry now says pt.
+            return compatible.isEmpty ? nil
+                : (entries: compatible, snapshot: old.snapshot.retaining(compatible))
         }
         builder = ReaderDiscoveryBuilder(catalogURL: active.catalogueURL)
         catalogueFingerprint = fingerprint

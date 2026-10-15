@@ -144,6 +144,107 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
         XCTAssertEqual(response.calls, 1, "the revised endpoint served the future pull")
     }
 
+    /// PD10-B2/P1: a reader with selected feeds but no discovery profile retains its association.
+    /// After activation its *next* connector must use the promoted endpoint, not the rev-5 URL.
+    func testPD10B2SelectedSourceWithoutDiscoveryUsesPromotedEndpoint() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let old = try makeCatalogue(in: root.appendingPathComponent("r5-no-discovery"),
+            sources: 1, revision: 5)
+        let descriptor = root.appendingPathComponent("r5-no-discovery.json")
+        try pd10Descriptor(old, revision: 5, sources: 1).write(to: descriptor)
+        let installation = CatalogInstallation(directory: root.appendingPathComponent("catalogue-no-discovery"),
+            bundledCatalogue: old, bundledManifest: descriptor)
+        XCTAssertEqual(installation.bootstrap()?.revision, 5)
+        let entry = try XCTUnwrap(LegacyCatalogImport.entry(try XCTUnwrap(
+            LegacyCatalogReader(catalogURL: old).source(key: "https://exemplo.pt/feed0"))))
+        let binding = SourceBinding(id: entry.bindingID, sourceID: entry.source.id,
+            externalPrincipal: .init(connectorKind: .syndication,
+                namespace: LegacyCatalogImport.principalNamespace, value: entry.principal, role: .principal),
+            aliases: [], generation: 1, state: .enabled)!
+        let db = try database()
+        let authority = AcquisitionTargetAuthority(database: db)
+        let target = try authority.register(id: entry.targetID, connectorKind: .syndication,
+            authorizedSources: [entry.source.id])
+        let registration = try XCTUnwrap(SyndicationTargetRegistration(targetID: target.id,
+            targetGeneration: target.generation, endpoint: entry.endpoint, bindings: [binding]))
+        let snapshot = try SyndicationAcquisitionSnapshot(database: db, registrations: [registration],
+            session: session(), redirectCapacity: 0, selectedSourceIDs: [entry.source.id],
+            installation: installation)
+        XCTAssertNil(snapshot.discovery, "there must be no traversal to act as a proxy for authority")
+        XCTAssertEqual(try snapshot.eligibleTargets(for: .init(request: .main)), [target])
+
+        let new = try makeCatalogue(in: root.appendingPathComponent("r6-no-discovery"),
+            sources: 1, revision: 6)
+        let response = response()
+        let queue = try DatabaseQueue(path: new.path)
+        try await queue.write { db in
+            try db.execute(sql: "UPDATE catalog_source SET request_url = ? WHERE id = 1",
+                arguments: [response.url.absoluteString])
+        }
+        guard case .installed = installation.install(manifestData: try pd10Descriptor(
+            new, revision: 6, sources: 1), catalogue: new) else {
+            return XCTFail("revision 6 must be the installed authority")
+        }
+        XCTAssertEqual(try snapshot.eligibleTargets(for: .init(request: .main)), [target])
+        let connector = try XCTUnwrap(snapshot.connector(for: target))
+        let pull = FeedConnectorPull(targetID: target.id, targetGeneration: target.generation,
+            checkpointRevision: 0, checkpoint: nil, observationCapacity: 4, byteCapacity: 100_000)!
+        guard case .batch = try await connector.pull(pull) else {
+            return XCTFail("the future connector must use the selected source's updated endpoint")
+        }
+        XCTAssertEqual(response.calls, 1)
+        XCTAssertEqual(try authority.target(id: target.id), target,
+            "promotion must not mutate durable target generation or revoke an in-flight pull")
+    }
+
+    /// PD10-B2/P2: the page's previously materialized acquisition snapshot declared 'en'.
+    /// When the same target becomes 'pt', reuse its durable target but rebind the page's snapshot
+    /// metadata; simply replacing traversal.entries is insufficient for eligibility.
+    func testPD10B2RetainedPageAdoptsPromotedLanguageWithoutRematerialization() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let old = try makeCatalogue(in: root.appendingPathComponent("r5-en"), sources: 1, revision: 5)
+        let oldQueue = try DatabaseQueue(path: old.path)
+        try await oldQueue.write { db in
+            try db.execute(sql: "UPDATE catalog_source SET language = 'en' WHERE id = 1")
+        }
+        let descriptor = root.appendingPathComponent("r5-en.json")
+        try pd10Descriptor(old, revision: 5, sources: 1).write(to: descriptor)
+        let installation = CatalogInstallation(directory: root.appendingPathComponent("catalogue-language"),
+            bundledCatalogue: old, bundledManifest: descriptor)
+        XCTAssertEqual(installation.bootstrap()?.revision, 5)
+        let key = ContextKey(request: .main, filter: ReaderFilter(languages: ["pt"]))
+        let traversal = ReaderDiscoveryTraversal(builder: ReaderDiscoveryBuilder(catalogURL: old),
+            profile: .init(languages: ["en", "pt"]), contextKey: key, installation: installation)
+        let db = try database()
+        let snapshot = try SyndicationAcquisitionSnapshot(database: db, registrations: [],
+            session: session(), redirectCapacity: 0, discovery: traversal, installation: installation)
+        let context = FeedContext(key: key)
+        _ = try snapshot.advanceDiscovery(for: context, examinedCapacity: 8)
+        let prepared = try XCTUnwrap(traversal.entries.first)
+        XCTAssertEqual(prepared.language, "en")
+        XCTAssertEqual(traversal.entries.count, 1)
+        let authority = AcquisitionTargetAuthority(database: db)
+        let durable = try XCTUnwrap(authority.target(id: prepared.targetID))
+        XCTAssertTrue(try snapshot.eligibleTargets(for: context).isEmpty,
+            "pt eligibility must reject the original en registration")
+
+        let promoted = try makeCatalogue(in: root.appendingPathComponent("r6-pt"),
+            sources: 1, revision: 6)
+        guard case .installed = installation.install(manifestData: try pd10Descriptor(
+            promoted, revision: 6, sources: 1), catalogue: promoted) else {
+            return XCTFail("revision 6 must activate")
+        }
+        XCTAssertEqual(traversal.entries.map(\.language), ["pt"])
+        XCTAssertEqual(try snapshot.eligibleTargets(for: context).map(\.id), [durable.id],
+            "retained page eligibility must use its promoted registration language")
+        _ = try snapshot.advanceDiscovery(for: context, examinedCapacity: 8)
+        XCTAssertEqual(traversal.entries.count, 1, "the target must not be registered twice")
+        XCTAssertEqual(try authority.target(id: durable.id), durable,
+            "reusing a prepared target does not change its durable generation")
+    }
+
     private func pd10Descriptor(_ url: URL, revision: Int, sources: Int) throws -> Data {
         let size = try XCTUnwrap(url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
         return try CatalogManifest(revision: revision, sourceCount: sources, fileCount: 1,
