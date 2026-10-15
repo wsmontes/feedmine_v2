@@ -30,6 +30,23 @@ final class PublicationRunwayStoreTests: XCTestCase {
         let addition = ", availability_observed_at REAL"
         let origin = try XCTUnwrap(schema.first { $0.hasPrefix("origin_records:") })
         XCTAssertEqual(origin.components(separatedBy: addition).count, 2)
+        // K-15: allow only these two ALTER TABLE suffixes in the old schema.
+        let revision = try XCTUnwrap(schema.first { $0.hasPrefix("origin_revisions:") })
+        let fingerprintSuffix = ", fingerprint_generation INTEGER NOT NULL DEFAULT 1\n    CHECK (fingerprint_generation IN (1, 2)), body_source_element TEXT"
+        XCTAssertEqual(revision.components(separatedBy: fingerprintSuffix).count, 2)
+        let revisionColumns = try Row.fetchAll(db, sql: "PRAGMA table_info('origin_revisions')")
+        XCTAssertEqual(revisionColumns.suffix(2).map { $0["name"] as String },
+            ["fingerprint_generation", "body_source_element"])
+        let generation = try XCTUnwrap(revisionColumns.first { ($0["name"] as String) == "fingerprint_generation" })
+        XCTAssertEqual(generation["type"] as String, "INTEGER")
+        XCTAssertEqual(generation["notnull"] as Int, 1)
+        XCTAssertEqual(generation["dflt_value"] as String?, "1")
+        XCTAssertEqual(generation["pk"] as Int, 0)
+        let provenance = try XCTUnwrap(revisionColumns.first { ($0["name"] as String) == "body_source_element" })
+        XCTAssertEqual(provenance["type"] as String, "TEXT")
+        XCTAssertEqual(provenance["notnull"] as Int, 0)
+        XCTAssertNil(provenance["dflt_value"] as String?)
+        XCTAssertEqual(provenance["pk"] as Int, 0)
         let column = try XCTUnwrap(Row.fetchOne(db, sql: "SELECT type, \"notnull\", dflt_value, pk FROM pragma_table_info('origin_records') WHERE name = 'availability_observed_at'"))
         XCTAssertEqual(column["type"] as String, "REAL")
         XCTAssertEqual(column["notnull"] as Int, 0)
@@ -43,7 +60,9 @@ final class PublicationRunwayStoreTests: XCTestCase {
         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('feed_editions') ORDER BY cid").suffix(2),
             ["context_identity", "context_key_json"])
         return Set(Self.normalizeRebuiltDefinitions(schema).map { entry in
-            entry == origin ? entry.replacingOccurrences(of: addition, with: "") : entry
+            if entry == origin { return entry.replacingOccurrences(of: addition, with: "") }
+            if entry == revision { return entry.replacingOccurrences(of: fingerprintSuffix, with: "") }
+            return entry
         })
     }
 
@@ -224,7 +243,8 @@ final class PublicationRunwayStoreTests: XCTestCase {
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_index_info('published_cards_origin_revision_segment') ORDER BY seqno"), ["origin_revision_id","segment_id"])
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1","reader-library-v1","reader-preferred-box-v1","media-playback-candidate-v1",
                 "reader-settings-v1","reader-imported-sources-v1","reader-curated-recipe-v1",
-                "reader-curated-recipe-revision-v1","reader-playback-positions-v1"])
+                "reader-curated-recipe-revision-v1","reader-playback-positions-v1",
+                 "content-fingerprint-generation-v2"])
         }
     }
 
@@ -337,8 +357,12 @@ extension PublicationRunwayStoreTests {
             let priorDefinitions = try Self.schemaBeforeAvailability(schemaAfter, in: db)
             let normalizedBefore = Self.normalizeRebuiltDefinitions(schemaBefore)
             XCTAssertTrue(normalizedBefore.isSubset(of: priorDefinitions))
-            // One new object (3R5 index), plus one altered existing definition (3R6B column).
+            // The 3R5 index, later explicit schema additions (including K-15), and the checked additive columns.
             let originDefinition = try XCTUnwrap(schemaAfter.first { $0.hasPrefix("origin_records:") })
+            // The first golden set strips K-15's authorized ALTER suffix from
+            // origin_revisions. The second compares the complete upgraded DDL,
+            // so its exact final definition belongs among the expected additions.
+            let revisionDefinition = try XCTUnwrap(schemaAfter.first { $0.hasPrefix("origin_revisions:") })
             let originIndex = "published_cards_origin_record_segment:CREATE INDEX published_cards_origin_record_segment\nON published_cards (origin_record_id, segment_id)"
             let authorityTable = """
                 acquisition_target_sources:CREATE TABLE acquisition_target_sources (
@@ -379,10 +403,41 @@ extension PublicationRunwayStoreTests {
             // The rebuilt table's own definition is compared by `MediaCandidateSchemaTests`; what this test
             // sees of it is the one index it added.
             let mediaRebuild: Set<String> = ["media_candidates_one_playback"]
+            // Exact sqlite_master DDL of both new tables and the implicit TEXT PK index.
+            let fingerprintObjects: Set<String> = [
+                """
+                content_fingerprint_policy:CREATE TABLE content_fingerprint_policy (
+                    id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+                    generation INTEGER NOT NULL CHECK (generation IN (1, 2))
+                )
+                """,
+                """
+                origin_revision_body_enrichment:CREATE TABLE origin_revision_body_enrichment (
+                    origin_revision_id TEXT PRIMARY KEY NOT NULL
+                        REFERENCES origin_revisions(id) ON DELETE RESTRICT,
+                    source_element TEXT NOT NULL,
+                    body_text TEXT
+                )
+                """,
+                "sqlite_autoindex_origin_revision_body_enrichment_1:"
+            ]
+            XCTAssertEqual(Set(schemaAfter.filter {
+                let name = String($0.split(separator: ":", maxSplits: 1)[0])
+                return ["content_fingerprint_policy", "origin_revision_body_enrichment",
+                    "sqlite_autoindex_origin_revision_body_enrichment_1"].contains(name)
+            }), fingerprintObjects)
+            XCTAssertEqual(try String.fetchAll(db,
+                sql: "SELECT name FROM pragma_table_info('content_fingerprint_policy') ORDER BY cid"),
+                ["id", "generation"])
+            XCTAssertEqual(try String.fetchAll(db,
+                sql: "SELECT name FROM pragma_table_info('origin_revision_body_enrichment') ORDER BY cid"),
+                ["origin_revision_id", "source_element", "body_text"])
             XCTAssertEqual(priorDefinitions.subtracting(normalizedBefore),
-                Set([originIndex, authorityTable, authorityIndex]).union(contextual).union(mediaRebuild))
+                Set([originIndex, authorityTable, authorityIndex]).union(contextual)
+                    .union(mediaRebuild).union(fingerprintObjects))
             XCTAssertEqual(Self.normalizeRebuiltDefinitions(schemaAfter).subtracting(normalizedBefore),
-                Set([originIndex, originDefinition, authorityTable, authorityIndex]).union(contextual).union(mediaRebuild))
+                Set([originIndex, originDefinition, revisionDefinition, authorityTable, authorityIndex]).union(contextual)
+                    .union(mediaRebuild).union(fingerprintObjects))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }

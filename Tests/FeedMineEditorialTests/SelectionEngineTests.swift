@@ -166,6 +166,38 @@ final class SelectionEngineTests: XCTestCase {
 
     }
 
+    func testK15EditedBodyAloneIsNewEditorialMaterialWhenDeclared() throws {
+        let current = candidate(2, revision: 88)
+        let original = Candidate(originRecordID: current.originRecordID,
+            originRevisionID: current.originRevisionID, headline: "Same", summary: "Same summary",
+            timestamp: current.timestamp, language: current.language, providerID: current.providerID,
+            declaredBody: "Body A")
+        let changed = Candidate(originRecordID: original.originRecordID,
+            originRevisionID: OriginRevisionID(rawValue: uuid(89)), headline: original.headline,
+            summary: original.summary, timestamp: original.timestamp,
+            language: original.language, providerID: original.providerID, declaredBody: "Body B")
+        let origin = original.originRecordID
+        let firstKey = SelectionExposureSnapshot.materialKey(headline: original.headline, summary: original.summary,
+            declaredBody: original.declaredBody)
+        let exposed = try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: [origin],
+            publishedOriginIDs: [origin], publishedMaterialKeys: [origin: [firstKey]]))
+        let plan = try plan(), policy = policy(plan.revision, exposure: .excludePublishedMaterial)
+        let engine = SelectionEngine()
+        XCTAssertEqual(try engine.select(plan: plan, policy: policy, window: window([changed]),
+            exposure: exposed).orderedCandidates, [changed])
+        XCTAssertTrue(try engine.select(plan: plan, policy: policy, window: window([original]),
+            exposure: exposed).orderedCandidates.isEmpty)
+        let legacy = Candidate(originRecordID: original.originRecordID, originRevisionID: changed.originRevisionID,
+            headline: original.headline, summary: original.summary,
+            timestamp: original.timestamp, language: original.language, providerID: original.providerID)
+        let legacyKey = SelectionExposureSnapshot.materialKey(headline: legacy.headline, summary: legacy.summary)
+        let legacyExposure = try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: [origin],
+            publishedOriginIDs: [origin], publishedMaterialKeys: [origin: [legacyKey]]))
+        XCTAssertTrue(try engine.select(plan: plan, policy: policy, window: window([legacy]),
+            exposure: legacyExposure).orderedCandidates.isEmpty)
+        XCTAssertNotEqual(firstKey, legacyKey, "declared-body key must not rewrite historical keys")
+    }
+
     func testExposureCoverageAndValidationOrder() throws {
         let plan = try plan(), candidates = [candidate(1),candidate(2)], ids = candidates.map(\.originRecordID)
         let engine = SelectionEngine(), automatic = policy(plan.revision,exposure: .excludePublishedRevisions)

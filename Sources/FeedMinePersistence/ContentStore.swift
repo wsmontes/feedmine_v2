@@ -44,6 +44,10 @@ public struct ContentStore: Sendable {
         public let sortDateBasis: SupplySortDateBasis
         public let headline: String?
         public let summary: String?
+        /// Declared source body (including legacy enrichment baseline), never a summary fallback.
+        public let declaredBody: String?
+        /// True for generation 2 and for an observed legacy baseline, even when body is absent.
+        public let bodyObserved: Bool
         public let authoredAt: Date?
         public let observedAt: Date
         public let language: String?
@@ -126,8 +130,16 @@ public struct ContentStore: Sendable {
                     }
                     // No broad revision decode: excluded payloads are never selected.
                     guard let payload = try Row.fetchOne(db, sql: """
-                        SELECT id, origin_record_id, headline, summary, authored_at, observed_at, language, provider_id, primary_link
-                        FROM origin_revisions WHERE id = ?
+                        SELECT id, origin_record_id, headline, summary, authored_at, observed_at, language, provider_id,
+                            primary_link,
+                            CASE WHEN r.fingerprint_generation = 2 THEN r.body_text
+                                WHEN e.origin_revision_id IS NOT NULL THEN e.body_text
+                                ELSE NULL END AS declared_body,
+                            CASE WHEN r.fingerprint_generation = 2 OR e.origin_revision_id IS NOT NULL
+                                THEN 1 ELSE 0 END AS body_observed
+                        FROM origin_revisions r
+                        LEFT JOIN origin_revision_body_enrichment e ON e.origin_revision_id = r.id
+                        WHERE r.id = ?
                         """, arguments: [Self.key(revision.rawValue)]) else {
                         throw ContentStoreError.corruption("supply revision")
                     }
@@ -138,6 +150,8 @@ public struct ContentStore: Sendable {
                     records.append(CandidateRecord(originRecordID: origin,
                         originRevisionID: OriginRevisionID(rawValue: try p.uuid("id")), sortDate: sortDate, sortDateBasis: basis,
                         headline: try p.optionalString("headline"), summary: try p.optionalString("summary"),
+                        declaredBody: try p.optionalString("declared_body"),
+                        bodyObserved: try p.integer("body_observed") == 1,
                         authoredAt: try p.optionalDate("authored_at"), observedAt: try p.date("observed_at"),
                         language: try p.optionalString("language"),
                         providerID: try p.optionalUUID("provider_id").map { ProviderID(rawValue: $0) },
@@ -195,11 +209,14 @@ public struct ContentStore: Sendable {
         public let expectedCurrent: CurrentRevisionExpectation
         public let currentUpdate: CurrentRevisionUpdate
         public let membershipMutations: [MembershipMutation]
+        public let fingerprintGeneration: Int
+        public let bodySourceElement: String?
 
         public init(recordID: OriginRecordID, externalObjectIdentity: ExternalIdentity,
             revision: OriginRevision, mediaCandidates: [MediaCandidate], availability: OriginAvailability, observedAt: Date,
             expectedCurrent: CurrentRevisionExpectation, currentUpdate: CurrentRevisionUpdate,
-            membershipMutations: [MembershipMutation]) {
+            membershipMutations: [MembershipMutation], fingerprintGeneration: Int = 1,
+            bodySourceElement: String? = nil) {
             self.recordID = recordID
             self.externalObjectIdentity = externalObjectIdentity
             self.revision = revision
@@ -209,6 +226,8 @@ public struct ContentStore: Sendable {
             self.expectedCurrent = expectedCurrent
             self.currentUpdate = currentUpdate
             self.membershipMutations = membershipMutations
+            self.fingerprintGeneration = fingerprintGeneration
+            self.bodySourceElement = bodySourceElement
         }
     }
 
@@ -240,6 +259,37 @@ public struct ContentStore: Sendable {
 
     func admissionMediaCandidates(originRevisionID: OriginRevisionID, in db: Database) throws -> [MediaCandidate] {
         try Self.coding { try Self.mediaCandidates(originRevisionID, in: db) }
+    }
+
+    /// Runtime fingerprint policy is persisted by migration; existing revisions remain generation 1.
+    func admissionFingerprintGeneration(of id: OriginRevisionID, in db: Database) throws -> Int {
+        guard let generation = try Int.fetchOne(db, sql:
+            "SELECT fingerprint_generation FROM origin_revisions WHERE id = ?", arguments: [Self.key(id.rawValue)]) else {
+            throw ContentStoreError.corruption("missing fingerprint generation")
+        }
+        return generation
+    }
+
+    func admissionCurrentFingerprintGeneration(in db: Database) throws -> Int {
+        guard let generation = try Int.fetchOne(db, sql: "SELECT generation FROM content_fingerprint_policy WHERE id = 1"),
+            generation == 2 else { throw ContentStoreError.corruption("fingerprint policy") }
+        return generation
+    }
+
+    func admissionEnrichedBody(of id: OriginRevisionID, in db: Database) throws -> (source: String, text: String?)? {
+        guard let row = try Row.fetchOne(db, sql: """
+            SELECT source_element, body_text FROM origin_revision_body_enrichment WHERE origin_revision_id = ?
+            """, arguments: [Self.key(id.rawValue)]) else { return nil }
+        let source: String = row["source_element"]
+        let body: String? = row["body_text"]
+        return (source, body)
+    }
+
+    func admissionAddBodyEnrichment(_ body: String?, source: String, revisionID: OriginRevisionID, in db: Database) throws {
+        try db.execute(sql: """
+            INSERT INTO origin_revision_body_enrichment(origin_revision_id, source_element, body_text)
+                VALUES (?, ?, ?)
+            """, arguments: [Self.key(revisionID.rawValue), source, body])
     }
 
     static func admissionSameRevision(_ a: OriginRevision, _ b: OriginRevision) -> Bool { sameRevision(a, b) }
@@ -294,7 +344,8 @@ public struct ContentStore: Sendable {
                             version.value, version.role.rawValue]) != nil {
                     throw ContentStoreError.versionIdentityConflict
                 }
-                try Self.insertRevision(revision, in: db)
+                try Self.insertRevision(revision, generation: change.fingerprintGeneration,
+                    bodySourceElement: change.bodySourceElement, in: db)
                 for (ordinal, candidate) in change.mediaCandidates.enumerated() {
                     guard try Self.mediaCandidate(candidate.id, in: db) == nil else {
                         throw ContentStoreError.mediaCandidateConflict(candidate.id)
@@ -376,7 +427,23 @@ public struct ContentStore: Sendable {
         try database.read { db in try Self.coding { try Self.record(id, in: db) } }
     }
     public func originRevision(id: OriginRevisionID) throws -> OriginRevision? {
-        try database.read { db in try Self.coding { try Self.revision(id, in: db) } }
+        try database.read { db in
+            try Self.coding {
+                guard let revision = try Self.revision(id, in: db) else { return nil }
+                // Public reading projection only. The immutable canonical row and version identity
+                // remain untouched, including already-published card payloads and actions.
+                guard revision.bodyText == nil,
+                    let enriched = try self.admissionEnrichedBody(of: id, in: db), let body = enriched.text else {
+                    return revision
+                }
+                return OriginRevision(id: revision.id, originRecordID: revision.originRecordID,
+                    externalVersionIdentity: revision.externalVersionIdentity, headline: revision.headline,
+                    summary: revision.summary, bodyText: body, authoredAt: revision.authoredAt,
+                    modifiedAt: revision.modifiedAt, observedAt: revision.observedAt, language: revision.language,
+                    primaryLink: revision.primaryLink, searchProjection: revision.searchProjection,
+                    providerID: revision.providerID)
+            }
+        }
     }
     /// Exact immutable historical collection. Missing revision differs from an admitted empty collection.
     /// T9: the one playable candidate of a revision, when the feed declared an audio or video enclosure. A
@@ -436,6 +503,10 @@ public struct ContentStore: Sendable {
     private static func validate(_ change: CanonicalChange) throws {
         guard change.externalObjectIdentity.role == .object else { throw ContentStoreError.invalidChange("object role") }
         let revision = change.revision
+        guard (change.fingerprintGeneration == 1 || change.fingerprintGeneration == 2),
+            (change.bodySourceElement == nil || (change.fingerprintGeneration == 2 && revision.bodyText != nil)) else {
+            throw ContentStoreError.invalidChange("fingerprint generation/provenance")
+        }
         guard revision.originRecordID == change.recordID else { throw ContentStoreError.invalidChange("revision origin") }
         if let version = revision.externalVersionIdentity {
             guard version.role == .version,
@@ -619,20 +690,22 @@ public struct ContentStore: Sendable {
         return revision
     }
 
-    private static func insertRevision(_ revision: OriginRevision, in db: Database) throws {
+    private static func insertRevision(_ revision: OriginRevision, generation: Int,
+        bodySourceElement: String?, in db: Database) throws {
         let version = revision.externalVersionIdentity
         try db.execute(sql: """
             INSERT INTO origin_revisions (id, origin_record_id, version_connector_kind, version_namespace,
                 version_value, version_role, headline, summary, body_text, authored_at, modified_at, observed_at,
-                language, primary_link, search_projection, provider_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                language, primary_link, search_projection, provider_id, fingerprint_generation, body_source_element)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, arguments: [key(revision.id.rawValue), key(revision.originRecordID.rawValue),
                 version?.connectorKind.rawValue, version?.namespace, version?.value, version?.role.rawValue,
                 revision.headline, revision.summary, revision.bodyText,
                 try revision.authoredAt.map { try PersistenceValueCoding.date($0, field: "authored_at") },
                 try revision.modifiedAt.map { try PersistenceValueCoding.date($0, field: "modified_at") },
                 try PersistenceValueCoding.date(revision.observedAt, field: "observed_at"), revision.language,
-                revision.primaryLink?.absoluteString, revision.searchProjection, revision.providerID.map { key($0.rawValue) }])
+                revision.primaryLink?.absoluteString, revision.searchProjection, revision.providerID.map { key($0.rawValue) },
+                generation, bodySourceElement])
     }
 
     private static func refreshSupply(_ id: OriginRecordID, in db: Database) throws {
