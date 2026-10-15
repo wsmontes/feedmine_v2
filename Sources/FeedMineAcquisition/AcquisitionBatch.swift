@@ -45,6 +45,10 @@ public struct AcquisitionMediaCandidateClaim: Hashable, Sendable {
 public struct AcquisitionObservation: Hashable, Sendable {
     public let objectIdentity: ExternalIdentity
     public let versionIdentity: ExternalIdentity?
+    /// Previous parser generation, for matching persisted historical versions without rewriting them.
+    public let legacyVersionIdentity: ExternalIdentity?
+    public let fingerprintGeneration: Int
+    public let bodySourceElement: String?
     public let precedence: AcquisitionPrecedence
     public let availability: OriginAvailability
     public let headline: String?
@@ -63,15 +67,24 @@ public struct AcquisitionObservation: Hashable, Sendable {
         precedence: AcquisitionPrecedence, availability: OriginAvailability, headline: String?, summary: String?,
         bodyText: String?, authoredAt: Date?, modifiedAt: Date?, observedAt: Date, language: String?,
         primaryLink: URL?, searchProjection: String?, providerID: ProviderID?,
-        memberships: [AcquisitionMembershipClaim], mediaCandidates: [AcquisitionMediaCandidateClaim]) {
+        memberships: [AcquisitionMembershipClaim], mediaCandidates: [AcquisitionMediaCandidateClaim],
+        fingerprintGeneration: Int = 1, legacyVersionIdentity: ExternalIdentity? = nil,
+        bodySourceElement: String? = nil) {
         guard objectIdentity.role == .object, !objectIdentity.connectorKind.rawValue.utf8.isEmpty,
             versionIdentity.map({ $0.role == .version && $0.connectorKind.rawValue.utf8.elementsEqual(objectIdentity.connectorKind.rawValue.utf8) }) ?? true,
+            (fingerprintGeneration == 1 || fingerprintGeneration == 2),
+            (legacyVersionIdentity == nil || fingerprintGeneration == 2),
+            legacyVersionIdentity.map({ $0.role == .version && $0.connectorKind == objectIdentity.connectorKind }) ?? true,
+            (bodySourceElement == nil || (fingerprintGeneration == 2 && bodyText != nil)),
             Set(memberships.map(\.sourceID)).count == memberships.count,
             observedAt.timeIntervalSince1970.isFinite,
             authoredAt.map({ $0.timeIntervalSince1970.isFinite }) ?? true,
             modifiedAt.map({ $0.timeIntervalSince1970.isFinite }) ?? true else { return nil }
         self.objectIdentity = objectIdentity
         self.versionIdentity = versionIdentity
+        self.legacyVersionIdentity = legacyVersionIdentity
+        self.fingerprintGeneration = fingerprintGeneration
+        self.bodySourceElement = bodySourceElement
         self.precedence = precedence
         self.availability = availability
         self.headline = headline

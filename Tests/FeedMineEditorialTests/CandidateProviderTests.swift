@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 import FeedMineDomain
 import FeedMinePersistence
-import FeedMineEditorial
+@testable import FeedMineEditorial
 
 final class CandidateProviderTests: XCTestCase {
     private let time = Date(timeIntervalSince1970: 1_700_000_000)
@@ -178,4 +178,265 @@ final class CandidateProviderTests: XCTestCase {
             }
         }
     }
+
+    /// Regresses K-15 across real canonical supply, editorial exposure and atomic publication guard.
+    func testK15BodyOnlyEditCreatesNewPublishedOccurrenceAcrossRealStores() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let db = try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))
+        let content = ContentStore(database: db), publisher = PublicationStore(database: db)
+        let provider = CandidateProvider(contentStore: content)
+        let originID = origin(415), sourceID = SourceID()
+        let object = ExternalIdentity(connectorKind: .syndication, namespace: "k15", value: "article", role: .object)
+        let link = try XCTUnwrap(URL(string: "https://example.test/article"))
+        func revision(_ text: String) -> OriginRevision {
+            OriginRevision(id: OriginRevisionID(), originRecordID: originID, externalVersionIdentity: nil,
+                headline: "Unchanged title", summary: "Same summary", bodyText: text,
+                authoredAt: nil, modifiedAt: nil, observedAt: self.time, language: nil,
+                primaryLink: link, searchProjection: nil, providerID: nil)
+        }
+        func admit(_ value: OriginRevision, expected: ContentStore.CurrentRevisionExpectation) throws {
+            try content.commitCanonicalChange(.init(recordID: originID, externalObjectIdentity: object,
+                revision: value, mediaCandidates: [], availability: .available, observedAt: self.time,
+                expectedCurrent: expected, currentUpdate: .useSuppliedRevision,
+                membershipMutations: [.upsert(sourceID: sourceID, kind: .direct, observedAt: self.time)],
+                fingerprintGeneration: 2, bodySourceElement: "content"))
+        }
+        func card(_ revisionID: OriginRevisionID) -> PublicationStore.CardRecord {
+            .init(id: PublicationCardID(), originRecordID: originID, originRevisionID: revisionID,
+                sourceID: sourceID, providerID: nil, sourceDisplayName: "Feed", providerDisplayName: nil,
+                contentEntityID: nil, contentClusterID: nil, title: "Unchanged title",
+                primaryText: "Same summary", timestampValue: nil, timestampKind: nil,
+                mediaKey: nil, mediaPixelWidth: nil, mediaPixelHeight: nil, mediaMimeType: nil,
+                renderLayout: "textOnly", renderMediaAspectRatio: nil,
+                primaryActionKind: "externalURL", primaryActionReference: link.absoluteString)
+        }
+        let a = revision("Body A")
+        try admit(a, expected: .none)
+        let feedPlan = try plan(.main)
+        let initial = try XCTUnwrap(provider.candidates(for: feedPlan, after: nil,
+            examinedCapacity: 5).candidates.first)
+        XCTAssertEqual(initial.declaredBody, "Body A")
+        let edition = PublicationStore.EditionRecord(id: FeedEditionID(),
+            editorialRevision: feedPlan.revision, publicationSchemaVersion: 1, selectionSeed: 100,
+            createdAt: self.time)
+        let first = card(a.id)
+        let initialSegment = PublicationStore.SegmentRecord(id: FeedSegmentID(),
+            editionID: edition.id, ordinal: 0, segmentSeed: 10,
+            publicationSchemaVersion: 1, createdAt: self.time, cardIDs: [first.id])
+        try publisher.createEdition(edition, firstSegment: initialSegment, cards: [first])
+        let oldKeys = try publisher.exposure(editionID: edition.id, originIDs: [originID])
+        XCTAssertEqual(oldKeys.publishedMaterialKeys[originID]?.count, 1)
+
+        let b = revision("Body B")
+        try admit(b, expected: .revision(a.id))
+        let window = try provider.candidates(for: feedPlan, after: nil, examinedCapacity: 5)
+        let next = try XCTUnwrap(window.candidates.first)
+        XCTAssertEqual(next.originRevisionID, b.id)
+        XCTAssertEqual(next.summary, initial.summary)
+        XCTAssertEqual(next.declaredBody, "Body B")
+
+        func selection() throws -> SelectionResult {
+            let exposure = try publisher.exposure(editionID: edition.id, originIDs: [originID])
+            let snapshot = try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: [originID],
+                publishedOriginIDs: exposure.publishedOriginIDs,
+                publishedMaterialKeys: exposure.publishedMaterialKeys,
+                unseenOriginIDs: exposure.unseenOriginIDs))
+            let p = feedPlan.revision
+            let policy = ResolvedSelectionPolicy(contextKey: p.contextKey,
+                userSelectionVersion: p.userSelectionVersion,
+                eligibilityPolicyVersion: p.eligibilityPolicyVersion,
+                scoringPolicyVersion: p.scoringPolicyVersion,
+                sequencingPolicyVersion: p.sequencingPolicyVersion,
+                exposurePolicyVersion: p.exposurePolicyVersion,
+                selectionSchemaVersion: p.selectionSchemaVersion,
+                eligibility: .structuralOnly, scoring: .equal,
+                sequencing: .recencyDescending, exposure: .excludePublishedMaterial)
+            return try SelectionEngine().select(plan: feedPlan, policy: policy,
+                window: window, exposure: snapshot)
+        }
+        XCTAssertEqual(try selection().orderedCandidates.map(\.originRevisionID), [b.id])
+        let second = card(b.id)
+        let nextSegment = PublicationStore.SegmentRecord(id: FeedSegmentID(),
+            editionID: edition.id, ordinal: 1, segmentSeed: 11,
+            publicationSchemaVersion: 1, createdAt: self.time, cardIDs: [second.id])
+        try publisher.appendSegment(nextSegment, cards: [second],
+            expectingTailCardID: first.id, recurrence: .whenMaterialChanged)
+        XCTAssertEqual(try publisher.exposure(editionID: edition.id,
+            originIDs: [originID]).publishedMaterialKeys[originID]?.count, 2)
+        XCTAssertEqual(try publisher.card(id: first.id), first)
+        XCTAssertEqual(try publisher.card(id: second.id), second)
+        XCTAssertTrue(try selection().orderedCandidates.isEmpty,
+            "after publication, the same body must not publish again")
+    }
+
+
+
+    func testK15LegacyEnrichmentMatchesGeneration2BodyAndRealRemovalPublishes() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let db = try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))
+        let content = ContentStore(database: db), publisher = PublicationStore(database: db)
+        let provider = CandidateProvider(contentStore: content), source = SourceID()
+        let originID = origin(416), stamp = self.time
+        let object = ExternalIdentity(connectorKind: .syndication, namespace: "legacy-atom",
+            value: "published", role: .object)
+        let link = try XCTUnwrap(URL(string: "https://example.test/legacy"))
+        let legacy = OriginRevision(id: OriginRevisionID(), originRecordID: originID,
+            externalVersionIdentity: nil, headline: "Unchanged", summary: "S",
+            bodyText: nil, authoredAt: stamp, modifiedAt: nil, observedAt: stamp,
+            language: nil, primaryLink: link, searchProjection: nil, providerID: nil)
+        try content.commitCanonicalChange(.init(recordID: originID,
+            externalObjectIdentity: object, revision: legacy, mediaCandidates: [],
+            availability: .available, observedAt: stamp,
+            expectedCurrent: .none, currentUpdate: .useSuppliedRevision,
+            membershipMutations: [.upsert(sourceID: source, kind: .direct, observedAt: stamp)],
+            fingerprintGeneration: 1))
+        let plan = try plan(.main)
+        let edition = PublicationStore.EditionRecord(id: FeedEditionID(),
+            editorialRevision: plan.revision, publicationSchemaVersion: 1,
+            selectionSeed: 1, createdAt: stamp)
+        func card(_ rev: OriginRevisionID) -> PublicationStore.CardRecord {
+            .init(id: PublicationCardID(), originRecordID: originID, originRevisionID: rev,
+                sourceID: source, providerID: nil, sourceDisplayName: "Legacy",
+                providerDisplayName: nil, contentEntityID: nil, contentClusterID: nil,
+                title: "Unchanged", primaryText: "S", timestampValue: nil, timestampKind: nil,
+                mediaKey: nil, mediaPixelWidth: nil, mediaPixelHeight: nil, mediaMimeType: nil,
+                renderLayout: "textOnly", renderMediaAspectRatio: nil,
+                primaryActionKind: "externalURL", primaryActionReference: link.absoluteString)
+        }
+        func segment(_ card: PublicationStore.CardRecord, ordinal: UInt64) -> PublicationStore.SegmentRecord {
+            .init(id: FeedSegmentID(), editionID: edition.id, ordinal: ordinal,
+                segmentSeed: ordinal + 1, publicationSchemaVersion: 1,
+                createdAt: stamp, cardIDs: [card.id])
+        }
+        let published = card(legacy.id)
+        try publisher.createEdition(edition, firstSegment: segment(published, ordinal: 0), cards: [published])
+        let historicalKey = try XCTUnwrap(publisher.exposure(
+            editionID: edition.id, originIDs: [originID]).publishedMaterialKeys[originID]?.first)
+        XCTAssertEqual(historicalKey, SelectionExposureSnapshot.materialKey(headline: "Unchanged", summary: "S"))
+
+        // Same original card, first body observation: real admission enriches its generation-1 revision.
+        let target = try AcquisitionTargetStore(database: db).register(id: AcquisitionTargetID(),
+            connectorKind: .syndication, authorizedSources: [source])
+        let observed = AcquisitionAdmissionStore.ObservationCommand(
+            objectIdentity: object, versionIdentity: nil, precedence: .makeCurrent,
+            availability: .available, headline: legacy.headline, summary: legacy.summary,
+            bodyText: "A", authoredAt: legacy.authoredAt, modifiedAt: legacy.modifiedAt,
+            observedAt: stamp.addingTimeInterval(1), language: legacy.language,
+            primaryLink: link, searchProjection: nil, providerID: nil,
+            memberships: [.init(sourceID: source, kind: .direct)], mediaCandidates: [],
+            fingerprintGeneration: 2, bodySourceElement: "content")
+        let receipt = try AcquisitionAdmissionStore(database: db).admit(.init(
+            targetID: target.id, targetGeneration: target.generation,
+            expectedCheckpointRevision: target.checkpointRevision,
+            observations: [observed], nextCheckpoint: nil))
+        XCTAssertFalse(receipt.selectableSupplyChanged)
+        XCTAssertEqual(try content.currentRevision(originRecordID: originID), legacy)
+        XCTAssertEqual(try publisher.card(id: published.id), published)
+
+        let observedKey = try XCTUnwrap(publisher.exposure(editionID: edition.id,
+            originIDs: [originID]).publishedMaterialKeys[originID]?.first)
+        XCTAssertEqual(observedKey, SelectionExposureSnapshot.materialKey(headline: "Unchanged",
+            summary: "S", declaredBody: "A", bodyObserved: true))
+        XCTAssertNotEqual(observedKey, historicalKey,
+            "the derived comparison reflects observed evidence without mutating published history")
+        let version2Same = OriginRevision(id: OriginRevisionID(), originRecordID: originID,
+            externalVersionIdentity: nil, headline: "Unchanged", summary: "S",
+            bodyText: "A", authoredAt: stamp, modifiedAt: stamp.addingTimeInterval(2),
+            observedAt: stamp.addingTimeInterval(2), language: nil, primaryLink: link,
+            searchProjection: nil, providerID: nil)
+        func admit(_ revision: OriginRevision, previous: OriginRevisionID, sourceElement: String?) throws {
+            try content.commitCanonicalChange(.init(recordID: originID,
+                externalObjectIdentity: object, revision: revision, mediaCandidates: [],
+                availability: .available, observedAt: revision.observedAt,
+                expectedCurrent: .revision(previous), currentUpdate: .useSuppliedRevision,
+                membershipMutations: [.upsert(sourceID: source, kind: .direct,
+                    observedAt: revision.observedAt)], fingerprintGeneration: 2,
+                bodySourceElement: sourceElement))
+        }
+        try admit(version2Same, previous: legacy.id, sourceElement: "content")
+        let sameWindow = try provider.candidates(for: plan, after: nil, examinedCapacity: 5)
+        let sameCandidate = try XCTUnwrap(sameWindow.candidates.first)
+        XCTAssertEqual(sameCandidate.declaredBody, "A")
+        XCTAssertTrue(sameCandidate.bodyObserved)
+        let p = plan.revision
+        let policy = ResolvedSelectionPolicy(contextKey: p.contextKey,
+            userSelectionVersion: p.userSelectionVersion, eligibilityPolicyVersion: p.eligibilityPolicyVersion,
+            scoringPolicyVersion: p.scoringPolicyVersion, sequencingPolicyVersion: p.sequencingPolicyVersion,
+            exposurePolicyVersion: p.exposurePolicyVersion, selectionSchemaVersion: p.selectionSchemaVersion,
+            eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyDescending,
+            exposure: .excludePublishedMaterial)
+        func select(_ window: CandidateSupplyWindow) throws -> SelectionResult {
+            let e = try publisher.exposure(editionID: edition.id, originIDs: [originID])
+            let snapshot = try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: [originID],
+                publishedOriginIDs: e.publishedOriginIDs, publishedMaterialKeys: e.publishedMaterialKeys,
+                unseenOriginIDs: e.unseenOriginIDs))
+            return try SelectionEngine().select(plan: plan, policy: policy, window: window, exposure: snapshot)
+        }
+        XCTAssertTrue(try select(sameWindow).orderedCandidates.isEmpty,
+            "timestamp-only Atom update with identical A is not a new publication")
+        let duplicate = card(version2Same.id)
+        XCTAssertThrowsError(try publisher.appendSegment(segment(duplicate, ordinal: 1),
+            cards: [duplicate], expectingTailCardID: published.id, recurrence: .whenMaterialChanged)) {
+            XCTAssertEqual($0 as? PublicationStoreError, .duplicateOriginInEdition)
+        }
+        XCTAssertEqual(try publisher.segments(editionID: edition.id).flatMap(\.cardIDs), [published.id])
+
+        let removed = OriginRevision(id: OriginRevisionID(), originRecordID: originID,
+            externalVersionIdentity: nil, headline: "Unchanged", summary: "S",
+            bodyText: nil, authoredAt: stamp, modifiedAt: stamp.addingTimeInterval(3),
+            observedAt: stamp.addingTimeInterval(3), language: nil, primaryLink: link,
+            searchProjection: nil, providerID: nil)
+        try admit(removed, previous: version2Same.id, sourceElement: nil)
+        let removedWindow = try provider.candidates(for: plan, after: nil, examinedCapacity: 5)
+        let removedCandidate = try XCTUnwrap(removedWindow.candidates.first)
+        XCTAssertNil(removedCandidate.declaredBody)
+        XCTAssertTrue(removedCandidate.bodyObserved, "observed absence is not legacy unknown")
+        XCTAssertEqual(try select(removedWindow).orderedCandidates.map(\.originRevisionID), [removed.id])
+        let changed = card(removed.id)
+        try publisher.appendSegment(segment(changed, ordinal: 1), cards: [changed],
+            expectingTailCardID: published.id, recurrence: .whenMaterialChanged)
+        XCTAssertEqual(try publisher.card(id: published.id), published)
+        XCTAssertEqual(try publisher.segments(editionID: edition.id).flatMap(\.cardIDs),
+            [published.id, changed.id])
+    }
+
+    func testK15Generation2BodyRemovedAfterIntermediateEditIsMaterial() throws {
+        let originID = origin(417), stamp = CandidateTimestamp(value: self.time, kind: .authored)
+        let edited = Candidate(originRecordID: originID, originRevisionID: OriginRevisionID(),
+            headline: "Same", summary: "S", timestamp: stamp, language: nil, providerID: nil,
+            declaredBody: "B", bodyObserved: true)
+        let removed = Candidate(originRecordID: originID, originRevisionID: OriginRevisionID(),
+            headline: "Same", summary: "S", timestamp: stamp, language: nil, providerID: nil,
+            bodyObserved: true)
+        let unknown = SelectionExposureSnapshot.materialKey(headline: "Same", summary: "S")
+        let absent = SelectionExposureSnapshot.materialKey(headline: "Same", summary: "S",
+            bodyObserved: true)
+        let bodyA = SelectionExposureSnapshot.materialKey(headline: "Same", summary: "S",
+            declaredBody: "A", bodyObserved: true)
+        let bodyB = SelectionExposureSnapshot.materialKey(headline: "Same", summary: "S",
+            declaredBody: "B", bodyObserved: true)
+        XCTAssertNotEqual(absent, unknown)
+        XCTAssertNotEqual(absent, bodyA)
+        XCTAssertNotEqual(absent, bodyB)
+        XCTAssertEqual(edited.declaredBody, "B")
+        XCTAssertNil(removed.declaredBody)
+        XCTAssertTrue(removed.bodyObserved)
+        let plan = try plan(.main), p = plan.revision
+        let policy = ResolvedSelectionPolicy(contextKey: p.contextKey,
+            userSelectionVersion: p.userSelectionVersion, eligibilityPolicyVersion: p.eligibilityPolicyVersion,
+            scoringPolicyVersion: p.scoringPolicyVersion, sequencingPolicyVersion: p.sequencingPolicyVersion,
+            exposurePolicyVersion: p.exposurePolicyVersion, selectionSchemaVersion: p.selectionSchemaVersion,
+            eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyDescending,
+            exposure: .excludePublishedMaterial)
+        let published = try XCTUnwrap(SelectionExposureSnapshot(
+            requestedOriginIDs: [originID], publishedOriginIDs: [originID],
+            publishedMaterialKeys: [originID: [bodyA, bodyB]]))
+        let window = CandidateSupplyWindow(candidates: [removed], examinedCount: 1,
+            nextCursor: nil, exhausted: true)
+        XCTAssertEqual(try SelectionEngine().select(plan: plan, policy: policy,
+            window: window, exposure: published).orderedCandidates, [removed])
+    }
+
 }

@@ -13,6 +13,7 @@ import XCTest
 import Foundation
 import Synchronization
 import FeedMineDomain
+import FeedMinePersistence
 @testable import FeedMineUI
 import UIKit
 import FeedMineRuntime
@@ -178,6 +179,94 @@ final class ReadingCompositionTests: XCTestCase {
             await association.close()
             association.store.perform(.init(action: .open, cardID: first.id), rendered: rendered)
             XCTAssertEqual(opens, 1, "A retired owner cannot open an old rendered card")
+        }
+    }
+
+
+    func testK15EnrichedLegacyRevisionBodyAppearsInReadingWithoutChangingPublishedCard() async throws {
+        try await withShape(.shortSummary) { _, association in
+            // Explicitly publish a generation-1 revision in the real runtime store.
+            // A fresh launch's syndication parser already writes generation 2, and
+            // cannot be used as a legacy-upgrade fixture.
+            let publication = PublicationStore(database: association.database)
+            let contents = ContentStore(database: association.database)
+            let sourceID = SourceID(), originID = OriginRecordID(), revisionID = OriginRevisionID()
+            let site = try XCTUnwrap(URL(string: "https://fixture.invalid/k15-legacy"))
+            let time = Date(timeIntervalSince1970: 1_700_000_000)
+            let object = ExternalIdentity(connectorKind: .syndication,
+                namespace: "k15-legacy-reading", value: originID.rawValue.uuidString, role: .object)
+            let legacy = OriginRevision(id: revisionID, originRecordID: originID,
+                externalVersionIdentity: nil, headline: "Legacy story",
+                summary: "Short summary", bodyText: nil,
+                authoredAt: time, modifiedAt: nil, observedAt: time,
+                language: nil, primaryLink: site, searchProjection: nil, providerID: nil)
+            try contents.commitCanonicalChange(.init(recordID: originID,
+                externalObjectIdentity: object, revision: legacy, mediaCandidates: [],
+                availability: .available, observedAt: time, expectedCurrent: .none,
+                currentUpdate: .useSuppliedRevision,
+                membershipMutations: [.upsert(sourceID: sourceID, kind: .direct, observedAt: time)],
+                fingerprintGeneration: 1))
+            let context = ContextKey(request: .main)
+            let editorial = EditorialRevision(id: EditorialRevisionID(), contextKey: context,
+                catalogGeneration: CatalogGeneration(rawValue: 1),
+                userSelectionVersion: PolicyVersion(rawValue: 1),
+                eligibilityPolicyVersion: PolicyVersion(rawValue: 2),
+                scoringPolicyVersion: PolicyVersion(rawValue: 3),
+                sequencingPolicyVersion: PolicyVersion(rawValue: 4),
+                exposurePolicyVersion: PolicyVersion(rawValue: 5),
+                selectionSchemaVersion: SelectionSchemaVersion(rawValue: 6))
+            let edition = PublicationStore.EditionRecord(id: FeedEditionID(), editorialRevision: editorial,
+                publicationSchemaVersion: 1, selectionSeed: 1, createdAt: time)
+            let published = PublicationStore.CardRecord(id: PublicationCardID(),
+                originRecordID: originID, originRevisionID: revisionID,
+                sourceID: sourceID, providerID: nil, sourceDisplayName: "Legacy feed",
+                providerDisplayName: nil, contentEntityID: nil, contentClusterID: nil,
+                title: legacy.headline, primaryText: legacy.summary,
+                timestampValue: time, timestampKind: "authored", mediaKey: nil,
+                mediaPixelWidth: nil, mediaPixelHeight: nil, mediaMimeType: nil,
+                renderLayout: "textOnly", renderMediaAspectRatio: nil,
+                primaryActionKind: "externalURL", primaryActionReference: site.absoluteString)
+            let segment = PublicationStore.SegmentRecord(id: FeedSegmentID(), editionID: edition.id,
+                ordinal: 0, segmentSeed: 1, publicationSchemaVersion: 1, createdAt: time,
+                cardIDs: [published.id])
+            try publication.createEdition(edition, firstSegment: segment, cards: [published])
+            XCTAssertEqual(try contents.currentRevision(originRecordID: originID), legacy)
+            let windowBefore = association.store.state.presentation?.window.items.map(\.id)
+            guard case .site = assertTheReadTouchesNothing(association, published.id) else {
+                return XCTFail("short legacy summary must open the publisher before enrichment")
+            }
+            let targetStore = AcquisitionTargetStore(database: association.database)
+            let target = try targetStore.register(id: AcquisitionTargetID(),
+                connectorKind: .syndication, authorizedSources: [sourceID])
+            let incoming = AcquisitionAdmissionStore.ObservationCommand(
+                objectIdentity: object, versionIdentity: nil,
+                precedence: .makeCurrent, availability: .available,
+                headline: legacy.headline, summary: legacy.summary, bodyText: ReadingFixture.longText,
+                authoredAt: legacy.authoredAt, modifiedAt: legacy.modifiedAt,
+                observedAt: time.addingTimeInterval(1), language: legacy.language,
+                primaryLink: legacy.primaryLink, searchProjection: legacy.searchProjection,
+                providerID: legacy.providerID,
+                memberships: [.init(sourceID: sourceID, kind: .direct)],
+                mediaCandidates: [], fingerprintGeneration: 2, bodySourceElement: "content:encoded")
+            let receipt = try AcquisitionAdmissionStore(database: association.database).admit(.init(
+                targetID: target.id, targetGeneration: target.generation,
+                expectedCheckpointRevision: target.checkpointRevision,
+                observations: [incoming], nextCheckpoint: nil))
+            XCTAssertFalse(receipt.selectableSupplyChanged)
+            XCTAssertTrue(receipt.rejectedObservations.isEmpty)
+            XCTAssertEqual(try contents.currentRevision(originRecordID: originID), legacy,
+                "admission must enrich generation 1 rather than create a generation-2 revision")
+            guard case .local(let result) = assertTheReadTouchesNothing(association, published.id) else {
+                return XCTFail("the existing card must open its newly enriched body locally")
+            }
+            XCTAssertEqual(result.origin, .sourceBody)
+            XCTAssertEqual(result.origin.label, "Texto publicado pela fonte")
+            XCTAssertEqual(result.text, ReadingFixture.longText)
+            XCTAssertTrue(result.isPartial)
+            XCTAssertEqual(try publication.card(id: published.id), published)
+            XCTAssertEqual(try publication.segments(editionID: edition.id).flatMap(\.cardIDs), [published.id])
+            XCTAssertEqual(association.store.state.presentation?.window.items.map(\.id), windowBefore)
+            XCTAssertEqual(try contents.originRevision(id: revisionID)?.bodyText, ReadingFixture.longText)
         }
     }
 

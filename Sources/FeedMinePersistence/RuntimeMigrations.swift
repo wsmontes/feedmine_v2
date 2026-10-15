@@ -525,6 +525,25 @@ public enum RuntimeMigrations {
                 );
                 """)
         }
+        migrator.registerMigration("content-fingerprint-generation-v2") { db in
+            // Existing immutable revisions retain their exact version identity and generation 1.
+            try db.execute(sql: """
+                ALTER TABLE origin_revisions ADD COLUMN fingerprint_generation INTEGER NOT NULL DEFAULT 1
+                    CHECK (fingerprint_generation IN (1, 2));
+                ALTER TABLE origin_revisions ADD COLUMN body_source_element TEXT;
+                CREATE TABLE content_fingerprint_policy (
+                    id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+                    generation INTEGER NOT NULL CHECK (generation IN (1, 2))
+                );
+                INSERT INTO content_fingerprint_policy(id, generation) VALUES (1, 2);
+                CREATE TABLE origin_revision_body_enrichment (
+                    origin_revision_id TEXT PRIMARY KEY NOT NULL
+                        REFERENCES origin_revisions(id) ON DELETE RESTRICT,
+                    source_element TEXT NOT NULL,
+                    body_text TEXT
+                );
+                """)
+        }
         return migrator
     }
 
