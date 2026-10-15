@@ -126,7 +126,7 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
         let new = try makeCatalogue(in: root.appendingPathComponent("r6"), sources: 1, revision: 6)
         let response = response()
         let queue = try DatabaseQueue(path: new.path)
-        try queue.write { db in
+        try await queue.write { db in
             try db.execute(sql: "UPDATE catalog_source SET request_url = ? WHERE id = 1",
                 arguments: [response.url.absoluteString])
         }
