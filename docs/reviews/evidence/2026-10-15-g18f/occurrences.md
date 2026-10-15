@@ -42,3 +42,28 @@ Janelas decisivas versionadas em `decisive/red-cand.composition{,2}.txt`.
 - 2 repetições verdes seguidas na mesma árvore de app depois da terceira ocorrência.
 - Conclusão mantida: **FLAKY — ROOT CAUSE UNDETERMINED**; a asserção de 17 segue intacta, o commit
   diagnóstico `4a05a182` não entrou em `main`, e nenhum PASS foi declarado.
+
+## 5. A quarta ocorrência (2026-10-15, árvore `e15ef6b3` — candidato de aceite do PD10-P0B)
+
+| campo | valor |
+|---|---|
+| quando | 2026-10-15, segunda execução serial da mesma medição (manhã, hora local) |
+| árvore | `e15ef6b36606a613e2336c28f19b22bfaef8d92c` (branch `chatgpt/pd10-p0b-active-catalog-recovery`, candidato de aceite) |
+| comando | `xcodebuild test … "-only-testing:FeedMineAppTests/CompositionTests"` (2ª das duas execuções seriais) |
+| resultado | `Executed 60 tests, with 1 failure (0 unexpected)` — `** TEST FAILED **`; a 1ª execução da mesma árvore passou com 0 falhas |
+| literal | `testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates` : `XCTAssertEqual failed: ("18") is not equal to ("17") - Anchor plus a sixteen-card idle reserve` |
+| condição ambiental | a máquina acabara de rodar `swift build` + `swift test` (1330 testes) e a primeira suíte do app; a segunda execução foi serial, sem build em paralelo |
+| nota | os sete testes PD10 passaram nas duas execuções; a única falha foi esta |
+
+**Placar do G-18F nesta árvore: 1 verde / 1 vermelha em 2 execuções.**
+
+### Placar acumulado das ocorrências
+
+| # | quando | árvore | condição |
+|---|---|---|---|
+| 1 | 2026-10-14 17:03 | `1b990306` | builds/suítes concorrentes |
+| 2 | 2026-10-14 17:05 | `1b990306` | builds/suítes concorrentes |
+| 3 | 2026-10-15 05:01 | `122ef5d5` | build recém-encerrado + restauração de insumo |
+| 4 | 2026-10-15 (2ª execução serial) | `e15ef6b3` | após `swift test` completo e a 1ª suíte do app |
+
+Estado mantido: **FLAKY — ROOT CAUSE UNDETERMINED**. Nenhuma dessas ocorrências foi atribuída a branch ou a produto; as 15 execuções limpas do G-18F e as duas repetições verdes posteriores seguem registradas acima.
