@@ -93,3 +93,31 @@ Estado mantido: **FLAKY — ROOT CAUSE UNDETERMINED**. Nenhuma dessas ocorrênci
 | 5 | 2026-10-15 (2ª execução serial) | `40bc9fa1` | idem: após `swift test` (1353) e a 1ª suíte do app |
 
 Estado mantido: **FLAKY — ROOT CAUSE UNDETERMINED**. Nenhuma ocorrência foi atribuída a branch ou a produto; as 15 execuções limpas do G-18F seguem registradas acima.
+
+## 7. Taxa medida no corpus completo de logs (extraído em 2026-10-15)
+
+Todas as execuções da suíte do app que existem nos logs desta máquina, agrupadas por **sequência de
+execuções seriais por árvore** (`xcodebuild … -only-testing:FeedMineAppTests/CompositionTests`):
+
+| rodada (árvore) | 1ª execução | 2ª execução |
+|---|---|---|
+| `pd10b3` (`a983b019`), `pd10b4` (`3caef142`), `pd10b6` (`91a63b33`), `pd10b7` (`6c19e4b6`), `pd10b8` (`0a142da3`) | 60/0 | 60/0 |
+| `pd10c` (`fe476ad4`, P0C), `pd10d` (`b0cab431`, P0C) | 60/0 | 60/0 |
+| `pd10r` | 57/0 | 57/0 |
+| **`pd10b5` (`e15ef6b3`)** | 60/0 | **60/1 — o G-18F** |
+| **`pd10e` (`40bc9fa1`)** | 60/0 | **60/1 — o G-18F** |
+
+Somando as 15 execuções **únicas** da campanha do G-18F (4 base + 6 instrumentadas + 5 sob carga induzida,
+todas verdes) e as duas vermelhas antigas de `1b990306`:
+
+- **2 vermelhas em 26 execuções** da suíte do app nesta máquina (~8%);
+- **ambas na 2ª posição** de um par consecutivo, com a máquina **ociosa** — o único trabalho simultâneo era a
+  própria suíte que acabara de rodar. As ocorrências 1–3 tinham "máquina ocupada" como explicação plausível;
+  **as ocorrências 4 e 5 não têm**;
+- 11 outros pares de execuções ficaram integralmente verdes.
+
+Isso **não** prova um efeito de segunda execução (com ~8% de taxa, dois acertos na casa "run 2" aconteceriam
+cerca de 1 vez em 4), mas **derruba** a atribuição "intermitência de máquina ocupada" para as ocorrências 4 e
+5. O experimento decisivo proposto (e ainda não executado) é repetir a suíte **5× num mesmo SHA fixo** e ver
+se a falha se concentra na 2ª/últimas posições — o que distinguiria **contaminação de estado entre execuções**
+(reprodutível, investigável) de **corrida aleatória** (que exigiria estimar a taxa com mais amostras).
