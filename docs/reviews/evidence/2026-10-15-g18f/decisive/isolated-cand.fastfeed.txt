@@ -1,0 +1,26 @@
+NOTA: extrato filtrado (linhas [composition], asserção, veredito e [G18F]); o log completo tem o resto.
+Test Case '-[FeedMineAppTests.CompositionTests testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates]' started.
+2026-10-14 17:41:40.662364-0700 FeedMine[78787:55817808] [composition] cold bootstrap settled
+2026-10-14 17:41:41.066488-0700 FeedMine[78787:55817808] [composition] cold bootstrap started
+2026-10-14 17:41:41.203297-0700 FeedMine[78787:55817808] [composition] installed cards=1 edition=19ADDF01-5F54-4224-8E44-8FB4DBCA343E sequence=6BC3C49B-09F0-4069-9F6E-F0B5DE1049D1 order=1
+2026-10-14 17:41:41.203623-0700 FeedMine[78787:55817808] [composition] installed cards=1 edition=19ADDF01-5F54-4224-8E44-8FB4DBCA343E sequence=6BC3C49B-09F0-4069-9F6E-F0B5DE1049D1 order=1
+2026-10-14 17:41:41.205797-0700 FeedMine[78787:55817808] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:41:41.250497-0700 FeedMine[78787:55817808] [composition] installed cards=1 edition=19ADDF01-5F54-4224-8E44-8FB4DBCA343E sequence=6BC3C49B-09F0-4069-9F6E-F0B5DE1049D1 order=1
+2026-10-14 17:41:41.250996-0700 FeedMine[78787:55817808] [composition] installed cards=1 edition=19ADDF01-5F54-4224-8E44-8FB4DBCA343E sequence=6BC3C49B-09F0-4069-9F6E-F0B5DE1049D1 order=1
+2026-10-14 17:41:41.251095-0700 FeedMine[78787:55817808] [composition] cold bootstrap settled
+2026-10-14 17:41:41.252989-0700 FeedMine[78787:55817808] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:41:41.254851-0700 FeedMine[78787:55817808] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:41:41.317898-0700 FeedMine[78787:55817808] [composition] installed cards=1 edition=19ADDF01-5F54-4224-8E44-8FB4DBCA343E sequence=6BC3C49B-09F0-4069-9F6E-F0B5DE1049D1 order=1
+2026-10-14 17:41:41.321524-0700 FeedMine[78787:55817808] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:41:41.321866-0700 FeedMine[78787:55817808] [composition] installed cards=17 edition=19ADDF01-5F54-4224-8E44-8FB4DBCA343E sequence=6BC3C49B-09F0-4069-9F6E-F0B5DE1049D1 order=2
+2026-10-14 17:41:41.328878-0700 FeedMine[78787:55817808] [composition] viewport forwarded activity=explicitTailApproach anchor=903569DA-8AE6-4CBD-B1EC-E916F8850E68
+2026-10-14 17:41:41.329171-0700 FeedMine[78787:55817808] [composition] viewport opportunity sent to driver
+2026-10-14 17:41:41.332696-0700 FeedMine[78787:55817808] [composition] installed cards=17 edition=19ADDF01-5F54-4224-8E44-8FB4DBCA343E sequence=6BC3C49B-09F0-4069-9F6E-F0B5DE1049D1 order=3
+2026-10-14 17:41:41.338059-0700 FeedMine[78787:55817808] [composition] installed cards=17 edition=19ADDF01-5F54-4224-8E44-8FB4DBCA343E sequence=6BC3C49B-09F0-4069-9F6E-F0B5DE1049D1 order=3
+2026-10-14 17:41:41.339238-0700 FeedMine[78787:55817808] [composition] settled position checkpoint anchor=903569DA-8AE6-4CBD-B1EC-E916F8850E68 placement=top window=20s
+2026-10-14 17:41:41.341418-0700 FeedMine[78787:55817808] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:41:41.341747-0700 FeedMine[78787:55817808] [composition] Runway opportunity completed activity=explicitTailApproach
+Test Case '-[FeedMineAppTests.CompositionTests testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates]' passed (0.699 seconds).
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.699 (0.700) seconds
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.699 (0.701) seconds
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.699 (0.701) seconds

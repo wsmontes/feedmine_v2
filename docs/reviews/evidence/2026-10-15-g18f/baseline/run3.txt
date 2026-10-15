@@ -1,0 +1,4 @@
+Test Case '-[FeedMineAppTests.CompositionTests testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates]' passed (0.326 seconds).
+	 Executed 53 tests, with 0 failures (0 unexpected) in 166.863 (166.880) seconds
+	 Executed 53 tests, with 0 failures (0 unexpected) in 166.863 (166.880) seconds
+	 Executed 53 tests, with 0 failures (0 unexpected) in 166.863 (166.881) seconds

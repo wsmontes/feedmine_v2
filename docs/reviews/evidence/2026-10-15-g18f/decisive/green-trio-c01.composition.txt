@@ -1,0 +1,857 @@
+NOTA: extrato filtrado (linhas [composition], asserção, veredito e [G18F]); o log completo tem o resto.
+Test Case '-[FeedMineAppTests.CompositionTests testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates]' started.
+2026-10-14 17:51:25.340705-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:51:25.386623-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=562400C3-7DED-4370-8A72-75285182CCFA sequence=72EAAD93-C492-469A-9E50-204DB83F5D4C order=1
+2026-10-14 17:51:25.386793-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=562400C3-7DED-4370-8A72-75285182CCFA sequence=72EAAD93-C492-469A-9E50-204DB83F5D4C order=1
+2026-10-14 17:51:25.388088-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:51:25.414852-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=562400C3-7DED-4370-8A72-75285182CCFA sequence=72EAAD93-C492-469A-9E50-204DB83F5D4C order=1
+2026-10-14 17:51:25.415079-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=562400C3-7DED-4370-8A72-75285182CCFA sequence=72EAAD93-C492-469A-9E50-204DB83F5D4C order=1
+2026-10-14 17:51:25.415160-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:51:25.416277-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:51:25.417563-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:51:25.461879-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=562400C3-7DED-4370-8A72-75285182CCFA sequence=72EAAD93-C492-469A-9E50-204DB83F5D4C order=1
+2026-10-14 17:51:25.464780-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:51:25.465007-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=562400C3-7DED-4370-8A72-75285182CCFA sequence=72EAAD93-C492-469A-9E50-204DB83F5D4C order=2
+2026-10-14 17:51:25.468759-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=39CB9556-D390-412E-8FFC-FB16F3191980
+2026-10-14 17:51:25.468905-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:51:25.471245-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=562400C3-7DED-4370-8A72-75285182CCFA sequence=72EAAD93-C492-469A-9E50-204DB83F5D4C order=3
+2026-10-14 17:51:25.475537-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=562400C3-7DED-4370-8A72-75285182CCFA sequence=72EAAD93-C492-469A-9E50-204DB83F5D4C order=3
+2026-10-14 17:51:25.476345-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=39CB9556-D390-412E-8FFC-FB16F3191980 placement=top window=20s
+2026-10-14 17:51:25.478019-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:51:25.478204-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+Test Case '-[FeedMineAppTests.CompositionTests testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates]' passed (0.340 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testFreshSessionDeclaresSupplyShareSequencingAndStillAcceptsV2Editions]' started.
+2026-10-14 17:51:25.679163-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:51:25.732470-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=AF9CB9D6-E0AF-4F91-A127-5E2E1CD0D10C sequence=177C1104-7427-4A03-8351-6E69F517A1DB order=1
+2026-10-14 17:51:25.732657-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=AF9CB9D6-E0AF-4F91-A127-5E2E1CD0D10C sequence=177C1104-7427-4A03-8351-6E69F517A1DB order=1
+2026-10-14 17:51:25.736167-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=AF9CB9D6-E0AF-4F91-A127-5E2E1CD0D10C sequence=177C1104-7427-4A03-8351-6E69F517A1DB order=1
+2026-10-14 17:51:25.736267-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:51:25.736463-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=AF9CB9D6-E0AF-4F91-A127-5E2E1CD0D10C sequence=177C1104-7427-4A03-8351-6E69F517A1DB order=1
+2026-10-14 17:51:25.736553-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:51:25.737811-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:51:25.739235-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:51:25.783631-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=AF9CB9D6-E0AF-4F91-A127-5E2E1CD0D10C sequence=177C1104-7427-4A03-8351-6E69F517A1DB order=1
+2026-10-14 17:51:25.786466-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:51:25.786680-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=AF9CB9D6-E0AF-4F91-A127-5E2E1CD0D10C sequence=177C1104-7427-4A03-8351-6E69F517A1DB order=2
+Test Case '-[FeedMineAppTests.CompositionTests testFreshSessionDeclaresSupplyShareSequencingAndStillAcceptsV2Editions]' passed (0.309 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testK05AnInexactOrInvalidDeclarationAuthorizesNothing]' started.
+2026-10-14 17:51:25.983112-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:51:26.028901-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=DBD9B7C5-2B40-4D74-81A7-C8914A517B14 sequence=5F7EE8CF-9017-4D8B-8478-8139D3E51219 order=1
+2026-10-14 17:51:26.029085-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=DBD9B7C5-2B40-4D74-81A7-C8914A517B14 sequence=5F7EE8CF-9017-4D8B-8478-8139D3E51219 order=1
+2026-10-14 17:51:26.029325-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=DBD9B7C5-2B40-4D74-81A7-C8914A517B14 sequence=5F7EE8CF-9017-4D8B-8478-8139D3E51219 order=1
+2026-10-14 17:51:26.029390-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:51:26.030452-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:51:26.031785-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:51:26.047436-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=DBD9B7C5-2B40-4D74-81A7-C8914A517B14 sequence=5F7EE8CF-9017-4D8B-8478-8139D3E51219 order=1
+2026-10-14 17:51:26.048945-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:51:26.229719-0700 FeedMine[81103:55841778] [composition] transport origin declared but unparseable as a URL; authorizing nothing (value withheld)
+2026-10-14 17:51:26.237018-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:51:26.238738-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:51:28.543462-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:51:28.630348-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:51:34.441295-0700 FeedMine[81103:55841778] [composition] transport origin declared but not a usable origin (scheme, host and port required; no path, query, fragment or credentials); authorizing no non-public origin
+2026-10-14 17:51:34.451245-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:51:34.452224-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:51:42.652800-0700 FeedMine[81103:55841778] [composition] transport origin declared but not a usable origin (scheme, host and port required; no path, query, fragment or credentials); authorizing no non-public origin
+2026-10-14 17:51:42.661146-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:51:42.662086-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:51:48.732739-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:51:48.822128-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:51:50.900301-0700 FeedMine[81103:55841778] [composition] transport origin declared but not a usable origin (scheme, host and port required; no path, query, fragment or credentials); authorizing no non-public origin
+2026-10-14 17:51:50.908371-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:51:50.909389-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:51:59.115361-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:51:59.116154-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+Test Case '-[FeedMineAppTests.CompositionTests testK05AnInexactOrInvalidDeclarationAuthorizesNothing]' passed (41.392 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testK05DeclaredOriginPublishesAndAnUndeclaredOneIsRefused]' started.
+2026-10-14 17:52:07.361973-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:07.408995-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=FB79603C-31D3-4B01-8B16-FDCFEA28DA86 sequence=DA3410FB-29D6-4E30-9E66-648C073F5197 order=1
+2026-10-14 17:52:07.409178-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=FB79603C-31D3-4B01-8B16-FDCFEA28DA86 sequence=DA3410FB-29D6-4E30-9E66-648C073F5197 order=1
+2026-10-14 17:52:07.409425-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=FB79603C-31D3-4B01-8B16-FDCFEA28DA86 sequence=DA3410FB-29D6-4E30-9E66-648C073F5197 order=1
+2026-10-14 17:52:07.409503-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:07.410606-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:07.411928-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:07.427661-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=FB79603C-31D3-4B01-8B16-FDCFEA28DA86 sequence=DA3410FB-29D6-4E30-9E66-648C073F5197 order=1
+2026-10-14 17:52:07.429187-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:07.616429-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:07.617396-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:08.915672-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:09.024847-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:15.842019-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:15.888864-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=C8859D50-1B1D-428C-B861-BDC02476DA08 sequence=E037764A-6A50-4A70-B5D7-05D289D9B1D1 order=1
+2026-10-14 17:52:15.889044-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=C8859D50-1B1D-428C-B861-BDC02476DA08 sequence=E037764A-6A50-4A70-B5D7-05D289D9B1D1 order=1
+2026-10-14 17:52:15.889317-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=C8859D50-1B1D-428C-B861-BDC02476DA08 sequence=E037764A-6A50-4A70-B5D7-05D289D9B1D1 order=1
+2026-10-14 17:52:15.889387-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:15.890498-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:15.891819-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:15.907799-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=C8859D50-1B1D-428C-B861-BDC02476DA08 sequence=E037764A-6A50-4A70-B5D7-05D289D9B1D1 order=1
+2026-10-14 17:52:15.909268-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+Test Case '-[FeedMineAppTests.CompositionTests testK05DeclaredOriginPublishesAndAnUndeclaredOneIsRefused]' passed (8.733 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testK06AnsweringInABetweenAAndBKeepsTheReaderWhereTheyWere]' started.
+2026-10-14 17:52:16.104939-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:16.156383-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=CA355B6A-04D0-4D5F-B115-917CF39B879D sequence=8EB8F5F1-531F-4A07-B48C-D3631D0583BB order=1
+2026-10-14 17:52:16.156555-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=CA355B6A-04D0-4D5F-B115-917CF39B879D sequence=8EB8F5F1-531F-4A07-B48C-D3631D0583BB order=1
+2026-10-14 17:52:16.159687-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=CA355B6A-04D0-4D5F-B115-917CF39B879D sequence=8EB8F5F1-531F-4A07-B48C-D3631D0583BB order=1
+2026-10-14 17:52:16.159766-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:16.159937-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=CA355B6A-04D0-4D5F-B115-917CF39B879D sequence=8EB8F5F1-531F-4A07-B48C-D3631D0583BB order=1
+2026-10-14 17:52:16.160024-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:16.161091-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:16.162254-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:16.201999-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=CA355B6A-04D0-4D5F-B115-917CF39B879D sequence=8EB8F5F1-531F-4A07-B48C-D3631D0583BB order=1
+2026-10-14 17:52:16.204640-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:16.204834-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=CA355B6A-04D0-4D5F-B115-917CF39B879D sequence=8EB8F5F1-531F-4A07-B48C-D3631D0583BB order=2
+2026-10-14 17:52:16.208327-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:16.222260-0700 FeedMine[81103:55841778] [composition] installed cards=8 edition=007E0A13-59D4-48FC-9A66-A6ACA6106C4B sequence=94B0E5EC-6B3F-4924-9165-CF99D860C531 order=1
+2026-10-14 17:52:16.222338-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:16.223774-0700 FeedMine[81103:55841778] [composition] published growth: admitted 8 -> 8
+2026-10-14 17:52:16.254832-0700 FeedMine[81103:55841778] [composition] installed cards=8 edition=007E0A13-59D4-48FC-9A66-A6ACA6106C4B sequence=94B0E5EC-6B3F-4924-9165-CF99D860C531 order=1
+2026-10-14 17:52:16.257282-0700 FeedMine[81103:55841778] [composition] published growth: admitted 8 -> 17
+2026-10-14 17:52:16.257479-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=007E0A13-59D4-48FC-9A66-A6ACA6106C4B sequence=94B0E5EC-6B3F-4924-9165-CF99D860C531 order=2
+2026-10-14 17:52:16.258748-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=forward anchor=02B6B74D-EE39-4270-B606-B35614E90ACB
+2026-10-14 17:52:16.258809-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:16.259344-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=007E0A13-59D4-48FC-9A66-A6ACA6106C4B sequence=94B0E5EC-6B3F-4924-9165-CF99D860C531 order=2
+2026-10-14 17:52:16.260409-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=007E0A13-59D4-48FC-9A66-A6ACA6106C4B sequence=94B0E5EC-6B3F-4924-9165-CF99D860C531 order=2
+2026-10-14 17:52:16.261088-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=02B6B74D-EE39-4270-B606-B35614E90ACB placement=top window=20s
+2026-10-14 17:52:16.261252-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:16.261386-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=forward
+2026-10-14 17:52:16.548157-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:16.576966-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=8E45F689-65E0-4063-8EEB-862E2BED3289 sequence=585059F9-7BB7-4496-8CF3-2A9470655225 order=1
+2026-10-14 17:52:16.577073-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:16.577174-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:16.603020-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=8E45F689-65E0-4063-8EEB-862E2BED3289 sequence=585059F9-7BB7-4496-8CF3-2A9470655225 order=1
+2026-10-14 17:52:16.603259-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:16.668941-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=007E0A13-59D4-48FC-9A66-A6ACA6106C4B sequence=0CD9BCC6-FDB7-4383-B720-45FB2E75797B order=1
+2026-10-14 17:52:16.669058-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:52:16.696545-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=007E0A13-59D4-48FC-9A66-A6ACA6106C4B sequence=0CD9BCC6-FDB7-4383-B720-45FB2E75797B order=1
+Test Case '-[FeedMineAppTests.CompositionTests testK06AnsweringInABetweenAAndBKeepsTheReaderWhereTheyWere]' passed (0.803 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testK06RoundTripBetweenContextsKeepsTheEditionAnchorAndPosition]' started.
+2026-10-14 17:52:16.910614-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:16.963490-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=F75D6105-ECFB-4C39-B5C3-D0D12FEC3ABE sequence=48A857E0-5620-4A85-9820-7174572315E2 order=1
+2026-10-14 17:52:16.963674-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=F75D6105-ECFB-4C39-B5C3-D0D12FEC3ABE sequence=48A857E0-5620-4A85-9820-7174572315E2 order=1
+2026-10-14 17:52:16.967092-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=F75D6105-ECFB-4C39-B5C3-D0D12FEC3ABE sequence=48A857E0-5620-4A85-9820-7174572315E2 order=1
+2026-10-14 17:52:16.967242-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:16.967403-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=F75D6105-ECFB-4C39-B5C3-D0D12FEC3ABE sequence=48A857E0-5620-4A85-9820-7174572315E2 order=1
+2026-10-14 17:52:16.967482-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:16.968732-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:16.970132-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:17.014298-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=F75D6105-ECFB-4C39-B5C3-D0D12FEC3ABE sequence=48A857E0-5620-4A85-9820-7174572315E2 order=1
+2026-10-14 17:52:17.017081-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:17.017277-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=F75D6105-ECFB-4C39-B5C3-D0D12FEC3ABE sequence=48A857E0-5620-4A85-9820-7174572315E2 order=2
+2026-10-14 17:52:17.020797-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:17.036357-0700 FeedMine[81103:55841778] [composition] installed cards=8 edition=432F6495-DF92-457C-958E-8A08733E6D92 sequence=DEBD5B1E-A539-4ABA-BC8D-E94343564BE7 order=1
+2026-10-14 17:52:17.036430-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:17.037777-0700 FeedMine[81103:55841778] [composition] published growth: admitted 8 -> 8
+2026-10-14 17:52:17.069578-0700 FeedMine[81103:55841778] [composition] installed cards=8 edition=432F6495-DF92-457C-958E-8A08733E6D92 sequence=DEBD5B1E-A539-4ABA-BC8D-E94343564BE7 order=1
+2026-10-14 17:52:17.072003-0700 FeedMine[81103:55841778] [composition] published growth: admitted 8 -> 17
+2026-10-14 17:52:17.072201-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=432F6495-DF92-457C-958E-8A08733E6D92 sequence=DEBD5B1E-A539-4ABA-BC8D-E94343564BE7 order=2
+2026-10-14 17:52:17.073431-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=forward anchor=FE47E37A-810C-44DC-B9A5-CF9D0A8C30AB
+2026-10-14 17:52:17.073494-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:17.074046-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=432F6495-DF92-457C-958E-8A08733E6D92 sequence=DEBD5B1E-A539-4ABA-BC8D-E94343564BE7 order=2
+2026-10-14 17:52:17.075219-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=432F6495-DF92-457C-958E-8A08733E6D92 sequence=DEBD5B1E-A539-4ABA-BC8D-E94343564BE7 order=2
+2026-10-14 17:52:17.075955-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=FE47E37A-810C-44DC-B9A5-CF9D0A8C30AB placement=top window=20s
+2026-10-14 17:52:17.076124-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:17.076282-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=forward
+2026-10-14 17:52:17.080683-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:17.107606-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=489DA4B3-F9DC-4C02-A035-3A517E4C6A37 sequence=218EFCCD-F56B-4098-8C53-C12C7CE42F00 order=1
+2026-10-14 17:52:17.107680-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:17.107773-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:17.131910-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=489DA4B3-F9DC-4C02-A035-3A517E4C6A37 sequence=218EFCCD-F56B-4098-8C53-C12C7CE42F00 order=1
+2026-10-14 17:52:17.132115-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:17.141541-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=432F6495-DF92-457C-958E-8A08733E6D92 sequence=F0EEA409-2B09-45F4-B15E-7A624ECE3EC6 order=1
+2026-10-14 17:52:17.141608-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:52:17.167589-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=432F6495-DF92-457C-958E-8A08733E6D92 sequence=F0EEA409-2B09-45F4-B15E-7A624ECE3EC6 order=1
+Test Case '-[FeedMineAppTests.CompositionTests testK06RoundTripBetweenContextsKeepsTheEditionAnchorAndPosition]' passed (0.460 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testK06RoundTripByFilterKeepsTheEdition]' started.
+2026-10-14 17:52:17.370197-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:17.423348-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=436A672F-8FFD-4D4C-ABDB-4A52D47CA5A6 sequence=216D55CD-D3DF-4DB0-ABB6-907634B83876 order=1
+2026-10-14 17:52:17.423537-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=436A672F-8FFD-4D4C-ABDB-4A52D47CA5A6 sequence=216D55CD-D3DF-4DB0-ABB6-907634B83876 order=1
+2026-10-14 17:52:17.426998-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=436A672F-8FFD-4D4C-ABDB-4A52D47CA5A6 sequence=216D55CD-D3DF-4DB0-ABB6-907634B83876 order=1
+2026-10-14 17:52:17.427102-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:17.427288-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=436A672F-8FFD-4D4C-ABDB-4A52D47CA5A6 sequence=216D55CD-D3DF-4DB0-ABB6-907634B83876 order=1
+2026-10-14 17:52:17.427366-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:17.428649-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:17.430046-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:17.472594-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=436A672F-8FFD-4D4C-ABDB-4A52D47CA5A6 sequence=216D55CD-D3DF-4DB0-ABB6-907634B83876 order=1
+2026-10-14 17:52:17.475184-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:17.475379-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=436A672F-8FFD-4D4C-ABDB-4A52D47CA5A6 sequence=216D55CD-D3DF-4DB0-ABB6-907634B83876 order=2
+2026-10-14 17:52:17.476600-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=forward anchor=C3DEE593-1972-428C-BBC4-A314151EB0C2
+2026-10-14 17:52:17.476660-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:17.477192-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=436A672F-8FFD-4D4C-ABDB-4A52D47CA5A6 sequence=216D55CD-D3DF-4DB0-ABB6-907634B83876 order=2
+2026-10-14 17:52:17.478429-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=436A672F-8FFD-4D4C-ABDB-4A52D47CA5A6 sequence=216D55CD-D3DF-4DB0-ABB6-907634B83876 order=2
+2026-10-14 17:52:17.479093-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=C3DEE593-1972-428C-BBC4-A314151EB0C2 placement=top window=20s
+2026-10-14 17:52:17.479259-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:17.479385-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=forward
+2026-10-14 17:52:17.483893-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:17.508909-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:17.518067-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=436A672F-8FFD-4D4C-ABDB-4A52D47CA5A6 sequence=E1B43D8C-6123-4328-A1ED-F5070E0A7810 order=1
+2026-10-14 17:52:17.518139-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:52:17.559700-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=436A672F-8FFD-4D4C-ABDB-4A52D47CA5A6 sequence=E1B43D8C-6123-4328-A1ED-F5070E0A7810 order=1
+Test Case '-[FeedMineAppTests.CompositionTests testK06RoundTripByFilterKeepsTheEdition]' passed (0.387 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testLongNavigationKeepsTheForwardReserveBoundedAndEverythingReachable]' started.
+2026-10-14 17:52:17.755804-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:17.810740-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=1
+2026-10-14 17:52:17.810935-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=1
+2026-10-14 17:52:17.814415-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=1
+2026-10-14 17:52:17.814581-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:17.814757-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=1
+2026-10-14 17:52:17.814825-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:17.816043-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:17.817463-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:17.861842-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=1
+2026-10-14 17:52:17.864356-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:17.864561-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=2
+2026-10-14 17:52:17.865006-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=C85464A0-7BDB-4D47-AC30-FB11F85BE42B
+2026-10-14 17:52:17.865067-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:17.866972-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=3
+2026-10-14 17:52:17.869818-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=3
+2026-10-14 17:52:17.870493-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=C85464A0-7BDB-4D47-AC30-FB11F85BE42B placement=top window=20s
+2026-10-14 17:52:17.871913-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:17.872017-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:17.872486-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=C85464A0-7BDB-4D47-AC30-FB11F85BE42B
+2026-10-14 17:52:17.872540-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:17.874250-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=3
+2026-10-14 17:52:18.012607-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=3
+2026-10-14 17:52:18.015114-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 33
+2026-10-14 17:52:18.015320-0700 FeedMine[81103:55841778] [composition] installed cards=33 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=4
+2026-10-14 17:52:18.015474-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:18.015918-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=DFDE2303-B313-4D97-95EC-AED1AC223AF2
+2026-10-14 17:52:18.015990-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:18.019311-0700 FeedMine[81103:55841778] [composition] installed cards=49 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=6
+2026-10-14 17:52:18.191832-0700 FeedMine[81103:55841778] [composition] installed cards=49 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=6
+2026-10-14 17:52:18.192045-0700 FeedMine[81103:55841778] [composition] published growth: admitted 49 -> 49
+2026-10-14 17:52:18.192188-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:18.192647-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=D1AD87C5-DFB6-4A04-8007-81291242AE8B
+2026-10-14 17:52:18.192697-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:18.195944-0700 FeedMine[81103:55841778] [composition] installed cards=65 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=8
+2026-10-14 17:52:18.403189-0700 FeedMine[81103:55841778] [composition] installed cards=65 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=8
+2026-10-14 17:52:18.403450-0700 FeedMine[81103:55841778] [composition] published growth: admitted 65 -> 65
+2026-10-14 17:52:18.403586-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:18.404141-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=5D8D3333-6B66-49BB-BD7C-015C94179584
+2026-10-14 17:52:18.404205-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:18.407892-0700 FeedMine[81103:55841778] [composition] installed cards=81 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=10
+2026-10-14 17:52:18.582523-0700 FeedMine[81103:55841778] [composition] published growth: admitted 81 -> 81
+2026-10-14 17:52:18.631068-0700 FeedMine[81103:55841778] [composition] published growth: admitted 81 -> 81
+2026-10-14 17:52:18.631221-0700 FeedMine[81103:55841778] [composition] published growth: admitted 81 -> 81
+2026-10-14 17:52:18.657341-0700 FeedMine[81103:55841778] [composition] installed cards=81 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=10
+2026-10-14 17:52:18.657609-0700 FeedMine[81103:55841778] [composition] published growth: admitted 81 -> 81
+2026-10-14 17:52:18.657789-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:18.658336-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=F4E8AC24-739B-4ED1-B20D-EC49F00268E7
+2026-10-14 17:52:18.658394-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:18.662267-0700 FeedMine[81103:55841778] [composition] installed cards=97 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=12
+2026-10-14 17:52:18.781036-0700 FeedMine[81103:55841778] [composition] published growth: admitted 97 -> 97
+2026-10-14 17:52:18.932332-0700 FeedMine[81103:55841778] [composition] installed cards=97 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=12
+2026-10-14 17:52:18.932558-0700 FeedMine[81103:55841778] [composition] published growth: admitted 97 -> 97
+2026-10-14 17:52:18.932690-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:18.933176-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=B5BCC02F-502A-4C22-9257-520C502DC88B
+2026-10-14 17:52:18.933229-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:18.949214-0700 FeedMine[81103:55841778] [composition] published growth: admitted 97 -> 113
+2026-10-14 17:52:18.949464-0700 FeedMine[81103:55841778] [composition] installed cards=113 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=14
+2026-10-14 17:52:18.949661-0700 FeedMine[81103:55841778] [composition] installed cards=113 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=14
+2026-10-14 17:52:19.164657-0700 FeedMine[81103:55841778] [composition] published growth: admitted 113 -> 113
+2026-10-14 17:52:19.250596-0700 FeedMine[81103:55841778] [composition] installed cards=113 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=14
+2026-10-14 17:52:19.250874-0700 FeedMine[81103:55841778] [composition] published growth: admitted 113 -> 113
+2026-10-14 17:52:19.251037-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:19.251609-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=882812EB-5376-4D76-B63C-9AA9BD02CFAF
+2026-10-14 17:52:19.251671-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:19.255406-0700 FeedMine[81103:55841778] [composition] installed cards=129 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=16
+2026-10-14 17:52:19.334934-0700 FeedMine[81103:55841778] [composition] published growth: admitted 129 -> 129
+2026-10-14 17:52:19.384925-0700 FeedMine[81103:55841778] [composition] published growth: admitted 129 -> 129
+2026-10-14 17:52:19.385018-0700 FeedMine[81103:55841778] [composition] published growth: admitted 129 -> 129
+2026-10-14 17:52:19.580424-0700 FeedMine[81103:55841778] [composition] installed cards=129 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=72B6573C-D15C-4E46-99E2-AD0F0EB3F338 order=16
+2026-10-14 17:52:19.580685-0700 FeedMine[81103:55841778] [composition] published growth: admitted 129 -> 129
+2026-10-14 17:52:19.580821-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:19.581691-0700 FeedMine[81103:55841778] [composition] lifecycle checkpoint
+2026-10-14 17:52:19.590310-0700 FeedMine[81103:55841778] [composition] tidy evicted=0 reclaimed=0 budget=2117545984
+2026-10-14 17:52:19.719921-0700 FeedMine[81103:55841778] [composition] hidden tail ineligible
+2026-10-14 17:52:19.742259-0700 FeedMine[81103:55841778] [composition] installed cards=129 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=1
+2026-10-14 17:52:19.742392-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:52:19.745683-0700 FeedMine[81103:55841778] [composition] installed cards=129 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=1
+2026-10-14 17:52:19.746819-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=E4F58C15-8DB5-40C3-87EC-19AC28234FF1
+2026-10-14 17:52:19.746897-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:19.750959-0700 FeedMine[81103:55841778] [composition] installed cards=145 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=3
+2026-10-14 17:52:19.776271-0700 FeedMine[81103:55841778] [composition] installed cards=145 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=3
+2026-10-14 17:52:19.777014-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=E4F58C15-8DB5-40C3-87EC-19AC28234FF1 placement=top window=20s
+2026-10-14 17:52:19.777226-0700 FeedMine[81103:55841778] [composition] published growth: admitted 145 -> 145
+2026-10-14 17:52:19.777373-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:19.868430-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=59C057EE-311E-4190-A881-CE1042D7C7AA
+2026-10-14 17:52:19.868529-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:19.872294-0700 FeedMine[81103:55841778] [composition] installed cards=161 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=5
+2026-10-14 17:52:19.874818-0700 FeedMine[81103:55841778] [composition] installed cards=161 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=5
+2026-10-14 17:52:19.875071-0700 FeedMine[81103:55841778] [composition] published growth: admitted 161 -> 161
+2026-10-14 17:52:19.875220-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:19.996864-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=49D89267-8CAB-46F4-A1F7-DB17FBB9E436
+2026-10-14 17:52:19.997046-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:20.003110-0700 FeedMine[81103:55841778] [composition] installed cards=177 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=7
+2026-10-14 17:52:20.006907-0700 FeedMine[81103:55841778] [composition] installed cards=177 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=7
+2026-10-14 17:52:20.007289-0700 FeedMine[81103:55841778] [composition] published growth: admitted 177 -> 177
+2026-10-14 17:52:20.007505-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:20.118654-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=B902A1FF-41C0-445F-BA73-9183C71F6386
+2026-10-14 17:52:20.118848-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:20.124445-0700 FeedMine[81103:55841778] [composition] installed cards=193 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=9
+2026-10-14 17:52:20.128187-0700 FeedMine[81103:55841778] [composition] installed cards=193 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=9
+2026-10-14 17:52:20.128572-0700 FeedMine[81103:55841778] [composition] published growth: admitted 193 -> 193
+2026-10-14 17:52:20.128762-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:20.241418-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=43359558-D153-4110-8157-2732CB1252DC
+2026-10-14 17:52:20.241610-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:20.247242-0700 FeedMine[81103:55841778] [composition] installed cards=209 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=11
+2026-10-14 17:52:20.251577-0700 FeedMine[81103:55841778] [composition] installed cards=209 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=11
+2026-10-14 17:52:20.252078-0700 FeedMine[81103:55841778] [composition] published growth: admitted 209 -> 209
+2026-10-14 17:52:20.252279-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:20.362456-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=2573AC63-6144-4E98-823D-7A0F0FFE1F49
+2026-10-14 17:52:20.362665-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:20.369444-0700 FeedMine[81103:55841778] [composition] installed cards=225 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=13
+2026-10-14 17:52:20.373385-0700 FeedMine[81103:55841778] [composition] installed cards=225 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=13
+2026-10-14 17:52:20.373780-0700 FeedMine[81103:55841778] [composition] published growth: admitted 225 -> 225
+2026-10-14 17:52:20.373990-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:20.485402-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=94F90F09-8DB6-4AD8-B066-382E954FB54D
+2026-10-14 17:52:20.485605-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:20.491427-0700 FeedMine[81103:55841778] [composition] installed cards=241 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=15
+2026-10-14 17:52:20.495285-0700 FeedMine[81103:55841778] [composition] installed cards=241 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=15
+2026-10-14 17:52:20.495871-0700 FeedMine[81103:55841778] [composition] published growth: admitted 241 -> 241
+2026-10-14 17:52:20.496098-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:20.613926-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=1434C0A7-F3FF-4889-8932-B541A08CB870
+2026-10-14 17:52:20.614129-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:20.621271-0700 FeedMine[81103:55841778] [composition] installed cards=257 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=17
+2026-10-14 17:52:20.625063-0700 FeedMine[81103:55841778] [composition] installed cards=257 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=17
+2026-10-14 17:52:20.625467-0700 FeedMine[81103:55841778] [composition] published growth: admitted 257 -> 257
+2026-10-14 17:52:20.625672-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:20.735445-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=96D04258-7FB5-4F23-8808-837441D3ACEB
+2026-10-14 17:52:20.735645-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:20.742087-0700 FeedMine[81103:55841778] [composition] installed cards=273 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=19
+2026-10-14 17:52:20.744482-0700 FeedMine[81103:55841778] [composition] installed cards=273 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=19
+2026-10-14 17:52:20.744890-0700 FeedMine[81103:55841778] [composition] published growth: admitted 273 -> 273
+2026-10-14 17:52:20.745088-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:20.861073-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=80FFEA1A-DCDE-43A0-A070-B336B9D6000F
+2026-10-14 17:52:20.861262-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:20.867881-0700 FeedMine[81103:55841778] [composition] installed cards=289 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=21
+2026-10-14 17:52:20.870497-0700 FeedMine[81103:55841778] [composition] installed cards=289 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=21
+2026-10-14 17:52:20.870937-0700 FeedMine[81103:55841778] [composition] published growth: admitted 289 -> 289
+2026-10-14 17:52:20.871156-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:20.981838-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=backward anchor=3B99FD24-68D4-4513-84C8-593F78066D00
+2026-10-14 17:52:20.982034-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:20.989396-0700 FeedMine[81103:55841778] [composition] installed cards=289 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=22
+2026-10-14 17:52:20.991865-0700 FeedMine[81103:55841778] [composition] installed cards=289 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=22
+2026-10-14 17:52:20.992205-0700 FeedMine[81103:55841778] [composition] published growth: admitted 289 -> 289
+2026-10-14 17:52:20.992391-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=backward
+2026-10-14 17:52:25.046634-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=A2D69B24-B8A2-49CC-AF38-55591B848F8D
+2026-10-14 17:52:25.046753-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:25.051056-0700 FeedMine[81103:55841778] [composition] installed cards=305 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=24
+2026-10-14 17:52:25.052675-0700 FeedMine[81103:55841778] [composition] installed cards=305 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=24
+2026-10-14 17:52:25.052943-0700 FeedMine[81103:55841778] [composition] published growth: admitted 305 -> 305
+2026-10-14 17:52:25.053074-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:25.168562-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=0AF85110-0E86-496A-8CEB-41921F4B9CD3
+2026-10-14 17:52:25.168617-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:25.172478-0700 FeedMine[81103:55841778] [composition] installed cards=321 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=26
+2026-10-14 17:52:25.174022-0700 FeedMine[81103:55841778] [composition] installed cards=321 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=26
+2026-10-14 17:52:25.174286-0700 FeedMine[81103:55841778] [composition] published growth: admitted 321 -> 321
+2026-10-14 17:52:25.174407-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:25.297273-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=8CB68B5B-273D-4740-87A8-21AFDFCE5908
+2026-10-14 17:52:25.297463-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:25.304422-0700 FeedMine[81103:55841778] [composition] installed cards=337 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=28
+2026-10-14 17:52:25.307049-0700 FeedMine[81103:55841778] [composition] installed cards=337 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=28
+2026-10-14 17:52:25.307548-0700 FeedMine[81103:55841778] [composition] published growth: admitted 337 -> 337
+2026-10-14 17:52:25.307759-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:25.418809-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=B91F132B-498D-4295-97E9-D1DEFCC3F2EB
+2026-10-14 17:52:25.419002-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:25.425250-0700 FeedMine[81103:55841778] [composition] installed cards=353 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=30
+2026-10-14 17:52:25.540556-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=85264388-5524-474B-9D65-FC733D090017
+2026-10-14 17:52:25.540647-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:25.555982-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=32
+2026-10-14 17:52:25.556388-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=32
+2026-10-14 17:52:25.558211-0700 FeedMine[81103:55841778] [composition] published growth: admitted 357 -> 357
+2026-10-14 17:52:25.558400-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:25.664972-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=2FC73BF8-E1AD-4D40-9871-776B3005FBF9
+2026-10-14 17:52:25.665109-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:25.678860-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=33
+2026-10-14 17:52:25.679192-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=33
+2026-10-14 17:52:25.681032-0700 FeedMine[81103:55841778] [composition] published growth: admitted 357 -> 357
+2026-10-14 17:52:25.681243-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:25.696825-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=33
+2026-10-14 17:52:25.698526-0700 FeedMine[81103:55841778] [composition] published growth: admitted 357 -> 357
+2026-10-14 17:52:25.698664-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:29.149256-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:29.242798-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:29.731651-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=2FC73BF8-E1AD-4D40-9871-776B3005FBF9
+2026-10-14 17:52:29.731868-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:29.739286-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=33
+2026-10-14 17:52:29.742012-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=33
+2026-10-14 17:52:29.744487-0700 FeedMine[81103:55841778] [composition] published growth: admitted 357 -> 357
+2026-10-14 17:52:29.744698-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:33.797175-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=2FC73BF8-E1AD-4D40-9871-776B3005FBF9
+2026-10-14 17:52:33.797352-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:33.802098-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=33
+2026-10-14 17:52:33.803931-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=33
+2026-10-14 17:52:33.806430-0700 FeedMine[81103:55841778] [composition] published growth: admitted 357 -> 357
+2026-10-14 17:52:33.806655-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:37.868955-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=2FC73BF8-E1AD-4D40-9871-776B3005FBF9
+2026-10-14 17:52:37.869172-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:37.874072-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=33
+2026-10-14 17:52:37.875863-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=33
+2026-10-14 17:52:37.878272-0700 FeedMine[81103:55841778] [composition] published growth: admitted 357 -> 357
+2026-10-14 17:52:37.878499-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:41.935217-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=2FC73BF8-E1AD-4D40-9871-776B3005FBF9
+2026-10-14 17:52:41.935345-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:41.938926-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=33
+2026-10-14 17:52:41.940729-0700 FeedMine[81103:55841778] [composition] installed cards=357 edition=ABEFAC2C-50D8-4D27-A58B-610DFCCBCB98 sequence=FDD8DAFB-38DD-4283-8225-7A7329EA82C3 order=33
+2026-10-14 17:52:41.941786-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=2FC73BF8-E1AD-4D40-9871-776B3005FBF9 placement=top window=20s
+2026-10-14 17:52:41.944166-0700 FeedMine[81103:55841778] [composition] published growth: admitted 357 -> 357
+2026-10-14 17:52:41.944377-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+Test Case '-[FeedMineAppTests.CompositionTests testLongNavigationKeepsTheForwardReserveBoundedAndEverythingReachable]' passed (28.486 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testMainSourceMainRestoresPositionOfflineAndRejectsOldAssociation]' started.
+2026-10-14 17:52:46.250414-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:46.302068-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=589F07CA-6DC4-49EB-92A7-E361F1B48951 sequence=2D4D7F03-31D8-4A85-8CCF-31BE69088814 order=1
+2026-10-14 17:52:46.302251-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=589F07CA-6DC4-49EB-92A7-E361F1B48951 sequence=2D4D7F03-31D8-4A85-8CCF-31BE69088814 order=1
+2026-10-14 17:52:46.305387-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=589F07CA-6DC4-49EB-92A7-E361F1B48951 sequence=2D4D7F03-31D8-4A85-8CCF-31BE69088814 order=1
+2026-10-14 17:52:46.305478-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:46.305654-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=589F07CA-6DC4-49EB-92A7-E361F1B48951 sequence=2D4D7F03-31D8-4A85-8CCF-31BE69088814 order=1
+2026-10-14 17:52:46.305745-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:46.306947-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:46.308220-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:46.348349-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=589F07CA-6DC4-49EB-92A7-E361F1B48951 sequence=2D4D7F03-31D8-4A85-8CCF-31BE69088814 order=1
+2026-10-14 17:52:46.350900-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:46.351107-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=589F07CA-6DC4-49EB-92A7-E361F1B48951 sequence=2D4D7F03-31D8-4A85-8CCF-31BE69088814 order=2
+2026-10-14 17:52:46.351594-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=32C598CD-715C-42AB-91EF-F5B91C32A5B6
+2026-10-14 17:52:46.351664-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:46.353571-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=589F07CA-6DC4-49EB-92A7-E361F1B48951 sequence=2D4D7F03-31D8-4A85-8CCF-31BE69088814 order=3
+2026-10-14 17:52:46.356364-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=589F07CA-6DC4-49EB-92A7-E361F1B48951 sequence=2D4D7F03-31D8-4A85-8CCF-31BE69088814 order=3
+2026-10-14 17:52:46.357058-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=32C598CD-715C-42AB-91EF-F5B91C32A5B6 placement=top window=20s
+2026-10-14 17:52:46.358528-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:46.358672-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:46.358765-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=forward anchor=DFAC4171-9F17-4290-BE40-1E583425F215
+2026-10-14 17:52:46.358816-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:46.359322-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=589F07CA-6DC4-49EB-92A7-E361F1B48951 sequence=2D4D7F03-31D8-4A85-8CCF-31BE69088814 order=4
+2026-10-14 17:52:46.361945-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=589F07CA-6DC4-49EB-92A7-E361F1B48951 sequence=2D4D7F03-31D8-4A85-8CCF-31BE69088814 order=4
+2026-10-14 17:52:46.363397-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:46.363509-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=forward
+2026-10-14 17:52:46.366891-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:46.392587-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=03E703DD-B0FD-41B8-A5F2-719DB3D8CEEB sequence=D75AFDBA-0B47-44B7-8C43-D867D3C3D71A order=1
+2026-10-14 17:52:46.392669-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:46.392748-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:46.415814-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=03E703DD-B0FD-41B8-A5F2-719DB3D8CEEB sequence=D75AFDBA-0B47-44B7-8C43-D867D3C3D71A order=1
+2026-10-14 17:52:46.416020-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:46.425031-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=589F07CA-6DC4-49EB-92A7-E361F1B48951 sequence=25705079-2C2C-477C-970D-8EEDD76F1B02 order=1
+2026-10-14 17:52:46.425103-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:52:46.465079-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=589F07CA-6DC4-49EB-92A7-E361F1B48951 sequence=25705079-2C2C-477C-970D-8EEDD76F1B02 order=1
+Test Case '-[FeedMineAppTests.CompositionTests testMainSourceMainRestoresPositionOfflineAndRejectsOldAssociation]' passed (0.416 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testReopeningOfflineKeepsCardsBeyondTheBackwardCapacityReachable]' started.
+2026-10-14 17:52:46.656962-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:46.707482-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=1
+2026-10-14 17:52:46.707652-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=1
+2026-10-14 17:52:46.710791-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=1
+2026-10-14 17:52:46.710875-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:46.711054-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=1
+2026-10-14 17:52:46.711115-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:46.712251-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:46.713461-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:46.753195-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=1
+2026-10-14 17:52:46.755697-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:46.755893-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=2
+2026-10-14 17:52:46.756368-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=25F2A4E4-2903-4823-B80C-2579BD522A29
+2026-10-14 17:52:46.756425-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:46.758328-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=3
+2026-10-14 17:52:46.882450-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=3
+2026-10-14 17:52:46.883162-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=25F2A4E4-2903-4823-B80C-2579BD522A29 placement=top window=20s
+2026-10-14 17:52:46.885685-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 33
+2026-10-14 17:52:46.885892-0700 FeedMine[81103:55841778] [composition] installed cards=33 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=4
+2026-10-14 17:52:46.886076-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:46.886550-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=3AB6D265-F228-4536-9156-98A255525073
+2026-10-14 17:52:46.886603-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:46.889899-0700 FeedMine[81103:55841778] [composition] installed cards=49 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=6
+2026-10-14 17:52:47.054783-0700 FeedMine[81103:55841778] [composition] installed cards=49 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=6
+2026-10-14 17:52:47.055056-0700 FeedMine[81103:55841778] [composition] published growth: admitted 49 -> 49
+2026-10-14 17:52:47.055190-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:47.055723-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=CB0D86A4-7F51-43B9-AF60-5A295B9095FB
+2026-10-14 17:52:47.055783-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:47.059281-0700 FeedMine[81103:55841778] [composition] installed cards=65 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=8
+2026-10-14 17:52:47.273352-0700 FeedMine[81103:55841778] [composition] installed cards=65 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=8
+2026-10-14 17:52:47.273623-0700 FeedMine[81103:55841778] [composition] published growth: admitted 65 -> 65
+2026-10-14 17:52:47.273771-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:47.274340-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=5651DB42-776D-4C4B-87BB-32D57DE4E2FF
+2026-10-14 17:52:47.274396-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:47.278122-0700 FeedMine[81103:55841778] [composition] installed cards=81 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=10
+2026-10-14 17:52:47.466299-0700 FeedMine[81103:55841778] [composition] published growth: admitted 81 -> 81
+2026-10-14 17:52:47.512408-0700 FeedMine[81103:55841778] [composition] published growth: admitted 81 -> 81
+2026-10-14 17:52:47.525154-0700 FeedMine[81103:55841778] [composition] installed cards=81 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=F0D57053-67F9-4124-8BFD-59505A60EFAA order=10
+2026-10-14 17:52:47.525418-0700 FeedMine[81103:55841778] [composition] published growth: admitted 81 -> 81
+2026-10-14 17:52:47.525534-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:47.526526-0700 FeedMine[81103:55841778] [composition] lifecycle checkpoint
+2026-10-14 17:52:47.535375-0700 FeedMine[81103:55841778] [composition] tidy evicted=0 reclaimed=0 budget=2114953216
+2026-10-14 17:52:47.601406-0700 FeedMine[81103:55841778] [composition] hidden tail ineligible
+2026-10-14 17:52:47.621443-0700 FeedMine[81103:55841778] [composition] installed cards=81 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=5A157818-DD78-4795-8333-91B1721AFA9A order=1
+2026-10-14 17:52:47.621536-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:52:47.624098-0700 FeedMine[81103:55841778] [composition] installed cards=81 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=5A157818-DD78-4795-8333-91B1721AFA9A order=1
+2026-10-14 17:52:47.624439-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=backward anchor=BAC9D5E9-2131-4076-B8FD-E37366D4705A
+2026-10-14 17:52:47.624492-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:47.628734-0700 FeedMine[81103:55841778] [composition] installed cards=81 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=5A157818-DD78-4795-8333-91B1721AFA9A order=2
+2026-10-14 17:52:47.630207-0700 FeedMine[81103:55841778] [composition] installed cards=81 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=5A157818-DD78-4795-8333-91B1721AFA9A order=2
+2026-10-14 17:52:47.630879-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=BAC9D5E9-2131-4076-B8FD-E37366D4705A placement=top window=20s
+2026-10-14 17:52:47.631037-0700 FeedMine[81103:55841778] [composition] published growth: admitted 81 -> 81
+2026-10-14 17:52:47.631159-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=backward
+2026-10-14 17:52:49.366727-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:49.459161-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:51.746315-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=forward anchor=5651DB42-776D-4C4B-87BB-32D57DE4E2FF
+2026-10-14 17:52:51.746511-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:51.747816-0700 FeedMine[81103:55841778] [composition] installed cards=81 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=5A157818-DD78-4795-8333-91B1721AFA9A order=3
+2026-10-14 17:52:51.750512-0700 FeedMine[81103:55841778] [composition] installed cards=81 edition=BFE9EEDE-FCFB-4C74-B07E-A856E1EB3523 sequence=5A157818-DD78-4795-8333-91B1721AFA9A order=3
+2026-10-14 17:52:51.750949-0700 FeedMine[81103:55841778] [composition] published growth: admitted 81 -> 81
+2026-10-14 17:52:51.751165-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=forward
+Test Case '-[FeedMineAppTests.CompositionTests testReopeningOfflineKeepsCardsBeyondTheBackwardCapacityReachable]' passed (5.418 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testS1SameSessionStoreAcrossViewportRefreshAndLifecycle]' started.
+2026-10-14 17:52:52.084947-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:52.136698-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=CC1633FE-C3C4-418A-A762-2F24509B3F1F sequence=9CAC8F75-A205-4B57-AF93-71C623287FB8 order=1
+2026-10-14 17:52:52.136879-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=CC1633FE-C3C4-418A-A762-2F24509B3F1F sequence=9CAC8F75-A205-4B57-AF93-71C623287FB8 order=1
+2026-10-14 17:52:52.140002-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=CC1633FE-C3C4-418A-A762-2F24509B3F1F sequence=9CAC8F75-A205-4B57-AF93-71C623287FB8 order=1
+2026-10-14 17:52:52.140089-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:52.140282-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=CC1633FE-C3C4-418A-A762-2F24509B3F1F sequence=9CAC8F75-A205-4B57-AF93-71C623287FB8 order=1
+2026-10-14 17:52:52.140344-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:52.141521-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:52.142740-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:52.183064-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=CC1633FE-C3C4-418A-A762-2F24509B3F1F sequence=9CAC8F75-A205-4B57-AF93-71C623287FB8 order=1
+2026-10-14 17:52:52.185710-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:52.185920-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=CC1633FE-C3C4-418A-A762-2F24509B3F1F sequence=9CAC8F75-A205-4B57-AF93-71C623287FB8 order=2
+2026-10-14 17:52:52.186888-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=0E1F74CA-C600-4CC0-B0E7-8E8B57EEC98F
+2026-10-14 17:52:52.186949-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:52.188994-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=CC1633FE-C3C4-418A-A762-2F24509B3F1F sequence=9CAC8F75-A205-4B57-AF93-71C623287FB8 order=3
+2026-10-14 17:52:52.191810-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=CC1633FE-C3C4-418A-A762-2F24509B3F1F sequence=9CAC8F75-A205-4B57-AF93-71C623287FB8 order=3
+2026-10-14 17:52:52.192507-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=0E1F74CA-C600-4CC0-B0E7-8E8B57EEC98F placement=top window=20s
+2026-10-14 17:52:52.193914-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:52.194032-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:52.194131-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=forward anchor=9821AC3A-0203-47B7-963C-88D6D6D52DF9
+2026-10-14 17:52:52.194189-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:52.194719-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=CC1633FE-C3C4-418A-A762-2F24509B3F1F sequence=9CAC8F75-A205-4B57-AF93-71C623287FB8 order=4
+2026-10-14 17:52:52.197406-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=CC1633FE-C3C4-418A-A762-2F24509B3F1F sequence=9CAC8F75-A205-4B57-AF93-71C623287FB8 order=4
+2026-10-14 17:52:52.198832-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:52.198965-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=forward
+2026-10-14 17:52:52.199909-0700 FeedMine[81103:55841778] [composition] lifecycle checkpoint
+2026-10-14 17:52:52.207814-0700 FeedMine[81103:55841778] [composition] tidy evicted=0 reclaimed=0 budget=2115588096
+2026-10-14 17:52:52.209272-0700 FeedMine[81103:55841778] [composition] hidden tail ineligible
+2026-10-14 17:52:52.209893-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=CC1633FE-C3C4-418A-A762-2F24509B3F1F sequence=9CAC8F75-A205-4B57-AF93-71C623287FB8 order=4
+2026-10-14 17:52:52.211353-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+Test Case '-[FeedMineAppTests.CompositionTests testS1SameSessionStoreAcrossViewportRefreshAndLifecycle]' passed (0.331 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testS2DelayedResultAndS7AtomicWorkRejection]' started.
+2026-10-14 17:52:52.410443-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:52.466348-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=4AE41A4B-FDD6-44AA-9593-C5C10DDDB18A sequence=0F454008-6AE5-466B-B138-48FC567D2266 order=1
+2026-10-14 17:52:52.466600-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=4AE41A4B-FDD6-44AA-9593-C5C10DDDB18A sequence=0F454008-6AE5-466B-B138-48FC567D2266 order=1
+2026-10-14 17:52:52.470456-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=4AE41A4B-FDD6-44AA-9593-C5C10DDDB18A sequence=0F454008-6AE5-466B-B138-48FC567D2266 order=1
+2026-10-14 17:52:52.470586-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:52.470767-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=4AE41A4B-FDD6-44AA-9593-C5C10DDDB18A sequence=0F454008-6AE5-466B-B138-48FC567D2266 order=1
+2026-10-14 17:52:52.470843-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:52.471978-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:52.473161-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:52.515505-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=4AE41A4B-FDD6-44AA-9593-C5C10DDDB18A sequence=0F454008-6AE5-466B-B138-48FC567D2266 order=1
+2026-10-14 17:52:52.518459-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:52.518719-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=4AE41A4B-FDD6-44AA-9593-C5C10DDDB18A sequence=0F454008-6AE5-466B-B138-48FC567D2266 order=2
+2026-10-14 17:52:52.520157-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=CC84DCEE-FF59-409E-A712-4ED61370B656
+2026-10-14 17:52:52.520231-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:52.522507-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=4AE41A4B-FDD6-44AA-9593-C5C10DDDB18A sequence=0F454008-6AE5-466B-B138-48FC567D2266 order=3
+2026-10-14 17:52:52.525800-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=4AE41A4B-FDD6-44AA-9593-C5C10DDDB18A sequence=0F454008-6AE5-466B-B138-48FC567D2266 order=3
+2026-10-14 17:52:52.526642-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=CC84DCEE-FF59-409E-A712-4ED61370B656 placement=top window=20s
+2026-10-14 17:52:52.528326-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:52.528545-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:52.529497-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=4AE41A4B-FDD6-44AA-9593-C5C10DDDB18A sequence=0F454008-6AE5-466B-B138-48FC567D2266 order=4
+Test Case '-[FeedMineAppTests.CompositionTests testS2DelayedResultAndS7AtomicWorkRejection]' passed (0.313 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testS3ReplacementAndS4OldCallbackCannotInstall]' started.
+2026-10-14 17:52:52.732843-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:52.791391-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=04BB123D-FACC-4E31-92F5-C95CAB3A57EC sequence=0101E7F4-E8E3-42AF-BBDE-66BC3C904475 order=1
+2026-10-14 17:52:52.791613-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=04BB123D-FACC-4E31-92F5-C95CAB3A57EC sequence=0101E7F4-E8E3-42AF-BBDE-66BC3C904475 order=1
+2026-10-14 17:52:52.795123-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=04BB123D-FACC-4E31-92F5-C95CAB3A57EC sequence=0101E7F4-E8E3-42AF-BBDE-66BC3C904475 order=1
+2026-10-14 17:52:52.795232-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:52.795428-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=04BB123D-FACC-4E31-92F5-C95CAB3A57EC sequence=0101E7F4-E8E3-42AF-BBDE-66BC3C904475 order=1
+2026-10-14 17:52:52.795514-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:52.796760-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:52.798222-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:52.843921-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=04BB123D-FACC-4E31-92F5-C95CAB3A57EC sequence=0101E7F4-E8E3-42AF-BBDE-66BC3C904475 order=1
+2026-10-14 17:52:52.846808-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:52.847063-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=04BB123D-FACC-4E31-92F5-C95CAB3A57EC sequence=0101E7F4-E8E3-42AF-BBDE-66BC3C904475 order=2
+2026-10-14 17:52:52.848705-0700 FeedMine[81103:55841778] [composition] lifecycle checkpoint
+2026-10-14 17:52:52.857700-0700 FeedMine[81103:55841778] [composition] tidy evicted=0 reclaimed=0 budget=2115098624
+2026-10-14 17:52:52.867889-0700 FeedMine[81103:55841778] [composition] hidden tail ineligible
+2026-10-14 17:52:52.877868-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=04BB123D-FACC-4E31-92F5-C95CAB3A57EC sequence=A932E3F0-2648-42E7-A42B-9CC803E48052 order=1
+2026-10-14 17:52:52.877991-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:52:52.924570-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=04BB123D-FACC-4E31-92F5-C95CAB3A57EC sequence=A932E3F0-2648-42E7-A42B-9CC803E48052 order=1
+2026-10-14 17:52:52.924949-0700 FeedMine[81103:55841778] [composition] projection rejected projectionSequenceMismatch
+Test Case '-[FeedMineAppTests.CompositionTests testS3ReplacementAndS4OldCallbackCannotInstall]' passed (0.395 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testS5OfflineReopenRestoresEditionWithFreshProvenance]' started.
+2026-10-14 17:52:53.138661-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:53.194590-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=13DCD01D-F797-4F4E-BF6B-FAC442D17F88 order=1
+2026-10-14 17:52:53.194786-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=13DCD01D-F797-4F4E-BF6B-FAC442D17F88 order=1
+2026-10-14 17:52:53.198243-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=13DCD01D-F797-4F4E-BF6B-FAC442D17F88 order=1
+2026-10-14 17:52:53.198335-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:53.198509-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=13DCD01D-F797-4F4E-BF6B-FAC442D17F88 order=1
+2026-10-14 17:52:53.198602-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:53.199758-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:53.201165-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:53.245396-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=13DCD01D-F797-4F4E-BF6B-FAC442D17F88 order=1
+2026-10-14 17:52:53.248250-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:53.248468-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=13DCD01D-F797-4F4E-BF6B-FAC442D17F88 order=2
+2026-10-14 17:52:53.248965-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=77F0B981-1677-454C-A2F1-7EF27850870E
+2026-10-14 17:52:53.249028-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:53.251227-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=13DCD01D-F797-4F4E-BF6B-FAC442D17F88 order=3
+2026-10-14 17:52:53.254346-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=13DCD01D-F797-4F4E-BF6B-FAC442D17F88 order=3
+2026-10-14 17:52:53.255144-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=77F0B981-1677-454C-A2F1-7EF27850870E placement=top window=20s
+2026-10-14 17:52:53.256729-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:53.256855-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:53.257324-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=77F0B981-1677-454C-A2F1-7EF27850870E
+2026-10-14 17:52:53.257389-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:53.259245-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=13DCD01D-F797-4F4E-BF6B-FAC442D17F88 order=3
+2026-10-14 17:52:53.261976-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=13DCD01D-F797-4F4E-BF6B-FAC442D17F88 order=3
+2026-10-14 17:52:53.263535-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:53.263696-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:53.265185-0700 FeedMine[81103:55841778] [composition] lifecycle checkpoint
+2026-10-14 17:52:53.273910-0700 FeedMine[81103:55841778] [composition] tidy evicted=0 reclaimed=0 budget=2114848768
+2026-10-14 17:52:53.275630-0700 FeedMine[81103:55841778] [composition] hidden tail ineligible
+2026-10-14 17:52:53.290270-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=8793D924-466B-483A-AC0E-DD5013C83F25 order=1
+2026-10-14 17:52:53.290350-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:52:53.333581-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=8793D924-466B-483A-AC0E-DD5013C83F25 order=1
+2026-10-14 17:52:53.336398-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=backward anchor=B95066B0-0CD9-4263-9EA9-EF5249BC5F5B
+2026-10-14 17:52:53.336458-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:53.340515-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=8793D924-466B-483A-AC0E-DD5013C83F25 order=2
+2026-10-14 17:52:53.341906-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=8793D924-466B-483A-AC0E-DD5013C83F25 order=2
+2026-10-14 17:52:53.342661-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=B95066B0-0CD9-4263-9EA9-EF5249BC5F5B placement=top window=20s
+2026-10-14 17:52:53.342844-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:53.342968-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=backward
+2026-10-14 17:52:53.343083-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=forward anchor=77F0B981-1677-454C-A2F1-7EF27850870E
+2026-10-14 17:52:53.343165-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:53.344004-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=8793D924-466B-483A-AC0E-DD5013C83F25 order=3
+2026-10-14 17:52:53.345310-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=8793D924-466B-483A-AC0E-DD5013C83F25 order=3
+2026-10-14 17:52:53.347328-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 19
+2026-10-14 17:52:53.347548-0700 FeedMine[81103:55841778] [composition] installed cards=19 edition=2DF82DAA-0B08-4F7C-86CC-9AAD13C63CCC sequence=8793D924-466B-483A-AC0E-DD5013C83F25 order=4
+2026-10-14 17:52:53.347715-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=forward
+Test Case '-[FeedMineAppTests.CompositionTests testS5OfflineReopenRestoresEditionWithFreshProvenance]' passed (0.423 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testS6NewerReverseProjectionAccepted]' started.
+2026-10-14 17:52:53.549809-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:53.607212-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B024FC8D-94DF-411C-AC80-CC3600D3BC09 sequence=08F0DBE8-799F-43F0-B342-CBA1764F2EE0 order=1
+2026-10-14 17:52:53.607397-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B024FC8D-94DF-411C-AC80-CC3600D3BC09 sequence=08F0DBE8-799F-43F0-B342-CBA1764F2EE0 order=1
+2026-10-14 17:52:53.610907-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B024FC8D-94DF-411C-AC80-CC3600D3BC09 sequence=08F0DBE8-799F-43F0-B342-CBA1764F2EE0 order=1
+2026-10-14 17:52:53.611023-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:53.611229-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B024FC8D-94DF-411C-AC80-CC3600D3BC09 sequence=08F0DBE8-799F-43F0-B342-CBA1764F2EE0 order=1
+2026-10-14 17:52:53.611301-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:53.612560-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:53.613976-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:53.658946-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B024FC8D-94DF-411C-AC80-CC3600D3BC09 sequence=08F0DBE8-799F-43F0-B342-CBA1764F2EE0 order=1
+2026-10-14 17:52:53.661668-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:53.661900-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=B024FC8D-94DF-411C-AC80-CC3600D3BC09 sequence=08F0DBE8-799F-43F0-B342-CBA1764F2EE0 order=2
+2026-10-14 17:52:53.663232-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=explicitTailApproach anchor=07CF553D-D1F3-45B9-AC35-E870E07C80A8
+2026-10-14 17:52:53.663301-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:52:53.665856-0700 FeedMine[81103:55841778] [composition] installed cards=18 edition=B024FC8D-94DF-411C-AC80-CC3600D3BC09 sequence=08F0DBE8-799F-43F0-B342-CBA1764F2EE0 order=4
+2026-10-14 17:52:53.669013-0700 FeedMine[81103:55841778] [composition] installed cards=18 edition=B024FC8D-94DF-411C-AC80-CC3600D3BC09 sequence=08F0DBE8-799F-43F0-B342-CBA1764F2EE0 order=4
+2026-10-14 17:52:53.669803-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=07CF553D-D1F3-45B9-AC35-E870E07C80A8 placement=top window=20s
+2026-10-14 17:52:53.671356-0700 FeedMine[81103:55841778] [composition] published growth: admitted 18 -> 18
+2026-10-14 17:52:53.671476-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=explicitTailApproach
+2026-10-14 17:52:53.672057-0700 FeedMine[81103:55841778] [composition] installed cards=18 edition=B024FC8D-94DF-411C-AC80-CC3600D3BC09 sequence=08F0DBE8-799F-43F0-B342-CBA1764F2EE0 order=5
+2026-10-14 17:52:53.672656-0700 FeedMine[81103:55841778] [composition] installed cards=18 edition=B024FC8D-94DF-411C-AC80-CC3600D3BC09 sequence=08F0DBE8-799F-43F0-B342-CBA1764F2EE0 order=6
+Test Case '-[FeedMineAppTests.CompositionTests testS6NewerReverseProjectionAccepted]' passed (0.323 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testSavedKeysMissingFromCatalogAreRepairedNotFatal]' started.
+Test Case '-[FeedMineAppTests.CompositionTests testSavedKeysMissingFromCatalogAreRepairedNotFatal]' passed (0.197 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testSequencingVersionMappingIsExplicit]' started.
+Test Case '-[FeedMineAppTests.CompositionTests testSequencingVersionMappingIsExplicit]' passed (0.001 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testSourceSelectionSurvivesRelaunchAndFiltersCanonicalSupply]' started.
+2026-10-14 17:52:54.060107-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:54.110448-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=8132AB10-5203-4D62-992D-60CBB12DF783 sequence=B5342C0A-ACE5-412E-966A-30524C7814BA order=1
+2026-10-14 17:52:54.110625-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=8132AB10-5203-4D62-992D-60CBB12DF783 sequence=B5342C0A-ACE5-412E-966A-30524C7814BA order=1
+2026-10-14 17:52:54.113710-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=8132AB10-5203-4D62-992D-60CBB12DF783 sequence=B5342C0A-ACE5-412E-966A-30524C7814BA order=1
+2026-10-14 17:52:54.113796-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:54.113983-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=8132AB10-5203-4D62-992D-60CBB12DF783 sequence=B5342C0A-ACE5-412E-966A-30524C7814BA order=1
+2026-10-14 17:52:54.114057-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:54.115092-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:54.116307-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:54.160925-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=8132AB10-5203-4D62-992D-60CBB12DF783 sequence=B5342C0A-ACE5-412E-966A-30524C7814BA order=1
+2026-10-14 17:52:54.163762-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:54.163984-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=8132AB10-5203-4D62-992D-60CBB12DF783 sequence=B5342C0A-ACE5-412E-966A-30524C7814BA order=2
+2026-10-14 17:52:54.173546-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:54.201990-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=ECE09CCE-349A-4339-B9B8-03A71140E5E0 sequence=7B530E2A-499A-49B2-B62A-4578360781FD order=1
+2026-10-14 17:52:54.202068-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:54.202172-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:54.226353-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=ECE09CCE-349A-4339-B9B8-03A71140E5E0 sequence=7B530E2A-499A-49B2-B62A-4578360781FD order=1
+2026-10-14 17:52:54.226564-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:54.233260-0700 FeedMine[81103:55841778] [composition] lifecycle checkpoint
+2026-10-14 17:52:54.242391-0700 FeedMine[81103:55841778] [composition] tidy evicted=0 reclaimed=0 budget=2114324480
+2026-10-14 17:52:54.255379-0700 FeedMine[81103:55841778] [composition] hidden tail ineligible
+2026-10-14 17:52:54.268264-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=ECE09CCE-349A-4339-B9B8-03A71140E5E0 sequence=A78B4587-4130-4F9C-A72F-72569A51E95E order=1
+2026-10-14 17:52:54.268346-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:52:54.292890-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=ECE09CCE-349A-4339-B9B8-03A71140E5E0 sequence=A78B4587-4130-4F9C-A72F-72569A51E95E order=1
+Test Case '-[FeedMineAppTests.CompositionTests testSourceSelectionSurvivesRelaunchAndFiltersCanonicalSupply]' passed (0.429 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testT11ACuratedFeedRanksByItsRecipeAndEditingChangesTheBehaviorVersion]' started.
+2026-10-14 17:52:54.494054-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:54.549854-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B80A4977-2BA4-492A-82A8-1CB3A8D52618 sequence=FB31A767-852F-46D0-B517-7413CFDE6FB2 order=1
+2026-10-14 17:52:54.550076-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B80A4977-2BA4-492A-82A8-1CB3A8D52618 sequence=FB31A767-852F-46D0-B517-7413CFDE6FB2 order=1
+2026-10-14 17:52:54.553571-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B80A4977-2BA4-492A-82A8-1CB3A8D52618 sequence=FB31A767-852F-46D0-B517-7413CFDE6FB2 order=1
+2026-10-14 17:52:54.553678-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:54.553861-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B80A4977-2BA4-492A-82A8-1CB3A8D52618 sequence=FB31A767-852F-46D0-B517-7413CFDE6FB2 order=1
+2026-10-14 17:52:54.553968-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:54.555176-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:54.556551-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:52:54.676134-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B80A4977-2BA4-492A-82A8-1CB3A8D52618 sequence=FB31A767-852F-46D0-B517-7413CFDE6FB2 order=1
+2026-10-14 17:52:54.679246-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:52:54.679524-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=B80A4977-2BA4-492A-82A8-1CB3A8D52618 sequence=FB31A767-852F-46D0-B517-7413CFDE6FB2 order=2
+2026-10-14 17:52:54.903812-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:54.937733-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=66C66237-0230-4DC4-B03F-A2DD93A98370 sequence=15138A86-D454-4B61-988F-E4E1605322F1 order=1
+2026-10-14 17:52:54.937832-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:54.937942-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:55.692793-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:56.449515-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:57.216368-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:57.972845-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:58.731266-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:59.104086-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=66C66237-0230-4DC4-B03F-A2DD93A98370 sequence=15138A86-D454-4B61-988F-E4E1605322F1 order=1
+2026-10-14 17:52:59.104402-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:59.177750-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:52:59.214806-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=F182250C-653C-47F4-8F45-171B4C8B2F17 sequence=FC212740-87CD-437D-BD97-F7F07C124E39 order=1
+2026-10-14 17:52:59.214924-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:52:59.215057-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:52:59.966574-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:00.360156-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=F182250C-653C-47F4-8F45-171B4C8B2F17 sequence=FC212740-87CD-437D-BD97-F7F07C124E39 order=1
+2026-10-14 17:53:00.360368-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+Test Case '-[FeedMineAppTests.CompositionTests testT11ACuratedFeedRanksByItsRecipeAndEditingChangesTheBehaviorVersion]' passed (6.062 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testT6FilterTransitionKeepsContextsSeparateAndStaleCallbackInert]' started.
+2026-10-14 17:53:00.565878-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:53:00.618811-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=65655009-0B0C-4098-9638-FF4965CF15EC sequence=11D64BD6-523D-48BD-8B4B-0AEFFC20781B order=1
+2026-10-14 17:53:00.619024-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=65655009-0B0C-4098-9638-FF4965CF15EC sequence=11D64BD6-523D-48BD-8B4B-0AEFFC20781B order=1
+2026-10-14 17:53:00.622539-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=65655009-0B0C-4098-9638-FF4965CF15EC sequence=11D64BD6-523D-48BD-8B4B-0AEFFC20781B order=1
+2026-10-14 17:53:00.622642-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:00.622811-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=65655009-0B0C-4098-9638-FF4965CF15EC sequence=11D64BD6-523D-48BD-8B4B-0AEFFC20781B order=1
+2026-10-14 17:53:00.622876-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:53:00.624118-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:00.625460-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:00.668038-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=65655009-0B0C-4098-9638-FF4965CF15EC sequence=11D64BD6-523D-48BD-8B4B-0AEFFC20781B order=1
+2026-10-14 17:53:00.670640-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:53:00.670861-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=65655009-0B0C-4098-9638-FF4965CF15EC sequence=11D64BD6-523D-48BD-8B4B-0AEFFC20781B order=2
+2026-10-14 17:53:00.670961-0700 FeedMine[81103:55841778] [composition] viewport forwarded activity=forward anchor=2F1A0A8F-F35F-4824-8DEB-7F3374DE81CE
+2026-10-14 17:53:00.671027-0700 FeedMine[81103:55841778] [composition] viewport opportunity sent to driver
+2026-10-14 17:53:00.671714-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=65655009-0B0C-4098-9638-FF4965CF15EC sequence=11D64BD6-523D-48BD-8B4B-0AEFFC20781B order=3
+2026-10-14 17:53:00.674587-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=65655009-0B0C-4098-9638-FF4965CF15EC sequence=11D64BD6-523D-48BD-8B4B-0AEFFC20781B order=3
+2026-10-14 17:53:00.675259-0700 FeedMine[81103:55841778] [composition] settled position checkpoint anchor=2F1A0A8F-F35F-4824-8DEB-7F3374DE81CE placement=top window=20s
+2026-10-14 17:53:00.676697-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:00.676830-0700 FeedMine[81103:55841778] [composition] Runway opportunity completed activity=forward
+2026-10-14 17:53:00.681089-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:53:00.706244-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:53:00.714590-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=65655009-0B0C-4098-9638-FF4965CF15EC sequence=12EAC786-3F3B-4B15-BE9B-7F13511BDAF9 order=1
+2026-10-14 17:53:00.714660-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:53:00.754174-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=65655009-0B0C-4098-9638-FF4965CF15EC sequence=12EAC786-3F3B-4B15-BE9B-7F13511BDAF9 order=1
+2026-10-14 17:53:01.690987-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:53:01.732100-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:53:01.742349-0700 FeedMine[81103:55841778] [composition] installed cards=18 edition=65655009-0B0C-4098-9638-FF4965CF15EC sequence=FEC73A75-BCA7-472A-9DA0-A574317A8E62 order=1
+2026-10-14 17:53:01.742439-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:53:01.782850-0700 FeedMine[81103:55841778] [composition] installed cards=18 edition=65655009-0B0C-4098-9638-FF4965CF15EC sequence=FEC73A75-BCA7-472A-9DA0-A574317A8E62 order=1
+2026-10-14 17:53:01.783149-0700 FeedMine[81103:55841778] [composition] projection rejected projectionSequenceMismatch
+Test Case '-[FeedMineAppTests.CompositionTests testT6FilterTransitionKeepsContextsSeparateAndStaleCallbackInert]' passed (1.425 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testT6RevisionCompatibilityRequiresTheWholeIdentity]' started.
+Test Case '-[FeedMineAppTests.CompositionTests testT6RevisionCompatibilityRequiresTheWholeIdentity]' passed (0.001 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testT8ASavedPresetIsOfferedAndActivatesItsOwnContext]' started.
+2026-10-14 17:53:01.979124-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:53:02.029473-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=FAAE639F-BD51-412A-B464-B743BB7E11FE sequence=1A2770B8-9E88-40ED-BEB9-D04CD88524A1 order=1
+2026-10-14 17:53:02.029645-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=FAAE639F-BD51-412A-B464-B743BB7E11FE sequence=1A2770B8-9E88-40ED-BEB9-D04CD88524A1 order=1
+2026-10-14 17:53:02.032760-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=FAAE639F-BD51-412A-B464-B743BB7E11FE sequence=1A2770B8-9E88-40ED-BEB9-D04CD88524A1 order=1
+2026-10-14 17:53:02.032878-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:02.033046-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=FAAE639F-BD51-412A-B464-B743BB7E11FE sequence=1A2770B8-9E88-40ED-BEB9-D04CD88524A1 order=1
+2026-10-14 17:53:02.033110-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:53:02.034351-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:02.035586-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:02.078269-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=FAAE639F-BD51-412A-B464-B743BB7E11FE sequence=1A2770B8-9E88-40ED-BEB9-D04CD88524A1 order=1
+2026-10-14 17:53:02.081231-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:53:02.081468-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=FAAE639F-BD51-412A-B464-B743BB7E11FE sequence=1A2770B8-9E88-40ED-BEB9-D04CD88524A1 order=2
+2026-10-14 17:53:02.086660-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:53:02.109218-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:53:02.112240-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:53:02.134902-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:53:02.138319-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:53:02.164730-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=E8E67CB2-EB3B-4661-8194-43B1A2DEBFCF sequence=8561FA6A-99D1-4A91-899D-E8D310E96A32 order=1
+2026-10-14 17:53:02.164819-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:53:02.164918-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:02.202678-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=E8E67CB2-EB3B-4661-8194-43B1A2DEBFCF sequence=8561FA6A-99D1-4A91-899D-E8D310E96A32 order=1
+2026-10-14 17:53:02.202917-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+Test Case '-[FeedMineAppTests.CompositionTests testT8ASavedPresetIsOfferedAndActivatesItsOwnContext]' passed (0.417 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testTheAnswerIsConsumedWhenTheNextSessionOfTheContextIsBuilt]' started.
+2026-10-14 17:53:02.868919-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:53:02.939924-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=77D6CF44-669C-4517-9D54-5B3947086909 sequence=CC6EEA6C-CA36-4B9C-AE3B-8A7DD8A97148 order=1
+2026-10-14 17:53:02.940132-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=77D6CF44-669C-4517-9D54-5B3947086909 sequence=CC6EEA6C-CA36-4B9C-AE3B-8A7DD8A97148 order=1
+2026-10-14 17:53:02.943609-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=77D6CF44-669C-4517-9D54-5B3947086909 sequence=CC6EEA6C-CA36-4B9C-AE3B-8A7DD8A97148 order=1
+2026-10-14 17:53:02.943701-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:02.943924-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=77D6CF44-669C-4517-9D54-5B3947086909 sequence=CC6EEA6C-CA36-4B9C-AE3B-8A7DD8A97148 order=1
+2026-10-14 17:53:02.944010-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:53:02.945291-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:02.946668-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:03.702733-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:53:03.702991-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=77D6CF44-669C-4517-9D54-5B3947086909 sequence=CC6EEA6C-CA36-4B9C-AE3B-8A7DD8A97148 order=2
+2026-10-14 17:53:03.703090-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:53:03.703281-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=77D6CF44-669C-4517-9D54-5B3947086909 sequence=CC6EEA6C-CA36-4B9C-AE3B-8A7DD8A97148 order=2
+2026-10-14 17:53:04.466433-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:04.466507-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:05.233100-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:05.233194-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:05.999816-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:05.999888-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:06.977896-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=77D6CF44-669C-4517-9D54-5B3947086909 sequence=CC6EEA6C-CA36-4B9C-AE3B-8A7DD8A97148 order=2
+2026-10-14 17:53:06.978160-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:07.636429-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=77D6CF44-669C-4517-9D54-5B3947086909 sequence=BB94D513-910A-4BE6-B3B8-B5C7A497BA3D order=1
+2026-10-14 17:53:07.636547-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:53:08.488710-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=77D6CF44-669C-4517-9D54-5B3947086909 sequence=BB94D513-910A-4BE6-B3B8-B5C7A497BA3D order=1
+Test Case '-[FeedMineAppTests.CompositionTests testTheAnswerIsConsumedWhenTheNextSessionOfTheContextIsBuilt]' passed (6.865 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testTheFirstRunAnswersBecomeTheFeedTheReaderEnters]' started.
+2026-10-14 17:53:09.270439-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:53:09.321556-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=C1D4E140-0CB0-4028-AC89-3236D2E83718 sequence=626B5B33-41E9-47CF-8B3D-48F5C141B819 order=1
+2026-10-14 17:53:09.321732-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=C1D4E140-0CB0-4028-AC89-3236D2E83718 sequence=626B5B33-41E9-47CF-8B3D-48F5C141B819 order=1
+2026-10-14 17:53:09.325000-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=C1D4E140-0CB0-4028-AC89-3236D2E83718 sequence=626B5B33-41E9-47CF-8B3D-48F5C141B819 order=1
+2026-10-14 17:53:09.325102-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:09.325277-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=C1D4E140-0CB0-4028-AC89-3236D2E83718 sequence=626B5B33-41E9-47CF-8B3D-48F5C141B819 order=1
+2026-10-14 17:53:09.325360-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:53:09.326693-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:09.328180-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:09.369720-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=C1D4E140-0CB0-4028-AC89-3236D2E83718 sequence=626B5B33-41E9-47CF-8B3D-48F5C141B819 order=1
+2026-10-14 17:53:09.372523-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:53:09.372748-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=C1D4E140-0CB0-4028-AC89-3236D2E83718 sequence=626B5B33-41E9-47CF-8B3D-48F5C141B819 order=2
+2026-10-14 17:53:09.566891-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:53:09.669275-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:53:09.873234-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=C1D4E140-0CB0-4028-AC89-3236D2E83718 sequence=6AC2DE62-7E72-4105-AD9A-7FC6E3CDCB50 order=1
+2026-10-14 17:53:09.873381-0700 FeedMine[81103:55841778] [composition] local restore before HTTP
+2026-10-14 17:53:14.249217-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=C1D4E140-0CB0-4028-AC89-3236D2E83718 sequence=6AC2DE62-7E72-4105-AD9A-7FC6E3CDCB50 order=1
+Test Case '-[FeedMineAppTests.CompositionTests testTheFirstRunAnswersBecomeTheFeedTheReaderEnters]' passed (5.191 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testTheReadersOwnDiscoveryAnswersDriveDiscoveryWithoutACuratedFeed]' started.
+2026-10-14 17:53:15.240405-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:53:15.308178-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=8E179656-C3BB-4705-AA6C-AE8E134B01EB sequence=8784BA87-CE29-4BDD-91CF-72F9D0C6DEB4 order=1
+2026-10-14 17:53:15.308381-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=8E179656-C3BB-4705-AA6C-AE8E134B01EB sequence=8784BA87-CE29-4BDD-91CF-72F9D0C6DEB4 order=1
+2026-10-14 17:53:15.311805-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=8E179656-C3BB-4705-AA6C-AE8E134B01EB sequence=8784BA87-CE29-4BDD-91CF-72F9D0C6DEB4 order=1
+2026-10-14 17:53:15.311919-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:15.312095-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=8E179656-C3BB-4705-AA6C-AE8E134B01EB sequence=8784BA87-CE29-4BDD-91CF-72F9D0C6DEB4 order=1
+2026-10-14 17:53:15.312177-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:53:15.313511-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:15.314960-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:16.068288-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:53:16.068575-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=8E179656-C3BB-4705-AA6C-AE8E134B01EB sequence=8784BA87-CE29-4BDD-91CF-72F9D0C6DEB4 order=2
+2026-10-14 17:53:16.068684-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:53:16.068879-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=8E179656-C3BB-4705-AA6C-AE8E134B01EB sequence=8784BA87-CE29-4BDD-91CF-72F9D0C6DEB4 order=2
+2026-10-14 17:53:16.825767-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:16.825854-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:17.583191-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:17.583296-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:18.349776-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:18.349848-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+2026-10-14 17:53:19.302426-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=8E179656-C3BB-4705-AA6C-AE8E134B01EB sequence=8784BA87-CE29-4BDD-91CF-72F9D0C6DEB4 order=2
+2026-10-14 17:53:19.302675-0700 FeedMine[81103:55841778] [composition] published growth: admitted 17 -> 17
+Test Case '-[FeedMineAppTests.CompositionTests testTheReadersOwnDiscoveryAnswersDriveDiscoveryWithoutACuratedFeed]' passed (5.050 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testTheTraceRecordsItsOwnDiscardInsteadOfGoingSilent]' started.
+Test Case '-[FeedMineAppTests.CompositionTests testTheTraceRecordsItsOwnDiscardInsteadOfGoingSilent]' passed (0.004 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testU1ApprovedBrandingAssetsResolveFromTheApplicationBundle]' started.
+Test Case '-[FeedMineAppTests.CompositionTests testU1ApprovedBrandingAssetsResolveFromTheApplicationBundle]' passed (0.013 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testU1TokenPaletteAdaptsToAppearanceWithoutAnOverlay]' started.
+Test Case '-[FeedMineAppTests.CompositionTests testU1TokenPaletteAdaptsToAppearanceWithoutAnOverlay]' passed (0.003 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testU2SavedArticlesUseTheBookmarkAuthorityAndOpenOutsideTheWindow]' started.
+2026-10-14 17:53:19.527080-0700 FeedMine[81103:55841778] [composition] cold bootstrap started
+2026-10-14 17:53:19.579469-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B0394A25-B22F-4316-9F6C-7E21AF9B82DE sequence=D3A2C01E-9313-44C3-8B62-EF4A6106E9DF order=1
+2026-10-14 17:53:19.579686-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B0394A25-B22F-4316-9F6C-7E21AF9B82DE sequence=D3A2C01E-9313-44C3-8B62-EF4A6106E9DF order=1
+2026-10-14 17:53:19.582889-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B0394A25-B22F-4316-9F6C-7E21AF9B82DE sequence=D3A2C01E-9313-44C3-8B62-EF4A6106E9DF order=1
+2026-10-14 17:53:19.582992-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:19.583153-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B0394A25-B22F-4316-9F6C-7E21AF9B82DE sequence=D3A2C01E-9313-44C3-8B62-EF4A6106E9DF order=1
+2026-10-14 17:53:19.583232-0700 FeedMine[81103:55841778] [composition] cold bootstrap settled
+2026-10-14 17:53:19.584496-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:19.585698-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 1
+2026-10-14 17:53:19.627745-0700 FeedMine[81103:55841778] [composition] installed cards=1 edition=B0394A25-B22F-4316-9F6C-7E21AF9B82DE sequence=D3A2C01E-9313-44C3-8B62-EF4A6106E9DF order=1
+2026-10-14 17:53:19.630597-0700 FeedMine[81103:55841778] [composition] published growth: admitted 1 -> 17
+2026-10-14 17:53:19.630842-0700 FeedMine[81103:55841778] [composition] installed cards=17 edition=B0394A25-B22F-4316-9F6C-7E21AF9B82DE sequence=D3A2C01E-9313-44C3-8B62-EF4A6106E9DF order=2
+2026-10-14 17:53:19.632819-0700 FeedMine[81103:55841778] [composition] opened card=AF8E61B1-A140-408E-980B-F76276F3FA2F
+Test Case '-[FeedMineAppTests.CompositionTests testU2SavedArticlesUseTheBookmarkAuthorityAndOpenOutsideTheWindow]' passed (0.305 seconds).
+Test Case '-[FeedMineAppTests.CompositionTests testUpdateOverV1NeverSharesTheRuntimeStore]' started.
+Test Case '-[FeedMineAppTests.CompositionTests testUpdateOverV1NeverSharesTheRuntimeStore]' passed (0.001 seconds).
+	 Executed 53 tests, with 0 failures (0 unexpected) in 171.525 (171.542) seconds
+	 Executed 53 tests, with 0 failures (0 unexpected) in 171.525 (171.542) seconds
+	 Executed 53 tests, with 0 failures (0 unexpected) in 171.525 (171.543) seconds

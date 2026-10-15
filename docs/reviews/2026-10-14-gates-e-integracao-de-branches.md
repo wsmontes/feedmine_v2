@@ -15,6 +15,7 @@ ou dos hashes congelados. Este arquivo está **não commitado** em `main`.
 |Simulador de benchmark|`FeedMine Bench (16DA3DB5-C9E0-4190-AF2F-AFAADC7EB7AE)` — o dispositivo dedicado; nenhum run toca o simulador compartilhado|
 |Worktree de verificação|`/tmp/fm-verify`|
 |Logs brutos|`/tmp/fm-verify-logs/`|
+|Evidência versionada|`docs/reviews/evidence/2026-10-15-candidate-1b990306/` (B01/B02/B04/B05) e `docs/reviews/evidence/2026-10-15-g18f/` (G-18F) — publicados porque `/tmp` é descartável e `bench/run/` é gitignored|
 |Relatórios das rodadas por tarefa|`/tmp/fm-verify/report.md`, `gates-round2.md`, `gates-round3.md`, `gates-round4.md`, `gates-round5.md`, `gates-round6.md`, `gates-round9.md`|
 
 Congelamento vigente — `bench/EVALUATOR.sha256` (6 entradas), conferido em cada corrida de gate:
@@ -450,6 +451,11 @@ Todas seriais, no simulador dedicado `FeedMine Bench (16DA3DB5-C9E0-4190-AF2F-AF
 |Instrumentada, ociosa|`1b990306`+inst.|6|6× `53 tests, with 0 failures`|`/tmp/fm-verify-logs/g18f-instr-run{1..6}.log`|
 |Instrumentada, **carga induzida**|`1b990306`+inst.|5|5× `53 tests, with 0 failures`|`/tmp/fm-verify-logs/g18f-load-run{1..5}.log`|
 
+> **Durabilidade:** `/tmp` é descartável, então os extratos filtrados dessas 15 execuções (linhas `[G18F]`,
+> asserção, vereditos por caso) estão versionados em `docs/reviews/evidence/2026-10-15-g18f/`, junto com
+> tamanho, contagem de linhas e **SHA-256 de cada log completo** e as janelas decisivas (vermelho × verde ×
+> isolado). É de lá que este relatório passa a citar.
+
 A carga induzida foi `yes > /dev/null` em 4 dos 10 núcleos, ligada antes e desligada depois (confirmado com
 `pgrep`). Ela **quase não afetou os tempos** — 187–200 s sob carga contra 177–185 s ociosos —, ou seja: o
 experimento mede sensibilidade à pressão de CPU e **não** reproduz a concorrência de builds, simulador e
@@ -527,6 +533,12 @@ perfil A, o default), de modo que os vereditos são comparáveis entre árvores.
 
 Identidade de cada stamp (medida, não presumida): `commit: 1b9903067b52614863de682eb9a3a7e2407fdb02`,
 `dirty: 0 files`, `evaluator.check` 6/6 OK, `manifest.check` 2314 OK / 0 falhas.
+
+> **Durabilidade:** `bench/run/` é gitignored, então os quatro vereditos passaram a viver no repositório em
+> **`docs/reviews/evidence/2026-10-15-candidate-1b990306/<GATE>/`** — `B0X.verdict.json`, `B0X.json`,
+> `B0X-A/B.phases`, os PNG das jornadas, `identity.txt`, `report.md`, `evaluator.check`, `manifest.check` e
+> `inputs.sha256`, publicados em `d964a41f`. Os caminhos em `/tmp/fm-gate-cand/…` que aparecem acima são os
+> **stamps originais** de onde cada arquivo foi copiado byte a byte.
 
 ### 15.1 Tentativa abortada de B01 (não é medição) — causa: recurso ausente, não disco
 
