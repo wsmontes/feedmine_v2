@@ -30,6 +30,62 @@ final class ReaderPreferencesStoreTests: XCTestCase {
         XCTAssertEqual(try reopened.load()?.activeContext, .source(source))
     }
 
+    /// PD10-B2: incremental intents merge with the latest persisted selection inside one
+    /// database.write, preserving unrelated keys, ordering and the rest of the reader record.
+    func testPD10B2IncrementalSourceUpdatesPreserveUnrelatedChoicesAndVersion() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let location = RuntimeDatabaseLocation(directory: root)
+        let store = ReaderPreferencesStore(database: try RuntimeDatabase(location: location))
+        let first = try store.initialize(sourceKeys: ["reader-owned", "one"])
+        let s1 = try store.changeSources(adding: ["subtree-a", "subtree-b"])
+        XCTAssertEqual(s1.sourceKeys, ["reader-owned", "one", "subtree-a", "subtree-b"])
+        XCTAssertEqual(s1.selectionVersion, first.selectionVersion + 1)
+        let s2 = try store.changeSources(adding: ["extra"])
+        XCTAssertEqual(s2.sourceKeys, ["reader-owned", "one", "subtree-a", "subtree-b", "extra"],
+            "S2 must merge with the persisted S1, never replace the whole reader selection")
+        let reduced = try store.changeSources(removing: ["subtree-b"])
+        XCTAssertEqual(reduced.sourceKeys, ["reader-owned", "one", "subtree-a", "extra"])
+        XCTAssertEqual(try store.changeSources(adding: ["extra"]).selectionVersion, reduced.selectionVersion,
+            "no-op incremental operation must not bump the durable selection version")
+        let reopened = ReaderPreferencesStore(database: try RuntimeDatabase(location: location))
+        XCTAssertEqual(try reopened.load()?.sourceKeys, reduced.sourceKeys)
+        XCTAssertEqual(try reopened.load()?.activeContextKey, first.activeContextKey)
+        XCTAssertEqual(try reopened.load()?.settings, first.settings)
+    }
+
+    func testPD10B2RejectedIncrementalMutationIsAtomic() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: root)))
+        let original = try store.initialize(sourceKeys: ["reader-owned", "x"])
+        XCTAssertThrowsError(try store.changeSources(adding: ["valid", ""]))
+        XCTAssertThrowsError(try store.changeSources(adding: ["x"], removing: ["x"]))
+        XCTAssertThrowsError(try store.changeSources(adding: ["x", "x"]))
+        XCTAssertEqual(try store.load(), original, "a rejected write changes neither keys nor version")
+        let emptied = try store.changeSources(removing: ["reader-owned", "x"])
+        XCTAssertTrue(emptied.sourceKeys.isEmpty, "removing the last source remains a legal intent")
+        XCTAssertEqual(emptied.selectionVersion, original.selectionVersion + 1)
+    }
+
+    /// Concurrent independent source intents use the SAME database.write owner: no stale
+    /// read/replace window can drop either choice or the existing reader-owned key.
+    func testPD10B2ConcurrentIncrementalWritesCannotLoseUnrelatedKeys() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try RuntimeDatabase(location: .init(directory: root))
+        let first = ReaderPreferencesStore(database: database)
+        let second = ReaderPreferencesStore(database: database)
+        _ = try first.initialize(sourceKeys: ["reader-owned"])
+        async let s1 = first.changeSources(adding: ["a"])
+        async let s2 = second.changeSources(adding: ["b"])
+        _ = try await (s1, s2)
+        let result = try XCTUnwrap(first.load())
+        XCTAssertEqual(Set(result.sourceKeys), ["reader-owned", "a", "b"])
+        XCTAssertEqual(result.selectionVersion, 4,
+            "two independent committed additions must each advance the version once")
+    }
+
     /// T7: V1 allowed zero selected sources, and that state is now reachable again (the reader can empty the
     /// selection from source management). Only a malformed set is refused.
     func testEmptySelectionIsAStateAndNotAMalformedRecord() throws {

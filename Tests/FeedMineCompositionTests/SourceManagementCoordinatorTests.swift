@@ -141,6 +141,31 @@ final class SourceManagementCoordinatorTests: XCTestCase {
         XCTAssertTrue(try coordinator.selection().isEmpty)
     }
 
+    /// PD10-B2: a per-source intent and a subtree intent operate on the latest durable
+    /// selection, never an absolute copy from a previous UI read.
+    func testPD10B2IncrementalSourceAndTreeMutationsKeepReaderOwnedKeys() throws {
+        let database = try database()
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: ["https://outside.example/feed"])
+        let coordinator = SourceManagementCoordinator(catalogURL: try catalog(), database: database)
+        let brazil = try XCTUnwrap(try coordinator.nodeByKey("countries/br"))
+        _ = try coordinator.setEnabledTree(nodeID: brazil, enabled: true)
+        XCTAssertEqual(Set(try coordinator.selection()), [
+            "https://outside.example/feed", "https://a.example/feed", "https://b.example/feed"
+        ])
+        _ = try coordinator.setSourceEnabled(key: "https://extra.example/feed", enabled: true)
+        XCTAssertEqual(Set(try coordinator.selection()), [
+            "https://outside.example/feed", "https://a.example/feed",
+            "https://b.example/feed", "https://extra.example/feed"
+        ])
+        _ = try coordinator.setEnabledTree(nodeID: brazil, enabled: false)
+        XCTAssertEqual(Set(try coordinator.selection()), [
+            "https://outside.example/feed", "https://extra.example/feed"
+        ], "subtree disable must not remove unrelated reader choices")
+        _ = try coordinator.setSourceEnabled(key: "https://extra.example/feed", enabled: false)
+        XCTAssertEqual(try coordinator.selection(), ["https://outside.example/feed"])
+    }
+
     /// V1's "whole region on/off": enabling a node merges its placed sources into the selection; disabling it
     /// removes them — including the last one, because zero sources is a state the surface now states.
     func testBulkNodeEnableAndDisablePersistThroughPreferences() throws {

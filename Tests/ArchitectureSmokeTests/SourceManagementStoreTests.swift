@@ -58,6 +58,15 @@ final class SourceManagementStoreTests: XCTestCase {
         func setSelection(_ keys: [String]) async throws {
             try guardFailure(); if failSetSelection { throw SourceManagementErrorDouble.invalid }; selection = keys
         }
+        func setSourceEnabled(_ key: String, enabled: Bool) async throws {
+            try guardFailure()
+            if failSetSelection { throw SourceManagementErrorDouble.invalid }
+            if enabled {
+                if !selection.contains(key) { selection.append(key) }
+            } else {
+                selection.removeAll { $0 == key }
+            }
+        }
         func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws {
             try guardFailure(); if failSetSelection { throw SourceManagementErrorDouble.invalid }
             setEnabledCalls.append((node.id, enabled))
@@ -83,8 +92,8 @@ final class SourceManagementStoreTests: XCTestCase {
         private var heldSourceKeys: Set<String> = []
         private var sourceReads: [String: CheckedContinuation<[CatalogSourceSummary], any Error>] = [:]
         private var sourceAwaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
-        private var searches: [String: [CheckedContinuation<[CatalogSourceSummary], Never>]] = [:]
-        private var nodes: [String: CheckedContinuation<[CatalogNodeSummary], Never>] = [:]
+        private var searches: [String: [CheckedContinuation<[CatalogSourceSummary], any Error>]] = [:]
+        private var nodes: [String: CheckedContinuation<[CatalogNodeSummary], any Error>] = [:]
         private var searchAwaiters: [(query: String, count: Int, resume: CheckedContinuation<Void, Never>)] = []
         private var nodeAwaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
@@ -129,7 +138,7 @@ final class SourceManagementStoreTests: XCTestCase {
         }
 
         func searchSources(_ query: String) async throws -> [CatalogSourceSummary] {
-            await withCheckedContinuation { continuation in
+            try await withCheckedThrowingContinuation { continuation in
                 searches[query, default: []].append(continuation)
                 let ready = searchAwaiters.filter { $0.query == query
                     && (searches[query]?.count ?? 0) >= $0.count }
@@ -142,16 +151,18 @@ final class SourceManagementStoreTests: XCTestCase {
             if (searches[query]?.count ?? 0) >= count { return }
             await withCheckedContinuation { searchAwaiters.append((query, count, $0)) }
         }
-        func finishSearch(_ query: String, with values: [CatalogSourceSummary], newest: Bool = false) {
+        func finishSearch(_ query: String, with values: [CatalogSourceSummary] = [],
+            newest: Bool = false, fails: Bool = false) {
             guard var pending = searches[query], !pending.isEmpty else { return }
             let callback = newest ? pending.removeLast() : pending.removeFirst()
             if pending.isEmpty { searches.removeValue(forKey: query) }
             else { searches[query] = pending }
-            callback.resume(returning: values)
+            if fails { callback.resume(throwing: RefreshFailure.requested) }
+            else { callback.resume(returning: values) }
         }
 
         func children(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary] {
-            await withCheckedContinuation { continuation in
+            try await withCheckedThrowingContinuation { continuation in
                 nodes[node.key] = continuation
                 for waiter in nodeAwaiters.removeValue(forKey: node.key) ?? [] { waiter.resume() }
             }
@@ -160,8 +171,11 @@ final class SourceManagementStoreTests: XCTestCase {
             if nodes[key] != nil { return }
             await withCheckedContinuation { nodeAwaiters[key, default: []].append($0) }
         }
-        func finishNode(_ key: String, with values: [CatalogNodeSummary]) {
-            nodes.removeValue(forKey: key)?.resume(returning: values)
+        func finishNode(_ key: String, with values: [CatalogNodeSummary] = [],
+            fails: Bool = false) {
+            guard let callback = nodes.removeValue(forKey: key) else { return }
+            if fails { callback.resume(throwing: RefreshFailure.requested) }
+            else { callback.resume(returning: values) }
         }
 
         func languages() async throws -> [CatalogLanguageSummary] { [] }
@@ -196,13 +210,22 @@ final class SourceManagementStoreTests: XCTestCase {
                 }
             }
         }
-        func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws {
+        func setSourceEnabled(_ key: String, enabled: Bool) async throws {
             if refusingWrites { throw RefreshFailure.requested }
             if enabled {
-                if !savedSelection.contains(node.key) { savedSelection.append(node.key) }
+                if !savedSelection.contains(key) { savedSelection.append(key) }
             } else {
-                savedSelection.removeAll { $0 == node.key }
+                savedSelection.removeAll { $0 == key }
             }
+            if heldWriteKeys.contains(key) {
+                await withCheckedContinuation { continuation in
+                    heldWrites[key] = continuation
+                    for waiter in heldWriteWaiters.removeValue(forKey: key) ?? [] { waiter.resume() }
+                }
+            }
+        }
+        func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws {
+            try await setSourceEnabled(node.key, enabled: enabled)
         }
     }
 
@@ -544,7 +567,7 @@ final class SourceManagementStoreTests: XCTestCase {
         let extra = CatalogSourceSummary(id: "reader-owned", title: "Reader choice",
             language: "pt", mediaKind: "text", defaultEnabled: true)
         await store.toggle(extra)
-        let newerSelection: Set<String> = [extra.id]
+        let newerSelection: Set<String> = [current.key, extra.id]
         let persistedSelection1 = await backend.durableSelection()
 
         XCTAssertEqual(persistedSelection1, newerSelection, "S2 must be durable")
@@ -620,7 +643,7 @@ final class SourceManagementStoreTests: XCTestCase {
         let more = CatalogSourceSummary(id: "new-choice", title: "Reader choice",
             language: "pt", mediaKind: "text", defaultEnabled: true)
         await store.toggle(more)
-        let expected: Set<String> = [more.id]
+        let expected: Set<String> = [current.key, more.id]
         XCTAssertEqual(store.selection, expected)
         XCTAssertNil(store.errorMessage)
 
@@ -632,8 +655,8 @@ final class SourceManagementStoreTests: XCTestCase {
         XCTAssertNil(store.errorMessage, "a failed refresh for S1 must not report an S2 write failure")
     }
 
-    /// PD10-B2: two absolute selections persist in order, but their async completions arrive
-    /// reversed. The last read for display must reflect the currently persisted S2, not S1's intent.
+    /// PD10-B2: two incremental selections persist in order, but their async completions
+    /// arrive reversed. The final display must retain both reader choices, not an old absolute set.
     func testPD10B2ApplyReconcilesOutOfOrderCompletedWrites() async {
         let backend = DeferredBackend()
         let store = SourceManagementStore(backend: backend)
@@ -648,13 +671,13 @@ final class SourceManagementStoreTests: XCTestCase {
         XCTAssertEqual(savedS1, [s1.id])
         await store.toggle(s2)
         let savedS2 = await backend.durableSelection()
-        XCTAssertEqual(savedS2, [s2.id])
-        XCTAssertEqual(store.selection, [s2.id])
+        XCTAssertEqual(savedS2, [s1.id, s2.id])
+        XCTAssertEqual(store.selection, [s1.id, s2.id])
 
         await backend.releaseWrite(s1.id)
         await first.value
         let finalSaved = await backend.durableSelection()
-        XCTAssertEqual(finalSaved, [s2.id])
+        XCTAssertEqual(finalSaved, [s1.id, s2.id])
         XCTAssertEqual(store.selection, finalSaved,
             "an older completion cannot republish its own requested keys")
     }
@@ -707,6 +730,96 @@ final class SourceManagementStoreTests: XCTestCase {
         await loading.value
         XCTAssertEqual(store.selection, expected,
             "load must not republish a selection read before an unrelated async health fetch")
+    }
+
+    /// An equal query in an unchanged revision is still a different user operation. The newer
+    /// result wins even when the older query and fingerprint compare equal.
+    func testPD10B2SameQuerySameRevisionRetainsNewestResult() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let old = Task { await store.search("same") }
+        await backend.waitForSearch("same")
+        let newer = Task { await store.search("same") }
+        await backend.waitForSearch("same", count: 2)
+        await backend.finishSearch("same", with: [
+            .init(id: "new", title: "Newest", language: "pt",
+                mediaKind: "text", defaultEnabled: true)
+        ], newest: true)
+        await newer.value
+        await backend.finishSearch("same", with: [
+            .init(id: "old", title: "Stale", language: "en",
+                mediaKind: "text", defaultEnabled: true)
+        ])
+        await old.value
+        XCTAssertEqual(store.results.map(\.id), ["new"])
+    }
+
+    /// An old successful search must not erase a later *open* failure on their shared feedback
+    /// surface. Search and open still have independent result leases.
+    func testPD10B2OldSearchSuccessDoesNotClearLaterOpenError() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let old = Task { await store.search("held") }
+        await backend.waitForSearch("held")
+        let bad = node(77, "Missing")
+        await backend.failNodeResolution(for: bad.key)
+        await store.open(bad)
+        let expected = "Não foi possível abrir esta parte do catálogo."
+        XCTAssertEqual(store.errorMessage, expected)
+        await backend.finishSearch("held", with: [
+            .init(id: "response", title: "Response", language: "pt",
+                mediaKind: "text", defaultEnabled: true)
+        ])
+        await old.value
+        XCTAssertEqual(store.errorMessage, expected)
+    }
+
+    /// The reverse direction matters too: old open returns successfully after a newer search
+    /// fails. It must not clear the search error or install its old level.
+    func testPD10B2OldOpenSuccessDoesNotClearLaterSearchError() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let oldNode = node(78, "Old", children: true)
+        let old = Task { await store.open(oldNode) }
+        await backend.waitForNode(oldNode.key)
+        let newer = Task { await store.search("later") }
+        await backend.waitForSearch("later")
+        await backend.finishSearch("later", fails: true)
+        await newer.value
+        let expected = "Não foi possível buscar no catálogo."
+        XCTAssertEqual(store.errorMessage, expected)
+        await backend.finishNode(oldNode.key, with: [])
+        await old.value
+        XCTAssertEqual(store.errorMessage, expected)
+    }
+
+    /// A catalogue promotion during a held node read cannot produce a mixed-revision
+    /// level, even when the node key is unchanged. The whole prior level remains published.
+    func testPD10B2PromotionDuringOpenKeepsEntirePreviousLevel() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let prior = node(85, "Published")
+        await store.open(prior)
+        let originalNode = store.openNode
+        let originalChildren = store.children
+        let originalBreadcrumb = store.breadcrumb
+        let originalSources = store.sources
+        let originalKeys = store.nodeChildKeys
+
+        let changing = node(86, "Changing", children: true)
+        let pending = Task { await store.open(changing) }
+        await backend.waitForNode(changing.key)
+        await backend.activate("rev-6")
+        await backend.finishNode(changing.key, with: [node(87, "Old-revision child")])
+        await pending.value
+        XCTAssertEqual(store.openNode, originalNode)
+        XCTAssertEqual(store.children.map(\.key), originalChildren.map(\.key))
+        XCTAssertEqual(store.children.map(\.name), originalChildren.map(\.name))
+        XCTAssertEqual(store.breadcrumb.map(\.key), originalBreadcrumb.map(\.key))
+        XCTAssertEqual(store.breadcrumb.map(\.name), originalBreadcrumb.map(\.name))
+        XCTAssertEqual(store.sources.map(\.id), originalSources.map(\.id))
+        XCTAssertEqual(store.sources.map(\.title), originalSources.map(\.title))
+        XCTAssertEqual(store.nodeChildKeys, originalKeys)
     }
 
     func testSearchTrimsAndClears() async {

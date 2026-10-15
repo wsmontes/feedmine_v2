@@ -140,6 +140,19 @@ final class SourceCatalogBackendTests: XCTestCase {
         XCTAssertEqual(selected, ["https://a.example/feed"])
     }
 
+    /// PD10-B2: the real backend routes one-source intents to transactional persistence,
+    /// never replacing a reader's unrelated stored keys with an old visual selection.
+    func testPD10B2BackendIncrementalToggleOnlyTouchesRequestedSource() async throws {
+        let (backend, database) = try backend()
+        let preferences = ReaderPreferencesStore(database: database)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, ["https://a.example/feed"])
+        try await backend.setSourceEnabled("https://b.example/feed", enabled: true)
+        let afterAdding = Set(try await backend.selection())
+        XCTAssertEqual(afterAdding, ["https://a.example/feed", "https://b.example/feed"])
+        try await backend.setSourceEnabled("https://a.example/feed", enabled: false)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, ["https://b.example/feed"])
+    }
+
     /// The health the surface reads is the app's own observation, passed through untouched (the catalog knows
     /// nothing about reachability), and an app that has observed nothing states nothing.
     func testHealthComesFromTheCallerAndDefaultsToNothingObserved() async throws {

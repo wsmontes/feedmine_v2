@@ -152,25 +152,25 @@ public struct SourceManagementCoordinator: Sendable {
         return try apply(enabled: enabled, keys: try catalog.sourceKeys(inSubtreeOf: nodeID, ceiling: ceiling))
     }
 
-    /// One write for both scopes: the keys are what the catalog answered for the scope, and the reader's own
-    /// selection is the only thing that changes.
+    /// One transaction for the incremental intent. The catalogue decides the affected keys;
+    /// persistence merges them with the CURRENT reader selection (never a stale UI copy).
     private func apply(enabled: Bool, keys: [String]) throws -> UInt64 {
         guard let preferences else { throw SourceManagementError.catalogUnavailable }
-        guard let record = try preferences.load() else { throw SourceManagementError.catalogUnavailable }
         guard !keys.isEmpty else { throw SourceManagementError.invalidSelection }
-        var selection = record.sourceKeys
-        if enabled {
-            let present = Set(selection)
-            selection.append(contentsOf: keys.filter { !present.contains($0) })
-        } else {
-            let removing = Set(keys)
-            selection.removeAll { removing.contains($0) }
-            // V1 allowed zero selected sources and stated it with its own empty surface; `validate` was relaxed
-            // together with that surface (`FeedSourcesEmptyStateView`), so disabling the last node is legal and
-            // the reader is told what happened instead of being refused.
-        }
-        do { return try preferences.updateSources(selection).selectionVersion }
-        catch { throw SourceManagementError.invalidSelection }
+        do {
+            // A source may occur in multiple placements of the same subtree. Deduplicate only
+            // the scope, never the reader's unrelated selections or their stored order.
+            var seen = Set<String>()
+            let scope = keys.filter { seen.insert($0).inserted }
+            return try preferences.changeSources(adding: enabled ? scope : [],
+                removing: enabled ? [] : scope).selectionVersion
+        } catch { throw SourceManagementError.invalidSelection }
+    }
+
+    /// A one-source UI intent must not replace the complete persisted selection.
+    @discardableResult
+    public func setSourceEnabled(key: String, enabled: Bool) throws -> UInt64 {
+        try apply(enabled: enabled, keys: [key])
     }
 
     /// Persists a selection change and returns the new version, so the caller can fence a restore on it.

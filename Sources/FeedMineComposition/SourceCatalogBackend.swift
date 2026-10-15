@@ -75,6 +75,10 @@ public struct SourceCatalogBackend: SourceManagementBackend {
 
     public func setSelection(_ keys: [String]) async throws { _ = try coordinator.setSelection(keys) }
 
+    public func setSourceEnabled(_ key: String, enabled: Bool) async throws {
+        _ = try coordinator.setSourceEnabled(key: key, enabled: enabled)
+    }
+
     public func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws {
         guard let currentID = try coordinator.nodeByKey(node.key) else { throw SourceManagementError.invalidSelection }
         _ = try coordinator.setEnabled(nodeID: currentID, enabled: enabled)
