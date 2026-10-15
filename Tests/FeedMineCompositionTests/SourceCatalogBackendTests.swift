@@ -53,6 +53,54 @@ final class SourceCatalogBackendTests: XCTestCase {
         return (SourceCatalogBackend(coordinator: coordinator), database)
     }
 
+    /// PD10-B2: the UI store already exists and holds its rendered values. Installing a new
+    /// snapshot never mutates those values; a later operation delegates to the active authority.
+    @MainActor
+    func testPD10B2ExistingStoreKeepsItsPresentationUntilNextExplicitRead() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let old = try makeCatalogue(in: root.appendingPathComponent("r5"), sources: 2, revision: 5)
+        let descriptor = root.appendingPathComponent("bundle.json")
+        try pd10Descriptor(old, revision: 5, sources: 2).write(to: descriptor)
+        let installation = CatalogInstallation(directory: root.appendingPathComponent("catalogue"),
+            bundledCatalogue: old, bundledManifest: descriptor)
+        XCTAssertEqual(installation.bootstrap()?.revision, 5)
+        let runtime = try RuntimeDatabase(location: .init(directory: root.appendingPathComponent("reader")))
+        _ = try ReaderPreferencesStore(database: runtime).initialize(sourceKeys: [])
+        let coordinator = SourceManagementCoordinator(installation: installation, database: runtime)
+        let backend = SourceCatalogBackend(coordinator: coordinator)
+        let store = SourceManagementStore(backend: backend)
+        await store.load()
+        await store.search("Exemplo 1")
+        XCTAssertEqual(store.results.map(\.title), ["Exemplo 1"])
+        let visible = store.results
+        let sections = store.sections
+        let selected = store.selection
+
+        let next = try makeCatalogue(in: root.appendingPathComponent("r6"), sources: 1, revision: 6)
+        guard case .installed = installation.install(manifestData: try pd10Descriptor(
+            next, revision: 6, sources: 1), catalogue: next) else {
+            return XCTFail("new snapshot must activate")
+        }
+        XCTAssertEqual(store.results.map(\.id), visible.map(\.id),
+            "activation must not rewrite previously displayed source identities")
+        XCTAssertEqual(store.results.map(\.title), visible.map(\.title),
+            "activation must not rewrite previously displayed source metadata")
+        XCTAssertEqual(store.sections.map(\.key), sections.map(\.key))
+        XCTAssertEqual(store.selection, selected)
+        await store.search("Exemplo 1")
+        XCTAssertTrue(store.results.isEmpty, "the next search must use revision 6")
+        await store.search("Exemplo 0")
+        XCTAssertEqual(store.results.map(\.title), ["Exemplo 0"])
+    }
+
+    private func pd10Descriptor(_ url: URL, revision: Int, sources: Int) throws -> Data {
+        let size = try XCTUnwrap(url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        return try CatalogManifest(revision: revision, sourceCount: sources, fileCount: 1,
+            files: [CatalogManifestEntry(path: "catalog.sqlite", bytes: size,
+                sha256: try CatalogManifest.sha256(ofFile: url))]).encoded()
+    }
+
     /// Every read the surface performs, through the adapter, over the real catalog file.
     func testReadsMapTheCatalogToTheSurfaceValues() async throws {
         let (backend, _) = try backend()

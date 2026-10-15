@@ -52,6 +52,8 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
     let discovery: ReaderDiscoveryTraversal?
     private let database: RuntimeDatabase
     private let registrations: [SyndicationTargetRegistration]
+    /// Explicitly selected sources remain reader-owned even if their managed catalogue row disappears.
+    private let selectedSourceIDs: Set<SourceID>
     private let session: URLSession
     private let redirectCapacity: Int
     private let authorizedNonPublicOrigins: Set<SyndicationAuthorizedOrigin>
@@ -64,7 +66,8 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
     public init(database: RuntimeDatabase, registrations: [SyndicationTargetRegistration], session: URLSession,
         redirectCapacity: Int, now: @escaping @Sendable () -> Date = { Date() },
         discovery: ReaderDiscoveryTraversal? = nil,
-        authorizedNonPublicOrigins: [URL] = []) throws {
+        authorizedNonPublicOrigins: [URL] = [],
+        selectedSourceIDs: Set<SourceID> = []) throws {
         guard redirectCapacity >= 0 else { throw SyndicationAcquisitionSnapshotError.invalidRedirectCapacity }
         var origins = Set<SyndicationAuthorizedOrigin>()
         for url in authorizedNonPublicOrigins {
@@ -103,6 +106,7 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
         self.discovery = discovery
         self.database = database
         self.registrations = registrations
+        self.selectedSourceIDs = selectedSourceIDs
         self.session = session
         self.redirectCapacity = redirectCapacity
         self.authorizedNonPublicOrigins = origins
@@ -131,8 +135,12 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
             languages = []
         }
         let authority = AcquisitionTargetAuthority(database: database)
+        // Only after a catalogue promotion: static registrations from the original discovery pool
+        // must be re-resolved against the newly committed authority, without revoking running targets.
+        let promoted = discovery?.promotedCatalogue().flatMap { try? LegacyCatalogReader(catalogURL: $0) }
         var targets: [AcquisitionTarget] = []
-        for registration in registrations {
+        for original in registrations {
+            guard let registration = try managedRegistration(original, from: promoted) else { continue }
             if let sourceID, !registration.bindings.contains(where: { $0.sourceID == sourceID }) { continue }
             // An undeclared language does not contradict an explicit choice. Reject only a known mismatch.
             if !languages.isEmpty, let language = registration.language,
@@ -181,11 +189,38 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
 
     // Retained catalogue pages own registrations, not the retired association's transport.
     func connector(for target: AcquisitionTarget, using transport: URLSession) -> (any FeedConnector)? {
-        guard target.state == .enabled, target.connectorKind == .syndication,
-            let registration = registrations.first(where: { $0.targetID == target.id && $0.targetGeneration == target.generation })
-        else { return discovery?.connector(for: target, using: transport) }
-        return SyndicationConnector(configuration: registration.configuration, session: transport,
-            redirectCapacity: redirectCapacity, now: now, authorizedNonPublicOrigins: authorizedNonPublicOrigins)
+        guard target.state == .enabled, target.connectorKind == .syndication else { return nil }
+        if let original = registrations.first(where: {
+            $0.targetID == target.id && $0.targetGeneration == target.generation
+        }) {
+            let promoted = discovery?.promotedCatalogue().flatMap { try? LegacyCatalogReader(catalogURL: $0) }
+            guard let registration = try? managedRegistration(original, from: promoted) else { return nil }
+            return SyndicationConnector(configuration: registration.configuration, session: transport,
+                redirectCapacity: redirectCapacity, now: now, authorizedNonPublicOrigins: authorizedNonPublicOrigins)
+        }
+        return discovery?.connector(for: target, using: transport)
+    }
+
+    /// A prior registration is still useful if it remains in the active catalogue. If its stable key
+    /// now resolves to an edited URL, the next connector uses that URL without changing SourceID or
+    /// the durable target generation. An absent managed discovery row is no longer eligible.
+    /// Reader-selected and imported sources are never silently revoked by a public update.
+    private func managedRegistration(_ registration: SyndicationTargetRegistration,
+        from catalogue: LegacyCatalogReader?) throws -> SyndicationTargetRegistration? {
+        guard let catalogue,
+            let identity = registration.bindings.first?.externalPrincipal,
+            identity.namespace == LegacyCatalogImport.principalNamespace else { return registration }
+        let selected = registration.bindings.contains { selectedSourceIDs.contains($0.sourceID) }
+        guard let record = try catalogue.source(key: identity.value),
+            let updated = LegacyCatalogImport.entry(record),
+            updated.targetID == registration.targetID,
+            registration.bindings.contains(where: { $0.sourceID == updated.source.id }) else {
+            return selected ? registration : nil
+        }
+        guard selected || record.defaultEnabled else { return nil }
+        return SyndicationTargetRegistration(targetID: registration.targetID,
+            targetGeneration: registration.targetGeneration, endpoint: updated.endpoint,
+            bindings: registration.bindings, language: updated.language)
     }
 
     // Page snapshots carry no traversal, so connector lookup cannot recurse into its owner.

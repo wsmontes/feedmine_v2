@@ -15,19 +15,79 @@ public enum ReaderDiscoveryTraversalError: Error, Equatable, Sendable {
 public final class ReaderDiscoveryTraversal: @unchecked Sendable {
     public let profile: ReaderDiscoveryProfile
     public let contextKey: ContextKey
-    private let builder: ReaderDiscoveryBuilder
+    private let installation: CatalogInstallation?
     private let lock = NSLock()
+    private var builder: ReaderDiscoveryBuilder
+    private var catalogueFingerprint: String?
+    /// Non-nil only when the installed authority advanced beyond the builder supplied at construction.
+    private var promotedCatalogueURL: URL?
     private var cursor: ReaderDiscoveryCursor?
     private var finished = false
-    private var discovered: [LegacyCatalogEntry] = []
-    private var pages: [SyndicationAcquisitionSnapshot] = []
 
-    public init(builder: ReaderDiscoveryBuilder, profile: ReaderDiscoveryProfile, contextKey: ContextKey) {
-        self.builder = builder; self.profile = profile; self.contextKey = contextKey
+    /// The existing materialized page runway, with each page's entries kept beside its acquisition
+    /// snapshot. A promoted catalogue retains only entries whose full catalog identity is still equal.
+    /// No second traversal/cache is created and no durable target is revoked (in-flight pulls may finish).
+    private var pages: [(entries: [LegacyCatalogEntry], snapshot: SyndicationAcquisitionSnapshot)] = []
+
+    public init(builder: ReaderDiscoveryBuilder, profile: ReaderDiscoveryProfile, contextKey: ContextKey,
+        installation: CatalogInstallation? = nil) {
+        self.builder = builder
+        self.profile = profile
+        self.contextKey = contextKey
+        self.installation = installation
+        self.catalogueFingerprint = installation?.activeFingerprint()
     }
 
-    public var entries: [LegacyCatalogEntry] { lock.withLock { discovered } }
-    public var exhausted: Bool { lock.withLock { finished } }
+    /// A pointer change is checked only at actual discovery/acquisition opportunities. The installed
+    /// snapshot remains the sole authority. Valid prepared pages are retained; a removed source or a
+    /// changed endpoint/metadata no longer qualifies as work prepared for the new revision.
+    private func refreshIfNeeded() {
+        guard let installation, let fingerprint = installation.activeFingerprint(),
+            fingerprint != catalogueFingerprint,
+            let active = installation.activeSnapshot(), active.fingerprint == fingerprint else { return }
+        let newReader = try? LegacyCatalogReader(catalogURL: active.catalogueURL)
+        pages = pages.compactMap { old in
+            let compatible = old.entries.compactMap { entry -> LegacyCatalogEntry? in
+                guard let record = try? newReader?.source(key: entry.principal),
+                    let updated = LegacyCatalogImport.entry(record),
+                    record.defaultEnabled,
+                    updated.source.id == entry.source.id, updated.targetID == entry.targetID,
+                    updated.bindingID == entry.bindingID, updated.endpoint == entry.endpoint else { return nil }
+                // The same endpoint and durable identity still have usable prepared acquisition work.
+                // Adopt new names, language and placements for work after promotion, without rewriting
+                // already published cards. A changed endpoint needs a fresh registration.
+                return updated
+            }
+            return compatible.isEmpty ? nil : (entries: compatible, snapshot: old.snapshot)
+        }
+        builder = ReaderDiscoveryBuilder(catalogURL: active.catalogueURL)
+        catalogueFingerprint = fingerprint
+        promotedCatalogueURL = active.catalogueURL
+        cursor = nil
+        finished = false
+    }
+
+    /// Nil until a promotion; the association's immutable initial registrations stay cheap on
+    /// ordinary opportunities. A changed snapshot supplies the current source/endpoint authority.
+    func promotedCatalogue() -> URL? {
+        lock.withLock {
+            refreshIfNeeded()
+            return promotedCatalogueURL
+        }
+    }
+
+    public var entries: [LegacyCatalogEntry] {
+        lock.withLock {
+            refreshIfNeeded()
+            return pages.flatMap { $0.entries }
+        }
+    }
+    public var exhausted: Bool {
+        lock.withLock {
+            refreshIfNeeded()
+            return finished
+        }
+    }
 
     /// Registration must succeed before committing examination, so failures leave this page retryable.
     /// No suspension under the lock: connector lookup and discovery cannot race page installation.
@@ -35,12 +95,16 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
         materialize: ([LegacyCatalogEntry]) throws -> SyndicationAcquisitionSnapshot) throws -> ReaderDiscoveryPage? {
         try lock.withLock {
             try Task.checkCancellation()
+            refreshIfNeeded()
             guard !finished else { return nil }
             let page = try builder.page(for: profile, after: cursor, examinedCapacity: examinedCapacity)
-            if !page.entries.isEmpty {
-                let snapshot = try materialize(page.entries)
-                pages.append(snapshot)
-                discovered.append(contentsOf: page.entries)
+            // Pages retained across a promotion are useful supply. Re-examination advances the new
+            // catalogue cursor without re-registering or re-fetching identical prepared targets.
+            let known = Set(pages.flatMap { $0.entries }.map(\.targetID))
+            let additions = page.entries.filter { !known.contains($0.targetID) }
+            if !additions.isEmpty {
+                let snapshot = try materialize(additions)
+                pages.append((entries: additions, snapshot: snapshot))
             }
             cursor = page.nextCursor
             finished = page.exhausted
@@ -49,20 +113,37 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
     }
 
     func targets(for context: FeedContext) throws -> [AcquisitionTarget] {
-        let snapshots = lock.withLock { pages }
-        return try snapshots.flatMap { try $0.eligibleTargets(for: context, skippingRevokedDiscovery: true) }
+        try lock.withLock {
+            refreshIfNeeded()
+            return try pages.flatMap { page in
+                let allowed = Set(page.entries.map(\.targetID))
+                return try page.snapshot.eligibleTargets(for: context, skippingRevokedDiscovery: true)
+                    .filter { allowed.contains($0.id) }
+            }
+        }
     }
 
     func liveSourceIDs() throws -> Set<SourceID> {
-        let snapshots = lock.withLock { pages }
-        return try snapshots.reduce(into: Set<SourceID>()) { sources, snapshot in
-            sources.formUnion(try snapshot.discoverySourceIDs(for: FeedContext(key: contextKey)))
+        try lock.withLock {
+            refreshIfNeeded()
+            var ids = Set<SourceID>()
+            for page in pages {
+                let enabled = Set(try page.snapshot.eligibleTargets(
+                    for: FeedContext(key: contextKey), skippingRevokedDiscovery: true).map(\.id))
+                ids.formUnion(page.entries.filter { enabled.contains($0.targetID) }.map { $0.source.id })
+            }
+            return ids
         }
     }
 
     func connector(for target: AcquisitionTarget, using transport: URLSession) -> (any FeedConnector)? {
-        let snapshots = lock.withLock { pages }
-        return snapshots.lazy.compactMap { $0.connector(for: target, using: transport) }.first
+        lock.withLock {
+            refreshIfNeeded()
+            for page in pages where page.entries.contains(where: { $0.targetID == target.id }) {
+                if let connector = page.snapshot.connector(for: target, using: transport) { return connector }
+            }
+            return nil
+        }
     }
 }
 

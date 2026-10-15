@@ -16,13 +16,30 @@ public enum SourceManagementError: Error, Equatable, Sendable {
 }
 
 public struct SourceManagementCoordinator: Sendable {
-    private let catalog: LegacyCatalogReader?
+    private let fixedCatalog: LegacyCatalogReader?
+    private let installation: CatalogInstallation?
     private let preferences: ReaderPreferencesStore?
 
-    /// The catalog is an optional shipped asset: without it the surface states its absence instead of
-    /// inventing an empty tree.
+    /// The source screen's backend resolves the current catalogue when a new operation starts,
+    /// not when the store was first presented. Previously rendered UI values are never rewritten here.
+    private var catalog: LegacyCatalogReader? {
+        if let installation {
+            return installation.activeSnapshot().flatMap { try? LegacyCatalogReader(catalogURL: $0.catalogueURL) }
+        }
+        return fixedCatalog
+    }
+
+    /// Fixed catalog for existing callers and tests that explicitly name one immutable fixture.
     public init(catalogURL: URL?, database: RuntimeDatabase?) {
-        catalog = catalogURL.flatMap { try? LegacyCatalogReader(catalogURL: $0) }
+        fixedCatalog = catalogURL.flatMap { try? LegacyCatalogReader(catalogURL: $0) }
+        installation = nil
+        preferences = database.map(ReaderPreferencesStore.init(database:))
+    }
+
+    /// Managed catalogue: the existing installer, not an alternate in-memory authority.
+    public init(installation: CatalogInstallation, database: RuntimeDatabase?) {
+        self.installation = installation
+        fixedCatalog = nil
         preferences = database.map(ReaderPreferencesStore.init(database:))
     }
 

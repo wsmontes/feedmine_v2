@@ -45,6 +45,42 @@ final class SourceManagementCoordinatorTests: XCTestCase {
         return try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))
     }
 
+    /// PD10-B2: an already constructed coordinator reads the installer's committed authority for
+    /// the *next* operation. The source selection is a reader-owned store, not a catalog side effect.
+    func testPD10B2ExistingCoordinatorReadsPromotedSnapshotWithoutRewritingSelection() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let old = try makeCatalogue(in: root.appendingPathComponent("r5"), sources: 2, revision: 5)
+        let bundleDescriptor = root.appendingPathComponent("bundle.json")
+        try pd10Descriptor(old, revision: 5, sources: 2).write(to: bundleDescriptor)
+        let installation = CatalogInstallation(directory: root.appendingPathComponent("catalogue"),
+            bundledCatalogue: old, bundledManifest: bundleDescriptor)
+        XCTAssertEqual(installation.bootstrap()?.revision, 5)
+        let db = try database()
+        let preferences = ReaderPreferencesStore(database: db)
+        _ = try preferences.initialize(sourceKeys: ["https://exemplo.pt/feed1"])
+        let coordinator = SourceManagementCoordinator(installation: installation, database: db)
+        XCTAssertEqual(try coordinator.searchSources("Exemplo 1").count, 1)
+        let selected = try coordinator.selection()
+
+        let new = try makeCatalogue(in: root.appendingPathComponent("r6"), sources: 1, revision: 6)
+        guard case .installed = installation.install(manifestData: try pd10Descriptor(
+            new, revision: 6, sources: 1), catalogue: new) else {
+            return XCTFail("the second snapshot must activate")
+        }
+        XCTAssertTrue(try coordinator.searchSources("Exemplo 1").isEmpty)
+        XCTAssertEqual(try coordinator.searchSources("Exemplo 0").count, 1)
+        XCTAssertEqual(try coordinator.selection(), selected,
+            "a managed deletion must not delete a reader's selected source")
+    }
+
+    private func pd10Descriptor(_ url: URL, revision: Int, sources: Int) throws -> Data {
+        let size = try XCTUnwrap(url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        return try CatalogManifest(revision: revision, sourceCount: sources, fileCount: 1,
+            files: [CatalogManifestEntry(path: "catalog.sqlite", bytes: size,
+                sha256: try CatalogManifest.sha256(ofFile: url))]).encoded()
+    }
+
     /// UI receives values, never reader records or rows; a missing asset is a typed absence.
     func testExposesValuesOnlyAndStatesAMissingCatalog() throws {
         let empty = SourceManagementCoordinator(catalogURL: nil, database: nil)

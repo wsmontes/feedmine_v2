@@ -1017,7 +1017,8 @@ final class AppComposition {
     func makeSourceManagementStore() -> SourceManagementStore {
         let database = libraryDatabase()
         return SourceManagementStore(backend: SourceCatalogBackend(
-            coordinator: SourceManagementCoordinator(catalogURL: catalogueURL, database: database),
+            coordinator: SourceManagementCoordinator(
+                installation: CatalogInstallation(appDirectory: directory), database: database),
             healthProvider: { await self.sourceHealth() }))
     }
 
@@ -1139,7 +1140,8 @@ final class AppComposition {
         let walk = DiscoveryWalkKey(profile: profile, contextKey: key, catalogue: snapshot.fingerprint)
         if let existing = discoveryTraversals[walk] { return existing }
         let traversal = ReaderDiscoveryTraversal(builder: ReaderDiscoveryBuilder(catalogURL: snapshot.catalogueURL),
-            profile: profile, contextKey: key)
+            profile: profile, contextKey: key,
+            installation: CatalogInstallation(appDirectory: directory))
         discoveryTraversals[walk] = traversal
         return traversal
     }
@@ -1984,7 +1986,8 @@ final class FeedAssociation {
         #endif
         let acquisition = try SyndicationAcquisitionSnapshot(database: db, registrations: registrations,
             session: transport, redirectCapacity: 4, discovery: discoveryTraversal,
-            authorizedNonPublicOrigins: authorizedNonPublicOrigins)
+            authorizedNonPublicOrigins: authorizedNonPublicOrigins,
+            selectedSourceIDs: Set(feeds.map(\.sourceID)))
         self.acquisition = acquisition
         // H2: a feed that keeps failing cools down for a doubling window that starts at what one
         // failed attempt may already cost (the request timeout) and is capped by the resource

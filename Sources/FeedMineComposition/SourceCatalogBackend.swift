@@ -37,15 +37,18 @@ public struct SourceCatalogBackend: SourceManagementBackend {
     }
 
     public func children(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary] {
-        try coordinator.nodes(parentID: node.id, limit: limit).values
+        guard let currentID = try coordinator.nodeByKey(node.key) else { return [] }
+        return try coordinator.nodes(parentID: currentID, limit: limit).values
     }
 
     public func breadcrumb(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary] {
-        try coordinator.breadcrumb(ofNodeID: node.id)
+        guard let currentID = try coordinator.nodeByKey(node.key) else { return [] }
+        return try coordinator.breadcrumb(ofNodeID: currentID)
     }
 
     public func sources(in node: CatalogNodeSummary) async throws -> [CatalogSourceSummary] {
-        try coordinator.sources(inNode: node.id, limit: limit).values
+        guard let currentID = try coordinator.nodeByKey(node.key) else { return [] }
+        return try coordinator.sources(inNode: currentID, limit: limit).values
     }
 
     public func searchSources(_ query: String) async throws -> [CatalogSourceSummary] {
@@ -55,7 +58,8 @@ public struct SourceCatalogBackend: SourceManagementBackend {
     public func countryKeys() async throws -> [Int64: Set<String>] { try coordinator.countryKeys() }
 
     public func childKeys(of node: CatalogNodeSummary) async throws -> [Int64: Set<String>] {
-        try coordinator.keysByParent(nodeID: node.id)
+        guard let currentID = try coordinator.nodeByKey(node.key) else { return [:] }
+        return try coordinator.keysByParent(nodeID: currentID)
     }
 
     public func health() async throws -> [String: CatalogSourceHealth] { await healthProvider() }
@@ -65,10 +69,12 @@ public struct SourceCatalogBackend: SourceManagementBackend {
     public func setSelection(_ keys: [String]) async throws { _ = try coordinator.setSelection(keys) }
 
     public func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws {
-        _ = try coordinator.setEnabled(nodeID: node.id, enabled: enabled)
+        guard let currentID = try coordinator.nodeByKey(node.key) else { throw SourceManagementError.invalidSelection }
+        _ = try coordinator.setEnabled(nodeID: currentID, enabled: enabled)
     }
 
     public func setEnabledTree(node: CatalogNodeSummary, enabled: Bool) async throws {
-        _ = try coordinator.setEnabledTree(nodeID: node.id, enabled: enabled)
+        guard let currentID = try coordinator.nodeByKey(node.key) else { throw SourceManagementError.invalidSelection }
+        _ = try coordinator.setEnabledTree(nodeID: currentID, enabled: enabled)
     }
 }

@@ -408,6 +408,10 @@ public struct CatalogInstallation: Sendable {
 
     public func activeSnapshot() -> CatalogSnapshot? { snapshot(for: activePointer()) }
 
+    /// Cheap identity check for future acquisition opportunities. Snapshot verification belongs to
+    /// bootstrap/install; callers only inspect the existing committed pointer here.
+    public func activeFingerprint() -> String? { activePointer()?.fingerprint }
+
     /// Everything the ledger holds, oldest first — accepted and refused alike, so one pass prints the
     /// normalisations and the quarantine.
     public func ledger() -> [CatalogRevisionRecord] {
