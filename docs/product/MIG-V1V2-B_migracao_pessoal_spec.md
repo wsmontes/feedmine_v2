@@ -241,3 +241,28 @@ divergência artificial entre o implementador e o `main`.
 
 **Verificação de árvore:** `git rev-parse a0623a6d^{tree}` deve diferir de `dee94e2e^{tree}` **apenas** por este
 arquivo; qualquer outra diferença é motivo para parar e relatar.
+
+---
+
+## Emenda 2 — base definitiva (decisão final do arquiteto, 2026-10-15)
+
+**Esta emenda corrige a base indicada na Emenda 1.** A Emenda 1 foi escrita **antes** da decisão final do
+arquiteto; ela permanece no texto por fidelidade ao que foi decidido naquele momento, mas **não é a base
+vigente**.
+
+| Parâmetro | Valor vigente |
+|---|---|
+| **Base definitiva** | **`801f017dd3a65c19e47ae101f4a95de02457458c`** |
+| Parent | `a0623a6d` |
+| Histórico da base (todos *docs-only*) | `dee94e2e` (P0D integrado) → `a0623a6d` (publicação da spec) → **`801f017d`** (Emenda 1) |
+| Alteração de produção nesse histórico | **nenhuma** (verificado: só `docs/product/MIG-V1V2-B_migracao_pessoal_spec.md`) |
+| Branch do implementador | `chatgpt/mig-v1v2-b-personal-preservation`, **um** commit sobre `801f017d` |
+| Demais contratos (§5 allowlist, §6 T01–T16, §7 M1–M8, §9 fixture, §5 protegidos) | **inalterados** |
+
+**Regra de processo associada (decisão do arquiteto, opção B):** enquanto este gate estiver aberto, o `main`
+fica **congelado** — registros documentais vão para branches `docs/…` **não mergeadas** e entram no `main` no
+fechamento do gate. Foi por isso que esta Emenda 2 vive aqui, e não no `main`.
+
+**Consequência para a auditoria:** o diff do gate é medido contra **`801f017d`**
+(`git diff --name-only 801f017d HEAD`), nunca contra `dee94e2e` nem `a0623a6d`. Comparar contra os SHAs
+anteriores misturaria commits de documentação com o delta do implementador.
