@@ -30,8 +30,8 @@ public enum ReaderSourceIdentity {
     ///
     /// nil when the entry cannot be fetched by the syndication connector — a non-http address, no host, or
     /// credentials in the URL — so an unusable entry is refused here instead of failing acquisition later.
-    public static func entry(_ imported: ReaderImportEntry) -> LegacyCatalogEntry? {
-        let identity = imported.id.trimmingCharacters(in: .whitespacesAndNewlines)
+    public static func entry(_ imported: ReaderImportEntry, identityKey: String? = nil) -> LegacyCatalogEntry? {
+        let identity = (identityKey ?? imported.id).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !identity.isEmpty else { return nil }
         guard let endpoint = URL(string: imported.requestURL), let scheme = endpoint.scheme?.lowercased(),
             scheme == "http" || scheme == "https", let host = endpoint.host, !host.isEmpty,

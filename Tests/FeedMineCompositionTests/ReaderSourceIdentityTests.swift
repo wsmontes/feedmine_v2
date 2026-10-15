@@ -99,4 +99,29 @@ final class ReaderSourceIdentityTests: XCTestCase {
         XCTAssertEqual(mapped.principal, "https://mine.example/feed")
         XCTAssertEqual(mapped.source.displayName, "Mine")
     }
+    /// PD10-P0D P8: managed source keys (not request endpoints) own historical IDs.
+    func testPD10P0DEndpointChangesCannotChangeManagedSourceIdentity() throws {
+        let key = "https://publisher.example/feed"
+        let make: (String) -> LegacyCatalogSourceRecord = { endpoint in
+            LegacyCatalogSourceRecord(key: key, title: "News", requestURL: endpoint,
+                siteURL: nil, language: nil, mediaKind: "text", qualityScore: nil,
+                defaultEnabled: true, nodeKeys: [])
+        }
+        let a = try XCTUnwrap(LegacyCatalogImport.entry(make(
+            "https://fetch.example/a?signature=one")))
+        let b = try XCTUnwrap(LegacyCatalogImport.entry(make(
+            "https://fetch.example/b?signature=two")))
+        XCTAssertEqual(a.source.id, b.source.id)
+        XCTAssertEqual(a.bindingID, b.bindingID)
+        XCTAssertEqual(a.targetID, b.targetID)
+        XCTAssertNotEqual(a.endpoint, b.endpoint)
+        XCTAssertEqual(a.principal, key)
+        XCTAssertEqual(b.principal, key)
+        let other = try XCTUnwrap(LegacyCatalogImport.entryWithIdentityKey(make(
+            "https://fetch.example/a?signature=one"), identityKey: "https://different.example/feed"))
+        XCTAssertNotEqual(a.source.id, other.source.id,
+            "sharing an endpoint alone does not create a new proven personal alias")
+    }
+
+
 }

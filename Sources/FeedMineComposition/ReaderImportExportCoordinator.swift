@@ -96,19 +96,24 @@ public struct ReaderImportExportCoordinator: Sendable {
     /// collection, or a saved box.
     func entries(for scope: ReaderExportScope) throws -> [ReaderImportEntry] {
         let imported = Dictionary(uniqueKeysWithValues: importedSources().map { ($0.id, $0) })
+        let links = try ReaderLibraryStore(database: database).sourceLinks()
+        func resolved(_ key: String) -> ReaderImportEntry {
+            let personal = imported[key] ?? links[key].flatMap { imported[$0.currentKey] }
+            if let personal {
+                return ReaderImportEntry(id: key, title: personal.title, requestURL: personal.requestURL,
+                    categoryPath: [])
+            }
+            let address = links[key]?.requestURL ?? key
+            return ReaderImportEntry(id: key, title: Self.title(forKey: key), requestURL: address,
+                categoryPath: [])
+        }
         switch scope {
         case .selection:
             let keys = (try? ReaderPreferencesStore(database: database).load()?.sourceKeys) ?? []
-            return keys.sorted().map { key in
-                imported[key] ?? ReaderImportEntry(id: key, title: Self.title(forKey: key),
-                    requestURL: key, categoryPath: [])
-            }
+            return keys.sorted().map(resolved)
         case .collection(let id):
             let keys = try ReaderLibraryStore(database: database).sourceKeys(inCollection: id)
-            return keys.sorted().map { key in
-                imported[key] ?? ReaderImportEntry(id: key, title: Self.title(forKey: key),
-                    requestURL: key, categoryPath: [])
-            }
+            return keys.sorted().map(resolved)
         case .bookmarkBox(let id):
             // A box holds card occurrences, not sources: the sources are the ones those cards came from.
             let store = PublicationStore(database: database)

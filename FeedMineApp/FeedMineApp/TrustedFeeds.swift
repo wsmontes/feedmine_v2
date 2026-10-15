@@ -60,53 +60,62 @@ extension TrustedFeed {
         }
     }
 
-    /// Review OMP C1: saved keys are reader preferences, not bundled configuration. A key the
-    /// current catalog no longer contains (catalog update, development key) is dropped instead of
-    /// failing startup; a missing or unreadable catalog still throws.
-    ///
-    /// `readerSources` are the feeds the reader brought themselves — a pasted link, an imported file — kept
-    /// beside the selection by `ReaderLibraryStore`. They are resolved **before** the catalogue is opened, and
-    /// a key that is in neither is still dropped: an imported or pasted feed used to be written, selected and
-    /// then dropped here, so the reader's own source never became a target and produced no card.
-    /// The order is an **authority** order, and it is the same on every launch and for every session:
-    /// the shipped catalogue, then the reader's own sources, then the session's list, then nothing.
-    ///
-    /// `catalogueURL` is the installed catalogue the app handed over (`AppComposition.catalogueURL`); this
-    /// function does not look one up, so the resolution is made against the snapshot the app actually verified.
-    ///
-    /// A key the catalogue carries keeps the catalogue's identities even when the reader imported it (an OPML
-    /// file full of popular feeds must not mint a second identity per feed, and a relaunch must not change the
-    /// binding under a reader who did nothing); a key the catalogue does not carry — a pasted link — is the
-    /// reader's, under the reader's own namespace. A key in none of them is still dropped, never invented.
+    /// Operational resolution never edits reader preferences. Pinned historic identity is separate from the
+    /// current catalog representation; a missing record is an unresolved choice, not a deselection.
     static func resolveAvailable(keys: [String], fallback: [TrustedFeed],
-        readerSources: [ReaderImportEntry] = [], catalogueURL: URL?) throws -> [TrustedFeed] {
-        var reader: LegacyCatalogReader?
-        var mine: [String: TrustedFeed] = [:]
-        for entry in readerSources {
-            guard mine[entry.id] == nil, let mapped = ReaderSourceIdentity.entry(entry) else { continue }
-            mine[entry.id] = TrustedFeed(targetID: mapped.targetID, sourceID: mapped.source.id,
-                bindingID: mapped.bindingID, principal: mapped.principal, endpoint: mapped.endpoint,
-                displayName: mapped.source.displayName, principalNamespace: ReaderSourceIdentity.principalNamespace)
-        }
-        return try keys.compactMap { key in
-            // The catalogue is the app's installed one, handed in — not a second lookup of `Bundle.main` that
-            // only pretends to be the same file. `nil` means this build carries no readable catalogue, and the
-            // reader's own sources and the session's list still resolve, exactly as before.
-            if reader == nil, let catalogueURL {
-                reader = try LegacyCatalogReader(catalogURL: catalogueURL)
+        readerSources: [ReaderImportEntry] = [], catalogueURL: URL?,
+        identities: [String: ReaderLibraryStore.SourceLink] = [:]) throws -> [TrustedFeed] {
+        let imported = Dictionary(readerSources.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let catalog = try catalogueURL.map { try LegacyCatalogReader(catalogURL: $0) }
+        var result: [TrustedFeed] = []
+        var seen = Set<String>()
+        for key in keys {
+            let link = identities[key]
+            let anchor = link?.anchorKey ?? key
+            let catalogKey = link?.currentKey ?? key
+            guard seen.insert(anchor).inserted else { continue }
+            let personal = imported[catalogKey] ?? imported[key]
+            if link?.authority == "reader", let personal,
+                let entry = ReaderSourceIdentity.entry(personal, identityKey: anchor) {
+                result.append(TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id,
+                    bindingID: entry.bindingID, principal: anchor, endpoint: entry.endpoint,
+                    displayName: entry.source.displayName, principalNamespace: ReaderSourceIdentity.principalNamespace))
+                continue
             }
-            if let record = try reader?.source(key: key), let entry = LegacyCatalogImport.entry(record) {
-                return TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id, bindingID: entry.bindingID,
-                    principal: entry.principal, endpoint: entry.endpoint, displayName: entry.source.displayName)
+            if let record = try catalog?.source(key: catalogKey),
+                let entry = LegacyCatalogImport.entryWithIdentityKey(record, identityKey: anchor) {
+                result.append(TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id,
+                    bindingID: entry.bindingID, principal: anchor, endpoint: entry.endpoint,
+                    displayName: entry.source.displayName))
+                continue
             }
-            // Residual, recorded: a key the catalogue *stops* carrying (an app update with a rebuilt catalogue)
-            // falls through to the reader's entry and changes identity from the catalogue's namespaces to the
-            // reader's. Recording the authority that first resolved a key, with the imported entry, is the fix;
-            // it is not needed while the bundled catalogue only changes with an app update.
-            if let readerFeed = mine[key] { return readerFeed }
-            if let supplied = fallback.first(where: { $0.principal == key }) { return supplied }
-            return nil
+            if let personal {
+                // Keep the first catalog namespace if a formerly catalog-managed source now has only
+                // its import endpoint; never flip source/target/binding IDs on catalog removal.
+                let entry: LegacyCatalogEntry?
+                if link?.authority == "catalog" {
+                    entry = LegacyCatalogImport.entry(LegacyCatalogSourceRecord(key: anchor,
+                        title: personal.title, requestURL: personal.requestURL, siteURL: nil,
+                        language: nil, mediaKind: "text", qualityScore: nil, defaultEnabled: true,
+                        nodeKeys: []))
+                } else {
+                    entry = ReaderSourceIdentity.entry(personal, identityKey: anchor)
+                }
+                if let entry {
+                    result.append(TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id,
+                        bindingID: entry.bindingID, principal: anchor, endpoint: entry.endpoint,
+                        displayName: entry.source.displayName,
+                        principalNamespace: link?.authority == "catalog"
+                            ? nil : ReaderSourceIdentity.principalNamespace))
+                    continue
+                }
+            }
+            if let supplied = fallback.first(where: { $0.principal == key || $0.principal == catalogKey }) {
+                result.append(supplied)
+            }
+            // Unresolved is not unselected; the stored key stays untouched.
         }
+        return result
     }
 
     /// The tests' own way in: a reader with **known** sources, so the control, navigation and restoration tests do

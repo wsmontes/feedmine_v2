@@ -725,8 +725,8 @@ final class CompositionTests: XCTestCase {
         XCTAssertThrowsError(try TrustedFeed.catalog(limit: 64, resourceURL: invalid))
     }
 
-    /// OMP C1: a saved key the catalog no longer has must not brick startup.
-    func testSavedKeysMissingFromCatalogAreRepairedNotFatal() throws {
+    /// PD10-P0D P1/D1: catalog availability is not the authority over durable selection.
+    func testSavedKeysMissingFromCatalogRemainSelectedWithoutVersionBump() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let starter = try TrustedFeed.catalog(limit: 64, resourceURL: XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite")))
@@ -737,16 +737,158 @@ final class CompositionTests: XCTestCase {
         }
         let composition = AppComposition(directory: directory, feeds: starter, transportConfiguration: .ephemeral)
         XCTAssertNil(composition.startupFailure)
-        XCTAssertEqual(composition.feeds.map(\.principal), starter.map(\.principal))
+        XCTAssertTrue(composition.feeds.isEmpty, "no unrelated starter feed may replace missing choices")
         XCTAssertEqual(composition.currentContext, .main)
-        let repaired = try XCTUnwrap(ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory))).load())
-        XCTAssertEqual(repaired.sourceKeys, starter.map(\.principal))
-        XCTAssertEqual(repaired.activeContext, .main)
+        let retained = try XCTUnwrap(ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory))).load())
+        XCTAssertEqual(retained.sourceKeys, ["https://absent.example/rss", "bbc-world"])
+        XCTAssertEqual(retained.selectionVersion, 2, "availability cannot bump the reader's selection version")
+        XCTAssertEqual(retained.activeContext, .main)
 
-        // Valid keys survive; only the vanished one is dropped.
+        // Resolution may omit unavailable keys from the operational list, never from persistence.
         let partial = try TrustedFeed.resolveAvailable(keys: ["https://absent.example/rss", starter[1].principal],
             fallback: starter, catalogueURL: Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
         XCTAssertEqual(partial.map(\.principal), [starter[1].principal])
+    }
+
+
+    /// PD10-P0D D1: turning off A cannot erase the reader's still-selected but unavailable B.
+    /// A/B/C are initially available; on reopen B is absent from the operational authority.
+    func testPD10P0DDisablingAvailableSourceKeepsMissingSelectionThroughReopen() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let a = TrustedFeed.development[0], c = TrustedFeed.development[1]
+        let b = TrustedFeed(targetID: AcquisitionTargetID(), sourceID: SourceID(),
+            bindingID: SourceBindingID(), principal: "https://temporarily-unavailable.example/rss",
+            endpoint: URL(string: "https://temporarily-unavailable.example/rss")!,
+            displayName: "Temporarily unavailable")
+        let first = root(directory: directory, feeds: [a, b, c])
+        XCTAssertNil(first.startupFailure)
+        XCTAssertEqual(first.feeds.map(\.principal), [a.principal, b.principal, c.principal])
+        let preferences = ReaderPreferencesStore(database: try RuntimeDatabase(
+            location: .init(directory: directory)))
+        let initiallySaved = try XCTUnwrap(preferences.load())
+        XCTAssertEqual(initiallySaved.sourceKeys, [a.principal, b.principal, c.principal])
+
+        // B is no longer offered, but no reader action has deselected it.
+        let withoutB = root(directory: directory, feeds: [a, c])
+        XCTAssertNil(withoutB.startupFailure)
+        XCTAssertEqual(withoutB.feeds.map(\.principal), [a.principal, c.principal])
+        XCTAssertEqual(try preferences.load()?.sourceKeys, initiallySaved.sourceKeys)
+        XCTAssertEqual(try preferences.load()?.selectionVersion, initiallySaved.selectionVersion)
+        await withoutB.launch()
+        try await withoutB.searchSources("")
+        try await withoutB.toggleSource(a.sourceID)
+
+        XCTAssertEqual(withoutB.feeds.map(\.principal), [c.principal])
+        XCTAssertEqual(try preferences.load()?.sourceKeys, [b.principal, c.principal],
+            "removing A must not silently discard unresolved B")
+        XCTAssertEqual(try preferences.load()?.selectionVersion, initiallySaved.selectionVersion + 1,
+            "one explicit toggle is exactly one selection change")
+        await withoutB.association?.close()
+
+        let reopened = root(directory: directory, feeds: [a, c])
+        XCTAssertNil(reopened.startupFailure)
+        XCTAssertEqual(reopened.feeds.map(\.principal), [c.principal])
+        XCTAssertEqual(try preferences.load()?.sourceKeys, [b.principal, c.principal])
+        XCTAssertEqual(try preferences.load()?.selectionVersion, initiallySaved.selectionVersion + 1)
+        await reopened.launch()
+        XCTAssertEqual(reopened.feeds.map(\.principal), [c.principal])
+        XCTAssertEqual(try preferences.load()?.sourceKeys, [b.principal, c.principal])
+        await reopened.association?.close()
+    }
+
+    /// PD10-P0D P1/P6/P7/P13: native composition and persisted authority, no HTTP.
+    func testPD10P0DImportedManagedIdentityRemainsSingleAndAvailableOffline() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let bundled = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let managed = try XCTUnwrap(TrustedFeed.catalog(limit: 1, resourceURL: bundled).first)
+        let imported = ReaderImportEntry(id: managed.principal, title: "Meu título",
+            requestURL: managed.endpoint.absoluteString + "?my_access=1", categoryPath: [])
+        let persisted: ReaderPreferencesStore.Record
+        do {
+            let database = try RuntimeDatabase(location: .init(directory: directory))
+            let preferences = ReaderPreferencesStore(database: database)
+            _ = try preferences.initialize(sourceKeys: [])
+            let library = ReaderLibraryStore(database: database)
+            _ = try library.commitImport([imported], rejected: 0, at: Date(timeIntervalSince1970: 1))
+            persisted = try XCTUnwrap(preferences.load())
+            XCTAssertEqual(persisted.sourceKeys, [managed.principal])
+        }
+        let first = AppComposition(directory: directory, feeds: [], transportConfiguration: .ephemeral)
+        XCTAssertNil(first.startupFailure)
+        XCTAssertEqual(first.feeds.count, 1, "import and catalog are one active source")
+        XCTAssertEqual(first.feeds[0].sourceID, managed.sourceID)
+        XCTAssertEqual(first.feeds[0].bindingID, managed.bindingID)
+        let library = ReaderLibraryStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+        let pinned = try library.sourceLinks()
+        XCTAssertEqual(pinned[managed.principal]?.authority, "catalog")
+        let offline = try TrustedFeed.resolveAvailable(keys: persisted.sourceKeys, fallback: [],
+            readerSources: [imported], catalogueURL: nil, identities: pinned)
+        XCTAssertEqual(offline.count, 1)
+        XCTAssertEqual(offline.first?.sourceID, managed.sourceID,
+            "removing the managed record must not flip source IDs to the import namespace")
+        XCTAssertEqual(offline.first?.targetID, managed.targetID)
+        XCTAssertEqual(offline.first?.endpoint.absoluteString, imported.requestURL)
+        let reopened = AppComposition(directory: directory, feeds: [], transportConfiguration: .ephemeral)
+        XCTAssertEqual(reopened.feeds.count, 1)
+        XCTAssertEqual(reopened.feeds[0].sourceID, managed.sourceID)
+        XCTAssertEqual(try ReaderPreferencesStore(database: try RuntimeDatabase(
+            location: .init(directory: directory))).load()?.selectionVersion, persisted.selectionVersion)
+    }
+
+    /// P0B/P0D integration: revision 6 removes a managed source that the user also imported.
+    /// The visible Edition stays frozen and the *next* association retains the historical IDs.
+    func testPD10P0DLiveCatalogActivationPreservesPersonalIdentity() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let bundled = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let managed = try XCTUnwrap(TrustedFeed.catalog(limit: 2, resourceURL: bundled).last)
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: [managed.principal])
+        let imported = ReaderImportEntry(id: managed.principal, title: "Meu feed science",
+            requestURL: managed.endpoint.absoluteString, categoryPath: [])
+        let library = ReaderLibraryStore(database: database)
+        _ = try library.commitImport([imported], rejected: 0, at: Date())
+        let before = try XCTUnwrap(preferences.load())
+
+        let published = try makePD10BPublishedRevision()
+        StandardCatalogueTransport.prepare(try published.manifest.encoded(),
+            payloads: published.payloads, paused: true)
+        defer { StandardCatalogueTransport.releaseManifest() }
+        let root = publicCatalogueRoot(directory: directory)
+        XCTAssertNil(root.startupFailure)
+        XCTAssertEqual(root.feeds.map(\.sourceID), [managed.sourceID])
+        XCTAssertEqual(try library.sourceLinks()[managed.principal]?.authority, "catalog")
+        await root.launch()
+        let original = try XCTUnwrap(root.association)
+        let foreground = Task { await root.foreground() }
+        for _ in 0..<300 where StandardCatalogueTransport.requests.withLock({ $0.isEmpty }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(StandardCatalogueTransport.requests.withLock { $0.count }, 1)
+        let frozen = original.store.state.presentation
+        StandardCatalogueTransport.releaseManifest()
+        await foreground.value
+        let activated = try XCTUnwrap(CatalogInstallation(appDirectory: directory).activeSnapshot())
+        XCTAssertEqual(activated.revision, 6)
+        XCTAssertTrue(root.association === original)
+        XCTAssertEqual(original.store.state.presentation, frozen)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, before.sourceKeys)
+        XCTAssertEqual(try preferences.load()?.selectionVersion, before.selectionVersion)
+
+        try await root.replaceSession()
+        let refreshed = try XCTUnwrap(root.association)
+        XCTAssertFalse(refreshed === original)
+        XCTAssertEqual(refreshed.catalogueURL, activated.catalogueURL)
+        XCTAssertEqual(refreshed.feeds.map(\.sourceID), [managed.sourceID])
+        XCTAssertEqual(refreshed.feeds.map(\.targetID), [managed.targetID])
+        XCTAssertEqual(refreshed.feeds.map(\.bindingID), [managed.bindingID])
+        XCTAssertEqual(refreshed.feeds.first?.endpoint, managed.endpoint)
+        XCTAssertEqual(try library.importedSources().first?.requestURL, imported.requestURL)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, before.sourceKeys)
+        await refreshed.close()
     }
 
     func testSourceSelectionSurvivesRelaunchAndFiltersCanonicalSupply() async throws {

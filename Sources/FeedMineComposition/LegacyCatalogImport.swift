@@ -39,18 +39,26 @@ public enum LegacyCatalogImport {
             digest[8], digest[9], digest[10], digest[11], digest[12], digest[13], digest[14], digest[15]))
     }
 
-    /// Maps one catalog record; nil when it cannot be fetched by the syndication connector.
+    /// Preserve the single-argument function value used by the catalog/discovery compactMaps.
+    /// Swift default arguments do not reduce a function reference's arity.
     public static func entry(_ record: LegacyCatalogSourceRecord) -> LegacyCatalogEntry? {
+        entryWithIdentityKey(record, identityKey: record.key)
+    }
+
+    /// Maps a catalog record under an independently proven historical identity. Nil when unfetchable.
+    public static func entryWithIdentityKey(_ record: LegacyCatalogSourceRecord,
+        identityKey: String) -> LegacyCatalogEntry? {
+        let key = identityKey
         guard let endpoint = URL(string: record.requestURL), let scheme = endpoint.scheme?.lowercased(),
             scheme == "http" || scheme == "https", let host = endpoint.host, !host.isEmpty,
             endpoint.user == nil, endpoint.password == nil else { return nil }
         let title = record.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let source = Source(id: SourceID(rawValue: stableUUID(namespace: sourceNamespace, key: record.key)),
+        let source = Source(id: SourceID(rawValue: stableUUID(namespace: sourceNamespace, key: key)),
             displayName: title.isEmpty ? host : title, isEnabled: record.defaultEnabled)
         return LegacyCatalogEntry(source: source,
-            targetID: AcquisitionTargetID(rawValue: stableUUID(namespace: targetNamespace, key: record.key)),
-            bindingID: SourceBindingID(rawValue: stableUUID(namespace: bindingNamespace, key: record.key)),
-            endpoint: endpoint, principal: record.key, language: record.language, nodeKeys: record.nodeKeys,
+            targetID: AcquisitionTargetID(rawValue: stableUUID(namespace: targetNamespace, key: key)),
+            bindingID: SourceBindingID(rawValue: stableUUID(namespace: bindingNamespace, key: key)),
+            endpoint: endpoint, principal: key, language: record.language, nodeKeys: record.nodeKeys,
             qualityScore: record.qualityScore)
     }
 

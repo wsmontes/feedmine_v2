@@ -243,4 +243,182 @@ final class ReaderLibraryStoreTests: XCTestCase {
         let reopened = ReaderLibraryStore(database: try RuntimeDatabase(location: location))
         XCTAssertEqual(try reopened.bookmarkedCardIDs(inList: ReaderBookmarkList.defaultID), [cards[1].id])
     }
+    // PD10-P0D deterministic revisions. Two local compiled SQLite catalogs, no HTTP and no live source.
+    private func identityCatalog(revision: Int, sources: [(String, String)]) throws -> LegacyCatalogReader {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        try DatabaseQueue(path: url.path).write { db in
+            try db.execute(sql: """
+                CREATE TABLE catalog_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE catalog_node (id INTEGER PRIMARY KEY, key TEXT NOT NULL, name TEXT NOT NULL);
+                CREATE TABLE catalog_placement (source_id INTEGER, node_id INTEGER);
+                CREATE TABLE catalog_source (
+                    id INTEGER PRIMARY KEY, key TEXT UNIQUE NOT NULL, title TEXT NOT NULL,
+                    request_url TEXT NOT NULL, site_url TEXT, language TEXT, media_kind TEXT NOT NULL,
+                    quality_score INTEGER, default_enabled INTEGER NOT NULL,
+                    description TEXT, display_host TEXT, tags TEXT, nature TEXT, activity TEXT
+                );
+                """)
+            try db.execute(sql: "INSERT INTO catalog_metadata (key,value) VALUES ('catalog_version', ?)",
+                arguments: [String(revision)])
+            for (index, source) in sources.enumerated() {
+                try db.execute(sql: """
+                    INSERT INTO catalog_source
+                        (id, key, title, request_url, media_kind, default_enabled)
+                    VALUES (?, ?, 'Verified feed', ?, 'text', 1)
+                    """, arguments: [index + 1, source.0, source.1])
+            }
+        }
+        return try LegacyCatalogReader(catalogURL: url)
+    }
+
+    func testPD10P0DAliasAcrossTwoCompiledRevisionsKeepsPersonalStateAndReopens() throws {
+        let a = "https://old.example/rss", b = "https://new.example/rss"
+        let endpoint = "https://actual.example/feed?token=keep"
+        let old = try identityCatalog(revision: 5, sources: [(a, endpoint)])
+        let new = try identityCatalog(revision: 6, sources: [(b, endpoint)])
+        let proof = try VerifiedSourceAlias(old: old, new: new, oldKey: a, newKey: b)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let location = RuntimeDatabaseLocation(directory: root)
+        let collectionID: String
+        let savedVersion: UInt64
+        let cardID: PublicationCardID
+        do {
+            let database = try RuntimeDatabase(location: location)
+            let library = ReaderLibraryStore(database: database)
+            let preferenceStore = ReaderPreferencesStore(database: database)
+            let initial = try preferenceStore.initialize(sourceKeys: [a])
+            savedVersion = initial.selectionVersion
+            try library.rememberResolvedSources([(key: a, authority: "catalog")])
+            let collection = try library.createCollection(named: "Minha coleção")
+            collectionID = collection.id
+            try library.addToCollection(id: collection.id, sourceKeys: [a, b], at: Date(timeIntervalSince1970: 12))
+            let store = PublicationStore(database: database)
+            let edition = StorageFixture.edition()
+            let card = StorageFixture.card()
+            cardID = card.id
+            try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [card]), cards: [card])
+            try library.setBookmarkMembership(cardID: cardID, listID: ReaderBookmarkList.defaultID,
+                included: true, at: Date(timeIntervalSince1970: 13))
+            let publishedBefore = try database.read {
+                try Row.fetchAll($0, sql: "SELECT * FROM published_cards ORDER BY id").map { String(describing: $0) }
+            }
+            let bookmarkBefore = try library.bookmarkedCardIDs(inList: ReaderBookmarkList.defaultID)
+            XCTAssertTrue(try library.reconcile(proof), "first verified transition must reach the write boundary")
+            XCTAssertFalse(try library.reconcile(proof), "same evidence is idempotent")
+            XCTAssertEqual(try library.sourceKeys(inCollection: collection.id), [a])
+            XCTAssertEqual(try library.collections().first?.id, collection.id)
+            XCTAssertEqual(try preferenceStore.load()?.sourceKeys, [a])
+            XCTAssertEqual(try preferenceStore.load()?.selectionVersion, savedVersion)
+            XCTAssertEqual(try library.sourceLinks()[a]?.currentKey, b)
+            XCTAssertEqual(try library.sourceLinks()[a]?.anchorKey, a)
+            XCTAssertEqual(try library.sourceLinks()[a]?.requestURL, endpoint)
+            XCTAssertEqual(try library.sourceLinks()[b]?.anchorKey, a)
+            let imported = ReaderImportEntry(id: b, title: "Minha cópia", requestURL: endpoint,
+                categoryPath: [])
+            let firstImport = try library.commitImport([imported], rejected: 0,
+                collectionID: collection.id, at: Date(timeIntervalSince1970: 15))
+            XCTAssertEqual(firstImport.insertedSources, 1)
+            XCTAssertEqual(firstImport.alreadySelected, 1, "B maps to A, which was already selected")
+            let secondImport = try library.commitImport([imported], rejected: 0,
+                collectionID: collection.id, at: Date(timeIntervalSince1970: 16))
+            XCTAssertEqual(secondImport.insertedSources, 0)
+            XCTAssertEqual(secondImport.filedInCollection, 0)
+            XCTAssertEqual(try library.sourceKeys(inCollection: collection.id), [a])
+            XCTAssertEqual(try preferenceStore.load()?.sourceKeys, [a])
+            XCTAssertEqual(try preferenceStore.load()?.selectionVersion, savedVersion)
+            XCTAssertEqual(try library.importedSources().first?.requestURL, endpoint)
+            // OPML parses the exact signed fetch URL into another canonical key. Only the
+            // already-verified endpoint relation may attach it to the historical personal anchor.
+            let roundTrip = ReaderImportEntry(id: "https://actual.example/feed",
+                title: "Reimported", requestURL: endpoint, categoryPath: [])
+            let replay = try library.commitImport([roundTrip], rejected: 0,
+                collectionID: collection.id, at: Date(timeIntervalSince1970: 17))
+            XCTAssertEqual(replay.insertedSources, 0)
+            XCTAssertEqual(replay.alreadySelected, 1)
+            XCTAssertEqual(replay.filedInCollection, 0)
+            XCTAssertEqual(try library.importedSources().count, 1,
+                "the OPML-recomputed key cannot become a third subscription")
+            XCTAssertEqual(try library.bookmarkedCardIDs(inList: ReaderBookmarkList.defaultID), bookmarkBefore)
+            XCTAssertEqual(try database.read {
+                try Row.fetchAll($0, sql: "SELECT * FROM published_cards ORDER BY id")
+                    .map { String(describing: $0) }
+            }, publishedBefore, "not just counts: every published row must match")
+        }
+        let reopened = try RuntimeDatabase(location: location)
+        let library = ReaderLibraryStore(database: reopened)
+        XCTAssertEqual(try library.sourceLinks()[a]?.currentKey, b, "same on-disk personal database")
+        XCTAssertEqual(try library.sourceKeys(inCollection: collectionID), [a])
+        XCTAssertEqual(try ReaderPreferencesStore(database: reopened).load()?.sourceKeys, [a])
+        XCTAssertEqual(try ReaderPreferencesStore(database: reopened).load()?.selectionVersion, savedVersion)
+        XCTAssertEqual(try library.bookmarkedCardIDs(inList: ReaderBookmarkList.defaultID), [cardID])
+        XCTAssertFalse(try library.reconcile(proof))
+    }
+
+    func testPD10P0DUnprovenAmbiguousAndConflictingAliasesFailClosed() throws {
+        let a = "https://old.example/rss", b = "https://new.example/rss"
+        let e = "https://actual.example/feed"
+        let old = try identityCatalog(revision: 5, sources: [(a, e)])
+        let changed = try identityCatalog(revision: 6, sources: [(b, "https://other.example/feed")])
+        XCTAssertThrowsError(try VerifiedSourceAlias(old: old, new: changed, oldKey: a, newKey: b),
+            "unrelated endpoints may not be merged")
+        let ambiguous = try identityCatalog(revision: 6, sources: [(b, e), ("https://other.example/rss", e)])
+        XCTAssertThrowsError(try VerifiedSourceAlias(old: old, new: ambiguous, oldKey: a, newKey: b),
+            "two destinations sharing one endpoint are ambiguous")
+        let current = try identityCatalog(revision: 6, sources: [(b, e)])
+        let proof = try VerifiedSourceAlias(old: old, new: current, oldKey: a, newKey: b)
+        let database = try StorageFixture.database(self)
+        let library = ReaderLibraryStore(database: database)
+        try library.rememberResolvedSources([(key: a, authority: "catalog"),
+            (key: b, authority: "reader")])
+        let before = try library.sourceLinks()
+        XCTAssertThrowsError(try library.reconcile(proof), "B already has a different personal anchor")
+        XCTAssertEqual(try library.sourceLinks(), before, "no partial rows or guessed equivalence")
+        let next = try identityCatalog(revision: 7, sources: [(a, e)])
+        let inverse = try VerifiedSourceAlias(old: current, new: next, oldKey: b, newKey: a)
+        // B was independently pinned: attempting the inverse cannot turn two owners into a cycle.
+        XCTAssertThrowsError(try library.reconcile(inverse))
+        XCTAssertEqual(try library.sourceLinks(), before)
+        let incompatible = try identityCatalog(revision: 4, sources: [(b, e)])
+        XCTAssertThrowsError(try VerifiedSourceAlias(old: old, new: incompatible, oldKey: a, newKey: b))
+    }
+
+    func testPD10P0DRollbackOnMembershipErrorKeepsAliasesAndCardsUnchanged() throws {
+        let a = "https://old.example/rss", b = "https://new.example/rss", e = "https://actual.example/feed"
+        let old = try identityCatalog(revision: 5, sources: [(a, e)])
+        let new = try identityCatalog(revision: 6, sources: [(b, e)])
+        let proof = try VerifiedSourceAlias(old: old, new: new, oldKey: a, newKey: b)
+        let (database, publication, cards) = try seeded()
+        let library = ReaderLibraryStore(database: database)
+        try library.rememberResolvedSources([(key: a, authority: "catalog")])
+        let collection = try library.createCollection(named: "Teste")
+        try library.addToCollection(id: collection.id, sourceKeys: [b], at: Date())
+        try library.setBookmarkMembership(cardID: cards[0].id, listID: ReaderBookmarkList.defaultID,
+            included: true, at: Date())
+        let before = try database.read {
+            try Row.fetchAll($0, sql: "SELECT * FROM published_cards ORDER BY id")
+                .map { String(describing: $0) }
+        }
+        try database.write { db in
+            try db.execute(sql: """
+                CREATE TRIGGER refuse_identity_collection_move
+                BEFORE DELETE ON reader_collection_memberships
+                BEGIN SELECT RAISE(ABORT, 'fixture: refuse after alias writes'); END;
+                """)
+        }
+        XCTAssertThrowsError(try library.reconcile(proof),
+            "transaction must reach collection rewrite and fail after attempted alias insert")
+        XCTAssertEqual(try library.sourceLinks()[a]?.currentKey, a)
+        XCTAssertNil(try library.sourceLinks()[b])
+        XCTAssertEqual(try library.sourceKeys(inCollection: collection.id), [b])
+        XCTAssertEqual(try publication.card(id: cards[0].id), cards[0])
+        XCTAssertEqual(try database.read {
+            try Row.fetchAll($0, sql: "SELECT * FROM published_cards ORDER BY id")
+                .map { String(describing: $0) }
+        }, before)
+        XCTAssertEqual(try library.bookmarkedCardIDs(inList: ReaderBookmarkList.defaultID), [cards[0].id])
+    }
+
+
 }

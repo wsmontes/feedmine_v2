@@ -218,13 +218,16 @@ final class AppComposition {
                     saved = try preferences.updateSources([])
                 }
                 #endif
-                var resolved = try TrustedFeed.resolveAvailable(keys: saved.sourceKeys, fallback: feeds,
-                    readerSources: Self.readerSourceEntries(in: database), catalogueURL: self.catalogueURL)
-                // T7: a selection the reader emptied stays empty — V1 allowed zero sources and said so with its
-                // own surface. The fallback repairs a selection whose sources vanished from the catalogue, which
-                // is why it needs the saved selection to have had sources in the first place.
-                if resolved.isEmpty, !saved.sourceKeys.isEmpty { resolved = feeds }
-                if resolved.map(\.principal) != saved.sourceKeys { saved = try preferences.updateSources(resolved.map(\.principal)) }
+                // PD10-P0D D1: the catalog describes availability, never permission to overwrite
+                // a durable choice. Missing keys remain in preferences without version changes.
+                let identityStore = ReaderLibraryStore(database: database)
+                let resolved = try TrustedFeed.resolveAvailable(keys: saved.sourceKeys, fallback: feeds,
+                    readerSources: Self.readerSourceEntries(in: database), catalogueURL: self.catalogueURL,
+                    identities: identityStore.sourceLinks())
+                try identityStore.rememberResolvedSources(resolved.map {
+                    (key: $0.principal, authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
+                        ? "reader" : "catalog")
+                })
                 self.selectedFeeds = resolved
                 let restored = try sessionState(for: saved.activeContextKey)
                 if restored.key != saved.activeContextKey {
@@ -379,10 +382,25 @@ final class AppComposition {
     private func adoptActivatedCatalogue(_ snapshot: CatalogSnapshot) {
         guard catalogueSnapshot?.fingerprint != snapshot.fingerprint else { return }
         catalogueSnapshot = snapshot
-        if let preferences, let saved = try? preferences.load(),
-            let resolved = try? TrustedFeed.resolveAvailable(keys: saved.sourceKeys, fallback: selectedFeeds,
-                readerSources: readerSourceEntries(), catalogueURL: snapshot.catalogueURL) {
-            selectedFeeds = resolved
+        // P0B owns the verified active snapshot and protects the currently displayed association.
+        // P0D applies that snapshot only to future operational resolution, reusing personal anchors.
+        if let preferences, let database = libraryDatabase() {
+            do {
+                if let saved = try preferences.load() {
+                    let identities = ReaderLibraryStore(database: database)
+                    let resolved = try TrustedFeed.resolveAvailable(keys: saved.sourceKeys,
+                        fallback: selectedFeeds, readerSources: Self.readerSourceEntries(in: database),
+                        catalogueURL: snapshot.catalogueURL, identities: identities.sourceLinks())
+                    try identities.rememberResolvedSources(resolved.map {
+                        (key: $0.principal,
+                            authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
+                                ? "reader" : "catalog")
+                    })
+                    selectedFeeds = resolved
+                }
+            } catch {
+                Self.log("catalog activation kept the previous operational selection: \(error)")
+            }
         }
         // Do not discard prepared pools/traversals: their existing snapshot identity keeps them reusable for
         // associations still reading that snapshot. Future lookups use the new fingerprint in their key.
@@ -424,8 +442,25 @@ final class AppComposition {
             let records = try await Task.detached {
                 try LegacyCatalogReader(catalogURL: url).matchingSources(query: query, limit: 50)
             }.value
+            // Preserve established IDs without reopening the large catalog for every search hit.
+            // This uses the already fetched records and the reader's one durable identity authority.
+            let links = (try? libraryDatabase().map {
+                try ReaderLibraryStore(database: $0).sourceLinks()
+            }) ?? [:]
+            let imported = Dictionary(readerSourceEntries().map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first })
             choices += records.compactMap { record in
-                LegacyCatalogImport.entry(record).map(Self.trustedFeed(from:))
+                let link = links[record.key]
+                let anchor = link?.anchorKey ?? record.key
+                if link?.authority == "reader",
+                    let personal = imported[record.key] ?? imported[anchor],
+                    let entry = ReaderSourceIdentity.entry(personal, identityKey: anchor) {
+                    return TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id,
+                        bindingID: entry.bindingID, principal: anchor, endpoint: entry.endpoint,
+                        displayName: entry.source.displayName,
+                        principalNamespace: ReaderSourceIdentity.principalNamespace)
+                }
+                return LegacyCatalogImport.entryWithIdentityKey(record, identityKey: anchor).map(Self.trustedFeed(from:))
             }
         }
         guard searchID == sourceSearchID else { return }
@@ -454,7 +489,8 @@ final class AppComposition {
         defer { replacingSession = false }
         guard let choice = sourceChoices[sourceID], let preferences else { throw ReaderPreferencesError.invalidSelection }
         var next = selectedFeeds
-        if let index = next.firstIndex(where: { $0.sourceID == sourceID }) { next.remove(at: index) }
+        let removing = next.firstIndex(where: { $0.sourceID == sourceID })
+        if let removing { next.remove(at: removing) }
         else { next.append(choice) }
         guard !next.isEmpty else { throw ReaderPreferencesError.invalidSelection }
         if let retired = association {
@@ -462,7 +498,16 @@ final class AppComposition {
             await retired.close()
         }
         association = nil
-        let saved = try preferences.updateSources(next.map(\.principal))
+        // D1: only the toggled key changes. Operationally unresolved keys remain durable
+        // in preferences; rebuilding from selectedFeeds would silently deselect them.
+        let saved = try preferences.changeSources(adding: removing == nil ? [choice.principal] : [],
+            removing: removing == nil ? [] : [choice.principal])
+        if let database = libraryDatabase() {
+            try ReaderLibraryStore(database: database).rememberResolvedSources(next.map {
+                (key: $0.principal, authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
+                    ? "reader" : "catalog")
+            })
+        }
         selectedFeeds = next
         selectionVersion = saved.selectionVersion
         let request: FeedContextRequest = next.count == 1 ? .source(next[0].sourceID) : .main
@@ -713,10 +758,12 @@ final class AppComposition {
     /// Collection membership is already durable library state, not another mutable feed selection.
     /// Resolve it again for rebuilds and cold restoration of a collection context.
     private func collectionFeeds(id: String) throws -> [TrustedFeed] {
-        guard let library = libraryCoordinator() else { throw ReaderPreferencesError.invalidSelection }
+        guard let database = libraryDatabase() else { throw ReaderPreferencesError.invalidSelection }
+        let library = ReaderLibraryStore(database: database)
         let keys = try library.sourceKeys(inCollection: id)
         let resolved = try TrustedFeed.resolveAvailable(keys: Array(keys), fallback: selectedFeeds,
-            readerSources: readerSourceEntries(), catalogueURL: catalogueURL)
+            readerSources: readerSourceEntries(), catalogueURL: catalogueURL,
+            identities: try library.sourceLinks())
         return resolved
     }
 
@@ -1046,9 +1093,17 @@ final class AppComposition {
         guard let preferences, let record = try? preferences.load() else { return }
         guard record.selectionVersion != selectionVersion else { return }
         selectionVersion = record.selectionVersion
-        var resolved = (try? TrustedFeed.resolveAvailable(keys: record.sourceKeys, fallback: selectedFeeds,
-            readerSources: readerSourceEntries(), catalogueURL: catalogueURL)) ?? []
-        if resolved.isEmpty, !record.sourceKeys.isEmpty { resolved = selectedFeeds }
+        let links = (try? libraryDatabase().map {
+            try ReaderLibraryStore(database: $0).sourceLinks()
+        }) ?? [:]
+        let resolved = (try? TrustedFeed.resolveAvailable(keys: record.sourceKeys, fallback: selectedFeeds,
+            readerSources: readerSourceEntries(), catalogueURL: catalogueURL, identities: links)) ?? []
+        if let database = libraryDatabase() {
+            try? ReaderLibraryStore(database: database).rememberResolvedSources(resolved.map {
+                (key: $0.principal, authority: $0.principalNamespace == ReaderSourceIdentity.principalNamespace
+                    ? "reader" : "catalog")
+            })
+        }
         selectedFeeds = resolved
         // One selected source is its own surface, exactly as `toggleSource` decides; a context pointing at a
         // source that is no longer selected would be a fence around nothing.

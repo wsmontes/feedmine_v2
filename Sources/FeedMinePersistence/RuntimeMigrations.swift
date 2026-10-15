@@ -544,6 +544,21 @@ public enum RuntimeMigrations {
                 );
                 """)
         }
+        // PD10-P0D: one durable relation for historical source ownership and verified aliases.
+        migrator.registerMigration("reader-source-identity-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE reader_source_identity (
+                    source_key TEXT PRIMARY KEY NOT NULL,
+                    anchor_key TEXT NOT NULL,
+                    current_key TEXT NOT NULL,
+                    authority TEXT NOT NULL CHECK(authority IN ('catalog', 'reader')),
+                    proof TEXT,
+                    request_url TEXT,
+                    CHECK(length(source_key) > 0 AND length(anchor_key) > 0 AND length(current_key) > 0)
+                );
+                CREATE INDEX reader_source_identity_current ON reader_source_identity(current_key);
+                """)
+        }
         return migrator
     }
 

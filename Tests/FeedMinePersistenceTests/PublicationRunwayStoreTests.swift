@@ -244,7 +244,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1","reader-library-v1","reader-preferred-box-v1","media-playback-candidate-v1",
                 "reader-settings-v1","reader-imported-sources-v1","reader-curated-recipe-v1",
                 "reader-curated-recipe-revision-v1","reader-playback-positions-v1",
-                 "content-fingerprint-generation-v2"])
+                 "content-fingerprint-generation-v2","reader-source-identity-v1"])
         }
     }
 
@@ -432,12 +432,28 @@ extension PublicationRunwayStoreTests {
             XCTAssertEqual(try String.fetchAll(db,
                 sql: "SELECT name FROM pragma_table_info('origin_revision_body_enrichment') ORDER BY cid"),
                 ["origin_revision_id", "source_element", "body_text"])
+            // PD10-P0D: exact additive objects; preserve the full schema drift guard.
+            let identityObjects: Set<String> = [
+                """
+                reader_source_identity:CREATE TABLE reader_source_identity (
+                    source_key TEXT PRIMARY KEY NOT NULL,
+                    anchor_key TEXT NOT NULL,
+                    current_key TEXT NOT NULL,
+                    authority TEXT NOT NULL CHECK(authority IN ('catalog', 'reader')),
+                    proof TEXT,
+                    request_url TEXT,
+                    CHECK(length(source_key) > 0 AND length(anchor_key) > 0 AND length(current_key) > 0)
+                )
+                """,
+                "reader_source_identity_current:CREATE INDEX reader_source_identity_current ON reader_source_identity(current_key)",
+                "sqlite_autoindex_reader_source_identity_1:"
+            ]
             XCTAssertEqual(priorDefinitions.subtracting(normalizedBefore),
                 Set([originIndex, authorityTable, authorityIndex]).union(contextual)
-                    .union(mediaRebuild).union(fingerprintObjects))
+                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects))
             XCTAssertEqual(Self.normalizeRebuiltDefinitions(schemaAfter).subtracting(normalizedBefore),
                 Set([originIndex, originDefinition, revisionDefinition, authorityTable, authorityIndex]).union(contextual)
-                    .union(mediaRebuild).union(fingerprintObjects))
+                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }

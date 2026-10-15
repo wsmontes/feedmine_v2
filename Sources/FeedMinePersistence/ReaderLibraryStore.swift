@@ -12,18 +12,182 @@
 // collection row alone.
 import Foundation
 import GRDB
+import CryptoKit
 import FeedMineDomain
 
 public enum ReaderLibraryError: Error, Equatable, Sendable {
     case missingLibraryItem
     case invalidName
     case cardIdentityMismatch
+    case invalidSourceIdentity
+    case ambiguousSourceIdentity
+}
+
+
+public struct VerifiedSourceAlias: Sendable {
+    public let oldKey: String
+    public let newKey: String
+    public let fingerprint: String
+    public let requestURL: String
+
+    /// Proof is intentionally explicit, from two compiled catalog snapshots. The public update manifest
+    /// publishes no alias map, so a routine catalog update must never guess this relationship.
+    public init(old: LegacyCatalogReader, new: LegacyCatalogReader, oldKey: String, newKey: String) throws {
+        guard oldKey != newKey, !oldKey.isEmpty, !newKey.isEmpty,
+            let oldRevision = try old.metadata()?.revision, let newRevision = try new.metadata()?.revision,
+            oldRevision < newRevision, try old.source(key: newKey) == nil,
+            try new.source(key: oldKey) == nil,
+            let prior = try old.source(key: oldKey), let current = try new.source(key: newKey),
+            prior.requestURL == current.requestURL, prior.mediaKind == current.mediaKind,
+            let endpoint = URL(string: prior.requestURL),
+            ["http", "https"].contains(endpoint.scheme?.lowercased() ?? ""),
+            endpoint.host != nil, endpoint.user == nil, endpoint.password == nil else {
+            throw ReaderLibraryError.invalidSourceIdentity
+        }
+        // Reject an endpoint used by two distinct source records in either snapshot.
+        // This full scan is reserved for explicit verification, never startup or feed presentation.
+        for (catalog, expected) in [(old, oldKey), (new, newKey)] {
+            var cursor: String?
+            var matches: [String] = []
+            while true {
+                let page = try catalog.sources(after: cursor, limit: 500,
+                    onlyDefaultEnabled: false, mediaKinds: [])
+                guard let last = page.last else { break }
+                matches += page.filter { $0.requestURL == prior.requestURL }.map(\.key)
+                guard matches.count <= 1 else { throw ReaderLibraryError.ambiguousSourceIdentity }
+                cursor = last.key
+            }
+            guard matches == [expected] else { throw ReaderLibraryError.ambiguousSourceIdentity }
+        }
+        self.oldKey = oldKey
+        self.newKey = newKey
+        self.requestURL = prior.requestURL
+        let text = "\(oldRevision)|\(newRevision)|\(oldKey)|\(newKey)|\(prior.requestURL)"
+        self.fingerprint = SHA256.hash(data: Data(text.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 public struct ReaderLibraryStore: Sendable {
     private let database: RuntimeDatabase
 
     public init(database: RuntimeDatabase) { self.database = database }
+
+
+    // MARK: - Personal source identity (PD10-P0D)
+
+    /// sourceKey is the durable reader choice, anchorKey fixes its historical IDs, currentKey is only
+    /// the verified catalog lookup. Publication IDs and saved card references never depend on this table.
+    public struct SourceLink: Hashable, Sendable {
+        public let sourceKey: String
+        public let anchorKey: String
+        public let currentKey: String
+        public let authority: String
+        public let proof: String?
+        public let requestURL: String?
+    }
+
+    public func sourceLinks() throws -> [String: SourceLink] {
+        try database.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT source_key, anchor_key, current_key, authority, proof, request_url FROM reader_source_identity
+                """)
+            return Dictionary(uniqueKeysWithValues: rows.map { row in
+                let link = SourceLink(sourceKey: row["source_key"], anchorKey: row["anchor_key"],
+                    currentKey: row["current_key"], authority: row["authority"], proof: row["proof"],
+                    requestURL: row["request_url"])
+                return (link.sourceKey, link)
+            })
+        }
+    }
+
+    /// The first operational resolution pins an existing namespace. Repeated launches cannot flip it.
+    public func rememberResolvedSources(_ sources: [(key: String, authority: String)]) throws {
+        try database.write { db in
+            for (key, authority) in sources {
+                guard !key.isEmpty, authority == "catalog" || authority == "reader" else {
+                    throw ReaderLibraryError.invalidSourceIdentity
+                }
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO reader_source_identity
+                        (source_key, anchor_key, current_key, authority) VALUES (?, ?, ?, ?)
+                    """, arguments: [key, key, key, authority])
+            }
+        }
+    }
+
+    /// A single personal transaction. Do not rewrite published cards, user selection, checkpoints or presets.
+    /// Returns false when the identical verified relation was already committed.
+    @discardableResult
+    public func reconcile(_ proof: VerifiedSourceAlias) throws -> Bool {
+        try database.write { db in
+            let old = try Row.fetchOne(db, sql: """
+                SELECT anchor_key, current_key, authority, proof FROM reader_source_identity
+                WHERE source_key = ?
+                """, arguments: [proof.oldKey])
+            let anchor: String = old?["anchor_key"] ?? proof.oldKey
+            let current: String = old?["current_key"] ?? proof.oldKey
+            let authority: String = old?["authority"] ?? "catalog"
+            let recorded: String? = old?["proof"]
+            guard anchor == proof.oldKey else { throw ReaderLibraryError.ambiguousSourceIdentity }
+            if current == proof.newKey && recorded == proof.fingerprint { return false }
+            guard current == proof.oldKey else { throw ReaderLibraryError.ambiguousSourceIdentity }
+            if let destination = try Row.fetchOne(db, sql: """
+                SELECT anchor_key, current_key FROM reader_source_identity WHERE source_key = ?
+                """, arguments: [proof.newKey]) {
+                let destinationAnchor: String = destination["anchor_key"]
+                let destinationCurrent: String = destination["current_key"]
+                guard destinationAnchor == proof.oldKey, destinationCurrent == proof.newKey else {
+                    throw ReaderLibraryError.ambiguousSourceIdentity
+                }
+            }
+            let conflicting = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM reader_source_identity WHERE current_key = ? AND anchor_key <> ?
+                """, arguments: [proof.newKey, proof.oldKey]) ?? 0
+            guard conflicting == 0 else { throw ReaderLibraryError.ambiguousSourceIdentity }
+            try db.execute(sql: """
+                INSERT INTO reader_source_identity (source_key, anchor_key, current_key, authority, proof, request_url)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source_key) DO UPDATE SET current_key = excluded.current_key,
+                    proof = excluded.proof, request_url = excluded.request_url
+                """, arguments: [proof.oldKey, proof.oldKey, proof.newKey, authority, proof.fingerprint,
+                    proof.requestURL])
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO reader_source_identity
+                    (source_key, anchor_key, current_key, authority, proof, request_url)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [proof.newKey, proof.oldKey, proof.newKey, authority, proof.fingerprint,
+                    proof.requestURL])
+            // Collections referencing B become A without duplicate memberships.
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO reader_collection_memberships (collection_id, source_key, added_at)
+                SELECT collection_id, ?, added_at FROM reader_collection_memberships WHERE source_key = ?
+                """, arguments: [proof.oldKey, proof.newKey])
+            try db.execute(sql: "DELETE FROM reader_collection_memberships WHERE source_key = ?",
+                arguments: [proof.newKey])
+            return true
+        }
+    }
+
+    private static func anchor(_ key: String, in db: Database) throws -> String {
+        try String.fetchOne(db, sql: "SELECT anchor_key FROM reader_source_identity WHERE source_key = ?",
+            arguments: [key]) ?? key
+    }
+
+    /// An OPML round-trip may canonicalize a signed request URL into a different key.
+    /// Reattach it ONLY when an already verified alias recorded this exact request endpoint.
+    /// A title, shared host, redirect guess or unproved URL normalization can never create a link.
+    private static func importKey(_ entry: ReaderImportEntry, in db: Database) throws -> String {
+        if try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM reader_source_identity WHERE source_key = ?)
+            """, arguments: [entry.id]) == true { return entry.id }
+        let matches = try String.fetchAll(db, sql: """
+            SELECT source_key FROM reader_source_identity
+            WHERE source_key = current_key AND proof IS NOT NULL AND request_url = ?
+            ORDER BY source_key
+            """, arguments: [entry.requestURL])
+        return matches.count == 1 ? matches[0] : entry.id
+    }
 
     // MARK: - Bookmark boxes
 
@@ -213,21 +377,22 @@ public struct ReaderLibraryStore: Sendable {
                     throw ReaderLibraryError.missingLibraryItem
                 }
             }
+            let resolvedKeys = try entries.map { try Self.importKey($0, in: db) }
             var inserted = 0
-            for entry in entries {
+            for (entry, key) in zip(entries, resolvedKeys) {
                 try db.execute(sql: """
                     INSERT INTO reader_imported_sources (key, request_url, title, imported_at) VALUES (?, ?, ?, ?)
                     ON CONFLICT(key) DO NOTHING
-                    """, arguments: [entry.id, entry.requestURL, entry.title, time])
+                    """, arguments: [key, entry.requestURL, entry.title, time])
                 inserted += db.changesCount
             }
             var filed = 0
             if let collectionID {
-                for entry in entries {
+                for key in resolvedKeys {
                     try db.execute(sql: """
                         INSERT INTO reader_collection_memberships (collection_id, source_key, added_at) VALUES (?, ?, ?)
                         ON CONFLICT(collection_id, source_key) DO NOTHING
-                        """, arguments: [collectionID, entry.id, time])
+                        """, arguments: [collectionID, try Self.anchor(key, in: db), time])
                     filed += db.changesCount
                 }
             }
@@ -235,8 +400,9 @@ public struct ReaderLibraryStore: Sendable {
                 throw ReaderLibraryError.missingLibraryItem
             }
             let current = Set(try JSONDecoder().decode([String].self, from: row["source_keys"] as Data))
-            let selected = current.union(entries.map(\.id))
-            let alreadySelected = entries.filter { current.contains($0.id) }.count
+            let anchors = try resolvedKeys.map { try Self.anchor($0, in: db) }
+            let selected = current.union(anchors)
+            let alreadySelected = anchors.filter { current.contains($0) }.count
             if selected != current {
                 let version: Int64 = row["selection_version"]
                 guard version < Int64.max else { throw ReaderLibraryError.missingLibraryItem }
@@ -331,10 +497,10 @@ public struct ReaderLibraryStore: Sendable {
                 try db.execute(sql: """
                     INSERT INTO reader_collection_memberships (collection_id, source_key, added_at) VALUES (?, ?, ?)
                     ON CONFLICT(collection_id, source_key) DO NOTHING
-                    """, arguments: [collectionID, sourceKey, time])
+                    """, arguments: [collectionID, try Self.anchor(sourceKey, in: db), time])
             } else {
                 try db.execute(sql: "DELETE FROM reader_collection_memberships WHERE collection_id = ? AND source_key = ?",
-                    arguments: [collectionID, sourceKey])
+                    arguments: [collectionID, try Self.anchor(sourceKey, in: db)])
             }
         }
     }
@@ -353,7 +519,7 @@ public struct ReaderLibraryStore: Sendable {
                 try db.execute(sql: """
                     INSERT INTO reader_collection_memberships (collection_id, source_key, added_at) VALUES (?, ?, ?)
                     ON CONFLICT(collection_id, source_key) DO NOTHING
-                    """, arguments: [id, key, time])
+                    """, arguments: [id, try Self.anchor(key, in: db), time])
                 added += db.changesCount
             }
             return added
@@ -362,8 +528,12 @@ public struct ReaderLibraryStore: Sendable {
 
     public func sourceKeys(inCollection id: String) throws -> Set<String> {
         try database.read { db in
-            Set(try String.fetchAll(db, sql: "SELECT source_key FROM reader_collection_memberships WHERE collection_id = ? ORDER BY added_at, source_key",
-                arguments: [id]))
+            Set(try String.fetchAll(db, sql: """
+                SELECT COALESCE(i.anchor_key, m.source_key)
+                FROM reader_collection_memberships m
+                LEFT JOIN reader_source_identity i ON i.source_key = m.source_key
+                WHERE m.collection_id = ? ORDER BY m.added_at, m.source_key
+                """, arguments: [id]))
         }
     }
 
