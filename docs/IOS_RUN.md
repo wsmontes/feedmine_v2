@@ -264,3 +264,66 @@ texto, e país como árvore de região no catálogo — está registrado superf�
 
 O que **não** foi executado: o soak em iPhone físico (nenhum aparelho disponível — dois conhecidos, ambos
 `unavailable`) e a comparação visual por screenshots (nenhum diff de pixel foi feito).
+
+## Gate PD10-P0C — archive TestFlight verificável (novas builds)
+
+A instrução histórica acima de executar `scripts/fetch-catalog.sh` está revogada: esse
+script agora sai com erro e **não** baixa `catalog-v1`.
+
+Para preparar uma nova revisão, obtenha o compilador legado como checkout identificado,
+com `build_catalog.py` e `catalog_identity.py` no mesmo diretório; verifique ambos
+com `shasum -a 256` e rode:
+
+```sh
+python3 scripts/bootstrap_catalog.py --compiler /path/to/build_catalog.py \
+  --compiler-sha256 <sha256-real> --identity-sha256 <sha256-real>
+# Inspecionar build/catalog-bootstrap/provenance.json e build-report.json
+cp build/catalog-bootstrap/{catalog.sqlite,catalog.manifest.json} FeedMineApp/FeedMineApp/Resources/
+git add FeedMineApp/FeedMineApp/Resources/catalog.manifest.json  # SQLite é Git-ignored
+git commit -m "chore(catalog): record verified public catalogue descriptor"
+scripts/release-testflight.sh --dry-run
+```
+
+Nota: `catalog.sqlite` está excluído pelo `.gitignore` e não é identificado somente pelo SHA Git.\nA evidência do archive é obrigatória para parear os bytes reais com o commit e o\ndescritor versionado.\n\nO release recusa árvore suja e verifica `scripts/verify_product_catalogue.sh` +
+`scripts/verify_catalog_release.py preflight` **antes** de `xcodebuild archive`.
+Depois, verifica novamente o par **dentro** de
+`.build/feedmine-v2.xcarchive/Products/Applications/FeedMine.app`, o bundle ID,
+a versão/build e o Git SHA, antes de export/upload. Em `--dry-run`, não exige
+credenciais ASC, não exporta, não faz upload nem tag. Os resultados são escritos em
+`.build/pd10-p0c-preflight.json` e
+`.build/pd10-p0c-<version>-build-<build>-<sha>.json` somente após verificações completas.
+
+```sh
+bash -n scripts/fetch-catalog.sh scripts/release-testflight.sh scripts/verify_product_catalogue.sh
+python3 -m unittest discover -s Tests/ReleaseScripts -p 'test_catalog_*.py'
+python3 -m unittest discover -s Tests/ReleaseScripts -p 'test_release_preflight.py'
+swift build
+swift test
+git diff --check
+```
+
+Para negativas nativas: sobre cópia temporária do archive, altere um byte de
+`catalog.sqlite` ou `catalog.manifest.json` e chame o verificador no app
+corrompido; exit deve ser não zero antes de permitir upload. Não modifique o
+archive de produção durante um teste. A ausência de espaço em disco para archive
+deve ser registrada `BLOCKED — DISK`, nunca transformada em PASS.
+
+A preparação de novo catálogo público ocorre separadamente com
+`scripts/publish_catalog_update.py --source ... --destination ... --revision ...`
+e hashes de ambos os scripts legados. Só `--apply` altera o checkout local de destino;
+nenhum commit/push ou cópia para Resources é automático. O README externo ainda
+requer correção em gate próprio: `P0C-PUBLISH-DOC — EXTERNAL BLOCKER`.
+
+### PD10-P0C: validação física do banco (audit follow-up)
+
+`verify_product_catalogue.sh` confere em modo SQLite read-only as mesmas tabelas
+requeridas por `LegacyCatalogReader` (`catalog_source`, `catalog_node`,
+`catalog_placement`) e a contagem real `COUNT(*) FROM catalog_source`.
+Essa contagem deve concordar tanto com `catalog_metadata.source_count` quanto com
+`catalog.manifest.json.sourceCount`. A verificação é executada para Resources
+antes do archive e novamente no `.app` real depois dele. As regressões Python
+incluem ausência de tabela, divergência física/descritor, divergência física/metadados
+e prova de exit não zero. O SHA-256 usado pelos heredocs do verificador é delegado
+à mesma `bootstrap_catalog.sha256_file` usada pelo bootstrap e pelo helper de release;
+não há uma implementação independente de hash. O helper de release continua apenas
+como orquestrador do manifesto atual, compilador, staging, preflight e archive.
