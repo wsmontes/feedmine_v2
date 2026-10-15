@@ -141,10 +141,63 @@ public struct CatalogInstallation: Sendable {
     /// rather than hidden, because a first run with no verified snapshot and no network must still present a
     /// feed. Every path here is local; nothing waits on a request.
     public func bootstrap() -> CatalogSnapshot? {
-        if let installed = installBundled() { return installed }
-        if let active = activeSnapshot() { return active }
+        // The only full checksum of the persisted active snapshot on the launch path. Future lookups use
+        // the immutable, content-addressed pointer without rehashing a 100+ MB SQLite on every read.
+        // A pointer alone (or a decodable descriptor) is not proof that the bytes are usable.
+        if let active = verifiedSnapshot(for: activePointer()) {
+            if let newerBundled = installBundled() { return newerBundled }
+            return active
+        }
+        let hadActive = fileExists(activePointerURL)
+        if hadActive {
+            record(deferredRecord(reason: "active catalogue pointer or snapshot failed integrity verification",
+                kind: "recovery"))
+        }
+        if let previous = previousPointer(), let recovered = verifiedSnapshot(for: previous) {
+            do {
+                try write(data: JSONEncoder().encode(previous), to: activePointerURL)
+                guard pointerMatches(previous, at: activePointerURL) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                record(CatalogRevisionRecord(revision: recovered.revision, fingerprint: recovered.fingerprint,
+                    outcome: .activated, reason: "recovered verified previous snapshot after unusable active",
+                    kind: "recovery", at: timestamp()))
+                return recovered
+            } catch {
+                record(deferredRecord(reason: "cannot persist recovered previous snapshot: \(error)",
+                    kind: "recovery"))
+            }
+        } else if fileExists(previousPointerURL) {
+            record(deferredRecord(reason: "previous catalogue pointer or snapshot failed integrity verification",
+                kind: "recovery"))
+        }
+        // Recovery may replace an invalid higher-revision pointer with this build's verified bundled copy.
+        // That is not an ordinary stale offer; the higher-revision bytes were not usable.
+        if hadActive {
+            if let bundled = recoverBundled() { return bundled }
+        } else {
+            if let bundled = installBundled() { return bundled }
+        }
         guard let bundledCatalogue, fileExists(bundledCatalogue) else { return nil }
         return degraded(bundledCatalogue)
+    }
+
+    private func recoverBundled() -> CatalogSnapshot? {
+        guard let bundledCatalogue, let bundledManifest,
+            let data = try? Data(contentsOf: bundledManifest),
+            let manifest = try? CatalogManifest.decode(data) else { return nil }
+        if let rejection = CatalogManifest.validate(manifest, catalogue: bundledCatalogue) {
+            _ = reject(rejection, revision: manifest.revision, fingerprint: manifest.catalogueEntry?.sha256)
+            return nil
+        }
+        let outcome = activate(manifest: manifest, catalogue: bundledCatalogue, outcome: .bootstrapped,
+            replacingUnusableActive: true)
+        if case .installed(let snapshot) = outcome {
+            record(deferredRecord(reason: "restored the verified bundled snapshot after missing or unusable active",
+                kind: "recovery"))
+            return snapshot
+        }
+        return nil
     }
 
     /// Verifies and installs the bundled snapshot, in place. Equal revision with an identical declaration is a
@@ -205,7 +258,18 @@ public struct CatalogInstallation: Sendable {
         guard let fingerprint = manifest.catalogueEntry?.sha256, !fingerprint.isEmpty else {
             return reject(.catalogueEntryMissing(manifest.revision), revision: manifest.revision, fingerprint: nil)
         }
-        if let active = activeSnapshot() {
+        return activate(manifest: manifest, catalogue: catalogue, outcome: outcome,
+            replacingUnusableActive: false)
+    }
+
+    /// Shared pointer transition for an ordinary offer and a verified recovery. A recovery is permitted to
+    /// supersede an *unusable* higher revision, but never promotes an unverified catalogue.
+    private func activate(manifest: CatalogManifest, catalogue: URL,
+        outcome: CatalogRevisionRecord.Outcome, replacingUnusableActive: Bool) -> CatalogInstallOutcome {
+        guard let fingerprint = manifest.catalogueEntry?.sha256, !fingerprint.isEmpty else {
+            return reject(.catalogueEntryMissing(manifest.revision), revision: manifest.revision, fingerprint: nil)
+        }
+        if !replacingUnusableActive, let active = activeSnapshot() {
             if manifest.revision == active.revision {
                 return active.manifest == manifest
                     ? .installed(active)
@@ -240,10 +304,16 @@ public struct CatalogInstallation: Sendable {
                 pointer = CatalogPointer(fingerprint: fingerprint, cataloguePath: localCatalogue.path,
                     manifestPath: localManifest.path)
             }
-            if let current = activePointer(), current.fingerprint != fingerprint {
-                try? write(data: try JSONEncoder().encode(current), to: previousPointerURL)
+            if !replacingUnusableActive, let current = activePointer(),
+                current.fingerprint != fingerprint {
+                // The previous pointer is part of the commit contract, not best-effort telemetry.
+                // A failure here must refuse activation while the original active pointer remains intact.
+                try write(data: JSONEncoder().encode(current), to: previousPointerURL)
             }
-            try write(data: try JSONEncoder().encode(pointer), to: activePointerURL)
+            try write(data: JSONEncoder().encode(pointer), to: activePointerURL)
+            guard pointerMatches(pointer, at: activePointerURL) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
         } catch {
             return reject(.catalogueUnreadable(String(describing: error)), revision: manifest.revision,
                 fingerprint: fingerprint)
@@ -315,11 +385,19 @@ public struct CatalogInstallation: Sendable {
     /// deletes the one it replaces.
     @discardableResult
     public func rollback() -> CatalogSnapshot? {
-        guard let previous = previousPointer(), let snapshot = snapshot(for: previous) else { return nil }
-        if let current = activePointer() {
-            try? write(data: try JSONEncoder().encode(current), to: previousPointerURL)
+        guard let previous = previousPointer(), let snapshot = verifiedSnapshot(for: previous) else { return nil }
+        do {
+            // Rollback has ONE commit pointer: writing previous.json first would introduce a second
+            // failure boundary and could lose the recovery lease if active.json then failed.
+            // The replaced revision's immutable bytes remain in snapshots/; no pointer swap is required.
+            try write(data: JSONEncoder().encode(previous), to: activePointerURL)
+            guard pointerMatches(previous, at: activePointerURL) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+        } catch {
+            record(deferredRecord(reason: "rollback pointer write failed: \(error)", kind: "rollback"))
+            return nil
         }
-        try? write(data: try JSONEncoder().encode(previous), to: activePointerURL)
         record(CatalogRevisionRecord(revision: snapshot.revision, fingerprint: snapshot.fingerprint,
             outcome: .activated, reason: "rolled back to revision \(snapshot.revision)", kind: "rollback",
             at: timestamp()))
@@ -368,6 +446,17 @@ public struct CatalogInstallation: Sendable {
 
     // MARK: - Private
 
+    /// Strict recovery/launch gate. A durable pointer is trusted only when its fingerprint matches its
+    /// descriptor and the complete SQLite passes the declared digest, schema and source-count checks.
+    /// Deliberately not used by the hot activeSnapshot() accessor: bootstrap pays for integrity once per
+    /// launch, while transitions already verify before committing the new pointer.
+    private func verifiedSnapshot(for pointer: CatalogPointer?) -> CatalogSnapshot? {
+        guard let snapshot = snapshot(for: pointer),
+            pointer?.fingerprint == snapshot.manifest.catalogueEntry?.sha256,
+            CatalogManifest.validate(snapshot.manifest, catalogue: snapshot.catalogueURL) == nil else { return nil }
+        return snapshot
+    }
+
     /// Resolves a pointer to a snapshot: read the manifest it names, and confirm the catalogue is where the
     /// pointer says. Nothing is inferred from a path.
     private func snapshot(for pointer: CatalogPointer?) -> CatalogSnapshot? {
@@ -394,6 +483,13 @@ public struct CatalogInstallation: Sendable {
     private func pointer(at url: URL) -> CatalogPointer? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(CatalogPointer.self, from: data)
+    }
+
+    private func pointerMatches(_ expected: CatalogPointer, at url: URL) -> Bool {
+        guard let persisted = pointer(at: url) else { return false }
+        return persisted.fingerprint == expected.fingerprint
+            && persisted.cataloguePath == expected.cataloguePath
+            && persisted.manifestPath == expected.manifestPath
     }
 
     private func activePointer() -> CatalogPointer? { pointer(at: activePointerURL) }
@@ -445,6 +541,11 @@ public struct CatalogInstallation: Sendable {
     private func write(data: Data, to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true)
+        // A directory at a pointer path is an invalid persisted state, not a file to be replaced.
+        // Reject deterministically before touching either pointer in a simulated interrupted write.
+        if let values = try? url.resourceValues(forKeys: [.isDirectoryKey]), values.isDirectory == true {
+            throw CocoaError(.fileWriteNoPermission)
+        }
         let temporary = url.appendingPathExtension("incoming")
         try data.write(to: temporary, options: .atomic)
         if FileManager.default.fileExists(atPath: url.path) {

@@ -189,6 +189,150 @@ final class CatalogInstallationTests: XCTestCase {
         _ = materialized
     }
 
+    // MARK: - PD10-P0B: recovery and pointer-failure guarantees
+
+    /// B5: active.json is not itself proof of a valid snapshot; both missing and malformed
+    /// pointers recover the verified previous revision rather than reinstalling or trusting the bad active.
+    func testB5MissingOrMalformedActiveRecoversVerifiedPrevious() throws {
+        for corruption in ["missing", "malformed"] {
+            let app = root.appendingPathComponent("case-\(corruption)")
+            let owner = try recoveryFixture(at: app)
+            let activeURL = owner.directory.appendingPathComponent("active.json")
+            if corruption == "missing" {
+                try FileManager.default.removeItem(at: activeURL)
+            } else {
+                try Data("not json".utf8).write(to: activeURL)
+            }
+            let result = try XCTUnwrap(owner.bootstrap())
+            XCTAssertEqual(result.revision, 5)
+            XCTAssertEqual(owner.activeSnapshot()?.fingerprint, result.fingerprint)
+            XCTAssertTrue(owner.ledger().contains { $0.kind == "recovery" && $0.outcome == .activated })
+        }
+    }
+
+    /// B5: a decodable pointer plus an existing filename is insufficient. Missing bytes, modified
+    /// SQLite contents and a corrupt descriptor each force the previous checksum-verified snapshot.
+    func testB5MissingCorruptedSqliteOrManifestRecoverPrevious() throws {
+        for corruption in ["missing-sqlite", "corrupt-sqlite", "invalid-manifest"] {
+            let owner = try recoveryFixture(at: root.appendingPathComponent(corruption))
+            let active = try XCTUnwrap(owner.activeSnapshot())
+            let pointerURL = owner.directory.appendingPathComponent("active.json")
+            let pointer = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: pointerURL))
+                as? [String: String])
+            let descriptor = try XCTUnwrap(pointer["manifestPath"])
+            switch corruption {
+            case "missing-sqlite":
+                try FileManager.default.removeItem(at: active.catalogueURL)
+            case "corrupt-sqlite":
+                // Preserve file size so a size-only check would incorrectly accept it.
+                let handle = try FileHandle(forWritingTo: active.catalogueURL)
+                try handle.write(contentsOf: Data(repeating: 0xFF, count: 12))
+                try handle.close()
+            default:
+                try Data("{bad manifest".utf8).write(to: URL(fileURLWithPath: descriptor))
+            }
+            let restored = try XCTUnwrap(owner.bootstrap())
+            XCTAssertEqual(restored.revision, 5, "failed case: \(corruption)")
+            XCTAssertEqual(owner.activeSnapshot()?.revision, 5)
+            XCTAssertTrue(owner.ledger().contains { $0.kind == "recovery" && $0.outcome == .activated })
+        }
+    }
+
+    /// B5: an unusable previous pointer cannot be recovered; the bundled bytes are the last valid floor.
+    func testB5InvalidPreviousFallsBackToVerifiedBundle() throws {
+        let owner = try recoveryFixture(at: root.appendingPathComponent("invalid-previous"))
+        let activeURL = owner.directory.appendingPathComponent("active.json")
+        let previousURL = owner.directory.appendingPathComponent("previous.json")
+        try Data("{broken active".utf8).write(to: activeURL)
+        try Data("{broken previous".utf8).write(to: previousURL)
+        let restored = try XCTUnwrap(owner.bootstrap())
+        XCTAssertEqual(restored.revision, 5)
+        XCTAssertEqual(owner.activeSnapshot()?.fingerprint, restored.fingerprint)
+        XCTAssertTrue(owner.ledger().contains { $0.kind == "recovery"
+            && $0.reason.contains("previous catalogue") })
+    }
+
+    /// B5: corrupted historical SQLite cannot be revived even when the manifest and pointer decode.
+    func testB5PreviousSqliteCorruptionFallsBackToBundle() throws {
+        let owner = try recoveryFixture(at: root.appendingPathComponent("invalid-previous-bytes"))
+        let pointerURL = owner.directory.appendingPathComponent("previous.json")
+        let pointer = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: pointerURL))
+            as? [String: String])
+        let previousPath = try XCTUnwrap(pointer["cataloguePath"])
+        // The previous is the in-place bundled copy: restore its bytes after the test if it lives in
+        // the shared fixture. Here the recovery fixture owns an isolated copy.
+        try Data("corrupt".utf8).write(to: URL(fileURLWithPath: previousPath))
+        try Data("{broken active".utf8).write(to: owner.directory.appendingPathComponent("active.json"))
+        let degraded = try XCTUnwrap(owner.bootstrap())
+        XCTAssertEqual(degraded.revision, 0, "no unverifiable revision may be claimed as installed")
+        XCTAssertNil(owner.activeSnapshot(), "there is no verified active pointer")
+        XCTAssertEqual(owner.ledger().last?.kind, "degraded")
+        XCTAssertFalse(owner.ledger().contains { $0.kind == "recovery" && $0.outcome == .activated })
+    }
+
+    /// B5/B7 diagnostic: reports the incremental cost of strict verification on both cold and warm
+    /// bootstrap. The Mac run is the measurement; this test deliberately invents no fixed time ceiling.
+    func testB5MeasuresColdAndWarmLocalBootstrapCost() throws {
+        let owner = installation()
+        let coldStarted = ProcessInfo.processInfo.systemUptime
+        let cold = try XCTUnwrap(owner.bootstrap())
+        let coldMs = (ProcessInfo.processInfo.systemUptime - coldStarted) * 1000
+        let warmStarted = ProcessInfo.processInfo.systemUptime
+        let warm = try XCTUnwrap(owner.bootstrap())
+        let warmMs = (ProcessInfo.processInfo.systemUptime - warmStarted) * 1000
+        XCTAssertEqual(cold.fingerprint, warm.fingerprint)
+        print("PD10_B5_BOOTSTRAP cold_ms=\(coldMs) warm_ms=\(warmMs)")
+    }
+
+    /// B6: failure to preserve previous.json is not a successful activation.
+    func testB6PreviousPointerWriteFailureKeepsActiveAndDoesNotLogActivation() throws {
+        let owner = installation()
+        let initial = try XCTUnwrap(owner.bootstrap())
+        let previousURL = owner.directory.appendingPathComponent("previous.json")
+        try FileManager.default.createDirectory(at: previousURL, withIntermediateDirectories: true)
+        let newer = try makeCatalogue(in: root.appendingPathComponent("failed-previous"), sources: 3, revision: 6)
+        let outcome = owner.install(manifestData: try manifestData(for: newer, revision: 6), catalogue: newer)
+        guard case .rejected = outcome else { return XCTFail("failed previous write must reject activation") }
+        XCTAssertEqual(owner.activeSnapshot()?.fingerprint, initial.fingerprint)
+        XCTAssertFalse(owner.ledger().contains { $0.outcome == .activated })
+    }
+
+    /// B6: neither an active-pointer failure nor rollback's failed pointer write may announce success.
+    func testB6FailedActivePointerAndRollbackNeverReportFalseActivation() throws {
+        let owner = installation()
+        _ = try XCTUnwrap(owner.bootstrap())
+        let newer = try makeCatalogue(in: root.appendingPathComponent("failed-active-new"), sources: 3, revision: 6)
+        _ = owner.install(manifestData: try manifestData(for: newer, revision: 6), catalogue: newer)
+        XCTAssertEqual(owner.activeSnapshot()?.revision, 6)
+        let activatedCount = owner.ledger().filter { $0.outcome == .activated }.count
+        let activeURL = owner.directory.appendingPathComponent("active.json")
+        try FileManager.default.removeItem(at: activeURL)
+        try FileManager.default.createDirectory(at: activeURL, withIntermediateDirectories: true)
+        XCTAssertNil(owner.rollback(), "rollback must not succeed when active.json cannot be written")
+        XCTAssertEqual(owner.ledger().filter { $0.outcome == .activated }.count, activatedCount)
+        let newerAgain = try makeCatalogue(in: root.appendingPathComponent("failed-active-next"), sources: 4, revision: 7)
+        guard case .rejected = owner.install(manifestData: try manifestData(for: newerAgain, revision: 7),
+            catalogue: newerAgain) else { return XCTFail("active pointer failure must reject installation") }
+        XCTAssertEqual(owner.ledger().filter { $0.outcome == .activated }.count, activatedCount)
+        try FileManager.default.removeItem(at: activeURL)
+        // Restart sees the verified previous snapshot, not the uncommitted revision 7.
+        XCTAssertEqual(owner.bootstrap()?.revision, 5)
+    }
+
+    private func recoveryFixture(at root: URL) throws -> CatalogInstallation {
+        let base = try makeCatalogue(in: root.appendingPathComponent("bundled"), sources: 2, revision: 5)
+        let descriptor = try writeManifest(for: base, revision: 5, into: root, name: "bundle.json")
+        let frozenClock = self.clock
+        let owner = CatalogInstallation(directory: root.appendingPathComponent("catalogue"),
+            bundledCatalogue: base, bundledManifest: descriptor, now: { frozenClock })
+        XCTAssertEqual(owner.bootstrap()?.revision, 5)
+        let later = try makeCatalogue(in: root.appendingPathComponent("newer"), sources: 3, revision: 6)
+        guard case .installed = owner.install(manifestData: try manifestData(for: later, revision: 6),
+            catalogue: later) else { throw CatalogManifest.DecodeError.malformed }
+        XCTAssertEqual(owner.activeSnapshot()?.revision, 6)
+        return owner
+    }
+
     // MARK: - Personal data and the catalogue are separate
 
     func testRejectingARevisionNeverTouchesTheReadersPersonalData() throws {
