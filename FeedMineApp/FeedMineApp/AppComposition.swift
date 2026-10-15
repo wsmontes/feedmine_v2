@@ -269,116 +269,103 @@ final class AppComposition {
         await syncCatalogueIfDue()
     }
 
-    /// PD-10's update opportunity. The launch path installs and verifies; *checking* the authority is a separate
-    /// decision, taken here — while the app is running and can make a request — and never in the first-presentation
-    /// barrier, so a slow authority cannot delay a paint. The policy is a pure value, so every outcome is stated:
-    /// a recent verification skips, and a skip is written down instead of passed over in silence.
-    ///
-    /// An accepted offer runs the whole path (`CatalogUpdater`): download the published OPML payload, verify every
-    /// declared byte, compile it into a `catalog.sqlite` in staging, and activate it atomically — or refuse and
-    /// leave the active snapshot exactly as it was, with the reason in the ledger. What that activation does not
-    /// do is swap the catalogue this **session** already reads: the session keeps the snapshot it opened with, and
-    /// the managed catalogue every later resolution reads is the new one (PD-10: "the substitution reaches only the
-    /// managed catalogue and future work").
+    /// The network opportunity is separate from the local bootstrap and from the first paint. A bundled
+    /// snapshot is verified *locally* at launch; it does not count as a successful check of the authority.
+    /// The only durable clock/validator is the existing sync record, committed after a successful remote
+    /// verification (200 up-to-date, 200 activated, or a consistent conditional 304).
     private func syncCatalogueIfDue() async {
         let installation = CatalogInstallation(appDirectory: directory)
         let recordURL = installation.directory.appendingPathComponent("sync.json")
-        // The record is read and written here, and by the channel's closures, which run off this actor. They are
-        // `@Sendable` closures rather than local functions: a local function would inherit this type's main-actor
-        // isolation, and the channel calls them from wherever the request runs. Both capture only values that are
-        // `Sendable` — the URL and the installation — so the file is the box, which is where it has to end up anyway.
         let readRecord: @Sendable () -> CatalogSyncRecord? = { [recordURL] in
-            (try? JSONDecoder().decode(CatalogSyncRecord.self, from: Data(contentsOf: recordURL)))
+            try? JSONDecoder().decode(CatalogSyncRecord.self, from: Data(contentsOf: recordURL))
         }
         let writeRecord: @Sendable (CatalogSyncRecord) -> Void = { [installation, recordURL] record in
             try? FileManager.default.createDirectory(at: installation.directory, withIntermediateDirectories: true)
             try? JSONEncoder().encode(record).write(to: recordURL, options: .atomic)
         }
-        /// Commit what this pass decided, keeping the validator the authority handed mid-flight: `storeETag` has
-        /// already written it to the same file, and the `record` in hand was read before that happened. Writing the
-        /// stale copy back would drop the ETag and turn every later check into a full GET.
-        func commit(_ record: CatalogSyncRecord) {
-            let etag = record.etag ?? readRecord()?.etag
-            writeRecord(CatalogSyncRecord(verifiedRevision: record.verifiedRevision, verifiedAt: record.verifiedAt,
-                remoteRevision: record.remoteRevision, etag: etag))
-        }
-        // The authority this pass consults: the published channel, unless this run states another one.
+        // A debug authority is a different channel; never consume or overwrite the published channel's ledger
+        // of successful checks. The production authority always uses its own durable record across relaunches.
         let authority = Self.statedCatalogueAuthority()
-        // The launch installation is the same authority's verdict, and the ledger is where it was written down.
-        // Recording it here is what makes the window survive a relaunch: without this, every launch would start
-        // the day over and check again immediately. What the launch installed was verified *of the published
-        // channel*, so a run aimed at a stated authority starts from nothing recorded about it: a window, a
-        // validator and a revision in `sync.json` are the published channel's state, and the decision below is a
-        // check because there is nothing that could excuse one.
         let stored = authority == nil ? (readRecord() ?? CatalogSyncRecord()) : CatalogSyncRecord()
-        var record = stored
-        if authority == nil, let snapshot = installation.activeSnapshot() {
-            record = CatalogSyncRecord(verifiedRevision: snapshot.revision, verifiedAt: Date(),
-                remoteRevision: record.remoteRevision, etag: record.etag)
-        }
-        let decision = CatalogSyncPolicy.decision(record: record, now: Date())
+        let active = installation.activeSnapshot()
+        let consistent = active != nil && stored.verifiedAt != nil
+            && stored.verifiedRevision == active?.revision
+            && stored.remoteRevision == stored.verifiedRevision
+        // An old validator for another revision cannot justify a 304 or a recent-verification skip.
+        let decision = CatalogSyncPolicy.decision(record: consistent ? stored : CatalogSyncRecord(), now: Date())
         guard decision.isCheck else {
             if case .skip(let verifiedAt) = decision {
                 installation.record(installation.deferredRecord(
                     reason: "verified \(Int(Date().timeIntervalSince(verifiedAt)))s ago; nothing due",
                     kind: "policy"))
             }
-            writeRecord(record)
             return
         }
-        // The validator the authority hands mid-flight belongs to the same record: keeping it here is what makes
-        // the next check one conditional request, and merging by `etag` alone is what keeps it from overwriting
-        // the fields this pass is about to write.
+        let validator = consistent ? stored.etag : nil
+        // Use the composition's existing transport configuration. Tests can exercise the *standard* authority
+        // without an environment override; production still uses an ephemeral session with the public URL.
+        // The Debug-only local authority is intentionally independent of the RSS transport used by app
+        // acceptance tests; only the standard public URL uses the composition's injectable configuration.
+        let manifestSession = authority == nil ? URLSession(configuration: transportConfiguration) : .shared
         let channel = CatalogUpdateChannel(manifestURL: authority ?? CatalogUpdateChannel.publicManifestURL,
-            session: .shared,
-            storedETag: { readRecord()?.etag },
-            storeETag: { etag in
-                guard let latest = readRecord() else { return }
-                writeRecord(CatalogSyncRecord(verifiedRevision: latest.verifiedRevision,
-                    verifiedAt: latest.verifiedAt, remoteRevision: latest.remoteRevision, etag: etag))
-            })
+            session: manifestSession, storedETag: { validator })
         func write(_ outcome: CatalogRevisionRecord.Outcome, _ revision: Int?, _ reason: String, _ kind: String?) {
             installation.record(CatalogRevisionRecord(revision: revision, fingerprint: nil, outcome: outcome,
                 reason: reason, kind: kind, at: ISO8601DateFormatter().string(from: Date())))
         }
+        // Only the published authority persists sync.json. The test-only authority is intentionally isolated.
+        func commit(_ record: CatalogSyncRecord) {
+            if authority == nil { writeRecord(record) }
+        }
         switch await channel.fetch() {
         case .notModified:
-            write(.deferred, nil, "manifest unchanged since the last check", "policy")
-        case .unavailable(let why):
-            write(.deferred, nil, "no manifest this time: \(why)", "network")
-        case .manifest(let data):
-            guard let remote = try? CatalogManifest.decode(data) else {
-                write(.deferred, nil, "the authority's manifest is not readable in the published shape", "payload")
-                commit(record)
+            guard consistent, validator != nil, let revision = stored.verifiedRevision else {
+                write(.deferred, nil, "304 without a matching previously verified snapshot", "policy")
                 return
             }
-            switch CatalogOffer.decide(remote: remote, active: installation.activeSnapshot()?.manifest) {
+            commit(CatalogSyncRecord(verifiedRevision: revision, verifiedAt: Date(),
+                remoteRevision: revision, etag: validator))
+            write(.deferred, revision, "manifest unchanged since the last verified check", "policy")
+        case .unavailable(let why):
+            write(.deferred, nil, "no manifest this time: \(why)", "network")
+        case .manifest(let data, let etag):
+            guard let remote = try? CatalogManifest.decode(data) else {
+                write(.deferred, nil, "the authority's manifest is not readable in the published shape", "payload")
+                return
+            }
+            // An equal revision cannot skip the download on the strength of an invalid public declaration.
+            // The public authority publishes OPML inputs only, never the locally derived SQLite artifact.
+            if let rejection = CatalogManifest.validate(remote) {
+                write(.rejected, remote.revision, rejection.reason, rejection.kind)
+                return
+            }
+            guard remote.catalogueEntry == nil, !remote.opmlEntries.isEmpty else {
+                write(.rejected, remote.revision, "public manifest must declare OPML inputs only", "manifest")
+                return
+            }
+            switch CatalogOffer.decide(remote: remote, active: active?.manifest) {
             case .upToDate(let revision):
+                // The public OPML declaration matched the installed snapshot; no download or recompilation.
+                commit(CatalogSyncRecord(verifiedRevision: revision, verifiedAt: Date(),
+                    remoteRevision: revision, etag: etag))
                 write(.deferred, revision, "revision \(revision) is already active", "policy")
             case .stale(let revision):
                 write(.rejected, revision, "revision \(revision) is older than the active snapshot", "payload")
             case .collision(let revision):
                 write(.rejected, revision, "revision \(revision) declares a different snapshot than the active one", "payload")
-            case .accept(let revision):
-                // The whole offer, in one call: download, verify, compile in staging, activate. The updater and the
-                // installation write the ledger rows for the attempt (activation, payload refusal, no payload), so
-                // this pass only records what it learned for the next check.
+            case .accept:
+                // Stage and activate before committing either the verifier's clock or its ETag. An interrupted or
+                // refused install must be retried on the next opportunity, rather than answered by a stranded 304.
                 let updater = CatalogUpdater(installation: installation, channel: channel)
                 switch await updater.install(remote) {
                 case .activated(let snapshot):
-                    // A verified revision is a verification: the window starts now, so a launch that just updated
-                    // does not ask again immediately.
-                    record = CatalogSyncRecord(verifiedRevision: snapshot.revision, verifiedAt: Date(),
-                        remoteRevision: snapshot.revision, etag: record.etag)
+                    commit(CatalogSyncRecord(verifiedRevision: snapshot.revision, verifiedAt: Date(),
+                        remoteRevision: snapshot.revision, etag: etag))
                 case .rejected, .unavailable:
-                    // Nothing was activated, so nothing was verified: the window is not refreshed and the next
-                    // foreground is free to try again. The reason is already in the ledger.
-                    record = CatalogSyncRecord(verifiedRevision: record.verifiedRevision,
-                        verifiedAt: record.verifiedAt, remoteRevision: revision, etag: record.etag)
+                    break // The updater logged the failure; neither the clock nor the ETag advances.
                 }
             }
         }
-        commit(record)
     }
 
     /// The authority this run consults, when the run states one. `FEEDMINE_CATALOGUE_AUTHORITY` names a manifest

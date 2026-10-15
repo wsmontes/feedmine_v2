@@ -39,6 +39,23 @@ final class CatalogManifestTests: XCTestCase {
         XCTAssertNil(CatalogManifest.validate(manifest))
     }
 
+    /// Criteria 3/4: only the compiled artefact is excluded from the public comparison inventory.
+    func testPublishedAndLocalManifestKeepTheSameOpmlEntries() {
+        let opml = (0..<118).map { index in
+            CatalogManifestEntry(path: String(format: "Feeds/%03d.opml", index), bytes: 10,
+                sha256: String(repeating: "a", count: 64))
+        }
+        let sqlite = entry("catalog.sqlite")
+        let published = CatalogManifest(revision: 5, sourceCount: 77_443, fileCount: 118, files: opml)
+        let installed = CatalogManifest(revision: 5, sourceCount: 77_443, fileCount: 119,
+            files: opml + [sqlite])
+        XCTAssertEqual(published.opmlEntries, installed.opmlEntries)
+        XCTAssertEqual(installed.catalogueEntry, sqlite)
+        XCTAssertNil(published.catalogueEntry)
+        XCTAssertEqual(published.fileCount, 118)
+        XCTAssertEqual(installed.fileCount, 119)
+    }
+
     func testTheBundledDescriptorDescribesTheCatalogueThisBuildShips() throws {
         // This module no longer carries a descriptor: the descriptor is the app's asset, and it must be read
         // beside the catalogue it describes (`FeedMineApp/FeedMineApp/Resources/catalog.manifest.json`).
