@@ -70,9 +70,16 @@ final class SourceManagementStoreTests: XCTestCase {
         private enum RefreshFailure: Error { case requested }
         private var fingerprint = "rev-5"
         private var savedSelection: [String] = []
+        private var refusingWrites = false
+        private var heldWriteKeys: Set<String> = []
+        private var heldWrites: [String: CheckedContinuation<Void, Never>] = [:]
+        private var heldWriteWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
         private var failingNodeKeys: Set<String> = []
         private var latestNodes: [String: CatalogNodeSummary] = [:]
         private var sourceRows: [String: [CatalogSourceSummary]] = [:]
+        private var holdsHealth = false
+        private var heldHealth: CheckedContinuation<[String: CatalogSourceHealth], Never>?
+        private var healthWaiters: [CheckedContinuation<Void, Never>] = []
         private var heldSourceKeys: Set<String> = []
         private var sourceReads: [String: CheckedContinuation<[CatalogSourceSummary], any Error>] = [:]
         private var sourceAwaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
@@ -90,6 +97,25 @@ final class SourceManagementStoreTests: XCTestCase {
             return latestNodes[node.key] ?? node
         }
         func durableSelection() -> Set<String> { Set(savedSelection) }
+        func holdHealthRead() { holdsHealth = true }
+        func waitForHealthRead() async {
+            if heldHealth != nil { return }
+            await withCheckedContinuation { healthWaiters.append($0) }
+        }
+        func releaseHealthRead() {
+            holdsHealth = false
+            heldHealth?.resume(returning: [:])
+            heldHealth = nil
+        }
+        func refuseWrites(_ value: Bool) { refusingWrites = value }
+        func holdWrite(for key: String) { heldWriteKeys.insert(key) }
+        func waitForWrite(_ key: String) async {
+            if heldWrites[key] != nil { return }
+            await withCheckedContinuation { heldWriteWaiters[key, default: []].append($0) }
+        }
+        func releaseWrite(_ key: String) {
+            heldWrites.removeValue(forKey: key)?.resume()
+        }
         func setSourceRows(_ rows: [CatalogSourceSummary], for key: String) { sourceRows[key] = rows }
         func holdSourceReads(for key: String) { heldSourceKeys.insert(key) }
         func waitForSourceRead(_ key: String) async {
@@ -151,10 +177,27 @@ final class SourceManagementStoreTests: XCTestCase {
         }
         func countryKeys() async throws -> [Int64: Set<String>] { [:] }
         func childKeys(of node: CatalogNodeSummary) async throws -> [Int64: Set<String>] { [:] }
-        func health() async throws -> [String: CatalogSourceHealth] { [:] }
+        func health() async throws -> [String: CatalogSourceHealth] {
+            guard holdsHealth else { return [:] }
+            return await withCheckedContinuation { continuation in
+                heldHealth = continuation
+                for waiter in healthWaiters { waiter.resume() }
+                healthWaiters.removeAll()
+            }
+        }
         func selection() async throws -> [String] { savedSelection }
-        func setSelection(_ keys: [String]) async throws { savedSelection = keys }
+        func setSelection(_ keys: [String]) async throws {
+            if refusingWrites { throw RefreshFailure.requested }
+            savedSelection = keys
+            if let key = keys.first, heldWriteKeys.contains(key) {
+                await withCheckedContinuation { continuation in
+                    heldWrites[key] = continuation
+                    for waiter in heldWriteWaiters.removeValue(forKey: key) ?? [] { waiter.resume() }
+                }
+            }
+        }
         func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws {
+            if refusingWrites { throw RefreshFailure.requested }
             if enabled {
                 if !savedSelection.contains(node.key) { savedSelection.append(node.key) }
             } else {
@@ -494,12 +537,14 @@ final class SourceManagementStoreTests: XCTestCase {
         await backend.holdSourceReads(for: current.key)
         let first = Task { await store.setEnabled(current, enabled: true) }
         await backend.waitForSourceRead(current.key)
-        XCTAssertEqual(store.selection, [current.key], "S1 must already be published before refreshing")
+        let savedS1 = await backend.durableSelection()
+        XCTAssertEqual(savedS1, [current.key], "S1 persisted and read before the held refresh")
+        XCTAssertTrue(store.selection.isEmpty, "the store must not publish S1 before the refresh finishes")
 
         let extra = CatalogSourceSummary(id: "reader-owned", title: "Reader choice",
             language: "pt", mediaKind: "text", defaultEnabled: true)
         await store.toggle(extra)
-        let newerSelection: Set<String> = [current.key, extra.id]
+        let newerSelection: Set<String> = [extra.id]
         let persistedSelection1 = await backend.durableSelection()
 
         XCTAssertEqual(persistedSelection1, newerSelection, "S2 must be durable")
@@ -548,7 +593,8 @@ final class SourceManagementStoreTests: XCTestCase {
         await backend.holdSourceReads(for: current.key)
         let setting = Task { await store.setEnabled(current, enabled: true) }
         await backend.waitForSourceRead(current.key)
-        XCTAssertEqual(store.selection, [current.key], "selection must be confirmed before refresh")
+        let saved = await backend.durableSelection()
+        XCTAssertEqual(saved, [current.key], "the write must be durable before the failing refresh")
         await backend.finishSourceRead(current.key, rows: [], fails: true)
         await setting.value
         let persistedSelection4 = await backend.durableSelection()
@@ -574,7 +620,7 @@ final class SourceManagementStoreTests: XCTestCase {
         let more = CatalogSourceSummary(id: "new-choice", title: "Reader choice",
             language: "pt", mediaKind: "text", defaultEnabled: true)
         await store.toggle(more)
-        let expected: Set<String> = [current.key, more.id]
+        let expected: Set<String> = [more.id]
         XCTAssertEqual(store.selection, expected)
         XCTAssertNil(store.errorMessage)
 
@@ -584,6 +630,83 @@ final class SourceManagementStoreTests: XCTestCase {
         XCTAssertEqual(persisted, expected)
         XCTAssertEqual(store.selection, expected)
         XCTAssertNil(store.errorMessage, "a failed refresh for S1 must not report an S2 write failure")
+    }
+
+    /// PD10-B2: two absolute selections persist in order, but their async completions arrive
+    /// reversed. The last read for display must reflect the currently persisted S2, not S1's intent.
+    func testPD10B2ApplyReconcilesOutOfOrderCompletedWrites() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let s1 = CatalogSourceSummary(id: "one", title: "One", language: "pt",
+            mediaKind: "text", defaultEnabled: true)
+        let s2 = CatalogSourceSummary(id: "two", title: "Two", language: "pt",
+            mediaKind: "text", defaultEnabled: true)
+        await backend.holdWrite(for: s1.id)
+        let first = Task { await store.toggle(s1) }
+        await backend.waitForWrite(s1.id)
+        let savedS1 = await backend.durableSelection()
+        XCTAssertEqual(savedS1, [s1.id])
+        await store.toggle(s2)
+        let savedS2 = await backend.durableSelection()
+        XCTAssertEqual(savedS2, [s2.id])
+        XCTAssertEqual(store.selection, [s2.id])
+
+        await backend.releaseWrite(s1.id)
+        await first.value
+        let finalSaved = await backend.durableSelection()
+        XCTAssertEqual(finalSaved, [s2.id])
+        XCTAssertEqual(store.selection, finalSaved,
+            "an older completion cannot republish its own requested keys")
+    }
+
+    /// PD10-B2: a write failure before confirmation retains the persisted previous value
+    /// and reports a true alteration failure, not a presentation-refresh failure.
+    func testPD10B2RejectedWriteKeepsPreviousSelectionAndReportsRealFailure() async throws {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        try await backend.setSelection(["saved"])
+        await store.load()
+        XCTAssertEqual(store.selection, ["saved"])
+        await backend.refuseWrites(true)
+        let source = CatalogSourceSummary(id: "rejected", title: "Rejected", language: "pt",
+            mediaKind: "text", defaultEnabled: true)
+        await store.toggle(source)
+        let unchanged = await backend.durableSelection()
+        XCTAssertEqual(unchanged, ["saved"])
+        XCTAssertEqual(store.selection, unchanged)
+        XCTAssertEqual(store.errorMessage, "Não foi possível alterar a seleção de fontes.")
+
+        await store.setEnabled(node(30, "Rejected tree"), enabled: true)
+        let stillSaved = await backend.durableSelection()
+        XCTAssertEqual(stillSaved, unchanged)
+        XCTAssertEqual(store.selection, unchanged)
+        XCTAssertEqual(store.errorMessage, "Não foi possível alterar a seleção de fontes.")
+    }
+
+    /// PD10-B2 audit: load began under the same catalog revision, but an accepted reader
+    /// selection S2 arrived while its health fetch was suspended. The final selection must
+    /// come from persisted preferences after the slow read, never from a prior S1 snapshot.
+    func testPD10B2LoadDoesNotOverwriteSelectionAcceptedDuringHealthRead() async throws {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        try await backend.setSelection(["initial"])
+        await store.load()
+        XCTAssertEqual(store.selection, ["initial"])
+
+        await backend.holdHealthRead()
+        let loading = Task { await store.load() }
+        await backend.waitForHealthRead()
+        let newChoice = CatalogSourceSummary(id: "choice-s2", title: "Reader choice",
+            language: "pt", mediaKind: "text", defaultEnabled: true)
+        await store.toggle(newChoice)
+        let expected: Set<String> = ["initial", newChoice.id]
+        let persisted = await backend.durableSelection()
+        XCTAssertEqual(persisted, expected)
+        XCTAssertEqual(store.selection, expected)
+        await backend.releaseHealthRead()
+        await loading.value
+        XCTAssertEqual(store.selection, expected,
+            "load must not republish a selection read before an unrelated async health fetch")
     }
 
     func testSearchTrimsAndClears() async {

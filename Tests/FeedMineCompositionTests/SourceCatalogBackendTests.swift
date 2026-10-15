@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 import GRDB
 import FeedMineDomain
+import FeedMineRuntime
 @testable import FeedMinePersistence
 @testable import FeedMineComposition
 import FeedMineUI

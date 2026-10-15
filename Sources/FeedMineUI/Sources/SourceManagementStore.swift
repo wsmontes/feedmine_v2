@@ -90,8 +90,11 @@ public final class SourceManagementStore {
             let sections = try await backend.sections()
             let countries = try await backend.countries()
             let countryKeys = try await backend.countryKeys()
-            let selection = Set(try await backend.selection())
             let health = try await backend.health()
+            guard await backend.catalogueFingerprint() == fingerprint else { return }
+            // A concurrent accepted write must not be replaced by a selection read *before*
+            // the slower health request. Consult persisted preferences last.
+            let selection = Set(try await backend.selection())
             guard await backend.catalogueFingerprint() == fingerprint else { return }
             // Publish one coherent read, never a mix of fields from two catalogue revisions.
             self.languages = languages
@@ -189,7 +192,7 @@ public final class SourceManagementStore {
         isLoading = true
         defer { isLoading = false }
 
-        // Commit and confirmation are independent of the fallible catalogue presentation refresh.
+        // (a) Persist the reader's intent. A refused write is the only alteration failure.
         do {
             try await backend.setEnabledTree(node: node, enabled: enabled)
         } catch {
@@ -197,33 +200,64 @@ public final class SourceManagementStore {
             return
         }
 
-        let confirmedSelection: Set<String>
+        // This first read is only a fence for an obsolete refresh/error, NEVER a selection
+        // value to publish after suspension. The authoritative display read occurs below.
+        let selectionAtWrite: Set<String>
         do {
-            confirmedSelection = Set(try await backend.selection())
+            selectionAtWrite = Set(try await backend.selection())
         } catch {
             errorMessage = String(localized: "A alteração foi salva, mas não foi possível atualizar a seleção exibida.")
             return
         }
-        selection = confirmedSelection
-        errorMessage = nil
 
-        // Never hold a captured selection across this suspension and publish it again: another
-        // accepted action may persist S2 while the source rows for S1 are being fetched.
-        guard openNode?.key == node.key else { return }
+        // (b) Refresh the *optional* presentation. Never turn a failed catalogue read into a
+        // failed write; keep the already published source level until the refresh is valid.
+        let wasOpen = openNode?.key == node.key
+        var refreshedNode: CatalogNodeSummary?
+        var refreshedSources: [CatalogSourceSummary]?
+        var refreshFailed = false
+        if wasOpen {
+            do {
+                refreshedNode = try await backend.currentNode(for: node)
+                if let refreshedNode {
+                    refreshedSources = try await backend.sources(in: refreshedNode)
+                }
+            } catch {
+                refreshFailed = true
+            }
+        }
+
+        // Read the persisted authority AFTER the potentially long catalogue awaits.
+        // Neither a selection captured as S1 nor a refresh error can overwrite persisted S2.
+        let latestSelection: Set<String>
         do {
-            guard let resolved = try await backend.currentNode(for: node) else { return }
-            let refreshedSources = try await backend.sources(in: resolved)
-            let current = await backend.catalogueFingerprint()
-            guard current == fingerprint, openNode?.key == node.key,
-                selection == confirmedSelection else { return }
-            openNode = resolved
-            sources = refreshedSources
+            latestSelection = Set(try await backend.selection())
         } catch {
-            let current = await backend.catalogueFingerprint()
-            guard current == fingerprint, openNode?.key == node.key,
-                selection == confirmedSelection else { return }
-            // Only the refresh failed. The durable selection write and its confirmation succeeded.
+            errorMessage = String(localized: "A alteração foi salva, mas não foi possível atualizar a seleção exibida.")
+            return
+        }
+        selection = latestSelection
+
+        let current = await backend.catalogueFingerprint()
+        guard current == fingerprint, openNode?.key == node.key else {
+            // A promoted catalogue or another open invalidates only the visual refresh.
+            errorMessage = nil
+            return
+        }
+        guard latestSelection == selectionAtWrite else {
+            // Another persisted intent superseded this operation while its catalogue read was held.
+            // Neither its old rows nor its late error belongs to the newer selection.
+            errorMessage = nil
+            return
+        }
+        if refreshFailed {
             errorMessage = String(localized: "A seleção foi salva, mas não foi possível atualizar as fontes exibidas.")
+        } else {
+            if let refreshedNode, let refreshedSources {
+                openNode = refreshedNode
+                sources = refreshedSources
+            }
+            errorMessage = nil
         }
     }
 
@@ -248,12 +282,19 @@ public final class SourceManagementStore {
     }
 
     private func apply(_ keys: [String]) async {
+        // The requested keys are an intent, not an authority: completion may arrive after
+        // another write. Publish only what the preferences store says *after* this write.
         do {
             try await backend.setSelection(keys)
+        } catch {
+            errorMessage = String(localized: "Não foi possível alterar a seleção de fontes.")
+            return
+        }
+        do {
             selection = Set(try await backend.selection())
             errorMessage = nil
         } catch {
-            errorMessage = String(localized: "Não foi possível alterar a seleção de fontes.")
+            errorMessage = String(localized: "A alteração foi salva, mas não foi possível atualizar a seleção exibida.")
         }
     }
 }
