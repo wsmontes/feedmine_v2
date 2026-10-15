@@ -914,40 +914,53 @@ final class CompositionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(index, min(before, 8),
             "o alcance ANTERIOR à âncora não pode encolher: tinha \(before) antes, a restauração devolveu \(index)")
         XCTAssertGreaterThan(items.count, 1, "a janela restaurada não é degenerada")
-        // **Navegação offline além do recorte** — a exigência seguinte do arquiteto, e ele está certo: devolver 8
-        // cartas anteriores não prova acesso às mais antigas. O leitor anda até a carta mais VELHA da janela e pede
-        // a cauda (`explicitTailApproach` — o vocabulário do próprio produto para "cheguei ao fim, quero mais",
-        // que é o que libera o que está admitido e ainda oculto; `backward` é outro caminho, o de adquirir
-        // conteúdo novo, e mediu-se que ele não estende a janela). A rede continua rejeitada, então o que aparecer
-        // só pode ter vindo do store: é a experiência de leitura offline, não o recorte que a restauração já trazia.
-        let oldest = try XCTUnwrap(items.first, "a janela restaurada tem de ter uma carta")
-        next.store.submitViewport(
-            ViewportObservation(anchor: PresentationAnchor(cardID: oldest.id, placement: .top)),
-            activity: .explicitTailApproach)
-        var extended: FeedPresentationSnapshot?
-        let deadline = Date().addingTimeInterval(10)
-        repeat {
-            extended = next.store.state.presentation
-            if let now = extended, now.window.items.first?.id != oldest.id { break }
-            try await Task.sleep(for: .milliseconds(100))
-        } while Date() < deadline
-        let extendedItems = try XCTUnwrap(extended?.window.items,
-            "pedir a cauda tem de produzir uma janela; a restauração é o começo da leitura, não o fim")
-        // O que se prova aqui é o que foi **medido**: a janela cresce com a navegação, offline. Medição desta
-        // execução, dos logs do próprio app: `installed cards=9` na reabertura e `installed cards=11` depois do
-        // pedido de cauda, com o transporte ainda rejeitando — logo o conteúdo veio do store. A direção do
-        // crescimento NÃO é afirmada, e vale registrar por quê: ele acontece na **cauda**, e as cartas **mais
-        // antigas que o recorte** (a edição tinha 17 cartas visíveis antes da reabertura, e a janela restaurada
-        // traz 9) seguem inalcançáveis por navegação — nem `backward` nem um novo descanso de âncora as estendem.
-        // Isso é um achado de produto, relatado ao arquiteto; uma asserção aqui o transformaria em contrato.
+        // keepsAdmittedHead restaura a cabeça completa do leitor, não um recorte de oito cartas.
+        // O banco pode conter cartas publicadas mas ainda não admitidas; não confundir essas populações.
+        let admittedBeforeClose = Set(snapshot.window.items.map(\.id))
         let restoredIDs = Set(items.map(\.id))
-        XCTAssertGreaterThan(extendedItems.count, items.count,
-            "pedir a cauda offline tem de trazer conteúdo ALÉM do recorte restaurado (\(items.count) cartas na restauração, \(extendedItems.count) depois)")
-        let fresh = Set(extendedItems.map(\.id)).subtracting(restoredIDs)
-        XCTAssertFalse(fresh.isEmpty,
-            "e tem de ser carta que a restauração não trazia — senão não houve navegação nenhuma")
-        XCTAssertEqual(extended?.window.anchor.cardID, oldest.id,
-            "e a âncora continua sendo onde o leitor parou: a janela cresce, o leitor não anda sozinho")
+        let editionCards = try PublicationStore(database: next.database).cards(
+            editionID: restored.editionID, around: restored.window.anchor.cardID,
+            backwardCapacity: Int.max, forwardCapacity: Int.max)
+        let editionIDs = Set(editionCards.map(\.id))
+        XCTAssertEqual(editionIDs.count, editionCards.count, "a Edition não pode repetir IDs publicados")
+        XCTAssertEqual(restoredIDs.count, items.count, "a janela não pode repetir IDs admitidos")
+        XCTAssertTrue(restoredIDs.isSubset(of: editionIDs), "todo card restaurado pertence à Edition")
+        XCTAssertTrue(admittedBeforeClose.isSubset(of: restoredIDs),
+            "reabrir offline deve preservar TODOS os cards admitidos antes de fechar")
+        let oldest = try XCTUnwrap(items.first)
+        XCTAssertEqual(oldest.id, editionCards.first?.id,
+            "a restauração com keepsAdmittedHead deve alcançar o início da Edition")
+
+        // Andar para trás não implica que novas cartas tenham de aparecer: elas já podem estar
+        // na janela restaurada. O gesto correto é backward, não explicitTailApproach.
+        await next.viewport(
+            ViewportObservation(anchor: PresentationAnchor(cardID: oldest.id, placement: .top)),
+            activity: .backward)
+        let movedBack = try XCTUnwrap(next.store.state.presentation)
+        XCTAssertEqual(movedBack.window.anchor.cardID, oldest.id)
+        XCTAssertEqual(movedBack.window.items.first?.id, oldest.id)
+        XCTAssertTrue(Set(movedBack.window.items.map(\.id)).isSubset(of: editionIDs))
+
+        // Regressar à posição original exige, quando necessário, percorrer a reserva futura
+        // admitindo a cauda local — nunca enviar diretamente uma âncora fora da janela.
+        for _ in 0..<editionCards.count {
+            let current = try XCTUnwrap(next.store.state.presentation)
+            if current.window.items.contains(where: { $0.id == restored.window.anchor.cardID }) { break }
+            guard let tail = current.window.items.last else { break }
+            await next.viewport(.init(anchor: .init(cardID: tail.id, placement: .top)),
+                activity: .explicitTailApproach)
+        }
+        XCTAssertTrue(next.store.state.presentation?.window.items.contains(where: {
+            $0.id == restored.window.anchor.cardID
+        }) == true, "o card onde o leitor estava deve permanecer alcançável offline")
+        await next.viewport(ViewportObservation(anchor: restored.window.anchor), activity: .forward)
+        let returned = try XCTUnwrap(next.store.state.presentation)
+        XCTAssertEqual(returned.window.anchor, restored.window.anchor,
+            "a navegação para trás e de volta não altera a posição original")
+        XCTAssertTrue(Set(returned.window.items.map(\.id)).isSubset(of: editionIDs))
+        print("C01 S5: editionDistinct=\(editionIDs.count) previouslyAdmitted=\(admittedBeforeClose.count) "
+            + "restoredAdmitted=\(restoredIDs.count) afterBackward=\(movedBack.window.items.count) "
+            + "returnedAdmitted=\(returned.window.items.count); snapshot != geometric viewport")
         await next.close()
     }
 
@@ -1080,9 +1093,15 @@ final class CompositionTests: XCTestCase {
         await reopened.launch()
         let next = try XCTUnwrap(reopened.association)
         let restored = try XCTUnwrap(next.store.state.presentation)
-        // O teto é o que a apresentação foi instalada com: 8 atrás + a âncora + 16 à frente.
-        let ceiling = 8 + 1 + 16
-        XCTAssertLessThanOrEqual(restored.window.items.count, ceiling, "a janela instalada já respeita o teto")
+        // keepsAdmittedHead preserva o histórico anterior; só a reserva posterior tem teto.
+        let restoredItems = restored.window.items
+        let restoredAnchorIndex = try XCTUnwrap(restoredItems.firstIndex {
+            $0.id == restored.window.anchor.cardID
+        })
+        let aheadOnRestore = restoredItems.count - restoredAnchorIndex - 1
+        XCTAssertLessThanOrEqual(aheadOnRestore, 16,
+            "a restauração deve limitar apenas a reserva à frente (\(aheadOnRestore) cards)")
+        print("C01 long navigation: restored=\(restoredItems.count) behind=\(restoredAnchorIndex) ahead=\(aheadOnRestore)")
 
         var reachable = Set(restored.window.items.map(\.id))
         /// O teto que a decisão do dono preservou: a reserva **à frente** da âncora. O total não é mais limitado,
