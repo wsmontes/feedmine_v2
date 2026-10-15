@@ -11,9 +11,15 @@ import FeedMineRuntime
 /// What the source surface needs from its backend. Every method is async and may throw: the store turns a
 /// failure into a stated message instead of leaving the surface silently empty.
 public protocol SourceManagementBackend: Sendable {
+    /// Identity of the committed public catalogue snapshot used by new read operations.
+    /// Nil for a fixed or absent catalogue; no periodic observer or secondary catalogue state.
+    func catalogueFingerprint() async -> String?
     func languages() async throws -> [CatalogLanguageSummary]
     func sections() async throws -> [CatalogNodeSummary]
     func countries() async throws -> [CatalogNodeSummary]
+    /// Re-resolve a node from its stable key before using its current child count and metadata.
+    /// Default is for immutable fixture backends; the managed backend reads its installed snapshot.
+    func currentNode(for node: CatalogNodeSummary) async throws -> CatalogNodeSummary?
     func children(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary]
     func breadcrumb(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary]
     func sources(in node: CatalogNodeSummary) async throws -> [CatalogSourceSummary]
@@ -24,6 +30,8 @@ public protocol SourceManagementBackend: Sendable {
     /// What the runtime observed per source (by catalog key). Absent means never attempted — never "healthy".
     func health() async throws -> [String: CatalogSourceHealth]
     func selection() async throws -> [String]
+    /// Incremental source intent; production backend merges within ReaderPreferencesStore.database.write.
+    func setSourceEnabled(_ key: String, enabled: Bool) async throws
     func setSelection(_ keys: [String]) async throws
     func setEnabled(node: CatalogNodeSummary, enabled: Bool) async throws
     /// V1's "whole region on/off" over the node's *tree*: the shipped catalog places a country's sources under
@@ -32,7 +40,17 @@ public protocol SourceManagementBackend: Sendable {
     func setEnabledTree(node: CatalogNodeSummary, enabled: Bool) async throws
 }
 
+private enum SourceSelectionCapabilityUnavailable: Error { case incremental }
+
 public extension SourceManagementBackend {
+    func catalogueFingerprint() async -> String? { nil }
+    func setSourceEnabled(_ key: String, enabled: Bool) async throws {
+        // Existing fixture backends may model absolute writes, but the real catalog backend
+        // must implement the transactional incremental owner. Avoid a silent read/write fallback.
+        throw SourceSelectionCapabilityUnavailable.incremental
+    }
+    func currentNode(for node: CatalogNodeSummary) async throws -> CatalogNodeSummary? { node }
+
     func setEnabledTree(node: CatalogNodeSummary, enabled: Bool) async throws {
         try await setEnabled(node: node, enabled: enabled)
     }
@@ -65,80 +83,221 @@ public final class SourceManagementStore {
     public private(set) var hasCatalog = true
 
     @ObservationIgnored private let backend: SourceManagementBackend
+    // Identity is scoped to publishing observable results, never to scheduling, persistence or acquisition.
+    // One monotonic sequence, with independent leases per kind of presentation.
+    @ObservationIgnored private var nextPublicationID: UInt64 = 0
+    @ObservationIgnored private var loadID: UInt64 = 0
+    @ObservationIgnored private var searchID: UInt64 = 0
+    @ObservationIgnored private var openID: UInt64 = 0
+    @ObservationIgnored private var mutationID: UInt64 = 0
+    @ObservationIgnored private var selectionReadID: UInt64 = 0
+    @ObservationIgnored private var feedbackID: UInt64 = 0
+    @ObservationIgnored private var loadingID: UInt64 = 0
+
+    private func newID() -> UInt64 {
+        nextPublicationID &+= 1
+        return nextPublicationID
+    }
+
+    private func beginIntent() -> UInt64 {
+        let id = newID()
+        feedbackID = id
+        return id
+    }
+
+    /// The only ordinary selection-publication path: read preferences after the relevant awaits.
+    /// The last read to *begin* wins publication; a late, older read cannot overwrite it.
+    private func publishPersistedSelection() async throws -> UInt64? {
+        let id = newID()
+        selectionReadID = id
+        let persisted = Set(try await backend.selection())
+        guard selectionReadID == id else { return nil }
+        selection = persisted
+        return id
+    }
 
     public init(backend: SourceManagementBackend) { self.backend = backend }
 
     /// Loads what the surface shows on appear: languages, sections and the current selection.
     public func load() async {
+        let id = beginIntent()
+        loadID = id
+        // A catalog read never owns a newer write's selection confirmation lease.
+        let selectionLease = selectionReadID
+        let mutationLease = mutationID
+        let fingerprint = await backend.catalogueFingerprint()
+        guard loadID == id else { return }
+        loadingID = id
         isLoading = true
-        defer { isLoading = false }
+        defer { if loadingID == id { isLoading = false } }
         do {
-            languages = try await backend.languages()
-            sections = try await backend.sections()
-            countries = try await backend.countries()
-            countryKeys = try await backend.countryKeys()
-            selection = Set(try await backend.selection())
-            health = try await backend.health()
+            let languages = try await backend.languages()
+            let sections = try await backend.sections()
+            let countries = try await backend.countries()
+            let countryKeys = try await backend.countryKeys()
+            let health = try await backend.health()
+            // Reject a superseded revision before even requesting its selection.
+            let checked = await backend.catalogueFingerprint()
+            guard loadID == id, checked == fingerprint else { return }
+            let selected = Set(try await backend.selection())
+            let current = await backend.catalogueFingerprint()
+            guard loadID == id, current == fingerprint else { return }
+            self.languages = languages
+            self.sections = sections
+            self.countries = countries
+            self.countryKeys = countryKeys
+            if selectionReadID == selectionLease, mutationID == mutationLease {
+                selection = selected
+            }
+            self.health = health
             hasCatalog = true
-            errorMessage = nil
+            if feedbackID == id { errorMessage = nil }
         } catch {
-            // The catalog is an optional shipped asset; its absence is a state, not an empty list.
+            let current = await backend.catalogueFingerprint()
+            guard loadID == id, current == fingerprint else { return }
             hasCatalog = false
-            errorMessage = String(localized: "O catálogo de fontes não está disponível.")
+            if feedbackID == id {
+                errorMessage = String(localized: "O catálogo de fontes não está disponível.")
+            }
         }
     }
 
     public func search(_ text: String) async {
+        let id = beginIntent()
+        searchID = id
         query = text
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { results = []; return }
-        do { results = try await backend.searchSources(trimmed); errorMessage = nil }
-        catch { errorMessage = String(localized: "Não foi possível buscar no catálogo.") }
+        let fingerprint = await backend.catalogueFingerprint()
+        guard searchID == id else { return }
+        do {
+            let found = try await backend.searchSources(trimmed)
+            let current = await backend.catalogueFingerprint()
+            guard searchID == id, current == fingerprint else { return }
+            results = found
+            if feedbackID == id { errorMessage = nil }
+        } catch {
+            let current = await backend.catalogueFingerprint()
+            guard searchID == id, current == fingerprint, feedbackID == id else { return }
+            errorMessage = String(localized: "Não foi possível buscar no catálogo.")
+        }
     }
 
     public func clearSearch() async {
+        let id = beginIntent()
+        searchID = id
         query = ""
         results = []
     }
 
-    /// Opens a node: its children become the visible level and its sources become the list underneath.
+    /// The node is resolved by key at the active revision. An obsolete or superseded
+    /// answer (including its error) never replaces another operation's publication.
     public func open(_ node: CatalogNodeSummary) async {
+        let id = beginIntent()
+        openID = id
+        let fingerprint = await backend.catalogueFingerprint()
+        guard openID == id else { return }
+        loadingID = id
         isLoading = true
-        defer { isLoading = false }
+        defer { if loadingID == id { isLoading = false } }
         do {
-            openNode = node
-            children = node.hasChildren ? try await backend.children(of: node) : []
-            breadcrumb = try await backend.breadcrumb(of: node)
-            sources = try await backend.sources(in: node)
-            nodeChildKeys = children.isEmpty ? [:] : try await backend.childKeys(of: node)
-            health = try await backend.health()
-            errorMessage = nil
-        } catch { errorMessage = String(localized: "Não foi possível abrir esta parte do catálogo.") }
+            guard let resolved = try await backend.currentNode(for: node) else {
+                let current = await backend.catalogueFingerprint()
+                guard openID == id, current == fingerprint, feedbackID == id else { return }
+                errorMessage = String(localized: "Não foi possível abrir esta parte do catálogo.")
+                return
+            }
+            let children = resolved.hasChildren ? try await backend.children(of: resolved) : []
+            let breadcrumb = try await backend.breadcrumb(of: resolved)
+            let sources = try await backend.sources(in: resolved)
+            let nodeChildKeys = children.isEmpty ? [:] : try await backend.childKeys(of: resolved)
+            let health = try await backend.health()
+            let current = await backend.catalogueFingerprint()
+            guard openID == id, current == fingerprint else { return }
+            openNode = resolved
+            self.children = children
+            self.breadcrumb = breadcrumb
+            self.sources = sources
+            self.nodeChildKeys = nodeChildKeys
+            self.health = health
+            if feedbackID == id { errorMessage = nil }
+        } catch {
+            let current = await backend.catalogueFingerprint()
+            guard openID == id, current == fingerprint, feedbackID == id else { return }
+            errorMessage = String(localized: "Não foi possível abrir esta parte do catálogo.")
+        }
     }
 
-    /// Adds or removes one source from the reader's selection. The list is refreshed from the backend, so the
-    /// surface never shows an optimistic state the preferences did not accept.
+    /// A toggle changes only this key. The UI supplies a desired action, never an absolute
+    /// replacement computed from an old, potentially incomplete selection.
     public func toggle(_ source: CatalogSourceSummary) async {
-        let next = selection.contains(source.id)
-            ? selection.subtracting([source.id])
-            : selection.union([source.id])
-        await apply(Array(next))
+        await apply(key: source.id, enabled: !selection.contains(source.id))
     }
 
-    /// V1's "whole region on/off". A node row is a region *tree* — the catalog places a country's sources under
-    /// its topic leaves — so the control covers everything placed beneath the node, not only at it. The list is
-    /// refreshed from the backend, so the surface never shows an optimistic state the preferences did not accept.
+    /// A subtree intent is merged transactionally by ReaderPreferencesStore. The persisted
+    /// selection is re-read AFTER any potentially slow catalogue refresh; old errors/rows lose
+    /// their publication lease, but a completed write is never undone.
     public func setEnabled(_ node: CatalogNodeSummary, enabled: Bool) async {
+        let id = beginIntent()
+        let fingerprint = await backend.catalogueFingerprint()
+        loadingID = id
         isLoading = true
-        defer { isLoading = false }
+        defer { if loadingID == id { isLoading = false } }
+
         do {
             try await backend.setEnabledTree(node: node, enabled: enabled)
-            selection = Set(try await backend.selection())
-            /* Refresh the node's own rows so their checkmarks follow the change. */
-            if openNode == node { sources = try await backend.sources(in: node) }
-            errorMessage = nil
         } catch {
+            guard feedbackID == id else { return }
             errorMessage = String(localized: "Não foi possível alterar a seleção de fontes.")
+            return
+        }
+        // A refused attempt must not revoke a pending load's right to publish the
+        // persisted selection. Mark only accepted writes, retaining monotonic order.
+        if id > mutationID { mutationID = id }
+
+        // The refresh is optional and fallible; its success says nothing about persistence.
+        let visibleKey = openNode?.key
+        let openedLease = openID
+        var refreshedLevel: (node: CatalogNodeSummary, children: [CatalogNodeSummary],
+            breadcrumb: [CatalogNodeSummary], sources: [CatalogSourceSummary],
+            childKeys: [Int64: Set<String>])?
+        var refreshError = false
+        if visibleKey == node.key {
+            do {
+                if let resolved = try await backend.currentNode(for: node) {
+                    let children = resolved.hasChildren ? try await backend.children(of: resolved) : []
+                    let breadcrumb = try await backend.breadcrumb(of: resolved)
+                    let sources = try await backend.sources(in: resolved)
+                    let keys = children.isEmpty ? [:] : try await backend.childKeys(of: resolved)
+                    refreshedLevel = (resolved, children, breadcrumb, sources, keys)
+                }
+            } catch { refreshError = true }
+        }
+
+        let selectionRead: UInt64
+        do {
+            guard let read = try await publishPersistedSelection() else { return }
+            selectionRead = read
+        } catch {
+            guard feedbackID == id else { return }
+            errorMessage = String(localized: "A alteração foi salva, mas não foi possível atualizar a seleção exibida.")
+            return
+        }
+        let current = await backend.catalogueFingerprint()
+        guard mutationID == id, selectionReadID == selectionRead, openID == openedLease,
+            current == fingerprint, openNode?.key == visibleKey else { return }
+        if let refreshedLevel {
+            // Rebind the entire level, never just its header and source rows.
+            openNode = refreshedLevel.node
+            children = refreshedLevel.children
+            breadcrumb = refreshedLevel.breadcrumb
+            sources = refreshedLevel.sources
+            nodeChildKeys = refreshedLevel.childKeys
+        }
+        if feedbackID == id {
+            errorMessage = refreshError
+                ? String(localized: "A seleção foi salva, mas não foi possível atualizar as fontes exibidas.")
+                : nil
         }
     }
 
@@ -162,13 +321,25 @@ public final class SourceManagementStore {
         return !keys.isEmpty && keys.allSatisfy(selection.contains)
     }
 
-    private func apply(_ keys: [String]) async {
+    /// The incremental source write is atomic in ReaderPreferencesStore; only display
+    /// confirmation runs asynchronously. Completion order may differ from commit order.
+    private func apply(key: String, enabled: Bool) async {
+        let id = beginIntent()
         do {
-            try await backend.setSelection(keys)
-            selection = Set(try await backend.selection())
-            errorMessage = nil
+            try await backend.setSourceEnabled(key, enabled: enabled)
         } catch {
+            guard feedbackID == id else { return }
             errorMessage = String(localized: "Não foi possível alterar a seleção de fontes.")
+            return
+        }
+        // Publication leases track successful mutations, not failed attempts.
+        if id > mutationID { mutationID = id }
+        do {
+            guard try await publishPersistedSelection() != nil else { return }
+            if feedbackID == id { errorMessage = nil }
+        } catch {
+            guard feedbackID == id else { return }
+            errorMessage = String(localized: "A alteração foi salva, mas não foi possível atualizar a seleção exibida.")
         }
     }
 }

@@ -57,35 +57,107 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
-/// Standard-public-URL test transport. Only the manifest request is intercepted; all RSS and OPML requests
-/// still pass through FixtureTransport. Unlike FEEDMINE_CATALOGUE_AUTHORITY, this exercises the release path.
+/// Standard-public-URL test transport. Manifest and declared OPML requests are intercepted;
+/// unrelated RSS requests pass through FixtureTransport. Unlike FEEDMINE_CATALOGUE_AUTHORITY,
+/// this exercises the release path.
 final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
     static let etag = "\"bundle-test\""
     static let manifest = Mutex<Data?>(nil)
     static let requests = Mutex<[String?]>([])
+    struct PayloadObservation: Sendable {
+        let requestedURL: String
+        let relativePath: String
+        let byteCount: Int?
+        let sha256: String?
+    }
+    // Diagnostic evidence of *actual* fixture responses; this replaces the former path-only log.
+    static let payloadObservations = Mutex<[PayloadObservation]>([])
+    static let fallbackRequestOffset = Mutex(0)
     static let force304 = Mutex(false)
+    static let payloads = Mutex<[String: Data]>([:])
+    static let holdManifest = Mutex(false)
+    // Keep held URLProtocol instances behind the same lock-owned wrapper as FixtureTransport.
+    // Swift 6 does not allow transferring task-isolated self through Mutex's sending inout state.
+    private final class HeldLoaders: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [StandardCatalogueTransport] = []
+        func append(_ loader: StandardCatalogueTransport) {
+            lock.lock(); defer { lock.unlock() }
+            values.append(loader)
+        }
+        func take() -> [StandardCatalogueTransport] {
+            lock.lock(); defer { lock.unlock() }
+            let loaders = values
+            values.removeAll()
+            return loaders
+        }
+    }
+    private static let held = HeldLoaders()
 
-    static func prepare(_ data: Data, unsolicited304: Bool = false) {
+    static func prepare(_ data: Data, unsolicited304: Bool = false,
+        payloads: [String: Data] = [:], paused: Bool = false) {
         manifest.withLock { $0 = data }
         requests.withLock { $0 = [] }
+        payloadObservations.withLock { $0 = [] }
+        let offset = FixtureTransport.requests.withLock { $0.count }
+        fallbackRequestOffset.withLock { $0 = offset }
         force304.withLock { $0 = unsolicited304 }
+        Self.payloads.withLock { $0 = payloads }
+        holdManifest.withLock { $0 = paused }
+        _ = held.take()
+    }
+
+    static func releaseManifest() {
+        holdManifest.withLock { $0 = false }
+        let loaders = held.take()
+        loaders.forEach { $0.deliver() }
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
-        request.url == CatalogUpdateChannel.publicManifestURL
+        guard let url = request.url else { return false }
+        // deletingLastPathComponent() already ends in "/". Adding another slash here silently
+        // sent every declared OPML to FixtureTransport (RSS bytes), making valid offers fail SHA-256.
+        let payloadBase = CatalogUpdateChannel.publicManifestURL.deletingLastPathComponent()
+        return url == CatalogUpdateChannel.publicManifestURL
+            || (url.absoluteString.hasPrefix(payloadBase.absoluteString)
+                && !Self.payloads.withLock { $0.isEmpty })
     }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        let conditional = request.value(forHTTPHeaderField: "If-None-Match")
-        Self.requests.withLock { $0.append(conditional) }
-        guard let data = Self.manifest.withLock({ $0 }) else {
+        if request.url == CatalogUpdateChannel.publicManifestURL {
+            let conditional = request.value(forHTTPHeaderField: "If-None-Match")
+            Self.requests.withLock { $0.append(conditional) }
+            if Self.holdManifest.withLock({ $0 }) {
+                Self.held.append(self)
+                return
+            }
+        }
+        deliver()
+    }
+
+    private func deliver() {
+        guard let url = request.url else { return }
+        let isManifest = url == CatalogUpdateChannel.publicManifestURL
+        let relative = String(url.path.dropFirst(
+            CatalogUpdateChannel.publicManifestURL.deletingLastPathComponent().path.count + 1))
+        let data = isManifest ? Self.manifest.withLock { $0 } : Self.payloads.withLock { $0[relative] }
+        if !isManifest {
+            let digest = data.map {
+                SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined()
+            }
+            let observation = PayloadObservation(requestedURL: url.absoluteString,
+                relativePath: relative, byteCount: data?.count, sha256: digest)
+            Self.payloadObservations.withLock { $0.append(observation) }
+        }
+        guard let data else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
-        let status = Self.force304.withLock { $0 } || conditional == Self.etag ? 304 : 200
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-            headerFields: status == 200 ? ["ETag": Self.etag] : [:])!
+        let conditional = request.value(forHTTPHeaderField: "If-None-Match")
+        let status = isManifest && (Self.force304.withLock { $0 } || conditional == Self.etag) ? 304 : 200
+        let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1",
+            headerFields: isManifest && status == 200 ? ["ETag": Self.etag] : [:])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         if status == 200 { client?.urlProtocol(self, didLoad: data) }
         client?.urlProtocolDidFinishLoading(self)
@@ -386,6 +458,217 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(try readSyncRecord(directory), previous,
             "the unsolicited 304 must not renew verifiedAt or bless a mismatched revision")
         await composition.association?.close()
+    }
+
+    /// B1/B3/B7, native app proof. The foreground request is held *after* the association's foreground
+    /// completed so a full presentation comparison isolates the catalogue activation from ordinary feed work.
+    /// Nothing in the initial presentation may wait for the public authority.
+    func testPD10B1B3ForegroundActivatesSixWithoutChangingCompletePublishedPresentation() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            StandardCatalogueTransport.releaseManifest()
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let published = try makePD10BPublishedRevision()
+        StandardCatalogueTransport.prepare(try published.manifest.encoded(),
+            payloads: published.payloads, paused: true)
+        let root = publicCatalogueRoot(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        XCTAssertNotNil(association.store.state.presentation, "first paint came from local data")
+        XCTAssertTrue(StandardCatalogueTransport.requests.withLock { $0.isEmpty })
+        let beforeSnapshot = try XCTUnwrap(CatalogInstallation(appDirectory: directory).activeSnapshot())
+        XCTAssertEqual(beforeSnapshot.revision, 5)
+        let foreground = Task { await root.foreground() }
+        for _ in 0..<300 where StandardCatalogueTransport.requests.withLock({ $0.isEmpty }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(StandardCatalogueTransport.requests.withLock { $0.count }, 1)
+        let frozen = try XCTUnwrap(association.store.state.presentation)
+        StandardCatalogueTransport.releaseManifest()
+        await foreground.value
+        let installation = CatalogInstallation(appDirectory: directory)
+        let activated = try XCTUnwrap(installation.activeSnapshot())
+        XCTAssertEqual(activated.revision, 6)
+        XCTAssertEqual(activated.sourceCount, 4)
+        assertPD10BPayload(published, installation: CatalogInstallation(appDirectory: directory))
+        XCTAssertEqual(activated.fingerprint, try CatalogManifest.sha256(ofFile: activated.catalogueURL))
+        let pointer = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: installation.directory.appendingPathComponent("active.json")))
+            as? [String: String])
+        XCTAssertEqual(pointer["fingerprint"], activated.fingerprint)
+        XCTAssertEqual(pointer["cataloguePath"], activated.catalogueURL.path)
+        XCTAssertEqual(installation.ledger().map(\.outcome), [.bootstrapped, .activated])
+        XCTAssertEqual(installation.ledger().last?.kind, "update")
+        XCTAssertEqual(installation.ledger().last?.revision, 6)
+        XCTAssertTrue(root.association === association, "activation must not replace the reading association")
+        XCTAssertEqual(association.store.state.presentation, frozen,
+            "anchor, admitted window, complete card content and metadata must remain identical")
+        await association.close()
+    }
+
+    /// B2 partial, native app proof: repeating an already queried profile on a *new* association sees the
+    /// new catalog fingerprint. It does not claim to fence new work of the old association's acquisition.
+    func testPD10B2NewContextAndSourceSearchUseActivatedCatalogue() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let db = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: db)
+        _ = try preferences.initialize(sourceKeys: TrustedFeed.development.map(\.principal))
+        var settings = (try preferences.load())?.settings ?? .standard
+        settings.discoveryProfile = FeedRecipeDefinition.neutral(languages: ["pt"])
+        _ = try preferences.setSettings(settings)
+        let published = try makePD10BPublishedRevision()
+        StandardCatalogueTransport.prepare(try published.manifest.encoded(), payloads: published.payloads)
+        let root = publicCatalogueRoot(directory: directory)
+        await root.launch()
+        let oldAssociation = try XCTUnwrap(root.association)
+        let oldPool = Set(oldAssociation.discovery.map(\.principal))
+        XCTAssertFalse(oldPool.isEmpty)
+        await root.foreground()
+        let active = try XCTUnwrap(CatalogInstallation(appDirectory: directory).activeSnapshot())
+        XCTAssertEqual(active.revision, 6)
+        assertPD10BPayload(published, installation: CatalogInstallation(appDirectory: directory))
+        try await root.searchSources("Alpha")
+        XCTAssertTrue(root.sourceOptions.contains { $0.name == "Alpha News" },
+            "source management must query the newly activated catalogue")
+        try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+        let next = try XCTUnwrap(root.association)
+        XCTAssertFalse(next === oldAssociation)
+        XCTAssertEqual(next.catalogueURL, active.catalogueURL)
+        let freshPool = Set(next.discovery.map(\.principal))
+        XCTAssertTrue(freshPool.contains("https://alpha.example/feed"))
+        XCTAssertNotEqual(freshPool, oldPool, "a cached old profile must not answer for revision 6")
+        await next.close()
+    }
+
+    /// B4, native stores rather than byte counts: reader import, explicit selection, bookmark, saved
+    /// collection, curated preset and durable reading position survive a managed-catalogue update.
+    func testPD10B4PersonalLibraryAndPublishedHistorySurviveActivation() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: TrustedFeed.development.map(\.principal))
+        let library = ReaderLibraryStore(database: database)
+        let mine = ReaderImportEntry(id: "https://mine.example/rss", title: "Minha fonte",
+            requestURL: "https://mine.example/rss", categoryPath: [])
+        _ = try library.commitImport([mine], rejected: 0, at: Date())
+        let published = try makePD10BPublishedRevision()
+        StandardCatalogueTransport.prepare(try published.manifest.encoded(), payloads: published.payloads)
+        let root = publicCatalogueRoot(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let card = try XCTUnwrap(association.store.state.presentation?.window.items.first)
+        let publication = PublicationStore(database: database)
+        try publication.toggleBookmark(cardID: card.id, at: Date())
+        await association.viewport(.init(anchor: .init(cardID: card.id, placement: .top)), activity: .forward)
+        _ = try await association.session.checkpointCurrentPosition(at: Date())
+        let position = try XCTUnwrap(SessionStore(database: database).checkpoint())
+        let collection = try XCTUnwrap(root.collectCurrentSources(named: "Minha coleção"))
+        let savedPreset = try XCTUnwrap(root.saveCuratedFeed(.neutral(languages: ["pt"]),
+            named: "Minha curadoria"))
+        let selected = try XCTUnwrap(preferences.load()).sourceKeys
+        let imported = try library.importedSources()
+        let members = try library.sourceKeys(inCollection: collection.id)
+        let recipe = try XCTUnwrap(root.makeCuratedCoordinator()?.curatedPresets()
+            .first(where: { $0.id == savedPreset.id })?.recipe)
+        let originalEdition = try XCTUnwrap(publication.edition(id: position.editionID))
+
+        await root.foreground()
+        XCTAssertEqual(CatalogInstallation(appDirectory: directory).activeSnapshot()?.revision, 6)
+        assertPD10BPayload(published, installation: CatalogInstallation(appDirectory: directory))
+        XCTAssertEqual(try preferences.load()?.sourceKeys, selected,
+            "the source selection belongs to the reader, not to the managed catalogue")
+        XCTAssertEqual(try library.importedSources(), imported)
+        XCTAssertTrue(try library.importedSources().contains { $0.id == mine.id })
+        XCTAssertEqual(try library.sourceKeys(inCollection: collection.id), members)
+        XCTAssertTrue(try library.collections().contains { $0.id == collection.id })
+        XCTAssertEqual(try root.makeCuratedCoordinator()?.curatedPresets()
+            .first(where: { $0.id == savedPreset.id })?.recipe, recipe)
+        XCTAssertTrue(try publication.bookmarkedCardIDs().contains(card.id))
+        let afterPosition = try XCTUnwrap(SessionStore(database: database).checkpoint())
+        XCTAssertEqual(afterPosition.editionID, position.editionID)
+        XCTAssertEqual(afterPosition.cardID, position.cardID)
+        XCTAssertEqual(afterPosition.anchorPlacement, position.anchorPlacement)
+        XCTAssertEqual(try publication.edition(id: position.editionID), originalEdition,
+            "published historical edition is not rewritten by a catalogue update")
+        XCTAssertTrue(root.association === association)
+        await association.close()
+    }
+
+    /// Diagnostic of the complete foreground download. Report both the attempted real URL and the
+    /// relative key used by the fixture, including a missing response (nil bytes/digest). A fallback
+    /// to FixtureTransport is visible separately; it must never count as an OPML response.
+    private func assertPD10BPayload(_ published: (manifest: CatalogManifest, payloads: [String: Data]),
+        installation: CatalogInstallation, file: StaticString = #filePath, line: UInt = #line) {
+        let observed = StandardCatalogueTransport.payloadObservations.withLock { $0 }
+        let declarations = published.manifest.opmlEntries
+        let ledgerReason = installation.ledger().last?.reason ?? "<no ledger record>"
+        let fallbackStart = StandardCatalogueTransport.fallbackRequestOffset.withLock { $0 }
+        let unexpectedFallbacks = FixtureTransport.requests.withLock {
+            Array($0.dropFirst(fallbackStart)).filter { $0.hasSuffix(".opml") }
+        }
+        print("PD10B_PAYLOAD_LEDGER_LAST_REASON: \(ledgerReason)")
+        print("PD10B_PAYLOAD_FALLBACK_REQUESTS: \(unexpectedFallbacks)")
+        for declared in declarations {
+            let expectedURL = declared.path.split(separator: "/").reduce(
+                CatalogUpdateChannel.publicManifestURL.deletingLastPathComponent()
+            ) { $0.appendingPathComponent(String($1)) }
+            print("PD10B_PAYLOAD_DECLARED expectedURL=\(expectedURL.absoluteString)"
+                + " path=\(declared.path) bytes=\(declared.bytes) sha256=\(declared.sha256)")
+        }
+        for delivered in observed {
+            print("PD10B_PAYLOAD_DELIVERED url=\(delivered.requestedURL)"
+                + " relative=\(delivered.relativePath) bytes=\(String(describing: delivered.byteCount))"
+                + " sha256=\(delivered.sha256 ?? "<not served>")")
+        }
+        let details = "ledger.last.reason=\(ledgerReason); "
+            + "delivered=\(observed.map { "\($0.requestedURL) => \($0.relativePath) / \(String(describing: $0.byteCount)) / \($0.sha256 ?? "<not served>")" }); "
+            + "fallbackOPML=\(unexpectedFallbacks)"
+        XCTAssertEqual(observed.map(\.relativePath).sorted(), declarations.map(\.path).sorted(),
+            "every OPML declared must be requested from the controlled authority; \(details)", file: file, line: line)
+        XCTAssertTrue(unexpectedFallbacks.isEmpty,
+            "no OPML request may escape to FixtureTransport; \(details)", file: file, line: line)
+        for delivered in observed {
+            guard let declared = declarations.first(where: { $0.path == delivered.relativePath }) else {
+                XCTFail("unrecognized payload key; \(details)", file: file, line: line)
+                continue
+            }
+            XCTAssertEqual(delivered.byteCount, declared.bytes,
+                "payload size must match the public manifest; \(details)", file: file, line: line)
+            XCTAssertEqual(delivered.sha256, declared.sha256.lowercased(),
+                "payload digest must match the public manifest; \(details)", file: file, line: line)
+        }
+    }
+
+    private func makePD10BPublishedRevision() throws ->
+        (manifest: CatalogManifest, payloads: [String: Data]) {
+        let first = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <opml version="2.0"><head><title>noticias</title><language>pt</language></head>
+            <body><outline text="Mundo" title="Mundo">
+            <outline text="Alpha News" title="Alpha News" xmlUrl="https://alpha.example/feed" feedmineMediaKind="text" />
+            <outline text="Beta News" title="Beta News" xmlUrl="https://beta.example/feed" feedmineMediaKind="text" />
+            </outline></body></opml>
+            """
+        let second = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <opml version="2.0"><head><title>programas</title><language>pt</language></head>
+            <body><outline text="Programas" title="Programas">
+            <outline text="Gamma Cast" title="Gamma Cast" xmlUrl="https://gamma.example/feed" feedmineMediaKind="audio" />
+            <outline text="Delta Video" title="Delta Video" xmlUrl="https://delta.example/feed" feedmineMediaKind="video" />
+            </outline></body></opml>
+            """
+        let payloads = ["Feeds/noticias.opml": Data(first.utf8),
+            "Feeds/programas.opml": Data(second.utf8)]
+        let declarations = payloads.keys.sorted().map { path in
+            CatalogManifestEntry(path: path, bytes: payloads[path]!.count,
+                sha256: CryptoKit.SHA256.hash(data: payloads[path]!)
+                    .map { String(format: "%02x", $0) }.joined())
+        }
+        return (CatalogManifest(revision: 6, sourceCount: 4, fileCount: declarations.count,
+            files: declarations), payloads)
     }
 
     func testBundledCatalogHasRealBytesAndStableBoundedDefaults() throws {

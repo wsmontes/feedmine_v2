@@ -42,7 +42,8 @@ final class AppComposition {
     /// `Bundle.main` lookup; one value, taken once at the top of `init`, is what makes the app read what
     /// `CatalogInstallation` verified instead of a lookup that merely happens to name the same file. `nil`
     /// stands for "this build carries no readable catalogue", stated rather than faked.
-    @ObservationIgnored private let catalogueURL: URL?
+    @ObservationIgnored private var catalogueSnapshot: CatalogSnapshot?
+    private var catalogueURL: URL? { catalogueSnapshot?.catalogueURL }
     @ObservationIgnored private var preferences: ReaderPreferencesStore?
     /// The reader's **real** exposures: the cards the visual capture actually presented as the reader's own
     /// position, in the order they happened. The ledger observes new identities so invitation eligibility can
@@ -188,7 +189,7 @@ final class AppComposition {
         // reader below takes this one value. The update opportunity is deliberately not here: whether and when to
         // consult the channel is a foreground decision (`CatalogSyncPolicy`), not a launch step.
         let snapshot = CatalogInstallation(appDirectory: self.directory).bootstrap()
-        self.catalogueURL = snapshot?.catalogueURL
+        self.catalogueSnapshot = snapshot
         // The player remembers where the reader stopped; the store opens with the rest of the reader's own state,
         // lazily, so the adapter can be built before the database is (a preview or a test never opens one).
         mediaAdapter.positions = ReaderPlaybackPositionsAdapter(database: { [weak self] in
@@ -359,6 +360,9 @@ final class AppComposition {
                 let updater = CatalogUpdater(installation: installation, channel: channel)
                 switch await updater.install(remote) {
                 case .activated(let snapshot):
+                    // Only work *started after this point* sees the new authority. The association already
+                    // presenting cards keeps the snapshot, discovery and publication it was built with.
+                    adoptActivatedCatalogue(snapshot)
                     commit(CatalogSyncRecord(verifiedRevision: snapshot.revision, verifiedAt: Date(),
                         remoteRevision: snapshot.revision, etag: etag))
                 case .rejected, .unavailable:
@@ -366,6 +370,23 @@ final class AppComposition {
                 }
             }
         }
+    }
+
+    /// Adopt the installer-verified snapshot for future work. The existing association, its runway and all
+    /// admitted cards are intentionally untouched. A selected source stays the reader's own durable choice;
+    /// re-resolution merely refreshes its endpoint/metadata when the same canonical key exists in the new
+    /// catalogue, without changing stored preferences or inventing a subscription from discovery.
+    private func adoptActivatedCatalogue(_ snapshot: CatalogSnapshot) {
+        guard catalogueSnapshot?.fingerprint != snapshot.fingerprint else { return }
+        catalogueSnapshot = snapshot
+        if let preferences, let saved = try? preferences.load(),
+            let resolved = try? TrustedFeed.resolveAvailable(keys: saved.sourceKeys, fallback: selectedFeeds,
+                readerSources: readerSourceEntries(), catalogueURL: snapshot.catalogueURL) {
+            selectedFeeds = resolved
+        }
+        // Do not discard prepared pools/traversals: their existing snapshot identity keeps them reusable for
+        // associations still reading that snapshot. Future lookups use the new fingerprint in their key.
+        // A source-search begun against the old catalogue is fenced when its detached query returns.
     }
 
     /// The authority this run consults, when the run states one. `FEEDMINE_CATALOGUE_AUTHORITY` names a manifest
@@ -397,8 +418,9 @@ final class AppComposition {
     func searchSources(_ query: String) async throws {
         let searchID = UUID()
         sourceSearchID = searchID
+        let snapshot = catalogueSnapshot
         var choices = selectedFeeds
-        if let url = catalogueURL {
+        if let url = snapshot?.catalogueURL {
             let records = try await Task.detached {
                 try LegacyCatalogReader(catalogURL: url).matchingSources(query: query, limit: 50)
             }.value
@@ -407,6 +429,12 @@ final class AppComposition {
             }
         }
         guard searchID == sourceSearchID else { return }
+        if catalogueSnapshot?.fingerprint != snapshot?.fingerprint {
+            // The detached query started under an obsolete snapshot. Repeat against the active revision,
+            // rather than installing old options on a newer catalogue or throwing away other useful work.
+            try await searchSources(query)
+            return
+        }
         sourceChoices = Dictionary(choices.map { ($0.sourceID, $0) }, uniquingKeysWith: { first, _ in first })
         let selected = Set(selectedFeeds.map(\.sourceID))
         sourceOptions = sourceChoices.values.map { .init(id: $0.sourceID, name: $0.displayName, selected: selected.contains($0.sourceID)) }
@@ -989,7 +1017,8 @@ final class AppComposition {
     func makeSourceManagementStore() -> SourceManagementStore {
         let database = libraryDatabase()
         return SourceManagementStore(backend: SourceCatalogBackend(
-            coordinator: SourceManagementCoordinator(catalogURL: catalogueURL, database: database),
+            coordinator: SourceManagementCoordinator(
+                installation: CatalogInstallation(appDirectory: directory), database: database),
             healthProvider: { await self.sourceHealth() }))
     }
 
@@ -1075,6 +1104,19 @@ final class AppComposition {
     /// The one place a session is built: every transition ranks with the context's own scoring. A collection's
     /// own feed passes its own sources; everything else is the reader's selection.
     private func association(contextKey: ContextKey) async throws -> FeedAssociation {
+        // The detached pool may finish after an activation. It retries for the current fingerprint;
+        // resolve the selected sources, policy and traversal *after* that await so they all agree about the
+        // authority one new association is using.
+        let initial = try sessionState(for: contextKey)
+        let profile = discoveryProfile(for: applied(initial.key))
+        let requestedFingerprint = catalogueSnapshot?.fingerprint
+        let discovered = await discoveryFeeds(profile: profile)
+        let snapshot = catalogueSnapshot
+        // Actor reentrancy can allow an activation *between* returning an old cached pool and
+        // resuming this constructor. Do not combine that pool with the replacement snapshot.
+        if requestedFingerprint != snapshot?.fingerprint {
+            return try await association(contextKey: contextKey)
+        }
         let session = try sessionState(for: contextKey)
         if session.key != contextKey {
             currentContextKey = session.key
@@ -1082,41 +1124,26 @@ final class AppComposition {
         }
         let key = applied(session.key)
         let (scoring, version) = scoring(for: key)
-        // The pair is resolved **once**, before any `await`: between the two awaits below the reader can answer a new
-        // preference, and a pool built for the old profile together with a walk created for the new one would
-        // describe two different readers inside one association (Codex's review of this wiring, 2026-10-11). A change
-        // that lands while this is in flight is the rebuild path's business, and that path already remembers a
-        // second answer instead of dropping it (finding 3).
-        let profile = discoveryProfile(for: key)
         return connecting(try FeedAssociation(directory: directory, feeds: session.feeds,
-            discovery: await discoveryFeeds(profile: profile),
+            discovery: discovered,
             configuration: transportConfiguration, trace: trace, database: libraryDatabase(),
-            discoveryTraversal: discoveryTraversal(for: key, profile: profile), contextKey: key,
+            discoveryTraversal: discoveryTraversal(for: key, profile: profile, snapshot: snapshot), contextKey: key,
             selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
-            catalogueURL: catalogueURL, editorialExposure: editorialExposure, discoveryProfile: profile))
+            catalogueURL: snapshot?.catalogueURL, editorialExposure: editorialExposure, discoveryProfile: profile))
     }
 
     /// The walk discovery is on for this context's profile. Bounded by the same rule as the pool: no catalogue, no
     /// profile, no traversal — and an empty profile is "no answers yet", not a reason to invent one.
-    private func discoveryTraversal(for key: ContextKey, profile: ReaderDiscoveryProfile) -> ReaderDiscoveryTraversal? {
-        guard let url = catalogueURL else { return nil }
-        guard !profile.isEmpty else { return nil }
-        let walk = DiscoveryWalkKey(profile: profile, contextKey: key, catalogue: Self.catalogueRevision(of: url))
+    private func discoveryTraversal(for key: ContextKey, profile: ReaderDiscoveryProfile,
+        snapshot: CatalogSnapshot?) -> ReaderDiscoveryTraversal? {
+        guard let snapshot, !profile.isEmpty else { return nil }
+        let walk = DiscoveryWalkKey(profile: profile, contextKey: key, catalogue: snapshot.fingerprint)
         if let existing = discoveryTraversals[walk] { return existing }
-        let traversal = ReaderDiscoveryTraversal(builder: ReaderDiscoveryBuilder(catalogURL: url),
-            profile: profile, contextKey: key)
+        let traversal = ReaderDiscoveryTraversal(builder: ReaderDiscoveryBuilder(catalogURL: snapshot.catalogueURL),
+            profile: profile, contextKey: key,
+            installation: CatalogInstallation(appDirectory: directory))
         discoveryTraversals[walk] = traversal
         return traversal
-    }
-
-    /// The same triple `ReaderDiscoveryBuilder` stamps into its cursors (path, size, modification date). Repeating
-    /// the formula is deliberate but not a second convention: a walk is resumed only while the catalogue it paged is
-    /// the same one, so a new corpus (the benchmark copies one into the bundle) starts a new walk instead of
-    /// resuming a cursor the builder would refuse anyway.
-    private static func catalogueRevision(of url: URL) -> String {
-        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-        return url.standardizedFileURL.path + "|" + String(values?.fileSize ?? 0) + "|"
-            + String(values?.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0)
     }
 
     /// The product's own promise: a reader who named interests gets sources they never named. The pool comes from
@@ -1128,10 +1155,10 @@ final class AppComposition {
     /// thousands of keys; measured against that file, one pool costs 2,5–2,8 s, which on the main actor is a
     /// frozen first run (the acceptance driver observed the app's main thread busy for 30 s).
     private func discoveryFeeds(profile: ReaderDiscoveryProfile) async -> [TrustedFeed] {
-        guard !profile.isEmpty, let url = catalogueURL else {
-            return []
-        }
-        if let cached = discoveryCache[profile] { return cached }
+        guard !profile.isEmpty, let snapshot = catalogueSnapshot else { return [] }
+        let cacheKey = DiscoveryCacheKey(profile: profile, fingerprint: snapshot.fingerprint)
+        if let cached = discoveryCache[cacheKey] { return cached }
+        let url = snapshot.catalogueURL
         let limit = Self.discoverySourceLimit
         // One detached pass: the pool query **and** the subject names. Opening the shipped 118 MB catalogue once
         // per node key — which is what asking the catalogue for a name does — put seconds of work on the main
@@ -1141,11 +1168,14 @@ final class AppComposition {
             let pool = (try? ReaderDiscoveryBuilder(catalogURL: url).pool(for: profile, limit: limit))?.entries ?? []
             return (pool, Self.subjects(in: pool, catalogURL: url))
         }.value
-        // The map belongs to the profile it was built for: a pool from an earlier profile must not answer for the
-        // association being read now.
-        discoverySubjects = subjects
         let feeds = entries.map(Self.trustedFeed(from:))
-        discoveryCache[profile] = feeds
+        discoveryCache[cacheKey] = feeds
+        // Work prepared for revision 5 can finish after activation of 6. Keep its keyed result for any
+        // context still using 5, but do not let its subjects or feeds become the current authority.
+        guard catalogueSnapshot?.fingerprint == snapshot.fingerprint else {
+            return await discoveryFeeds(profile: profile)
+        }
+        discoverySubjects = subjects
         return feeds
     }
 
@@ -1369,7 +1399,11 @@ final class AppComposition {
 
     /// Profiles already resolved this launch: the catalogue query is done once per profile, and a context
     /// transition that asks for the same profile is free.
-    @ObservationIgnored private var discoveryCache: [ReaderDiscoveryProfile: [TrustedFeed]] = [:]
+    struct DiscoveryCacheKey: Hashable {
+        let profile: ReaderDiscoveryProfile
+        let fingerprint: String
+    }
+    @ObservationIgnored private var discoveryCache: [DiscoveryCacheKey: [TrustedFeed]] = [:]
 
     /// The discovery **traversal** for a profile, remembered per profile. A page cursor **is** progress, so it
     /// cannot live in an array handed out once: recreating the traversal on every association would re-find the same
@@ -1952,7 +1986,9 @@ final class FeedAssociation {
         #endif
         let acquisition = try SyndicationAcquisitionSnapshot(database: db, registrations: registrations,
             session: transport, redirectCapacity: 4, discovery: discoveryTraversal,
-            authorizedNonPublicOrigins: authorizedNonPublicOrigins)
+            authorizedNonPublicOrigins: authorizedNonPublicOrigins,
+            selectedSourceIDs: Set(feeds.map(\.sourceID)),
+            installation: CatalogInstallation(appDirectory: directory))
         self.acquisition = acquisition
         // H2: a feed that keeps failing cools down for a doubling window that starts at what one
         // failed attempt may already cost (the request timeout) and is capped by the resource

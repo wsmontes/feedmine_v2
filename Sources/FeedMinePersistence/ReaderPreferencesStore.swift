@@ -58,6 +58,31 @@ public struct ReaderPreferencesStore: Sendable {
         }
     }
 
+    /// Incremental selection intent, committed with the latest persisted selection in ONE
+    /// transaction. A source-management operation never replaces unrelated reader choices.
+    /// Absolute replacement remains updateSources(_:), for callers that explicitly mean that.
+    public func changeSources(adding: [String] = [], removing: [String] = []) throws -> Record {
+        try Self.validate(adding)
+        try Self.validate(removing)
+        guard Set(adding).isDisjoint(with: removing) else { throw ReaderPreferencesError.invalidSelection }
+        return try database.write { db in
+            guard let current = try Self.read(db) else { throw ReaderPreferencesError.missingPreferences }
+            let excluded = Set(removing)
+            var keys = current.sourceKeys.filter { !excluded.contains($0) }
+            let present = Set(keys)
+            keys.append(contentsOf: adding.filter { !present.contains($0) })
+            if Set(keys) == Set(current.sourceKeys) { return current }
+            guard current.selectionVersion < UInt64(Int64.max) else {
+                throw ReaderPreferencesError.versionOverflow
+            }
+            let updated = Record(sourceKeys: keys, selectionVersion: current.selectionVersion + 1,
+                activeContextKey: current.activeContextKey, settings: current.settings,
+                preferredBookmarkListID: current.preferredBookmarkListID, filterExpiry: current.filterExpiry)
+            try Self.save(updated, in: db)
+            return updated
+        }
+    }
+
     /// T10: writes the reader's preferences. The four-hour filter rule keeps its own column — T6 wrote it first,
     /// and the read composes it back into the value — so this write keeps both in step.
     public func setSettings(_ settings: ReaderSettings) throws -> Record {

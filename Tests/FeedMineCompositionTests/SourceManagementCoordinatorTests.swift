@@ -45,6 +45,42 @@ final class SourceManagementCoordinatorTests: XCTestCase {
         return try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))
     }
 
+    /// PD10-B2: an already constructed coordinator reads the installer's committed authority for
+    /// the *next* operation. The source selection is a reader-owned store, not a catalog side effect.
+    func testPD10B2ExistingCoordinatorReadsPromotedSnapshotWithoutRewritingSelection() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let old = try makeCatalogue(in: root.appendingPathComponent("r5"), sources: 2, revision: 5)
+        let bundleDescriptor = root.appendingPathComponent("bundle.json")
+        try pd10Descriptor(old, revision: 5, sources: 2).write(to: bundleDescriptor)
+        let installation = CatalogInstallation(directory: root.appendingPathComponent("catalogue"),
+            bundledCatalogue: old, bundledManifest: bundleDescriptor)
+        XCTAssertEqual(installation.bootstrap()?.revision, 5)
+        let db = try database()
+        let preferences = ReaderPreferencesStore(database: db)
+        _ = try preferences.initialize(sourceKeys: ["https://exemplo.pt/feed1"])
+        let coordinator = SourceManagementCoordinator(installation: installation, database: db)
+        XCTAssertEqual(try coordinator.searchSources("Exemplo 1").count, 1)
+        let selected = try coordinator.selection()
+
+        let new = try makeCatalogue(in: root.appendingPathComponent("r6"), sources: 1, revision: 6)
+        guard case .installed = installation.install(manifestData: try pd10Descriptor(
+            new, revision: 6, sources: 1), catalogue: new) else {
+            return XCTFail("the second snapshot must activate")
+        }
+        XCTAssertTrue(try coordinator.searchSources("Exemplo 1").isEmpty)
+        XCTAssertEqual(try coordinator.searchSources("Exemplo 0").count, 1)
+        XCTAssertEqual(try coordinator.selection(), selected,
+            "a managed deletion must not delete a reader's selected source")
+    }
+
+    private func pd10Descriptor(_ url: URL, revision: Int, sources: Int) throws -> Data {
+        let size = try XCTUnwrap(url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        return try CatalogManifest(revision: revision, sourceCount: sources, fileCount: 1,
+            files: [CatalogManifestEntry(path: "catalog.sqlite", bytes: size,
+                sha256: try CatalogManifest.sha256(ofFile: url))]).encoded()
+    }
+
     /// UI receives values, never reader records or rows; a missing asset is a typed absence.
     func testExposesValuesOnlyAndStatesAMissingCatalog() throws {
         let empty = SourceManagementCoordinator(catalogURL: nil, database: nil)
@@ -103,6 +139,31 @@ final class SourceManagementCoordinatorTests: XCTestCase {
         let emptied = try coordinator.setSelection([])
         XCTAssertEqual(emptied, version + 1, "emptying the selection is a selection change")
         XCTAssertTrue(try coordinator.selection().isEmpty)
+    }
+
+    /// PD10-B2: a per-source intent and a subtree intent operate on the latest durable
+    /// selection, never an absolute copy from a previous UI read.
+    func testPD10B2IncrementalSourceAndTreeMutationsKeepReaderOwnedKeys() throws {
+        let database = try database()
+        let preferences = ReaderPreferencesStore(database: database)
+        _ = try preferences.initialize(sourceKeys: ["https://outside.example/feed"])
+        let coordinator = SourceManagementCoordinator(catalogURL: try catalog(), database: database)
+        let brazil = try XCTUnwrap(try coordinator.nodeByKey("countries/br"))
+        _ = try coordinator.setEnabledTree(nodeID: brazil, enabled: true)
+        XCTAssertEqual(Set(try coordinator.selection()), [
+            "https://outside.example/feed", "https://a.example/feed", "https://b.example/feed"
+        ])
+        _ = try coordinator.setSourceEnabled(key: "https://extra.example/feed", enabled: true)
+        XCTAssertEqual(Set(try coordinator.selection()), [
+            "https://outside.example/feed", "https://a.example/feed",
+            "https://b.example/feed", "https://extra.example/feed"
+        ])
+        _ = try coordinator.setEnabledTree(nodeID: brazil, enabled: false)
+        XCTAssertEqual(Set(try coordinator.selection()), [
+            "https://outside.example/feed", "https://extra.example/feed"
+        ], "subtree disable must not remove unrelated reader choices")
+        _ = try coordinator.setSourceEnabled(key: "https://extra.example/feed", enabled: false)
+        XCTAssertEqual(try coordinator.selection(), ["https://outside.example/feed"])
     }
 
     /// V1's "whole region on/off": enabling a node merges its placed sources into the selection; disabling it

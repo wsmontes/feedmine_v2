@@ -52,6 +52,11 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
     let discovery: ReaderDiscoveryTraversal?
     private let database: RuntimeDatabase
     private let registrations: [SyndicationTargetRegistration]
+    /// Explicitly selected sources remain reader-owned even if their managed catalogue row disappears.
+    private let selectedSourceIDs: Set<SourceID>
+    // Transient reference to the installed authority, independent of whether discovery is enabled.
+    private let installation: CatalogInstallation?
+    private let installedFingerprint: String?
     private let session: URLSession
     private let redirectCapacity: Int
     private let authorizedNonPublicOrigins: Set<SyndicationAuthorizedOrigin>
@@ -64,7 +69,9 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
     public init(database: RuntimeDatabase, registrations: [SyndicationTargetRegistration], session: URLSession,
         redirectCapacity: Int, now: @escaping @Sendable () -> Date = { Date() },
         discovery: ReaderDiscoveryTraversal? = nil,
-        authorizedNonPublicOrigins: [URL] = []) throws {
+        authorizedNonPublicOrigins: [URL] = [],
+        selectedSourceIDs: Set<SourceID> = [],
+        installation: CatalogInstallation? = nil) throws {
         guard redirectCapacity >= 0 else { throw SyndicationAcquisitionSnapshotError.invalidRedirectCapacity }
         var origins = Set<SyndicationAuthorizedOrigin>()
         for url in authorizedNonPublicOrigins {
@@ -103,6 +110,9 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
         self.discovery = discovery
         self.database = database
         self.registrations = registrations
+        self.selectedSourceIDs = selectedSourceIDs
+        self.installation = installation
+        self.installedFingerprint = installation?.activeFingerprint()
         self.session = session
         self.redirectCapacity = redirectCapacity
         self.authorizedNonPublicOrigins = origins
@@ -131,8 +141,12 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
             languages = []
         }
         let authority = AcquisitionTargetAuthority(database: database)
+        // Only after a catalogue promotion: static registrations from the original discovery pool
+        // must be re-resolved against the newly committed authority, without revoking running targets.
+        let promoted = promotedReader()
         var targets: [AcquisitionTarget] = []
-        for registration in registrations {
+        for original in registrations {
+            guard let registration = try managedRegistration(original, from: promoted) else { continue }
             if let sourceID, !registration.bindings.contains(where: { $0.sourceID == sourceID }) { continue }
             // An undeclared language does not contradict an explicit choice. Reject only a known mismatch.
             if !languages.isEmpty, let language = registration.language,
@@ -181,11 +195,78 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
 
     // Retained catalogue pages own registrations, not the retired association's transport.
     func connector(for target: AcquisitionTarget, using transport: URLSession) -> (any FeedConnector)? {
-        guard target.state == .enabled, target.connectorKind == .syndication,
-            let registration = registrations.first(where: { $0.targetID == target.id && $0.targetGeneration == target.generation })
-        else { return discovery?.connector(for: target, using: transport) }
-        return SyndicationConnector(configuration: registration.configuration, session: transport,
-            redirectCapacity: redirectCapacity, now: now, authorizedNonPublicOrigins: authorizedNonPublicOrigins)
+        guard target.state == .enabled, target.connectorKind == .syndication else { return nil }
+        if let original = registrations.first(where: {
+            $0.targetID == target.id && $0.targetGeneration == target.generation
+        }) {
+            let promoted = promotedReader()
+            guard let registration = try? managedRegistration(original, from: promoted) else { return nil }
+            return SyndicationConnector(configuration: registration.configuration, session: transport,
+                redirectCapacity: redirectCapacity, now: now, authorizedNonPublicOrigins: authorizedNonPublicOrigins)
+        }
+        return discovery?.connector(for: target, using: transport)
+    }
+
+    /// Consult only the committed pointer at a new acquisition opportunity. A reader without
+    /// discovery still has an installed authority; the association remembers the fingerprint it opened.
+    private func promotedReader() -> LegacyCatalogReader? {
+        if let installation {
+            guard let current = installation.activeFingerprint(), current != installedFingerprint,
+                let snapshot = installation.activeSnapshot(), snapshot.fingerprint == current else { return nil }
+            return try? LegacyCatalogReader(catalogURL: snapshot.catalogueURL)
+        }
+        // Preserve callers that own a traversal but did not supply the installer to this snapshot.
+        return discovery?.promotedCatalogue().flatMap { try? LegacyCatalogReader(catalogURL: $0) }
+    }
+
+    /// Refresh an already materialized page's registration language and endpoint using the matching
+    /// promoted entries. Its durable targets and connector state remain intact: this is a value copy,
+    /// not a new materialization or a new cache, and in-flight pulls keep their captured connectors.
+    func retaining(_ entries: [LegacyCatalogEntry]) -> SyndicationAcquisitionSnapshot {
+        let currentByID = Dictionary(uniqueKeysWithValues: entries.map { ($0.targetID, $0) })
+        let retained = registrations.compactMap { registration -> SyndicationTargetRegistration? in
+            guard let entry = currentByID[registration.targetID] else { return nil }
+            return SyndicationTargetRegistration(targetID: registration.targetID,
+                targetGeneration: registration.targetGeneration, endpoint: entry.endpoint,
+                bindings: registration.bindings, language: entry.language)
+        }
+        return SyndicationAcquisitionSnapshot(retaining: self, registrations: retained)
+    }
+
+    private init(retaining original: SyndicationAcquisitionSnapshot,
+        registrations: [SyndicationTargetRegistration]) {
+        discovery = original.discovery
+        database = original.database
+        self.registrations = registrations
+        selectedSourceIDs = original.selectedSourceIDs
+        installation = original.installation
+        installedFingerprint = original.installedFingerprint
+        session = original.session
+        redirectCapacity = original.redirectCapacity
+        authorizedNonPublicOrigins = original.authorizedNonPublicOrigins
+        now = original.now
+    }
+
+    /// A prior registration is still useful if it remains in the active catalogue. If its stable key
+    /// now resolves to an edited URL, the next connector uses that URL without changing SourceID or
+    /// the durable target generation. An absent managed discovery row is no longer eligible.
+    /// Reader-selected and imported sources are never silently revoked by a public update.
+    private func managedRegistration(_ registration: SyndicationTargetRegistration,
+        from catalogue: LegacyCatalogReader?) throws -> SyndicationTargetRegistration? {
+        guard let catalogue,
+            let identity = registration.bindings.first?.externalPrincipal,
+            identity.namespace == LegacyCatalogImport.principalNamespace else { return registration }
+        let selected = registration.bindings.contains { selectedSourceIDs.contains($0.sourceID) }
+        guard let record = try catalogue.source(key: identity.value),
+            let updated = LegacyCatalogImport.entry(record),
+            updated.targetID == registration.targetID,
+            registration.bindings.contains(where: { $0.sourceID == updated.source.id }) else {
+            return selected ? registration : nil
+        }
+        guard selected || record.defaultEnabled else { return nil }
+        return SyndicationTargetRegistration(targetID: registration.targetID,
+            targetGeneration: registration.targetGeneration, endpoint: updated.endpoint,
+            bindings: registration.bindings, language: updated.language)
     }
 
     // Page snapshots carry no traversal, so connector lookup cannot recurse into its owner.

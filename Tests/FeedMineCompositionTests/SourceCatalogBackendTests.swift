@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 import GRDB
 import FeedMineDomain
+import FeedMineRuntime
 @testable import FeedMinePersistence
 @testable import FeedMineComposition
 import FeedMineUI
@@ -53,6 +54,60 @@ final class SourceCatalogBackendTests: XCTestCase {
         return (SourceCatalogBackend(coordinator: coordinator), database)
     }
 
+    /// PD10-B2: the UI store already exists and holds its rendered values. Installing a new
+    /// snapshot never mutates those values; a later operation delegates to the active authority.
+    @MainActor
+    func testPD10B2ExistingStoreKeepsItsPresentationUntilNextExplicitRead() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let old = try makeCatalogue(in: root.appendingPathComponent("r5"), sources: 2, revision: 5)
+        let descriptor = root.appendingPathComponent("bundle.json")
+        try pd10Descriptor(old, revision: 5, sources: 2).write(to: descriptor)
+        let installation = CatalogInstallation(directory: root.appendingPathComponent("catalogue"),
+            bundledCatalogue: old, bundledManifest: descriptor)
+        XCTAssertEqual(installation.bootstrap()?.revision, 5)
+        let runtime = try RuntimeDatabase(location: .init(directory: root.appendingPathComponent("reader")))
+        _ = try ReaderPreferencesStore(database: runtime).initialize(sourceKeys: [])
+        let coordinator = SourceManagementCoordinator(installation: installation, database: runtime)
+        let backend = SourceCatalogBackend(coordinator: coordinator)
+        let initialFingerprint = await backend.catalogueFingerprint()
+        XCTAssertEqual(initialFingerprint, installation.activeFingerprint(),
+            "the UI adapter must expose the installed authority's exact existing identity")
+        let store = SourceManagementStore(backend: backend)
+        await store.load()
+        await store.search("Exemplo 1")
+        XCTAssertEqual(store.results.map(\.title), ["Exemplo 1"])
+        let visible = store.results
+        let sections = store.sections
+        let selected = store.selection
+
+        let next = try makeCatalogue(in: root.appendingPathComponent("r6"), sources: 1, revision: 6)
+        guard case .installed = installation.install(manifestData: try pd10Descriptor(
+            next, revision: 6, sources: 1), catalogue: next) else {
+            return XCTFail("new snapshot must activate")
+        }
+        let promotedFingerprint = await backend.catalogueFingerprint()
+        XCTAssertEqual(promotedFingerprint, installation.activeFingerprint())
+        XCTAssertNotEqual(promotedFingerprint, initialFingerprint)
+        XCTAssertEqual(store.results.map(\.id), visible.map(\.id),
+            "activation must not rewrite previously displayed source identities")
+        XCTAssertEqual(store.results.map(\.title), visible.map(\.title),
+            "activation must not rewrite previously displayed source metadata")
+        XCTAssertEqual(store.sections.map(\.key), sections.map(\.key))
+        XCTAssertEqual(store.selection, selected)
+        await store.search("Exemplo 1")
+        XCTAssertTrue(store.results.isEmpty, "the next search must use revision 6")
+        await store.search("Exemplo 0")
+        XCTAssertEqual(store.results.map(\.title), ["Exemplo 0"])
+    }
+
+    private func pd10Descriptor(_ url: URL, revision: Int, sources: Int) throws -> Data {
+        let size = try XCTUnwrap(url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        return try CatalogManifest(revision: revision, sourceCount: sources, fileCount: 1,
+            files: [CatalogManifestEntry(path: "catalog.sqlite", bytes: size,
+                sha256: try CatalogManifest.sha256(ofFile: url))]).encoded()
+    }
+
     /// Every read the surface performs, through the adapter, over the real catalog file.
     func testReadsMapTheCatalogToTheSurfaceValues() async throws {
         let (backend, _) = try backend()
@@ -61,6 +116,11 @@ final class SourceCatalogBackendTests: XCTestCase {
         let countries = try await backend.countries()
         XCTAssertEqual(countries.map(\.name), ["Brazil"])
         let brazil = try XCTUnwrap(countries.first)
+        let staleSummary = CatalogNodeSummary(id: 9_999, key: brazil.key, name: "Old label",
+            kind: brazil.kind, sourceCount: 0, hasChildren: false)
+        let resolvedValue = try await backend.currentNode(for: staleSummary)
+        let resolved = try XCTUnwrap(resolvedValue)
+        XCTAssertEqual(resolved, brazil, "stale numeric IDs, names and child flags must not survive re-resolution")
         let children = try await backend.children(of: brazil)
         XCTAssertEqual(children.map(\.name), ["São Paulo"])
         XCTAssertEqual(children.map(\.kind), [.topic], "a child's kind reaches the surface as a value")
@@ -78,6 +138,19 @@ final class SourceCatalogBackendTests: XCTestCase {
         XCTAssertTrue(audioOnly.isEmpty, "an audio source is not a text search result")
         let selected = try await backend.selection()
         XCTAssertEqual(selected, ["https://a.example/feed"])
+    }
+
+    /// PD10-B2: the real backend routes one-source intents to transactional persistence,
+    /// never replacing a reader's unrelated stored keys with an old visual selection.
+    func testPD10B2BackendIncrementalToggleOnlyTouchesRequestedSource() async throws {
+        let (backend, database) = try backend()
+        let preferences = ReaderPreferencesStore(database: database)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, ["https://a.example/feed"])
+        try await backend.setSourceEnabled("https://b.example/feed", enabled: true)
+        let afterAdding = Set(try await backend.selection())
+        XCTAssertEqual(afterAdding, ["https://a.example/feed", "https://b.example/feed"])
+        try await backend.setSourceEnabled("https://a.example/feed", enabled: false)
+        XCTAssertEqual(try preferences.load()?.sourceKeys, ["https://b.example/feed"])
     }
 
     /// The health the surface reads is the app's own observation, passed through untouched (the catalog knows
