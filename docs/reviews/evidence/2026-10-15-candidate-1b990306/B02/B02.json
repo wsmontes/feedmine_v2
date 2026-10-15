@@ -1,0 +1,96 @@
+{
+  "gate": "B02",
+  "clauses": [
+    {
+      "clause": "≥80% dos 200 cards correspondem ao perfil",
+      "observed": {
+        "relevantes": 200,
+        "com rótulo": 200,
+        "cards": 200
+      },
+      "expected": ">=80%",
+      "pass": true
+    },
+    {
+      "clause": "≥20 fontes distintas",
+      "observed": 40,
+      "expected": ">=20",
+      "pass": true
+    },
+    {
+      "clause": "nenhuma fonte >15%",
+      "observed": 0.045,
+      "expected": "<=0.15",
+      "pass": true
+    },
+    {
+      "clause": "zero pares consecutivos da mesma fonte",
+      "observed": 0,
+      "expected": "0",
+      "pass": true
+    },
+    {
+      "clause": "zero duplicatas de artigo canônico",
+      "observed": 0,
+      "expected": "0",
+      "pass": true
+    }
+  ],
+  "source_counts": {
+    "https://feeds.megaphone.fm/NPP1540838940": 7,
+    "https://feeds.megaphone.fm/GLT7512917936": 8,
+    "https://vejasp.abril.com.br/feed": 9,
+    "https://rss.castbox.fm/everest/3bcd4168c2c14a409c7ae607a28afc52.xml": 9,
+    "https://drauziovarella.uol.com.br/feed": 3,
+    "https://brazil.9natree.com/feed.xml": 7,
+    "https://adrenaline.com.br/feed": 7,
+    "https://rss.castbox.fm/everest/610fe32370a74dc4949dd43b52df8975.xml": 8,
+    "https://feed.podbean.com/professormarins/feed.xml": 7,
+    "https://cartograma.substack.com/feed": 5,
+    "https://feeds.feedburner.com/ArchdailyBR": 3,
+    "https://feeds.megaphone.fm/GLOBO9536309159": 2,
+    "https://causaoperaria.org.br/feed": 2,
+    "https://sfnoticias.com.br/feed": 6,
+    "https://catracalivre.com.br/feed": 3,
+    "https://feeds.transistor.fm/historia-do-disco": 3,
+    "https://folhadelondrina.com.br/feed": 1,
+    "https://feeds.soundcloud.com/users/soundcloud:users:804054037/sounds.rss": 2,
+    "https://cadernodoevandro.substack.com/feed": 2,
+    "https://feeds.feedburner.com/BlogDoEdsonAlves": 1,
+    "https://feeds.megaphone.fm/ESP6410797634": 1,
+    "https://rss.castbox.fm/everest/fe18e7458acd4e499710503c0297b13b.xml": 7,
+    "https://facavocemesmo.net/feed": 6,
+    "https://jornaldaparaiba.com.br/feed": 9,
+    "https://rss.castbox.fm/everest/b9679efee6b24ad69a2704d6866e32ea.xml": 7,
+    "https://rss.castbox.fm/everest/8179667c58b04e4c86a42c3d326667ce.xml": 8,
+    "https://uepb.edu.br/feed": 1,
+    "https://zedudu.com.br/feed": 7,
+    "https://congressoemfoco.com.br/feed": 7,
+    "https://rss.castbox.fm/everest/ab8aade59a90479fb3342140c33668d0.xml": 7,
+    "https://feeds.megaphone.fm/ESP8183144091": 8,
+    "https://publishnews.com.br/rss.xml": 7,
+    "https://feeds.megaphone.fm/GLOBO2619775594": 7,
+    "https://jornalagora.com.br/feed": 7,
+    "https://gd1993.substack.com/feed": 3,
+    "https://feeds.megaphone.fm/GLOBO8565580534": 3,
+    "https://johncutrim.com.br/feed": 3,
+    "https://vasconoticias.com.br/feed": 3,
+    "https://revistapesquisa.fapesp.br/feed": 2,
+    "https://ndmais.com.br/feed": 2
+  },
+  "cards": 200,
+  "phases": [
+    "neutral",
+    "answered:90_countries/brazil/news-current-affairs/world-news",
+    "answered:90_countries/brazil/health-wellness/mental-health",
+    "thematic-attempted",
+    "hide-stable:true",
+    "hide-frames:221->221"
+  ],
+  "verdict": "PASS",
+  "identity": {
+    "database": "/tmp/fm-gate-cand/bench/run/20261015T062751Z/container/Library/Application Support/FeedMine/955FD52A-5212-41CA-9108-F1DD3528A5D4/runtime.sqlite",
+    "corpus_items": 15917,
+    "catalog_keys": 2305
+  }
+}

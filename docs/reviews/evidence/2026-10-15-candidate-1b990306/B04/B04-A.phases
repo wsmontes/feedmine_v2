@@ -1,0 +1,20 @@
+neutral
+neutral
+b04-anchor0:121
+b04-block-above-reader:true
+b04-anchor0:351
+b04-after-answer-stable:true
+b04-after-answer-frames:351->351
+b04-after-answer-order:true
+b04-after-undo-stable:true
+b04-after-undo-frames:351->351
+b04-after-hide-stable:true
+b04-after-hide-frames:351->351
+b04-cycle-attempts:1
+b04-idle-stable:not-measurable
+b04-idle-frames:card-absent(on-screen=F5C674A1-906A-481E-9E9C-3066C1FE55E2,0CB00895-B820-4BFE-9C34-996B1A1C86D6)
+b04-rotation-holds:true
+b04-rotation-counters:received=30 completed=30 backward=24->received=30 completed=30 backward=24
+b04-background-same-topmost:true
+b04-background-stable:true
+b04-background-frames:414->414

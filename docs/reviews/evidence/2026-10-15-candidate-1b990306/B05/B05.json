@@ -1,0 +1,59 @@
+{
+  "gate": "B05",
+  "clauses": [
+    {
+      "clause": "o protocolo de B05 foi caminhado (salvar, A→B→A, reabrir, offline)",
+      "observed": [
+        "b05-anchor-before",
+        "b05-context-b-reached",
+        "b05-offline-cards",
+        "b05-offline-shows-local",
+        "b05-reopen-keeps-saved",
+        "b05-reopen-preserves-anchor",
+        "b05-return-preserves-anchor",
+        "b05-saved"
+      ],
+      "expected": "as medições de B05 no registro de fases",
+      "pass": true
+    },
+    {
+      "clause": "zero perda silenciosa de estado",
+      "observed": {
+        "medidas": {
+          "b05-saved": "true",
+          "b05-anchor-before": "73430B6C-2078-4D8A-9354-568557C1FA6A",
+          "b05-context-b-reached": "true",
+          "b05-return-preserves-anchor": "true",
+          "b05-reopen-preserves-anchor": "true",
+          "b05-reopen-keeps-saved": "true",
+          "b05-offline-shows-local": "true",
+          "b05-offline-cards": "true"
+        },
+        "registro_duravel": {
+          "salvos": [
+            "73430b6c-2078-4d8a-9354-568557c1fa6a"
+          ],
+          "ancora_nomeada": "73430b6c-2078-4d8a-9354-568557c1fa6a",
+          "posicao_na_reabertura": {
+            "anchor": "73430B6C-2078-4D8A-9354-568557C1FA6A",
+            "placement": "top"
+          },
+          "checkpoints_duradouros": 1
+        },
+        "falhas": []
+      },
+      "expected": "todas as medidas verdadeiras **e** o registro durável guardando a carta que o driver nomeou, com posição durável depois do percurso",
+      "pass": true
+    }
+  ],
+  "states": {
+    "measurements": 8,
+    "failed": 0
+  },
+  "verdict": "PASS",
+  "identity": {
+    "database": "/tmp/fm-gate-cand/bench/run/20261015T063945Z/container/Library/Application Support/FeedMine/73BE03AB-FBA7-4FB3-B77D-5CCC0D92A079/runtime.sqlite",
+    "corpus_items": 15917,
+    "catalog_keys": 2305
+  }
+}

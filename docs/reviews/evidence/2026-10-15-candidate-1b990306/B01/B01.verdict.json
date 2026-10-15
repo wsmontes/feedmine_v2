@@ -1,0 +1,62 @@
+{
+  "gate": "B01",
+  "verdict": "PASS",
+  "clauses": [
+    {
+      "clause": "a jornada vigente foi caminhada nas duas fases observáveis, nos dois perfis",
+      "observed": {
+        "A": [
+          "neutral",
+          "answered:90_countries/brazil/health-wellness/mental-health",
+          "answered:90_countries/brazil/food-drink/cooking-recipes",
+          "thematic-attempted",
+          "hide-stable:true",
+          "hide-frames:224->224"
+        ],
+        "B": [
+          "neutral",
+          "answered:04-technology-science/software-computing",
+          "answered:04-technology-science/earth-life-sciences",
+          "thematic-attempted",
+          "hide-stable:true",
+          "hide-frames:167->167",
+          "negative:not-offered"
+        ],
+        "subjects_declared_in_the_feed": [
+          "90_countries/brazil/food-drink/cooking-recipes",
+          "90_countries/brazil/health-wellness/mental-health"
+        ]
+      },
+      "expected": "neutral e thematic (o feed neutro, e o feed após as duas respostas dentro dele)",
+      "pass": true
+    },
+    {
+      "clause": "não depende das quatro fontes padrão",
+      "observed": [],
+      "expected": "as fontes padrão não são a única origem do feed",
+      "pass": true
+    },
+    {
+      "clause": "≥50 fontes distintas entram automaticamente no conjunto de aquisição",
+      "observed": 237,
+      "expected": ">=50 registradas no conjunto de aquisição",
+      "pass": true
+    },
+    {
+      "clause": "≥20 fontes distintas contribuem com os primeiros 300 cards",
+      "observed": 32,
+      "expected": ">=20",
+      "pass": true
+    },
+    {
+      "clause": "outro perfil muda o conjunto de aquisição de modo explicável",
+      "observed": {
+        "a": 237,
+        "b": 365,
+        "iguais": 0
+      },
+      "expected": "os dois perfis não adquirem o mesmo conjunto",
+      "pass": true
+    }
+  ]
+}

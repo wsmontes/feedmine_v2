@@ -1,0 +1,40 @@
+{
+  "gate": "B02",
+  "verdict": "PASS",
+  "clauses": [
+    {
+      "clause": "≥80% dos 200 cards correspondem ao perfil",
+      "observed": {
+        "relevantes": 200,
+        "com rótulo": 200,
+        "cards": 200
+      },
+      "expected": ">=80%",
+      "pass": true
+    },
+    {
+      "clause": "≥20 fontes distintas",
+      "observed": 40,
+      "expected": ">=20",
+      "pass": true
+    },
+    {
+      "clause": "nenhuma fonte >15%",
+      "observed": 0.045,
+      "expected": "<=0.15",
+      "pass": true
+    },
+    {
+      "clause": "zero pares consecutivos da mesma fonte",
+      "observed": 0,
+      "expected": "0",
+      "pass": true
+    },
+    {
+      "clause": "zero duplicatas de artigo canônico",
+      "observed": 0,
+      "expected": "0",
+      "pass": true
+    }
+  ]
+}
