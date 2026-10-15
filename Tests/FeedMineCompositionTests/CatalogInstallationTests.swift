@@ -213,7 +213,7 @@ final class CatalogInstallationTests: XCTestCase {
     /// B5: a decodable pointer plus an existing filename is insufficient. Missing bytes, modified
     /// SQLite contents and a corrupt descriptor each force the previous checksum-verified snapshot.
     func testB5MissingCorruptedSqliteOrManifestRecoverPrevious() throws {
-        for corruption in ["missing-sqlite", "corrupt-sqlite", "invalid-manifest"] {
+        for corruption in ["missing-sqlite", "corrupt-sqlite", "invalid-manifest", "divergent-manifest"] {
             let owner = try recoveryFixture(at: root.appendingPathComponent(corruption))
             let active = try XCTUnwrap(owner.activeSnapshot())
             let pointerURL = owner.directory.appendingPathComponent("active.json")
@@ -228,8 +228,14 @@ final class CatalogInstallationTests: XCTestCase {
                 let handle = try FileHandle(forWritingTo: active.catalogueURL)
                 try handle.write(contentsOf: Data(repeating: 0xFF, count: 12))
                 try handle.close()
-            default:
+            case "invalid-manifest":
                 try Data("{bad manifest".utf8).write(to: URL(fileURLWithPath: descriptor))
+            default:
+                let altered = CatalogManifest(revision: 6, sourceCount: 3, fileCount: 1,
+                    files: [CatalogManifestEntry(path: "catalog.sqlite",
+                        bytes: try XCTUnwrap(active.catalogueURL.resourceValues(forKeys: [.fileSizeKey]).fileSize),
+                        sha256: String(repeating: "0", count: 64))])
+                try altered.encoded().write(to: URL(fileURLWithPath: descriptor))
             }
             let restored = try XCTUnwrap(owner.bootstrap())
             XCTAssertEqual(restored.revision, 5, "failed case: \(corruption)")
@@ -294,6 +300,8 @@ final class CatalogInstallationTests: XCTestCase {
         let outcome = owner.install(manifestData: try manifestData(for: newer, revision: 6), catalogue: newer)
         guard case .rejected = outcome else { return XCTFail("failed previous write must reject activation") }
         XCTAssertEqual(owner.activeSnapshot()?.fingerprint, initial.fingerprint)
+        XCTAssertEqual(installation().bootstrap()?.fingerprint, initial.fingerprint,
+            "relaunch cannot reinterpret the failed activation as a new revision")
         XCTAssertFalse(owner.ledger().contains { $0.outcome == .activated })
     }
 

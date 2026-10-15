@@ -1108,8 +1108,14 @@ final class AppComposition {
         // authority one new association is using.
         let initial = try sessionState(for: contextKey)
         let profile = discoveryProfile(for: applied(initial.key))
+        let requestedFingerprint = catalogueSnapshot?.fingerprint
         let discovered = await discoveryFeeds(profile: profile)
         let snapshot = catalogueSnapshot
+        // Actor reentrancy can allow an activation *between* returning an old cached pool and
+        // resuming this constructor. Do not combine that pool with the replacement snapshot.
+        if requestedFingerprint != snapshot?.fingerprint {
+            return try await association(contextKey: contextKey)
+        }
         let session = try sessionState(for: contextKey)
         if session.key != contextKey {
             currentContextKey = session.key
