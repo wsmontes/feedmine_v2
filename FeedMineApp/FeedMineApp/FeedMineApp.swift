@@ -289,6 +289,7 @@ struct FeedMineApp: App {
                                     .navigationDestination(for: LibraryRoute.self) { route in
                                         FeedSavedListView(
                                             articles: composition.association?.savedArticles(inBox: Self.boxID(route)) ?? [],
+                                            legacyArticles: composition.legacySavedArticles(inBox: Self.boxID(route)),
                                             onOpen: { cardID in composition.association?.openSaved(cardID) })
                                     }
                             } else {
@@ -339,6 +340,7 @@ struct FeedMineApp: App {
                     switch destination {
                     case .saved:
                         FeedSavedListView(articles: composition.association?.savedArticles() ?? [],
+                            legacyArticles: composition.legacySavedArticles(),
                             onOpen: { cardID in composition.association?.openSaved(cardID) })
                     default:
                         // Only destinations the host declares available can be reached (T5 rule).

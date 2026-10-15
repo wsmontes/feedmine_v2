@@ -559,6 +559,44 @@ public enum RuntimeMigrations {
                 CREATE INDEX reader_source_identity_current ON reader_source_identity(current_key);
                 """)
         }
+        // MIG-V1V2-B: preserve V1 user-owned records without inventing published occurrences.
+        // The receipt is committed with the imported rows by ReaderLibraryStore.
+        migrator.registerMigration("reader-legacy-personal-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE reader_legacy_bookmarks (
+                    legacy_list_id INTEGER NOT NULL,
+                    item_id TEXT COLLATE BINARY NOT NULL,
+                    list_id TEXT NOT NULL REFERENCES reader_bookmark_lists(id) ON DELETE CASCADE,
+                    added_at REAL NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    title TEXT,
+                    url TEXT,
+                    source_title TEXT,
+                    source_url TEXT,
+                    excerpt TEXT,
+                    media_url TEXT,
+                    authored_at REAL,
+                    captured_at REAL,
+                    status TEXT NOT NULL CHECK (status IN ('snapshot', 'unresolved')),
+                    PRIMARY KEY (legacy_list_id, item_id)
+                );
+                CREATE INDEX reader_legacy_bookmarks_list_order
+                    ON reader_legacy_bookmarks(list_id, added_at DESC, sort_order, item_id);
+                CREATE TABLE reader_legacy_records (
+                    category TEXT COLLATE BINARY NOT NULL,
+                    legacy_key TEXT COLLATE BINARY NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('recoverable', 'unresolved')),
+                    PRIMARY KEY (category, legacy_key)
+                );
+                CREATE TABLE reader_legacy_receipt (
+                    origin TEXT PRIMARY KEY NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    totals_json TEXT NOT NULL,
+                    imported_at REAL NOT NULL
+                );
+                """)
+        }
         return migrator
     }
 

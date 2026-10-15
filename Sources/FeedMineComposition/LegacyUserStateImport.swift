@@ -8,15 +8,8 @@
 // through an explicit, stable map (`v1:list:<id>`), and hands the whole result to the library store, which
 // applies it in one transaction.
 //
-// What it deliberately does **not** carry, and says so in its report instead of importing a half-truth:
-// - V1's bookmarked *articles*: their `item_id` names an object in V1's article schema, and V2 has no referent
-//   for it (V2's bookmarks mark published card occurrences). The boxes keep their names, order and identity;
-//   the items cannot come with them.
-// - V1's curated feeds: their definitions carry profile weights and a recipe; V2's filter cannot express them,
-//   and T11 owns curation. They are counted, not approximated.
-// - A smart feed's source-collection scope: V2's identity has no collection-scoped request, so the terms and
-//   filters are imported and the scope is reported as dropped.
-// - V1's persistent-search bookmark lists: no V1 UI ever created one (the columns exist, the surface does not).
+// A nonconvertible V1 definition stays in the recoverable archive. Legacy bookmark IDs
+// never become publication IDs. Conversion and the receipt are owned by ReaderLibraryStore.
 import Foundation
 import FeedMineDomain
 import FeedMinePersistence
@@ -57,44 +50,74 @@ public struct LegacyUserStateImport: Sendable {
         var excludedKeywords: [String]?
     }
 
+    /// Capture V1's namespaced settings as recoverable facts; do not mutate UserDefaults.
+    /// Values are wrapped because JSONSerialization does not accept top-level fragments by default.
+    public static func personalDefaults(_ defaults: UserDefaults) throws -> [LegacyPersonalArchiveRecord] {
+        let names: Set<String> = [
+            "toggleDisabled", "toggleEnabledOverrides", "hasInitializedSourceDefaults",
+            "filterRegion", "filterTaxonomyNodes", "filterContentType", "filterMood",
+            "filterSetAt", "filterAutoExpire", "filterLanguages", "hasInitializedLanguageDefault",
+            "circadianPaletteOn", "paletteFamily", "circadianTypographyOn", "fontStyle", "fontSize", "nightMode",
+            "prefetchImages", "showDebugBar", "hasSeenOnboarding", "contentFiltersEnabled",
+            "sessionStreak", "sessionMinutesToday", "daysWithAppTotal", "lastOpenDate",
+            "activePreset", "last_whats_new_seen_at", "lastHeavyMaintenance",
+            "lastPodcastItemID", "lastPodcastPosition"
+        ]
+        let values = defaults.dictionaryRepresentation()
+        return try names.sorted().compactMap { key in
+            guard let value = values[key] else { return nil }
+            // UserDefaults permits Date/Data and nested property lists that are not JSON values.
+            // Preserve their exact property-list representation instead of dropping them or failing upgrade.
+            let plist = try PropertyListSerialization.data(fromPropertyList: ["value": value],
+                format: .binary, options: 0)
+            let json = try String(data: JSONSerialization.data(withJSONObject: [
+                "format": "binary-plist-base64", "payload": plist.base64EncodedString()
+            ], options: [.sortedKeys]), encoding: .utf8)
+            guard let json else { return nil }
+            return LegacyPersonalArchiveRecord(category: "user_defaults", key: key,
+                payloadJSON: json, status: "recoverable")
+        }
+    }
+
+    /// Only exact V1 feed identities can be applied to V2's initial chosen candidate keys.
+    /// Group/category keys are preserved intact, never mistaken for source addresses.
+    static func initialKeys(_ proposed: [String], defaults: UserDefaults,
+        importedSources: [LegacyPersonalImportedSource]) -> [String] {
+        let disabled = Set(defaults.stringArray(forKey: "toggleDisabled") ?? [])
+        let explicitlyEnabled = Set(defaults.stringArray(forKey: "toggleEnabledOverrides") ?? [])
+        let disabledImports = Set(importedSources.filter { !$0.enabled }.map(\.identity))
+        return proposed.filter { key in
+            let canonical = FeedAddress.identity(key)
+            let original = "url:" + canonical
+            if disabled.contains(original) || disabled.contains("url:" + key) { return false }
+            if disabledImports.contains(key) || disabledImports.contains(canonical) { return false }
+            // V1 per-feed enabled overrides matter for parent-disable policies, whose raw
+            // keys remain archived until taxonomy equivalence is explicitly proved.
+            _ = explicitlyEnabled.contains(original)
+            return true
+        }
+    }
+
     @discardableResult
     public static func run(reader: LegacyUserStateReader, into database: RuntimeDatabase,
+        defaults: UserDefaults = .standard, initialSourceKeys: [String]? = nil,
         at date: Date = Date()) throws -> Report {
-        let lists = try reader.bookmarkLists()
-        let itemCounts = try reader.bookmarkItemCounts()
-        let collections = try reader.collections()
-        let smartFeeds = try reader.smartFeeds()
-        let curatedCount = try reader.curatedFeedCount()
+        let state = try reader.personalState()
+        let preferences = try personalDefaults(defaults)
+        var skippedPersistentSearch = 0, skippedSmartFeeds = 0, droppedScopes = 0
+        for list in state.lists where list.carriesDeadPersistentSearch { skippedPersistentSearch += 1 }
 
-        var importPayload = ReaderLibraryImport()
-        var skippedBoxes = 0, skippedBoxItems = 0, skippedPersistentSearch = 0
-        var droppedCollectionScopes = 0, skippedSmartFeeds = 0
-
-        // Boxes: V1's default box *is* V2's default box, so it is not imported again — its identity is the one
-        // the card control already writes to. Every other box keeps V1's name and its own order.
-        var imported: [ReaderLibraryImport.BookmarkList] = []
-        for list in lists {
-            skippedBoxItems += itemCounts[list.id] ?? 0
-            if list.carriesDeadPersistentSearch { skippedPersistentSearch += 1 }
-            guard !list.isDefault, !list.carriesDeadPersistentSearch else {
-                if !list.isDefault { skippedBoxes += 1 }
-                continue
-            }
-            imported.append(.init(id: listID(list.id), name: list.name))
-        }
-        importPayload = ReaderLibraryImport(bookmarkLists: imported, collections: [], presets: [])
-
-        // Collections carry over whole: V2's catalog keys and V1's `source_url` are the same vocabulary.
-        let collectionPayload = collections.map { collection in
-            ReaderLibraryImport.Collection(id: collectionID(collection.id), name: collection.name,
-                memberKeys: collection.memberKeys)
-        }
-
-        // Smart feeds: the terms, the scope, the filters and the exclusions V2 can express, as one T6 key.
+        // The V1 scope cannot be expressed by V2's smart-feed request. Never install a
+        // silently broadened preset; its complete V1 JSON stays in the archival authority.
         var smartPayload: [ReaderLibraryImport.Preset] = []
-        for feed in smartFeeds {
+        for feed in state.smartFeeds {
             guard let definition = try? JSONDecoder().decode(SmartFeedDefinition.self,
                 from: Data(feed.definitionJSON.utf8)) else {
+                skippedSmartFeeds += 1
+                continue
+            }
+            if definition.sourceCollectionID != nil {
+                droppedScopes += 1
                 skippedSmartFeeds += 1
                 continue
             }
@@ -103,17 +126,20 @@ public struct LegacyUserStateImport: Sendable {
                 skippedSmartFeeds += 1
                 continue
             }
-            if definition.sourceCollectionID != nil { droppedCollectionScopes += 1 }
             smartPayload.append(.init(id: id, name: feed.name, kind: .smartBookmark, key: key))
         }
-
-        let payload = ReaderLibraryImport(bookmarkLists: importPayload.bookmarkLists,
-            collections: collectionPayload, presets: smartPayload)
-        let inserted = try ReaderLibraryStore(database: database).apply(payload, at: date)
-        return Report(inserted: inserted, skippedBoxItems: skippedBoxItems, skippedBoxes: skippedBoxes,
-            skippedPersistentSearchLists: skippedPersistentSearch, skippedCuratedFeeds: curatedCount,
-            skippedSmartFeeds: skippedSmartFeeds, droppedCollectionScopes: droppedCollectionScopes,
-            carriedCollections: collectionPayload.count, carriedSmartFeeds: smartPayload.count)
+        let imported = try ReaderLibraryStore(database: database).applyLegacyPersonalState(state,
+            payload: ReaderLibraryImport(presets: smartPayload), preferences: preferences,
+            initialSourceKeys: initialSourceKeys.map {
+                initialKeys($0, defaults: defaults, importedSources: state.importedSources)
+            }, at: date)
+        return Report(inserted: imported,
+            skippedBoxItems: 0, skippedBoxes: 0,
+            skippedPersistentSearchLists: skippedPersistentSearch,
+            skippedCuratedFeeds: state.archived.filter { $0.category == "curated_feed" }.count,
+            skippedSmartFeeds: skippedSmartFeeds, droppedCollectionScopes: droppedScopes,
+            carriedCollections: state.collections.count,
+            carriedSmartFeeds: smartPayload.count)
     }
 
     /// The T6 identity a V1 smart feed becomes. Nil when nothing about it can be activated: a preset with no

@@ -164,3 +164,71 @@ public enum ReaderLibraryRules {
         return Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($0.element, $0.offset) })
     }
 }
+
+
+// MIG-V1V2-B: a legacy bookmark is a saved article, never a PublicationCardID.
+public struct ReaderLegacyBookmark: Hashable, Codable, Sendable, Identifiable {
+    public let legacyListID: Int64
+    public let itemID: String
+    public let listID: String
+    public let addedAt: Date
+    public let position: Int
+    public let title: String?
+    public let url: String?
+    public let sourceTitle: String?
+    public let sourceURL: String?
+    public let excerpt: String?
+    public let mediaURL: String?
+    public let authoredAt: Date?
+    public let capturedAt: Date?
+    public let hasSnapshot: Bool
+
+    public var id: String { "v1:\(legacyListID):\(itemID)" }
+    public var isRecoverable: Bool { hasSnapshot }
+
+    public init(legacyListID: Int64, itemID: String, listID: String, addedAt: Date,
+        position: Int, title: String?, url: String?, sourceTitle: String?, sourceURL: String?,
+        excerpt: String?, mediaURL: String?, authoredAt: Date?, capturedAt: Date?, hasSnapshot: Bool) {
+        self.legacyListID = legacyListID
+        self.itemID = itemID
+        self.listID = listID
+        self.addedAt = addedAt
+        self.position = position
+        self.title = title
+        self.url = url
+        self.sourceTitle = sourceTitle
+        self.sourceURL = sourceURL
+        self.excerpt = excerpt
+        self.mediaURL = mediaURL
+        self.authoredAt = authoredAt
+        self.capturedAt = capturedAt
+        self.hasSnapshot = hasSnapshot
+    }
+}
+
+public struct ReaderLegacyImportReceipt: Hashable, Sendable {
+    public let fingerprint: String
+    public let totalsJSON: String
+    public let importedAt: Date
+
+    public init(fingerprint: String, totalsJSON: String, importedAt: Date) {
+        self.fingerprint = fingerprint
+        self.totalsJSON = totalsJSON
+        self.importedAt = importedAt
+    }
+}
+
+
+public struct ReaderLegacyArchiveRecord: Hashable, Sendable, Identifiable {
+    public let category: String
+    public let key: String
+    public let payloadJSON: String
+    public let status: String
+    public var id: String { category + ":" + key }
+    public init(category: String, key: String, payloadJSON: String, status: String) {
+        self.category = category
+        self.key = key
+        self.payloadJSON = payloadJSON
+        self.status = status
+    }
+}

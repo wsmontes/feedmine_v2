@@ -210,6 +210,31 @@ final class AppComposition {
                 let preferences = ReaderPreferencesStore(database: database)
                 // OMP C1: the repair path (toggleSource) needs preferences even if resolution fails.
                 self.preferences = preferences
+                // MIG-V1V2-B: in-place upgrade in the SAME application container, local-only.
+                // A durable receipt avoids scanning V1 on every subsequent launch.
+                if self.directory.standardizedFileURL == support.standardizedFileURL,
+                    try ReaderLibraryStore(database: database).legacyReceipt() == nil {
+                    let appSupport = FileManager.default.urls(for: .applicationSupportDirectory,
+                        in: .userDomainMask)[0]
+                    let documents = FileManager.default.urls(for: .documentDirectory,
+                        in: .userDomainMask)[0]
+                    let candidates = [appSupport.appendingPathComponent("Feedmine/user.sqlite"),
+                        documents.appendingPathComponent("user.sqlite")]
+                        .filter { FileManager.default.fileExists(atPath: $0.path) }
+                    if candidates.count > 1 {
+                        throw NSError(domain: "FeedMine.LegacyMigration", code: 2,
+                            userInfo: [NSLocalizedDescriptionKey: "Ambiguous V1 user.sqlite origins"])
+                    }
+                    if let url = candidates.first {
+                        let reader = try LegacyUserStateReader(url: url)
+                        guard try reader.isLegacyUserState() else {
+                            throw NSError(domain: "FeedMine.LegacyMigration", code: 1,
+                                userInfo: [NSLocalizedDescriptionKey: "Invalid V1 user.sqlite schema"])
+                        }
+                        _ = try LegacyUserStateImport.run(reader: reader, into: database,
+                            defaults: .standard, initialSourceKeys: feeds.map(\.principal))
+                    }
+                }
                 var saved = try preferences.initialize(sourceKeys: feeds.map(\.principal))
                 #if DEBUG
                 // T7 UI evidence: launch with no selected source at all, which is a state V1 allowed and
@@ -651,6 +676,12 @@ final class AppComposition {
     func makeBookmarkBoxesStore() -> BookmarkBoxesStore? {
         guard let database = libraryDatabase() else { return nil }
         return BookmarkBoxesStore(backend: ReaderBookmarkBoxesBackend(database: database))
+    }
+
+    /// V1 snapshots are local saved articles, never published card identifiers.
+    func legacySavedArticles(inBox listID: String? = nil) -> [ReaderLegacyBookmark] {
+        guard let database = libraryDatabase() else { return [] }
+        return (try? ReaderLibraryStore(database: database).legacyBookmarks(inList: listID)) ?? []
     }
 
     /// T8: the collections surface's store, over the same library.

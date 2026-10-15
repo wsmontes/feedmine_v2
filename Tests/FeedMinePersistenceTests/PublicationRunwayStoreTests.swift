@@ -244,7 +244,8 @@ final class PublicationRunwayStoreTests: XCTestCase {
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1","reader-library-v1","reader-preferred-box-v1","media-playback-candidate-v1",
                 "reader-settings-v1","reader-imported-sources-v1","reader-curated-recipe-v1",
                 "reader-curated-recipe-revision-v1","reader-playback-positions-v1",
-                 "content-fingerprint-generation-v2","reader-source-identity-v1"])
+                 "content-fingerprint-generation-v2","reader-source-identity-v1",
+                  "reader-legacy-personal-v1"])
         }
     }
 
@@ -448,12 +449,55 @@ extension PublicationRunwayStoreTests {
                 "reader_source_identity_current:CREATE INDEX reader_source_identity_current ON reader_source_identity(current_key)",
                 "sqlite_autoindex_reader_source_identity_1:"
             ]
+            // MIG-V1V2-B: from the migration's SQL, not from observed sqlite_master.
+            let legacyObjects: Set<String> = [
+                """
+                reader_legacy_bookmarks:CREATE TABLE reader_legacy_bookmarks (
+                    legacy_list_id INTEGER NOT NULL,
+                    item_id TEXT COLLATE BINARY NOT NULL,
+                    list_id TEXT NOT NULL REFERENCES reader_bookmark_lists(id) ON DELETE CASCADE,
+                    added_at REAL NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    title TEXT,
+                    url TEXT,
+                    source_title TEXT,
+                    source_url TEXT,
+                    excerpt TEXT,
+                    media_url TEXT,
+                    authored_at REAL,
+                    captured_at REAL,
+                    status TEXT NOT NULL CHECK (status IN ('snapshot', 'unresolved')),
+                    PRIMARY KEY (legacy_list_id, item_id)
+                )
+                """,
+                "reader_legacy_bookmarks_list_order:CREATE INDEX reader_legacy_bookmarks_list_order\n    ON reader_legacy_bookmarks(list_id, added_at DESC, sort_order, item_id)",
+                "sqlite_autoindex_reader_legacy_bookmarks_1:",
+                """
+                reader_legacy_records:CREATE TABLE reader_legacy_records (
+                    category TEXT COLLATE BINARY NOT NULL,
+                    legacy_key TEXT COLLATE BINARY NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('recoverable', 'unresolved')),
+                    PRIMARY KEY (category, legacy_key)
+                )
+                """,
+                "sqlite_autoindex_reader_legacy_records_1:",
+                """
+                reader_legacy_receipt:CREATE TABLE reader_legacy_receipt (
+                    origin TEXT PRIMARY KEY NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    totals_json TEXT NOT NULL,
+                    imported_at REAL NOT NULL
+                )
+                """,
+                "sqlite_autoindex_reader_legacy_receipt_1:"
+            ]
             XCTAssertEqual(priorDefinitions.subtracting(normalizedBefore),
                 Set([originIndex, authorityTable, authorityIndex]).union(contextual)
-                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects))
+                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects).union(legacyObjects))
             XCTAssertEqual(Self.normalizeRebuiltDefinitions(schemaAfter).subtracting(normalizedBefore),
                 Set([originIndex, originDefinition, revisionDefinition, authorityTable, authorityIndex]).union(contextual)
-                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects))
+                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects).union(legacyObjects))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }

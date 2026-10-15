@@ -4,6 +4,11 @@ import SwiftUI
 import FeedMineDomain
 
 /// One saved article as the app host may present it. A plain value: no storage handle, no URL.
+public enum FeedSavedArticleReference: Hashable, Sendable {
+    case published(PublicationCardID)
+    case legacy(String)
+}
+
 public struct FeedSavedArticle: Identifiable, Hashable, Sendable {
     public let id: PublicationCardID
     public let title: String
@@ -21,23 +26,28 @@ public struct FeedSavedArticle: Identifiable, Hashable, Sendable {
 @MainActor
 public struct FeedSavedListView: View {
     private let articles: [FeedSavedArticle]
+    private let legacyArticles: [ReaderLegacyBookmark]
+    @State private var readingLegacy: ReaderLegacyBookmark?
     private let onOpen: (PublicationCardID) -> Void
 
-    public init(articles: [FeedSavedArticle], onOpen: @escaping (PublicationCardID) -> Void) {
+    public init(articles: [FeedSavedArticle], legacyArticles: [ReaderLegacyBookmark] = [],
+        onOpen: @escaping (PublicationCardID) -> Void) {
         self.articles = articles
+        self.legacyArticles = legacyArticles
         self.onOpen = onOpen
     }
 
     public var body: some View {
         Group {
-            if articles.isEmpty {
+            if articles.isEmpty && legacyArticles.isEmpty {
                 ContentUnavailableView {
                     Label("Nenhum artigo salvo", systemImage: "bookmark")
                 } description: {
                     Text("Salve um artigo pelo menu do card para encontrá-lo aqui.")
                 }
             } else {
-                List(articles) { article in
+                List {
+                    ForEach(articles) { article in
                     // U2: the row's whole area is the reader's target, not only the text it draws. The row is a
                     // link-styled button, and a tap between the title and the metadata line is a tap on the row
                     // — measured: at the row's centre the button's action never ran, and the same tap reached it
@@ -48,15 +58,68 @@ public struct FeedSavedListView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("saved-article-" + article.id.rawValue.uuidString)
                     .accessibilityAddTraits(.isLink)
+                    }
+                    ForEach(legacyArticles) { legacy in
+                        Button { readingLegacy = legacy } label: {
+                            legacyRow(legacy).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("saved-legacy-" + legacy.id)
+                        .accessibilityAddTraits(.isLink)
+                    }
                 }
             }
         }
-        .navigationTitle("Salvos")
+.sheet(item: $readingLegacy) { legacy in
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(legacy.title ?? "Artigo legado sem snapshot")
+                            .font(.title2.bold())
+                        Text("Salvo na V1 · " + legacy.itemID)
+                            .font(.caption).foregroundStyle(.secondary)
+                        if let source = legacy.sourceTitle { Text(source).font(.subheadline) }
+                        if let excerpt = legacy.excerpt, !excerpt.isEmpty {
+                            Text(excerpt).textSelection(.enabled)
+                        } else if !legacy.hasSnapshot {
+                            Text("Referência preservada, mas sem conteúdo recuperável no snapshot. A recuperação pode depender do banco da V1.")
+                        } else {
+                            Text("A V1 preservou os metadados deste artigo, mas nenhum texto local foi capturado.")
+                        }
+                        if let original = legacy.url, let url = URL(string: original),
+                            ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil {
+                            Link("Abrir URL original", destination: url)
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .navigationTitle("Artigo preservado")
+                .toolbar { ToolbarItem(placement: .confirmationAction) {
+                    Button("Fechar") { readingLegacy = nil }
+                } }
+            }
+        }
+                .navigationTitle("Salvos")
         #if canImport(UIKit)
         // T5: the reader's root hides the navigation bar (V1 draws its own floating header); a pushed
         // destination brings it back so the reader keeps a way back.
         .toolbar(.visible, for: .navigationBar)
         #endif
+    }
+
+    private func legacyRow(_ legacy: ReaderLegacyBookmark) -> some View {
+        VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.tight) {
+            Text(legacy.title ?? "Referência legada: " + legacy.itemID)
+                .font(FeedDesignTokens.Typography.cardTitle).lineLimit(3)
+            HStack {
+                Text("V1 · " + (legacy.hasSnapshot ? "snapshot local" : "conteúdo indisponível"))
+                if let source = legacy.sourceTitle { Text(source) }
+            }
+            .font(FeedDesignTokens.Typography.metadata)
+            .foregroundStyle(FeedDesignTokens.Palette.secondaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private func row(_ article: FeedSavedArticle) -> some View {

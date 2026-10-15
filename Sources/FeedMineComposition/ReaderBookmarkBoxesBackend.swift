@@ -21,9 +21,10 @@ public struct ReaderBookmarkBoxesBackend: BookmarkBoxesBackend {
         let library = ReaderLibraryStore(database: database)
         let lists = try library.bookmarkLists()
         let counts = try library.bookmarkListCounts()
+        let legacyCounts = try library.legacyBookmarkListCounts()
         let preferred = try ReaderPreferencesStore(database: database).load()?.preferredBookmarkListID
         return lists.map { list in
-            BookmarkBoxRow(id: list.id, name: list.name, count: counts[list.id] ?? 0,
+            BookmarkBoxRow(id: list.id, name: list.name, count: (counts[list.id] ?? 0) + (legacyCounts[list.id] ?? 0),
                 isDefault: list.id == ReaderBookmarkList.defaultID,
                 isPreferred: preferred == nil ? list.id == ReaderBookmarkList.defaultID : preferred == list.id)
         }

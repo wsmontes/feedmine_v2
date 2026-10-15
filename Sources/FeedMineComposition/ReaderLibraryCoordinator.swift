@@ -56,6 +56,11 @@ public struct ReaderLibraryCoordinator: Sendable {
         try store.bookmarkedCardIDs(inList: listID)
     }
 
+    /// Legacy bookmarks are not published cards.
+    public func legacyBookmarks(inList listID: String? = nil) throws -> [ReaderLegacyBookmark] {
+        try store.legacyBookmarks(inList: listID)
+    }
+
     public func bookmarkListIDs(forCard cardID: PublicationCardID) throws -> Set<String> {
         try store.bookmarkListIDs(forCard: cardID)
     }

@@ -42,6 +42,17 @@ public struct ReaderPreferencesStore: Sendable {
             return initial
         }
     }
+    /// Called only by the V1 import's existing transaction; never creates a second commit.
+    /// An existing V2 preference (including an intentionally empty selection) always wins.
+    static func initializeLegacySelectionIfAbsent(_ keys: [String], in db: Database) throws {
+        try validate(keys)
+        guard try read(db) == nil else { return }
+        try save(Record(sourceKeys: keys, selectionVersion: 2,
+            activeContextKey: ContextKey(request: .main), settings: .standard,
+            preferredBookmarkListID: nil,
+            filterExpiry: ReaderFilterExpiry(isEnabled: true, startsAt: nil)), in: db)
+    }
+
     public func updateSources(_ keys: [String]) throws -> Record {
         try Self.validate(keys)
         return try database.write { db in

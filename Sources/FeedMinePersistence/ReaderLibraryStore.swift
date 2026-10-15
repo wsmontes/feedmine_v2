@@ -692,3 +692,239 @@ public struct ReaderLibraryStore: Sendable {
     /// mints the id it will then insert in one transaction.
     public static func mintID() -> String { UUID().uuidString.lowercased() }
 }
+
+
+// MARK: - MIG-V1V2-B (one owner, one transaction, no publications)
+extension ReaderLibraryStore {
+    public enum LegacyImportError: Error, Sendable {
+        case differentOriginAlreadyImported
+        case invalidLegacyIdentity
+    }
+
+    /// Every V1 bookmark remains keyed by (V1 list id, V1 item id). A missing snapshot is explicitly
+    /// unresolved, not a card synthesized from a URL. Does not read or modify the V1 database.
+    public func legacyBookmarks(inList listID: String? = nil) throws -> [ReaderLegacyBookmark] {
+        try database.read { db in
+            let rows: [Row]
+            if let listID {
+                rows = try Row.fetchAll(db, sql: """
+                    SELECT * FROM reader_legacy_bookmarks WHERE list_id = ?
+                    ORDER BY added_at DESC, sort_order, legacy_list_id, item_id
+                    """, arguments: [listID])
+            } else {
+                rows = try Row.fetchAll(db, sql: """
+                    SELECT * FROM reader_legacy_bookmarks
+                    ORDER BY added_at DESC, sort_order, legacy_list_id, item_id
+                    """)
+            }
+            return rows.map { row in
+                ReaderLegacyBookmark(legacyListID: row["legacy_list_id"], itemID: row["item_id"],
+                    listID: row["list_id"],
+                    addedAt: Date(timeIntervalSince1970: row["added_at"] as Double),
+                    position: row["sort_order"], title: row["title"], url: row["url"],
+                    sourceTitle: row["source_title"], sourceURL: row["source_url"],
+                    excerpt: row["excerpt"], mediaURL: row["media_url"],
+                    authoredAt: (row["authored_at"] as Double?).map(Date.init(timeIntervalSince1970:)),
+                    capturedAt: (row["captured_at"] as Double?).map(Date.init(timeIntervalSince1970:)),
+                    hasSnapshot: (row["status"] as String) == "snapshot")
+            }
+        }
+    }
+
+    /// Includes the original V1 memberships without inventing a published-card relationship.
+    public func legacyBookmarkListCounts() throws -> [String: Int] {
+        try database.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT list_id, COUNT(*) AS total FROM reader_legacy_bookmarks GROUP BY list_id
+                """)
+            return Dictionary(uniqueKeysWithValues: rows.map { row in
+                (row["list_id"] as String, row["total"] as Int)
+            })
+        }
+    }
+
+    /// Raw provenanced records remain readable without needing the discontinued V1 binary.
+    public func legacyArchive() throws -> [ReaderLegacyArchiveRecord] {
+        try database.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT category, legacy_key, payload_json, status
+                FROM reader_legacy_records ORDER BY category, legacy_key
+                """).map { row in
+                ReaderLegacyArchiveRecord(category: row["category"], key: row["legacy_key"],
+                    payloadJSON: row["payload_json"], status: row["status"])
+            }
+        }
+    }
+
+    public func legacyReceipt() throws -> ReaderLegacyImportReceipt? {
+        try database.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT fingerprint, totals_json, imported_at FROM reader_legacy_receipt WHERE origin = 'v1:user.sqlite'
+                """).map { row in
+                ReaderLegacyImportReceipt(fingerprint: row["fingerprint"],
+                    totalsJSON: row["totals_json"],
+                    importedAt: Date(timeIntervalSince1970: row["imported_at"] as Double))
+            }
+        }
+    }
+
+    /// One transaction covers all destination rows and the receipt. No second authority, and a
+    /// subsequent V2 preference edit is never overwritten on re-entry. The source fingerprint also
+    /// includes V1 UserDefaults, so an altered V1 database cannot masquerade as the original receipt.
+    public func applyLegacyPersonalState(_ state: LegacyPersonalState, payload: ReaderLibraryImport,
+        preferences: [LegacyPersonalArchiveRecord], initialSourceKeys: [String]? = nil,
+        at date: Date) throws -> ReaderLibraryImportReport {
+        let prefEvidence = preferences.sorted { $0.key < $1.key }
+            .map { "\($0.key)|\($0.payloadJSON)" }.joined(separator: "\n")
+        let fingerprint = SHA256.hash(data: Data((state.fingerprint + "\n" + prefEvidence).utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        let now = date.timeIntervalSince1970
+        return try database.write { db in
+            let previous = try String.fetchOne(db, sql: """
+                SELECT fingerprint FROM reader_legacy_receipt WHERE origin = 'v1:user.sqlite'
+                """)
+            if let previous {
+                guard previous == fingerprint else { throw LegacyImportError.differentOriginAlreadyImported }
+                return ReaderLibraryImportReport(insertedBookmarkLists: 0, insertedCollections: 0,
+                    insertedPresets: 0, insertedMemberships: 0)
+            }
+            var lists = 0, collections = 0, presets = 0, memberships = 0
+            // The V1 default box maps to V2's existing default. Other stable keys are namespaced.
+            for source in state.lists {
+                let id = source.isDefault ? ReaderBookmarkList.defaultID : "v1:list:\(source.id)"
+                guard try Bool.fetchOne(db, sql: """
+                    SELECT EXISTS(SELECT 1 FROM reader_bookmark_lists WHERE id = ?)
+                    """, arguments: [id]) == false else { continue }
+                guard let name = ReaderLibraryRules.normalizedName(source.name) else {
+                    throw ReaderLibraryError.invalidName
+                }
+                try db.execute(sql: """
+                    INSERT INTO reader_bookmark_lists (id, name, position) VALUES (?, ?, ?)
+                    """, arguments: [id, name, try Self.nextListPosition(db)])
+                lists += 1
+            }
+            var newlyCreatedCollections = Set<String>()
+            for source in state.collections {
+                let id = "v1:collection:\(source.id)"
+                guard try Bool.fetchOne(db, sql: """
+                    SELECT EXISTS(SELECT 1 FROM reader_collections WHERE id = ?)
+                    """, arguments: [id]) == false else { continue }
+                guard let name = ReaderLibraryRules.normalizedName(source.name) else {
+                    throw ReaderLibraryError.invalidName
+                }
+                let position = try Int.fetchOne(db, sql: """
+                    SELECT COALESCE(MAX(position) + 1, 0) FROM reader_collections
+                    """) ?? 0
+                try db.execute(sql: """
+                    INSERT INTO reader_collections (id, name, position) VALUES (?, ?, ?)
+                    """, arguments: [id, name, position])
+                collections += 1
+                newlyCreatedCollections.insert(id)
+            }
+            // Never normalize an explicit historical identity, match by request URL, or assume that
+            // identical domains prove an alias. Original URL/title/media/order are in the archive.
+            for member in state.collectionMembers {
+                let key = member.identity ?? FeedAddress.identity(member.requestURL)
+                // Invalid/unproven identities remain in the raw V1 archive; never fabricate a V2 source key.
+                guard !key.isEmpty, FeedAddress.isValidHTTPURL(key) else { continue }
+                let collection = "v1:collection:\(member.collectionID)"
+                // Never restore deleted V1 members into a pre-existing user-managed V2 collection.
+                guard newlyCreatedCollections.contains(collection) else { continue }
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO reader_collection_memberships
+                        (collection_id, source_key, added_at) VALUES (?, ?, ?)
+                    """, arguments: [collection, key, member.addedAt])
+                memberships += db.changesCount
+            }
+            for preset in payload.presets {
+                guard try Bool.fetchOne(db, sql: """
+                    SELECT EXISTS(SELECT 1 FROM reader_presets WHERE id = ?)
+                    """, arguments: [preset.id]) == false else { continue }
+                let position = try Int.fetchOne(db, sql: """
+                    SELECT COALESCE(MAX(position) + 1, 0) FROM reader_presets WHERE kind = ?
+                    """, arguments: [preset.kind.rawValue]) ?? 0
+                try db.execute(sql: """
+                    INSERT INTO reader_presets
+                        (id, name, kind, position, context_key, recipe_json)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """, arguments: [preset.id, preset.name, preset.kind.rawValue, position,
+                        try JSONEncoder().encode(preset.key),
+                        try preset.recipe.map { try JSONEncoder().encode($0) }])
+                presets += 1
+            }
+            for source in state.importedSources {
+                guard !source.identity.isEmpty, FeedAddress.isValidHTTPURL(source.requestURL) else {
+                    // Invalid address remains in the complete V1 archive, explicitly unresolved.
+                    continue
+                }
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO reader_imported_sources (key, request_url, title, imported_at)
+                    VALUES (?, ?, ?, ?)
+                    """, arguments: [source.identity, source.requestURL, source.title, source.addedAt])
+            }
+            for bookmark in state.bookmarks {
+                guard state.lists.contains(where: { $0.id == bookmark.listID }) else {
+                    throw ReaderLibraryError.missingLibraryItem
+                }
+                let isDefault = state.lists.first { $0.id == bookmark.listID }?.isDefault == true
+                let boxID = isDefault ? ReaderBookmarkList.defaultID : "v1:list:\(bookmark.listID)"
+                try db.execute(sql: """
+                    INSERT INTO reader_legacy_bookmarks
+                        (legacy_list_id, item_id, list_id, added_at, sort_order,
+                         title, url, source_title, source_url, excerpt, media_url,
+                         authored_at, captured_at, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [bookmark.listID, bookmark.itemID, boxID,
+                        bookmark.addedAt, bookmark.position, bookmark.title, bookmark.url,
+                        bookmark.sourceTitle, bookmark.sourceURL, bookmark.excerpt,
+                        bookmark.mediaURL, bookmark.authoredAt, bookmark.capturedAt,
+                        bookmark.hasSnapshot ? "snapshot" : "unresolved"])
+            }
+            for record in state.archived + preferences {
+                try db.execute(sql: """
+                    INSERT INTO reader_legacy_records (category, legacy_key, payload_json, status)
+                    VALUES (?, ?, ?, ?)
+                    """, arguments: [record.category, record.key, record.payloadJSON, record.status])
+            }
+            // The V1 effective source choice and the receipt share this transaction.
+            // Do not replace a V2 preference that the reader already changed.
+            if let initialSourceKeys {
+                try ReaderPreferencesStore.initializeLegacySelectionIfAbsent(initialSourceKeys, in: db)
+            }
+            let counters: [String: Int] = [
+                "bookmarks": state.bookmarks.count,
+                "snapshots": state.bookmarks.filter(\.hasSnapshot).count,
+                "unresolved_bookmarks": state.bookmarks.filter { !$0.hasSnapshot }.count,
+                "bookmark_lists": state.lists.count,
+                "collections": state.collections.count,
+                "collection_members": state.collectionMembers.count,
+                "imported_sources": state.importedSources.count,
+                "smart_feeds": state.smartFeeds.count,
+                "preserved_records": state.archived.count + preferences.count,
+                "converted_presets": presets,
+                "converted_collections": collections,
+                "converted_collection_members": memberships,
+                "identities_derived_from_v1_url": state.collectionMembers.filter {
+                    $0.identity == nil
+                }.count,
+                "unresolved_collection_members": state.collectionMembers.filter { member in
+                    let key = member.identity ?? FeedAddress.identity(member.requestURL)
+                    return !FeedAddress.isValidHTTPURL(key) || key.isEmpty
+                }.count,
+                "user_operations_preserved": state.archived.filter { $0.category == "user_operation" }.count,
+                "source_history_preserved": state.archived.filter { $0.category == "source_history_access" }.count,
+                "curated_feeds_preserved": state.archived.filter { $0.category == "curated_feed" }.count
+            ]
+            guard let json = String(data: try JSONSerialization.data(withJSONObject: counters,
+                options: [.sortedKeys]), encoding: .utf8) else {
+                throw LegacyImportError.invalidLegacyIdentity
+            }
+            try db.execute(sql: """
+                INSERT INTO reader_legacy_receipt (origin, fingerprint, totals_json, imported_at)
+                VALUES ('v1:user.sqlite', ?, ?, ?)
+                """, arguments: [fingerprint, json, now])
+            return ReaderLibraryImportReport(insertedBookmarkLists: lists, insertedCollections: collections,
+                insertedPresets: presets, insertedMemberships: memberships)
+        }
+    }
+}
