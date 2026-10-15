@@ -1,0 +1,44 @@
+# Ocorrências vermelhas de `testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates`
+
+Registro exigido pelo arquiteto depois de a terceira ocorrência aparecer durante a medição do PD10-P0A.
+Nada aqui reabre o gate: o estado continua **FLAKY — ROOT CAUSE UNDETERMINED**.
+
+## 1. As duas primeiras (2026-10-14, árvore `1b990306`)
+
+| # | quando | árvore | execução | literal |
+|---|---|---|---|---|
+| 1 | 17:03 | `1b990306` | suíte `CompositionTests` completa | `CompositionTests.swift:180: XCTAssertEqual failed: ("18") is not equal to ("17") - Anchor plus a sixteen-card idle reserve` |
+| 2 | 17:05 | `1b990306` | idem | idem |
+
+Condição ambiental: a máquina rodava, em paralelo, as suítes de verificação das outras branches
+(`mk15`, `mk14`, `mk15k14`), com builds concorrentes no worktree `/tmp/fm-verify`.
+Janelas decisivas versionadas em `decisive/red-cand.composition{,2}.txt`.
+
+## 2. A terceira (2026-10-15, árvore `122ef5d5` — PD10-P0A antes do ajuste de compilação)
+
+| campo | valor |
+|---|---|
+| quando | 2026-10-15, `05:01:04.136` (hora local) |
+| árvore | `122ef5d52fb6e045bfc038c0de2a4373c1708014` (branch `chatgpt/pd10-p0a-sync-contract`, primeiro commit) |
+| worktree | `/tmp/fm-pd10a` (recém-criado, `detach` em `122ef5d5`) |
+| comando | `xcodebuild test -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine -destination "platform=iOS Simulator,id=16DA3DB5-C9E0-4190-AF2F-AFAADC7EB7AE" "-only-testing:FeedMineAppTests/CompositionTests"` |
+| resultado | `Executed 57 tests, with 1 failure (0 unexpected)` — `Test Suite 'CompositionTests' failed` |
+| literal | `CompositionTests.swift:217: error: -[FeedMineAppTests.CompositionTests testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates] : XCTAssertEqual failed: ("18") is not equal to ("17") - Anchor plus a sixteen-card idle reserve` |
+| condição ambiental | a mesma máquina tinha acabado de rodar `swift build`/`swift test` (que **falhou por compilação** — o defeito do consumidor de `.manifest`) e a restauração do insumo `catalog.sqlite` do worktree; a suíte do app rodou logo depois, com o processo de build recém-encerrado |
+| nota | os outros 4 testes PD10 do app passaram nessa mesma execução; a única falha foi esta |
+
+## 3. As duas repetições verdes (mesma árvore de app, `5d02f8d7`)
+
+| # | quando | resultado | caso |
+|---|---|---|---|
+| 1ª | 05:21:53 | `Executed 57 tests, with 0 failures`, `** TEST SUCCEEDED **` | passed |
+| 2ª | serial, máquina ociosa | idem, zero falhas | passed |
+
+## 4. Placar honesto
+
+- 15 execuções limpas (4 base + 6 instrumentadas + 5 sob carga induzida) **sem** nenhuma reprodução.
+- 3 execuções vermelhas conhecidas: **todas** em condição de máquina ocupada (builds/suítes concorrentes),
+  duas em `1b990306` (17:03/17:05) e uma em `122ef5d5` (05:01).
+- 2 repetições verdes seguidas na mesma árvore de app depois da terceira ocorrência.
+- Conclusão mantida: **FLAKY — ROOT CAUSE UNDETERMINED**; a asserção de 17 segue intacta, o commit
+  diagnóstico `4a05a182` não entrou em `main`, e nenhum PASS foi declarado.
