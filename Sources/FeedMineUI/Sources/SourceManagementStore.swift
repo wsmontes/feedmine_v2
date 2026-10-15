@@ -239,7 +239,6 @@ public final class SourceManagementStore {
     /// their publication lease, but a completed write is never undone.
     public func setEnabled(_ node: CatalogNodeSummary, enabled: Bool) async {
         let id = beginIntent()
-        mutationID = id
         let fingerprint = await backend.catalogueFingerprint()
         loadingID = id
         isLoading = true
@@ -252,6 +251,9 @@ public final class SourceManagementStore {
             errorMessage = String(localized: "Não foi possível alterar a seleção de fontes.")
             return
         }
+        // A refused attempt must not revoke a pending load's right to publish the
+        // persisted selection. Mark only accepted writes, retaining monotonic order.
+        if id > mutationID { mutationID = id }
 
         // The refresh is optional and fallible; its success says nothing about persistence.
         let visibleKey = openNode?.key
@@ -323,7 +325,6 @@ public final class SourceManagementStore {
     /// confirmation runs asynchronously. Completion order may differ from commit order.
     private func apply(key: String, enabled: Bool) async {
         let id = beginIntent()
-        mutationID = id
         do {
             try await backend.setSourceEnabled(key, enabled: enabled)
         } catch {
@@ -331,6 +332,8 @@ public final class SourceManagementStore {
             errorMessage = String(localized: "Não foi possível alterar a seleção de fontes.")
             return
         }
+        // Publication leases track successful mutations, not failed attempts.
+        if id > mutationID { mutationID = id }
         do {
             guard try await publishPersistedSelection() != nil else { return }
             if feedbackID == id { errorMessage = nil }

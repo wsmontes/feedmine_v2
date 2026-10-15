@@ -920,6 +920,46 @@ final class SourceManagementStoreTests: XCTestCase {
         XCTAssertEqual(finalSaved, [extra.id])
     }
 
+    /// PD10-B2: a rejected mutation is an attempt, not an accepted selection publication.
+    /// A first load suspended in health must still publish persisted reader keys when it resumes.
+    /// Exercise both the single-source and subtree paths without sleeps or new scheduling.
+    func testPD10B2RejectedMutationDuringHeldLoadStillPublishesPersistedSelection() async throws {
+        for isSubtree in [false, true] {
+            let backend = DeferredBackend()
+            let store = SourceManagementStore(backend: backend)
+            try await backend.setSelection(["already-saved"])
+            await backend.holdHealthRead()
+
+            let pendingLoad = Task { await store.load() }
+            await backend.waitForHealthRead()
+            XCTAssertTrue(store.selection.isEmpty, "the initial load must still be held")
+
+            await backend.refuseWrites(true)
+            if isSubtree {
+                await store.setEnabled(node(91, "Rejected subtree"), enabled: true)
+            } else {
+                let extra = CatalogSourceSummary(id: "rejected-extra", title: "Rejected extra",
+                    language: "pt", mediaKind: "text", defaultEnabled: true)
+                await store.toggle(extra)
+            }
+            let expectedError = "Não foi possível alterar a seleção de fontes."
+            XCTAssertEqual(store.errorMessage, expectedError,
+                "a rejected mutation must retain its truthful error")
+            let beforeResume = await backend.durableSelection()
+            XCTAssertEqual(beforeResume, ["already-saved"], "the refused intent must not change preferences")
+
+            await backend.releaseHealthRead()
+            await pendingLoad.value
+            let persisted = await backend.durableSelection()
+            XCTAssertEqual(persisted, ["already-saved"])
+            XCTAssertEqual(store.selection, persisted,
+                "a rejected mutation must not invalidate the held load's selection publication")
+            XCTAssertEqual(store.errorMessage, expectedError,
+                "an older load must not erase the later write-failure feedback")
+            XCTAssertTrue(store.hasCatalog, "the otherwise-valid catalogue load must finish")
+        }
+    }
+
     /// Regression: after promotion, an old visible level is refreshed by setEnabled. All five
     /// catalogue-facing fields must belong to rev 6, not only the header and its sources.
     func testPD10B2SetEnabledPromotesWholeOpenedLevelCoherently() async {
