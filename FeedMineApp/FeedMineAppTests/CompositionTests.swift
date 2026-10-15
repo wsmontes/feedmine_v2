@@ -57,13 +57,22 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
-/// Standard-public-URL test transport. Only the manifest request is intercepted; all RSS and OPML requests
-/// still pass through FixtureTransport. Unlike FEEDMINE_CATALOGUE_AUTHORITY, this exercises the release path.
+/// Standard-public-URL test transport. Manifest and declared OPML requests are intercepted;
+/// unrelated RSS requests pass through FixtureTransport. Unlike FEEDMINE_CATALOGUE_AUTHORITY,
+/// this exercises the release path.
 final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
     static let etag = "\"bundle-test\""
     static let manifest = Mutex<Data?>(nil)
     static let requests = Mutex<[String?]>([])
-    static let servedPayloadPaths = Mutex<[String]>([])
+    struct PayloadObservation: Sendable {
+        let requestedURL: String
+        let relativePath: String
+        let byteCount: Int?
+        let sha256: String?
+    }
+    // Diagnostic evidence of *actual* fixture responses; this replaces the former path-only log.
+    static let payloadObservations = Mutex<[PayloadObservation]>([])
+    static let fallbackRequestOffset = Mutex(0)
     static let force304 = Mutex(false)
     static let payloads = Mutex<[String: Data]>([:])
     static let holdManifest = Mutex(false)
@@ -89,7 +98,9 @@ final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
         payloads: [String: Data] = [:], paused: Bool = false) {
         manifest.withLock { $0 = data }
         requests.withLock { $0 = [] }
-        servedPayloadPaths.withLock { $0 = [] }
+        payloadObservations.withLock { $0 = [] }
+        let offset = FixtureTransport.requests.withLock { $0.count }
+        fallbackRequestOffset.withLock { $0 = offset }
         force304.withLock { $0 = unsolicited304 }
         Self.payloads.withLock { $0 = payloads }
         holdManifest.withLock { $0 = paused }
@@ -131,11 +142,18 @@ final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
         let relative = String(url.path.dropFirst(
             CatalogUpdateChannel.publicManifestURL.deletingLastPathComponent().path.count + 1))
         let data = isManifest ? Self.manifest.withLock { $0 } : Self.payloads.withLock { $0[relative] }
+        if !isManifest {
+            let digest = data.map {
+                SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined()
+            }
+            let observation = PayloadObservation(requestedURL: url.absoluteString,
+                relativePath: relative, byteCount: data?.count, sha256: digest)
+            Self.payloadObservations.withLock { $0.append(observation) }
+        }
         guard let data else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
-        if !isManifest { Self.servedPayloadPaths.withLock { $0.append(relative) } }
         let conditional = request.value(forHTTPHeaderField: "If-None-Match")
         let status = isManifest && (Self.force304.withLock { $0 } || conditional == Self.etag) ? 304 : 200
         let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1",
@@ -473,8 +491,7 @@ final class CompositionTests: XCTestCase {
         let activated = try XCTUnwrap(installation.activeSnapshot())
         XCTAssertEqual(activated.revision, 6)
         XCTAssertEqual(activated.sourceCount, 4)
-        XCTAssertEqual(StandardCatalogueTransport.servedPayloadPaths.withLock { $0.sorted() },
-            published.payloads.keys.sorted(), "the production updater must receive every declared OPML from the test authority")
+        assertPD10BPayload(published, installation: CatalogInstallation(appDirectory: directory))
         XCTAssertEqual(activated.fingerprint, try CatalogManifest.sha256(ofFile: activated.catalogueURL))
         let pointer = try XCTUnwrap(JSONSerialization.jsonObject(
             with: Data(contentsOf: installation.directory.appendingPathComponent("active.json")))
@@ -511,8 +528,7 @@ final class CompositionTests: XCTestCase {
         await root.foreground()
         let active = try XCTUnwrap(CatalogInstallation(appDirectory: directory).activeSnapshot())
         XCTAssertEqual(active.revision, 6)
-        XCTAssertEqual(StandardCatalogueTransport.servedPayloadPaths.withLock { $0.sorted() },
-            published.payloads.keys.sorted(), "the production updater must receive every declared OPML from the test authority")
+        assertPD10BPayload(published, installation: CatalogInstallation(appDirectory: directory))
         try await root.searchSources("Alpha")
         XCTAssertTrue(root.sourceOptions.contains { $0.name == "Alpha News" },
             "source management must query the newly activated catalogue")
@@ -561,8 +577,7 @@ final class CompositionTests: XCTestCase {
 
         await root.foreground()
         XCTAssertEqual(CatalogInstallation(appDirectory: directory).activeSnapshot()?.revision, 6)
-        XCTAssertEqual(StandardCatalogueTransport.servedPayloadPaths.withLock { $0.sorted() },
-            published.payloads.keys.sorted(), "the production updater must receive every declared OPML from the test authority")
+        assertPD10BPayload(published, installation: CatalogInstallation(appDirectory: directory))
         XCTAssertEqual(try preferences.load()?.sourceKeys, selected,
             "the source selection belongs to the reader, not to the managed catalogue")
         XCTAssertEqual(try library.importedSources(), imported)
@@ -580,6 +595,51 @@ final class CompositionTests: XCTestCase {
             "published historical edition is not rewritten by a catalogue update")
         XCTAssertTrue(root.association === association)
         await association.close()
+    }
+
+    /// Diagnostic of the complete foreground download. Report both the attempted real URL and the
+    /// relative key used by the fixture, including a missing response (nil bytes/digest). A fallback
+    /// to FixtureTransport is visible separately; it must never count as an OPML response.
+    private func assertPD10BPayload(_ published: (manifest: CatalogManifest, payloads: [String: Data]),
+        installation: CatalogInstallation, file: StaticString = #filePath, line: UInt = #line) {
+        let observed = StandardCatalogueTransport.payloadObservations.withLock { $0 }
+        let declarations = published.manifest.opmlEntries
+        let ledgerReason = installation.ledger().last?.reason ?? "<no ledger record>"
+        let fallbackStart = StandardCatalogueTransport.fallbackRequestOffset.withLock { $0 }
+        let unexpectedFallbacks = FixtureTransport.requests.withLock {
+            Array($0.dropFirst(fallbackStart)).filter { $0.hasSuffix(".opml") }
+        }
+        print("PD10B_PAYLOAD_LEDGER_LAST_REASON: \(ledgerReason)")
+        print("PD10B_PAYLOAD_FALLBACK_REQUESTS: \(unexpectedFallbacks)")
+        for declared in declarations {
+            let expectedURL = declared.path.split(separator: "/").reduce(
+                CatalogUpdateChannel.publicManifestURL.deletingLastPathComponent()
+            ) { $0.appendingPathComponent(String($1)) }
+            print("PD10B_PAYLOAD_DECLARED expectedURL=\(expectedURL.absoluteString)"
+                + " path=\(declared.path) bytes=\(declared.bytes) sha256=\(declared.sha256)")
+        }
+        for delivered in observed {
+            print("PD10B_PAYLOAD_DELIVERED url=\(delivered.requestedURL)"
+                + " relative=\(delivered.relativePath) bytes=\(String(describing: delivered.byteCount))"
+                + " sha256=\(delivered.sha256 ?? "<not served>")")
+        }
+        let details = "ledger.last.reason=\(ledgerReason); "
+            + "delivered=\(observed.map { "\($0.requestedURL) => \($0.relativePath) / \(String(describing: $0.byteCount)) / \($0.sha256 ?? "<not served>")" }); "
+            + "fallbackOPML=\(unexpectedFallbacks)"
+        XCTAssertEqual(observed.map(\.relativePath).sorted(), declarations.map(\.path).sorted(),
+            "every OPML declared must be requested from the controlled authority; \(details)", file: file, line: line)
+        XCTAssertTrue(unexpectedFallbacks.isEmpty,
+            "no OPML request may escape to FixtureTransport; \(details)", file: file, line: line)
+        for delivered in observed {
+            guard let declared = declarations.first(where: { $0.path == delivered.relativePath }) else {
+                XCTFail("unrecognized payload key; \(details)", file: file, line: line)
+                continue
+            }
+            XCTAssertEqual(delivered.byteCount, declared.bytes,
+                "payload size must match the public manifest; \(details)", file: file, line: line)
+            XCTAssertEqual(delivered.sha256, declared.sha256.lowercased(),
+                "payload digest must match the public manifest; \(details)", file: file, line: line)
+        }
     }
 
     private func makePD10BPublishedRevision() throws ->
