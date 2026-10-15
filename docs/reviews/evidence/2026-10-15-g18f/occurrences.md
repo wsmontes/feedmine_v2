@@ -67,3 +67,29 @@ Janelas decisivas versionadas em `decisive/red-cand.composition{,2}.txt`.
 | 4 | 2026-10-15 (2ª execução serial) | `e15ef6b3` | após `swift test` completo e a 1ª suíte do app |
 
 Estado mantido: **FLAKY — ROOT CAUSE UNDETERMINED**. Nenhuma dessas ocorrências foi atribuída a branch ou a produto; as 15 execuções limpas do G-18F e as duas repetições verdes posteriores seguem registradas acima.
+
+## 6. A quinta ocorrência (2026-10-15, árvore `40bc9fa1` — quinta passada do PD10-P0B)
+
+| campo | valor |
+|---|---|
+| quando | 2026-10-15, segunda das duas execuções seriais da medição do candidato |
+| árvore | `40bc9fa1d514781561393d844763a0b46052cd4a` (branch `chatgpt/pd10-p0b-active-catalog-recovery`) |
+| comando | `xcodebuild test … "-only-testing:FeedMineAppTests/CompositionTests"` (2ª execução) |
+| resultado | `Executed 60 tests, with 1 failure (0 unexpected)` — `** TEST FAILED **`; a 1ª execução da mesma árvore passou com 0 falhas |
+| literal | `CompositionTests.swift:289: error: -[FeedMineAppTests.CompositionTests testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates] : XCTAssertEqual failed` |
+| condição ambiental | a máquina acabara de rodar `swift build` + `swift test` (1353 testes) e a primeira suíte do app; a segunda execução foi serial |
+| nota | os **sete** testes PD10 passaram nas duas execuções; a única falha foi esta |
+
+**Placar nesta árvore: 1 verde / 1 vermelha em 2 execuções** (a vermelha já é a **5ª ocorrência conhecida**).
+
+### Placar acumulado
+
+| # | quando | árvore | condição |
+|---|---|---|---|
+| 1 | 2026-10-14 17:03 | `1b990306` | builds/suítes concorrentes |
+| 2 | 2026-10-14 17:05 | `1b990306` | builds/suítes concorrentes |
+| 3 | 2026-10-15 05:01 | `122ef5d5` | build recém-encerrado + restauração de insumo |
+| 4 | 2026-10-15 (2ª execução serial) | `e15ef6b3` | após `swift test` completo e a 1ª suíte do app |
+| 5 | 2026-10-15 (2ª execução serial) | `40bc9fa1` | idem: após `swift test` (1353) e a 1ª suíte do app |
+
+Estado mantido: **FLAKY — ROOT CAUSE UNDETERMINED**. Nenhuma ocorrência foi atribuída a branch ou a produto; as 15 execuções limpas do G-18F seguem registradas acima.
