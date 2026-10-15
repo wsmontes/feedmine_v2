@@ -105,9 +105,15 @@ public struct SourceManagementCoordinator: Sendable {
         return try catalog.sourceKeysByParentInSubtree(nodeID: nodeID).mapValues(Set.init)
     }
 
-    public func nodeByKey(_ key: String) throws -> Int64? {
+    /// Resolve a previously displayed node by its stable key against the installed catalogue.
+    /// Its current child count, name and numeric id belong to that revision, not to the old row.
+    public func nodeSummary(forKey key: String) throws -> CatalogNodeSummary? {
         guard let catalog else { throw SourceManagementError.catalogUnavailable }
-        return try catalog.node(key: key)?.id
+        return try catalog.node(key: key).map { Self.summary($0) }
+    }
+
+    public func nodeByKey(_ key: String) throws -> Int64? {
+        try nodeSummary(forKey: key)?.id
     }
 
     public func searchSources(_ query: String, limit: Int = 50) throws -> [CatalogSourceSummary] {

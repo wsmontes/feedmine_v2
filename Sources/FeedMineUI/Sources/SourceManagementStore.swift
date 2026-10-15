@@ -17,6 +17,9 @@ public protocol SourceManagementBackend: Sendable {
     func languages() async throws -> [CatalogLanguageSummary]
     func sections() async throws -> [CatalogNodeSummary]
     func countries() async throws -> [CatalogNodeSummary]
+    /// Re-resolve a node from its stable key before using its current child count and metadata.
+    /// Default is for immutable fixture backends; the managed backend reads its installed snapshot.
+    func currentNode(for node: CatalogNodeSummary) async throws -> CatalogNodeSummary?
     func children(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary]
     func breadcrumb(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary]
     func sources(in node: CatalogNodeSummary) async throws -> [CatalogSourceSummary]
@@ -37,6 +40,7 @@ public protocol SourceManagementBackend: Sendable {
 
 public extension SourceManagementBackend {
     func catalogueFingerprint() async -> String? { nil }
+    func currentNode(for node: CatalogNodeSummary) async throws -> CatalogNodeSummary? { node }
 
     func setEnabledTree(node: CatalogNodeSummary, enabled: Bool) async throws {
         try await setEnabled(node: node, enabled: enabled)
@@ -70,6 +74,9 @@ public final class SourceManagementStore {
     public private(set) var hasCatalog = true
 
     @ObservationIgnored private let backend: SourceManagementBackend
+    /// The latest requested level, separate from the last successfully published level. A stale
+    /// async open must not mutate presentation merely because the previous level is still visible.
+    @ObservationIgnored private var requestedNodeKey: String?
 
     public init(backend: SourceManagementBackend) { self.backend = backend }
 
@@ -127,21 +134,31 @@ public final class SourceManagementStore {
         results = []
     }
 
-    /// Opens a node: its children become the visible level and its sources become the list underneath.
+    /// An explicit open reads the *current* node by stable key and publishes its complete level.
+    /// A catalogue promotion or a newer node request discards the response without retrying; the
+    /// previous presentation stays intact until the reader requests another operation.
     public func open(_ node: CatalogNodeSummary) async {
-        openNode = node
+        requestedNodeKey = node.key
         let fingerprint = await backend.catalogueFingerprint()
-        guard openNode?.key == node.key else { return }
+        guard requestedNodeKey == node.key else { return }
         isLoading = true
         defer { isLoading = false }
         do {
-            let children = node.hasChildren ? try await backend.children(of: node) : []
-            let breadcrumb = try await backend.breadcrumb(of: node)
-            let sources = try await backend.sources(in: node)
-            let nodeChildKeys = children.isEmpty ? [:] : try await backend.childKeys(of: node)
+            guard let resolved = try await backend.currentNode(for: node) else {
+                let current = await backend.catalogueFingerprint()
+                guard requestedNodeKey == node.key, current == fingerprint else { return }
+                errorMessage = String(localized: "Não foi possível abrir esta parte do catálogo.")
+                return
+            }
+            // A previously drawn leaf can acquire children in a newer revision.
+            let children = resolved.hasChildren ? try await backend.children(of: resolved) : []
+            let breadcrumb = try await backend.breadcrumb(of: resolved)
+            let sources = try await backend.sources(in: resolved)
+            let nodeChildKeys = children.isEmpty ? [:] : try await backend.childKeys(of: resolved)
             let health = try await backend.health()
             let current = await backend.catalogueFingerprint()
-            guard openNode?.key == node.key, current == fingerprint else { return }
+            guard requestedNodeKey == node.key, current == fingerprint else { return }
+            openNode = resolved
             self.children = children
             self.breadcrumb = breadcrumb
             self.sources = sources
@@ -150,7 +167,7 @@ public final class SourceManagementStore {
             errorMessage = nil
         } catch {
             let current = await backend.catalogueFingerprint()
-            guard openNode?.key == node.key, current == fingerprint else { return }
+            guard requestedNodeKey == node.key, current == fingerprint else { return }
             errorMessage = String(localized: "Não foi possível abrir esta parte do catálogo.")
         }
     }
@@ -168,15 +185,34 @@ public final class SourceManagementStore {
     /// its topic leaves — so the control covers everything placed beneath the node, not only at it. The list is
     /// refreshed from the backend, so the surface never shows an optimistic state the preferences did not accept.
     public func setEnabled(_ node: CatalogNodeSummary, enabled: Bool) async {
+        let fingerprint = await backend.catalogueFingerprint()
         isLoading = true
         defer { isLoading = false }
         do {
             try await backend.setEnabledTree(node: node, enabled: enabled)
-            selection = Set(try await backend.selection())
-            /* Refresh the node's own rows so their checkmarks follow the change. */
-            if openNode == node { sources = try await backend.sources(in: node) }
+            let acceptedSelection = Set(try await backend.selection())
+            // Persisted selection is reader-owned. A refresh is presentation work and must resolve
+            // the visible node using the current catalogue's key, not a stale numeric id.
+            let visibleKey = openNode?.key
+            var resolved: CatalogNodeSummary?
+            var refreshedSources: [CatalogSourceSummary]?
+            if visibleKey == node.key {
+                resolved = try await backend.currentNode(for: node)
+                if let resolved {
+                    refreshedSources = try await backend.sources(in: resolved)
+                }
+            }
+            let current = await backend.catalogueFingerprint()
+            guard current == fingerprint else { return }
+            selection = acceptedSelection
+            if openNode?.key == node.key, let resolved, let refreshedSources {
+                openNode = resolved
+                sources = refreshedSources
+            }
             errorMessage = nil
         } catch {
+            let current = await backend.catalogueFingerprint()
+            guard current == fingerprint else { return }
             errorMessage = String(localized: "Não foi possível alterar a seleção de fontes.")
         }
     }

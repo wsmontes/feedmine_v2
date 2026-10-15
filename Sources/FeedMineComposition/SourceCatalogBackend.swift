@@ -39,6 +39,10 @@ public struct SourceCatalogBackend: SourceManagementBackend {
         try coordinator.countries(limit: limit).values
     }
 
+    public func currentNode(for node: CatalogNodeSummary) async throws -> CatalogNodeSummary? {
+        try coordinator.nodeSummary(forKey: node.key)
+    }
+
     public func children(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary] {
         guard let currentID = try coordinator.nodeByKey(node.key) else { return [] }
         return try coordinator.nodes(parentID: currentID, limit: limit).values

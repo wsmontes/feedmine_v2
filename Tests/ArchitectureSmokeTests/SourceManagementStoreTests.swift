@@ -12,6 +12,7 @@ final class SourceManagementStoreTests: XCTestCase {
             enabledSources: 2, totalSources: 3, isUndeclared: false)]
         var sections: [CatalogNodeSummary] = []
         var countries: [CatalogNodeSummary] = []
+        var latestNodes: [String: CatalogNodeSummary] = [:]
         var childrenByNode: [Int64: [CatalogNodeSummary]] = [:]
         var breadcrumbByNode: [Int64: [CatalogNodeSummary]] = [:]
         var sourcesByNode: [Int64: [CatalogSourceSummary]] = [:]
@@ -29,6 +30,10 @@ final class SourceManagementStoreTests: XCTestCase {
         func languages() async throws -> [CatalogLanguageSummary] { try guardFailure(); return languages }
         func sections() async throws -> [CatalogNodeSummary] { try guardFailure(); return sections }
         func countries() async throws -> [CatalogNodeSummary] { try guardFailure(); return countries }
+        func currentNode(for node: CatalogNodeSummary) async throws -> CatalogNodeSummary? {
+            try guardFailure()
+            return latestNodes[node.key] ?? node
+        }
         func children(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary] {
             try guardFailure(); return childrenByNode[node.id] ?? []
         }
@@ -63,6 +68,11 @@ final class SourceManagementStoreTests: XCTestCase {
     /// No clock or randomized scheduling: tests decide which rev-5/rev-6 response completes first.
     private actor DeferredBackend: SourceManagementBackend {
         private var fingerprint = "rev-5"
+        private var latestNodes: [String: CatalogNodeSummary] = [:]
+        private var sourceRows: [String: [CatalogSourceSummary]] = [:]
+        private var heldSourceKeys: Set<String> = []
+        private var sourceReads: [String: CheckedContinuation<[CatalogSourceSummary], Never>] = [:]
+        private var sourceAwaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
         private var searches: [String: [CheckedContinuation<[CatalogSourceSummary], Never>]] = [:]
         private var nodes: [String: CheckedContinuation<[CatalogNodeSummary], Never>] = [:]
         private var searchAwaiters: [(query: String, count: Int, resume: CheckedContinuation<Void, Never>)] = []
@@ -70,6 +80,19 @@ final class SourceManagementStoreTests: XCTestCase {
 
         func catalogueFingerprint() async -> String? { fingerprint }
         func activate(_ revision: String) { fingerprint = revision }
+        func updateNode(_ node: CatalogNodeSummary) { latestNodes[node.key] = node }
+        func currentNode(for node: CatalogNodeSummary) async throws -> CatalogNodeSummary? {
+            latestNodes[node.key] ?? node
+        }
+        func setSourceRows(_ rows: [CatalogSourceSummary], for key: String) { sourceRows[key] = rows }
+        func holdSourceReads(for key: String) { heldSourceKeys.insert(key) }
+        func waitForSourceRead(_ key: String) async {
+            if sourceReads[key] != nil { return }
+            await withCheckedContinuation { sourceAwaiters[key, default: []].append($0) }
+        }
+        func finishSourceRead(_ key: String, rows: [CatalogSourceSummary]) {
+            sourceReads.removeValue(forKey: key)?.resume(returning: rows)
+        }
 
         func searchSources(_ query: String) async throws -> [CatalogSourceSummary] {
             await withCheckedContinuation { continuation in
@@ -111,7 +134,13 @@ final class SourceManagementStoreTests: XCTestCase {
         func sections() async throws -> [CatalogNodeSummary] { [] }
         func countries() async throws -> [CatalogNodeSummary] { [] }
         func breadcrumb(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary] { [] }
-        func sources(in node: CatalogNodeSummary) async throws -> [CatalogSourceSummary] { [] }
+        func sources(in node: CatalogNodeSummary) async throws -> [CatalogSourceSummary] {
+            guard heldSourceKeys.contains(node.key) else { return sourceRows[node.key] ?? [] }
+            return await withCheckedContinuation { continuation in
+                sourceReads[node.key] = continuation
+                for waiter in sourceAwaiters.removeValue(forKey: node.key) ?? [] { waiter.resume() }
+            }
+        }
         func countryKeys() async throws -> [Int64: Set<String>] { [:] }
         func childKeys(of node: CatalogNodeSummary) async throws -> [Int64: Set<String>] { [:] }
         func health() async throws -> [String: CatalogSourceHealth] { [:] }
@@ -346,6 +375,99 @@ final class SourceManagementStoreTests: XCTestCase {
         XCTAssertEqual(store.openNode?.key, later.key)
         XCTAssertEqual(store.children.map(\.key), [child.key])
         XCTAssertTrue(store.breadcrumb.isEmpty)
+    }
+
+    /// PD10-B2: a node displayed as a leaf in rev 5 acquires children and a new title in rev 6.
+    /// Opening that *old summary* must resolve the active identity and publish no old metadata.
+    func testPD10B2OpeningStaleLeafUsesPromotedNodeAndDiscoversNewChildren() async {
+        let backend = Backend()
+        let stale = node(10, "Old title", children: false)
+        let promoted = CatalogNodeSummary(id: 42, key: stale.key, name: "Updated title",
+            kind: .topic, sourceCount: 3, hasChildren: true)
+        let child = node(43, "New child")
+        backend.latestNodes[stale.key] = promoted
+        backend.childrenByNode[promoted.id] = [child]
+        backend.sourcesByNode[promoted.id] = [
+            .init(id: "active", title: "Active source", language: "pt",
+                mediaKind: "text", defaultEnabled: true)
+        ]
+        let store = SourceManagementStore(backend: backend)
+        await store.open(stale)
+        XCTAssertEqual(store.openNode, promoted, "old node metadata must not be published")
+        XCTAssertEqual(store.children.map(\.key), [child.key],
+            "a stale hasChildren=false cannot suppress children added in the active revision")
+        XCTAssertEqual(store.sources.map(\.id), ["active"])
+    }
+
+    /// PD10-B2: pending open keeps the previously published level untouched, even though the
+    /// requested node summary has changed. The revision's complete answer is installed together.
+    func testPD10B2OpenDoesNotPublishStaleNodeBeforeProtectedRead() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let previous = node(1, "Previous")
+        await store.open(previous)
+        XCTAssertEqual(store.openNode, previous)
+        let old = node(2, "Old", children: false)
+        let promoted = CatalogNodeSummary(id: 20, key: old.key, name: "Promoted",
+            kind: .topic, sourceCount: 2, hasChildren: true)
+        await backend.activate("rev-6")
+        await backend.updateNode(promoted)
+        let opening = Task { await store.open(old) }
+        await backend.waitForNode(promoted.key)
+        XCTAssertEqual(store.openNode, previous, "do not publish the old or incomplete node")
+        await backend.finishNode(promoted.key, with: [node(21, "New descendant")])
+        await opening.value
+        XCTAssertEqual(store.openNode, promoted)
+        XCTAssertEqual(store.children.map(\.id), [21])
+    }
+
+    /// PD10-B2: a successful selection write may have started in rev 5. If its refresh returns
+    /// after activation, it must not install rev-5 sources over the published node.
+    func testPD10B2SetEnabledCannotInstallOldSourcesAfterActivation() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let current = node(8, "Visible")
+        let originallyVisible = CatalogSourceSummary(id: "visible", title: "Published",
+            language: "pt", mediaKind: "text", defaultEnabled: true)
+        let stale = CatalogSourceSummary(id: "removed", title: "Old catalogue",
+            language: "en", mediaKind: "text", defaultEnabled: true)
+        await backend.setSourceRows([originallyVisible], for: current.key)
+        await store.open(current)
+        XCTAssertEqual(store.sources.map(\.id), ["visible"])
+        await backend.holdSourceReads(for: current.key)
+        let toggling = Task { await store.setEnabled(current, enabled: true) }
+        await backend.waitForSourceRead(current.key)
+        await backend.activate("rev-6")
+        await backend.finishSourceRead(current.key, rows: [stale])
+        await toggling.value
+        XCTAssertEqual(store.sources.map(\.id), ["visible"],
+            "late rev-5 refresh cannot overwrite sources after the revision changed")
+        XCTAssertEqual(store.openNode, current)
+    }
+
+    /// PD10-B2: with the catalogue fingerprint unchanged, a delayed setEnabled refresh must
+    /// still respect a different node the reader opened while the previous read was suspended.
+    func testPD10B2SetEnabledDoesNotReplaceAnotherOpenedNode() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let old = node(6, "Old level")
+        let next = node(7, "Current level")
+        let nextSource = CatalogSourceSummary(id: "current", title: "Current source",
+            language: "pt", mediaKind: "text", defaultEnabled: true)
+        await backend.setSourceRows([nextSource], for: next.key)
+        await store.open(old)
+        await backend.holdSourceReads(for: old.key)
+        let toggling = Task { await store.setEnabled(old, enabled: true) }
+        await backend.waitForSourceRead(old.key)
+        await store.open(next)
+        XCTAssertEqual(store.sources.map(\.id), ["current"])
+        await backend.finishSourceRead(old.key, rows: [
+            CatalogSourceSummary(id: "old", title: "Stale refresh", language: "en",
+                mediaKind: "text", defaultEnabled: true)
+        ])
+        await toggling.value
+        XCTAssertEqual(store.openNode?.key, next.key)
+        XCTAssertEqual(store.sources.map(\.id), ["current"])
     }
 
     func testSearchTrimsAndClears() async {

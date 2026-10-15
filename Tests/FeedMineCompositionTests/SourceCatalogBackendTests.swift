@@ -115,6 +115,11 @@ final class SourceCatalogBackendTests: XCTestCase {
         let countries = try await backend.countries()
         XCTAssertEqual(countries.map(\.name), ["Brazil"])
         let brazil = try XCTUnwrap(countries.first)
+        let staleSummary = CatalogNodeSummary(id: 9_999, key: brazil.key, name: "Old label",
+            kind: brazil.kind, sourceCount: 0, hasChildren: false)
+        let resolvedValue = try await backend.currentNode(for: staleSummary)
+        let resolved = try XCTUnwrap(resolvedValue)
+        XCTAssertEqual(resolved, brazil, "stale numeric IDs, names and child flags must not survive re-resolution")
         let children = try await backend.children(of: brazil)
         XCTAssertEqual(children.map(\.name), ["São Paulo"])
         XCTAssertEqual(children.map(\.kind), [.topic], "a child's kind reaches the surface as a value")
