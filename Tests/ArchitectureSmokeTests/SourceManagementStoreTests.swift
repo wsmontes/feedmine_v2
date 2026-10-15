@@ -78,6 +78,12 @@ final class SourceManagementStoreTests: XCTestCase {
     private actor DeferredBackend: SourceManagementBackend {
         private enum RefreshFailure: Error { case requested }
         private var fingerprint = "rev-5"
+        private var holdFingerprint = false
+        private var fingerprintReads: [CheckedContinuation<String?, Never>] = []
+        private var fingerprintWaiters: [(count: Int, resume: CheckedContinuation<Void, Never>)] = []
+        private var holdSelection = false
+        private var selectionReads: [CheckedContinuation<[String], Never>] = []
+        private var selectionWaiters: [(count: Int, resume: CheckedContinuation<Void, Never>)] = []
         private var savedSelection: [String] = []
         private var refusingWrites = false
         private var heldWriteKeys: Set<String> = []
@@ -86,6 +92,9 @@ final class SourceManagementStoreTests: XCTestCase {
         private var failingNodeKeys: Set<String> = []
         private var latestNodes: [String: CatalogNodeSummary] = [:]
         private var sourceRows: [String: [CatalogSourceSummary]] = [:]
+        private var childRows: [String: [CatalogNodeSummary]] = [:]
+        private var breadcrumbRows: [String: [CatalogNodeSummary]] = [:]
+        private var childKeyRows: [String: [Int64: Set<String>]] = [:]
         private var holdsHealth = false
         private var heldHealth: CheckedContinuation<[String: CatalogSourceHealth], Never>?
         private var healthWaiters: [CheckedContinuation<Void, Never>] = []
@@ -97,7 +106,37 @@ final class SourceManagementStoreTests: XCTestCase {
         private var searchAwaiters: [(query: String, count: Int, resume: CheckedContinuation<Void, Never>)] = []
         private var nodeAwaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
-        func catalogueFingerprint() async -> String? { fingerprint }
+        func catalogueFingerprint() async -> String? {
+            guard holdFingerprint else { return fingerprint }
+            return await withCheckedContinuation { continuation in
+                fingerprintReads.append(continuation)
+                let ready = fingerprintWaiters.filter { fingerprintReads.count >= $0.count }
+                fingerprintWaiters.removeAll { fingerprintReads.count >= $0.count }
+                for waiter in ready { waiter.resume.resume() }
+            }
+        }
+        func holdFingerprintReads() { holdFingerprint = true }
+        func waitForFingerprintRead(count: Int = 1) async {
+            if fingerprintReads.count >= count { return }
+            await withCheckedContinuation { fingerprintWaiters.append((count, $0)) }
+        }
+        func releaseFingerprintReads() {
+            holdFingerprint = false
+            let pending = fingerprintReads
+            fingerprintReads.removeAll()
+            for read in pending { read.resume(returning: fingerprint) }
+        }
+        func holdSelectionReads() { holdSelection = true }
+        func waitForSelectionRead(count: Int = 1) async {
+            if selectionReads.count >= count { return }
+            await withCheckedContinuation { selectionWaiters.append((count, $0)) }
+        }
+        func releaseSelectionReads() {
+            holdSelection = false
+            let pending = selectionReads
+            selectionReads.removeAll()
+            for read in pending { read.resume(returning: savedSelection) }
+        }
         func activate(_ revision: String) { fingerprint = revision }
         func updateNode(_ node: CatalogNodeSummary) { latestNodes[node.key] = node }
         func failNodeResolution(for key: String) { failingNodeKeys.insert(key) }
@@ -126,6 +165,15 @@ final class SourceManagementStoreTests: XCTestCase {
             heldWrites.removeValue(forKey: key)?.resume()
         }
         func setSourceRows(_ rows: [CatalogSourceSummary], for key: String) { sourceRows[key] = rows }
+        func setLevel(_ node: CatalogNodeSummary, children: [CatalogNodeSummary],
+            breadcrumb: [CatalogNodeSummary], sources: [CatalogSourceSummary],
+            childKeys: [Int64: Set<String>]) {
+            latestNodes[node.key] = node
+            childRows[node.key] = children
+            breadcrumbRows[node.key] = breadcrumb
+            sourceRows[node.key] = sources
+            childKeyRows[node.key] = childKeys
+        }
         func holdSourceReads(for key: String) { heldSourceKeys.insert(key) }
         func waitForSourceRead(_ key: String) async {
             if sourceReads[key] != nil { return }
@@ -162,7 +210,8 @@ final class SourceManagementStoreTests: XCTestCase {
         }
 
         func children(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary] {
-            try await withCheckedThrowingContinuation { continuation in
+            if let immediate = childRows[node.key] { return immediate }
+            return try await withCheckedThrowingContinuation { continuation in
                 nodes[node.key] = continuation
                 for waiter in nodeAwaiters.removeValue(forKey: node.key) ?? [] { waiter.resume() }
             }
@@ -181,7 +230,9 @@ final class SourceManagementStoreTests: XCTestCase {
         func languages() async throws -> [CatalogLanguageSummary] { [] }
         func sections() async throws -> [CatalogNodeSummary] { [] }
         func countries() async throws -> [CatalogNodeSummary] { [] }
-        func breadcrumb(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary] { [] }
+        func breadcrumb(of node: CatalogNodeSummary) async throws -> [CatalogNodeSummary] {
+            breadcrumbRows[node.key] ?? []
+        }
         func sources(in node: CatalogNodeSummary) async throws -> [CatalogSourceSummary] {
             guard heldSourceKeys.contains(node.key) else { return sourceRows[node.key] ?? [] }
             return try await withCheckedThrowingContinuation { continuation in
@@ -190,7 +241,9 @@ final class SourceManagementStoreTests: XCTestCase {
             }
         }
         func countryKeys() async throws -> [Int64: Set<String>] { [:] }
-        func childKeys(of node: CatalogNodeSummary) async throws -> [Int64: Set<String>] { [:] }
+        func childKeys(of node: CatalogNodeSummary) async throws -> [Int64: Set<String>] {
+            childKeyRows[node.key] ?? [:]
+        }
         func health() async throws -> [String: CatalogSourceHealth] {
             guard holdsHealth else { return [:] }
             return await withCheckedContinuation { continuation in
@@ -199,7 +252,15 @@ final class SourceManagementStoreTests: XCTestCase {
                 healthWaiters.removeAll()
             }
         }
-        func selection() async throws -> [String] { savedSelection }
+        func selection() async throws -> [String] {
+            guard holdSelection else { return savedSelection }
+            return await withCheckedContinuation { continuation in
+                selectionReads.append(continuation)
+                let ready = selectionWaiters.filter { selectionReads.count >= $0.count }
+                selectionWaiters.removeAll { selectionReads.count >= $0.count }
+                for waiter in ready { waiter.resume.resume() }
+            }
+        }
         func setSelection(_ keys: [String]) async throws {
             if refusingWrites { throw RefreshFailure.requested }
             savedSelection = keys
@@ -820,6 +881,84 @@ final class SourceManagementStoreTests: XCTestCase {
         XCTAssertEqual(store.sources.map(\.id), originalSources.map(\.id))
         XCTAssertEqual(store.sources.map(\.title), originalSources.map(\.title))
         XCTAssertEqual(store.nodeChildKeys, originalKeys)
+    }
+
+    /// Regression: rev-5 load is held on health while an independent selected-source write
+    /// commits S2 and holds its confirmation read. The discarded load must NOT seize
+    /// selectionReadID and revoke that write's eventual publication.
+    func testPD10B2DiscardedOldLoadCannotRevokePendingSelectionConfirmation() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        await backend.holdHealthRead()
+        let oldLoad = Task { await store.load() }
+        await backend.waitForHealthRead()
+
+        await backend.activate("rev-6")
+        await backend.holdSelectionReads()
+        let extra = CatalogSourceSummary(id: "persisted-s2", title: "Reader selection",
+            language: "pt", mediaKind: "text", defaultEnabled: true)
+        let confirmedWrite = Task { await store.toggle(extra) }
+        await backend.waitForSelectionRead()
+        let saved = await backend.durableSelection()
+        XCTAssertEqual(saved, [extra.id], "the incremental write is already durable")
+        XCTAssertTrue(store.selection.isEmpty, "its confirmation is deliberately held")
+
+        // Pin the load's revision check on the test actor so that its discard happens
+        // before the write's selection continuation is released. No sleeps or timing guesses.
+        await backend.holdFingerprintReads()
+        await backend.releaseHealthRead()
+        await backend.waitForFingerprintRead()
+        await backend.releaseFingerprintReads()
+        await oldLoad.value
+        XCTAssertTrue(store.selection.isEmpty)
+
+        await backend.releaseSelectionReads()
+        await confirmedWrite.value
+        XCTAssertEqual(store.selection, [extra.id],
+            "discarded rev-5 catalogue work cannot invalidate the accepted selection's lease")
+        let finalSaved = await backend.durableSelection()
+        XCTAssertEqual(finalSaved, [extra.id])
+    }
+
+    /// Regression: after promotion, an old visible level is refreshed by setEnabled. All five
+    /// catalogue-facing fields must belong to rev 6, not only the header and its sources.
+    func testPD10B2SetEnabledPromotesWholeOpenedLevelCoherently() async {
+        let backend = DeferredBackend()
+        let store = SourceManagementStore(backend: backend)
+        let old = node(96, "Old level", children: false)
+        let oldAncestor = node(95, "Old ancestor")
+        let oldSource = CatalogSourceSummary(id: "old-source", title: "Old source",
+            language: "en", mediaKind: "text", defaultEnabled: true)
+        await backend.setLevel(old, children: [], breadcrumb: [oldAncestor],
+            sources: [oldSource], childKeys: [:])
+        await store.open(old)
+        XCTAssertEqual(store.openNode, old)
+        XCTAssertEqual(store.breadcrumb.map(\.name), ["Old ancestor"])
+        XCTAssertEqual(store.sources.map(\.id), [oldSource.id])
+        XCTAssertTrue(store.children.isEmpty)
+        XCTAssertTrue(store.nodeChildKeys.isEmpty)
+
+        await backend.activate("rev-6")
+        let promoted = CatalogNodeSummary(id: 196, key: old.key, name: "Promoted level",
+            kind: .topic, sourceCount: 2, hasChildren: true)
+        let newAncestor = node(195, "New ancestor")
+        let newChild = node(197, "New child")
+        let newSource = CatalogSourceSummary(id: "new-source", title: "Promoted source",
+            language: "pt", mediaKind: "text", defaultEnabled: true)
+        let newKeys: [Int64: Set<String>] = [newChild.id: [newSource.id]]
+        await backend.setLevel(promoted, children: [newChild], breadcrumb: [newAncestor],
+            sources: [newSource], childKeys: newKeys)
+
+        await store.setEnabled(old, enabled: true)
+        XCTAssertEqual(store.openNode, promoted)
+        XCTAssertEqual(store.children.map(\.id), [newChild.id])
+        XCTAssertEqual(store.children.map(\.name), [newChild.name])
+        XCTAssertEqual(store.breadcrumb.map(\.id), [newAncestor.id])
+        XCTAssertEqual(store.breadcrumb.map(\.name), [newAncestor.name])
+        XCTAssertEqual(store.sources.map(\.id), [newSource.id])
+        XCTAssertEqual(store.sources.map(\.title), [newSource.title])
+        XCTAssertEqual(store.nodeChildKeys, newKeys)
+        XCTAssertEqual(store.selection, [old.key], "the reader's accepted intent remains durable")
     }
 
     func testSearchTrimsAndClears() async {

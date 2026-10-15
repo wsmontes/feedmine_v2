@@ -122,6 +122,9 @@ public final class SourceManagementStore {
     public func load() async {
         let id = beginIntent()
         loadID = id
+        // A catalog read never owns a newer write's selection confirmation lease.
+        let selectionLease = selectionReadID
+        let mutationLease = mutationID
         let fingerprint = await backend.catalogueFingerprint()
         guard loadID == id else { return }
         loadingID = id
@@ -133,16 +136,19 @@ public final class SourceManagementStore {
             let countries = try await backend.countries()
             let countryKeys = try await backend.countryKeys()
             let health = try await backend.health()
-            let readID = newID()
-            selectionReadID = readID
+            // Reject a superseded revision before even requesting its selection.
+            let checked = await backend.catalogueFingerprint()
+            guard loadID == id, checked == fingerprint else { return }
             let selected = Set(try await backend.selection())
             let current = await backend.catalogueFingerprint()
-            guard loadID == id, selectionReadID == readID, current == fingerprint else { return }
+            guard loadID == id, current == fingerprint else { return }
             self.languages = languages
             self.sections = sections
             self.countries = countries
             self.countryKeys = countryKeys
-            selection = selected
+            if selectionReadID == selectionLease, mutationID == mutationLease {
+                selection = selected
+            }
             self.health = health
             hasCatalog = true
             if feedbackID == id { errorMessage = nil }
@@ -250,13 +256,19 @@ public final class SourceManagementStore {
         // The refresh is optional and fallible; its success says nothing about persistence.
         let visibleKey = openNode?.key
         let openedLease = openID
-        var refreshedNode: CatalogNodeSummary?
-        var refreshedSources: [CatalogSourceSummary]?
+        var refreshedLevel: (node: CatalogNodeSummary, children: [CatalogNodeSummary],
+            breadcrumb: [CatalogNodeSummary], sources: [CatalogSourceSummary],
+            childKeys: [Int64: Set<String>])?
         var refreshError = false
         if visibleKey == node.key {
             do {
-                refreshedNode = try await backend.currentNode(for: node)
-                if let refreshedNode { refreshedSources = try await backend.sources(in: refreshedNode) }
+                if let resolved = try await backend.currentNode(for: node) {
+                    let children = resolved.hasChildren ? try await backend.children(of: resolved) : []
+                    let breadcrumb = try await backend.breadcrumb(of: resolved)
+                    let sources = try await backend.sources(in: resolved)
+                    let keys = children.isEmpty ? [:] : try await backend.childKeys(of: resolved)
+                    refreshedLevel = (resolved, children, breadcrumb, sources, keys)
+                }
             } catch { refreshError = true }
         }
 
@@ -272,9 +284,13 @@ public final class SourceManagementStore {
         let current = await backend.catalogueFingerprint()
         guard mutationID == id, selectionReadID == selectionRead, openID == openedLease,
             current == fingerprint, openNode?.key == visibleKey else { return }
-        if let refreshedNode, let refreshedSources {
-            openNode = refreshedNode
-            sources = refreshedSources
+        if let refreshedLevel {
+            // Rebind the entire level, never just its header and source rows.
+            openNode = refreshedLevel.node
+            children = refreshedLevel.children
+            breadcrumb = refreshedLevel.breadcrumb
+            sources = refreshedLevel.sources
+            nodeChildKeys = refreshedLevel.childKeys
         }
         if feedbackID == id {
             errorMessage = refreshError
