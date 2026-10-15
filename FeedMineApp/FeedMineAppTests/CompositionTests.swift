@@ -63,6 +63,7 @@ final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
     static let etag = "\"bundle-test\""
     static let manifest = Mutex<Data?>(nil)
     static let requests = Mutex<[String?]>([])
+    static let servedPayloadPaths = Mutex<[String]>([])
     static let force304 = Mutex(false)
     static let payloads = Mutex<[String: Data]>([:])
     static let holdManifest = Mutex(false)
@@ -88,6 +89,7 @@ final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
         payloads: [String: Data] = [:], paused: Bool = false) {
         manifest.withLock { $0 = data }
         requests.withLock { $0 = [] }
+        servedPayloadPaths.withLock { $0 = [] }
         force304.withLock { $0 = unsolicited304 }
         Self.payloads.withLock { $0 = payloads }
         holdManifest.withLock { $0 = paused }
@@ -102,9 +104,11 @@ final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
 
     override class func canInit(with request: URLRequest) -> Bool {
         guard let url = request.url else { return false }
+        // deletingLastPathComponent() already ends in "/". Adding another slash here silently
+        // sent every declared OPML to FixtureTransport (RSS bytes), making valid offers fail SHA-256.
+        let payloadBase = CatalogUpdateChannel.publicManifestURL.deletingLastPathComponent()
         return url == CatalogUpdateChannel.publicManifestURL
-            || (url.absoluteString.hasPrefix(CatalogUpdateChannel.publicManifestURL
-                .deletingLastPathComponent().absoluteString + "/")
+            || (url.absoluteString.hasPrefix(payloadBase.absoluteString)
                 && !Self.payloads.withLock { $0.isEmpty })
     }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -131,6 +135,7 @@ final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
+        if !isManifest { Self.servedPayloadPaths.withLock { $0.append(relative) } }
         let conditional = request.value(forHTTPHeaderField: "If-None-Match")
         let status = isManifest && (Self.force304.withLock { $0 } || conditional == Self.etag) ? 304 : 200
         let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1",
@@ -468,6 +473,8 @@ final class CompositionTests: XCTestCase {
         let activated = try XCTUnwrap(installation.activeSnapshot())
         XCTAssertEqual(activated.revision, 6)
         XCTAssertEqual(activated.sourceCount, 4)
+        XCTAssertEqual(StandardCatalogueTransport.servedPayloadPaths.withLock { $0.sorted() },
+            published.payloads.keys.sorted(), "the production updater must receive every declared OPML from the test authority")
         XCTAssertEqual(activated.fingerprint, try CatalogManifest.sha256(ofFile: activated.catalogueURL))
         let pointer = try XCTUnwrap(JSONSerialization.jsonObject(
             with: Data(contentsOf: installation.directory.appendingPathComponent("active.json")))
@@ -504,6 +511,8 @@ final class CompositionTests: XCTestCase {
         await root.foreground()
         let active = try XCTUnwrap(CatalogInstallation(appDirectory: directory).activeSnapshot())
         XCTAssertEqual(active.revision, 6)
+        XCTAssertEqual(StandardCatalogueTransport.servedPayloadPaths.withLock { $0.sorted() },
+            published.payloads.keys.sorted(), "the production updater must receive every declared OPML from the test authority")
         try await root.searchSources("Alpha")
         XCTAssertTrue(root.sourceOptions.contains { $0.name == "Alpha News" },
             "source management must query the newly activated catalogue")
@@ -552,6 +561,8 @@ final class CompositionTests: XCTestCase {
 
         await root.foreground()
         XCTAssertEqual(CatalogInstallation(appDirectory: directory).activeSnapshot()?.revision, 6)
+        XCTAssertEqual(StandardCatalogueTransport.servedPayloadPaths.withLock { $0.sorted() },
+            published.payloads.keys.sorted(), "the production updater must receive every declared OPML from the test authority")
         XCTAssertEqual(try preferences.load()?.sourceKeys, selected,
             "the source selection belongs to the reader, not to the managed catalogue")
         XCTAssertEqual(try library.importedSources(), imported)
