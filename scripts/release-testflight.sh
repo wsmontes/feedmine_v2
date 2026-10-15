@@ -3,7 +3,7 @@
 #
 # Ported from the V1 pipeline (feedmine-dev/scripts/release-testflight.sh). The invariants are:
 #   * refuses a dirty working tree — an uploaded binary must be reproducible from a commit;
-#   * refuses to archive without the bundled V1 catalog (the release build hard-fails on it anyway);
+#   * refuses archive unless current public inventory, compiler and bundled SQLite provenance agree;
 #   * archives, then verifies the git SHA stamped inside the archive against HEAD, aborting on mismatch;
 #   * uploads with the App Store Connect API key (the Xcode Apple-ID path fails on this machine);
 #   * creates the local annotated tag `ios/<version>-build.<build>-<sha>` and prints the pairing.
@@ -11,7 +11,7 @@
 # It never pushes: `git tag` is local.
 #
 # Usage: scripts/release-testflight.sh [--dry-run]
-#   --dry-run  stop after verifying the archived SHA (no upload, no tag)
+#   --dry-run  run the same preflight and archive checks (no ASC key, upload or tag)
 
 set -euo pipefail
 # K-03 (Kiro): -e makes any unchecked failure stop the release instead of uploading or tagging
@@ -32,18 +32,17 @@ missing_env() {
   echo "ABORTADO: $1 ausente ou vazio — exporte $1 com o valor da chave App Store Connect antes de rodar"
   exit 9
 }
-# Explicit checks (no indirect expansion) so macOS /bin/bash 3.2 behaves exactly like newer shells.
-if [ -z "${ASC_KEY_ID:-}" ]; then missing_env ASC_KEY_ID; fi
-if [ -z "${ASC_ISSUER_ID:-}" ]; then missing_env ASC_ISSUER_ID; fi
-KEY_ID="$ASC_KEY_ID"
-ISSUER_ID="$ASC_ISSUER_ID"
-KEY_PATH="${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8}"
+# Credentials are intentionally checked only after a verified non-dry-run archive.
 PROJECT="FeedMineApp/FeedMineApp.xcodeproj"
 SCHEME="FeedMine"
 INFO_PLIST="FeedMineApp/FeedMineApp/Info.plist"
-CATALOG="FeedMineApp/FeedMineApp/Resources/catalog.sqlite"
+RESOURCES="FeedMineApp/FeedMineApp/Resources"
+CATALOG="$RESOURCES/catalog.sqlite"
+DESCRIPTOR="$RESOURCES/catalog.manifest.json"
 ARCHIVE=".build/feedmine-v2.xcarchive"
 EXPORT_OPTS="scripts/ExportOptions.plist"
+STAGING="${P0C_STAGING_ROOT:-build/catalog-bootstrap}"
+EVIDENCE_DIR="${P0C_EVIDENCE_DIR:-.build}"
 
 if [ -n "$(git status --porcelain)" ]; then
   echo "ABORTADO: working tree is dirty — commit first, or the uploaded binary maps to no SHA"
@@ -51,13 +50,8 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 9
 fi
 
-if [ ! -f "$CATALOG" ]; then
-  echo "ABORTADO: $CATALOG ausente — rode scripts/fetch-catalog.sh primeiro"
-  exit 9
-fi
-
-if [ ! -f "$KEY_PATH" ]; then
-  echo "ABORTADO: API key ausente em $KEY_PATH (confira ASC_KEY_ID ou defina ASC_KEY_PATH)"
+if [ ! -f "$CATALOG" ] || [ ! -f "$DESCRIPTOR" ]; then
+  echo "ABORTADO: catalog.sqlite + catalog.manifest.json must both exist in Resources" >&2
   exit 9
 fi
 
@@ -76,6 +70,15 @@ require "CFBundleVersion ($INFO_PLIST)" "$BUILD"
 require "CFBundleShortVersionString ($INFO_PLIST)" "$VERSION"
 TAG="ios/$VERSION-build.$BUILD-$SHORT"
 
+# No repair/download after HEAD has been fixed. Both calls must succeed before archive.
+echo "== P0C release preflight: $VERSION ($BUILD) from $SHORT =="
+scripts/verify_product_catalogue.sh "$RESOURCES" || {
+  echo "ABORTADO: product catalogue verification failed before archive" >&2; exit 9;
+}
+python3 scripts/verify_catalog_release.py preflight --resources "$RESOURCES" \
+  --head "$SHA" --staging "$STAGING" --evidence-dir "$EVIDENCE_DIR" || {
+  echo "ABORTADO: public catalogue provenance could not be verified before archive" >&2; exit 9;
+}
 echo "== archiving $VERSION ($BUILD) from $SHORT =="
 rm -rf "$ARCHIVE" .build/tf-export
 if xcodebuild archive -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
@@ -100,11 +103,31 @@ if [ "$ARCHIVED_SHA" != "$SHORT" ]; then
   echo "ABORTADO: the archive carries SHA '$ARCHIVED_SHA' but HEAD is '$SHORT' — the pairing is not proven"
   exit 8
 fi
+# The final archive is the authority on what would be distributed, not Resources.
+scripts/verify_product_catalogue.sh "$APP" || {
+  echo "ABORTADO: archive contains an unverified or benchmark catalogue" >&2; exit 8;
+}
+python3 scripts/verify_catalog_release.py archive --resources "$RESOURCES" \
+  --archive "$ARCHIVE" --head "$SHA" --version "$VERSION" --build "$BUILD" \
+  --staging "$STAGING" --evidence-dir "$EVIDENCE_DIR" || {
+  echo "ABORTADO: archive bytes/provenance differ from preflight" >&2; exit 8;
+}
 echo "PAIRING OK: TestFlight build $VERSION ($ARCHIVED_BUILD) = $SHA"
 
 if [ "$DRY_RUN" = "1" ]; then
   echo "DRY RUN: archive verificado, nada foi enviado e nenhuma tag criada"
   exit 0
+fi
+
+# Only an actual upload needs App Store Connect secrets.
+if [ -z "${ASC_KEY_ID:-}" ]; then missing_env ASC_KEY_ID; fi
+if [ -z "${ASC_ISSUER_ID:-}" ]; then missing_env ASC_ISSUER_ID; fi
+KEY_ID="$ASC_KEY_ID"
+ISSUER_ID="$ASC_ISSUER_ID"
+KEY_PATH="${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8}"
+if [ ! -f "$KEY_PATH" ]; then
+  echo "ABORTADO: API key ausente em $KEY_PATH" >&2
+  exit 9
 fi
 
 if xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist "$EXPORT_OPTS" \

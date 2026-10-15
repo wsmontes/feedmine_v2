@@ -24,8 +24,8 @@ deduced from a 119-entry list that looks like the published one. Unknown keys ar
 Every step refuses instead of repairing, and nothing is written into the staging tree until the step it belongs
 to has passed — a failure leaves a previous, already-published result exactly as it was:
 
-  * the published `revision` is **pinned** (default 5, `--revision`): a published revision that moved is a
-    different decision, never a silent upgrade, so it is refused;
+  * the public revision is discovered from the authority; optional `--revision` pins an expectation,
+    and a lower revision or changed declaration at the same revision is refused;
   * `schemaVersion` must be the manifest format this build understands (1; `CatalogManifest.supportedSchemaVersion`);
   * every OPML is verified by `bytes` **and** `sha256` against the manifest, in manifest order, and the first
     divergence is refused by name before anything is written;
@@ -48,8 +48,8 @@ would mint a new `.sqlite` checksum for identical inputs.
 
 Usage
 -----
-    python3 scripts/bootstrap_catalog.py [--revision 5] [--staging-root build/catalog-bootstrap]
-                                         [--public-base URL] [--compiler PATH] [--refetch] [--rebuild]
+    python3 scripts/bootstrap_catalog.py --compiler PATH --compiler-sha256 SHA256
+        --identity-sha256 SHA256 [--revision N] [--staging-root DIR] [--refetch] [--rebuild]
 
 Exit codes: 0 success, 2 refused (a mismatch, per the contract), 1 operational failure (network, tooling).
 """
@@ -72,9 +72,7 @@ from pathlib import Path
 
 # The channel the app itself reads (`CatalogUpdateChannel.publicManifestURL`).
 DEFAULT_PUBLIC_BASE = "https://raw.githubusercontent.com/wawasoft/feed-repository/main"
-DEFAULT_REVISION = 5
 SUPPORTED_MANIFEST_SCHEMA = 1
-DEFAULT_COMPILER = Path("/Users/wagnermontes/Documents/GitHub/feedmine/scripts/build_catalog.py")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_STAGING = REPO_ROOT / "build" / "catalog-bootstrap"
 
@@ -208,7 +206,7 @@ def validate_manifest(manifest: object, raw: bytes, url: str, expected_revision:
         )
     if not isinstance(revision, int) or revision <= 0:
         raise Refusal(f"{url} declares a non-positive revision {revision!r}")
-    if revision != expected_revision:
+    if expected_revision is not None and revision != expected_revision:
         raise Refusal(
             f"published revision moved: {url} declares revision {revision}, this bootstrap is pinned to "
             f"{expected_revision} — a later revision is a different decision, not a silent upgrade"
@@ -339,10 +337,27 @@ def compiler_command(compiler: Path, feeds_root: Path, output: Path, report: Pat
         "--manifest-output", str(report), "--json"]
 
 
-def compiler_identity(compiler: Path) -> dict:
-    if not compiler.is_file():
-        raise Failure(f"compiler not found: {compiler}")
-    return {"path": str(compiler), "sha256": sha256_file(compiler), "python": sys.version.split()[0]}
+def compiler_identity(compiler: Path, expected_compiler_sha: str, expected_identity_sha: str) -> dict:
+    """Verify the V1 compiler and its required catalog_identity.py dependency."""
+    compiler = compiler.expanduser().resolve()
+    dependency = compiler.with_name("catalog_identity.py")
+    for path, expected in ((compiler, expected_compiler_sha), (dependency, expected_identity_sha)):
+        if not is_sha256(expected):
+            raise Refusal(f"invalid expected sha256 for {path.name}: {expected!r}")
+        if not path.is_file():
+            raise Failure(f"compiler dependency missing: {path}")
+        actual = sha256_file(path)
+        if actual != expected:
+            raise Refusal(f"compiler identity mismatch: {path}: sha256 {actual} != expected {expected}")
+    try:
+        ref = subprocess.run(["git", "-C", str(compiler.parent), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=False)
+        commit = ref.stdout.strip() if ref.returncode == 0 else None
+    except FileNotFoundError:
+        commit = None
+    return {"path": str(compiler), "sha256": expected_compiler_sha,
+        "dependency": {"path": str(dependency), "sha256": expected_identity_sha},
+        "gitCommit": commit, "python": sys.version.split()[0]}
 
 
 def reuse_state(staging: Path, state: dict, identity: dict, revision: int, manifest_sha: str,
@@ -354,7 +369,15 @@ def reuse_state(staging: Path, state: dict, identity: dict, revision: int, manif
     """
     if state.get("revision") != revision or state.get("manifestSha256") != manifest_sha:
         return None
-    if state.get("feedTreeSha256") != feed_tree_sha or state.get("compiler") != identity:
+    if state.get("feedTreeSha256") != feed_tree_sha:
+        return None
+    # Paths and checkout HEAD are provenance, not compiler input bytes. Moving a
+    # verified checkout without changing its Python/source/dependency must not
+    # trigger a timestamped SQLite recompile.
+    old_compiler = state.get("compiler") or {}
+    if (old_compiler.get("sha256") != identity["sha256"] or
+        old_compiler.get("dependency", {}).get("sha256") != identity["dependency"]["sha256"] or
+        old_compiler.get("python") != identity["python"]):
         return None
     recorded_artifacts = state.get("artifacts")
     if not isinstance(recorded_artifacts, dict):
@@ -487,15 +510,40 @@ def run(args: argparse.Namespace) -> int:
     manifest = validate_manifest(manifest, raw_manifest, manifest_url, args.revision)
     entries = manifest["files"]
     manifest_sha = sha256_bytes(raw_manifest)
+    existing_descriptor = staging / DESCRIPTOR_NAME
+    if existing_descriptor.is_file():
+        try:
+            old_descriptor = json.loads(existing_descriptor.read_text("utf-8"))
+            old_revision = old_descriptor["revision"]
+            old_manifest_sha = old_descriptor["derivedFrom"]["manifestSha256"]
+        except (ValueError, OSError, KeyError, TypeError) as error:
+            raise Refusal(f"existing staged descriptor cannot establish previous revision: {error}") from None
+        if not isinstance(old_revision, int) or not is_sha256(old_manifest_sha):
+            raise Refusal("existing staged descriptor revision/hash is malformed")
+        if manifest["revision"] < old_revision:
+            raise Refusal(f"public revision {manifest['revision']} is older than staged descriptor {old_revision}")
+        if manifest["revision"] == old_revision and old_manifest_sha != manifest_sha:
+            raise Refusal("same public revision has different manifest bytes in staged descriptor")
+    previous_state_path = staging / STATE_NAME
+    if previous_state_path.is_file():
+        try:
+            previous_state = json.loads(previous_state_path.read_text("utf-8"))
+        except (ValueError, OSError) as error:
+            raise Refusal(f"existing bootstrap state is unreadable: {error}") from None
+        previous_revision = previous_state.get("revision")
+        if isinstance(previous_revision, int) and manifest["revision"] < previous_revision:
+            raise Refusal(f"public revision {manifest['revision']} is older than staged revision {previous_revision}")
+        if previous_revision == manifest["revision"] and previous_state.get("manifestSha256") != manifest_sha:
+            raise Refusal("same public revision declares different manifest bytes")
 
     step(2, "OPML inventory")
     tally = verify_payload(entries, payload_root, base, args.refetch)
 
     step(3, "compile (legacy V1 compiler)")
-    identity = compiler_identity(args.compiler)
+    identity = compiler_identity(args.compiler, args.compiler_sha256, args.identity_sha256)
     feeds_root = payload_root / FEEDS_PREFIX.rstrip("/")
     work = staging / ".work"
-    command = compiler_command(args.compiler, feeds_root, work / SQLITE_NAME, work / REPORT_NAME)
+    command = compiler_command(Path(identity["path"]), feeds_root, work / SQLITE_NAME, work / REPORT_NAME)
     say(f"       {' '.join(command)}")
     state_path = staging / STATE_NAME
     previous = {}
@@ -611,22 +659,24 @@ def run(args: argparse.Namespace) -> int:
     say("       This build wrote nothing outside its staging tree and nothing into the Xcode project.")
     say("       The descriptor and the catalogue it declares are one pair: installing one without the other "
         "fails verification.")
-    say("       The release asset currently in FeedMineApp/FeedMineApp/Resources (117940224 bytes, "
-        "sha256 c2ae483a7525fd2b6797855149eb6fb312abbed788549a90a7754121eb5c8629) is *not* described by this "
-        "descriptor.")
+    say("       Install the verified staged pair into Resources and commit both before release.")
     return 0
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--revision", type=int, default=DEFAULT_REVISION,
-        help=f"the published revision this bootstrap is pinned to (default {DEFAULT_REVISION})")
+    parser.add_argument("--revision", type=int, default=None,
+        help="optional expected revision; default resolves current authoritative manifest")
     parser.add_argument("--staging-root", type=Path, default=DEFAULT_STAGING,
         help=f"where the payload, catalogue, descriptor and provenance are written (default {DEFAULT_STAGING})")
     parser.add_argument("--public-base", default=DEFAULT_PUBLIC_BASE,
         help="base URL of the public channel (manifest.json and the declared paths resolve against it)")
-    parser.add_argument("--compiler", type=Path, default=DEFAULT_COMPILER,
-        help=f"the legacy V1 compiler (default {DEFAULT_COMPILER})")
+    parser.add_argument("--compiler", type=Path, required=True,
+        help="explicit V1 build_catalog.py path, with catalog_identity.py beside it")
+    parser.add_argument("--compiler-sha256", required=True,
+        help="expected SHA-256 of build_catalog.py")
+    parser.add_argument("--identity-sha256", required=True,
+        help="expected SHA-256 of catalog_identity.py")
     parser.add_argument("--refetch", action="store_true",
         help="download every OPML again instead of reusing what is already verified on disk")
     parser.add_argument("--rebuild", action="store_true",

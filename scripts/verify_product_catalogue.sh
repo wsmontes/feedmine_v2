@@ -347,10 +347,20 @@ if schema_version != str(READER_SCHEMA_VERSION):
     reasons.append(f"catalog_metadata.schema_version is {schema_version!r}; this build reads"
                    f" {READER_SCHEMA_VERSION}")
 
-if files and expected.get("files"):
-    if files[0].get("sha256") != expected["files"][0].get("sha256") or files[0].get("path") != expected["files"][0].get("path"):
-        reasons.append(f"descriptor files[0] is {files[0].get('path')!r}/{files[0].get('sha256')!r}; the repository's"
-                       f" is {expected['files'][0].get('path')!r}/{expected['files'][0].get('sha256')!r}")
+# No sampling: each public OPML path, size, SHA and role is part of the release identity.
+# The catalogue entry is checked separately against the SQLite actually carried.
+def opml_inventory(value):
+    return [(entry.get("path"), entry.get("bytes"), entry.get("sha256"), entry.get("role"))
+            for entry in value.get("files", []) if entry.get("role") == "opml"]
+
+if opml_inventory(declared) != opml_inventory(expected):
+    reasons.append("descriptor OPML inventory differs from repository descriptor (all paths/bytes/SHA-256/order)")
+if declared.get("fileCount") != expected.get("fileCount"):
+    reasons.append(f"descriptor fileCount {declared.get('fileCount')!r} differs from repository {expected.get('fileCount')!r}")
+if declared.get("derivedFrom") != expected.get("derivedFrom"):
+    reasons.append("descriptor derivedFrom public manifest provenance differs from repository descriptor")
+if sum(1 for item in files if item.get("role") == "catalogue") != 1:
+    reasons.append("descriptor does not contain exactly one role=catalogue entry")
 if not files:
     reasons.append("the descriptor declares no files")
 if entry is not None and entry.get("bytes") != expected_entry.get("bytes"):

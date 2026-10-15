@@ -37,3 +37,34 @@ Análise de 15 oportunidades da V1 com código/linhas como evidência, V2 atual 
 Execute o benchmark por `scripts/run-discovery-benchmark.sh --gate B01 --profile A --profile B` (ou os demais gates). O launcher configura a origem de transporte no ambiente do app por `UITargetAppEnvironmentVariables` do `.xctestrun` gerado, fora do avaliador; `bench/run.sh`, driver, oráculo e corpus conservam os hashes congelados. Em iPhone físico, forneça `FEEDMINE_BENCH_DEVICE_UDID` e `FEEDMINE_BENCH_TRANSPORT_HOST` (host:porta do Mac).
 
 TestFlight interno confirmado pela API Apple: **1.0 (32)**, commit `c6de80b7decca9a81a4888333521b696f84cf761`, estado `VALID` / `IN_BETA_TESTING`, grupo **WawaTesters**. Esta build corrige o travamento por cardinalidade variável de filhos no lazy layout. Disponibilidade interna não certifica B01–B06 nem aprovação de produção. Evidência atual: [status de entrega](docs/reviews/2026-10-13-production-delivery.md).
+
+### PD10-P0C — preparação verificável de catálogo para novas releases
+
+`fetch-catalog.sh` agora recusa explicitamente o catálogo V1. Em um checkout separado do compilador
+V1, mantenha `build_catalog.py` **e** `catalog_identity.py` juntos e identifique seus bytes:
+
+```sh
+COMPILER=/absolute/path/to/legacy/scripts/build_catalog.py
+COMPILER_SHA=$(shasum -a 256 "$COMPILER" | awk '{print $1}')
+IDENTITY_SHA=$(shasum -a 256 "$(dirname "$COMPILER")/catalog_identity.py" | awk '{print $1}')
+python3 scripts/bootstrap_catalog.py --compiler "$COMPILER" \
+  --compiler-sha256 "$COMPILER_SHA" --identity-sha256 "$IDENTITY_SHA"
+# Examine build/catalog-bootstrap/{provenance.json,state.json,build-report.json}.
+cp build/catalog-bootstrap/{catalog.sqlite,catalog.manifest.json} FeedMineApp/FeedMineApp/Resources/
+# Commit the tracked descriptor before release; catalog.sqlite is Git-ignored and is\n# instead bound to the commit/build by the archive's byte-level evidence.
+scripts/release-testflight.sh --dry-run
+```
+
+O `catalog.sqlite` é intencionalmente ignorado pelo Git (atualmente maior que 100 MB),\nportanto o SHA Git sozinho **não** certifica seus bytes. A evidência de cada archive vincula\nGit SHA + manifesto público + SHA-256 do SQLite efetivamente distribuído.\n\nO preflight exige manifesto público atual acessível, inventário completo e OPMLs íntegros,
+relatório e identidade do compilador, par do staging e par de Resources. O archive real é
+revalidado antes de qualquer export/upload. Evidências legíveis por máquina ficam em
+`.build/pd10-p0c-*.json`. O dry-run não exige credenciais do App Store Connect.
+Essas verificações são somente de empacotamento e não alteram o first paint offline.
+
+`scripts/publish_catalog_update.py` é uma operação **distinta**: use
+`--source <editorial-root> --destination <public-checkout> --revision <nova-revisão>`
+e os três argumentos do compilador acima. Sem `--apply` só inspeciona; mesmo com
+`--apply` não faz commit, push, nem altera Resources.
+O README externo de `wawasoft/feed-repository` ainda mostra apenas
+`--destination` e promete copiar o catálogo para o app; sua correção necessita gate
+separado: **P0C-PUBLISH-DOC — EXTERNAL BLOCKER**.

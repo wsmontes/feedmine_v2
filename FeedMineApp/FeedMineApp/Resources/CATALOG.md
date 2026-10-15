@@ -70,3 +70,19 @@ checksum/versão e conservar a identidade por key.
 5. A ausência do repositório público não impede uso do snapshot embarcado/último válido; o GitHub é canal de **metadados de fontes**, não backend de conteúdo.
 
 **Gate:** não declarar a sincronização do catálogo nem o release concluídos sem implementação e evidência de ponta a ponta. Ver [PD-10](../../../docs/product/PRODUCT_DECISIONS_2026-10-09.md), [INV-18](../../../docs/architecture/PRODUCT_INVARIANTS.md) e [arquitetura](../../../docs/architecture/ARCHITECTURE.md). A política da V1 de desabilitar atualização remota em release **não é uma autorização para repetir isso na V2**.
+
+## PD10-P0C — proveniência exigida em novas builds (2026-10-15)
+
+O valor histórico `revision: 5` neste documento não é uma constante do bootstrap. O script
+`scripts/bootstrap_catalog.py` agora consulta o manifesto público no momento da preparação;
+`--revision` apenas fixa uma expectativa explícita. Exige um compilador V1 fornecido pelo
+operador, hash esperado de `build_catalog.py` e hash esperado de `catalog_identity.py` adjacente.
+Registra também o commit Git do checkout do compilador (quando resolvível), a versão Python,
+o comando executado, o SHA do manifesto original e todo o inventário validado.
+
+Somente instale em Resources o par gerado e verificado no mesmo staging, e faça commit dele
+antes de rodar `scripts/release-testflight.sh`. O release se recusa a reconstituir, baixar ou
+substituir conteúdo após fixar o SHA da build. O preflight e o archive usam a mesma revisão
+pública fresca e confirmam o SHA-256 dos bytes realmente distribuíveis; sem acesso à
+autoridade, não se declara uma revisão antiga como atual. Nada disso ocorre no primeiro paint.
+O antigo `fetch-catalog.sh` agora recusa explicitamente instalar `catalog-v1`.
