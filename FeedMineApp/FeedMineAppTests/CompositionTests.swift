@@ -84,10 +84,20 @@ final class CompositionTests: XCTestCase {
     /// The activity is the discriminating input: `.explicitTailApproach` is the only one
     /// `RunwayActivity.admitsForwardContent` accepts, so `.forward` observes the position and never extends
     /// the admitted list. The anchor is the admitted tail, so the append lands after it.
-    private func produceAndAdmit(_ association: FeedAssociation) async throws {
+    private func produceAndAdmit(
+        _ association: FeedAssociation,
+        trace: (@MainActor (String, PublicationCardID?) -> Void)? = nil
+    ) async throws {
+        trace?("before driver.drive", nil)
         _ = try await association.driver.drive(resources: FeedAssociation.resources)
-        guard let anchor = association.store.state.presentation?.window.items.last else { return }
+        trace?("after driver.drive", nil)
+        guard let anchor = association.store.state.presentation?.window.items.last else {
+            trace?("no viewport target after driver.drive", nil)
+            return
+        }
+        trace?("before explicitTailApproach", anchor.id)
         await association.viewport(.init(anchor: .init(cardID: anchor.id, placement: .top)), activity: .explicitTailApproach)
+        trace?("after explicitTailApproach", anchor.id)
     }
 
     func testDevelopmentProxyBlocksActualRSSTransport() async throws {
@@ -175,7 +185,63 @@ final class CompositionTests: XCTestCase {
         FixtureTransport.releaseScience()
         await launch.value
         let association = try XCTUnwrap(root.association)
-        try await produceAndAdmit(association)
+
+        // G-18F: take snapshots at the existing operations, and emit them only after the
+        // sequence ends. Printing between drive and viewport would perturb the race.
+        // Track three distinct positions: the original fast card, the published
+        // presentation anchor, and the card passed to explicitTailApproach.
+        struct ReserveSample {
+            let phase: String
+            let edition: String
+            let anchorID: String
+            let anchorIndex: Int?
+            let opportunityID: String
+            let opportunityIndex: Int?
+            let fastIndex: Int?
+            let cards: [(id: String, source: String)]
+        }
+        let fastID = first?.window.items.first?.id
+        var samples: [ReserveSample] = []
+        let trace: @MainActor (String, PublicationCardID?) -> Void = { phase, opportunity in
+            let snapshot = association.store.state.presentation
+            let items = snapshot?.window.items ?? []
+            let anchor = snapshot?.window.anchor.cardID
+            samples.append(.init(
+                phase: phase,
+                edition: String(describing: snapshot?.editionID),
+                anchorID: String(describing: anchor),
+                anchorIndex: anchor.flatMap { id in items.firstIndex { $0.id == id } },
+                opportunityID: String(describing: opportunity),
+                opportunityIndex: opportunity.flatMap { id in items.firstIndex { $0.id == id } },
+                fastIndex: fastID.flatMap { id in items.firstIndex { $0.id == id } },
+                cards: items.map { (id: String(describing: $0.id), source: String(describing: $0.sourceDisplayName)) }
+            ))
+        }
+        trace("after launch / before produceAndAdmit", nil)
+        try await produceAndAdmit(association, trace: trace)
+        trace("after produceAndAdmit", nil)
+
+        for (index, sample) in samples.enumerated() {
+            let previous = index == 0 ? [] : samples[index - 1].cards
+            let previousIDs = Set(previous.map(\.id))
+            let currentIDs = Set(sample.cards.map(\.id))
+            let added = sample.cards.filter { !previousIDs.contains($0.id) }
+                .map { "\($0.id):\($0.source)" }
+            let removed = previous.filter { !currentIDs.contains($0.id) }
+                .map { "\($0.id):\($0.source)" }
+            let ahead = sample.anchorIndex.map { sample.cards.count - $0 - 1 } ?? -1
+            print("[G18F] phase=\(sample.phase) edition=\(sample.edition) count=\(sample.cards.count) " +
+                "anchor=\(sample.anchorID) anchorIndex=\(sample.anchorIndex.map { String($0) } ?? "missing") " +
+                "behind=\(sample.anchorIndex ?? -1) anchorPresent=\(sample.anchorIndex == nil ? 0 : 1) ahead=\(ahead) " +
+                "fastIndex=\(sample.fastIndex.map { String($0) } ?? "missing") " +
+                "opportunity=\(sample.opportunityID) opportunityIndex=\(sample.opportunityIndex.map { String($0) } ?? "missing") " +
+                "added=\(added) removed=\(removed)")
+            let ordered = sample.cards.enumerated().map { offset, card in
+                "\(offset):\(card.id):\(card.source)"
+            }.joined(separator: " | ")
+            print("[G18F] phase=\(sample.phase) ordered=[\(ordered)]")
+        }
+
         let cards = try XCTUnwrap(association.store.state.presentation).window.items
         XCTAssertEqual(cards.count, 17, "Anchor plus a sixteen-card idle reserve")
         for (left, right) in zip(cards, cards.dropFirst()) {
