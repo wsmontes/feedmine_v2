@@ -82,7 +82,7 @@ final class CatalogUpdaterTests: XCTestCase {
         let published = try publishManifest()
 
         // The check the composition performs: one GET against the authority, then the offer rule.
-        guard case .manifest(let data) = await channel.fetch(), let fetched = try? CatalogManifest.decode(data)
+        guard case .manifest(let data, etag: _) = await channel.fetch(), let fetched = try? CatalogManifest.decode(data)
         else { return XCTFail("the authority serves the manifest it published") }
         XCTAssertEqual(fetched, published, "the bytes served decode to the declaration that was published")
         guard case .accept(6) = CatalogOffer.decide(remote: fetched,
