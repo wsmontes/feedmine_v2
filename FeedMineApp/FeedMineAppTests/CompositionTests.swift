@@ -66,7 +66,23 @@ final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
     static let force304 = Mutex(false)
     static let payloads = Mutex<[String: Data]>([:])
     static let holdManifest = Mutex(false)
-    private static let held = Mutex<[StandardCatalogueTransport]>([])
+    // Keep held URLProtocol instances behind the same lock-owned wrapper as FixtureTransport.
+    // Swift 6 does not allow transferring task-isolated self through Mutex's sending inout state.
+    private final class HeldLoaders: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [StandardCatalogueTransport] = []
+        func append(_ loader: StandardCatalogueTransport) {
+            lock.lock(); defer { lock.unlock() }
+            values.append(loader)
+        }
+        func take() -> [StandardCatalogueTransport] {
+            lock.lock(); defer { lock.unlock() }
+            let loaders = values
+            values.removeAll()
+            return loaders
+        }
+    }
+    private static let held = HeldLoaders()
 
     static func prepare(_ data: Data, unsolicited304: Bool = false,
         payloads: [String: Data] = [:], paused: Bool = false) {
@@ -75,16 +91,12 @@ final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
         force304.withLock { $0 = unsolicited304 }
         Self.payloads.withLock { $0 = payloads }
         holdManifest.withLock { $0 = paused }
-        held.withLock { $0 = [] }
+        _ = held.take()
     }
 
     static func releaseManifest() {
         holdManifest.withLock { $0 = false }
-        let loaders = held.withLock { held -> [StandardCatalogueTransport] in
-            let loaders = held
-            held.removeAll()
-            return loaders
-        }
+        let loaders = held.take()
         loaders.forEach { $0.deliver() }
     }
 
@@ -102,7 +114,7 @@ final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
             let conditional = request.value(forHTTPHeaderField: "If-None-Match")
             Self.requests.withLock { $0.append(conditional) }
             if Self.holdManifest.withLock({ $0 }) {
-                Self.held.withLock { $0.append(self) }
+                Self.held.append(self)
                 return
             }
         }
