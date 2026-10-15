@@ -106,3 +106,91 @@ Não existe documento cru guardado: para enriquecer 3.403 revisões é preciso *
   `content:encoded` *declarado* (mudança de valor com elemento declarado nos dois lados ainda é edição).
 - O backfill gasta rede em nome do leitor: precisa de orçamento explícito e de visibilidade (o mesmo tipo de
   contabilidade que a rodada 10 fez para as ofertas editoriais).
+
+
+## K-15 implementation — 2026-10-14
+
+Fingerprint policy migration \`content-fingerprint-generation-v2\` persists generation
+2 in \`content_fingerprint_policy\` and labels all preexisting immutable
+\`origin_revisions\` generation 1 with an additive DEFAULT 1 column. Existing
+\`external_version_identity\` values remain byte-exact. For RSS and Atom,
+new observations are generation 2; Atom carries both the generation-2 identity and
+the exact legacy generation-1 identity to reconcile already admitted versions.
+JSON Feed remains generation 1 because its projection was already complete.
+
+The first new parser observation of a generation-1 revision whose original
+title/summary/attribution/metadata/media still match is recorded as an
+\`origin_revision_body_enrichment\` (revision ID, source element, readable body).
+This is a separately keyed, immutable baseline and does not update the prior
+\`origin_revisions\` body or version, current revision, published cards or edition.
+Repeated identical acquisition is idempotent. A generation-2 observation with
+no declared body also records an explicit `absent` baseline (nullable body); if the
+publisher later adds that element, it is a material edit rather than a first parser
+enrichment. When the source later changes the body relative to either baseline,
+the normal admission path inserts a generation-2 revision. A changed headline, summary or media follows the existing revision path.
+
+Provenance is stored as the declaring source element (\`content:encoded\` or
+\`content\`), while plain text is derived with the common Domain tokenizer.
+The old reader does not claim to have a complete copy before the enrichment is
+available. No background backfill runner was added; ordinary bounded acquisition
+may enrich data it encounters. Exhaustive historical reacquisition, with budgets
+and resumable progress, remains distinct release work, not a side effect of UI.
+
+Risk limit: an unchanged historical XML body cannot be distinguished from
+a body edit made before its first generation-2 observation. Therefore the first
+observed body is baselined, not treated as an edit; subsequent changes are
+detectable. That is the information-theoretic limit of not storing original XML.
+
+Estimated raw storage if 3,403 entries each carry 5–20 KiB of readable text:
+17–68 MiB, before SQLite page/index overhead. This is not a corpus measurement.
+
+
+## K-15 follow-up — publisher identity and local reading (2026-10-14)
+
+- **Material occurrence identity:** `MaterialContentIdentity.key` retains the exact historic
+  three-component key for legacy revisions whose body has not been reobserved.
+  Generation-2 observations (including absence) and generation-1 revisions with
+  an observed enrichment baseline add an explicit body-state component. The same calculation
+  is used by `CandidateProvider` / `SelectionExposureSnapshot`, both
+  `PublicationStore` material queries (exposure and hidden-tail history), and
+  the append guard. A title/summary/media-identical publisher edit to a
+  declared body can now produce a new occurrence only under an Edition policy
+  that already allows `.whenMaterialChanged`, and never if an old occurrence
+  remains ahead of the reader. Existing published payloads, actions, layout,
+  order and persisted version identities are unchanged. Comparison keys are
+  derived from the currently known provenance without rewriting history.
+  Bounded candidate queries project only declared or enriched material.
+- **Reader projection:** `ContentStore.originRevision(id:)` overlays the separate
+  immutable enrichment's body only for public reading when the canonical revision
+  has no body. Admission/version-conflict logic still uses private canonical reads;
+  the old `origin_revisions` row is never updated. The existing
+  `FeedAssociation.readingTarget` then presents `.sourceBody` with its existing
+  label "Texto publicado pela fonte", marks it partial, and preserves the
+  publisher URL. The displayed published card and its stored action do not change.
+  The field `source_element` records the RSS/Atom declaring element.
+- **Atom literal semantics:** `type="text"`, absent `type` and `text/plain`
+  preserve escaped markup as literal characters, normalizing whitespace only.
+  HTML/XHTML alone use Domain's shared HTML-to-readable-text converter.
+  Remote and binary content do not populate `bodyText`.
+
+**Deliberately out of scope:** exhaustive, budgeted, resumable historical
+backfill. Only normally revisited records are enriched through existing
+acquisition. Forcing historical reacquisition here would add another workload
+owner and might interrupt the visible feed; no new scheduler, queue, cache,
+retry engine, or migration-time network fetch was introduced.
+
+## K-15 cross-generation recurrence correction (2026-10-14)
+
+Material comparison distinguishes three factual body states: `unknown` for a
+generation-1 revision that has never been reobserved, `absent` when a generation-2
+observation explicitly found no declared content, and `declared(text)` for an
+observed source body. A generation-1 `origin_revision_body_enrichment` baseline
+(including its explicit `absent` row) is evidence for this comparison; only
+the comparison key is derived anew. Neither a historical revision nor a published
+card's persisted identity, action or layout is rewritten.
+
+`CandidateProvider`, `SelectionExposureSnapshot`, `PublicationStore.exposure`,
+`PublicationStore.seenMaterial`, and the append guard now use the same
+three-state key. Consequently, unchanged body A following an Atom `updated`
+change does not republish, while removal after an observed A or an intermediate
+A-to-B edit is material. Full historical backfill remains explicitly separate.
