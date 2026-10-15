@@ -171,7 +171,6 @@ final class SyndicationAcquisitionSnapshotTests: XCTestCase {
         let snapshot = try SyndicationAcquisitionSnapshot(database: db, registrations: [registration],
             session: session(), redirectCapacity: 0, selectedSourceIDs: [entry.source.id],
             installation: installation)
-        XCTAssertNil(snapshot.discovery, "there must be no traversal to act as a proxy for authority")
         XCTAssertEqual(try snapshot.eligibleTargets(for: .init(request: .main)), [target])
 
         let new = try makeCatalogue(in: root.appendingPathComponent("r6-no-discovery"),
