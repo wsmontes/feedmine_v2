@@ -214,3 +214,30 @@ xcrun simctl get_app_container "$SIM" com.feedmine.app data
 - **Arquiteto:** recebe SHA e evidências, audita a conformidade de V1–V12 e cada divergência; **nenhum merge** antes de provar upgrade real e consentimento específico para qualquer alteração fora da allowlist.
 
 **Não é necessário aguardar outra autorização para delegar o implementador e a preparação da fixture.** A autorização presente é de execução do gate, não de aceite ou integração.
+
+---
+
+## Emenda 1 — base congelada (decisão do arquiteto, 2026-10-15)
+
+**Esta emenda substitui exclusivamente a base congelada indicada no §1 e no §10. Todos os demais contratos
+permanecem inalterados.**
+
+| Parâmetro | Valor definitivo |
+|---|---|
+| Repositório | `wsmontes/feedmine_v2` |
+| **Base** | **`a0623a6df0e19cf29da1b3a248e273fabaa1e67e`** (substitui `dee94e2e`) |
+| Branch | `chatgpt/mig-v1v2-b-personal-preservation` |
+| Commits | exatamente 1 sobre a nova base |
+| Allowlist | os mesmos 18 caminhos |
+| Protegidos | inalterados |
+| Contratos / testes / medições | V1–V12 / T01–T16 / M1–M8 |
+| Evidência | `docs/reviews/MIG-V1V2-B_PERSONAL_MIGRATION_EVIDENCE.md` |
+
+**Razão da emenda:** a publicação desta própria spec avançou `origin/main` de `dee94e2e` para `a0623a6d` —
+exatamente 1 commit, exatamente 1 arquivo (este documento), **nenhuma alteração de produção** (verificado pelo
+arquiteto no GitHub: parent `dee94e2e`, 1 commit, 1 arquivo). A spec original manda *parar e pedir rebase
+autorizado* se `origin/main` avançar; o arquiteto decidiu a **opção A** — emendar a base — para não criar
+divergência artificial entre o implementador e o `main`.
+
+**Verificação de árvore:** `git rev-parse a0623a6d^{tree}` deve diferir de `dee94e2e^{tree}` **apenas** por este
+arquivo; qualquer outra diferença é motivo para parar e relatar.
