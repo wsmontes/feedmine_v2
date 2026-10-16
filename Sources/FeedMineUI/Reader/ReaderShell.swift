@@ -1,6 +1,6 @@
 // File: ReaderShell.swift
 // Module: FeedMineUI
-// Owns: the reader's chrome — floating header, lens slot, search surface, clipboard banner and toast —
+// Owns: the reader's chrome — floating header, lens slot, search surface and toast —
 //       copied from V1 `Views/FeedScreen.swift` (ZStack + measured header + `feedTopPadding`).
 // Does not own: how the feed is produced, which cards are admitted, or any execution. The store states
 // what is available; the shell reports intents through it and starts no work of its own.

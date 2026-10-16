@@ -306,7 +306,6 @@ Plan task T5. The reader's chrome is now V1's: the V2 navigation toolbar is gone
 | V1's ellipsis menu (556–635) | `ReaderMenu.swift` + `ReaderNavigation.swift` | All 14 V1 items as values (`ReaderMenuEntry.standard`), with V1's labels, SF Symbols, destructive roles and grouping. |
 | V1's search bar (655–716) | `ReaderShell.swift` `searchBar` | Field, submit, explicit cancel; the surface closes without touching the feed. |
 | `Views/ToastView.swift` + V1's toast lifetime (1097–1119) | `Feedback/ToastView.swift` | Black capsule, 2 s, spring 0.35/0.8, 100 pt above the bottom; non-interactive. |
-| `Views/ClipboardBanner.swift` | `Feedback/ClipboardBanner.swift` | Add / dismiss; the pasteboard check stays with the host (T10 owns import). |
 | `Views/FeedScreen.swift` composition (`feedTopPadding`, `ZStack` + `HeaderHeightKey`) | `ReaderShell.swift` | The shell measures **its own** chrome with a layout preference and pads the content by exactly that; production can never open, close or resize it (T3/T5 rule). |
 
 **Removed from V2:** the navigation toolbar (Feed context menu, Salvos, Fontes and the bottom search
@@ -314,6 +313,18 @@ field) and the U3 context bar. The context switcher survives as the header's sta
 working V2 flow that has no V1 equivalent yet; T6 replaces it with V1's filter/preset surfaces. The chip
 states the active context with the identifiers the U3 flow already used (`reader-contexts`,
 `reader-context-label`, `reader-context-clear`), so no flow was lost.
+
+**Ported and then removed — the clipboard banner.** `Views/ClipboardBanner.swift` was ported as
+`Feedback/ClipboardBanner.swift` and **removed** on 2026-10-16 (architect's decision: remove it, do not
+wire it). It never had a call site in V2 — nothing on screen ever built it — so it was a surface the
+reader could not reach and a `checkClipboard()`/Add/Dismiss flow no test could exercise. What stays, and
+was not touched, is the add-feed sheet's own paste: the reader's field and paste button
+(`Sources/FeedMineUI/Tools/ReaderAddFeedViews.swift:239` `add-feed-input`, `:248-253` `add-feed-paste`)
+over the closure the host injects (`:120-126`; `FeedMineApp/FeedMineApp/AppComposition.swift:1064-1068`)
+— the view never reads the pasteboard itself. The sheet is exercised end to end by
+`testAddFeedByLinkDiscoversAddsAndReadsIt`, which types the address; the paste **button** itself has no
+executed test, and that gap is recorded rather than claimed. The removal is recorded with its evidence in
+`docs/reviews/2026-10-16-superficies-honestas.md`.
 
 **One owner for each decision.** `FeedScreenStore` gained the shell's state and intents: `isSearching`,
 `searchQuery`, `toast`, `filterCount` (0 until T6), `bookmarkBoxActive` (false until T8),
