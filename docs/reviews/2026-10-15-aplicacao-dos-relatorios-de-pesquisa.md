@@ -116,18 +116,20 @@ Caminho: `main` → branch `integration/tx11-nn06-nn07-nn08-tx07-characterizatio
 |---|---|---|
 | árvore | `1f9042d4` (cinco merges, sem o relatório) | `swift build` 0 · `swift test` **1366 testes, 4 skipped, 0 falhas** · `git diff --check` vazio |
 | árvore com o relatório e a evidência (a que se publica) | `1b41d492`, tree `a0f7c8f21689c10b88d8fccf646bcf8715686ab6` | `git diff --check 801f017d..HEAD` **0** · `swift build` 0 · `swift test` **1366 testes, 1 skipped, 0 falhas** · 20 arquivos contra a BASE, **0** em `bench/` |
-| alvo do app, árvore integrada | `xcodebuild test … -only-testing:FeedMineAppTests/CompositionTests -only-testing:FeedMineUITests/FeedMineUITests/testTheWelcomeHeadlineIsDrawnWhereTheReaderReadsIt -only-testing:…/testFirstRunImportsOPMLWithoutMakingItAPrerequisite` sobre `/tmp/fm-integration` | `CompositionTests` **63/0**, as duas jornadas **2/0 em 41,6 s**, `** TEST SUCCEEDED **` — é o único artefato onde NN-06 e NN-08 coexistem em `FeedMineApp.swift`; log `integrated-tree-app-tests.log` (o seletor de `CompositionTests` é por **classe**: o caso novo do NN-06, em `BackgroundRefreshCapabilityTests`, não entra nessa conta) |
+| alvo do app, árvore integrada | `xcodebuild test … -only-testing:FeedMineAppTests/CompositionTests -only-testing:FeedMineUITests/FeedMineUITests/testTheWelcomeHeadlineIsDrawnWhereTheReaderReadsIt -only-testing:…/testFirstRunImportsOPMLWithoutMakingItAPrerequisite` sobre `/tmp/fm-integration` | `CompositionTests` **63/0**, as duas jornadas **2/0 em 41,6 s**, `** TEST SUCCEEDED **` — é o único artefato onde NN-06 e NN-08 coexistem em `FeedMineApp.swift`; log `integrated-tree-app-tests.log` (o seletor de `CompositionTests` é por **classe**: o caso novo do NN-06, em `BackgroundRefreshCapabilityTests`, não entra nessa conta, e foi medido à parte: **1/0**) |
+| árvore PUBLICADA (TX-07D + TX-05D + o commit documental) | `acf8d5f7`, tree `b00e869c` (worktree com paridade de corpus restaurada) | `swift build` 0 · `swift test` **1397 testes, 1 skipped, 0 falhas** · `All tests passed` — o `1 skipped` é o da `main`, então o número é comparável aos PASS já registrados; log `published-tree-final.log` |
 
 **Logs brutos desta rodada (persistidos no repo, nunca só em `/tmp`):**
 `docs/reviews/evidence/2026-10-15-aplicacao-dos-relatorios/` — `fm-int-test-final.log` e
 `fm-int-test-parity.log` (suíte do pacote na árvore integrada), `integrated-tree-app-tests.log`
 (`CompositionTests` + as duas jornadas de UI na árvore integrada), `nn07-base-control.log` (controle
 do NN-07 na BASE), `nn08-composition-and-onboarding-journey.log` (corrida do par no alvo do app) e
-`app-target-build-precondition-peer.log` (a precondição de build ausente num worktree novo).
+`app-target-build-precondition-peer.log` (a precondição de build ausente num worktree novo) e
+`published-tree-final.log` (a verificação final na árvore publicada, com paridade de corpus).
 
 **Transformação aplicada aos logs, declarada (o `git diff --check` do repo exige árvore sem espaço em
 branco no fim de linha, e os logs de `xcodebuild` têm muitos):** removido apenas espaço/tab no fim de
-cada linha; nenhum outro byte alterado. Quatro arquivos mudaram e dois não:
+cada linha; nenhum outro byte alterado. Cinco arquivos mudaram e dois não:
 
 | Arquivo | bytes | SHA-256 (normalizado) |
 |---|---|---|
@@ -137,10 +139,11 @@ cada linha; nenhum outro byte alterado. Quatro arquivos mudaram e dois não:
 | `nn08-composition-and-onboarding-journey.log` | 1671789 → 1671779 | `4ea9a1411fff51f55e72e07a7b7f0639f0c9c7b79c84d580cfec792a4f7a8dcf` → `af9fe2f4253009d2a346d8eb479f51b37396e7d6c69d37063d4ef0e2fea17159` |
 | `fm-int-test-final.log` | 397937 → 397937 | `b192c414ea06e6ebb4fa8c5dab00fa9dc26a945aa1e113456ddd58d60e26ee2b` (inalterado) |
 | `fm-int-test-parity.log` | 397937 → 397937 | `5a6e0fae2fba484a169fe4d3dbae892f423e1ac27d65817173499717356c8b3f` (inalterado) |
+| `published-tree-final.log` | 450712 → 450710 | `ec054a463d05dc3f7e5a50ef2e637ae1f616f3a69e9b5a9c076e012ad0c062c7` → `d0b0300398d0da25841119c67c5843e6f3b450adf08da39a25cca9355b5960c9` |
 
-Os dois últimos têm o mesmo tamanho por coincidência e **conteúdo diferente** (`cmp` diverge no byte 1):
-são duas corridas distintas da mesma suíte (uma antes e uma depois do commit do relatório), não uma
-cópia da outra.
+`fm-int-test-final.log` e `fm-int-test-parity.log` têm o mesmo tamanho por coincidência e **conteúdo
+diferente** (`cmp` diverge no byte 1): são duas corridas distintas da mesma suíte (uma antes e uma
+depois do commit do relatório), não uma cópia da outra.
 
 Paridade de corpus exigiu **dois** artefatos, não um: `bench/corpus/` (89 MB) **e**
 `FeedMineApp/FeedMineApp/Resources/catalog.sqlite` (118 MB). Sem o segundo,
@@ -301,8 +304,7 @@ integração, e o delta entre a árvore medida (`1b41d492`) e a publicada restri
 (UX23-A/B/E, expiração, execução negada, Background App Refresh desligado) exige aparelho físico e
 segue `NOT_RUN`. Nada neste lote a declara aprovada.
 
-**Fora deste lote:** TX-07D (verificado à parte, corrigido e publicado em `omp/tx07-temporal-evidence`,
-`f742b184`) e TX-05D, ainda não iniciado.
+**Fora deste lote, mas integrados depois:** TX-07D (reconciliado contra a `main` deste lote, aprovado e integrado em `d589741e`) e TX-05D (aprovado e integrado em `8faef1fa`) — ver o desfecho na seção 3.3.
 
 ## 5. Achados que ficam para a próxima rodada
 
