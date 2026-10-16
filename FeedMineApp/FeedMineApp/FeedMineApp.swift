@@ -190,6 +190,9 @@ struct FeedMineApp: App {
     /// by the app's own host — a presentation from behind a `fullScreenCover` is refused — so the gate steps aside
     /// for the file flow and comes back exactly as it was. This says the gate owes the reader that return.
     @State private var onboardingImportPending = false
+    /// The document the export sheet asked to share, and the platform surface that presents it. It is the
+    /// *sheet's* own presentation, anchored on the sheet (`exportSheet`), not the feed's: the reader asks for it
+    /// while the sheet is up, and a surface presented by a presenter that already has one up is deferred.
     @State private var sharedExport: SharedLink?
     /// T11: the onboarding gate and the curated feed's own hood.
     @State private var showsOnboarding = false
@@ -445,13 +448,6 @@ struct FeedMineApp: App {
                 .background(ReaderHost(page: readerPage, playback: composition.mediaState.isPlaying,
                     reader: { page, close in AnyView(readerBody(page, close: close)) },
                     onFinish: { finishReader() }))
-                .sheet(item: $sharedExport) { link in
-                    #if os(iOS)
-                    ActivityView(url: link.url, subject: link.subject)
-                    #else
-                    Text(verbatim: link.url.absoluteString).padding()
-                    #endif
-                }
                 // NN-08: the preview the first contact asked for is gone — confirmed or cancelled — and, if the
                 // reader came from the gate, the gate comes back.
                 .sheet(item: $importPreview, onDismiss: { resumeOnboardingAfterImport() }) { preview in
@@ -476,11 +472,7 @@ struct FeedMineApp: App {
                     Task { await readImportedFile(result) }
                 }
                 .sheet(item: $sharedLink) { link in
-                    #if os(iOS)
-                    ActivityView(url: link.url, subject: link.subject)
-                    #else
-                    Text(verbatim: link.url.absoluteString).padding()
-                    #endif
+                    shareSurface(link)
                 }
                 .alert(libraryPrompt?.title ?? "", isPresented: Binding(
                     get: { libraryPrompt != nil }, set: { if !$0 { libraryPrompt = nil } })) {
@@ -1125,6 +1117,28 @@ struct FeedMineApp: App {
                     }
                 }
         }
+        // The document's own share surface is presented by *this* sheet, not by the feed behind it.
+        // `Compartilhar` and `Salvar arquivo` are asked for while the sheet is up, and the platform defers a
+        // presentation requested by a presenter that already has one up: with this modifier on the feed's own
+        // view, the surface came up only **after** the export sheet was closed — measured 2026-10-16, 4 s
+        // later, with the reader's tap having produced nothing in the meantime
+        // (`docs/reviews/2026-10-16-superficies-honestas.md` §3, raw log `/tmp/sharecheck-ORCH-repro.log`).
+        // Anchored here it is the export sheet's own surface: it goes up over the document the reader asked to
+        // share, and leaving it gives the sheet back as it was — the reading point is not the platform's to
+        // move.
+        .sheet(item: $sharedExport) { link in
+            shareSurface(link)
+        }
+    }
+
+    /// The platform's own share surface for a document or a link this app produced: one adapter, presented by
+    /// whichever surface asked for it — the export sheet for the document it shows, the feed for a card's link.
+    @ViewBuilder private func shareSurface(_ link: SharedLink) -> some View {
+        #if os(iOS)
+        ActivityView(url: link.url, subject: link.subject)
+        #else
+        Text(verbatim: link.url.absoluteString).padding()
+        #endif
     }
 
     /// V1's "Add Feeds" sheet. The store (resolution, storage, collections) belongs to the composition; the
