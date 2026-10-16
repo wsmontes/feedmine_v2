@@ -28,11 +28,11 @@ final class CandidateProviderTests: XCTestCase {
     }
     @discardableResult
     private func insert(_ number: Int, source: SourceID, into store: ContentStore,
-        authored: Date? = nil, observed: Date? = nil, headline: String? = "", summary: String? = nil,
+        authored: Date? = nil, modified: Date? = nil, observed: Date? = nil, headline: String? = "", summary: String? = nil,
         language: String? = nil, provider: ProviderID? = nil) throws -> OriginRevision {
         let revision = OriginRevision(id: OriginRevisionID(), originRecordID: origin(number), externalVersionIdentity: nil,
             headline: headline, summary: summary, bodyText: "not a candidate field", authoredAt: authored,
-            modifiedAt: nil, observedAt: observed ?? time, language: language,
+            modifiedAt: modified, observedAt: observed ?? time, language: language,
             primaryLink: URL(string: "https://example.test/item")!, searchProjection: "not a candidate field", providerID: provider)
         try store.commitCanonicalChange(ContentStore.CanonicalChange(recordID: origin(number),
             externalObjectIdentity: ExternalIdentity(connectorKind: ConnectorKind(rawValue: "test"),
@@ -76,15 +76,256 @@ final class CandidateProviderTests: XCTestCase {
             let result = try provider.candidates(for: plan(.main), after: nil, examinedCapacity: 3)
             XCTAssertEqual(result.candidates, [
                 Candidate(originRecordID: origin(1), originRevisionID: v1.id, headline: nil, summary: "summary é",
-                    timestamp: CandidateTimestamp(value: authored, kind: .authored), language: "pt-BR", providerID: attribution, sourceIDs: [a], primaryLink: URL(string: "https://example.test/item")!),
+                    timestamp: CandidateTimestamp(value: authored, kind: .authored),
+                    temporal: CandidateTemporalEvidence(observedAt: observed, acceptedAuthoredAt: authored),
+                    language: "pt-BR", providerID: attribution, sourceIDs: [a], primaryLink: URL(string: "https://example.test/item")!),
                 Candidate(originRecordID: origin(2), originRevisionID: v2.id, headline: "", summary: "",
-                    timestamp: CandidateTimestamp(value: time, kind: .observed), language: nil, providerID: nil, sourceIDs: [b], primaryLink: URL(string: "https://example.test/item")!)])
+                    timestamp: CandidateTimestamp(value: time, kind: .observed),
+                    temporal: CandidateTemporalEvidence(observedAt: time),
+                    language: nil, providerID: nil, sourceIDs: [b], primaryLink: URL(string: "https://example.test/item")!)])
             XCTAssertEqual(result.examinedCount, 2)
             XCTAssertEqual(result.nextCursor, CandidateSupplyCursor(sortDate: time, originRecordID: origin(2)))
             XCTAssertTrue(result.exhausted)
             // This baseline uses context only; versions are not executed as policy.
             XCTAssertEqual(try provider.candidates(for: plan(.main, policy: UInt64.max), after: nil, examinedCapacity: 3), result)
         }
+    }
+
+    /// TX-07D: the candidate carries the temporal facts as distinct evidence reconstructed from canonical
+    /// supply. A declared publication date is never substituted by the observation, absence stays absence,
+    /// the accepted change instant stays a different fact from both, and an accepted instant that equals the
+    /// observation instant is reported as ambiguous instead of being called a declared date.
+    func testTemporalEvidenceKeepsDeclaredObservationAndAbsenceDistinct() throws {
+        try withProvider { store, provider in
+            let source = SourceID()
+            let declared = time.addingTimeInterval(-30 * 86_400)
+            let dated = try insert(1, source: source, into: store, authored: declared, observed: time)
+            let undated = try insert(2, source: source, into: store, observed: time)
+            let withChange = try insert(3, source: source, into: store, authored: declared,
+                modified: declared.addingTimeInterval(3600), observed: time)
+            // Exactly what a declaration ahead of the observation leaves behind once the original claim is
+            // gone, and what a genuine coincidence would look like: identical canonical bytes.
+            let coincident = try insert(4, source: source, into: store, authored: time, modified: time, observed: time)
+            let candidates = try provider.candidates(for: plan(.main), after: nil, examinedCapacity: 4).candidates
+            XCTAssertEqual(candidates.count, 4)
+            let byOrigin = Dictionary(uniqueKeysWithValues: candidates.map { ($0.originRecordID, $0) })
+            let datedEvidence = try XCTUnwrap(byOrigin[dated.originRecordID]?.temporal)
+            XCTAssertEqual(datedEvidence.publicationDate, .declared(declared))
+            XCTAssertEqual(datedEvidence.observedAt, time)
+            XCTAssertNil(datedEvidence.acceptedModifiedAt)
+            XCTAssertEqual(datedEvidence.modificationDate, .absent)
+            XCTAssertEqual(byOrigin[dated.originRecordID]?.timestamp, CandidateTimestamp(value: declared, kind: .authored))
+            let undatedEvidence = try XCTUnwrap(byOrigin[undated.originRecordID]?.temporal)
+            XCTAssertEqual(undatedEvidence.publicationDate, .absent)
+            XCTAssertNil(undatedEvidence.acceptedAuthoredAt)
+            XCTAssertEqual(undatedEvidence.observedAt, time)
+            XCTAssertEqual(byOrigin[undated.originRecordID]?.timestamp, CandidateTimestamp(value: time, kind: .observed))
+            // The observation is never promoted into the publication date, only into the ordering key the
+            // contract already documented (sort_date_basis == observedFallback).
+            XCTAssertNotEqual(undatedEvidence.publicationDate, .declared(time))
+            let changeEvidence = try XCTUnwrap(byOrigin[withChange.originRecordID]?.temporal)
+            XCTAssertEqual(changeEvidence.publicationDate, .declared(declared))
+            XCTAssertEqual(changeEvidence.acceptedModifiedAt, declared.addingTimeInterval(3600))
+            XCTAssertEqual(changeEvidence.modificationDate, .declared(declared.addingTimeInterval(3600)))
+            XCTAssertEqual(changeEvidence.inconsistencies, [])
+            let coincidentEvidence = try XCTUnwrap(byOrigin[coincident.originRecordID]?.temporal)
+            XCTAssertEqual(coincidentEvidence.acceptedAuthoredAt, time)
+            XCTAssertEqual(coincidentEvidence.publicationDate, .ambiguousAtObservation(time))
+            XCTAssertNotEqual(coincidentEvidence.publicationDate, .declared(time))
+            XCTAssertEqual(coincidentEvidence.modificationDate, .ambiguousAtObservation(time))
+            XCTAssertEqual(coincidentEvidence.inconsistencies, [])
+            // The conservative reading changes no fact and removes nothing: the accepted values, the
+            // ordering timestamp and the story itself are all exactly what canonical supply holds.
+            XCTAssertEqual(coincidentEvidence.observedAt, time)
+            XCTAssertEqual(byOrigin[coincident.originRecordID]?.timestamp, CandidateTimestamp(value: time, kind: .authored))
+            XCTAssertEqual(byOrigin[coincident.originRecordID]?.originRevisionID, coincident.id)
+        }
+    }
+
+    /// TX-07D: contextual temporal nature is a different dimension from date reliability, and a
+    /// representation never becomes a presumed category by default. Only `unknown` is representable, and
+    /// there is no category to reach for: age, subject, source and title are not evidence.
+    func testTemporalNatureStaysUnknownForEveryRepresentation() throws {
+        try withProvider { store, provider in
+            let source = SourceID()
+            try insert(1, source: source, into: store, authored: time.addingTimeInterval(-86_400))
+            try insert(2, source: source, into: store)
+            try insert(3, source: source, into: store, authored: time.addingTimeInterval(-5 * 365 * 86_400))
+            let candidates = try provider.candidates(for: plan(.main), after: nil, examinedCapacity: 3).candidates
+            XCTAssertEqual(candidates.count, 3)
+            XCTAssertEqual(Set(candidates.map(\.temporal.nature)), [.unknown])
+            // Three different date representations are present, and none of them is interpreted.
+            XCTAssertEqual(Set(candidates.map(\.temporal.publicationDate)).count, 3)
+            XCTAssertNil(StoryTemporalNature(rawValue: "timeSensitive"))
+            XCTAssertNil(StoryTemporalNature(rawValue: "durable"))
+            XCTAssertNil(StoryTemporalNature(rawValue: "news"))
+            XCTAssertEqual(StoryTemporalNature(rawValue: "unknown"), .unknown)
+        }
+    }
+
+    /// TX-07D: the evidence states only what the recorded facts themselves show. A declared change instant
+    /// that precedes the declared publication instant is an inconsistency; nothing is estimated.
+    func testTemporalEvidenceStatesOnlyInconsistenciesTheFactsThemselvesShow() throws {
+        try withProvider { store, provider in
+            let source = SourceID()
+            let publication = time.addingTimeInterval(-10 * 86_400)
+            let earlier = publication.addingTimeInterval(-3600)
+            try insert(1, source: source, into: store, authored: publication, modified: publication.addingTimeInterval(3600))
+            try insert(2, source: source, into: store, authored: publication, modified: earlier)
+            // A clamped authorship: the accepted publication instant is the observation's own, so the order
+            // it would imply is not evidence about the origin and must never fabricate an inconsistency.
+            try insert(3, source: source, into: store, authored: time, modified: time.addingTimeInterval(-3600), observed: time)
+            let candidates = try provider.candidates(for: plan(.main), after: nil, examinedCapacity: 3).candidates
+            let byOrigin = Dictionary(uniqueKeysWithValues: candidates.map { ($0.originRecordID, $0) })
+            XCTAssertEqual(byOrigin[origin(1)]?.temporal.inconsistencies, [])
+            XCTAssertEqual(byOrigin[origin(2)]?.temporal.inconsistencies,
+                [.modificationBeforePublication(publication: publication, modification: earlier)])
+            XCTAssertEqual(byOrigin[origin(2)]?.temporal.acceptedModifiedAt, earlier)
+            XCTAssertEqual(byOrigin[origin(2)]?.temporal.publicationDate, .declared(publication))
+            XCTAssertEqual(byOrigin[origin(1)]?.temporal.publicationDate, byOrigin[origin(2)]?.temporal.publicationDate)
+            XCTAssertEqual(byOrigin[origin(3)]?.temporal.publicationDate, .ambiguousAtObservation(time))
+            XCTAssertEqual(byOrigin[origin(3)]?.temporal.modificationDate, .declared(time.addingTimeInterval(-3600)))
+            XCTAssertEqual(byOrigin[origin(3)]?.temporal.inconsistencies, [])
+        }
+    }
+
+    /// TX-07D: a caller that states only a timestamp states the narrowest fact it has, and the
+    /// reconstruction never contradicts that timestamp's own kind — and never turns the single instant it
+    /// was given into a declared publication date, because with no separate observation instant a declared
+    /// value equal to that instant is indistinguishable from one the observation had to accept as itself.
+    func testTimestampOnlyConstructionReconstructsTheNarrowestTemporalEvidence() {
+        let authored = Candidate(originRecordID: origin(1), originRevisionID: OriginRevisionID(), headline: "H",
+            summary: "S", timestamp: CandidateTimestamp(value: time, kind: .authored), language: nil, providerID: nil)
+        XCTAssertEqual(authored.temporal.acceptedAuthoredAt, time)
+        XCTAssertEqual(authored.temporal.observedAt, time)
+        XCTAssertEqual(authored.temporal.publicationDate, .ambiguousAtObservation(time))
+        XCTAssertNotEqual(authored.temporal.publicationDate, .declared(time))
+        XCTAssertEqual(authored.temporal.modificationDate, .absent)
+        XCTAssertTrue(authored.temporal.inconsistencies.isEmpty)
+        let observed = Candidate(originRecordID: origin(2), originRevisionID: OriginRevisionID(), headline: "H",
+            summary: "S", timestamp: CandidateTimestamp(value: time, kind: .observed), language: nil, providerID: nil)
+        XCTAssertEqual(observed.temporal.publicationDate, .absent)
+        XCTAssertNil(observed.temporal.acceptedAuthoredAt)
+        XCTAssertEqual(observed.temporal.observedAt, time)
+        XCTAssertEqual(observed.temporal.modificationDate, .absent)
+        XCTAssertTrue(observed.temporal.inconsistencies.isEmpty)
+        XCTAssertEqual(observed.temporal.nature, .unknown)
+        // Stated evidence is never second-guessed: a caller that says the declaration is older than the
+        // observation gets `.declared`, whether it comes from a store or from a fixture.
+        let stated = Candidate(originRecordID: origin(3), originRevisionID: OriginRevisionID(), headline: "H",
+            summary: "S", timestamp: CandidateTimestamp(value: time.addingTimeInterval(-86_400), kind: .authored),
+            temporal: CandidateTemporalEvidence(observedAt: time,
+                acceptedAuthoredAt: time.addingTimeInterval(-86_400)), language: nil, providerID: nil)
+        XCTAssertEqual(stated.temporal.publicationDate, .declared(time.addingTimeInterval(-86_400)))
+    }
+
+    /// TX-07D (architect's acceptance condition): a declaration ahead of the observation is accepted as the
+    /// observation instant and the original declaration is transient — it does not survive persistence. So
+    /// after a real admission and a reopen, a future-declared story is never presented as a publication date
+    /// that is provably current: the contract states the ambiguity, keeps the story in the offer, and leaves
+    /// the canonical value and the ordering key exactly as they were written.
+    func testFutureDeclarationAdmittedThenReopenedIsAmbiguousAndNeverDatedToday() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let location = RuntimeDatabaseLocation(directory: root)
+        let sourceID = SourceID(), targetID = AcquisitionTargetID()
+        let observation = Date(timeIntervalSince1970: 1_700_000_000)
+        let claimed = Date(timeIntervalSince1970: 4_102_444_800) // 2100-01-01T00:00:00Z
+        let object = ExternalIdentity(connectorKind: .syndication, namespace: "tx07d", value: "future", role: .object)
+        do {
+            let db = try RuntimeDatabase(location: location)
+            _ = try AcquisitionTargetStore(database: db).register(id: targetID, connectorKind: .syndication,
+                authorizedSources: [sourceID])
+            let receipt = try AcquisitionAdmissionStore(database: db).admit(.init(targetID: targetID,
+                targetGeneration: 1, expectedCheckpointRevision: 0, observations: [
+                    .init(objectIdentity: object, versionIdentity: nil, precedence: .makeCurrent,
+                        availability: .available, headline: "Declared 2100", summary: "Summary", bodyText: nil,
+                        authoredAt: observation, modifiedAt: nil, observedAt: observation, language: "en",
+                        primaryLink: nil, searchProjection: nil, providerID: nil,
+                        memberships: [.init(sourceID: sourceID, kind: .direct)], mediaCandidates: [],
+                        declaredAuthoredAt: claimed)
+                ], nextCheckpoint: nil))
+            XCTAssertTrue(receipt.rejectedObservations.isEmpty)
+            // Canonical supply holds the accepted value and nothing else: the claim is already gone.
+            let written = ContentStore(database: db)
+            let revisionID = try XCTUnwrap(written.candidateWindow(sourceID: nil, after: nil,
+                examinedCapacity: 1).records.first?.originRevisionID)
+            let stored = try XCTUnwrap(written.originRevision(id: revisionID))
+            XCTAssertEqual(stored.authoredAt, observation)
+            XCTAssertNotEqual(stored.authoredAt, claimed)
+        }
+        let reopened = try RuntimeDatabase(location: location)
+        let store = ContentStore(database: reopened)
+        let record = try XCTUnwrap(store.candidateWindow(sourceID: nil, after: nil, examinedCapacity: 1).records.first)
+        XCTAssertEqual(record.authoredAt, observation)
+        XCTAssertEqual(record.observedAt, observation)
+        XCTAssertEqual(record.sortDate, observation)
+        XCTAssertEqual(record.sortDateBasis, .authored)
+        let candidate = try XCTUnwrap(CandidateProvider(contentStore: store)
+            .candidates(for: plan(.main), after: nil, examinedCapacity: 1).candidates.first)
+        XCTAssertEqual(candidate.temporal.publicationDate, .ambiguousAtObservation(observation))
+        XCTAssertNotEqual(candidate.temporal.publicationDate, .declared(observation))
+        XCTAssertNotEqual(candidate.temporal.publicationDate, .declared(claimed))
+        // Conservative classification is not removal: same story, same identity, same canonical value.
+        XCTAssertEqual(candidate.headline, "Declared 2100")
+        XCTAssertEqual(candidate.originRevisionID, record.originRevisionID)
+        XCTAssertEqual(candidate.timestamp, CandidateTimestamp(value: observation, kind: .authored))
+        XCTAssertEqual(candidate.temporal.observedAt, observation)
+        XCTAssertEqual(candidate.temporal.modificationDate, .absent)
+        XCTAssertTrue(candidate.temporal.inconsistencies.isEmpty)
+        XCTAssertEqual(candidate.temporal.nature, .unknown)
+    }
+
+    /// TX-07D: a material edit is a new revision and adds no fabricated publication date. The ordering key
+    /// stays the declared publication instant, so an edit alone never manufactures novelty, and the
+    /// evidence keeps stating what was observed about *that* revision. The observation a candidate states
+    /// is `origin_revisions.observed_at` — the revision's own, written once by `ContentStore.insertRevision`
+    /// and never rewritten (immutable revisions) — not `origin_records.last_observed_at`, which is the
+    /// record's separate clock and moves on every admission.
+    func testMaterialEditKeepsTheDeclaredPublicationDateAndManufacturesNoNovelty() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let db = try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))
+        let content = ContentStore(database: db), provider = CandidateProvider(contentStore: content)
+        let sourceID = SourceID(), originID = origin(700)
+        let object = ExternalIdentity(connectorKind: .syndication, namespace: "tx07d", value: "story", role: .object)
+        let declared = time.addingTimeInterval(-30 * 86_400)
+        func revision(_ body: String, observed: Date) -> OriginRevision {
+            OriginRevision(id: OriginRevisionID(), originRecordID: originID, externalVersionIdentity: nil,
+                headline: "Story", summary: "Summary", bodyText: body, authoredAt: declared, modifiedAt: nil,
+                observedAt: observed, language: "en", primaryLink: nil, searchProjection: nil, providerID: nil)
+        }
+        // The revision carries its own observation and the record its own clock, exactly as
+        // AcquisitionAdmissionStore stamps a newly admitted revision: both receive the admission instant.
+        func admit(_ value: OriginRevision, expected: ContentStore.CurrentRevisionExpectation) throws {
+            try content.commitCanonicalChange(.init(recordID: originID, externalObjectIdentity: object,
+                revision: value, mediaCandidates: [], availability: .available, observedAt: value.observedAt,
+                expectedCurrent: expected, currentUpdate: .useSuppliedRevision,
+                membershipMutations: [.upsert(sourceID: sourceID, kind: .direct, observedAt: value.observedAt)],
+                fingerprintGeneration: 2, bodySourceElement: "content"))
+        }
+        let first = revision("Original body", observed: time)
+        try admit(first, expected: .none)
+        let feedPlan = try plan(.main)
+        let before = try XCTUnwrap(provider.candidates(for: feedPlan, after: nil, examinedCapacity: 1).candidates.first)
+        XCTAssertEqual(before.originRevisionID, first.id)
+        XCTAssertEqual(before.temporal.publicationDate, .declared(declared))
+        XCTAssertEqual(before.temporal.observedAt, time)
+        let edit = revision("Substantially revised body", observed: time.addingTimeInterval(3600))
+        try admit(edit, expected: .revision(first.id))
+        let after = try XCTUnwrap(provider.candidates(for: feedPlan, after: nil, examinedCapacity: 1).candidates.first)
+        XCTAssertEqual(after.originRevisionID, edit.id)
+        XCTAssertNotEqual(after.originRevisionID, before.originRevisionID)
+        XCTAssertEqual(after.temporal.publicationDate, .declared(declared))
+        XCTAssertEqual(after.timestamp, before.timestamp)
+        XCTAssertEqual(after.temporal.observedAt, time.addingTimeInterval(3600))
+        XCTAssertNotEqual(after.temporal.observedAt, before.temporal.observedAt)
+        XCTAssertNil(after.temporal.acceptedModifiedAt)
+        // Both canonical facts, stated by their own owner: the record's clock followed the admission, and
+        // the revision's observation (the one the candidate reports) is the one that revision was stamped with.
+        XCTAssertEqual(try content.originRecord(id: originID)?.lastObservedAt, time.addingTimeInterval(3600))
+        XCTAssertEqual(try content.currentRevision(originRecordID: originID)?.observedAt, time.addingTimeInterval(3600))
+        XCTAssertEqual(try content.currentRevision(originRecordID: originID), edit)
     }
 
     func testSourceFilteringPreservesExaminedCountAndRelativeOrder() throws {
