@@ -9,7 +9,7 @@ ou dos hashes congelados. Este arquivo está **não commitado** em `main`.
 |Item|Valor|
 |---|---|
 |Data/hora|2026-10-14, 14:20–16:41 (hora local, UTC-07:00)|
-|Repo|`/Users/wagnermontes/Documents/GitHub/feedmine_v2`|
+|Repo|`/Users/<user>/Documents/GitHub/feedmine_v2`|
 |`main` no início / no fim|`efefd1930b8566151e3cf17483a9fbcf5d9bcf24` → `72af6f1e4d4cd1e0d61717358f343083fbe874b0`|
 |Toolchain|Xcode 26.6 (17F113)|
 |Simulador de benchmark|`FeedMine Bench (16DA3DB5-C9E0-4190-AF2F-AFAADC7EB7AE)` — o dispositivo dedicado; nenhum run toca o simulador compartilhado|
@@ -47,7 +47,7 @@ e35d61c4ef84fdf909203ab0364d2e568d363190d99b0ab143715a8e8e0f123f  corpus/media.p
 Comandos executados (integração **somente** com as três branches aprovadas — sem K-14, sem K-10, sem K-15):
 
 ```
-cd /Users/wagnermontes/Documents/GitHub/feedmine_v2
+cd /Users/<user>/Documents/GitHub/feedmine_v2
 git fetch origin
 git switch -c integration/r3-r4-d2 efefd193
 git merge --no-ff origin/chatgpt/r3-preserve-consumption-runway -m "Merge origin/chatgpt/r3-preserve-consumption-runway"
@@ -262,9 +262,9 @@ após `simctl boot` explícito, a repetição mediu exit 0 e 48/0. A falha era d
 
 ```
 == Devices Offline ==
-Wagner's Apple Watch (10.6.2) (00008006-0010749A3E00C02E)
-iPhone (129) (26.5.2) (00008120-000260903ED1A01E)
-iPhone (18.6.2) (00008110-00067D861486201E)
+Wagner's Apple Watch (10.6.2) (<physical-device-udid>)
+iPhone (129) (26.5.2) (<physical-device-udid>)
+iPhone (18.6.2) (<physical-device-udid>)
 ```
 
 Os dois iPhones estão **Offline** → **B06 = NOT_RUN**, sem waiver de simulador. `scripts/b06-evidence.sh`

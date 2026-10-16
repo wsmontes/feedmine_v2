@@ -86,7 +86,7 @@ ruins durante a carga; eles não foram transformados em aprovação de desempenh
 
 ## Tentativa física e erros que NÃO contam como prova
 
-iPhone 14 Plus, iOS 18.6.2, UDID `00008110-00067D861486201E`: build e instalação do runner ocorreram, mas a
+iPhone 14 Plus, iOS 18.6.2, UDID `<physical-device-udid>`: build e instalação do runner ocorreram, mas a
 ativação de automação expirou. Jornadas UI físicas **NOT_RUN** nesta tentativa. A ferramenta relatou Developer Mode
 ativo, pareamento por cabo e `passcodeRequired=false`. Nenhuma permissão foi alterada. Isso não demonstra que
 screenshots pelo XCTest sejam impossíveis; demonstra este bloqueio de inicialização.

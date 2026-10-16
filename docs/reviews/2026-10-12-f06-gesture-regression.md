@@ -36,7 +36,7 @@ A revisão de integração encontrou outra guarda duplicada em `FeedAssociation.
 
 ## Medição exportada do fluxo completo
 
-Bateria 14:55: 3/3 UI. Anexo `fast-fling-native-state`: janela inicial17, final25; deferredWindows45; activeWrites0; activeWindows0; activeLayoutSteps0; activeLayoutStep0; uma compensação em repouso, medida, visualResidual0. Resultados e anexos preservados em `/Users/wagnermontes/Desktop/feedmine-f06-gesture-fix-20261012/`.
+Bateria 14:55: 3/3 UI. Anexo `fast-fling-native-state`: janela inicial17, final25; deferredWindows45; activeWrites0; activeWindows0; activeLayoutSteps0; activeLayoutStep0; uma compensação em repouso, medida, visualResidual0. Resultados e anexos preservados em `/Users/<user>/Desktop/feedmine-f06-gesture-fix-20261012/`.
 
 Bateria seguinte: app83/83; UI11/11 (três rolagens, sugestões em catálogo real e sete leituras). Nas sugestões: responder/desfazer/esconder 132,083328 ->132,083328 pt. A leitura de card retido é alteração posterior e recebe bateria nova; esses números anteriores não são usados como validação desse novo ramo.
 

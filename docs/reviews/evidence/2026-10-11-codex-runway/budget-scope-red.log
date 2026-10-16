@@ -10,7 +10,7 @@ Test Suite 'Selected tests' started at 2026-10-11 00:50:52.027.
 Test Suite 'FeedMinePackageTests.xctest' started at 2026-10-11 00:50:52.028.
 Test Suite 'ReaderDiscoveryPoolTests' started at 2026-10-11 00:50:52.028.
 Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testDeactivationDuringMediaBudgetCreationDoesNotAdvanceDiscovery]' started.
-/Users/wagnermontes/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:268: error: -[FeedMineCompositionTests.ReaderDiscoveryPoolTests testDeactivationDuringMediaBudgetCreationDoesNotAdvanceDiscovery] : XCTAssertTrue failed - An opportunity revoked during budget creation cannot discover a page
+/Users/<user>/Documents/GitHub/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:268: error: -[FeedMineCompositionTests.ReaderDiscoveryPoolTests testDeactivationDuringMediaBudgetCreationDoesNotAdvanceDiscovery] : XCTAssertTrue failed - An opportunity revoked during budget creation cannot discover a page
 Test Case '-[FeedMineCompositionTests.ReaderDiscoveryPoolTests testDeactivationDuringMediaBudgetCreationDoesNotAdvanceDiscovery]' failed (0.276 seconds).
 Test Suite 'ReaderDiscoveryPoolTests' failed at 2026-10-11 00:50:52.304.
 	 Executed 1 test, with 1 failure (0 unexpected) in 0.276 (0.276) seconds

@@ -1,6 +1,6 @@
 benchmark launch: exact transport origin configured for UI target app
 Command line invocation:
-    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test-without-building -destination "platform=iOS Simulator,id=16DA3DB5-C9E0-4190-AF2F-AFAADC7EB7AE" -derivedDataPath /Users/wagnermontes/Documents/GitHub/feedmine_v2/bench/run/20261013T235704Z/derived "-only-testing:FeedMineUITests/DiscoveryBenchmarkTests/testB01DiscoveryWithoutASubscription" -xctestrun /Users/wagnermontes/Documents/GitHub/feedmine_v2/bench/run/20261013T235704Z/derived/Build/Products/FeedMine_iphonesimulator26.5-arm64.xctestrun
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test-without-building -destination "platform=iOS Simulator,id=16DA3DB5-C9E0-4190-AF2F-AFAADC7EB7AE" -derivedDataPath /Users/<user>/Documents/GitHub/feedmine_v2/bench/run/20261013T235704Z/derived "-only-testing:FeedMineUITests/DiscoveryBenchmarkTests/testB01DiscoveryWithoutASubscription" -xctestrun /Users/<user>/Documents/GitHub/feedmine_v2/bench/run/20261013T235704Z/derived/Build/Products/FeedMine_iphonesimulator26.5-arm64.xctestrun
 
 2026-10-13 17:02:16.710 xcodebuild[3613:53102797] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
 2026-10-13 17:02:16.714 xcodebuild[3613:53102797] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.

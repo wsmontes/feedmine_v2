@@ -34,9 +34,9 @@ read-only à API da Apple. Nada aqui afirma que esses arquivos estejam preservad
 | Candidata publicada | `1.0 (48)`, archive pareado com `03d05f5f4bfff9ec0ce6c3be3f4a78ef5073c38f` |
 | Árvore | worktree exclusiva `/tmp/fm-int48-verify`, branch `release/1.0-build.48` |
 | Código sob teste | `03d05f5f` (a mesma revisão do archive; estes relatórios são commits posteriores) |
-| Aparelho | iPhone 14 Plus, iOS 18.6.2, UDID `00008110-00067D861486201E`, `devicectl` id `BBA4F656-…` |
+| Aparelho | iPhone 14 Plus, iOS 18.6.2, UDID `<physical-device-udid>`, `devicectl` id `BBA4F656-…` |
 | Bundle exercitado | `com.feedmine.development` (Debug). **`com.feedmine.app` nunca foi tocado**: nem instalação, nem lançamento, nem término, nem desinstalação |
-| Ferramenta | Xcode 26.6, `xcodebuild test` com `-destination 'id=00008110-00067D861486201E'` |
+| Ferramenta | Xcode 26.6, `xcodebuild test` com `-destination 'id=<physical-device-udid>'` |
 
 Catálogo da corrida de mídia: o fixture local de duas fontes com PNG magenta 16:9 (o mesmo do simulador), porque o
 teste exige um bitmap conhecido. Isto **não** mede download de fotos da internet — essa metade está na §5.
@@ -45,12 +45,12 @@ teste exige um bitmap conhecido. Isto **não** mede download de fotos da interne
 
 ```sh
 xcodebuild test -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine \
-  -destination 'id=00008110-00067D861486201E' -derivedDataPath /tmp/fm-int48-dd -allowProvisioningUpdates \
+  -destination 'id=<physical-device-udid>' -derivedDataPath /tmp/fm-int48-dd -allowProvisioningUpdates \
   -only-testing:FeedMineUITests/CardImageJourneyUITests \
   -only-testing:FeedMineUITests/FluidityJourneyUITests
 ```
 
-Saída bruta (`docs/reviews/evidence/2026-10-16-rodada-48/int48-physical-authorized.log`, sha256 `03fd1799f7d269ba9ac441812fa94bc0c4f58e276c47c313c8531b0c2bac37be`):
+Saída bruta (`docs/reviews/evidence/2026-10-16-rodada-48/int48-physical-authorized.log`, sha256 `03fd1799f7d269ba9ac441812fa94bc0c4f58e276c47c313c8531b0c2bac37be` **dos bytes publicados antes da redação de identificadores** — o hash dos bytes da ponta atual e o registro por arquivo estão em `docs/reviews/evidence/REDACTION.md`):
 
 ```
 CardImageJourneyUITests: Executed 2 tests, with 0 failures (0 unexpected)

@@ -105,7 +105,7 @@ lifetimes. **Exclusions have no expiry.** Timestamps and pending-expiry status a
 
 - **The plan's T6 requirement of explicit apply/cancel is wrong.** V1's `FilterSheetView` has no Cancel: it
   hydrates a local draft on appear and commits the dirty parts on `onDisappear`, so dismissing the sheet applies
-  (`/Users/wagnermontes/Documents/GitHub/feedmine/feedmine/Views/FilterSheetView.swift:220-297`, with
+  (`/Users/<user>/Documents/GitHub/feedmine/feedmine/Views/FilterSheetView.swift:220-297`, with
   `presetIsDirty`/`overlayFiltersAreDirty` tracked separately). The transfer keeps **dismiss-applies**; the V2
   API therefore needs `ReaderFilterStore.apply(_ draft:)` for the *coordinator* but no Cancel affordance, and
   the plan's "apply/cancel/reset" test row becomes apply/dismiss-applies/reset.

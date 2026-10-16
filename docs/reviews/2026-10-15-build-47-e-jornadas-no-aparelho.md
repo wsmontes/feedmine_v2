@@ -8,7 +8,7 @@ onde algo não foi executado, o texto diz `NOT_RUN` e a razão.
 
 | Item | Valor |
 |---|---|
-| Repositório | `/Users/wagnermontes/Documents/GitHub/feedmine_v2` |
+| Repositório | `/Users/<user>/Documents/GitHub/feedmine_v2` |
 | `main` ao fim da rodada | `3b020a15` (árvore limpa, igual a `origin/main`) |
 | Base da build 47 | `f7c505d6` (branch `release/1.0-build.47`) |
 | Aparelho físico | iPhone 14 Plus, `xcrun devicectl` id `BBA4F656-A5EA-5D81-934E-E484ED71B8E2` |

@@ -1,6 +1,6 @@
 benchmark launch: exact transport origin configured for UI target app
 Command line invocation:
-    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test-without-building -destination "platform=iOS Simulator,id=16DA3DB5-C9E0-4190-AF2F-AFAADC7EB7AE" -derivedDataPath /Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/bench/run/20261014T002900Z/derived "-only-testing:FeedMineUITests/DiscoveryBenchmarkTests/testB01DiscoveryWithoutASubscription" -xctestrun /Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/bench/run/20261014T002900Z/derived/Build/Products/FeedMine_iphonesimulator26.5-arm64.xctestrun
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test-without-building -destination "platform=iOS Simulator,id=16DA3DB5-C9E0-4190-AF2F-AFAADC7EB7AE" -derivedDataPath /Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/bench/run/20261014T002900Z/derived "-only-testing:FeedMineUITests/DiscoveryBenchmarkTests/testB01DiscoveryWithoutASubscription" -xctestrun /Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/bench/run/20261014T002900Z/derived/Build/Products/FeedMine_iphonesimulator26.5-arm64.xctestrun
 
 2026-10-13 17:30:29.501 xcodebuild[9845:53163572] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
 2026-10-13 17:30:29.524 xcodebuild[9845:53163572] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
@@ -749,7 +749,7 @@ Test Suite 'Selected tests' passed at 2026-10-13 17:34:15.698.
 2026-10-13 17:34:16.098 xcodebuild[9845:53163572] [MT] IDETestOperationsObserverDebug: 224.860 sec, +224.860 sec -- end
 
 Test session results, code coverage, and logs:
-	/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/bench/run/20261014T002900Z/derived/Logs/Test/Test-FeedMine-2026.10.13_17-30-29--0700.xcresult
+	/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/bench/run/20261014T002900Z/derived/Logs/Test/Test-FeedMine-2026.10.13_17-30-29--0700.xcresult
 
 ** TEST EXECUTE SUCCEEDED **
 

@@ -1,7 +1,7 @@
 # Medições óbvias ancoradas na jornada — e as constantes mágicas que podem ser apagadas
 
 **Data:** 2026-10-15. **Revisor:** agente `ObviousBench` (tarefa delegada pelo ORCH). **Números:** `arquivo:linha`
-do repositório `/Users/wagnermontes/Documents/GitHub/feedmine_v2` **naquela data** — a régua congelada muda por
+do repositório `/Users/<user>/Documents/GitHub/feedmine_v2` **naquela data** — a régua congelada muda por
 protocolo, e uma linha citada aqui pode não ser a mesma linha amanhã.
 
 **Natureza:** revisão de leitura. Nada foi executado além de leitura de arquivos e `shasum -a 256 -c`

@@ -2845,7 +2845,7 @@ que faltava.
 O que faltava era o **registro de pareamento para desenvolvimento**, e ele tem verbo próprio:
 
 ```
-$ xcrun devicectl manage pair --device 00008110-00067D861486201E
+$ xcrun devicectl manage pair --device <physical-device-udid>
 Paired with device:
 Name     Hostname                  Identifier                             State                 Model
 iPhone   iPhone.coredevice.local   BBA4F656-A5EA-5D81-934E-E484ED71B8E2   available (paired)    iPhone14,8
@@ -2888,7 +2888,7 @@ que o *próprio build* gerou:
 codesign -d --entitlements :- "$APP" > /tmp/ent.plist      # antes de mutar — get-task-allow e application-identifier vêm daqui
 cp bench/device/catalog.sqlite "$APP/catalog.sqlite"        # a injeção do avaliador
 plutil -replace NSAppTransportSecurity -json '{"NSAllowsArbitraryLoads":true}' "$APP/Info.plist"
-codesign --force --sign "Apple Development: wmontes@gmail.com (BU5227WFYX)" --entitlements /tmp/ent.plist "$APP"
+codesign --force --sign "Apple Development: <redacted-email> (BU5227WFYX)" --entitlements /tmp/ent.plist "$APP"
 ```
 
 Herança do `codesign` sem `--entitlements` **não** serve: sem `application-identifier` e `get-task-allow` o perfil deixa
@@ -2917,7 +2917,7 @@ Depois de parear (§66) e de corrigir a assinatura (§67), a cadeia inteira exec
 ```
 xcrun devicectl device install app   → installationURL: …/FeedMine.app/
 xcrun devicectl device process launch → Launched application with com.feedmine.development bundle identifier
-xcodebuild test -destination "platform=iOS,id=00008110-00067D861486201E" \
+xcodebuild test -destination "platform=iOS,id=<physical-device-udid>" \
   -only-testing:FeedMineUITests/FeedMineUITests/testFirstRunCollectsLanguagesAndPlacesAndEntersTheFeed
   → Test Case '…testFirstRunCollectsLanguagesAndPlacesAndEntersTheFeed' passed (39.131 seconds)
   → ** TEST SUCCEEDED **
@@ -3202,11 +3202,11 @@ O protocolo (linha 98) é explícito sobre o que o B06 exige, e eu tinha mapeado
 
 |peça|estado|
 |---|---|
-|`xctrace` vendo o aparelho|**sim**: `iPhone (18.6.2) (00008110-00067D861486201E)` na seção `== Devices ==`|
+|`xctrace` vendo o aparelho|**sim**: `iPhone (18.6.2) (<physical-device-udid>)` na seção `== Devices ==`|
 |template para RSS/CPU/memória|**Activity Monitor**|
 |template para frame hitches|**Animation Hitches**|
 |template para energia|**Power Profiler**|
-|o segundo aparelho que o B06 exige|`iPhone (129)` **iOS 26.5.2**, hoje **offline** (`00008120-000260903ED1A01E`)|
+|o segundo aparelho que o B06 exige|`iPhone (129)` **iOS 26.5.2**, hoje **offline** (`<physical-device-udid>`)|
 |o caminho de aparelho do runner|**provado hoje** (pareamento, injeção, re-assinatura, instalação, execução, banco de volta, oráculo)|
 
 Uma correção de método que vale registrar: numa primeira sondagem eu concluí que o `xctrace` **não** via o iPhone, e a

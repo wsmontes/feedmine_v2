@@ -22,7 +22,7 @@ no dry-run.
 
 ```sh
 python3 scripts/bootstrap_catalog.py \
-  --compiler /Users/wagnermontes/Documents/GitHub/feedmine/scripts/build_catalog.py \
+  --compiler /Users/<user>/Documents/GitHub/feedmine/scripts/build_catalog.py \
   --compiler-sha256 e3c9fcf21ee30ab7dfc282def733ba4838337bb83c95d4d234b2e8a3e9a48df5 \
   --identity-sha256 2a83b83356d757ab49cb22e6bd75dafd78888754b27f5e4bf32fab0d2f6ee578
 cp build/catalog-bootstrap/{catalog.sqlite,catalog.manifest.json} FeedMineApp/FeedMineApp/Resources/

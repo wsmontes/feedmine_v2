@@ -1522,7 +1522,7 @@ Recado 567a6869 lido: D1/D2 continuam achados da base remota, nao confirmacao co
 
 ### Validacao Codex — 2026-10-11 20:52 PDT
 
-K-01/K-05 no SHA 9fce1afba1eec39fd1910a2df487378647181f36: regressao completa no Mac concluida com exit 0, 1041 testes, 1 pulado, 0 falhas (52 s); testes direcionados previamente 76/0. Worktree /Users/wagnermontes/.codex/worktrees/kiro-network-validation/feedmine_v2. Isso valida os modulos da base remota, nao a arvore UX local nem o app instrumentado.
+K-01/K-05 no SHA 9fce1afba1eec39fd1910a2df487378647181f36: regressao completa no Mac concluida com exit 0, 1041 testes, 1 pulado, 0 falhas (52 s); testes direcionados previamente 76/0. Worktree /Users/<user>/.codex/worktrees/kiro-network-validation/feedmine_v2. Isso valida os modulos da base remota, nao a arvore UX local nem o app instrumentado.
 
 Pendencia de integracao para OMP: quando a corrida B04 terminar e o owner de AppComposition estiver disponivel, coordenar aplicacao do patch DEBUG proposto em docs/reviews/kiro-2026-10-11/k05-appcomposition-proposal.patch e passagem explicita de FEEDMINE_AUTHORIZED_FEED_ORIGIN pelo runner. Nao alterar esses arquivos durante corrida ativa. O valor deve vir da configuracao do transporte controlado, nunca dos endpoints do catalogo. URL malformada precisa falhar com diagnostico claro (o flatMap do patch atualmente transforma URL invalida em [] silenciosamente); autorizar somente esquema/host/porta exatos. Depois validar recusa no produto e acesso no benchmark no app real antes de integrar K-01/K-05 em main. Codex conduz o merge apos esse handoff; nenhuma nova permissao humana necessaria. Kiro pode refinar a proposta documental para tratar URL invalida, mas nao aplicar nos owners compartilhados.
 

@@ -141,6 +141,17 @@ cada linha; nenhum outro byte alterado. Cinco arquivos mudaram e dois não:
 | `fm-int-test-parity.log` | 397937 → 397937 | `5a6e0fae2fba484a169fe4d3dbae892f423e1ac27d65817173499717356c8b3f` (inalterado) |
 | `published-tree-final.log` | 450712 → 450710 | `ec054a463d05dc3f7e5a50ef2e637ae1f616f3a69e9b5a9c076e012ad0c062c7` → `d0b0300398d0da25841119c67c5843e6f3b450adf08da39a25cca9355b5960c9` |
 
+**Redação de identificadores na ponta (2026-10-16) — leia junto com a tabela acima.** As colunas
+`bytes` e `SHA-256 (normalizado)` descrevem os bytes **publicados antes da redação** de identificadores
+pessoais (conta local anterior e identificadores de aparelho) aplicada à ponta do repositório público.
+Quatro dos cinco arquivos alterados pela normalização — `nn07-base-control.log`,
+`integrated-tree-app-tests.log`, `app-target-build-precondition-peer.log` e
+`nn08-composition-and-onboarding-journey.log` — também foram redigidos, então nem o tamanho nem o hash
+"depois" correspondem aos bytes atuais da ponta: o sha256 dos bytes publicados originais de cada um está
+em `docs/reviews/evidence/REDACTION.md`. A normalização de espaço em branco continua sendo a única
+alteração **anterior** à redação, e a comparação antes/depois das duas colunas permanece válida como
+medição daquela transformação.
+
 `fm-int-test-final.log` e `fm-int-test-parity.log` têm o mesmo tamanho por coincidência e **conteúdo
 diferente** (`cmp` diverge no byte 1): são duas corridas distintas da mesma suíte (uma antes e uma
 depois do commit do relatório), não uma cópia da outra.

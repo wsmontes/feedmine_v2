@@ -4675,7 +4675,7 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/verif-int-derived/Build/Interme
     export ALLOW_TARGET_PLATFORM_SPECIALIZATION\=NO
     export ALTERNATE_GROUP\=staff
     export ALTERNATE_MODE\=u+w,go-w,a+rX
-    export ALTERNATE_OWNER\=wagnermontes
+    export ALTERNATE_OWNER\=<user>
     export ALTERNATIVE_DISTRIBUTION_WEB\=NO
     export ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES\=NO
     export ALWAYS_SEARCH_USER_PATHS\=YES
@@ -4885,7 +4885,7 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/verif-int-derived/Build/Interme
     export HEADERMAP_USES_FRAMEWORK_PREFIX_ENTRIES\=YES
     export HEADERMAP_USES_VFS\=NO
     export HEADER_SEARCH_PATHS\=/tmp/verif-int-derived/Build/Products/Debug-iphonesimulator/include\
-    export HOME\=/Users/wagnermontes
+    export HOME\=/Users/<user>
     export HOST_ARCH\=arm64
     export HOST_PLATFORM\=macosx
     export ICONV\=/usr/bin/iconv
@@ -4906,7 +4906,7 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/verif-int-derived/Build/Interme
     export INSTALL_DIR\=/tmp/FeedMineApp.dst/Applications
     export INSTALL_GROUP\=staff
     export INSTALL_MODE_FLAG\=u+w,go-w,a+rX
-    export INSTALL_OWNER\=wagnermontes
+    export INSTALL_OWNER\=<user>
     export INSTALL_PATH\=/Applications
     export INSTALL_ROOT\=/tmp/FeedMineApp.dst
     export IPHONEOS_DEPLOYMENT_TARGET\=18.0
@@ -4993,7 +4993,7 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/verif-int-derived/Build/Interme
     export OTHER_SWIFT_FLAGS\=-Xcc\ -fmodule-map-file\=/tmp/verif-int-derived/SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap\
     export PACKAGE_TYPE\=com.apple.package-type.wrapper.application
     export PASCAL_STRINGS\=YES
-    export PATH\=/Applications/Xcode.app/Contents/SharedFrameworks/SwiftBuild.framework/Versions/A/PlugIns/SWBBuildService.bundle/Contents/PlugIns/SWBUniversalPlatformPlugin.bundle/Contents/Frameworks/SWBUniversalPlatform.framework/Resources:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/local/bin:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/libexec:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/usr/bin:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/usr/local/bin:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/bin:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/local/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:/Applications/Xcode.app/Contents/Developer/usr/local/bin:/Users/wagnermontes/.antigravity/antigravity/bin:/Users/wagnermontes/.local/bin:/opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/pmk/env/global/bin:/Library/Apple/usr/bin:/Users/wagnermontes/.lmstudio/bin
+    export PATH\=/Applications/Xcode.app/Contents/SharedFrameworks/SwiftBuild.framework/Versions/A/PlugIns/SWBBuildService.bundle/Contents/PlugIns/SWBUniversalPlatformPlugin.bundle/Contents/Frameworks/SWBUniversalPlatform.framework/Resources:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/local/bin:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/libexec:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/usr/bin:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/usr/local/bin:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/bin:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/local/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:/Applications/Xcode.app/Contents/Developer/usr/local/bin:/Users/<user>/.antigravity/antigravity/bin:/Users/<user>/.local/bin:/opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/pmk/env/global/bin:/Library/Apple/usr/bin:/Users/<user>/.lmstudio/bin
     export PATH_PREFIXES_EXCLUDED_FROM_HEADER_DEPENDENCIES\=/usr/include\ /usr/local/include\ /System/Library/Frameworks\ /System/Library/PrivateFrameworks\ /Applications/Xcode.app/Contents/Developer/Headers\ /Applications/Xcode.app/Contents/Developer/SDKs\ /Applications/Xcode.app/Contents/Developer/Platforms
     export PBDEVELOPMENTPLIST_PATH\=FeedMine.app/pbdevelopment.plist
     export PER_ARCH_MODULE_FILE_DIR\=/tmp/verif-int-derived/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphonesimulator/FeedMine.build/Objects-normal/undefined_arch
@@ -5179,9 +5179,9 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/verif-int-derived/Build/Interme
     export UNLOCALIZED_RESOURCES_FOLDER_PATH_SHALLOW_BUNDLE_NO\=FeedMine.app/Resources
     export UNLOCALIZED_RESOURCES_FOLDER_PATH_SHALLOW_BUNDLE_YES\=FeedMine.app
     export UNSTRIPPED_PRODUCT\=NO
-    export USER\=wagnermontes
-    export USER_APPS_DIR\=/Users/wagnermontes/Applications
-    export USER_LIBRARY_DIR\=/Users/wagnermontes/Library
+    export USER\=<user>
+    export USER_APPS_DIR\=/Users/<user>/Applications
+    export USER_LIBRARY_DIR\=/Users/<user>/Library
     export USE_DYNAMIC_NO_PIC\=YES
     export USE_HEADERMAP\=YES
     export USE_HEADER_SYMLINKS\=NO
@@ -5190,7 +5190,7 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/verif-int-derived/Build/Interme
     export VALID_ARCHS\=arm64\ x86_64
     export VERBOSE_PBXCP\=NO
     export VERSIONPLIST_PATH\=FeedMine.app/version.plist
-    export VERSION_INFO_BUILDER\=wagnermontes
+    export VERSION_INFO_BUILDER\=<user>
     export VERSION_INFO_FILE\=FeedMine_vers.c
     export VERSION_INFO_STRING\=\"@\(\#\)PROGRAM:FeedMine\ \ PROJECT:FeedMineApp-\"
     export WORKSPACE_DIR\=/tmp/fm-integration/FeedMineApp/FeedMineApp.xcodeproj

@@ -64,7 +64,7 @@ pelos resultados acima. Capturas e séries estão no `.xcresult` indicado pelo l
 
 ## Aparelho físico: tentativa e bloqueio observado
 
-O iPhone 14 Plus, iOS 18.6.2, UDID `00008110-00067D861486201E`, foi reconhecido, pareado por cabo e com Developer
+O iPhone 14 Plus, iOS 18.6.2, UDID `<physical-device-udid>`, foi reconhecido, pareado por cabo e com Developer
 Mode ativo. `xcodebuild test` das duas classes de jornada, na candidata `ec9016aa`, instalou o runner, mas encerrou:
 
 ```

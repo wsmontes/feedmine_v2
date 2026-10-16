@@ -9,8 +9,8 @@ memory of "how V1 looked". It is not a visual approval of the current V2 build.
 
 | Role | Path | Revision | Working tree |
 | --- | --- | --- | --- |
-| V1 source (read-only reference) | `/Users/wagnermontes/Documents/GitHub/feedmine` | `712a6ba93c6a8ab28c3b3c0e2b2777d1e3341d0c` | **dirty** — see below |
-| V2 destination | `/Users/wagnermontes/Documents/GitHub/feedmine_v2` | `372f4c5cb6df5110e25f49b74f65a34ea507d5a6` | clean at T1 start; T1 adds only docs |
+| V1 source (read-only reference) | `/Users/<user>/Documents/GitHub/feedmine` | `712a6ba93c6a8ab28c3b3c0e2b2777d1e3341d0c` | **dirty** — see below |
+| V2 destination | `/Users/<user>/Documents/GitHub/feedmine_v2` | `372f4c5cb6df5110e25f49b74f65a34ea507d5a6` | clean at T1 start; T1 adds only docs |
 
 V1 local modifications present during T1 (recorded, not reverted, never modified):
 
@@ -25,7 +25,7 @@ V1 local modifications present during T1 (recorded, not reverted, never modified
 Commands used to establish this:
 
 ```sh
-cd /Users/wagnermontes/Documents/GitHub/feedmine && git rev-parse HEAD && git status --porcelain
+cd /Users/<user>/Documents/GitHub/feedmine && git rev-parse HEAD && git status --porcelain
 git diff --stat -- feedmine/Views feedmine/Models feedmine/Services
 git diff -- feedmine/Views/FeedScreen.swift     # comment-only, verified
 ```

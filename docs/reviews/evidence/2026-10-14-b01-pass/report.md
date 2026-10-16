@@ -2,7 +2,7 @@
 
 - device: FeedMine Bench (16DA3DB5-C9E0-4190-AF2F-AFAADC7EB7AE, dedicated to the benchmark) (simulator) · transport: 127.0.0.1:8757 · corpus: bench/corpus · commit: 326bb45cb28befa95b60992416adee9208d4aac5 · dirty files: 0
 - corpus: {"behaviour_classes": {"intermittent": 265, "normal": 1622, "slow": 287, "timeout": 131}, "canonical_articles_shared": 270, "cross_publisher_duplicate_pairs": 270, "distinct_headlines": 15917, "eligible_items": {"A": 6885, "B": 8112}, "eligible_sources": {"A": 942, "B": 1123}, "empty_documents": 75, "item_topics": {"brazil-news": 6146, "other": 814, "photography": 14, "science": 1550, "technology": 4754, "world-news": 2639}, "items": 15917, "material_revision_items": 75, "media_kinds": {"audio": 2949, "image": 4785, "none": 3204, "video": 4979}, "protocols": {"atom": 587, "jsonfeed": 433, "rss": 1285}, "slow_media_sources": 231, "source_topics": {"brazil-news": 845, "other": 215, "photography": 2, "science": 215, "technology": 659, "world-news": 369}, "sources": 2305}
-- database: /Users/wagnermontes/Documents/GitHub/feedmine_v2/bench/run/20261014T071443Z/container/Library/Application Support/FeedMine/D10E0653-6464-4606-8816-B9095E0CCFD0/runtime.sqlite
+- database: /Users/<user>/Documents/GitHub/feedmine_v2/bench/run/20261014T071443Z/container/Library/Application Support/FeedMine/D10E0653-6464-4606-8816-B9095E0CCFD0/runtime.sqlite
 
 ## B01 — PASS
 

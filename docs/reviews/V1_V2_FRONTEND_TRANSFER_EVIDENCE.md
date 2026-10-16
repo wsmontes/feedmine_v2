@@ -8,8 +8,8 @@ says "not executed" was not run, and nothing here claims otherwise. Work package
 `docs/superpowers/plans/2026-10-09-transferencia-frontend-v1-v2.md`; the narrative is in
 `docs/v1-study/PORT_LOG.md`, the per-control inventory in `docs/v1-study/UI_TRANSFER_MATRIX.md`.
 
-- Repository: `/Users/wagnermontes/Documents/GitHub/feedmine_v2`
-- V1 reference: `/Users/wagnermontes/Documents/GitHub/feedmine@712a6ba9` (read-only throughout)
+- Repository: `/Users/<user>/Documents/GitHub/feedmine_v2`
+- V1 reference: `/Users/<user>/Documents/GitHub/feedmine@712a6ba9` (read-only throughout)
 - Package suite: `swift test` → **1017 tests, 0 failures**, exit 0 (final regression)
 - `git diff --check` → exit 0, no output
 - iOS build: `xcodebuild -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine -destination

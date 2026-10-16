@@ -8,7 +8,7 @@ seguro ainda não é possível.
 
 |Arquivo|Linha|Trecho|
 |---|---|---|
-|`/Users/wagnermontes/.omp/agent/AGENTS.md`|457|"- Nunca commite ou faça push sem pedido explícito do usuário." (seção *Preferências de trabalho*)|
+|`/Users/<user>/.omp/agent/AGENTS.md`|457|"- Nunca commite ou faça push sem pedido explícito do usuário." (seção *Preferências de trabalho*)|
 |`docs/superpowers/handoffs/PARALLEL_SESSION_HANDOFF.md`|35-36|"4. Commit per task with the message the plan gives that task. Never `git push`. Never `git stash` or `git checkout -- .` on a tree you did not verify: the other session may have uncommitted work."|
 
 A segunda linha é o protocolo do próprio repositório para duas sessões na mesma árvore: ele permite commits

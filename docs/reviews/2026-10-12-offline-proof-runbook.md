@@ -15,7 +15,7 @@ tela do aparelho não é dirigida daqui. O teste está escrito e compilado; falt
 **guardado**, e ele é semeado pelo diagnóstico da leitura, que roda com rede:
 
 ```bash
-cd /Users/wagnermontes/Documents/GitHub/feedmine_v2
+cd /Users/<user>/Documents/GitHub/feedmine_v2
 xcodebuild test -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine \
   -destination "platform=iOS,id=BBA4F656-A5EA-5D81-934E-E484ED71B8E2" \
   -derivedDataPath /tmp/fm-product-derived \
@@ -38,7 +38,7 @@ falta de conteúdo, não por falta de rede.
      de origem correto.
 
 ```bash
-cd /Users/wagnermontes/Documents/GitHub/feedmine_v2
+cd /Users/<user>/Documents/GitHub/feedmine_v2
 xcodebuild test -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine \
   -destination "platform=iOS,id=BBA4F656-A5EA-5D81-934E-E484ED71B8E2" \
   -derivedDataPath /tmp/fm-product-derived \

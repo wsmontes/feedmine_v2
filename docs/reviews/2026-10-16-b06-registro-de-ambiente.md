@@ -16,7 +16,7 @@ Onde a interface não expõe o dado, está `NOT_MEASURED` com a razão — nunca
 | Estado de boot | `booted` | idem |
 | Developer Mode | `enabled` | idem |
 | DDI | `ddiServicesAvailable: true` | idem |
-| UDID (hardware) | `00008110-00067D861486201E` | idem |
+| UDID (hardware) | `<physical-device-udid>` | idem |
 | id do `devicectl` | `BBA4F656-A5EA-5D81-934E-E484ED71B8E2` | idem |
 | macOS | 26.3.1 (25D2128) | `sw_vers` (medido nesta máquina) |
 | Xcode | 26.6 (17F113), `xctrace` 16.0 | `xcodebuild -version` / `xcrun xctrace version` |
@@ -81,9 +81,9 @@ comando foi inventado.
 
 ```sh
 # 1) ensaio curto (infraestrutura; NÃO é evidência de gate)
-bash scripts/b06-evidence.sh --udid 00008110-00067D861486201E --host 192.168.1.76:8757 --validate
+bash scripts/b06-evidence.sh --udid <physical-device-udid> --host 192.168.1.76:8757 --validate
 # 2) corrida de certificação (só após o preflight fechar)
-bash scripts/b06-evidence.sh --udid 00008110-00067D861486201E --host 192.168.1.76:8757
+bash scripts/b06-evidence.sh --udid <physical-device-udid> --host 192.168.1.76:8757
 ```
 
 O instrumento **nunca emite PASS**: ele entrega `CERTIFICATION EVIDENCE — NOT PASS` /
@@ -92,7 +92,7 @@ avaliador para produzir verde.
 
 ## 8. Resultado (executado em 2026-10-16)
 
-**Ensaio curto — EXECUTADO.** `bash scripts/b06-evidence.sh --udid 00008110-00067D861486201E --host 192.168.1.76:8757 --validate`
+**Ensaio curto — EXECUTADO.** `bash scripts/b06-evidence.sh --udid <physical-device-udid> --host 192.168.1.76:8757 --validate`
 Pacote: `bench/run/20261016T184556Z/b06` (29 MB de artefatos por instrumento). Veredito do instrumento:
 `INCOMPLETE` / `SCHEMA VALIDATION ONLY — NOT GATE EVIDENCE`, como projetado.
 

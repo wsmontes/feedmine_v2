@@ -52,7 +52,7 @@ through a Composition coordinator (`SourceManagementCoordinator`), never as GRDB
 ## 3. Rules that already cost time in this repository
 
 - **Read-only, and never the V1 database.** `LegacyCatalogReader` opens a *copy*; do not open
-  `/Users/wagnermontes/Documents/GitHub/feedmine`'s base with the V2 migrator (plan constraint).
+  `/Users/<user>/Documents/GitHub/feedmine`'s base with the V2 migrator (plan constraint).
 - **Identity**: v1 `sourceID` is a truncated 32-bit hash; V2 uses UUIDs derived by
   `LegacyCatalogImport.stableUUID`. New queries must return the same derived identities, not the catalog integers.
 - **No full catalogue enumeration on the main thread**: page by parent/cursor and keep the queries indexed

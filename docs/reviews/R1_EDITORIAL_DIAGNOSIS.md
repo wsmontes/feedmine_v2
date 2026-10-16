@@ -6,11 +6,11 @@ against a real simulator run. Nothing here is inferred from reading code alone.
 
 | | |
 |---|---|
-| V2 base | `/Users/wagnermontes/Documents/GitHub/feedmine_v2` |
+| V2 base | `/Users/<user>/Documents/GitHub/feedmine_v2` |
 | V2 branch | `main` |
 | V2 HEAD | `c2474c2caf54efb13583137d4467651ca79faefc` |
 | `origin/main` | `372f4c5cb6df5110e25f49b74f65a34ea507d5a6` |
-| V1 base | `/Users/wagnermontes/Documents/GitHub/feedmine`, branch `fix/release-1.0-final-hardening`, HEAD `712a6ba9` |
+| V1 base | `/Users/<user>/Documents/GitHub/feedmine`, branch `fix/release-1.0-final-hardening`, HEAD `712a6ba9` |
 | TestFlight build visible to testers | **26** (`ios/1.0-build.26-372f4c5`, = `origin/main`) |
 | Executed evidence | `swift test --filter FeedMineEditorialTests` → 43 tests, 0 failures; `swift test --filter SourceDiversityContractTests` → 2 tests, 6 failures (RED, §H) |
 

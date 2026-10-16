@@ -16,7 +16,7 @@ whose row says `incompleto` has no destination yet and blocks a parity claim.
 | Column | Meaning |
 | --- | --- |
 | `surface` | The user-facing surface (screen region, sheet, modal). |
-| `v1Path` | File in `/Users/wagnermontes/Documents/GitHub/feedmine` (relative to `feedmine/`). |
+| `v1Path` | File in `/Users/<user>/Documents/GitHub/feedmine` (relative to `feedmine/`). |
 | `v1Symbol` | Type/function/property that renders or executes it, with the line range observed. |
 | `v1Revision` | `712a6ba` unless the V1 working tree differs at that file (see `V1_UI_REFERENCE.md`). |
 | `actions` | Every reachable action with its trigger, execute symbol and the service it touches. |

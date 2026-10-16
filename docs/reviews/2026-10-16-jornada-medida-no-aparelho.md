@@ -142,7 +142,7 @@ REFUSED: --out /tmp/fm-refusal-out-44528 já existe e não está vazio: use um d
 $ echo $?
 2
 $ ls -la /tmp/fm-refusal-out-44528     # o diretório do usuário ficou intocado
--rw-r--r--  1 wagnermontes wheel  29 Oct 16 06:55 console.log
+-rw-r--r--  1 <user> wheel  29 Oct 16 06:55 console.log
 ```
 
 E, por leitura do script inteiro (não por amostragem): `OWNER_BUNDLE` só aparece em 44 (a definição), 170 e 182 (as

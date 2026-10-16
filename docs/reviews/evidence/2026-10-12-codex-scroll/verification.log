@@ -74,8 +74,8 @@ Test Case '-[FeedMineUITests.EditorialOfferBudgetUITests testTheOfferBudgetHolds
 ** TEST SUCCEEDED **
 
 ## codex-scroll-negative.log
-/Users/wagnermontes/Documents/GitHub/feedmine_v2/FeedMineApp/FeedMineAppTests/ArticleReadingDiagnosisUITests.swift:347: error: -[FeedMineUITests.ArticleReadingDiagnosisUITests testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped] : XCTAssertLessThan failed: ("157.333333") is not less than ("1.0") - a correção remove o deslocamento de layout
-/Users/wagnermontes/Documents/GitHub/feedmine_v2/FeedMineApp/FeedMineAppTests/ArticleReadingDiagnosisUITests.swift:350: error: -[FeedMineUITests.ArticleReadingDiagnosisUITests testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped] : XCTAssertGreaterThan failed: ("0") is not greater than ("0") - a mesma carta deve ser medida depois de uma correção ligada à mutação real da janela
+/Users/<user>/Documents/GitHub/feedmine_v2/FeedMineApp/FeedMineAppTests/ArticleReadingDiagnosisUITests.swift:347: error: -[FeedMineUITests.ArticleReadingDiagnosisUITests testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped] : XCTAssertLessThan failed: ("157.333333") is not less than ("1.0") - a correção remove o deslocamento de layout
+/Users/<user>/Documents/GitHub/feedmine_v2/FeedMineApp/FeedMineAppTests/ArticleReadingDiagnosisUITests.swift:350: error: -[FeedMineUITests.ArticleReadingDiagnosisUITests testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped] : XCTAssertGreaterThan failed: ("0") is not greater than ("0") - a mesma carta deve ser medida depois de uma correção ligada à mutação real da janela
 Test Case '-[FeedMineUITests.ArticleReadingDiagnosisUITests testWindowUpdateDoesNotShiftAStableVisibleCardWhileStopped]' failed (91.000 seconds).
 
 ## codex-release-build.log

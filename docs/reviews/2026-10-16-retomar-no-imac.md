@@ -62,7 +62,7 @@ O instrumento **exige o aparelho livre de qualquer processo FeedMine**, e os doi
 **Só o bundle de desenvolvimento** (`96462AC0…`) é de agente; o de produção (`C78B92AD…`) só o dono encerra.
 
 ```sh
-bash scripts/b06-evidence.sh --udid 00008110-00067D861486201E --host 192.168.1.76:8757
+bash scripts/b06-evidence.sh --udid <physical-device-udid> --host 192.168.1.76:8757
 ```
 Declarar no relatório, por escrito: (i) **energia `NOT_MEASURED`** — o template `Energy Log` não existe nesta
 instalação (26 templates *Standard*; os *instrumentos* de energia existem); (ii) **hitches 0 linhas por dois métodos

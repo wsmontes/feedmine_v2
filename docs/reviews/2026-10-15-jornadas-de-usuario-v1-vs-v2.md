@@ -9,8 +9,8 @@ jornada** (um teste que abre o app e observa o resultado visível).
 
 | Item | Valor |
 |---|---|
-| Repositório V2 | `/Users/wagnermontes/Documents/GitHub/feedmine_v2`, `HEAD = 2cb61bbba94d7dc0854fcc1316d79602cf78cc72` (branch `main`), **árvore limpa** no momento da leitura |
-| Repositório V1 | `/Users/wagnermontes/Documents/GitHub/feedmine`, `HEAD = 712a6ba93c6a8ab28c3b3c0e2b2777d1e3341d0c`, branch `fix/release-1.0-final-hardening`, **árvore suja com 27 arquivos** (a condição que `docs/reviews/V1_UI_REFERENCE.md:6-11` já registra). Nenhum dos arquivos citados neste relatório está entre os sujos: as citações do V1 são documentos em `docs/` e dois arquivos de teste em `feedmineUITests/` |
+| Repositório V2 | `/Users/<user>/Documents/GitHub/feedmine_v2`, `HEAD = 2cb61bbba94d7dc0854fcc1316d79602cf78cc72` (branch `main`), **árvore limpa** no momento da leitura |
+| Repositório V1 | `/Users/<user>/Documents/GitHub/feedmine`, `HEAD = 712a6ba93c6a8ab28c3b3c0e2b2777d1e3341d0c`, branch `fix/release-1.0-final-hardening`, **árvore suja com 27 arquivos** (a condição que `docs/reviews/V1_UI_REFERENCE.md:6-11` já registra). Nenhum dos arquivos citados neste relatório está entre os sujos: as citações do V1 são documentos em `docs/` e dois arquivos de teste em `feedmineUITests/` |
 | Comandos | só leitura: `read`, `grep`, `glob`, `git rev-parse`/`git status` (2 execuções). **Nenhum build, nenhum teste, nenhuma instalação** — por instrução da tarefa |
 | Identidade | `git rev-parse HEAD` nos dois repositórios (acima). Os números de linha deste relatório valem para essas duas revisões e para as árvores sujas descritas |
 | Corpus | os benchmarks `B01`–`B05` citados foram executados em `bench/run/20261011T*` e estão registrados em `docs/evidence/ACCEPTANCE_RECORD.md`; **este relatório não executou nenhum deles** |
@@ -21,7 +21,7 @@ Convenção: toda afirmação tem `arquivo:linha`; citações são **verbatim** 
 
 ### 1.1 A doutrina do produto — declarada pelo dono como critério de aceitação
 
-`/Users/wagnermontes/Documents/GitHub/feedmine/docs/release/1.0-checklist.md:3114`:
+`/Users/<user>/Documents/GitHub/feedmine/docs/release/1.0-checklist.md:3114`:
 
 > **Product doctrine (user, verbatim intent) — this is the acceptance criterion, not a suggestion**
 

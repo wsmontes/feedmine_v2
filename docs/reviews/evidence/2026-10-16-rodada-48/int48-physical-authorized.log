@@ -1,5 +1,5 @@
 Command line invocation:
-    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine -destination id=00008110-00067D861486201E -derivedDataPath /tmp/fm-int48-dd -allowProvisioningUpdates "-only-testing:FeedMineUITests/CardImageJourneyUITests" "-only-testing:FeedMineUITests/FluidityJourneyUITests"
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine -destination id=<physical-device-udid> -derivedDataPath /tmp/fm-int48-dd -allowProvisioningUpdates "-only-testing:FeedMineUITests/CardImageJourneyUITests" "-only-testing:FeedMineUITests/FluidityJourneyUITests"
 
 Resolve Package Graph
 
@@ -1572,9 +1572,9 @@ ProcessProductPackaging "" /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMine
     
     builtin-productPackagingUtility -entitlements -format xml -o /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMine.build/FeedMine.app.xcent
 
-ProcessProductPackaging /Users/wagnermontes/Library/Developer/Xcode/UserData/Provisioning\ Profiles/2abf3e99-ffec-47fa-9696-a67bcbd9c7f6.mobileprovision /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/embedded.mobileprovision (in target 'FeedMine' from project 'FeedMineApp')
+ProcessProductPackaging /Users/<user>/Library/Developer/Xcode/UserData/Provisioning\ Profiles/<profile-uuid>.mobileprovision /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/embedded.mobileprovision (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
-    builtin-productPackagingUtility /Users/wagnermontes/Library/Developer/Xcode/UserData/Provisioning\ Profiles/2abf3e99-ffec-47fa-9696-a67bcbd9c7f6.mobileprovision -o /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/embedded.mobileprovision
+    builtin-productPackagingUtility /Users/<user>/Library/Developer/Xcode/UserData/Provisioning\ Profiles/<profile-uuid>.mobileprovision -o /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/embedded.mobileprovision
 
 ProcessProductPackagingDER /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMine.build/FeedMine.app.xcent /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMine.build/FeedMine.app.xcent.der (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
@@ -1701,71 +1701,71 @@ CompileXCStrings /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/libXCTestSwiftSupport.dylib (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/libXCTestSwiftSupport.dylib
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/libXCTestSwiftSupport.dylib
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/libXCTestSwiftSupport.dylib: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/libXCTestBundleInject.dylib (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/libXCTestBundleInject.dylib
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/libXCTestBundleInject.dylib
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/libXCTestBundleInject.dylib: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCUnit.framework (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCUnit.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCUnit.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCUnit.framework: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCUIAutomation.framework (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCUIAutomation.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCUIAutomation.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCUIAutomation.framework: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTestSupport.framework (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTestSupport.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTestSupport.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTestSupport.framework: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTestCore.framework (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTestCore.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTestCore.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTestCore.framework: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTest.framework (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTest.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTest.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTest.framework: replacing existing signature
 
 CopyStringsFile /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/pt-BR.lproj/Localizable.strings /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMine.build/pt-BR.lproj/Localizable.strings (in target 'FeedMine' from project 'FeedMineApp')
@@ -1781,21 +1781,21 @@ CopyStringsFile /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/en.l
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTAutomationSupport.framework (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTAutomationSupport.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTAutomationSupport.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/XCTAutomationSupport.framework: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/Testing.framework (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/Testing.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/Testing.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks/Testing.framework: replacing existing signature
 
 SwiftCompile normal arm64 Compiling\ FeedMineApp.swift /tmp/fm-int48-verify/FeedMineApp/FeedMineApp/FeedMineApp.swift (in target 'FeedMine' from project 'FeedMineApp')
@@ -1963,7 +1963,7 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/fm-int48-dd/Build/Intermediates
     export ALLOW_TARGET_PLATFORM_SPECIALIZATION\=NO
     export ALTERNATE_GROUP\=staff
     export ALTERNATE_MODE\=u+w,go-w,a+rX
-    export ALTERNATE_OWNER\=wagnermontes
+    export ALTERNATE_OWNER\=<user>
     export ALTERNATIVE_DISTRIBUTION_WEB\=NO
     export ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES\=NO
     export ALWAYS_SEARCH_USER_PATHS\=YES
@@ -2140,9 +2140,9 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/fm-int48-dd/Build/Intermediates
     export EXECUTABLE_FOLDER_PATH_SHALLOW_BUNDLE_YES\=FeedMine.app
     export EXECUTABLE_NAME\=FeedMine
     export EXECUTABLE_PATH\=FeedMine.app/FeedMine
-    export EXPANDED_CODE_SIGN_IDENTITY\=D4D057537849FAB4B1A2AA99B962C9DCE07600ED
-    export EXPANDED_CODE_SIGN_IDENTITY_NAME\=Apple\ Development:\ wmontes@gmail.com\ \(BU5227WFYX\)
-    export EXPANDED_PROVISIONING_PROFILE\=2abf3e99-ffec-47fa-9696-a67bcbd9c7f6
+    export EXPANDED_CODE_SIGN_IDENTITY\=<cert-fingerprint>
+    export EXPANDED_CODE_SIGN_IDENTITY_NAME\=Apple\ Development:\ <redacted-email>\ \(BU5227WFYX\)
+    export EXPANDED_PROVISIONING_PROFILE\=<profile-uuid>
     export EXTENSIONS_FOLDER_PATH\=FeedMine.app/Extensions
     export FILE_LIST\=/tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMine.build/Objects/LinkFileList
     export FIXED_FILES_DIR\=/tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMine.build/FixedFiles
@@ -2180,7 +2180,7 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/fm-int48-dd/Build/Intermediates
     export HEADERMAP_USES_FRAMEWORK_PREFIX_ENTRIES\=YES
     export HEADERMAP_USES_VFS\=NO
     export HEADER_SEARCH_PATHS\=/tmp/fm-int48-dd/Build/Products/Debug-iphoneos/include\ 
-    export HOME\=/Users/wagnermontes
+    export HOME\=/Users/<user>
     export HOST_ARCH\=arm64
     export HOST_PLATFORM\=macosx
     export ICONV\=/usr/bin/iconv
@@ -2201,7 +2201,7 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/fm-int48-dd/Build/Intermediates
     export INSTALL_DIR\=/tmp/FeedMineApp.dst/Applications
     export INSTALL_GROUP\=staff
     export INSTALL_MODE_FLAG\=u+w,go-w,a+rX
-    export INSTALL_OWNER\=wagnermontes
+    export INSTALL_OWNER\=<user>
     export INSTALL_PATH\=/Applications
     export INSTALL_ROOT\=/tmp/FeedMineApp.dst
     export IPHONEOS_DEPLOYMENT_TARGET\=18.0
@@ -2289,7 +2289,7 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/fm-int48-dd/Build/Intermediates
     export OTHER_SWIFT_FLAGS\=-Xcc\ -fmodule-map-file\=/tmp/fm-int48-dd/SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap\ 
     export PACKAGE_TYPE\=com.apple.package-type.wrapper.application
     export PASCAL_STRINGS\=YES
-    export PATH\=/Applications/Xcode.app/Contents/SharedFrameworks/SwiftBuild.framework/Versions/A/PlugIns/SWBBuildService.bundle/Contents/PlugIns/SWBUniversalPlatformPlugin.bundle/Contents/Frameworks/SWBUniversalPlatform.framework/Resources:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/local/bin:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/libexec:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/usr/bin:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/usr/local/bin:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/local/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:/Applications/Xcode.app/Contents/Developer/usr/local/bin:/Users/wagnermontes/.antigravity/antigravity/bin:/Users/wagnermontes/.local/bin:/opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/pmk/env/global/bin:/Library/Apple/usr/bin:/Users/wagnermontes/.lmstudio/bin
+    export PATH\=/Applications/Xcode.app/Contents/SharedFrameworks/SwiftBuild.framework/Versions/A/PlugIns/SWBBuildService.bundle/Contents/PlugIns/SWBUniversalPlatformPlugin.bundle/Contents/Frameworks/SWBUniversalPlatform.framework/Resources:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/local/bin:/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/libexec:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/usr/bin:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/usr/local/bin:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin:/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/local/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:/Applications/Xcode.app/Contents/Developer/usr/local/bin:/Users/<user>/.antigravity/antigravity/bin:/Users/<user>/.local/bin:/opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/pmk/env/global/bin:/Library/Apple/usr/bin:/Users/<user>/.lmstudio/bin
     export PATH_PREFIXES_EXCLUDED_FROM_HEADER_DEPENDENCIES\=/usr/include\ /usr/local/include\ /System/Library/Frameworks\ /System/Library/PrivateFrameworks\ /Applications/Xcode.app/Contents/Developer/Headers\ /Applications/Xcode.app/Contents/Developer/SDKs\ /Applications/Xcode.app/Contents/Developer/Platforms
     export PBDEVELOPMENTPLIST_PATH\=FeedMine.app/pbdevelopment.plist
     export PER_ARCH_MODULE_FILE_DIR\=/tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMine.build/Objects-normal/undefined_arch
@@ -2454,7 +2454,7 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/fm-int48-dd/Build/Intermediates
     export TARGETED_DEVICE_FAMILY\=1,2
     export TARGETNAME\=FeedMine
     export TARGET_BUILD_DIR\=/tmp/fm-int48-dd/Build/Products/Debug-iphoneos
-    export TARGET_DEVICE_IDENTIFIER\=00008110-00067D861486201E
+    export TARGET_DEVICE_IDENTIFIER\=<physical-device-udid>
     export TARGET_DEVICE_MODEL\=iPhone14,8
     export TARGET_DEVICE_OS_VERSION\=18.6.2
     export TARGET_DEVICE_PLATFORM_NAME\=iphoneos
@@ -2478,9 +2478,9 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/fm-int48-dd/Build/Intermediates
     export UNLOCALIZED_RESOURCES_FOLDER_PATH_SHALLOW_BUNDLE_NO\=FeedMine.app/Resources
     export UNLOCALIZED_RESOURCES_FOLDER_PATH_SHALLOW_BUNDLE_YES\=FeedMine.app
     export UNSTRIPPED_PRODUCT\=NO
-    export USER\=wagnermontes
-    export USER_APPS_DIR\=/Users/wagnermontes/Applications
-    export USER_LIBRARY_DIR\=/Users/wagnermontes/Library
+    export USER\=<user>
+    export USER_APPS_DIR\=/Users/<user>/Applications
+    export USER_LIBRARY_DIR\=/Users/<user>/Library
     export USE_DYNAMIC_NO_PIC\=YES
     export USE_HEADERMAP\=YES
     export USE_HEADER_SYMLINKS\=NO
@@ -2489,7 +2489,7 @@ PhaseScriptExecution Stamp\ build\ identity /tmp/fm-int48-dd/Build/Intermediates
     export VALID_ARCHS\=arm64\ arm64e\ armv7\ armv7s
     export VERBOSE_PBXCP\=NO
     export VERSIONPLIST_PATH\=FeedMine.app/version.plist
-    export VERSION_INFO_BUILDER\=wagnermontes
+    export VERSION_INFO_BUILDER\=<user>
     export VERSION_INFO_FILE\=FeedMine_vers.c
     export VERSION_INFO_STRING\=\"@\(\#\)PROGRAM:FeedMine\ \ PROJECT:FeedMineApp-\"
     export WORKSPACE_DIR\=/tmp/fm-int48-verify/FeedMineApp/FeedMineApp.xcodeproj
@@ -2533,11 +2533,11 @@ ExtractAppIntentsMetadata (in target 'FeedMine' from project 'FeedMineApp')
 
 CopySwiftLibs /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
-    builtin-swiftStdLibTool --copy --verbose --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --scan-executable /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/FeedMine.debug.dylib --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/SystemExtensions --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Extensions --platform iphoneos --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMine.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os --back-deploy-swift-span
+    builtin-swiftStdLibTool --copy --verbose --sign <cert-fingerprint> --scan-executable /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/FeedMine.debug.dylib --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/SystemExtensions --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Extensions --platform iphoneos --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMine.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os --back-deploy-swift-span
 
-ProcessProductPackaging /Users/wagnermontes/Library/Developer/Xcode/UserData/Provisioning\ Profiles/2abf3e99-ffec-47fa-9696-a67bcbd9c7f6.mobileprovision /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/embedded.mobileprovision (in target 'FeedMineUITests' from project 'FeedMineApp')
+ProcessProductPackaging /Users/<user>/Library/Developer/Xcode/UserData/Provisioning\ Profiles/<profile-uuid>.mobileprovision /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/embedded.mobileprovision (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
-    builtin-productPackagingUtility /Users/wagnermontes/Library/Developer/Xcode/UserData/Provisioning\ Profiles/2abf3e99-ffec-47fa-9696-a67bcbd9c7f6.mobileprovision -o /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/embedded.mobileprovision
+    builtin-productPackagingUtility /Users/<user>/Library/Developer/Xcode/UserData/Provisioning\ Profiles/<profile-uuid>.mobileprovision -o /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/embedded.mobileprovision
 
 ProcessProductPackaging "" /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMineUITests.build/FeedMineUITests.xctest.xcent (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
@@ -3178,7 +3178,7 @@ Ld /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineA
 
 CopySwiftLibs /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest (in target 'FeedMineAppTests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
-    builtin-swiftStdLibTool --copy --verbose --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --scan-executable /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest/FeedMineAppTests --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest/Frameworks --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest/PlugIns --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest/SystemExtensions --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest/Extensions --platform iphoneos --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMineAppTests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os --back-deploy-swift-span
+    builtin-swiftStdLibTool --copy --verbose --sign <cert-fingerprint> --scan-executable /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest/FeedMineAppTests --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest/Frameworks --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest/PlugIns --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest/SystemExtensions --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest/Extensions --platform iphoneos --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMineAppTests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os --back-deploy-swift-span
 
 ExtractAppIntentsMetadata (in target 'FeedMineAppTests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
@@ -3200,9 +3200,9 @@ AppIntentsSSUTraining (in target 'FeedMineAppTests' from project 'FeedMineApp')
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest (in target 'FeedMineAppTests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest
 
 RegisterExecutionPolicyException /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMineAppTests.xctest (in target 'FeedMineAppTests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
@@ -3215,29 +3215,29 @@ Touch /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/PlugIns/FeedMi
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/FeedMine.debug.dylib (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/FeedMine.debug.dylib
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/FeedMine.debug.dylib
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/__preview.dylib (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/__preview.dylib
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app/__preview.dylib
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --entitlements /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMine.build/FeedMine.app.xcent --timestamp\=none --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app
+    /usr/bin/codesign --force --sign <cert-fingerprint> --entitlements /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMine.build/FeedMine.app.xcent --timestamp\=none --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app
 
 RegisterExecutionPolicyException /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMine.app (in target 'FeedMine' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
@@ -3265,7 +3265,7 @@ CpResource /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner
 
 CopySwiftLibs /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
-    builtin-swiftStdLibTool --copy --verbose --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --scan-executable /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/FeedMineUITests --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/Frameworks --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/PlugIns --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/SystemExtensions --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/Extensions --platform iphoneos --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMineUITests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os --back-deploy-swift-span
+    builtin-swiftStdLibTool --copy --verbose --sign <cert-fingerprint> --scan-executable /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/FeedMineUITests --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/Frameworks --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/PlugIns --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/SystemExtensions --scan-folder /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/Extensions --platform iphoneos --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMineUITests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os --back-deploy-swift-span
 
 ExtractAppIntentsMetadata (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
@@ -3343,91 +3343,91 @@ warning: not stripping binary because it is signed: /Applications/Xcode.app/Cont
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCUnit.framework (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCUnit.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCUnit.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCUnit.framework: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/libXCTestSwiftSupport.dylib (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/libXCTestSwiftSupport.dylib
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/libXCTestSwiftSupport.dylib
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/libXCTestSwiftSupport.dylib: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTestSupport.framework (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTestSupport.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTestSupport.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTestSupport.framework: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTest.framework (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTest.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTest.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTest.framework: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTAutomationSupport.framework (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTAutomationSupport.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTAutomationSupport.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTAutomationSupport.framework: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTestCore.framework (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTestCore.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTestCore.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCTestCore.framework: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCUIAutomation.framework (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCUIAutomation.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCUIAutomation.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/XCUIAutomation.framework: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/Testing.framework (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/Testing.framework
+    /usr/bin/codesign --force --sign <cert-fingerprint> --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/Testing.framework
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/Frameworks/Testing.framework: replacing existing signature
 
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --entitlements /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMineUITests.build/FeedMineUITests.xctest.xcent --timestamp\=none --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest
+    /usr/bin/codesign --force --sign <cert-fingerprint> --entitlements /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMineUITests.build/FeedMineUITests.xctest.xcent --timestamp\=none --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest
 
 RegisterExecutionPolicyException /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/PlugIns/FeedMineUITests.xctest (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
@@ -3440,11 +3440,11 @@ Touch /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app/
 CodeSign /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app (in target 'FeedMineUITests' from project 'FeedMineApp')
     cd /tmp/fm-int48-verify/FeedMineApp
     
-    Signing Identity:     "Apple Development: wmontes@gmail.com (BU5227WFYX)"
+    Signing Identity:     "Apple Development: <redacted-email> (BU5227WFYX)"
     Provisioning Profile: "iOS Team Provisioning Profile: *"
-                          (2abf3e99-ffec-47fa-9696-a67bcbd9c7f6)
+                          (<profile-uuid>)
     
-    /usr/bin/codesign --force --sign D4D057537849FAB4B1A2AA99B962C9DCE07600ED --entitlements /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMineUITests.build/FeedMineUITests.xctest.xcent --timestamp\=none --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app
+    /usr/bin/codesign --force --sign <cert-fingerprint> --entitlements /tmp/fm-int48-dd/Build/Intermediates.noindex/FeedMineApp.build/Debug-iphoneos/FeedMineUITests.build/FeedMineUITests.xctest.xcent --timestamp\=none --generate-entitlement-der /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app
 /tmp/fm-int48-dd/Build/Products/Debug-iphoneos/FeedMineUITests-Runner.app: replacing existing signature
 
 note: Run script build phase 'Stamp build identity' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'FeedMine' from project 'FeedMineApp')

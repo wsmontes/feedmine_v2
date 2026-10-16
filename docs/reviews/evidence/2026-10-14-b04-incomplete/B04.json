@@ -53,7 +53,7 @@
   },
   "verdict": "NOT_RUN",
   "identity": {
-    "database": "/Users/wagnermontes/Documents/GitHub/feedmine_v2/bench/run/20261014T083321Z/container/Library/Application Support/FeedMine/50C72814-9776-40DB-A079-4D6B77E49638/runtime.sqlite",
+    "database": "/Users/<user>/Documents/GitHub/feedmine_v2/bench/run/20261014T083321Z/container/Library/Application Support/FeedMine/50C72814-9776-40DB-A079-4D6B77E49638/runtime.sqlite",
     "corpus_items": 15917,
     "catalog_keys": 2305
   }

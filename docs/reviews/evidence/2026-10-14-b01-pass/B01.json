@@ -409,7 +409,7 @@
   "cards": 202,
   "verdict": "PASS",
   "identity": {
-    "database": "/Users/wagnermontes/Documents/GitHub/feedmine_v2/bench/run/20261014T071443Z/container/Library/Application Support/FeedMine/D10E0653-6464-4606-8816-B9095E0CCFD0/runtime.sqlite",
+    "database": "/Users/<user>/Documents/GitHub/feedmine_v2/bench/run/20261014T071443Z/container/Library/Application Support/FeedMine/D10E0653-6464-4606-8816-B9095E0CCFD0/runtime.sqlite",
     "corpus_items": 15917,
     "catalog_keys": 2305
   }

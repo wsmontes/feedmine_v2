@@ -15,8 +15,8 @@
 
 ## Global Constraints
 
-- V1 fonte: `/Users/wagnermontes/Documents/GitHub/feedmine`, commit de referência `712a6ba93c6a8ab28c3b3c0e2b2777d1e3341d0c`; conferir alterações locais antes de copiar. Não modificar esse checkout.
-- V2 destino: `/Users/wagnermontes/Documents/GitHub/feedmine_v2`; referência inicial `372f4c5`. Conferir HEAD e alterações existentes antes de executar.
+- V1 fonte: `/Users/<user>/Documents/GitHub/feedmine`, commit de referência `712a6ba93c6a8ab28c3b3c0e2b2777d1e3341d0c`; conferir alterações locais antes de copiar. Não modificar esse checkout.
+- V2 destino: `/Users/<user>/Documents/GitHub/feedmine_v2`; referência inicial `372f4c5`. Conferir HEAD e alterações existentes antes de executar.
 - Copiar código visual do V1. Alterar somente integração, separação de responsabilidades e correções necessárias à estabilidade/acessibilidade, registrando diferenças.
 - UI consome Domain/Runtime. Nenhuma View acessa banco, connector, aquisição, seleção ou AssetStore.
 - Não copiar `FeedStore.swift`, `FeedLoader.swift`, Reservoir, schedulers ou outro motor paralelo para obter compatibilidade.

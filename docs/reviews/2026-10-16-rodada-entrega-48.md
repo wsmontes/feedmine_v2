@@ -11,7 +11,7 @@ abaixo veio de relato de agente sem artefato: os que eu não rodei estão marcad
 | Build distribuída | `1.0 (48)` pareada a `03d05f5f4bfff9ec0ce6c3be3f4a78ef5073c38f` |
 | Apple | `processingState=VALID`, `internalBuildState=IN_BETA_TESTING`, grupo interno `WawaTesters`, sem distribuição externa |
 | Tag local | `ios/1.0-build.48-03d05f5f` (não empurrada) |
-| Aparelho | iPhone 14 Plus, iOS 18.6.2 (`22G100`), UDID `00008110-00067D861486201E` |
+| Aparelho | iPhone 14 Plus, iOS 18.6.2 (`22G100`), UDID `<physical-device-udid>` |
 | Bench congelado | `bench/EVALUATOR.sha256` 6/6 OK; `bench/MANIFEST.sha256` 2314 entradas |
 | Classificação honesta | **interna, de observabilidade**. Fluidez `NOT_CERTIFIED`; **B06 `NOT_RUN`**; reabertura estava fora da 48 e entrou depois, na `main` |
 
@@ -41,7 +41,7 @@ encontra cadeias reais. Executável do archive: sha256 `dff14b71b2271e8a8464c736
 ### 2.2 A jornada de imagem passou **no iPhone físico**, com pixels e controle negativo
 
 ```
-xcodebuild test … -destination 'id=00008110-00067D861486201E' \
+xcodebuild test … -destination 'id=<physical-device-udid>' \
   -only-testing:FeedMineUITests/CardImageJourneyUITests -only-testing:FeedMineUITests/FluidityJourneyUITests
 → CardImageJourneyUITests: Executed 2 tests, with 0 failures
 → FluidityJourneyUITests:  Executed 1 test,  with 0 failures (30.782 s)
@@ -268,19 +268,22 @@ o aparelho está com a outra sessão OMP (as medições de referência externa) 
 
 | Artefato | Identificador |
 |---|---|
-| Log UI físico (jornadas 3/0) | `docs/reviews/evidence/2026-10-16-rodada-48/int48-physical-authorized.log` — sha256 `03fd1799f7d269ba9ac441812fa94bc0c4f58e276c47c313c8531b0c2bac37be` |
-| Reprodução do share (Orquestrador) | `docs/reviews/evidence/2026-10-16-rodada-48/sharecheck-ORCH-repro.log` — sha256 `d23b63268c7b78cfcaf0d90e7c2719b8b6855f15a8f334c3a8015d7e2ff6d23d` |
+| Log UI físico (jornadas 3/0) | `docs/reviews/evidence/2026-10-16-rodada-48/int48-physical-authorized.log` — sha256 `03fd1799f7d269ba9ac441812fa94bc0c4f58e276c47c313c8531b0c2bac37be` **dos bytes publicados antes da redação de identificadores** |
+| Reprodução do share (Orquestrador) | `docs/reviews/evidence/2026-10-16-rodada-48/sharecheck-ORCH-repro.log` — sha256 `d23b63268c7b78cfcaf0d90e7c2719b8b6855f15a8f334c3a8015d7e2ff6d23d` **dos bytes publicados antes da redação de identificadores** |
 | Captura do aparelho (imagem desenhada) | `/tmp/int48-physical-evidence/2FAFF157-….png` — sha256 `49e770cd7c1581edbb346945dc0fa70a27e19fbda1a655a6920b1480846350d7` |
 | Série de quadros do aparelho | `/tmp/int48-physical-evidence/62CB9727-….txt` — sha256 `39c4fd95eae06dccc10c0174a9ef0396a49acdf3ef30bd4cc6ab8c5571a1fb` |
 | Log da primeira tentativa física (infra) | `/tmp/int48-physical-journeys.log` — sha256 `d08b538f1b72acc025ebb2aad2d6393a4d5913cf799102eba096a5e41b07cc35` |
 | Confirmação da Apple | `/tmp/int48-apple-confirmed.json` |
 | Pré-validação da árvore combinada | `/tmp/int48-final-ui.log`, `/tmp/int48-final-package.log` |
 | Corrida F48-HITCH | `/tmp/hx-run-control`, `/tmp/hx-run-branch`, `/tmp/hx-run-control-v1-b-falhou` |
-| Registro de ambiente do B06 | `docs/reviews/2026-10-16-b06-registro-de-ambiente.md` — cópia versionada, byte a byte, do `/tmp/b06-preflight-registro.md` |
+| Registro de ambiente do B06 | `docs/reviews/2026-10-16-b06-registro-de-ambiente.md` — cópia versionada do `/tmp/b06-preflight-registro.md`; era **byte a byte** até a redação de identificadores da ponta, que altera bytes (ver `docs/reviews/evidence/REDACTION.md`) |
 
 O log UI físico, a reprodução do share e o registro do B06 **estão versionados** (os dois primeiros em
-`docs/reviews/evidence/2026-10-16-rodada-48/`, o terceiro em `docs/reviews/2026-10-16-b06-registro-de-ambiente.md`),
-com os hashes acima conferidos já na cópia versionada. Os demais continuam **referências locais desta máquina**, não
+`docs/reviews/evidence/2026-10-16-rodada-48/`, o terceiro em `docs/reviews/2026-10-16-b06-registro-de-ambiente.md`).
+Os dois sha256 tabelados para esses logs foram conferidos na cópia versionada **antes da redação de
+identificadores da ponta** (2026-10-16): eles continuam sendo o hash dos bytes originais publicados, e o hash
+dos bytes da ponta atual de cada arquivo redigido está em `docs/reviews/evidence/REDACTION.md`. Os demais continuam
+**referências locais desta máquina**, não
 arquivos versionados: os hashes estão aqui para que uma cópia futura possa ser conferida, e os comandos das seções 2 e
 3 reproduzem cada um deles.
 
@@ -323,7 +326,7 @@ arquiteto autorizou o registro manual, com a origem de cada dado; onde a interfa
 | Aparelho | iPhone 14 Plus (`iPhone14,8`), série `W44LWTR2HT` | `xcrun devicectl device info details` |
 | iOS / build | 18.6.2 / `22G100` | idem |
 | Developer Mode / DDI | `enabled` / `ddiServicesAvailable: true` | idem |
-| UDID (hardware) | `00008110-00067D861486201E` | idem |
+| UDID (hardware) | `<physical-device-udid>` | idem |
 | macOS / Xcode | 26.3.1 (25D2128) / 26.6 (17F113), `xctrace` 16.0 | `sw_vers`, `xcodebuild -version`, `xcrun xctrace version` |
 | Bateria no início | **NOT_MEASURED** | `devicectl` não tem subcomando de bateria: a lista de `device info --help` é `appIcon`, `apps`, `authListing`, `ddiServices`, `details`, `displays`, `files`, `lockState`, `processes` |
 | Estado térmico no início | **NOT_MEASURED** | Mesma razão. Durante a captura o `xctrace` ligou `device-thermal-state-intervals` (1 amostra), mas o **template** de energia não existe nesta instalação (26 templates *Standard*, nenhum `Energy Log`) |

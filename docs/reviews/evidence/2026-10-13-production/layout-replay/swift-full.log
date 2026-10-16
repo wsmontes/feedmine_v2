@@ -1,5 +1,5 @@
 Building for debugging...
-[0/31] /Users/wagnermontes/Documents/GitHub/feedmine_v2/.build/arm64-apple-macosx/debug/FeedMinePackageTests.derived/runner.swift
+[0/31] /Users/<user>/Documents/GitHub/feedmine_v2/.build/arm64-apple-macosx/debug/FeedMinePackageTests.derived/runner.swift
 [1/31] Write sources
 [6/31] Copying Info.plist
 [6/31] Copying PrivacyInfo.xcprivacy
@@ -30,14 +30,14 @@ Building for debugging...
 [55/229] Compiling GRDB FTS5CustomTokenizer.swift
 [58/229] Compiling FeedMineDomain Source.swift
 [59/229] Compiling XMLKit XMLStringConvertible.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineDomain/OPMLDocument.swift:236:23: warning: result of call to 'popLast()' is unused [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineDomain/OPMLDocument.swift:236:23: warning: result of call to 'popLast()' is unused [#no-usage]
 234 |         let hadChild = hasChild.isEmpty ? false : hasChild.removeLast()
 235 |         guard case .category(let title) = outline else { return }
 236 |         categoryStack.popLast()
     |                       `- warning: result of call to 'popLast()' is unused [#no-usage]
 237 |         if !hadChild, !title.isEmpty {
 238 |             rejections.append(.init(title: title, rawAddress: nil, reason: .emptyCategory))
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineDomain/OPMLDocument.swift:236:23: warning: result of call to 'popLast()' is unused [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineDomain/OPMLDocument.swift:236:23: warning: result of call to 'popLast()' is unused [#no-usage]
 234 |         let hadChild = hasChild.isEmpty ? false : hasChild.removeLast()
 235 |         guard case .category(let title) = outline else { return }
 236 |         categoryStack.popLast()
@@ -270,7 +270,7 @@ Building for debugging...
 [397/453] Compiling FeedMinePublication FeedEdition.swift
 [398/453] Compiling FeedMinePublication FeedSegment.swift
 [399/453] Emitting module FeedMineSyndication
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:106:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type '[NSRegularExpression]', consider removing it
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:106:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type '[NSRegularExpression]', consider removing it
 104 |     // Immutable after construction; NSRegularExpression matching is thread-safe.
 105 |     // One expression per element (no back-reference), comments first so `<!-- <script> -->` cannot open one.
 106 |     nonisolated(unsafe) private static let hiddenMarkup: [NSRegularExpression] =
@@ -278,7 +278,7 @@ Building for debugging...
 107 |         (["<!--[\\s\\S]*?(?:-->|\\z)"] + ["script", "style", "template", "iframe"].map { name in
 108 |             "<\(name)(?=[\\s/>])[^>]*>[\\s\\S]*?(?:</\(name)\\s*>|\\z)"
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:111:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:111:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
 109 |         }).map { try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
 110 |     // Immutable after construction; NSRegularExpression matching is thread-safe.
 111 |     nonisolated(unsafe) private static let imgTag = try! NSRegularExpression(pattern: "<img\\b[^>]*>", options: [.caseInsensitive])
@@ -286,7 +286,7 @@ Building for debugging...
 112 |     nonisolated(unsafe) private static let attributePattern = try! NSRegularExpression(
 113 |         pattern: "([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", options: [])
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:112:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:112:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
 110 |     // Immutable after construction; NSRegularExpression matching is thread-safe.
 111 |     nonisolated(unsafe) private static let imgTag = try! NSRegularExpression(pattern: "<img\\b[^>]*>", options: [.caseInsensitive])
 112 |     nonisolated(unsafe) private static let attributePattern = try! NSRegularExpression(
@@ -294,7 +294,7 @@ Building for debugging...
 113 |         pattern: "([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", options: [])
 114 |     // Two to four digits per side so aspect ratios such as 16x9 or 4x3 are never mistaken for sizes.
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:115:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:115:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
 113 |         pattern: "([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", options: [])
 114 |     // Two to four digits per side so aspect ratios such as 16x9 or 4x3 are never mistaken for sizes.
 115 |     nonisolated(unsafe) private static let tinyDimension = try! NSRegularExpression(
@@ -310,7 +310,7 @@ Building for debugging...
 [406/453] Compiling FeedMinePublication FeedWindow.swift
 [407/453] Compiling FeedMinePublication PublicationCardDraft.swift
 [408/453] Compiling FeedMinePublication PublicationCoordinator.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMinePublication/PublicationCoordinator.swift:161:17: warning: no calls to throwing functions occur within 'try' expression
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMinePublication/PublicationCoordinator.swift:161:17: warning: no calls to throwing functions occur within 'try' expression
 159 |         }
 160 |         let records = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
 161 |         return (try PublicationPersistenceMapping.record(edition), records.0, records.1)
@@ -318,7 +318,7 @@ Building for debugging...
 162 |     }
 163 | 
 [409/453] Compiling FeedMinePublication PublicationHistory.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMinePublication/PublicationCoordinator.swift:161:17: warning: no calls to throwing functions occur within 'try' expression
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMinePublication/PublicationCoordinator.swift:161:17: warning: no calls to throwing functions occur within 'try' expression
 159 |         }
 160 |         let records = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
 161 |         return (try PublicationPersistenceMapping.record(edition), records.0, records.1)
@@ -326,7 +326,7 @@ Building for debugging...
 162 |     }
 163 | 
 [410/453] Compiling FeedMineSyndication SyndicationMediaLocator.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:106:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type '[NSRegularExpression]', consider removing it
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:106:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type '[NSRegularExpression]', consider removing it
 104 |     // Immutable after construction; NSRegularExpression matching is thread-safe.
 105 |     // One expression per element (no back-reference), comments first so `<!-- <script> -->` cannot open one.
 106 |     nonisolated(unsafe) private static let hiddenMarkup: [NSRegularExpression] =
@@ -334,7 +334,7 @@ Building for debugging...
 107 |         (["<!--[\\s\\S]*?(?:-->|\\z)"] + ["script", "style", "template", "iframe"].map { name in
 108 |             "<\(name)(?=[\\s/>])[^>]*>[\\s\\S]*?(?:</\(name)\\s*>|\\z)"
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:111:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:111:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
 109 |         }).map { try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
 110 |     // Immutable after construction; NSRegularExpression matching is thread-safe.
 111 |     nonisolated(unsafe) private static let imgTag = try! NSRegularExpression(pattern: "<img\\b[^>]*>", options: [.caseInsensitive])
@@ -342,7 +342,7 @@ Building for debugging...
 112 |     nonisolated(unsafe) private static let attributePattern = try! NSRegularExpression(
 113 |         pattern: "([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", options: [])
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:112:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:112:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
 110 |     // Immutable after construction; NSRegularExpression matching is thread-safe.
 111 |     nonisolated(unsafe) private static let imgTag = try! NSRegularExpression(pattern: "<img\\b[^>]*>", options: [.caseInsensitive])
 112 |     nonisolated(unsafe) private static let attributePattern = try! NSRegularExpression(
@@ -350,7 +350,7 @@ Building for debugging...
 113 |         pattern: "([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", options: [])
 114 |     // Two to four digits per side so aspect ratios such as 16x9 or 4x3 are never mistaken for sizes.
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:115:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineSyndication/SyndicationMediaLocator.swift:115:5: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'NSRegularExpression', consider removing it
 113 |         pattern: "([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", options: [])
 114 |     // Two to four digits per side so aspect ratios such as 16x9 or 4x3 are never mistaken for sizes.
 115 |     nonisolated(unsafe) private static let tinyDimension = try! NSRegularExpression(
@@ -442,21 +442,21 @@ Building for debugging...
 [500/601] Compiling FeedMineDomainTests SourceTests.swift
 [503/601] Compiling FeedMineSyndicationTests SyndicationHTTPTests.swift
 [504/601] Compiling FeedMineSyndicationTests SyndicationMediaLocatorHiddenMarkupTests.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:40:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:40:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
  38 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
  39 |         // columns, and its SQL text is not part of this comparison.
  40 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
     |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
  41 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
  42 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement", "updated_at"])
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:40:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:40:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
  38 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
  39 |         // columns, and its SQL text is not part of this comparison.
  40 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
     |             `- warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
  41 |         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
  42 |             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement", "updated_at"])
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:40:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:40:13: warning: initialization of immutable value 'checkpoints' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
  38 |         // T6 rebuilt context_checkpoints to key it by the context identity; its definition is checked by
  39 |         // columns, and its SQL text is not part of this comparison.
  40 |         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
@@ -507,7 +507,7 @@ Building for debugging...
 [582/608] Compiling FeedMineUI FeedScrollPosition.swift
 [583/608] Emitting module FeedMineUI
 [602/608] Compiling FeedMineUI NodeSourcesView.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
 269 |             .buttonStyle(.plain)
 270 |             .accessibilityIdentifier("node-child-\(child.id)")
 271 |             Toggle("", isOn: Binding(get: { isEnabled }, set: onToggle))
@@ -515,7 +515,7 @@ Building for debugging...
 272 |                 .labelsHidden()
 273 |                 .tint(.green)
 [603/608] Compiling FeedMineUI SourceManagementStore.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
 269 |             .buttonStyle(.plain)
 270 |             .accessibilityIdentifier("node-child-\(child.id)")
 271 |             Toggle("", isOn: Binding(get: { isEnabled }, set: onToggle))
@@ -523,7 +523,7 @@ Building for debugging...
 272 |                 .labelsHidden()
 273 |                 .tint(.green)
 [604/608] Compiling FeedMineUI SourceManagementView.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
 269 |             .buttonStyle(.plain)
 270 |             .accessibilityIdentifier("node-child-\(child.id)")
 271 |             Toggle("", isOn: Binding(get: { isEnabled }, set: onToggle))
@@ -531,7 +531,7 @@ Building for debugging...
 272 |                 .labelsHidden()
 273 |                 .tint(.green)
 [605/608] Compiling FeedMineUI ReaderAddFeedViews.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
 269 |             .buttonStyle(.plain)
 270 |             .accessibilityIdentifier("node-child-\(child.id)")
 271 |             Toggle("", isOn: Binding(get: { isEnabled }, set: onToggle))
@@ -539,7 +539,7 @@ Building for debugging...
 272 |                 .labelsHidden()
 273 |                 .tint(.green)
 [606/608] Compiling FeedMineUI ReaderImportExportViews.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineUI/Sources/NodeSourcesView.swift:271:63: warning: converting non-Sendable function value to '@isolated(any) @Sendable (Bool) -> Void' may introduce data races
 269 |             .buttonStyle(.plain)
 270 |             .accessibilityIdentifier("node-child-\(child.id)")
 271 |             Toggle("", isOn: Binding(get: { isEnabled }, set: onToggle))
@@ -555,7 +555,7 @@ Building for debugging...
 [613/641] Compiling FeedMineComposition ReaderSettingsCoordinator.swift
 [614/644] Emitting module FeedMineComposition
 [615/644] Compiling FeedMineComposition ReaderContentFilterPolicy.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineComposition/ReaderDiscoveryPool.swift:145:13: warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineComposition/ReaderDiscoveryPool.swift:145:13: warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
 143 |         let reader = try LegacyCatalogReader(catalogURL: catalogURL)
 144 | 
 145 |         var seen = Set<String>()
@@ -563,7 +563,7 @@ Building for debugging...
 146 |         var candidates: [LegacyCatalogSourceRecord] = []
 147 |         if profile.topicNodeKeys.isEmpty {
 [616/644] Compiling FeedMineComposition ReaderContentFilterTemplates.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineComposition/ReaderDiscoveryPool.swift:145:13: warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineComposition/ReaderDiscoveryPool.swift:145:13: warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
 143 |         let reader = try LegacyCatalogReader(catalogURL: catalogURL)
 144 | 
 145 |         var seen = Set<String>()
@@ -571,7 +571,7 @@ Building for debugging...
 146 |         var candidates: [LegacyCatalogSourceRecord] = []
 147 |         if profile.topicNodeKeys.isEmpty {
 [617/644] Compiling FeedMineComposition ReaderDiscoveryPool.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineComposition/ReaderDiscoveryPool.swift:145:13: warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Sources/FeedMineComposition/ReaderDiscoveryPool.swift:145:13: warning: initialization of variable 'seen' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
 143 |         let reader = try LegacyCatalogReader(catalogURL: catalogURL)
 144 | 
 145 |         var seen = Set<String>()
@@ -604,7 +604,7 @@ Building for debugging...
 [641/644] Compiling FeedMineComposition CatalogSyncPolicy.swift
 [642/644] Compiling FeedMineComposition CatalogUpdateChannel.swift
 [643/691] Emitting module FeedMineCompositionTests
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/ColdFeedBootstrapTests.swift:68:62: warning: conformance of 'ColdURLProtocol' to protocol 'Sendable' is already unavailable
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/ColdFeedBootstrapTests.swift:68:62: warning: conformance of 'ColdURLProtocol' to protocol 'Sendable' is already unavailable
  66 |     }
  67 | }
  68 | private final class ColdURLProtocol: URLProtocol, @unchecked Sendable {
@@ -613,7 +613,7 @@ Building for debugging...
  69 |     // Intercept every request; an unregistered endpoint fails locally instead of reaching the internet.
  70 |     override class func canInit(with request: URLRequest) -> Bool { true }
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/FeedPresentationHandoffTests.swift:412:65: warning: conformance of 'HandoffURLProtocol' to protocol 'Sendable' is already unavailable
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/FeedPresentationHandoffTests.swift:412:65: warning: conformance of 'HandoffURLProtocol' to protocol 'Sendable' is already unavailable
 410 |     }
 411 | }
 412 | private final class HandoffURLProtocol: URLProtocol, @unchecked Sendable {
@@ -622,7 +622,7 @@ Building for debugging...
 413 |     override class func canInit(with request: URLRequest) -> Bool { true }
 414 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/FeedRunwayDriverTests.swift:791:64: warning: conformance of 'DriverURLProtocol' to protocol 'Sendable' is already unavailable
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/FeedRunwayDriverTests.swift:791:64: warning: conformance of 'DriverURLProtocol' to protocol 'Sendable' is already unavailable
 789 |     }
 790 | }
 791 | private final class DriverURLProtocol: URLProtocol, @unchecked Sendable {
@@ -631,7 +631,7 @@ Building for debugging...
 792 |     override class func canInit(with request:URLRequest) -> Bool { DriverHTTPFixture.find(request.url) != nil }
 793 |     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:521:78: warning: conformance of 'ProgressiveDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:521:78: warning: conformance of 'ProgressiveDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
 519 | }
 520 | 
 521 | private final class ProgressiveDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
@@ -640,7 +640,7 @@ Building for debugging...
 522 |     override class func canInit(with request: URLRequest) -> Bool { true }
 523 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:536:74: warning: conformance of 'OfflineDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/ReaderDiscoveryPoolTests.swift:536:74: warning: conformance of 'OfflineDiscoveryURLProtocol' to protocol 'Sendable' is already unavailable
 534 | }
 535 | 
 536 | private final class OfflineDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
@@ -649,7 +649,7 @@ Building for debugging...
 537 |     override class func canInit(with request: URLRequest) -> Bool { true }
 538 |     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SyndicationAcquisitionSnapshotTests.swift:314:65: warning: conformance of 'BridgeHTTPProtocol' to protocol 'Sendable' is already unavailable
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SyndicationAcquisitionSnapshotTests.swift:314:65: warning: conformance of 'BridgeHTTPProtocol' to protocol 'Sendable' is already unavailable
 312 |     }
 313 | }
 314 | private final class BridgeHTTPProtocol: URLProtocol, @unchecked Sendable {
@@ -683,7 +683,7 @@ Building for debugging...
 [667/694] Compiling ArchitectureSmokeTests ReaderShellTests.swift
 [668/695] Compiling ArchitectureSmokeTests SourceManagementStoreTests.swift
 [669/695] Compiling FeedMineCompositionTests RunwayAcquisitionCycleTests.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
 244 |         let entered = expectation(description: "Coverage connector entered")
 245 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
 246 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
@@ -691,7 +691,7 @@ Building for debugging...
 247 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
 248 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:252:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:252:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
 250 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
 251 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
 252 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
@@ -699,7 +699,7 @@ Building for debugging...
 253 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
 254 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
 [670/695] Compiling FeedMineCompositionTests SelectedSourceCoverageTests.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
 244 |         let entered = expectation(description: "Coverage connector entered")
 245 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
 246 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
@@ -707,7 +707,7 @@ Building for debugging...
 247 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
 248 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:252:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:252:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
 250 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
 251 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
 252 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
@@ -715,7 +715,7 @@ Building for debugging...
 253 |         let otherContext = FeedContext(request: .source(f.sources[3])), v = PolicyVersion(rawValue: 1)
 254 |         let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: otherContext.key, catalogGeneration: .init(rawValue: 1),
 [671/695] Compiling FeedMineCompositionTests SourceCatalogBackendTests.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:246:78: warning: immutable value 'runway' was never used; consider replacing with '_' or removing it [#no-usage]
 244 |         let entered = expectation(description: "Coverage connector entered")
 245 |         let gate = CoverageGate { entered.fulfill() }; defer { gate.release() }
 246 |         let f = try fixture(gate: gate), first = try await cold(f), (driver, runway) = try driver(f)
@@ -723,7 +723,7 @@ Building for debugging...
 247 |         let task = Task { try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 1)) }
 248 |         let waited = await XCTWaiter.fulfillment(of: [entered], timeout: 5); XCTAssertEqual(waited, .completed)
 
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:252:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMineCompositionTests/SelectedSourceCoverageTests.swift:252:13: warning: initialization of immutable value 'oldSegments' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
 250 |         let competing = try await driver.drive(resources: resources(targetCapacity: 1))
 251 |         XCTAssertEqual(competing, old); XCTAssertEqual(f.journal.pulls.count, 3)
 252 |         let oldSegments = try PublicationStore(database: f.database).segments(editionID: first.editionID)
@@ -737,14 +737,14 @@ Building for debugging...
 [680/695] Compiling FeedMineCompositionTests ColdFeedBootstrapTests.swift
 [681/695] Compiling FeedMineCompositionTests CuratedFeedCoordinatorTests.swift
 [682/695] Compiling FeedMineCompositionTests FeedPresentationHandoffTests.swift
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.swift:577:17: warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.swift:577:17: warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
 575 |         _ = capture.observe(FeedVisualGeometry(offset: 320, extent: 4_000, height: 800))
 576 |         // The card straddles the reference line (half the viewport) while its top edge is above it.
 577 |         capture.observeCard(FeedVisualCardGeometry(cardID: id,
     |                 `- warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
 578 |             frame: CGRect(x: 0, y: -120, width: 400, height: 600), offset: 420, height: 800), isLast: false)
 579 |         let position = try XCTUnwrap(capture.position)
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.swift:577:17: warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.swift:577:17: warning: result of call to 'observeCard(_:isLast:)' is unused [#no-usage]
 575 |         _ = capture.observe(FeedVisualGeometry(offset: 320, extent: 4_000, height: 800))
 576 |         // The card straddles the reference line (half the viewport) while its top edge is above it.
 577 |         capture.observeCard(FeedVisualCardGeometry(cardID: id,
@@ -1113,7 +1113,7 @@ Test Suite 'CanonicalSupplySchemaTests' passed at 2026-10-13 17:48:30.254.
 	 Executed 5 tests, with 0 failures (0 unexpected) in 0.180 (0.180) seconds
 Test Suite 'CatalogCompilerReferenceTests' started at 2026-10-13 17:48:30.254.
 Test Case '-[FeedMinePersistenceTests.CatalogCompilerReferenceTests testCompiledTreeMatchesTheReferenceCatalogueRowForRow]' started.
-/Users/wagnermontes/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMinePersistenceTests/CatalogCompilerReferenceTests.swift:96: -[FeedMinePersistenceTests.CatalogCompilerReferenceTests testCompiledTreeMatchesTheReferenceCatalogueRowForRow] : Test skipped - set FEEDMINE_REFERENCE_FEEDS_ROOT and FEEDMINE_REFERENCE_CATALOG to compare a whole tree
+/Users/<user>/.codex/worktrees/feed-layout-hang/feedmine_v2/Tests/FeedMinePersistenceTests/CatalogCompilerReferenceTests.swift:96: -[FeedMinePersistenceTests.CatalogCompilerReferenceTests testCompiledTreeMatchesTheReferenceCatalogueRowForRow] : Test skipped - set FEEDMINE_REFERENCE_FEEDS_ROOT and FEEDMINE_REFERENCE_CATALOG to compare a whole tree
 Test Case '-[FeedMinePersistenceTests.CatalogCompilerReferenceTests testCompiledTreeMatchesTheReferenceCatalogueRowForRow]' skipped (0.001 seconds).
 Test Case '-[FeedMinePersistenceTests.CatalogCompilerReferenceTests testFrozenCorpusCatalogueIsReadableAndDeclaresTheSameSchema]' started.
 Test Case '-[FeedMinePersistenceTests.CatalogCompilerReferenceTests testFrozenCorpusCatalogueIsReadableAndDeclaresTheSameSchema]' passed (0.009 seconds).
