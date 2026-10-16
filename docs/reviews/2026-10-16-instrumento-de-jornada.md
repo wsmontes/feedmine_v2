@@ -1,7 +1,20 @@
-# O instrumento de jornada — medições binárias lidas do registro do app (`bench/journey.py`)
+# O instrumento de jornada — medições binárias lidas do registro do app (`instruments/journey/journey.py`)
 
 **Data:** 2026-10-16 · **Autor:** agente `ObviousInstrument` (tarefa delegada pelo agente principal) ·
 **Ambiente:** macOS 25.3.0 (arm64), Python 3.12.13 · **sem build, sem simulador, sem rede** nesta sessão.
+
+**Recorte aprovado (2026-10-16, veredito do arquiteto):** o instrumento **saiu de `bench/`** — que é a referência
+congelada — para `instruments/journey/`, com hash próprio, e o código de saída passou a ser **de quatro vias**
+(0/1/2/3). O veredito do arquiteto aprovou a implementação como diagnóstico e pediu exatamente esses dois ajustes
+antes da integração à `main`; a §11 registra o que mudou, com os quatro caminhos medidos por execução. A baseline
+B01–B06 permanece intocada, byte a byte.
+
+**Versão do recorte.** O artefato é `instruments/journey/journey.py`, sha256
+`4e4eff074fec7c3d9728aed17693d3c8b9feafb80caec52f99d070765d2bed8e` (92.805 B) — o mesmo hash de
+`instruments/journey/journey.sha256`. As seções §0.1 a §10 foram medidas na versão anterior (sha256
+`92869365…`, 63.108 B, ainda em `bench/journey.py`, num `/tmp` de sessão que não existe mais); elas continuam
+descrevendo o mesmo modelo de cláusula e os mesmos contratos, e a §11 lista **o que o recorte mudou** e o que ele
+**não** mudou.
 
 **Versão corrigida.** Esta é a segunda versão, depois de uma revisão independente do agente
 `ReviewJourneyInstrument`. A §7 responde item por item, com a evidência medida do que mudou. O artefato testado é
@@ -14,10 +27,12 @@ de o disco esgotar e de o agente principal pedir o diff para revisão).
 
 | Item | Valor |
 |---|---|
-| Instrumento | `bench/journey.py`, sha256 `92869365…`, 63.108 B, arquivo novo, hash próprio |
+| Instrumento | `instruments/journey/journey.py` (no recorte; era `bench/journey.py`), sha256 `4e4eff07…`, 92.805 B, arquivo novo, hash próprio |
+| Onde mora | `instruments/journey/`, **fora** de `bench/`: `bench/` é a régua congelada (B01–B06) e uma ferramenta nova e evolutiva ali dentro pareceria ter autoridade sobre ela |
 | Medições implementadas | M1, M2, M3, M4, M5, M7, M10 |
 | Sem evidência hoje | M1/M6 (superfície), M8, M9, M11, M12, M7-pouso (§6) |
-| Controles positivos | dez injeções (§5), cada uma numa cópia do insumo em `/tmp` |
+| Controles positivos | dez injeções (§5) + `--selftest` com os quatro códigos de saída e as dez injeções (§11.4) |
+| Código de saída | `0` tudo aplicável medido e PASS · `1` alguma cláusula FAIL · `2` erro de entrada/execução · `3` sem FAIL, com cláusula aplicável não medida (§11.2) |
 | Leitura do banco | cópia de `runtime.sqlite` **com** `-wal` e `-shm` para diretório temporário, aberta em `mode=ro` |
 
 Contratos que decidem o veredito, e que a revisão mostrou faltarem na primeira versão:
@@ -741,6 +756,16 @@ número cru: `com_mídia_declarada` cai de 42 para 41 e `digests_distintos` de 3
 | **M3** | jornada de aparelho | 0 `advance`: a jornada não rolou, não há gesto para julgar |
 | **M7** | qualquer insumo com ≥2 linhas de contexto na mesma edição, ou com a edição medida ausente | o instrumento não sabe **qual** contexto foi medido e não escolhe a primeira linha |
 
+### 6.1 A lista acima não é aprovação de nada
+
+As cláusulas da primeira tabela (falta gravar no produto) e as que o instrumento congelado já mede no lugar
+(M9 = B01, M11 = `bench/expand.py`) continuam **identificadas como não implementadas aqui** — no relatório e na
+saída impressa, sem exceção: o bloco `sem evidência hoje` diz, em cada linha, "cláusulas que este instrumento
+**não** implementa e que **não** são aprovação global". Elas não são medida deste instrumento, não viram `PASS` e
+**não entram no código de saída**: um insumo limpo devolve `0` com elas listadas, porque `0` afirma apenas "toda
+cláusula **aplicável** foi medida e deu `PASS`" (§11.2) — nada além disso. Nenhuma linha daqui substitui
+B01–B06, e o instrumento continua diagnóstico auxiliar, nunca oráculo.
+
 ## 7. Resposta à revisão independente (item por item)
 
 | # | Achado | O que mudou | Evidência medida nesta versão |
@@ -786,12 +811,13 @@ Não prova: (a) nada foi executado em build novo (o disco ficou em 1,8 GB e a re
 abaixo de 3 GB — toda a evidência vem de corridas de 2026-10-14 e de uma jornada de aparelho de 2026-10-16);
 (b) M7 mede metade da jornada (a identidade durável, não o pouso); (c) M5 mede o asset local, não o pixel;
 (d) M10 não tem veredito de desempenho por desenho; (e) o bench não publica mídia, então M5 só tem sujeito no
-aparelho; (f) este trabalho **não está commitado** — o checkout canônico está na branch
-`feat/journey-instrument` desde 07:07:51 (incidente registrado ao agente principal) e a cópia que está lá é a
-primeira versão.
+aparelho; (f) esta seção foi escrita antes do recorte: hoje o instrumento está commitado na branch
+`instruments/journey-measurements` e o recorte revisado, pronto para fast-forward da `main`, em
+`instruments/journey-recut` (§11.5) — a evidência de medição continua sendo a das corridas de 2026-10-14 e da
+jornada de aparelho de 2026-10-16, nenhuma delas refeita.
 
 ```bash
-# instrumento (o artefato testado; sha256 92869365…)
+# instrumento (o artefato testado; sha256 92869365… nesta versão, 4e4eff07… no recorte — ver §11)
 python3 bench/journey.py --help
 python3 bench/journey.py --run bench/run/20261014T173601Z          # completo: M1/M2/M3/M4/M10 PASS
 python3 bench/journey.py --run bench/run/20261014T182436Z          # traço incompleto: NOT_RUN, não PASS
@@ -811,6 +837,11 @@ git diff --stat 78a37428..HEAD -- bench/oracle.py bench/EVALUATOR.sha256 bench/M
 git status --porcelain -- bench/oracle.py bench/EVALUATOR.sha256 bench/MANIFEST.sha256 bench/corpus
 ```
 
+Os caminhos acima são `bench/journey.py` porque foi assim que a versão desta seção foi medida. No recorte o
+arquivo é `instruments/journey/journey.py`; os insumos de `bench/run/` e a jornada de `/tmp` **não estão nesta
+máquina hoje** (as corridas são `gitignored`), então a §11 mede os quatro códigos de saída em insumos sintéticos
+mínimos, com o comando que qualquer revisor reproduz.
+
 **Ambiente:** macOS 25.3.0 (Darwin, arm64) · Python 3.12.13 · `df -h /` = 1,8 GB livres na medição · nenhum
 `swift build`, nenhum `xcodebuild`, nenhum simulador, nenhuma rede.
 
@@ -822,8 +853,10 @@ Comando, na worktree `instruments/journey-measurements` (base `78a37428`), apont
 diretório canônico (gitignored, lido só em leitura):
 
 ```sh
-python3 bench/journey.py --run /Users/wagnermontes/Documents/GitHub/feedmine_v2/bench/run/20261014T214403Z
+python3 instruments/journey/journey.py --run /Users/wagnermontes/Documents/GitHub/feedmine_v2/bench/run/20261014T214403Z
 ```
+
+(medido quando o arquivo ainda era `bench/journey.py`; o caminho acima é o do recorte)
 
 Saída (trecho bruto):
 
@@ -852,4 +885,213 @@ número cru ao lado, e que onde o traço não contém o fato ele diz `NOT_RUN` c
 em vez de escolher um limiar. O que **não** prova: fluidez, desempenho ou aprovação de release — nenhuma cláusula
 aqui é limiar de qualidade de experiência, e as medições de quadro são relatadas como série, sem teto.
 
-`shasum -a 256 -c bench/journey.sha256` → `bench/journey.py: OK`.
+`shasum -a 256 -c instruments/journey/journey.sha256` (do diretório do repo) → `instruments/journey/journey.py: OK`.
+
+---
+
+## 11. Recorte aprovado — localização e saída em quatro códigos (2026-10-16)
+
+O veredito do arquiteto aprovou o instrumento **como diagnóstico** e pediu dois ajustes antes da integração: tirar
+a ferramenta de `bench/` (que é a régua congelada) e não deixar o processo sair `0` quando existe cláusula
+aplicável `NOT_RUN`. Esta seção é o registro do que foi feito, medido **por execução** — o artefato é
+`instruments/journey/journey.py`, sha256 `4e4eff074fec7c3d9728aed17693d3c8b9feafb80caec52f99d070765d2bed8e`,
+92.805 B, e o mesmo hash de `instruments/journey/journey.sha256`.
+
+### 11.1 Localização: `instruments/journey/`, fora da régua
+
+`git mv bench/journey.py instruments/journey/journey.py` e `git mv bench/journey.sha256
+instruments/journey/journey.sha256` (o git registra as duas como renomeações, com o histórico preservado), e o
+conteúdo do hash passou a apontar o caminho novo. `bench/` perdeu os dois arquivos **novos** do instrumento e não
+teve nenhum dos arquivos congelados tocado — a §11.5 mostra o diff vazio.
+
+Por que sair: `bench/` é a referência congelada (B01–B06, `oracle.py`, `EVALUATOR.sha256`, `MANIFEST.sha256`,
+`manifest.json`, `revisions/`), e uma ferramenta nova e evolutiva morando ali dentro pareceria ter autoridade
+sobre ela. O instrumento não lê nada de `bench/` para decidir e não escreve nada lá: é diagnóstico auxiliar.
+
+### 11.2 Saída de quatro vias
+
+| Resultado do instrumento | Código |
+|---|---:|
+| Toda cláusula **aplicável** medida e `PASS` | `0` |
+| Pelo menos uma cláusula `FAIL` | `1` |
+| Erro de entrada ou execução | `2` |
+| Sem `FAIL`, mas com cláusula **aplicável** `NOT_RUN` | `3` |
+
+Antes do recorte o código era binário: `1` se houvesse `FAIL`, `0` em todo o resto — inclusive num insumo sem
+artefato nenhum, em que todas as cláusulas ficam `NOT_RUN`. Uma automação que só olhasse o código lia medição
+incompleta (ou insumo quebrado) como sucesso. Era exatamente o risco apontado.
+
+**O que "aplicável" quer dizer aqui.** Não é sinônimo de "todo `NOT_RUN`": é uma decisão do modelo de cláusula
+deste instrumento, e ela está **no código**, não no julgamento de quem lê. Cada sub-fato não medido carrega um
+`motivo` de vocabulário fechado, e os motivos são de duas famílias:
+
+| Motivo | Quando aparece | Família |
+|---|---|---|
+| `sem_sujeito` | o insumo não tem o que medir: sem janela atribuída a uma geração, sem carta publicada, sem avanço, sem dois avanços comparáveis na mesma geração, sem série de quadros, sem linha durável, sem checkpoint relatado | **fora de escopo** — não força `3` |
+| `nao_implementado` | nenhuma fonte de evidência existe, por desenho: só o fato visual de M5 hoje (pixel decodificado) | **fora de escopo** — não força `3` |
+| `evidencia_incompleta` | o sujeito existe, mas o traço anuncia perdas (`trace_truncated`) ou tem linha ilegível: zero violação não prova nada (contrato 2) | **lacuna** — força `3` |
+| `nao_resolvido` | o sujeito existe, mas alguma âncora não se resolve na ordem do leitor da edição | **lacuna** — força `3` |
+| `nao_identificado` | o sujeito existe e o registro é ambíguo: 0 linhas duráveis para a edição medida (com linhas de outras edições) ou ≥2 linhas na mesma edição; ou a linha de sessão existe mas não há com o que compará-la | **lacuna** — força `3` |
+| `nao_comparavel` | o sujeito existe e os dois registros não são do mesmo instante: a linha durável é mais nova que o último evento do traço, falta metade do par, ou o instante durável não é numérico | **lacuna** — força `3` |
+
+O veredito agregado **impresso** continua sendo o do contrato 3 (`FAIL` > qualquer sub-fato não medido >
+`PASS`, como em `bench/oracle.py:624-631`), sem enfraquecer nada: M5 continua imprimindo `NOT_RUN` pela metade
+visual. O que mudou é que o `NOT_RUN` passou a **dizer de que família é**, e o código de saída lê a família:
+
+```
+    [NOT_RUN: lacuna de medição — evidencia_incompleta] empty_then_content == 0 — esperado: 0, observado: 0
+    [NOT_RUN: fora de escopo — nao_implementado] a imagem foi desenhada (pixel decodificado) — precisa de tela…
+  cláusula: aplicável, com lacuna de medição: evidencia_incompleta      # força 3
+  cláusula: aplicável e medida; fora de escopo: nao_implementado        # não força 3
+  cláusula: não aplicável neste insumo: sem_sujeito                     # não força 3
+```
+
+**O caso M5, explicitamente.** M5 tem dois sub-fatos: (a) carta da janela com mídia declarada e sem asset local
+— medível, e é a cláusula de verdade; (b) o pixel desenhado — **nunca** medível, por desenho. Se (b) contasse
+como lacuna, todo insumo com mídia na janela sairia `3` para sempre e o código deixaria de distinguir medição
+completa de incompleta — precisamente o que a automação precisa ler. Por isso `nao_implementado` é escopo, e não
+lacuna; o que **não** acontece é (b) sumir: ele continua impresso, com o motivo ao lado, e continua na lista
+explícita da §6 — sem virar `PASS` e sem virar aprovação global (§6.1).
+
+O JSON carrega a mesma decisão para a automação: por insumo `codigo_de_saida` e `razao_do_codigo`; por medição
+`veredito`, `aplicavel`, `lacunas`, `fora_de_escopo`; por sub-fato `pass` e `motivo`.
+
+### 11.3 Erro de entrada deixou de se confundir com medição
+
+Antes, três caminhos silenciosos convergiam para o mesmo `0`: diretório sem artefato nenhum, banco que não abre
+ou não tem o esquema, e injeção impossível. Agora os três imprimem `ERRO DE ENTRADA` (ou `ERRO DE EXECUÇÃO`) no
+stderr e devolvem `2`, **sem veredito de cláusula** — o código `2` não afirma nada sobre o produto:
+
+| Situação | Antes | Agora |
+|---|---|---|
+| diretório inexistente | `2` (já estava certo) | `2`, `ERRO DE ENTRADA: <dir> não é um diretório: insumo inexistente` |
+| insumo sem `trace.jsonl`, sem `runtime.sqlite` e sem `console.log` | **`0`** com todas as cláusulas `NOT_RUN` | `2`, `ERRO DE ENTRADA: … nenhum artefato …` |
+| `runtime.sqlite` que não é banco, ou sem `published_cards`/`feed_segments` | **`0`** com `cartas: 0` (a leitura devolvia lista vazia) | `2`, `ERRO DE ENTRADA: SQLite ilegível ou sem o esquema do leitor …` |
+| tabela `context_checkpoints`/`session_checkpoint` ausente | `M7` sem sujeito | igual: esquema antigo não é banco quebrado |
+| argumentos inválidos (`--out` sem `--inject`, nada a medir) | `2` | `2` (o mesmo caminho do `argparse`) |
+| injeção impossível no insumo (`REFUSED: …`) | **`1`** (parecia falha medida) | `2`, `ERRO DE ENTRADA: REFUSED: …` |
+| arquivo de traço/console ilegível, e qualquer exceção de execução | traceback → `1` | `2`, `ERRO DE EXECUÇÃO: <tipo>: <mensagem>` |
+
+A tabela explica o caso já registrado na §10: duas corridas do `bench` "sem traço utilizável" imprimiam todas as
+cláusulas `NOT_RUN` (nada de silêncio verde no veredito) mas o processo saía `0`. Agora elas saem `2` — o
+veredito continua sendo que não há medição, e o código passou a dizer a mesma coisa.
+
+A única mudança de comportamento dentro de uma cláusula: `context_checkpoints.updated_at` com valor não numérico
+(texto) passa a ser `nao_comparavel` (lacuna → `3`) em vez de derrubar a medição com `TypeError`. No app o campo
+é numérico; a guarda existe para que um banco estranho não vire "falha medida".
+
+### 11.4 Controles positivos: quatro códigos + as dez injeções, por execução
+
+Os controles agora são **dois grupos**, e os dois rodam **o próprio processo** (um `subprocess` por caminho) e
+conferem o código de saída observado *e* a linha que o justifica. Como as corridas de `bench/run/` não estão
+nesta máquina (são `gitignored`), os insumos de medição são **sintéticos e mínimos** — traço de 7 a 9 eventos e
+banco de 5 cartas, com as colunas que as injeções tocam — montados pelo próprio instrumento, com a receita da
+§5.11 e agora escrita dentro do arquivo. Nenhum insumo sintético é apresentação de produto: eles existem para
+exercitar caminho de código.
+
+```sh
+# 1) monta os insumos dos controles (ficam; nenhum é medição de produto)
+python3 instruments/journey/journey.py --fixtures /tmp/fmc
+
+# 2) os quatro caminhos, um comando por caminho
+python3 instruments/journey/journey.py --run /tmp/fmc/completo                                  # 0
+python3 instruments/journey/journey.py --run /tmp/fmc/fora-de-escopo                            # 0 (fora de escopo ≠ 3)
+python3 instruments/journey/journey.py --run /tmp/fmc/completo --inject m2 --out /tmp/fmc/copia-m2   # 1
+python3 instruments/journey/journey.py --run /tmp/fmc/nao-existe                                # 2
+python3 instruments/journey/journey.py --journey /tmp/fmc/vazio                                 # 2
+python3 instruments/journey/journey.py --run /tmp/fmc/sqlite-ilegivel                           # 2
+python3 instruments/journey/journey.py --run /tmp/fmc/completo --out /tmp/fmc/sem-inject        # 2
+python3 instruments/journey/journey.py --run /tmp/fmc/lacuna                                    # 3
+
+# 3) o controle inteiro, com os 18 casos e o código de cada um
+python3 instruments/journey/journey.py --selftest
+```
+
+Saída bruta dos oito comandos do passo 2 (exit code e linha do veredito, verbatim; o `--run completo` e o
+`--run lacuna` também imprimem as sete cláusulas, cortadas aqui):
+
+```text
+$ python3 instruments/journey/journey.py --run /tmp/fmc/completo                                     # exit=0
+veredito do insumo (sem substituir gate nenhum): NOT_RUN (M1=PASS, M2=PASS, M3=PASS, M4=PASS, M5=NOT_RUN, M7=PASS, M10=PASS)
+código de saída do insumo: 0 — todas as cláusulas aplicáveis medidas e PASS; fora de escopo neste insumo: M5 (nao_implementado)
+código de saída do processo: 0 — /tmp/fmc/completo: todas as cláusulas aplicáveis medidas e PASS; fora de escopo neste insumo: M5 (nao_implementado)
+
+$ python3 instruments/journey/journey.py --run /tmp/fmc/fora-de-escopo                               # exit=0
+veredito do insumo (sem substituir gate nenhum): NOT_RUN (M1=PASS, M2=PASS, M3=NOT_RUN, M4=PASS, M5=NOT_RUN, M7=NOT_RUN, M10=NOT_RUN)
+código de saída do insumo: 0 — todas as cláusulas aplicáveis medidas e PASS; fora de escopo neste insumo: M3 (sem_sujeito); M5 (nao_implementado, sem_sujeito); M7 (sem_sujeito); M10 (sem_sujeito)
+código de saída do processo: 0 — /tmp/fmc/fora-de-escopo: todas as cláusulas aplicáveis medidas e PASS; fora de escopo neste insumo: M3 (sem_sujeito); M5 (nao_implementado, sem_sujeito); M7 (sem_sujeito); M10 (sem_sujeito)
+
+$ python3 instruments/journey/journey.py --run /tmp/fmc/completo --inject m2 --out /tmp/fmc/copia-m2   # exit=1
+veredito do insumo (sem substituir gate nenhum): FAIL (M1=PASS, M2=FAIL, M3=PASS, M4=PASS, M5=NOT_RUN, M7=PASS, M10=PASS)
+código de saída do insumo: 1 — cláusula FAIL: M2
+código de saída do processo: 1 — /tmp/fmc/copia-m2: cláusula FAIL: M2
+
+$ python3 instruments/journey/journey.py --run /tmp/fmc/nao-existe                                   # exit=2
+ERRO DE ENTRADA: /tmp/fmc/nao-existe não é um diretório: insumo inexistente
+
+$ python3 instruments/journey/journey.py --journey /tmp/fmc/vazio                                    # exit=2
+ERRO DE ENTRADA: /tmp/fmc/vazio: nenhum artefato — sem `trace.jsonl`, sem `runtime.sqlite` e sem `console.log`. Insumo ausente ou vazio: erro de entrada, não medição vazia (código 2, não 0)
+
+$ python3 instruments/journey/journey.py --run /tmp/fmc/sqlite-ilegivel                              # exit=2
+ERRO DE ENTRADA: SQLite ilegível ou sem o esquema do leitor (`published_cards`/`feed_segments`): /tmp/fmc/sqlite-ilegivel/runtime.sqlite (file is not a database)
+
+$ python3 instruments/journey/journey.py --run /tmp/fmc/completo --out /tmp/fmc/sem-inject           # exit=2
+journey.py: error: --out só faz sentido com --inject
+
+$ python3 instruments/journey/journey.py --run /tmp/fmc/lacuna                                       # exit=3
+veredito do insumo (sem substituir gate nenhum): NOT_RUN (M1=NOT_RUN, M2=PASS, M3=NOT_RUN, M4=NOT_RUN, M5=NOT_RUN, M7=NOT_RUN, M10=PASS)
+código de saída do insumo: 3 — sem FAIL, mas cláusula aplicável não medida: M1 (evidencia_incompleta); M3 (evidencia_incompleta); M4 (evidencia_incompleta); M7 (evidencia_incompleta)
+código de saída do processo: 3 — /tmp/fmc/lacuna: sem FAIL, mas cláusula aplicável não medida: M1 (evidencia_incompleta); M3 (evidencia_incompleta); M4 (evidencia_incompleta); M7 (evidencia_incompleta)
+```
+
+Qual caminho cada controle exercita:
+
+| Controle | Caminho exercitado | Código |
+|---|---|---|
+| `passe-limpo` (`--run completo`) | `0` — M1/M2/M3/M4/M5(a)/M7/M10 medidos (`M5` metade (`b`) é `nao_implementado`) | `0` |
+| `fora-de-escopo` (`--run fora-de-escopo`) | `0` com M3/M5/M7/M10 `sem_sujeito`: prova que "não aplicável" **não** vira `3` | `0` |
+| `falha` (`--inject m2`) | `1` — uma cláusula `FAIL` (M2), sem nenhum outro `FAIL` na saída | `1` |
+| `injeção m1/m2/m3a/m3b/m4/m5/m7/m7a` | `1` cada: as oito injeções que medem violação continuam virando exatamente **um** `FAIL` na cláusula alvo | `1` |
+| `injeção m5b/m10` | `0` cada: continuam sem mudar veredito (número cru e guarda de vacuidade) | `0` |
+| `entrada-inexistente` | `2` — insumo que não existe | `2` |
+| `entrada-sem-artefato` | `2` — diretório vazio (antes saía `0`) | `2` |
+| `entrada-sqlite-ilegivel` | `2` — `runtime.sqlite` que não é banco (antes saía `0`) | `2` |
+| `entrada-argumentos` | `2` — argumento inválido | `2` |
+| `lacuna` (`--run lacuna`: o insumo completo + `trace_truncated` de 2 eventos perdidos) | `3` — nenhum `FAIL`, quatro cláusulas com lacuna `evidencia_incompleta` | `3` |
+
+Resumo da execução de `--selftest` (18 controles, um processo por controle; a saída completa tem a linha e o
+comando de cada um):
+
+```text
+caminho 0: 4/4 controles OK — passe-limpo, fora-de-escopo, injeção m5b, injeção m10
+caminho 1: 9/9 controles OK — falha, injeção m1, injeção m2, injeção m3a, injeção m3b, injeção m4, injeção m5, injeção m7, injeção m7a
+caminho 2: 4/4 controles OK — entrada-sqlite-ilegivel, entrada-sem-artefato, entrada-inexistente, entrada-argumentos
+caminho 3: 1/1 controles OK — lacuna
+controles: todos OK          # exit=0
+```
+
+`--selftest` sai `0` quando os controles valem, `1` quando algum quebrou e `2` quando não conseguiu montar os
+insumos — contrato próprio do modo, separado do contrato de medição: nenhum dos quatro códigos de medição
+depende dele.
+
+### 11.5 Integridade do congelado e integração
+
+No commit do recorte, `git diff --numstat` contra o pai nas dez referências congeladas
+(`bench/oracle.py`, `bench/run.sh`, `bench/serve.py`, `bench/build_corpus.py`, `bench/EVALUATOR.sha256`,
+`bench/MANIFEST.sha256`, `bench/manifest.json`, `bench/expand.py`, `bench/transport_variant.py`,
+`bench/README.md`, `bench/REFERENCE.md`, `bench/revisions/`) é **vazio**, e `git diff --name-status` lista
+apenas as duas renomeações e este relatório. A branch pronta para integrar, criada **da `main`** com um único
+commit, tem exatamente três arquivos: `instruments/journey/journey.py`, `instruments/journey/journey.sha256` e
+este relatório — de modo que a `main` pode avançar por fast-forward.
+
+### 11.6 O que o recorte **não** mudou
+
+- O modelo de cláusula e os três contratos de evidência: `verdict_of` continua `FAIL` > `NOT_RUN` > `PASS`, e
+  qualquer sub-fato não medido continua contaminando o agregado.
+- As sete medições (M1, M2, M3, M4, M5, M7, M10), seus fatos, números crus, notas e o que cada uma lê.
+- A lista de cláusulas explicitamente não implementadas (`NOT_RUN_MEASUREMENTS`), que continua impressa e
+  identificada como não implementada (§6.1), e as dez injeções, cujo alvo e veredito continuam os mesmos
+  (§11.4).
+- O que o relatório já registrava como não provado: nada de build novo, M5 mede asset e não pixel, M7 mede a
+  identidade durável e não o pouso, M10 não tem limiar por desenho.
+

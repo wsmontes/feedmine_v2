@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bench/journey.py — medições binárias lidas do que o app registrou sobre uma jornada real.
+"""instruments/journey/journey.py — medições binárias lidas do que o app registrou sobre uma jornada real.
 
 Duas fontes, nenhuma pergunta inventada:
   * `--run bench/run/<stamp>` — a corrida do bench: o `trace.jsonl` e o `runtime.sqlite` que o contêiner
@@ -11,8 +11,44 @@ Duas fontes, nenhuma pergunta inventada:
 
 Cada medição imprime a pergunta do leitor, o campo do traço que a responde, o veredito binário e o número cru ao
 lado — o número **informa**, não decide (régua de `docs/reviews/2026-10-15-medicoes-obvias-e-constantes-magicas.md`
-§1). Arquivo novo, hash próprio (`bench/journey.sha256`); nada de `bench/` é alterado, e este instrumento não
-substitui nem reescreve B01–B06.
+§1). Instrumento **independente**, com hash próprio (`instruments/journey/journey.sha256`) e fora da régua: mora em
+`instruments/journey/` e não em `bench/`, porque `bench/` é a referência **congelada** (B01–B06) e uma ferramenta
+nova e evolutiva ali dentro pareceria ter autoridade sobre ela. Nada de `bench/` é lido para decidir nem escrito
+por este arquivo, e este instrumento não substitui nem reescreve B01–B06 — é diagnóstico auxiliar, nunca oráculo.
+
+**Código de saída** (o que uma automação lê; a tabela está no relatório §11):
+
+===========  ==========================================================================
+``0``        toda cláusula **aplicável** foi medida e deu `PASS`
+``1``        pelo menos uma cláusula deu `FAIL` (violação **observada**)
+``2``        erro de **entrada ou execução** — insumo inexistente, sem artefato, SQLite ilegível,
+             argumentos inválidos, injeção impossível. **Nunca** se confunde com falha de medição:
+             estes caminhos não imprimem veredito de cláusula, imprimem `ERRO DE ENTRADA`
+``3``        nenhum `FAIL`, mas alguma cláusula aplicável ficou `NOT_RUN` (medição **incompleta**)
+===========  ==========================================================================
+
+`0` e `3` são caminhos distintos de propósito: sem isso, automação que só olha o código leria medição
+incompleta como sucesso. Um veredito `NOT_RUN` **não** basta para `3` — só o `NOT_RUN` de cláusula *aplicável*
+basta. **Aplicável** aqui é uma decisão do modelo de cláusula deste instrumento, não um sinônimo de "todo
+`NOT_RUN`" (a cláusula de superfície, por exemplo, é `NOT_RUN` **por contrato** em todo insumo: nenhum evento a
+mede). Cada sub-fato não medido carrega um **motivo**, de vocabulário fechado:
+
+``sem_sujeito``          o insumo não tem o que medir (sem janela atribuída, sem carta, sem avanço, sem
+                         série de quadros, sem linha durável). Cláusula **não aplicável**.
+``nao_implementado``     nenhuma fonte de evidência existe, por desenho (o pixel desenhado de M5; as cláusulas
+                         da lista "sem evidência hoje"). Cláusula **não aplicável**.
+``evidencia_incompleta`` o sujeito existe, mas o traço anuncia perdas (`trace_truncated`) ou tem linha
+                         ilegível: zero violação não prova nada. **Lacuna** → `3`.
+``nao_resolvido``        o sujeito existe, mas uma referência não se resolve na ordem do leitor. **Lacuna** → `3`.
+``nao_identificado``     o sujeito existe e o registro é ambíguo (0 ou ≥2 linhas duráveis para a edição
+                         medida). **Lacuna** → `3`.
+``nao_comparavel``       o sujeito existe, mas os dois registros não são do mesmo instante (linha durável mais
+                         nova que o fim do traço, ou falta metade do par). **Lacuna** → `3`.
+
+Os dois primeiros motivos deixam a cláusula **fora do escopo do insumo** e não forçam `3`; os quatro últimos são
+**lacuna de medição** e forçam. O veredito agregado impresso continua sendo o do contrato 3 (`FAIL` > `NOT_RUN` >
+`PASS`), então M5 imprime `NOT_RUN` pela metade visual mesmo em `0` — o código de saída diz que *aquela* metade
+não é medição deste insumo, e a linha ``cláusula:`` ao lado diz qual dos dois casos é.
 
 Três contratos de evidência, porque sem eles uma cláusula mente:
 
@@ -33,14 +69,23 @@ relé não recebeu nada (`AppComposition.swift:2363-2366`), **não** que a super
 
 Uso::
 
-    python3 bench/journey.py --help
-    python3 bench/journey.py --run bench/run/20261014T173601Z
-    python3 bench/journey.py --journey /tmp/fm-journey-20261016T075109Z --json
-    python3 bench/journey.py --journey /tmp/fm-journey-20261016T075109Z --series
-    python3 bench/journey.py --run bench/run/20261014T173601Z --inject m1 --out /tmp/inj-m1
+    python3 instruments/journey/journey.py --help
+    python3 instruments/journey/journey.py --selftest          # controles positivos dos quatro códigos de saída
+    python3 instruments/journey/journey.py --run bench/run/20261014T173601Z
+    python3 instruments/journey/journey.py --journey /tmp/fm-journey-20261016T075109Z --json
+    python3 instruments/journey/journey.py --journey /tmp/fm-journey-20261016T075109Z --series
+    python3 instruments/journey/journey.py --run bench/run/20261014T173601Z --inject m1 --out /tmp/inj-m1
 
 `--inject` aplica a violação numa **cópia** do insumo (nunca no original), imprime o diff e mede a cópia: é o
 controle positivo de cada cláusula.
+
+`--selftest` monta insumos sintéticos num diretório temporário e roda **o próprio processo** uma vez por caminho
+de saída, conferindo o código observado e a linha que o justifica: `0` (tudo aplicável medido e `PASS`), `0` de
+novo com cláusulas **fora de escopo** (prova que "não aplicável" não vira `3`), `1` (uma cláusula `FAIL`, via
+`--inject m2`), `2` (insumo inexistente, insumo sem artefato, SQLite ilegível, argumentos inválidos) e `3`
+(cláusula aplicável com lacuna). Ele sai `0` se os controles valem, `1` se algum controle quebrou e `2` se não
+soube montar o insumo — contrato próprio do modo, separado do contrato de medição acima. `--fixtures DIR` monta
+os mesmos insumos num diretório que fica, para um revisor rodar cada caminho com o comando da linha de comando.
 
 Leitura do banco: `runtime.sqlite` (com `-wal` e `-shm`) é copiado para um diretório temporário e aberto em
 `mode=ro`. Ler no lugar cria `-shm`/`-wal` na árvore de quem lê (medido: suja o `identity.txt` de uma corrida em
@@ -57,6 +102,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -141,6 +187,28 @@ def write_file(path: str, content: str) -> None:
         handle.write(content)
 
 
+class InputError(Exception):
+    """Entrada ou execução — **nunca** uma medição: vira código de saída 2, com a razão impressa."""
+
+
+# Motivo de cada sub-fato **não medido**. Os dois primeiros deixam a cláusula fora do escopo do insumo (não
+# aplicável); os quatro últimos são lacuna de medição e forçam o código de saída 3 (tabela no docstring).
+SEM_SUJEITO = "sem_sujeito"
+NAO_IMPLEMENTADO = "nao_implementado"
+EVIDENCIA_INCOMPLETA = "evidencia_incompleta"
+NAO_RESOLVIDO = "nao_resolvido"
+NAO_IDENTIFICADO = "nao_identificado"
+NAO_COMPARAVEL = "nao_comparavel"
+REASONS = (SEM_SUJEITO, NAO_IMPLEMENTADO, EVIDENCIA_INCOMPLETA, NAO_RESOLVIDO, NAO_IDENTIFICADO, NAO_COMPARAVEL)
+GAP_REASONS = (EVIDENCIA_INCOMPLETA, NAO_RESOLVIDO, NAO_IDENTIFICADO, NAO_COMPARAVEL)
+
+# Códigos de saída: a tabela que a automação lê.
+EXIT_OK = 0
+EXIT_FAIL = 1
+EXIT_INPUT = 2
+EXIT_INCOMPLETE = 3
+
+
 class Insumo:
     """Um diretório de corrida ou de jornada. O que não está lá é `None`, e as cláusulas dizem `NOT_RUN`."""
 
@@ -194,10 +262,16 @@ class Insumo:
             media = os.path.join(os.path.dirname(self.database), "Media", "sha256")
             if os.path.isdir(media):
                 self.media_dir = media
+        if self.trace is None and self.database is None and self.console is None:
+            raise InputError(f"{self.path}: nenhum artefato — sem `trace.jsonl`, sem `runtime.sqlite` e sem "
+                "`console.log`. Insumo ausente ou vazio: erro de entrada, não medição vazia (código 2, não 0)")
 
     def _load(self) -> None:
         if self.trace:
-            self.raw_lines, self.events, self.invalid_lines = read_jsonl(self.trace)
+            try:
+                self.raw_lines, self.events, self.invalid_lines = read_jsonl(self.trace)
+            except OSError as error:
+                raise InputError(f"traço ilegível: {self.trace} ({error})") from error
         if self.database:
             self.cards, self.durable = self._read_database(self.database)
             for card in self.cards:
@@ -205,39 +279,54 @@ class Insumo:
             self.index_by_edition = {edition: {card["id"]: position for position, card in enumerate(rows)}
                 for edition, rows in self.by_edition.items()}
         if self.console:
-            with open(self.console, encoding="utf-8", errors="replace") as handle:
-                for line in handle:
-                    match = JOURNEY_RE.search(line)
-                    if match:
-                        self.journey.append(dict(p.split("=", 1) for p in match.group(1).split() if "=" in p))
-                        continue
-                    match = FRAMES_RE.search(line)
-                    if match:
-                        self.frame_lines.append({"frames": int(match.group(1)), "late": int(match.group(2)),
-                            "bad": int(match.group(3)), "severe": int(match.group(4)),
-                            "worst_ms": float(match.group(5))})
+            try:
+                with open(self.console, encoding="utf-8", errors="replace") as handle:
+                    for line in handle:
+                        match = JOURNEY_RE.search(line)
+                        if match:
+                            self.journey.append(dict(p.split("=", 1) for p in match.group(1).split() if "=" in p))
+                            continue
+                        match = FRAMES_RE.search(line)
+                        if match:
+                            self.frame_lines.append({"frames": int(match.group(1)), "late": int(match.group(2)),
+                                "bad": int(match.group(3)), "severe": int(match.group(4)),
+                                "worst_ms": float(match.group(5))})
+            except OSError as error:
+                raise InputError(f"console ilegível: {self.console} ({error})") from error
 
     @staticmethod
     def _read_database(path: str) -> tuple[list[dict], dict]:
+        """Cópia (com `-wal`/`-shm`) aberta em `mode=ro`. Banco que não abre ou não tem o esquema do leitor é
+        **erro de entrada** (código 2): sem ele toda cláusula ficaria `NOT_RUN` e a automação leria `0`."""
         workspace = tempfile.mkdtemp(prefix="journey-db-")
         _TEMPORARY.append(workspace)
         copy = os.path.join(workspace, "runtime.sqlite")
         for suffix in ("", "-wal", "-shm"):
             if os.path.exists(path + suffix):
                 shutil.copy2(path + suffix, copy + suffix)
-        connection = sqlite3.connect(f"file:{copy}?mode=ro", uri=True)
-        connection.row_factory = sqlite3.Row
         try:
-            cards = [dict(row) for row in connection.execute(READER_ORDER).fetchall()]
-        except sqlite3.DatabaseError:
-            cards = []
+            connection = sqlite3.connect(f"file:{copy}?mode=ro", uri=True)
+        except sqlite3.Error as error:
+            raise InputError(f"SQLite não abre: {path} ({error})") from error
+        connection.row_factory = sqlite3.Row
         durable: dict = {"context": [], "session": []}
-        for table, key in (("context_checkpoints", "context"), ("session_checkpoint", "session")):
+        try:
             try:
-                durable[key] = [dict(row) for row in connection.execute(f"SELECT * FROM {table}").fetchall()]
-            except sqlite3.DatabaseError:
-                pass
-        connection.close()
+                cards = [dict(row) for row in connection.execute(READER_ORDER).fetchall()]
+            except sqlite3.DatabaseError as error:
+                raise InputError(f"SQLite ilegível ou sem o esquema do leitor "
+                    f"(`published_cards`/`feed_segments`): {path} ({error})") from error
+            for table, key in (("context_checkpoints", "context"), ("session_checkpoint", "session")):
+                try:
+                    durable[key] = [dict(row) for row in connection.execute(f"SELECT * FROM {table}").fetchall()]
+                except sqlite3.OperationalError as error:
+                    # Tabela ausente é esquema antigo, não banco quebrado: a cláusula que a lê fica sem sujeito.
+                    if "no such table" not in str(error).lower():
+                        raise InputError(f"SQLite ilegível em `{table}`: {path} ({error})") from error
+                except sqlite3.DatabaseError as error:
+                    raise InputError(f"SQLite ilegível em `{table}`: {path} ({error})") from error
+        finally:
+            connection.close()
         return cards, durable
 
     # -- fatos derivados --------------------------------------------------------------------------------------
@@ -321,8 +410,22 @@ class Insumo:
 # -- medições ---------------------------------------------------------------------------------------------------
 
 
-def fact(name: str, observed, expected: str, passed) -> dict:
-    return {"fato": name, "observado": observed, "esperado": expected, "pass": passed}
+def fact(name: str, observed, expected: str, passed, motivo: str | None = None) -> dict:
+    """Um sub-fato: `pass` medido (`True`/`False`) ou `None` **com motivo**.
+
+    O motivo é obrigatório quando não houve medição — é ele que separa "esta cláusula não tem sujeito neste
+    insumo" de "esta cláusula é aplicável e ficou sem medição", e é o que o código de saída lê.
+    """
+    if (passed is None) == (motivo is None):
+        raise ValueError(f"fato {name}: `pass=None` exige motivo, e `pass` medido não aceita motivo")
+    if motivo is not None and motivo not in REASONS:
+        raise ValueError(f"fato {name}: motivo fora do vocabulário: {motivo}")
+    return {"fato": name, "observado": observed, "esperado": expected, "pass": passed, "motivo": motivo}
+
+
+def _gap(passed, motivo: str):
+    """`motivo` só vale quando não houve medição; medido, o motivo tem de sair de cena (o `fact` recusa os dois)."""
+    return motivo if passed is None else None
 
 
 def verdict_of(facts: list[dict]) -> str:
@@ -334,10 +437,49 @@ def verdict_of(facts: list[dict]) -> str:
     return "PASS"
 
 
+def clause_state(result: dict) -> dict:
+    """O que o código de saída lê de uma cláusula, separado do veredito que o leitor lê.
+
+    Aplicável = a cláusula tem sujeito neste insumo: ou algum sub-fato foi medido, ou a lacuna é de medição.
+    Cláusula sem sujeito (ou cuja única metade não medida é `nao_implementado`) **não** é lacuna: é escopo.
+    """
+    gaps, outside = [], []
+    for item in result["fatos"]:
+        if item["pass"] is not None:
+            continue
+        (gaps if item["motivo"] in GAP_REASONS else outside).append(item["motivo"])
+    return {"aplicavel": bool(gaps) or any(item["pass"] is not None for item in result["fatos"]),
+        "lacunas": gaps, "fora_de_escopo": outside}
+
+
+def exit_code_of(results: list[dict]) -> int:
+    """A tabela: `FAIL` manda; senão lacuna de medição em cláusula aplicável; senão `0`."""
+    if any(result["veredito"] == "FAIL" for result in results):
+        return EXIT_FAIL
+    return EXIT_INCOMPLETE if any(clause_state(result)["lacunas"] for result in results) else EXIT_OK
+
+
+def exit_reason(results: list[dict]) -> str:
+    """A frase que acompanha o código — por que este insumo sai com ele."""
+    failures = [result["id"] for result in results if result["veredito"] == "FAIL"]
+    if failures:
+        return f"cláusula FAIL: {', '.join(failures)}"
+    gaps = [f"{result['id']} ({', '.join(sorted(set(clause_state(result)['lacunas'])))})"
+        for result in results if clause_state(result)["lacunas"]]
+    if gaps:
+        return f"sem FAIL, mas cláusula aplicável não medida: {'; '.join(gaps)}"
+    outside = [f"{result['id']} ({', '.join(sorted(set(clause_state(result)['fora_de_escopo'])))})"
+        for result in results if clause_state(result)["fora_de_escopo"]]
+    head = "todas as cláusulas aplicáveis medidas e PASS"
+    return f"{head}; fora de escopo neste insumo: {'; '.join(outside)}" if outside else head
+
+
 def measurement(key: str, title: str, question: str, read_from: str, facts: list[dict], numbers: dict,
     notes: list[str] | None = None) -> dict:
-    return {"id": key, "titulo": title, "pergunta": question, "fato_lido": read_from, "fatos": facts,
+    result = {"id": key, "titulo": title, "pergunta": question, "fato_lido": read_from, "fatos": facts,
         "numeros": numbers, "notas": notes or [], "veredito": verdict_of(facts)}
+    result.update(clause_state(result))
+    return result
 
 
 def measure_m1(ins: Insumo) -> dict:
@@ -372,8 +514,9 @@ def measure_m1(ins: Insumo) -> dict:
             elif seen:
                 empty_then_content += 1
                 break
-    facts = [fact("empty_then_content == 0", empty_then_content, "0",
-        None if not per_generation else ins.absence(empty_then_content))]
+    m1_verdict = None if not per_generation else ins.absence(empty_then_content)
+    facts = [fact("empty_then_content == 0", empty_then_content, "0", m1_verdict,
+        _gap(m1_verdict, SEM_SUJEITO if not per_generation else EVIDENCIA_INCOMPLETA))]
     cards_series = sorted({as_int(line.get("cards")) for line in ins.journey if as_int(line.get("cards")) is not None})
     rejects = [as_int(line.get("install_rejects")) for line in ins.journey]
     return measurement("M1", "A abertura entrega conteúdo na mesma geração",
@@ -398,12 +541,14 @@ def measure_m2(ins: Insumo) -> dict:
     cards = ins.cards
     without_source = sum(1 for card in cards if not (card.get("source_id") or "").strip())
     without_action = sum(1 for card in cards if not (card.get("primary_action_reference") or "").strip())
+    source_verdict = (without_source == 0) if cards else None
+    action_verdict = (without_action == 0) if cards else None
     return measurement("M2", "A primeira tela tem história",
         "Toda carta que eu vi pertence a uma fonte que existe e tem para onde me levar?",
         "`published_cards.source_id` e `.primary_action_reference` (a cláusula parcial do oráculo é "
         "bench/oracle.py:285-287)",
-        [fact("cards_sem_fonte == 0", without_source, "0", without_source == 0 if cards else None),
-         fact("cards_sem_destino == 0", without_action, "0", without_action == 0 if cards else None)],
+        [fact("cards_sem_fonte == 0", without_source, "0", source_verdict, _gap(source_verdict, SEM_SUJEITO)),
+         fact("cards_sem_destino == 0", without_action, "0", action_verdict, _gap(action_verdict, SEM_SUJEITO))],
         {"cartas": len(cards), "edições": len({card["edition"] for card in cards if card["edition"]}),
             "fontes_distintas": len({card.get("source_id") for card in cards if card.get("source_id")}),
             "layouts": sorted({card.get("render_layout") for card in cards})},
@@ -462,17 +607,22 @@ def measure_m3(ins: Insumo) -> dict:
     for advance in advances:
         activities[advance["activity"]] = activities.get(advance["activity"], 0) + 1
     # Sem janela instalada não há "dentro da janela" para medir; sem dois avanços na mesma geração não há "atrás
-    # do anterior". Em ambos os casos é NOT_RUN, nunca PASS.
+    # do anterior". Em ambos os casos é NOT_RUN, nunca PASS — e o motivo diz se é escopo ou lacuna.
     window_verdict = (ins.absence(outside) if not unresolved else None) \
         if (advances and generations) else None
     behind_verdict = (ins.absence(forward_behind) if not unresolved else None) if comparable else None
+    window_motivo = SEM_SUJEITO if not (advances and generations) \
+        else (NAO_RESOLVIDO if unresolved else EVIDENCIA_INCOMPLETA)
+    behind_motivo = SEM_SUJEITO if not comparable else (NAO_RESOLVIDO if unresolved else EVIDENCIA_INCOMPLETA)
     return measurement("M3", "Rolar atinge carta que existe e para frente é para frente",
         "Rolei — e cheguei a cartas de verdade, sem o app me dizer que avancei para um lugar onde eu já estava?",
         "`advance.activity`/`.anchor` (AppComposition.swift:2577-2579) cruzados com a janela instalada "
         "(`admitted.head`/`tail`) e com a ordem do leitor dentro da edição "
         "(`feed_segments.edition_id`, `feed_segments.ordinal`, `published_cards.ordinal`)",
-        [fact("âncora fora da janela instalada == 0", outside, "0", window_verdict),
-         fact("avanço forward atrás da posição observada anterior == 0", forward_behind, "0", behind_verdict)],
+        [fact("âncora fora da janela instalada == 0", outside, "0", window_verdict,
+            _gap(window_verdict, window_motivo)),
+         fact("avanço forward atrás da posição observada anterior == 0", forward_behind, "0", behind_verdict,
+            _gap(behind_verdict, behind_motivo))],
         {"avanços": len(advances), "por_atividade": activities,
             "avanços_com_posição_observada_anterior": comparable,
             "âncoras_distintas": len({advance["anchor"] for advance in advances if advance["anchor"] is not None}),
@@ -515,15 +665,21 @@ def measure_m4(ins: Insumo) -> dict:
                 holes += 1
         reference = row
     gate = (lambda observed: ins.absence(observed)) if not unresolved else (lambda observed: None)
+    series_motivo = SEM_SUJEITO if not series else (NAO_RESOLVIDO if unresolved else EVIDENCIA_INCOMPLETA)
+    holes_motivo = SEM_SUJEITO if not measurable else (NAO_RESOLVIDO if unresolved else EVIDENCIA_INCOMPLETA)
+    anchored = gate(contains_anchor) if series else None
+    shrunk_verdict = gate(shrunk) if series else None
+    tail_verdict = gate(tail_back) if series else None
+    holes_verdict = gate(holes) if measurable else None
     return measurement("M4", "Rolar com trabalho de fundo não move o que está acima da âncora",
         "Rolei e nada acima de mim mudou — o app não retirou, não encolheu e não remendou o feed sob a minha leitura?",
         "`admitted.cards`/`head`/`tail`/`anchor` na ordem do leitor da edição (AppComposition.swift:2346-2350; o "
         "instrumento de B04 mede o mesmo registro em bench/oracle.py:390-460)",
-        [fact("janela instalada contém a âncora == 0", contains_anchor, "0",
-            gate(contains_anchor) if series else None),
-         fact("encolhimentos == 0", shrunk, "0", gate(shrunk) if series else None),
-         fact("cauda recuou == 0", tail_back, "0", gate(tail_back) if series else None),
-         fact("buracos na janela == 0", holes, "0", (gate(holes) if measurable else None))],
+        [fact("janela instalada contém a âncora == 0", contains_anchor, "0", anchored,
+            _gap(anchored, series_motivo)),
+         fact("encolhimentos == 0", shrunk, "0", shrunk_verdict, _gap(shrunk_verdict, series_motivo)),
+         fact("cauda recuou == 0", tail_back, "0", tail_verdict, _gap(tail_verdict, series_motivo)),
+         fact("buracos na janela == 0", holes, "0", holes_verdict, _gap(holes_verdict, holes_motivo))],
         {"instalações": len(series), "instalações_não_resolvidas": unresolved,
             "cabeça_avançou": head_forward, "gerações": len({row["generation"] for row in series})},
         ["`cabeça_avançou` é número cru: numa corrida que rola, a cabeça seguir o leitor é a poda declarada "
@@ -556,14 +712,15 @@ def measure_m5(ins: Insumo) -> dict:
         and (card["media_key"])[len(MEDIA_KEY_PREFIX):] not in files]
     missing_all = [card for card in declared if (card["media_key"])[len(MEDIA_KEY_PREFIX):] not in files]
     measurable = bool(window_cards) and ins.media_dir is not None
+    asset_verdict = (len(missing_in_window) == 0) if measurable else None
     return measurement("M5", "As imagens aparecem (o que o asset local prova, e o que não prova)",
         "As imagens apareceram nos cartões — sem imagem quebrada?",
         "`published_cards.media_key` vs. `Media/sha256/<digest>` para as cartas da janela instalada "
         "(AssetStore.swift:37-45,78-79); `render_layout` em PresentationCard.swift:11-15",
         [fact("cartas da janela com mídia declarada e sem asset local == 0", len(missing_in_window), "0",
-            (len(missing_in_window) == 0) if measurable else None),
+            asset_verdict, _gap(asset_verdict, SEM_SUJEITO)),
          fact("a imagem foi desenhada (pixel decodificado) — precisa de tela, não de arquivo", "sem evidência",
-            "igualdade com a tela do cartão", None)],
+            "igualdade com a tela do cartão", None, NAO_IMPLEMENTADO)],
         {"cartas": len(cards_ := ins.cards), "edições": len({card["edition"] for card in cards_ if card["edition"]}),
             "cartas_na_última_janela": len(window_cards),
             "com_mídia_declarada": len(declared), "digests_distintos": len({card["media_key"] for card in declared}),
@@ -599,28 +756,39 @@ def measure_m7(ins: Insumo) -> dict:
     measured_edition = (ins.fields(installs[-1]).get("edition") or "").lower() if installs else None
     rows = [row for row in (ins.durable.get("context") or [])
         if (row.get("edition_id") or "").lower() == measured_edition]
-    session = (ins.durable.get("session") or [None])[0]
+    session_rows = ins.durable.get("session") or []
+    session = (session_rows or [None])[0]
     reported = checkpoints[-1]["anchor"] if checkpoints else None
     reported_at = checkpoints[-1]["at"] if checkpoints else None
     stored = (rows[0].get("card_id") or "").lower() if len(rows) == 1 else None
     stored_at = rows[0].get("updated_at") if len(rows) == 1 else None
     last_event_at = ins.events[-1].get("at") if ins.events else None
-    context_verdict = None
+    # As guardas abaixo são as mesmas da versão aprovada; o que mudou é que cada saída por `None` agora diz
+    # **por que** — escopo do insumo (`sem_sujeito`) ou lacuna de medição (o resto). O código de saída lê isso.
+    context_verdict, context_motivo = None, None
     if not rows:
-        context_verdict = None
+        # Banco sem nenhuma linha durável tem menos sujeito que banco com linhas de outras edições: naquele, o
+        # app não gravou âncora durável nenhuma; neste, gravou, mas não a do contexto medido.
+        context_motivo = NAO_IDENTIFICADO if (ins.durable.get("context") or []) else SEM_SUJEITO
     elif len(rows) > 1:
-        context_verdict = None
-    elif not (reported and stored and stored_at is not None and last_event_at is not None):
-        context_verdict = None
+        context_motivo = NAO_IDENTIFICADO
+    elif last_event_at is None:
+        context_motivo = SEM_SUJEITO
+    elif not (reported and stored and stored_at is not None):
+        context_motivo = NAO_COMPARAVEL
+    elif not isinstance(stored_at, (int, float)):
+        context_motivo = NAO_COMPARAVEL
     elif stored_at > last_event_at + 1.0:
-        context_verdict = None
+        context_motivo = NAO_COMPARAVEL
     elif not ins.complete():
-        context_verdict = None
+        context_motivo = EVIDENCIA_INCOMPLETA
     else:
         context_verdict = stored == reported
-    session_verdict = None
+    session_verdict, session_motivo = None, None
     if stored and session and session.get("card_id"):
         session_verdict = (session["card_id"] or "").lower() == stored
+    else:
+        session_motivo = SEM_SUJEITO if not session_rows else NAO_IDENTIFICADO
     reported_index = ins.position(reported, measured_edition)
     stored_index = ins.position(stored, measured_edition)
     return measurement("M7", "A âncora que eu reabro é a âncora que o app gravou",
@@ -628,14 +796,16 @@ def measure_m7(ins: Insumo) -> dict:
         "último `position_checkpoint.anchor` do traço (AppComposition.swift:2689-2690) vs. "
         "`context_checkpoints.card_id` (a linha do contexto medido) e `session_checkpoint.card_id`",
         [fact("âncora durável do contexto medido == última âncora relatada", (stored == reported) if context_verdict
-            is not None else "não comparável", "igualdade", context_verdict),
+            is not None else "não comparável", "igualdade", context_verdict,
+            _gap(context_verdict, context_motivo)),
          fact("a linha de sessão concorda com a do contexto medido", (session or {}).get("card_id"), stored,
-            session_verdict)],
+            session_verdict, _gap(session_verdict, session_motivo))],
         {"edição_medida": measured_edition, "checkpoints_relatados": len(checkpoints),
             "âncora_relatada": reported, "âncora_relatada_índice": reported_index,
             "âncora_durável": stored, "âncora_durável_índice": stored_index,
             "linhas_de_contexto_do_medido": len(rows),
-            "âncora_durável_em": iso(stored_at), "último_evento_do_traço_em": iso(last_event_at),
+            "âncora_durável_em": iso(stored_at) if isinstance(stored_at, (int, float)) else stored_at,
+            "último_evento_do_traço_em": iso(last_event_at),
             "traço_completo": ins.complete(),
             "regressão_da_âncora": (stored_index < reported_index
                 if stored_index is not None and reported_index is not None else None)},
@@ -672,11 +842,12 @@ def measure_m10(ins: Insumo) -> dict:
             "segundos_com_severe": sum(1 for row in rows if (row["severe"] or 0) > 0)}
 
     seconds = len(trace_rows) or len(ins.frame_lines)
+    series_verdict = True if seconds else None
     return measurement("M10", "Rolar rápido: a série de quadros, relatada",
         "Rolei rápido — o que o app mediu de cada segundo, quadro a quadro?",
         "`frames.frames/late/bad/severe/worst_ms/budget_ms` do traço (FeedFrameMeter.swift) e as linhas "
         "`feedmine frames=…` do console",
-        [fact("série medida (segundos > 0)", seconds, "> 0", True if seconds else None)],
+        [fact("série medida (segundos > 0)", seconds, "> 0", series_verdict, _gap(series_verdict, SEM_SUJEITO))],
         {"traço": totals(trace_rows), "console": totals(ins.frame_lines),
             "traço_completo": ins.complete()},
         ["Sem limiar por desenho: a razão fora do orçamento é impressa e não decide. `--series` imprime a série "
@@ -733,7 +904,7 @@ def _copy_insumo(ins: Insumo, out: str) -> None:
     Sem o console, uma injeção tiraria da cópia evidência que não tem nada a ver com ela."""
     if os.path.exists(out):
         if os.listdir(out):
-            raise SystemExit(f"REFUSED: --out {out} existe e não está vazio")
+            raise InputError(f"REFUSED: --out {out} existe e não está vazio")
     os.makedirs(out, exist_ok=True)
     if ins.trace:
         shutil.copy2(ins.trace, os.path.join(out, "trace.jsonl"))
@@ -818,7 +989,7 @@ def inject(ins: Insumo, which: str, out: str) -> list[str]:
                    for other_gen, other_cards, _ in attributed[position + 1:]):
                 target = event
         if target is None:
-            raise SystemExit("REFUSED: nenhuma janela com conteúdo seguida de outra na mesma geração")
+            raise InputError("REFUSED: nenhuma janela com conteúdo seguida de outra na mesma geração")
         stamp = (target.get("at"), target.get("mono"))
 
         def mutate(event, number, stamp=stamp):
@@ -869,7 +1040,7 @@ def inject(ins: Insumo, which: str, out: str) -> list[str]:
             if anchor is not None:
                 previous[generation] = anchor
         if target is None:
-            raise SystemExit(f"REFUSED: nenhum avanço adequado para a injeção {which}")
+            raise InputError(f"REFUSED: nenhum avanço adequado para a injeção {which}")
         stamp, replacement = (target[0].get("at"), target[0].get("mono")), target[1]
 
         def mutate(event, number, stamp=stamp, replacement=replacement):
@@ -891,7 +1062,7 @@ def inject(ins: Insumo, which: str, out: str) -> list[str]:
                 target = row
                 break
         if target is None:
-            raise SystemExit("REFUSED: nenhuma instalação com cabeça além da primeira carta")
+            raise InputError("REFUSED: nenhuma instalação com cabeça além da primeira carta")
         rows = ins.by_edition[target["edition"]]
         before, after = rows[target["head"]], rows[target["head"] + 1]
         stamp = (target["at"], target["mono"])
@@ -917,12 +1088,12 @@ def inject(ins: Insumo, which: str, out: str) -> list[str]:
             window_cards = rows[installs[-1]["head"]:installs[-1]["tail"] + 1]
         candidates = [card for card in window_cards if (card.get("media_key") or "").startswith(MEDIA_KEY_PREFIX)]
         if not candidates:
-            raise SystemExit("REFUSED: nenhuma carta da janela declara mídia")
+            raise InputError("REFUSED: nenhuma carta da janela declara mídia")
         if which == "m5":
             digest = candidates[0]["media_key"][len(MEDIA_KEY_PREFIX):]
             path = os.path.join(out, "Media", "sha256", digest)
             if not os.path.exists(path):
-                raise SystemExit(f"REFUSED: o asset {digest} não está na cópia")
+                raise InputError(f"REFUSED: o asset {digest} não está na cópia")
             size = os.path.getsize(path)
             os.remove(path)
             return [f"injeção m5: o asset local da carta {candidates[0]['id']} (na janela instalada) é apagado:",
@@ -939,12 +1110,12 @@ def inject(ins: Insumo, which: str, out: str) -> list[str]:
     if which in ("m7", "m7a"):
         row = _sql(database, "SELECT card_id FROM context_checkpoints LIMIT 1")
         if not row:
-            raise SystemExit("REFUSED: nenhuma linha em context_checkpoints")
+            raise InputError("REFUSED: nenhuma linha em context_checkpoints")
         if which == "m7":
             anchors = [ins.fields(event).get("anchor", "").lower() for event in ins.events_of("position_checkpoint")]
             replacement = anchors[0] if anchors else None
             if not replacement or replacement == row[0][0]:
-                raise SystemExit("REFUSED: nenhuma âncora relatada anterior serve de destino")
+                raise InputError("REFUSED: nenhuma âncora relatada anterior serve de destino")
         else:
             replacement = "00000000-0000-4000-8000-000000000000"
         _sql(database, "UPDATE context_checkpoints SET card_id = ?", (replacement,))
@@ -974,17 +1145,34 @@ def inject(ins: Insumo, which: str, out: str) -> list[str]:
         return _report(f"injeção m10: a série de quadros sai do insumo ({record['removed']} linhas do traço, "
             f"{removed_console} do console)", record)
 
-    raise SystemExit(f"REFUSED: injeção desconhecida {which}")
+    raise InputError(f"REFUSED: injeção desconhecida {which}")
 
 
 # -- impressão --------------------------------------------------------------------------------------------------
+
+
+def clause_line(result: dict) -> str:
+    """O que o código de saída vê nesta cláusula — separado do veredito que o leitor vê."""
+    state = clause_state(result)
+    if state["lacunas"]:
+        return f"aplicável, com lacuna de medição: {', '.join(sorted(set(state['lacunas'])))}"
+    if not state["aplicavel"]:
+        return f"não aplicável neste insumo: {', '.join(sorted(set(state['fora_de_escopo'])))}"
+    if state["fora_de_escopo"]:
+        return ("aplicável e medida; fora de escopo: "
+            + ", ".join(sorted(set(state["fora_de_escopo"]))))
+    return "aplicável e medida"
 
 
 def render_measurement(result: dict) -> str:
     lines = [f"[{result['id']}] {result['titulo']}",
         f"  pergunta do leitor: {result['pergunta']}", f"  fato lido: {result['fato_lido']}"]
     for item in result["fatos"]:
-        label = {True: "PASS", False: "FAIL", None: "NOT_RUN"}[item["pass"]]
+        if item["pass"] is None:
+            scope = "lacuna de medição" if item["motivo"] in GAP_REASONS else "fora de escopo"
+            label = f"NOT_RUN: {scope} — {item['motivo']}"
+        else:
+            label = {True: "PASS", False: "FAIL"}[item["pass"]]
         lines.append(f"    [{label}] {item['fato']} — esperado: {item['esperado']}, observado: {item['observado']}")
     lines.append("  números crus (informam, não decidem):")
     for key, value in result["numeros"].items():
@@ -995,6 +1183,7 @@ def render_measurement(result: dict) -> str:
     for note in result["notas"]:
         lines.append(f"  nota: {note}")
     lines.append(f"  veredito: {result['veredito']}")
+    lines.append(f"  cláusula: {clause_line(result)}")
     return "\n".join(lines)
 
 
@@ -1021,7 +1210,9 @@ def render(ins: Insumo, results: list[dict], series: list[str] | None) -> str:
     for result in results:
         lines.append(render_measurement(result))
         lines.append("")
-    lines.append("sem evidência hoje (NOT_RUN por contrato, não por falha):")
+    lines.append("sem evidência hoje (NOT_RUN por contrato, não por falha — cláusulas que este instrumento **não**\n"
+        "implementa e que **não** são aprovação global; ficam fora do código de saída por declaração, e não por\n"
+        "medição):")
     for entry in NOT_RUN_MEASUREMENTS:
         lines.append(f"[{entry['id']}] {entry['titulo']}\n  veredito: NOT_RUN\n  falta: {entry['falta']}\n"
             f"  onde: {entry['onde']}")
@@ -1034,6 +1225,7 @@ def render(ins: Insumo, results: list[dict], series: list[str] | None) -> str:
     overall = "FAIL" if "FAIL" in verdicts else ("NOT_RUN" if "NOT_RUN" in verdicts else "PASS")
     lines.append(f"veredito do insumo (sem substituir gate nenhum): {overall} "
         f"({', '.join(result['id'] + '=' + result['veredito'] for result in results)})")
+    lines.append(f"código de saída do insumo: {exit_code_of(results)} — {exit_reason(results)}")
     return "\n".join(lines)
 
 
@@ -1048,6 +1240,214 @@ def series_of(ins: Insumo) -> list[str]:
         rows.append(f"  console t={index}s frames={row['frames']} late={row['late']} bad={row['bad']} "
             f"severe={row['severe']} worst_ms={row['worst_ms']}")
     return rows
+
+
+# -- controles positivos dos quatro códigos de saída ------------------------------------------------------------
+#
+# Sem insumo real à mão (as corridas vivem em `bench/run/`, fora do git), os controles montam insumos sintéticos
+# **mínimos** num diretório temporário — a mesma receita da §5.11 do relatório, agora com o banco escrito aqui em
+# vez de copiado de uma corrida. Cada controle roda **o próprio processo** e confere o código de saída observado e
+# a linha que o justifica: é o único jeito de provar o número que uma automação lê.
+
+FIXTURE_EDITION = "11111111-1111-4111-8111-111111111111"
+FIXTURE_DIGEST = "ab" * 32
+FIXTURE_CARDS = 5
+
+
+def _fixture_card(index: int) -> dict:
+    return {"id": f"{index:08x}-0000-4000-8000-000000000000", "ordinal": index, "source_id": f"source-{index}",
+        "primary_action_reference": f"https://example.test/card/{index}", "primary_action_kind": "openURL",
+        "media_key": f"{MEDIA_KEY_PREFIX}{FIXTURE_DIGEST}" if index == 2 else None,
+        "render_layout": "hero" if index == 2 else TEXT_LAYOUT, "media_pixel_width": 1200,
+        "media_pixel_height": 800, "media_mime_type": "image/jpeg"}
+
+
+def _fixture_trace(complete_series: bool, truncated: bool) -> list[dict]:
+    """Duas instalações na mesma geração e dois avanços para frente — o mínimo que M1/M3/M4 leem, com a segunda
+    instalação começando depois da primeira carta (é o que a injeção `m4` precisa para ter o que retirar) e a
+    carta de mídia **dentro** da janela final (o que `m5`/`m5b` precisam). Com `complete_series=False` saem os
+    avanços, a série de quadros e os checkpoints: M3/M7/M10 ficam sem sujeito."""
+    cards = [_fixture_card(index) for index in range(1, FIXTURE_CARDS + 1)]
+    events = [
+        {"at": 1000.0, "mono": 1000.0, "event": "admitted", "fields": {"edition": FIXTURE_EDITION, "sequence": "1",
+            "cards": "4", "head": cards[0]["id"], "tail": cards[3]["id"], "anchor": cards[0]["id"]}},
+        {"at": 1000.5, "mono": 1000.5, "event": "window", "fields": {"cards": "4"}},
+    ]
+    if complete_series:
+        events += [
+            {"at": 1001.0, "mono": 1001.0, "event": "advance",
+                "fields": {"activity": "forward", "anchor": cards[2]["id"]}},
+            {"at": 1001.5, "mono": 1001.5, "event": "frames",
+                "fields": {"frames": "60", "late": "0", "bad": "0", "severe": "0", "worst_ms": "12.0",
+                    "budget_ms": "16.67"}},
+        ]
+    events += [
+        {"at": 1002.0, "mono": 1002.0, "event": "admitted", "fields": {"edition": FIXTURE_EDITION, "sequence": "1",
+            "cards": "4", "head": cards[1]["id"], "tail": cards[4]["id"], "anchor": cards[2]["id"]}},
+        {"at": 1002.5, "mono": 1002.5, "event": "window", "fields": {"cards": "4"}},
+    ]
+    if complete_series:
+        events += [
+            {"at": 1002.75, "mono": 1002.75, "event": "position_checkpoint", "fields": {"anchor": cards[2]["id"]}},
+            {"at": 1003.0, "mono": 1003.0, "event": "advance",
+                "fields": {"activity": "forward", "anchor": cards[3]["id"]}},
+            {"at": 1004.0, "mono": 1004.0, "event": "position_checkpoint", "fields": {"anchor": cards[3]["id"]}},
+            {"at": 1005.0, "mono": 1005.0, "event": "frames",
+                "fields": {"frames": "58", "late": "1", "bad": "0", "severe": "0", "worst_ms": "18.4",
+                    "budget_ms": "16.67"}},
+        ]
+    if truncated:
+        events.append({"at": 1005.5, "mono": 1005.5, "event": "trace_truncated",
+            "fields": {"ceiling": "40000", "written": "40000", "dropped_by_ceiling": "2", "dropped_by_write": "0",
+                "dropped_by_encoding": "0"}})
+    return events
+
+
+def _fixture_database(path: str, cards: list[dict], durable: bool) -> None:
+    """O esquema que o instrumento lê, com as colunas que as injeções tocam. `durable=False` deixa as duas
+    tabelas de posição **vazias** de propósito: nenhuma âncora durável, nenhum sujeito para M7."""
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute("CREATE TABLE feed_segments (id TEXT PRIMARY KEY, edition_id TEXT, ordinal INTEGER)")
+        connection.execute("CREATE TABLE published_cards (id TEXT PRIMARY KEY, source_id TEXT, "
+            "primary_action_reference TEXT, primary_action_kind TEXT, media_key TEXT, render_layout TEXT, "
+            "media_pixel_width INTEGER, media_pixel_height INTEGER, media_mime_type TEXT, segment_id TEXT, "
+            "ordinal INTEGER)")
+        connection.execute("CREATE TABLE context_checkpoints (edition_id TEXT PRIMARY KEY, card_id TEXT, "
+            "updated_at REAL)")
+        connection.execute("CREATE TABLE session_checkpoint (card_id TEXT, updated_at REAL)")
+        connection.execute("INSERT INTO feed_segments VALUES (?, ?, ?)", ("segment-1", FIXTURE_EDITION, 1))
+        for card in cards:
+            connection.execute("INSERT INTO published_cards VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (card["id"], card["source_id"], card["primary_action_reference"], card["primary_action_kind"],
+                    card["media_key"], card["render_layout"], card["media_pixel_width"],
+                    card["media_pixel_height"], card["media_mime_type"], "segment-1", card["ordinal"]))
+        if durable:
+            connection.execute("INSERT INTO context_checkpoints VALUES (?, ?, ?)",
+                (FIXTURE_EDITION, cards[3]["id"], 1004.5))
+            connection.execute("INSERT INTO session_checkpoint VALUES (?, ?)", (cards[3]["id"], 1004.5))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _fixture(root: str, name: str, *, complete_series: bool, durable: bool, media: bool,
+    truncated: bool = False) -> str:
+    path = os.path.join(root, name)
+    os.makedirs(path)
+    cards = [_fixture_card(index) for index in range(1, FIXTURE_CARDS + 1)]
+    _fixture_database(os.path.join(path, "runtime.sqlite"), cards, durable)
+    write_file(os.path.join(path, "trace.jsonl"),
+        "".join(compact(event) + "\n" for event in _fixture_trace(complete_series, truncated)))
+    if media:
+        directory = os.path.join(path, "Media", "sha256")
+        os.makedirs(directory)
+        write_file(os.path.join(directory, FIXTURE_DIGEST), "fixture")
+    return path
+
+
+def _control(argv: list[str]) -> tuple[int, str]:
+    """Roda este arquivo como **processo** e devolve (código de saída, saída crua). Filtra do ambiente o que
+    não interessa ao controle: `PYTHONHASHSEED`/locale não mudam veredito, e nada aqui lê variável do app."""
+    process = subprocess.run([sys.executable, os.path.abspath(__file__)] + argv,
+        capture_output=True, text=True)
+    return process.returncode, process.stdout + process.stderr
+
+
+def build_fixtures(root: str) -> dict:
+    """Monta os insumos sintéticos dos controles em `root` (que precisa não existir ou estar vazio).
+
+    Os três insumos de medição e os dois de erro saem daqui, e não de `/tmp` de sessão: com `--fixtures DIR` um
+    revisor monta os mesmos insumos e roda **cada caminho de saída** com o comando da linha de comando, sem
+    depender da contabilidade deste arquivo.
+    """
+    if os.path.exists(root) and os.listdir(root):
+        raise InputError(f"REFUSED: {root} existe e não está vazio")
+    os.makedirs(root, exist_ok=True)
+    vazio = os.path.join(root, "vazio")
+    os.makedirs(vazio)
+    quebrado = os.path.join(root, "sqlite-ilegivel")
+    os.makedirs(quebrado)
+    write_file(os.path.join(quebrado, "runtime.sqlite"), "isto não é um banco SQLite\n")
+    return {"completo": _fixture(root, "completo", complete_series=True, durable=True, media=True),
+        "fora-de-escopo": _fixture(root, "fora-de-escopo", complete_series=False, durable=False, media=False),
+        "lacuna": _fixture(root, "lacuna", complete_series=True, durable=True, media=True, truncated=True),
+        "vazio": vazio, "sqlite-ilegivel": quebrado}
+
+
+def selftest() -> int:
+    """Os controles positivos dos quatro códigos. Sai `0` se todos valem, `1` se algum quebrou, `2` se não
+    consegui montar os insumos (erro de execução do próprio controle, nunca veredito de medição)."""
+    workspace = tempfile.mkdtemp(prefix="journey-selftest-")
+    _TEMPORARY.append(workspace)
+    try:
+        built = build_fixtures(workspace)
+    except (InputError, OSError) as error:
+        print(f"ERRO DE EXECUÇÃO: não montei os insumos sintéticos ({error})", file=sys.stderr)
+        _cleanup()
+        return EXIT_INPUT
+
+    # Grupo 1: os quatro códigos de saída. Grupo 2: os dez controles de injeção que já existiam — as oito que
+    # medem violação têm de continuar virando `1`, e `m5b`/`m10` continuam `0` (elas mexem em número cru e em
+    # guarda de vacuidade, não em cláusula). "Só a cláusula-alvo muda" é conferido em `=FAIL` por saída.
+    controls = [
+        {"nome": "passe-limpo", "espera": EXIT_OK, "argv": ["--run", built["completo"]], "falhas": 0,
+         "linha": "código de saída do insumo: 0 — todas as cláusulas aplicáveis medidas e PASS"},
+        {"nome": "fora-de-escopo", "espera": EXIT_OK, "argv": ["--run", built["fora-de-escopo"]], "falhas": 0,
+         "linha": "fora de escopo neste insumo: M3 (sem_sujeito)"},
+        {"nome": "falha", "espera": EXIT_FAIL, "falhas": 1,
+         "argv": ["--run", built["completo"], "--inject", "m2", "--out", os.path.join(workspace, "copia-falha-m2")],
+         "linha": "código de saída do insumo: 1 — cláusula FAIL: M2"},
+        {"nome": "entrada-sqlite-ilegivel", "espera": EXIT_INPUT, "argv": ["--run", built["sqlite-ilegivel"]],
+         "falhas": None, "linha": "ERRO DE ENTRADA"},
+        {"nome": "entrada-sem-artefato", "espera": EXIT_INPUT, "argv": ["--journey", built["vazio"]],
+         "falhas": None, "linha": "ERRO DE ENTRADA"},
+        {"nome": "entrada-inexistente", "espera": EXIT_INPUT, "argv": ["--run", os.path.join(workspace, "nao-existe")],
+         "falhas": None, "linha": "ERRO DE ENTRADA"},
+        {"nome": "entrada-argumentos", "espera": EXIT_INPUT, "falhas": None,
+         "argv": ["--run", built["completo"], "--out", os.path.join(workspace, "sem-inject")],
+         "linha": "só faz sentido com --inject"},
+        {"nome": "lacuna", "espera": EXIT_INCOMPLETE, "argv": ["--run", built["lacuna"]], "falhas": 0,
+         "linha": "código de saída do insumo: 3 — sem FAIL, mas cláusula aplicável não medida: M1 "
+             "(evidencia_incompleta)"},
+    ]
+    for injection, clause, espera in (("m1", "M1", EXIT_FAIL), ("m2", "M2", EXIT_FAIL), ("m3a", "M3", EXIT_FAIL),
+        ("m3b", "M3", EXIT_FAIL), ("m4", "M4", EXIT_FAIL), ("m5", "M5", EXIT_FAIL), ("m7", "M7", EXIT_FAIL),
+        ("m7a", "M7", EXIT_FAIL), ("m5b", None, EXIT_OK), ("m10", None, EXIT_OK)):
+        controls.append({"nome": f"injeção {injection}", "espera": espera, "falhas": 1 if clause else 0,
+            "argv": ["--run", built["completo"], "--inject", injection, "--out",
+                os.path.join(workspace, f"copia-{injection}")],
+            "linha": f"cláusula FAIL: {clause}" if clause else "código de saída do insumo: 0"})
+
+    observed: dict[str, int] = {}
+    failures: list[str] = []
+    for position, control in enumerate(controls):
+        if position == 8:
+            print("=" * 96)
+            print("os dez controles de injeção que já existiam (nenhum pode ter mudado de veredito)")
+            print("=" * 96)
+        code, output = _control(control["argv"])
+        observed[control["nome"]] = code
+        line = next((row for row in output.splitlines() if control["linha"] in row), "")
+        counted = output.count("=FAIL")
+        good = code == control["espera"] and bool(line) \
+            and (control["falhas"] is None or counted == control["falhas"])
+        if not good:
+            failures.append(control["nome"])
+        print(f"controle `{control['nome']}`: esperado {control['espera']}, observado {code} — "
+            f"{'OK' if good else 'FALHOU'}"
+            + ("" if control["falhas"] is None else f" (cláusulas FAIL na saída: {counted}, "
+                f"esperadas: {control['falhas']})"))
+        print(f"  comando: {os.path.abspath(__file__)} {' '.join(control['argv'])}")
+        print(f"  linha: {line if line else '(a linha esperada não apareceu)'}")
+    for code in (EXIT_OK, EXIT_FAIL, EXIT_INPUT, EXIT_INCOMPLETE):
+        names = [control for control in controls if control["espera"] == code]
+        hits = sum(1 for control in names if observed[control["nome"]] == code)
+        print(f"caminho {code}: {hits}/{len(names)} controles OK — "
+            f"{', '.join(control['nome'] for control in names)}")
+    print("controles: " + ("todos OK" if not failures else f"QUEBRARAM: {', '.join(failures)}"))
+    _cleanup()
+    return EXIT_OK if not failures else EXIT_FAIL
 
 
 MEASUREMENTS = [measure_m1, measure_m2, measure_m3, measure_m4, measure_m5, measure_m7, measure_m10]
@@ -1072,6 +1472,23 @@ B01), M11 (bench/expand.py), M12 (instante de lançamento) e M7-pouso (tipo de a
 contratos de evidência: sem sujeito é NOT_RUN; zero violação sobre traço incompleto é NOT_RUN (o traço anuncia
 suas perdas em `trace_truncated`); qualquer sub-fato não medido torna o agregado NOT_RUN.
 
+código de saída (o que a automação lê):
+  0  toda cláusula aplicável medida e PASS
+  1  pelo menos uma cláusula FAIL
+  2  erro de entrada ou execução — insumo inexistente, insumo sem artefato, SQLite ilegível, argumentos
+     inválidos, injeção impossível. Nunca se confunde com falha de medição: não imprime veredito de cláusula
+  3  sem FAIL, mas cláusula aplicável NOT_RUN (lacuna de medição)
+
+aplicável x fora de escopo: cada sub-fato não medido traz um motivo. `sem_sujeito` (o insumo não tem o que
+medir) e `nao_implementado` (nenhuma fonte de evidência existe, por desenho) são fora de escopo e NÃO forçam 3;
+`evidencia_incompleta`, `nao_resolvido`, `nao_identificado` e `nao_comparavel` são lacuna de medição e forçam.
+As cláusulas da lista "sem evidência hoje" são `nao_implementado`: continuam identificadas no relatório e no
+bloco abaixo, **não** são medida deste instrumento e não são aprovação global de nada.
+
+--selftest monta insumos sintéticos e roda os controles dos quatro códigos num processo por caminho; sai 0 se
+todos valem, 1 se algum quebrou, 2 se não soube montar o insumo. --fixtures DIR monta os mesmos insumos num
+diretório que fica, para rodar cada caminho à mão (sai 0 se montou, 2 se não pôde).
+
 injeções (controle positivo, sempre numa cópia; `--out` precisa não existir ou estar vazio):
   m1  uma janela desenhada declara cards=0 no meio da geração
   m2  uma carta perde o destino (reference e kind em NULL)
@@ -1086,6 +1503,13 @@ injeções (controle positivo, sempre numa cópia; `--out` precisa não existir 
 """
 
 
+def combined_exit(codes: list[int]) -> int:
+    """Vários insumos: `FAIL` de qualquer um manda; depois lacuna; depois `0`."""
+    if EXIT_FAIL in codes:
+        return EXIT_FAIL
+    return EXIT_INCOMPLETE if EXIT_INCOMPLETE in codes else EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="journey.py",
         description="O instrumento de jornada: medições binárias lidas do traço do app e do console do aparelho.",
@@ -1098,7 +1522,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--series", action="store_true", help="imprime a série de quadros inteira")
     parser.add_argument("--inject", choices=INJECTIONS, metavar="NOME", help="injeta a violação NOME numa cópia")
     parser.add_argument("--out", metavar="DIR", help="destino da cópia injetada (exige --inject)")
+    parser.add_argument("--selftest", action="store_true",
+        help="roda os controles positivos dos quatro códigos de saída (0, 1, 2, 3)")
+    parser.add_argument("--fixtures", metavar="DIR",
+        help="monta os insumos sintéticos dos controles em DIR e imprime os caminhos")
     arguments = parser.parse_args(argv)
+    if arguments.fixtures:
+        if arguments.run or arguments.journey or arguments.inject or arguments.out or arguments.json:
+            parser.error("--fixtures não combina com --run/--journey/--inject/--out/--json")
+        try:
+            built = build_fixtures(arguments.fixtures)
+        except (InputError, OSError) as error:
+            print(f"ERRO DE ENTRADA: {error}", file=sys.stderr)
+            return EXIT_INPUT
+        print(f"insumos sintéticos em {os.path.abspath(arguments.fixtures)} "
+            "(controles; nenhum deles é medição de produto):")
+        for name, path in built.items():
+            print(f"  {name}: {path}")
+        print("  os quatro caminhos de saída: --run completo (0) · --run completo --inject m2 --out DIR/copia (1) · "
+            "--run nao-existe | --journey vazio | --run sqlite-ilegivel | --run completo --out DIR/x (2) · "
+            "--run lacuna (3)")
+        return EXIT_OK
+    if arguments.selftest:
+        if arguments.run or arguments.journey or arguments.inject or arguments.out or arguments.json:
+            parser.error("--selftest não combina com --run/--journey/--inject/--out/--json")
+        return selftest()
     if not arguments.run and not arguments.journey:
         parser.error("informe --run <bench/run/<stamp>> e/ou --journey <dir>")
     if arguments.inject and not arguments.out:
@@ -1106,34 +1554,47 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.out and not arguments.inject:
         parser.error("--out só faz sentido com --inject")
 
-    exit_code = 0
     payload = []
-    for kind, paths in (("corrida", arguments.run), ("jornada", arguments.journey)):
-        for path in paths:
-            if not os.path.isdir(path):
-                print(f"REFUSED: {path} não é um diretório", file=sys.stderr)
-                return 2
-            ins = Insumo(path, kind)
-            try:
-                if arguments.inject:
-                    changed = inject(ins, arguments.inject, arguments.out)
-                    print("=" * 96)
-                    print(f"injeção {arguments.inject} em {arguments.out} (o original {ins.path} não foi tocado)")
-                    print("=" * 96)
-                    print("\n".join(changed))
-                    print()
-                    ins = Insumo(arguments.out, kind)
-                results = [measure(ins) for measure in MEASUREMENTS]
-                payload.append({"insumo": ins.provenance(), "medicoes": results,
-                    "sem_evidencia_hoje": NOT_RUN_MEASUREMENTS})
-                if not arguments.json:
-                    print(render(ins, results, series_of(ins) if arguments.series else None))
-                if any(result["veredito"] == "FAIL" for result in results):
-                    exit_code = 1
-            finally:
-                _cleanup()
+    codes: list[int] = []
+    reasons: list[str] = []
+    try:
+        for kind, paths in (("corrida", arguments.run), ("jornada", arguments.journey)):
+            for path in paths:
+                if not os.path.isdir(path):
+                    raise InputError(f"{path} não é um diretório: insumo inexistente")
+                try:
+                    ins = Insumo(path, kind)
+                    if arguments.inject:
+                        changed = inject(ins, arguments.inject, arguments.out)
+                        print("=" * 96)
+                        print(f"injeção {arguments.inject} em {arguments.out} (o original {ins.path} não foi tocado)")
+                        print("=" * 96)
+                        print("\n".join(changed))
+                        print()
+                        ins = Insumo(arguments.out, kind)
+                    results = [measure(ins) for measure in MEASUREMENTS]
+                    payload.append({"insumo": ins.provenance(), "medicoes": results,
+                        "sem_evidencia_hoje": NOT_RUN_MEASUREMENTS,
+                        "codigo_de_saida": exit_code_of(results),
+                        "razao_do_codigo": exit_reason(results)})
+                    if not arguments.json:
+                        print(render(ins, results, series_of(ins) if arguments.series else None))
+                    codes.append(exit_code_of(results))
+                    reasons.append(f"{ins.path}: {exit_reason(results)}")
+                finally:
+                    _cleanup()
+    except InputError as error:
+        print(f"ERRO DE ENTRADA: {error}", file=sys.stderr)
+        return EXIT_INPUT
+    except Exception as error:
+        # Leitura ou execução que não completou é código 2 — nunca 1, que afirmaria violação medida.
+        print(f"ERRO DE EXECUÇÃO: {type(error).__name__}: {error}", file=sys.stderr)
+        return EXIT_INPUT
     if arguments.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+    exit_code = combined_exit(codes)
+    if not arguments.json:
+        print(f"código de saída do processo: {exit_code} — " + " | ".join(reasons))
     return exit_code
 
 
