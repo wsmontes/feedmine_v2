@@ -22,11 +22,7 @@ final class ContentFilterTests: XCTestCase {
     }
 
     private func root(directory: URL) -> AppComposition {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FixtureTransport.self]
-        configuration.timeoutIntervalForRequest = 5
-        return AppComposition(directory: directory, feeds: TrustedFeed.development,
-            transportConfiguration: configuration)
+        fixtureComposition(timeout: 5, directory: directory)
     }
 
     private func setSettings(_ directory: URL, _ change: (inout ReaderSettings) -> Void) throws {

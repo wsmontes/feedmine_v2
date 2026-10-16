@@ -236,11 +236,7 @@ final class CatalogueUpdateAcceptTests: XCTestCase {
         XCTAssertLessThan(descriptor.revision, PublishedRevision.revision, "the offer is newer, which is what accept means")
 
         // The app opens, as the app host opens it.
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FixtureTransport.self]
-        configuration.timeoutIntervalForRequest = 10
-        let composition = AppComposition(directory: appDirectory, feeds: TrustedFeed.development,
-            transportConfiguration: configuration)
+        let composition = fixtureComposition(timeout: 10, directory: appDirectory)
         await composition.launch()
         let association = try XCTUnwrap(composition.association, "the reader's session opened")
         XCTAssertNil(association.store.state.presentation,

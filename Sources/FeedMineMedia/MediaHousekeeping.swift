@@ -27,9 +27,9 @@ public struct MediaHousekeeping: Sendable {
         guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys) else { return [] }
         return files.compactMap { file in
             let name = file.lastPathComponent
-            guard name.count == 64, name.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+            guard let digest = PublishedMediaKey.digest(fileName: name),
                 let values = try? file.resourceValues(forKeys: Set(keys)), values.isRegularFile == true,
-                let key = PublishedMediaKey(rawValue: "sha256:" + name) else { return nil }
+                let key = PublishedMediaKey(rawValue: "sha256:" + digest) else { return nil }
             return StoredMediaAsset(key: key, byteCount: Int64(values.fileSize ?? 0),
                 storedAt: values.contentModificationDate ?? .distantPast)
         }

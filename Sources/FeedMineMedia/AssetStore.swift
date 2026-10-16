@@ -75,7 +75,7 @@ struct AssetStore: Sendable {
     }
 
     func bytes(for key: PublishedMediaKey) throws -> Data? {
-        let digest = try Self.parse(key)
+        guard let digest = key.digest else { throw LocalMediaAssetError.unsupportedKey(key) }
         let file = rootDirectory.appendingPathComponent("sha256", isDirectory: true).appendingPathComponent(digest)
         let bytes: Data
         do {
@@ -94,15 +94,6 @@ struct AssetStore: Sendable {
 
     private func ensureDurability(file: URL, directory: URL) throws {
         guard syncFile(file), syncDirectory(directory) else { throw LocalMediaAssetError.durabilityFailed }
-    }
-
-    private static func parse(_ key: PublishedMediaKey) throws -> String {
-        let text = Array(key.rawValue.utf8)
-        guard text.count == 71, text.prefix(7).elementsEqual("sha256:".utf8),
-            text.dropFirst(7).allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {
-            throw LocalMediaAssetError.unsupportedKey(key)
-        }
-        return String(key.rawValue.dropFirst(7))
     }
 
     private static func digest(_ bytes: Data) -> String {

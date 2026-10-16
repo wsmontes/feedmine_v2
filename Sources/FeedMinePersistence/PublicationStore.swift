@@ -393,12 +393,8 @@ public struct PublicationStore: Sendable {
             let key = PersistenceValueCoding.uuid(lease.editionID.rawValue)
             let high = try Self.historyPosition(lease.highWaterCardID, editionKey: key, schema: Self.historySchema(key, in: db), in: db)
             let keys = Array(Set(originIDs)).map { PersistenceValueCoding.uuid($0.rawValue) }
-            guard !keys.isEmpty else { return [:] }
-            let capacity = db.maximumStatementArgumentCount - 3
             var result: [OriginRecordID: Set<String>] = [:]
-            for start in stride(from: 0, to: keys.count, by: capacity) {
-                let group = Array(keys[start..<min(start + capacity, keys.count)])
-                let parameters = Array(repeating: "?", count: group.count).joined(separator: ",")
+            for chunk in try Self.chunks(of: keys, reserved: 3, in: db) {
                 let rows = try Row.fetchAll(db, sql: """
                     SELECT c.origin_record_id, c.title, c.primary_text, m.remote_locator AS primary_media,
                         CASE WHEN r.fingerprint_generation = 2 THEN r.body_text
@@ -410,8 +406,8 @@ public struct PublicationStore: Sendable {
                     LEFT JOIN origin_revisions r ON r.id = c.origin_revision_id
                     LEFT JOIN origin_revision_body_enrichment e ON e.origin_revision_id = c.origin_revision_id
                     LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0 AND m.media_class = 'image'
-                    WHERE s.edition_id = ? AND (s.ordinal, c.ordinal) <= (?, ?) AND c.origin_record_id IN (\(parameters))
-                    """, arguments: StatementArguments([key as DatabaseValueConvertible, Int64(high.segmentOrdinal), Int64(high.cardOrdinal)] + group.map { $0 as DatabaseValueConvertible }))
+                    WHERE s.edition_id = ? AND (s.ordinal, c.ordinal) <= (?, ?) AND c.origin_record_id IN (\(chunk.placeholders))
+                    """, arguments: StatementArguments([key as DatabaseValueConvertible, Int64(high.segmentOrdinal), Int64(high.cardOrdinal)] + chunk.keys.map { $0 as DatabaseValueConvertible }))
                 for row in rows {
                     let fields = PublicationRecordFields(row)
                     let origin = OriginRecordID(rawValue: try fields.uuid("origin_record_id"))
@@ -699,17 +695,13 @@ public struct PublicationStore: Sendable {
                     let high = try Self.historyPosition(PublicationCardID(rawValue: PublicationValueCoding.uuid(water, field: "high_water_card_id")), editionKey: editionKey, schema: schema, in: db)
                     if anchor.isBefore(high) { anchor = high }
                 }
-                let keys = material.keys.map { PersistenceValueCoding.uuid($0.rawValue) }
-                let capacity = db.maximumStatementArgumentCount - 3
-                guard capacity > 0 else { throw PublicationStoreError.invalidCapacity }
-                for start in stride(from: 0, to: keys.count, by: capacity) {
-                    let group = Array(keys[start..<min(start + capacity, keys.count)])
-                    let placeholders = Array(repeating: "?", count: group.count).joined(separator: ",")
+                for chunk in try Self.chunks(of: material.keys.map { PersistenceValueCoding.uuid($0.rawValue) },
+                    reserved: 3, in: db) {
                     let values = try String.fetchAll(db, sql: """
                         SELECT DISTINCT c.origin_record_id FROM published_cards c
                         JOIN feed_segments s ON s.id = c.segment_id
-                        WHERE c.origin_record_id IN (\(placeholders)) AND s.edition_id = ? AND (s.ordinal, c.ordinal) > (?, ?)
-                        """, arguments: StatementArguments(group.map { $0 as DatabaseValueConvertible }
+                        WHERE c.origin_record_id IN (\(chunk.placeholders)) AND s.edition_id = ? AND (s.ordinal, c.ordinal) > (?, ?)
+                        """, arguments: StatementArguments(chunk.keys.map { $0 as DatabaseValueConvertible }
                             + [editionKey, Int64(anchor.segmentOrdinal), Int64(anchor.cardOrdinal)]))
                     for value in values { unseen.insert(OriginRecordID(rawValue: try PublicationValueCoding.uuid(value, field: "origin_record_id"))) }
                 }
@@ -719,15 +711,30 @@ public struct PublicationStore: Sendable {
         }
     }
 
+    /// One query's worth of keys: a group that fits SQLite's parameter budget, and the `?,?,…` list bound for it.
+    private struct KeyChunk {
+        let keys: [String]
+        let placeholders: String
+    }
+
+    // Shared by the bounded exposure read and the serialized pre-insert guard.
+    // Chunk only at SQLite's actual parameter limit; never one query per candidate. `reserved` is how many
+    // parameters the caller's statement binds besides the chunk itself.
+    private static func chunks(of keys: [String], reserved: Int = 1, in db: Database) throws -> [KeyChunk] {
+        let capacity = db.maximumStatementArgumentCount - reserved
+        guard capacity > 0 else { throw PublicationStoreError.invalidCapacity }
+        return stride(from: 0, to: keys.count, by: capacity).map { start in
+            let group = Array(keys[start..<min(start + capacity, keys.count)])
+            return KeyChunk(keys: group,
+                placeholders: Array(repeating: "?", count: group.count).joined(separator: ","))
+        }
+    }
+
     private static func publishedMaterial(_ ids: [OriginRecordID], editionID: FeedEditionID,
         in db: Database) throws -> [OriginRecordID: Set<String>] {
         let keys = Array(Set(ids)).map { PersistenceValueCoding.uuid($0.rawValue) }
-        let capacity = db.maximumStatementArgumentCount - 1
-        guard capacity > 0 else { throw PublicationStoreError.invalidCapacity }
         var found: [OriginRecordID: Set<String>] = [:]
-        for start in stride(from: 0, to: keys.count, by: capacity) {
-            let group = Array(keys[start..<min(start + capacity, keys.count)])
-            let placeholders = Array(repeating: "?", count: group.count).joined(separator: ",")
+        for chunk in try chunks(of: keys, in: db) {
             let rows = try Row.fetchAll(db, sql: """
                 SELECT c.origin_record_id, c.title, c.primary_text, m.remote_locator AS primary_media,
                         CASE WHEN r.fingerprint_generation = 2 THEN r.body_text
@@ -739,8 +746,8 @@ public struct PublicationStore: Sendable {
                 LEFT JOIN origin_revisions r ON r.id = c.origin_revision_id
                     LEFT JOIN origin_revision_body_enrichment e ON e.origin_revision_id = c.origin_revision_id
                 LEFT JOIN media_candidates m ON m.origin_revision_id = c.origin_revision_id AND m.ordinal = 0 AND m.media_class = 'image'
-                WHERE c.origin_record_id IN (\(placeholders)) AND s.edition_id = ?
-                """, arguments: StatementArguments(group + [PersistenceValueCoding.uuid(editionID.rawValue)]))
+                WHERE c.origin_record_id IN (\(chunk.placeholders)) AND s.edition_id = ?
+                """, arguments: StatementArguments(chunk.keys + [PersistenceValueCoding.uuid(editionID.rawValue)]))
             for row in rows {
                 let fields = PublicationRecordFields(row)
                 let origin = OriginRecordID(rawValue: try fields.uuid("origin_record_id"))
@@ -753,22 +760,16 @@ public struct PublicationStore: Sendable {
         return found
     }
 
-    // Shared by the bounded exposure read and the serialized pre-insert guard.
-    // Chunk only at SQLite's actual parameter limit; never one query per candidate.
     private static func publishedOrigins(_ ids: [OriginRecordID], editionID: FeedEditionID,
         in db: Database) throws -> Set<OriginRecordID> {
         let keys = Array(Set(ids)).map { PersistenceValueCoding.uuid($0.rawValue) }
-        let capacity = db.maximumStatementArgumentCount - 1
-        guard capacity > 0 else { throw PublicationStoreError.invalidCapacity }
         var found = Set<OriginRecordID>()
-        for start in stride(from: 0, to: keys.count, by: capacity) {
-            let group = Array(keys[start..<min(start + capacity, keys.count)])
-            let placeholders = Array(repeating: "?", count: group.count).joined(separator: ",")
+        for chunk in try chunks(of: keys, in: db) {
             let values = try String.fetchAll(db, sql: """
                 SELECT DISTINCT c.origin_record_id FROM published_cards c
                 JOIN feed_segments s ON s.id = c.segment_id
-                WHERE c.origin_record_id IN (\(placeholders)) AND s.edition_id = ?
-                """, arguments: StatementArguments(group + [PersistenceValueCoding.uuid(editionID.rawValue)]))
+                WHERE c.origin_record_id IN (\(chunk.placeholders)) AND s.edition_id = ?
+                """, arguments: StatementArguments(chunk.keys + [PersistenceValueCoding.uuid(editionID.rawValue)]))
             for value in values {
                 guard let uuid = UUID(uuidString: value), PersistenceValueCoding.uuid(uuid) == value else {
                     throw PublicationStoreError.corruption("origin_record_id")

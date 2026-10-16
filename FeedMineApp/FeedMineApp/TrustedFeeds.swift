@@ -132,6 +132,15 @@ extension TrustedFeed {
 }
 
 #if DEBUG
+/// Puts a fixture's own `URLProtocol` in front of the session's protocol stack and keeps the system's handlers
+/// behind it. The one place both DEBUG fixture sites install themselves, so their stacks cannot drift apart.
+private func installFixtureProtocol(_ protocolClass: URLProtocol.Type,
+    in configuration: URLSessionConfiguration) {
+    var protocols = configuration.protocolClasses ?? []
+    protocols.insert(protocolClass, at: 0)
+    configuration.protocolClasses = protocols
+}
+
 /// The add-feed UI test's own site: a page that declares its own feed, and the feed itself. Both come from the
 /// app's process, so the whole path a reader walks — paste an address, discovery, storage, acquisition, a card —
 /// runs through the real code with no network and no server.
@@ -151,9 +160,7 @@ enum AddFeedFixtureSite {
     static let headline = headlines.last!
 
     static func apply(to configuration: URLSessionConfiguration) {
-        var protocols = configuration.protocolClasses ?? []
-        protocols.insert(AddFeedFixtureProtocol.self, at: 0)
-        configuration.protocolClasses = protocols
+        installFixtureProtocol(AddFeedFixtureProtocol.self, in: configuration)
     }
 
     /// Every request the fixture answered, so a test can state that the session really fetched the feed it
@@ -257,9 +264,7 @@ enum DevelopmentLocalFeeds {
     ]
 
     static func apply(to configuration: URLSessionConfiguration) {
-        var protocols = configuration.protocolClasses ?? []
-        protocols.insert(LocalFeedProtocol.self, at: 0)
-        configuration.protocolClasses = protocols
+        installFixtureProtocol(LocalFeedProtocol.self, in: configuration)
     }
 
     /// The document each endpoint answers with: six items, two sources, distinct timestamps — enough for a feed,

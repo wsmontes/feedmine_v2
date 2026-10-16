@@ -2319,10 +2319,22 @@ final class FeedAssociation {
     }
 
     func install(_ received: FeedPresentationState) throws {
+        // Os contadores de fluxo existem só para o traço de diagnóstico, que é DEBUG; em release nada é escrito.
+        #if DEBUG
         FeedFlowCounters.installAttempts += 1
+        #endif
         guard active else { throw FeedPresentationStateError.projectionSequenceMismatch }
-        do { try store.install(received); FeedFlowCounters.installAccepts += 1 }
-        catch { FeedFlowCounters.installRejects += 1; throw error }
+        do {
+            try store.install(received)
+            #if DEBUG
+            FeedFlowCounters.installAccepts += 1
+            #endif
+        } catch {
+            #if DEBUG
+            FeedFlowCounters.installRejects += 1
+            #endif
+            throw error
+        }
         // O feed está em tela: a partir daqui o intervalo entre quadros é medido e escrito no trace.
         frameMeter.start()
         let installed = store.state.presentation

@@ -166,16 +166,27 @@ final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
+/// The composition root every app test opens: one fixture transport stack, one request timeout, the feeds the
+/// test names, and a fresh temporary directory when it does not supply one. Stating the stack and the timeout
+/// once here keeps the twelve fixture sessions from drifting apart while staying one line at each call site.
+@MainActor
+func fixtureComposition(protocols: [AnyClass] = [FixtureTransport.self],
+    timeout: TimeInterval = 60, feeds: [TrustedFeed] = TrustedFeed.development,
+    directory: URL? = nil) -> AppComposition {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = protocols
+    configuration.timeoutIntervalForRequest = timeout
+    return AppComposition(
+        directory: directory ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+        feeds: feeds, transportConfiguration: configuration)
+}
+
 @MainActor
 final class CompositionTests: XCTestCase {
 
     private func root(requestTimeout: TimeInterval = 60, directory: URL? = nil,
         feeds: [TrustedFeed] = TrustedFeed.development) -> AppComposition {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FixtureTransport.self]
-        configuration.timeoutIntervalForRequest = requestTimeout
-        return AppComposition(directory: directory ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
-            feeds: feeds, transportConfiguration: configuration)
+        fixtureComposition(timeout: requestTimeout, feeds: feeds, directory: directory)
     }
 
     private func launched() async throws -> (AppComposition, FeedAssociation) {
@@ -310,11 +321,8 @@ final class CompositionTests: XCTestCase {
     // MARK: - PD10-P0A: public sync contract, through the production URL and the real composition root
 
     private func publicCatalogueRoot(directory: URL) -> AppComposition {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [StandardCatalogueTransport.self, FixtureTransport.self]
-        configuration.timeoutIntervalForRequest = 10
-        return AppComposition(directory: directory, feeds: TrustedFeed.development,
-            transportConfiguration: configuration)
+        fixtureComposition(protocols: [StandardCatalogueTransport.self, FixtureTransport.self],
+            timeout: 10, directory: directory)
     }
 
     private func bundledPublicManifest() throws -> CatalogManifest {
@@ -1167,12 +1175,7 @@ final class CompositionTests: XCTestCase {
     /// exactly that, which is why this test reads the shipped catalogue).
     func testT11ACuratedFeedRanksByItsRecipeAndEditingChangesTheBehaviorVersion() async throws {
         let catalog = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FixtureTransport.self]
-        let root = AppComposition(
-            directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
-            feeds: try TrustedFeed.catalog(limit: 4, resourceURL: catalog),
-            transportConfiguration: configuration)
+        let root = fixtureComposition(feeds: try TrustedFeed.catalog(limit: 4, resourceURL: catalog))
         await root.launch()
         let feed = try XCTUnwrap(root.association?.feeds.first)
         let reader = try LegacyCatalogReader(catalogURL: catalog)
@@ -1378,10 +1381,7 @@ final class CompositionTests: XCTestCase {
         let feed = TrustedFeed(targetID: AcquisitionTargetID(), sourceID: SourceID(rawValue: UUID()),
             bindingID: SourceBindingID(), principal: endpoint.absoluteString, endpoint: endpoint,
             displayName: "fixture")
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FixtureTransport.self]
-        configuration.timeoutIntervalForRequest = 20
-        let root = AppComposition(directory: directory, feeds: [feed], transportConfiguration: configuration)
+        let root = fixtureComposition(timeout: 20, feeds: [feed], directory: directory)
 
         await root.launch()
         XCTAssertNil(root.startupFailure)
@@ -1543,9 +1543,7 @@ final class CompositionTests: XCTestCase {
 
     func testS5OfflineReopenRestoresEditionWithFreshProvenance() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FixtureTransport.self]
-        let root = AppComposition(directory: directory, feeds: TrustedFeed.development, transportConfiguration: configuration)
+        let root = fixtureComposition(directory: directory)
         await root.launch()
         let old = try XCTUnwrap(root.association)
         try await produceAndAdmit(old)
@@ -1560,7 +1558,7 @@ final class CompositionTests: XCTestCase {
         await old.close()
         FixtureTransport.rejecting.withLock { $0 = true }
         defer { FixtureTransport.rejecting.withLock { $0 = false } }
-        let reopened = AppComposition(directory: directory, feeds: TrustedFeed.development, transportConfiguration: configuration)
+        let reopened = fixtureComposition(directory: directory)
         await reopened.launch()
         XCTAssertNil(reopened.startupFailure)
         let next = try XCTUnwrap(reopened.association)
@@ -1645,10 +1643,7 @@ final class CompositionTests: XCTestCase {
     /// alcança. Fica vermelha como prova da perda; o commit que a deixa verde é o da admissão para trás.
     func testReopeningOfflineKeepsCardsBeyondTheBackwardCapacityReachable() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FixtureTransport.self]
-        let root = AppComposition(directory: directory, feeds: TrustedFeed.development,
-            transportConfiguration: configuration)
+        let root = fixtureComposition(directory: directory)
         ReadingFixture.generation.withLock { $0 = 0 }
         defer { ReadingFixture.generation.withLock { $0 = 0 } }
         await root.launch()
@@ -1669,8 +1664,7 @@ final class CompositionTests: XCTestCase {
 
         FixtureTransport.rejecting.withLock { $0 = true }
         defer { FixtureTransport.rejecting.withLock { $0 = false } }
-        let reopened = AppComposition(directory: directory, feeds: TrustedFeed.development,
-            transportConfiguration: configuration)
+        let reopened = fixtureComposition(directory: directory)
         await reopened.launch()
         let next = try XCTUnwrap(reopened.association)
         let restored = try XCTUnwrap(next.store.state.presentation)
@@ -1738,10 +1732,7 @@ final class CompositionTests: XCTestCase {
     /// o que o leitor já alcançava.
     func testLongNavigationKeepsTheForwardReserveBoundedAndEverythingReachable() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FixtureTransport.self]
-        let root = AppComposition(directory: directory, feeds: TrustedFeed.development,
-            transportConfiguration: configuration)
+        let root = fixtureComposition(directory: directory)
         await root.launch()
         let old = try XCTUnwrap(root.association)
         // **Oito publicações com itens DISTINTOS** (a geração do fixture): cada uma traz 24 itens novos, então a
@@ -1763,8 +1754,7 @@ final class CompositionTests: XCTestCase {
 
         FixtureTransport.rejecting.withLock { $0 = true }
         defer { FixtureTransport.rejecting.withLock { $0 = false } }
-        let reopened = AppComposition(directory: directory, feeds: TrustedFeed.development,
-            transportConfiguration: configuration)
+        let reopened = fixtureComposition(directory: directory)
         await reopened.launch()
         let next = try XCTUnwrap(reopened.association)
         let restored = try XCTUnwrap(next.store.state.presentation)
@@ -2251,10 +2241,7 @@ final class CompositionTests: XCTestCase {
         settings.discoveryProfile = answers
         _ = try preferences.setSettings(settings)
 
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FixtureTransport.self]
-        configuration.timeoutIntervalForRequest = 60
-        let root = AppComposition(directory: directory, feeds: [], transportConfiguration: configuration)
+        let root = fixtureComposition(timeout: 60, feeds: [], directory: directory)
         await root.launch()
         if let failure = root.startupFailure {
             XCTFail("the app failed to start for a reader who chose nothing: \(failure)")
@@ -2319,11 +2306,7 @@ final class CompositionTests: XCTestCase {
         settings.discoveryProfile = answers
         _ = try preferences.setSettings(settings)
 
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FixtureTransport.self]
-        configuration.timeoutIntervalForRequest = 60
-        let root = AppComposition(directory: directory, feeds: TrustedFeed.development,
-            transportConfiguration: configuration)
+        let root = fixtureComposition(timeout: 60, directory: directory)
         await root.launch()
         let association = try XCTUnwrap(root.association)
         XCTAssertGreaterThanOrEqual(association.discovery.count, 50, "the fixture has a discovery pool")

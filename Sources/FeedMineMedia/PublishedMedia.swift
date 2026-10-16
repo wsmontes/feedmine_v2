@@ -27,6 +27,9 @@
 /// Opaque stable local asset identity understood by FeedMineMedia.
 /// Not a filesystem path or remote URL; future AssetStore resolves it to local materialization.
 public struct PublishedMediaKey: Hashable, Sendable, CustomStringConvertible {
+    /// The one namespace a key's digest is stored under, in the key and in the asset root's file names alike.
+    private static let scheme = "sha256:"
+
     public let rawValue: String
 
     public init?(rawValue: String) {
@@ -36,6 +39,24 @@ public struct PublishedMediaKey: Hashable, Sendable, CustomStringConvertible {
 
     public var description: String {
         rawValue
+    }
+
+    /// The bare digest this key names (`sha256:<64 lowercase hex>`), or nil when it names anything else — an
+    /// arbitrary legacy key must never be used as a path. The comparison is the key's own; no caller re-states it.
+    public var digest: String? {
+        guard rawValue.hasPrefix(Self.scheme) else { return nil }
+        let text = String(rawValue.dropFirst(Self.scheme.count))
+        return Self.isDigest(text) ? text : nil
+    }
+
+    /// The digest a bare asset-root file name carries, or nil when the name is not one.
+    public static func digest(fileName: String) -> String? {
+        isDigest(fileName) ? fileName : nil
+    }
+
+    private static func isDigest(_ text: String) -> Bool {
+        text.utf8.count == 64
+            && text.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
 }
 

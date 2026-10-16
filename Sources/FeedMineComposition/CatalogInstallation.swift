@@ -155,7 +155,7 @@ public struct CatalogInstallation: Sendable {
         }
         if let previous = previousPointer(), let recovered = verifiedSnapshot(for: previous) {
             do {
-                try write(data: JSONEncoder().encode(previous), to: activePointerURL)
+                try install(data: JSONEncoder().encode(previous), at: activePointerURL)
                 guard pointerMatches(previous, at: activePointerURL) else {
                     throw CocoaError(.fileReadCorruptFile)
                 }
@@ -290,7 +290,7 @@ public struct CatalogInstallation: Sendable {
             if bundled {
                 let manifestURL = snapshotDirectory(fingerprint)
                     .appendingPathComponent("manifest.json")
-                try write(data: try manifest.encoded(), to: manifestURL)
+                try install(data: try manifest.encoded(), at: manifestURL)
                 pointer = CatalogPointer(fingerprint: fingerprint, cataloguePath: catalogue.path,
                     manifestPath: manifestURL.path)
             } else {
@@ -299,8 +299,8 @@ public struct CatalogInstallation: Sendable {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let localCatalogue = directory.appendingPathComponent("catalog.sqlite")
                 let localManifest = directory.appendingPathComponent("manifest.json")
-                try replace(file: catalogue, with: localCatalogue)
-                try write(data: try manifest.encoded(), to: localManifest)
+                try install(source: catalogue, at: localCatalogue)
+                try install(data: try manifest.encoded(), at: localManifest)
                 pointer = CatalogPointer(fingerprint: fingerprint, cataloguePath: localCatalogue.path,
                     manifestPath: localManifest.path)
             }
@@ -308,9 +308,9 @@ public struct CatalogInstallation: Sendable {
                 current.fingerprint != fingerprint {
                 // The previous pointer is part of the commit contract, not best-effort telemetry.
                 // A failure here must refuse activation while the original active pointer remains intact.
-                try write(data: JSONEncoder().encode(current), to: previousPointerURL)
+                try install(data: JSONEncoder().encode(current), at: previousPointerURL)
             }
-            try write(data: JSONEncoder().encode(pointer), to: activePointerURL)
+            try install(data: JSONEncoder().encode(pointer), at: activePointerURL)
             guard pointerMatches(pointer, at: activePointerURL) else {
                 throw CocoaError(.fileReadCorruptFile)
             }
@@ -390,7 +390,7 @@ public struct CatalogInstallation: Sendable {
             // Rollback has ONE commit pointer: writing previous.json first would introduce a second
             // failure boundary and could lose the recovery lease if active.json then failed.
             // The replaced revision's immutable bytes remain in snapshots/; no pointer swap is required.
-            try write(data: JSONEncoder().encode(previous), to: activePointerURL)
+            try install(data: JSONEncoder().encode(previous), at: activePointerURL)
             guard pointerMatches(previous, at: activePointerURL) else {
                 throw CocoaError(.fileReadCorruptFile)
             }
@@ -529,33 +529,30 @@ public struct CatalogInstallation: Sendable {
         try data.write(to: ledgerURL, options: .atomic)
     }
 
-    /// Copies `source` over `destination` by writing elsewhere and moving into place, so a reader never sees a
-    /// half-written catalogue and a failure leaves the previous file intact.
-    private func replace(file source: URL, with destination: URL) throws {
+    /// Installs content — a copy of `source`, or `data` — at `destination` by writing it under a sibling
+    /// `.incoming` name and moving it into place, so a reader never sees a half-written file and a failure
+    /// leaves the previous one intact. Exactly one of the two supplies the content.
+    private func install(source: URL? = nil, data: Data? = nil, at destination: URL) throws {
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        // A directory at an install path is an invalid persisted state, not a file to be replaced.
+        // Reject deterministically before touching either pointer in a simulated interrupted write.
+        if let values = try? destination.resourceValues(forKeys: [.isDirectoryKey]), values.isDirectory == true {
+            throw CocoaError(.fileWriteNoPermission)
+        }
         let temporary = destination.appendingPathExtension("incoming")
         try? FileManager.default.removeItem(at: temporary)
-        try FileManager.default.copyItem(at: source, to: temporary)
+        if let source {
+            try FileManager.default.copyItem(at: source, to: temporary)
+        } else if let data {
+            try data.write(to: temporary, options: .atomic)
+        } else {
+            throw CocoaError(.fileNoSuchFile)
+        }
         if FileManager.default.fileExists(atPath: destination.path) {
             _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
         } else {
             try FileManager.default.moveItem(at: temporary, to: destination)
-        }
-    }
-
-    private func write(data: Data, to url: URL) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true)
-        // A directory at a pointer path is an invalid persisted state, not a file to be replaced.
-        // Reject deterministically before touching either pointer in a simulated interrupted write.
-        if let values = try? url.resourceValues(forKeys: [.isDirectoryKey]), values.isDirectory == true {
-            throw CocoaError(.fileWriteNoPermission)
-        }
-        let temporary = url.appendingPathExtension("incoming")
-        try data.write(to: temporary, options: .atomic)
-        if FileManager.default.fileExists(atPath: url.path) {
-            _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
-        } else {
-            try FileManager.default.moveItem(at: temporary, to: url)
         }
     }
 }

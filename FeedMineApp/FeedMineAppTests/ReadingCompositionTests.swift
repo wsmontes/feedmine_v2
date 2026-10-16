@@ -85,12 +85,7 @@ enum ReadingFixture {
 @MainActor
 final class ReadingCompositionTests: XCTestCase {
     private func launched() async throws -> (AppComposition, FeedAssociation) {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FixtureTransport.self]
-        configuration.timeoutIntervalForRequest = 60
-        let root = AppComposition(
-            directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
-            feeds: TrustedFeed.development, transportConfiguration: configuration)
+        let root = fixtureComposition()
         await root.launch()
         XCTAssertNil(root.startupFailure)
         let association = try XCTUnwrap(root.association)
