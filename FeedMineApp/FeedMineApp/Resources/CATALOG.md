@@ -3,12 +3,14 @@
 Snapshot read-only derivado da **revisão pública 5** de `wawasoft/feed-repository`: 77.443 fontes, 6.450 nós e
 77.443 placements. 117.993.472 bytes.
 
-SHA-256: `42e602341d18f47290b06615eb9d49a25a693e36f3e9a4c327bbecd83e923b66`.
-Metadata schema_version=2; catalog_version=1792122546765159; SQLite user_version=0.
+SHA-256: `e6da170eb9bd139ee9acd95f09940b9c999e3870ce5b70b8f1cace2be076e54c`.
+Metadata schema_version=2; catalog_version=1792180662394189; SQLite user_version=0.
 
-> **Builds ≤ 45** embarcaram o mesmo snapshot com outro par de bytes — SHA-256
+> **Builds 46–48** embarcaram o mesmo snapshot com outro par de bytes — SHA-256
+> `42e602341d18f47290b06615eb9d49a25a693e36f3e9a4c327bbecd83e923b66` e
+> `catalog_version=1792122546765159`. As **builds ≤ 45** embarcaram um par ainda mais antigo — SHA-256
 > `72f066227958b482f365c88dd58320e75bc9ade9268b4e2ddaac9173908ecf71` e
-> `catalog_version=1791736083355950`. As duas versões têm o mesmo tamanho, o mesmo inventário
+> `catalog_version=1791736083355950`. As três versões têm o mesmo tamanho, o mesmo inventário
 > (118 OPML, 77.443 fontes, 6.450 nós) e a mesma revisão pública 5: o compilador V1 não é
 > reprodutível byte a byte, e o `catalog_version` é um relógio de parede. Os relatórios anteriores
 > de `docs/reviews/` mantêm, corretamente, os números das builds que mediram.
