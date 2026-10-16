@@ -2750,6 +2750,13 @@ final class FeedAssociation {
 
     func foreground() async {
         visible = true
+        // O outro lado do par: `background()` para o medidor com a tela, porque o que interessa é o que o leitor
+        // sente enquanto rola. Sem esta linha, a medição só voltava por tabela — pelo `install()` que o restore ou
+        // a reativação da apresentação corrente alcançam —, e um foreground que não passa por ali (falha no
+        // `activateCurrentPresentation`, early-return durante o launch) deixava o medidor parado pelo resto da vida
+        // do processo. A tela está visível: a partir daqui ela é medida. `start()` é idempotente (`guard link ==
+        // nil`), então quem já está medindo não paga nada.
+        frameMeter.start()
         do {
             if let edition = store.state.presentation?.editionID {
                 try PublicationStore(database: database).setVisibility(editionID: edition, visible: true)

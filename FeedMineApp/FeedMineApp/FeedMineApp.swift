@@ -266,6 +266,11 @@ struct FeedMineApp: App {
                                     .accessibilityIdentifier("native-viewport-delivery")
                                     .allowsHitTesting(false)
                             }
+                            // A jornada de fluidez lê aqui a série que o próprio app mediu: o rótulo é o ponto
+                            // onde o app declara o que viu, e não uma paráfrase do teste.
+                            .overlay(alignment: .topLeading) {
+                                FeedFrameEvidenceSurface()
+                            }
                             #endif
                     } else if let failure = composition.startupFailure {
                         Text(failure).padding()
