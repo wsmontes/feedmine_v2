@@ -125,14 +125,35 @@ final class HitchGestureExperimentUITests: XCTestCase {
         }
     }
 
-    /// O outro lado: mesmo deslocamento pedido (0,5 da altura do leitor), **mais passos** e velocidade lenta, para
-    /// o custo do harness ser diferente com o trabalho do app igual.
-    func testB6SlowMultiStepDrags() throws {
-        try journey(variant: "B-slow-multi-step-drags",
-            recipe: "6 × press(forDuration: 0.4, thenDragTo: dy 0.8→0.3, withVelocity: .slow, thenHoldForDuration: 0.1)") { scroll in
-            let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
-            let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-            start.press(forDuration: 0.4, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.1)
+    /// O outro lado: **muitos passos**, mesma fração de deslocamento pedido (0,5 da altura, em 4 etapas de 0,125).
+    ///
+    /// A primeira versão usava `press(forDuration: 0.4, thenDragTo: …, withVelocity: .slow, thenHoldForDuration: 0.1)`
+    /// e **não rolava o leitor**: medido em 2026-10-16, `initial_card == final_card` e o teste falhou em
+    /// `XCTAssertNotEqual` — o gesto foi reconhecido como prensa/arrasto (a prensa de 0,4 s convida a isso), não
+    /// como rolagem. O instrumento fez o certo: falhou em vez de produzir um "ganho" que era só o leitor parado.
+    /// Aqui a prensa é de 0,05 s e o deslocamento é dividido em 4 etapas — 24 arrastos no total, contra 6 do
+    /// controle, com a mesma fração de tela percorrida.
+    func testB6MultiStepDrags() throws {
+        try journey(variant: "B-multi-step-drags",
+            recipe: "6 × 4 etapas de press(forDuration: 0.05, thenDragTo: dy 0.125) = 0,5 da altura em 24 arrastos") { scroll in
+            var offset = 0.80
+            for _ in 0..<4 {
+                let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: offset))
+                let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: offset - 0.125))
+                start.press(forDuration: 0.05, thenDragTo: end)
+                offset -= 0.125
+            }
+        }
+    }
+
+    /// Terceiro ponto, deliberadamente conservador: a **mesma** API do controle (um `swipeUp`), com a velocidade
+    /// trocada (`.slow` em vez de `.fast`). Serve para o veredito de H3 não depender de uma única receita: se o
+    /// custo seguir a **síntese do gesto**, `.slow` deve se afastar do `.fast`; se seguir as **observações do app**,
+    /// os três métodos devem colapsar na mesma razão severos/observação.
+    func testC6SlowSwipes() throws {
+        try journey(variant: "C-slow-swipes",
+            recipe: "6 × scroll.swipeUp(velocity: .slow)") { scroll in
+            scroll.swipeUp(velocity: .slow)
         }
     }
 }
