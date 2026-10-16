@@ -187,3 +187,21 @@ armadilha do instrumento congelado: `bench/expand.py:last_window_new > 0` dá **
 cria buckets que contêm primeiras ocorrências (`expand.py:47-57`) — se todas caírem no primeiro minuto, a "última
 janela" dele **é** a primeira. É o argumento decisivo para o instrumento novo de jornada nascer com hash próprio em
 vez de editar o oráculo.
+
+## 10. O gargalo que não estava previsto: o disco, e o runtime watchOS de 8,1 GB
+
+Sete agentes compilando ao mesmo tempo levaram o volume a **898 MB livres**. O sintoma apareceu do jeito que a
+regra do projeto prevê: uma corrida de UI test morreu com `Executed 0 tests` e *"Restarting after unexpected exit,
+crash, or test timeout"* — **ENOSPC**, não defeito. O próprio agente que a rodou se recusou a tratá-la como
+resultado, e essa recusa está certa: um veredito produzido faminto se descarta, não se relata. Eu já tinha
+interrompido uma medição minha pelo mesmo motivo (o build frio do alvo de UI não chegou a rodar teste nenhum).
+
+**A causa raiz não era cache de build: era um runtime que ninguém usa.** `xcrun simctl runtime list` mostrava dois
+volumes — iOS 26.5 (em uso) e **watchOS 26.5, 8,1 GB**. Nenhum device watchOS existe nesta máquina (a seção watchOS
+do `simctl list devices` está vazia) e o projeto é iOS-only (três targets: `FeedMine`, `FeedMineAppTests`,
+`FeedMineUITests`), então o volume era peso morto re-baixável. Removido com o caminho suportado
+(`xcrun simctl runtime delete 1D0A0B46-472A-418C-9311-EBBABA87C776`), o disco foi de 3,2 GB para **7,4 GB**.
+
+**Regra operacional que sai daqui** (para a próxima rodada, e ela vai ter várias): antes de comissionar mais de três
+agentes que compilam, medir o disco e checar `simctl runtime list`; e **nunca** deixar um build de gate ou de medida
+competir com builds de agentes — foi exatamente assim que uma medição morreu em 2026-10-14 e de novo agora.
