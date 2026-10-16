@@ -1063,6 +1063,38 @@ final class CompositionTests: XCTestCase {
             "a v3 Edition must not reuse the identity a v2 Edition was persisted under")
     }
 
+    /// F07/T6: the four-hour overlay deadline is a product promise, and **a launch is a boundary like any
+    /// other transition**. The app used to adopt the persisted context verbatim, so an overlay the reader
+    /// could no longer see stayed in force on every launch and quietly excluded everything the discovery
+    /// brought: measured on a physical device, a `languages: ["pt"]` overlay outlived its window by a day
+    /// and the feed starved with "no stories" the whole time, with no way out but an explicit switch.
+    func testALaunchDropsAnExpiredOverlaySelection() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let catalog = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let starter = try TrustedFeed.catalog(limit: 1, resourceURL: catalog)
+
+        // A reader who narrowed the feed by language, and let that window expire before closing the app.
+        do {
+            let database = try RuntimeDatabase(location: .init(directory: directory))
+            let preferences = ReaderPreferencesStore(database: database)
+            _ = try preferences.initialize(sourceKeys: starter.map(\.principal))
+            _ = try preferences.setContext(ContextKey(request: .main, preset: .everything,
+                filter: ReaderFilter(languages: ["pt"])))
+            _ = try preferences.setFilterExpiry(ReaderFilterExpiry(isEnabled: true,
+                startsAt: Date().addingTimeInterval(-5 * 3600)))
+        }
+
+        let reopened = root(directory: directory, feeds: starter)
+        XCTAssertNil(reopened.startupFailure)
+        XCTAssertTrue(reopened.currentFilter.languages.isEmpty,
+            "an overlay the product itself had already expired does not survive a launch")
+        XCTAssertEqual(reopened.currentFilter.mood, .all)
+        let persisted = try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory))).load()
+        XCTAssertTrue(try XCTUnwrap(persisted).activeContextKey.filter.languages.isEmpty,
+            "the context the app rebuilds from is the resolved one, not the stale overlay")
+    }
+
     /// R2: a fresh session declares the proportional sequencing behavior, and a v2 revision stays usable
     /// for the Editions already published under it.
     func testFreshSessionDeclaresSupplyShareSequencingAndStillAcceptsV2Editions() async throws {

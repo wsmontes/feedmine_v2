@@ -231,9 +231,19 @@ final class AppComposition {
                         ? "reader" : "catalog")
                 })
                 self.selectedFeeds = resolved
-                let restored = try sessionState(for: saved.activeContextKey)
-                if restored.key != saved.activeContextKey {
-                    saved = try preferences.setContext(restored.key)
+                let session = try sessionState(for: saved.activeContextKey)
+                // A launch is a boundary like any other transition, and the product's own overlay expiry
+                // (four hours) must not outlive it. Without this resolution the app adopted the persisted
+                // key verbatim, so an overlay the reader could no longer see stayed in force on every
+                // launch and quietly excluded everything the discovery brought: the feed starved with
+                // "no stories", launch after launch, with no way out except an explicit surface switch.
+                let filter = saved.filterExpiry.resolving(session.key.filter, at: Date())
+                let restored = filter == session.key.filter
+                    ? session.key
+                    : ContextKey(request: session.key.request, preset: session.key.preset,
+                        filter: filter, searchScope: session.key.searchScope)
+                if restored != saved.activeContextKey {
+                    saved = try preferences.setContext(restored)
                 }
                 currentContextKey = saved.activeContextKey
                 selectionVersion = saved.selectionVersion
