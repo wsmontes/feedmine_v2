@@ -37,6 +37,9 @@ public actor FeedRunwayDriver {
         var resources: FeedRunwayDriverResources
         var reconsiderRequested = false
         var mediaOpportunity: MediaPreparationOpportunity?
+        /// Caller opportunities that arrived while this execution already owned the examination. Each one is an
+        /// external fact and each one owns exactly one catalogue page; nothing inside the execution adds to it.
+        var callerPagesPending = 0
     }
     private var causalExecution: CausalExecution?
     private let session: FeedSession
@@ -190,14 +193,16 @@ public actor FeedRunwayDriver {
         if causalExecution != nil {
             causalExecution?.resources = resources
             causalExecution?.reconsiderRequested = true
+            // A caller that coalesces into an execution already in flight is still a caller (PD8-R1): its own
+            // opportunity waits for the examination that execution holds, and it owns its own page below.
+            causalExecution?.callerPagesPending += 1
             return await session.currentPresentation()
         }
-        // Claim before the first suspension, including scope validation.
-        causalExecution = CausalExecution(resources: resources)
+        // Claim before the first suspension, including scope validation. The claiming call is itself a caller
+        // opportunity, so it is the first page this execution owes.
+        causalExecution = CausalExecution(resources: resources, callerPagesPending: 1)
         settledAcquisition = nil
         defer { causalExecution = nil }
-        // One catalogue page per caller opportunity, outside the causal drain. Coverage may
-        // settle this page through the existing planner; it cannot load the next page here.
         guard let scope = try await validateCurrentScope(), await runway.snapshot().scope == scope else {
             return await session.currentPresentation()
         }
@@ -208,25 +213,42 @@ public actor FeedRunwayDriver {
         guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
             return await session.currentPresentation()
         }
-        let discoveryResources = causalExecution!.resources
-        if discoveryResources.runway.localWorkAllowed {
-            if let page = try acquisition.advanceDiscovery(for: plan.context,
-                examinedCapacity: discoveryResources.discoveryExaminedCapacity) {
-                await onDiscoveryPage?(page.entries)
-            }
-            guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
-                return await session.currentPresentation()
-            }
-        }
         var resumeOutstanding = true
         while true {
+            // One catalogue page per caller opportunity, outside the causal drain. Coverage may settle a page
+            // through the existing planner, and the drain may conclude plenty about the catalogue, but neither
+            // can authorise a page here: only a caller opportunity adds to `callerPagesPending`. A caller that
+            // coalesced while a pass was in flight owns exactly one page, served before that pass's own
+            // conclusions are reconsidered.
+            while causalExecution!.callerPagesPending > 0 {
+                // Revocation fences catalogue work as well as publication.
+                guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
+                    return await session.currentPresentation()
+                }
+                causalExecution!.callerPagesPending -= 1
+                try await serveCallerCataloguePage()
+                guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
+                    return await session.currentPresentation()
+                }
+            }
             causalExecution?.reconsiderRequested = false
             let presentation = try await driveCausalEffects(resumeOutstanding: resumeOutstanding)
             resumeOutstanding = false
             // No await between this decision and releasing ownership. A caller arriving
             // during the last presentation read therefore cannot lose its opportunity.
-            if causalExecution!.reconsiderRequested { continue }
+            if causalExecution!.reconsiderRequested || causalExecution!.callerPagesPending > 0 { continue }
             return presentation
+        }
+    }
+
+    /// Serves the single catalogue page one caller opportunity owns, with the resource facts that caller
+    /// registered. A page the catalogue does not have is an answer to that opportunity, not a new one.
+    private func serveCallerCataloguePage() async throws {
+        let discoveryResources = causalExecution!.resources
+        guard discoveryResources.runway.localWorkAllowed else { return }
+        if let page = try acquisition.advanceDiscovery(for: plan.context,
+            examinedCapacity: discoveryResources.discoveryExaminedCapacity) {
+            await onDiscoveryPage?(page.entries)
         }
     }
 
