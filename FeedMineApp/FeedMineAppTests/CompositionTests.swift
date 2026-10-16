@@ -285,8 +285,22 @@ final class CompositionTests: XCTestCase {
         await launch.value
         let association = try XCTUnwrap(root.association)
         try await produceAndAdmit(association)
-        let cards = try XCTUnwrap(association.store.state.presentation).window.items
-        XCTAssertEqual(cards.count, 17, "Anchor plus a sixteen-card idle reserve")
+        let window = try XCTUnwrap(association.store.state.presentation).window
+        let cards = window.items
+        // O que a reserva promete é o **teto à frente da âncora** (`FeedPresentationBounds.forwardCapacity`), não um
+        // total: `keepsAdmittedHead` preserva toda carta acima do leitor, e é a própria sessão que recorta a cauda
+        // (`FeedSession.swift:233-235`, `last = min(items.count - 1, anchorIndex + forwardCapacity)`) — nenhuma
+        // chegada consegue pôr mais de 16 cartas à frente. O total depende de quanta antecipação de consumo a lane
+        // já admitiu quando a janela é lida, e antecipar é o que a diretiva (linha 86) manda o runtime fazer.
+        // Ver CompositionTests:1768 ("o total não é mais limitado") e CONTINUOUS_FEED_RUNWAY_DESIGN.md §18, emenda
+        // de 2026-10-15: a demanda nasce do déficit medido, e a pressão lógica — sem contagem — segue o mesmo
+        // critério de oportunidade.
+        let anchorIndex = try XCTUnwrap(cards.firstIndex { $0.id == window.anchor.cardID },
+            "a âncora do leitor tem de estar na janela")
+        XCTAssertLessThanOrEqual(cards.count - anchorIndex - 1, 16,
+            "a reserva à frente da âncora não passa de dezesseis cartas")
+        XCTAssertGreaterThanOrEqual(cards.count, 17,
+            "a apresentação admite a âncora e a reserva de dezesseis cartas do bootstrap")
         for (left, right) in zip(cards, cards.dropFirst()) {
             XCTAssertNotEqual(left.sourceDisplayName, right.sourceDisplayName)
         }

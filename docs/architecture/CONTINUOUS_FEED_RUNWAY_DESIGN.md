@@ -299,7 +299,9 @@ Local-first is mandatory whenever a lane can progress. Successful local progress
 > parece saudável" fazia o papel de medida, e a rede só era pedida com o leitor já no fim do prefixo publicado —
 > o "buscar quando faltarem exatamente N cards" que o INV-04 proíbe. O que passa a valer: (a) a leitura saturada
 > entra na demanda como o **piso** que o probe provou, e a inicialização de `AcquisitionDemand` continua exigindo
-> que o déficit exceda essa reserva; (b) o caminho "probe maior até o teto e então recusa" deixa de existir;
+> que o déficit exceda essa reserva **no caminho do déficit de cobertura** — o único que carrega contagem; a
+> pressão lógica segue sem contagem, como o §18 já fixava, e `AcquisitionDemand` não lhe aplica guarda
+> aritmética alguma; (b) o caminho "probe maior até o teto e então recusa" deixa de existir;
 > (c) cobertura medida como saudável e cobertura não medida (`.unknown`) continuam recusando rede; (d) a ordem
 > local-first continua obrigatória — reserva pronta → supply local → preparação local → demanda —, então a demanda
 > segue exigindo o fim estrutural do walk local, sem trabalho local em voo, sem lane de cabeça/pending reset e sem

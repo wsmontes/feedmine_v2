@@ -242,8 +242,12 @@ public actor RunwayController {
     /// coverage verdict, not the shape of the reading.
     ///
     /// The demand carries the ready stock the deficit was measured against, as the probe established it; a
-    /// saturated reading is a floor, and `AcquisitionDemand` accepts a coverage deficit only while the deficit
-    /// exceeds that stock, so the demand can never describe a shortage the reader does not have.
+    /// saturated reading is a floor. On the **coverage-deficit** path `AcquisitionDemand` accepts the deficit only
+    /// while it exceeds that stock, so there the demand cannot describe a shortage the reader does not have. The
+    /// **logical-tail** path carries no count at all — by design, logical pressure introduces none — so its warrant
+    /// is not arithmetic: it is the policy's verdict that a reader is at the tail with the local walk spent, and it
+    /// is deliberately not blocked by a stock the probe could only bound (INV-04: wait for an exact N and the
+    /// network is only asked at the end of the published prefix).
     private func acquisitionIntentIfEligible(coverage: RunwayCoverage) -> RunwayAcquisitionIntent? {
         guard let scope, let observation = latestObservation, let readyAhead,
             readyAhead.editionID == scope.editionID, readyAhead.anchorCardID == observation.anchorCardID,
