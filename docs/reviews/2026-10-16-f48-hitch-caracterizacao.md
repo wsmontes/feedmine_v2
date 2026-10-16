@@ -997,16 +997,120 @@ reportada, como o arquiteto exigiu.
 
 ### 10.5 O que ainda NÃO foi medido (lista explícita)
 
-1. **O custo do gesto por síntese** (H3) — precisa dos dois métodos rodando no aparelho.
-2. **O ganho de coalescer as 54 publicações redundantes** (H4a) — precisa do controle e do ramo, com a mesma
-   instrumentação e os mesmos gestos.
+1. ~~**O custo do gesto por síntese** (H3)~~ — **medido na §11.1**: a fração fora do orçamento é ~10% nas três
+   receitas e a contagem segue as observações do app.
+2. ~~**O ganho de coalescer as 54 publicações redundantes** (H4a)~~ — **medido na §11.2**: o mecanismo pulou 47%
+   das publicações e **nenhum** ganho apareceu acima do ruído de ±12–22% entre corridas do mesmo código.
 3. **Se o custo está no modificador do viewport ou em outras views que leem `state`** — a captura mede o efeito
    agregado; atribuir a uma view específica exigiria instrumentação por view (não autorizada, não feita).
 4. **Comportamento sob sessão longa** (memória/térmico acumulando) — a corrida mediu 26 s com gesto e 89 s ociosos.
-5. **A linha `feedmine journey` na jornada dirigida** — o novo arquivo de teste a declara no `launchEnvironment`;
-   se F48-HITCH-X não a trouxer, é bug do teste e a causa será medida de novo.
+5. ~~**A linha `feedmine journey` na jornada dirigida**~~ — **apareceu** nos dois lados (§11): era o caminho do
+   lançamento, como a §9.9 tinha diagnosticado.
+6. **Repetições por célula** — o efeito procurado é menor que o ruído de uma corrida (§11.2, três corridas do
+   mesmo código: severe −12%, pior intervalo +22%): qualquer conclusão fina exige N corridas por método.
 6. **Nada de arquitetura**: o guard é um ramo experimental, revertível, e não uma decisão sobre o fluxo de
    apresentação. Coalescer não é redesenhar.
+
+---
+
+## 11. F48-HITCH-X — o resultado dos dois experimentos (2026-10-16, 17:20–17:31 UTC)
+
+Duas corridas no aparelho, cada uma com **três métodos de gesto** e a mesma instrumentação nos dois lados
+(`FEEDMINE_TRACE_CAPTURE=1` **e** `FEEDMINE_JOURNEY_CONSOLE=1`, §10.3). Os dois lados diferem **só** no guard do
+H4a (`git diff --stat gate/f48-hitch-x-control gate/f48-hitch-x -- FeedMineApp Sources Package.swift` → só
+`AppComposition.swift` e `FeedScreen.swift`; o arquivo de teste é idêntico). Cada método lança o seu próprio app,
+logo tem o seu namespace e o seu traço — e o mapa método→namespace foi conferido pela série que o app publicou
+(`scripts/hitch-methods.py`; a contagem de janelas do traço é ≤ o `seconds=N` da série, porque a cauda do traço se
+perde no encerramento).
+
+A linha do `feedmine journey` **apareceu** nos dois lados: o teste novo a declara no `launchEnvironment`, e isso
+fecha o diagnóstico da §9.9 (o caminho era o lançamento, não a captura).
+
+### 11.1 H3 — o custo acompanha as observações do app (apoiada), e o harness não fica excluído
+
+As três receitas de gesto, **na mesma corrida e no mesmo app** (controle, `d8d3feb0`):
+
+| método | gestos | observações do app (`advance`) | quadros | severos | severos/observação | %fora | pior ms |
+|---|---|---|---|---|---|---|---|
+| **A** `swipeUp(.fast)` | 6 flings | 40 | 1047 | 84 | **2,10** | 10,51% | 375,5 |
+| **B** 24 arrastos em etapas (6 unidades de gesto) | 24 drags | 101 | 3031 | 277 | **2,74** | 10,33% | **1516,9** |
+| **C** `swipeUp(.slow)` | 6 flings lentos | 30 | 948 | 76 | **2,53** | 9,39% | 1055,1 |
+
+**O que o número sustenta:** a fração de quadros fora do orçamento é **~10% nas três receitas** (9,39%–10,51%,
+uma faixa de ±6%), enquanto a contagem absoluta acompanha as **observações do app** (30 → 76 severos; 40 → 84;
+101 → 277) e a duração. Ou seja: o custo é **por observação do viewport** — a mesma ordem de grandeza em três
+sínteses de gesto muito diferentes (um fling rápido, 24 arrastos lentos, seis flings lentos). A razão
+severos/observação fica em 2,10–2,74.
+
+**O que ele NÃO sustenta:** isolar o harness. A razão de B é 30% maior que a de A e a de C 20% — na direção de
+"mais passos sintetizados custa mais por observação", e dentro/na borda do ruído medido abaixo. Com **uma corrida
+por célula** não se separa o custo do app do custo da injeção de eventos do XCTest; o que se pode afirmar é que
+**a fração de quadros fora do orçamento não muda com a receita** (o que seria esperado se a síntese dominasse) e
+que a contagem **segue as observações**.
+
+**Um achado à parte, e ele importa para a régua:** o **pior intervalo** das receitas com mais passos foi muito
+maior (B: 1516,9 ms; C: 1055,1 ms; A: 375,5 ms) — mas não é estável entre corridas (o mesmo B deu 299,5 ms na
+outra corrida, 5× menos). O pior intervalo de uma corrida **não** serve como métrica de comparação sem repetições.
+
+### 11.2 H4a — o mecanismo funciona e **não** há ganho de quadros (o custo não está na publicação redundante)
+
+Método **A** (os mesmos 6 `swipeUp(.fast)`), controle × ramo com o guard:
+
+| | controle (`d8d3feb0`) | ramo (guard) | Δ |
+|---|---|---|---|
+| janelas | 24 | 25 | — |
+| quadros | 1047 | 1015 | −3% |
+| late + bad + **severe** | 9 + 17 + **84** | 8 + 10 + **98** | severe **+17%** |
+| %fora do orçamento | 10,51% | 11,43% | +9% |
+| pior intervalo | 375,5 ms | 407,3 ms | +8% |
+| observações do app | 40 | 41 | +2% |
+| âncoras distintas | 31 | **31** | **=** |
+| admissões | 113 | 118 | +4% |
+| eventos de reposição (`replenishment_*`) | 19 | 20 | +5% |
+| **instalações marcadas `redundant=1`** | **0** | **55** | o guard pulou 55 de 118 = **47%** |
+
+**O mecanismo é o previsto:** o guard marcou **55 publicações redundantes de 118 (47%)** — a §10.1 previu 48%. E a
+continuidade está **igual** (âncoras 31 = 31, admissões e reposição dentro de 5%), que era a condição para o
+resultado valer.
+
+**O ganho não apareceu: os quadros não melhoraram** — pioraram 3%–17%, na direção contrária à esperada, e a
+magnitude é a do **ruído**. Piso de ruído medido na mesma receita (A) em três corridas idênticas de código:
+
+| corrida | observações | quadros | fora | severos | %fora | pior ms |
+|---|---|---|---|---|---|---|
+| controle v1 (mesmo app) | 37 | 1115 | 117 | 95 | 10,49% | 308,4 |
+| controle v2 (mesmo app) | 40 | 1047 | 110 | 84 | 10,51% | 375,5 |
+| ramo (guard) | 41 | 1015 | 116 | 98 | 11,43% | 407,3 |
+
+O mesmo código, a mesma receita, duas corridas: severos 95 × 84 (**−12%**), pior intervalo 308 × 376 ms (**+22%**).
+Ou seja: **a diferença entre controle e ramo (severe +17%, pior +8%) está dentro do espalhamento entre duas
+corridas do mesmo código**. Não há ganho detectável, e o resultado honesto é o que o arquiteto previu: **o custo
+não está na publicação redundante do estado.**
+
+**O que isso NÃO significa:** que a publicação do `state` seja gratuita. Significa que, neste aparelho e com esta
+instrumentação, **48% menos publicações não produziram diferença mensurável** — e que o efeito que se procura é
+menor que o ruído de uma corrida (~12–22%), logo uma detecção exigiria **repetições por célula** e não uma
+corrida.
+
+### 11.3 Veredito por experimento
+
+| experimento | veredito | o número que o sustenta |
+|---|---|---|
+| **H3** (harness × app) | **o custo acompanha as observações do APP** — e o harness **não** fica excluído | %fora do orçamento ~10% nas três receitas (9,39%–10,51%) com razão severos/observação 2,10–2,74; a contagem absoluta segue as observações (30/76, 40/84, 101/277) |
+| **H4a** (coalescer só o redundante) | **mecanismo confirmado, ganho NÃO detectável** → "o custo não está na publicação redundante" | 55 de 118 (47%) publicações puladas, continuidade igual (âncoras 31=31), quadros +17% de severos — dentro do ruído de ±12–22% medido em três corridas do mesmo código |
+| **H4b** (ablação agressiva) | **não executada** (por decisão: o H4a não justificou) | — |
+
+### 11.4 O que este resultado pede antes de qualquer reescrita
+
+1. **Repetições, não uma corrida:** para detectar efeitos <20% são precisas N corridas por célula; o instrumento já
+   dá o número por método e o ruído (três corridas do método A estão medidas acima).
+2. **O alvo mudou de lugar:** se o custo é por **observação do viewport** (o que H3 sugere), a pergunta seguinte é
+   *quantas dessas observações são necessárias* — e aí a §10.1 já diz que 47% das **instalações** são idênticas e
+   28% mudam só a âncora, mas **nenhuma** dessas duas classes é a publicação do estado, que é o que o H4a mostrou
+   não custar. O caminho que sobra é o próprio trabalho por observação (a leitura do viewport, a admissão, o
+   `install` inteiro: contrato de estado, bookmarks, medidor, log) — e isso é uma pergunta nova.
+3. **Nada de arquitetura:** o guard fica no ramo experimental, revertível, e não vira desenho.
+
 
 ---
 
@@ -1017,6 +1121,7 @@ reportada, como o arquiteto exigiu.
 | `scripts/hitch-pass.sh` | a corrida física (build, fase A reusando `device-journey.sh`, fase B com syslog, contêiner, prova do app do dono, `--audit`, `--build-only`) |
 | `scripts/hitch-join.py` | a junção por segundo e o relatório por janela severa (5 dimensões, com `arquivo:linha`; `--json`; `--select severe|bad|late|any`) |
 | `FeedMineApp/FeedMineAppTests/HitchGestureExperimentUITests.swift` | F48-HITCH-X: os dois gestos com a mesma instrumentação (H3) e o controle/experimento do H4a (`project.pbxproj` com os ids `…0113`/`…0114` na fase `…0036` e no grupo `…000D`) |
+| `scripts/hitch-methods.py` | F48-HITCH-X: as métricas **por método de gesto** de uma corrida (mapa método→namespace pelo carimbo do anexo e pela série publicada) |
 | `docs/reviews/2026-10-16-f48-hitch-caracterizacao.md` | este relatório |
 
 ## Anexo B — como reconferir cada número deste relatório
