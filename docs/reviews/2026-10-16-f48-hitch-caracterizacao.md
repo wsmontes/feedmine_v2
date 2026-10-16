@@ -948,8 +948,11 @@ proibiu.
 ### 10.3 O desenho dos dois experimentos
 
 **H3 (harness × app)** — `FeedMineApp/FeedMineAppTests/HitchGestureExperimentUITests.swift`, dois métodos com a
-**mesma instrumentação** (`FEEDMINE_TRACE_CAPTURE=1` **e** `FEEDMINE_JOURNEY_CONSOLE=1`; a segunda entrou aqui para
-os dois lados terem a mesma carga de logging — condição 2 do arquiteto):
+**mesma instrumentação**. Aqui a chave `FEEDMINE_JOURNEY_CONSOLE=1` é ligada de propósito e pelo mesmo motivo nos
+dois métodos: **o lado A e o lado B têm de carregar a mesma carga de logging**, senão a comparação seria entre duas
+condições diferentes — e a carga não é pequena (600–800 linhas `native card observed` por segundo de rolagem, mais
+39 `viewport forwarded` e 54 `published growth`, tudo sob `FEEDMINE_TRACE_CAPTURE`; §9.6). Ligar a chave nos dois
+lados é o que torna a diferença medida atribuível ao **gesto**, e não à instrumentação. Os dois métodos são:
 
 * `testA6FastSwipes` — 6 × `scroll.swipeUp(velocity: .fast)` (o gesto que mediu os engasgos);
 * `testB6SlowMultiStepDrags` — 6 × `press(forDuration: 0.4, thenDragTo: dy 0.8→0.3, withVelocity: .slow,
@@ -981,7 +984,18 @@ contável na evidência pelo campo `redundant` do evento `admitted` e pelo conta
 redundantes custam algo; entra isolada, com a diferença de comportamento (âncora, janela, reposição) medida e
 reportada, como o arquiteto exigiu.
 
-### 10.4 O que ainda NÃO foi medido (lista explícita)
+### 10.4 Conformidade com as condições do arquiteto
+
+| Condição | Como esta frente a cumpre (verificável) |
+|---|---|
+| ramo **descartável** derivado da **árvore de medição** | `gate/f48-hitch-x`, criada de `gate/f48-hitch` cujo código de app é idêntico a `03d05f5f`; `git merge-base --is-ancestor 03d05f5f HEAD` verdadeiro |
+| **controle com a MESMA instrumentação** | `FEEDMINE_TRACE_CAPTURE=1` **e** `FEEDMINE_JOURNEY_CONSOLE=1` nos **dois** métodos do teste (§10.3), e a razão é essa: dois lados com cargas de logging diferentes não provam nada sobre o gesto |
+| nada de tocar a **release distribuída** nem o **bench congelado** | nenhum arquivo de `bench/` alterado (`git status --porcelain -- bench/` vazio); `release/1.0-build.48` e a tag `ios/1.0-build.48-03d05f5f` intocadas; nenhum commit desta frente foi promovido à main |
+| nada promovido à main direto | os commits vivem em `gate/f48-hitch` e `gate/f48-hitch-x`; a promoção é verdict de outro dono |
+| medir **âncora, continuidade da janela e capacidade de reposição**, não só quadros | `scripts/hitch-compare.py` imprime as três e **recusa** a comparação quando uma das corridas não movimentou o leitor; o relatório do resultado traz a taxonomia das admissões e as contagens de `replenishment_*` dos dois lados |
+| a técnica experimental **não** vira arquitetura antes do resultado | o guard é um commit próprio, revertível, com o fato registrado igual ao controle; a ablação agressiva (H4b) não foi implementada |
+
+### 10.5 O que ainda NÃO foi medido (lista explícita)
 
 1. **O custo do gesto por síntese** (H3) — precisa dos dois métodos rodando no aparelho.
 2. **O ganho de coalescer as 54 publicações redundantes** (H4a) — precisa do controle e do ramo, com a mesma
