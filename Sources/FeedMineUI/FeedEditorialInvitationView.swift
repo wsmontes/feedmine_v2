@@ -4,9 +4,10 @@
 //
 // Responsibility:
 // F02's in-feed invitation: the feed presents what discovery found, and the reader says **in place** where to
-// explore more or less of. It is one block of the feed, not a form, not a gate, and never more than the reader
-// asked for: every action states its consequence, the answer can be taken back, and the invitations can be
-// hidden for good.
+// explore more of — or to leave a group out of it. It is one block of the feed, not a form, not a gate, and never
+// more than the reader asked for: every action states its consequence (PD-11: the negative answer *excludes* the
+// subject from future discoveries, and the copy may never promise a softer behaviour than the product performs),
+// the answer can be taken back, and the invitations can be hidden for good.
 //
 // Does not own: the vote (the host writes the preference), discovery, or the feed's own cards.
 import FeedMineDomain
@@ -44,10 +45,14 @@ public struct FeedEditorialInvitationView: View {
                 .foregroundStyle(.secondary)
             if let answered {
                 // The answer is stated, and it is not final: the PRD is explicit that a person changes their mind
-                // without punishment, so the way back is right here.
-                Text(verbatim: answered == .more
-                    ? String(localized: "Você pediu mais fontes em \(subjectName). Vamos procurar mais delas.")
-                    : String(localized: "Você pediu menos fontes em \(subjectName). Vamos procurar menos delas."))
+                // without punishment, so the way back is right here. The two answers do not promise the same
+                // thing, and saying so is the point of PD-11: "more" widens the search, while the negative answer
+                // takes the subject **out of future discoveries** (`topicPreferences["topic:<subject>"] = .less`
+                // → `excludedTopicNodeKeys`), so its acknowledgement states that exclusion and not a quieter
+                // search.
+                Text(verbatim: answered == .less
+                    ? String(localized: "Entendido. Vamos excluir \(subjectName) das próximas descobertas.")
+                    : String(localized: "Você pediu mais fontes em \(subjectName). Vamos procurar mais delas."))
                     .font(.subheadline)
                     HStack(spacing: FeedDesignTokens.Spacing.tight) {
                         Button(String(localized: "Desfazer")) { onUndo() }
@@ -73,8 +78,11 @@ public struct FeedEditorialInvitationView: View {
                 Text(verbatim: String(localized: "No nosso catálogo, esta fonte está em \(subjectName). Quer explorar mais fontes desse grupo?"))
                     .font(.subheadline)
                     actions
-                // The consequence, in plain words: the reader should never have to guess what a tap does.
-                Text(verbatim: String(localized: "Sua resposta orienta a busca por mais ou menos fontes desse grupo nas próximas descobertas. Você pode mudar de ideia."))
+                // The consequence, in plain words: the reader should never have to guess what a tap does — and it
+                // states the truth of both answers (PD-11): "more" widens the search for this group, and not
+                // wanting more of it **excludes** the group from future discoveries instead of only making it
+                // rarer. The old sentence promised the softer reading and is gone.
+                Text(verbatim: String(localized: "Sua resposta orienta as próximas descobertas: mais fontes desse grupo, ou esse grupo excluído da descoberta. Você pode mudar de ideia."))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("feed-invitation-consequence-\(nodeKey)")
@@ -97,7 +105,10 @@ public struct FeedEditorialInvitationView: View {
             Button(String(localized: "Mais de \(subjectName)")) { onVote(.more) }
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("feed-invitation-more-\(nodeKey)")
-            Button(String(localized: "Menos de \(subjectName)")) { onVote(.less) }
+            // The label states what the action performs (PD-11's chosen wording, "Não quero mais sobre X"): the
+            // subject is excluded from future discoveries. It never says "menos", which would promise a ranking
+            // it does not touch.
+            Button(String(localized: "Não quero mais sobre \(subjectName)")) { onVote(.less) }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("feed-invitation-less-\(nodeKey)")
             Button(String(localized: "Esconder dicas")) { onHide() }
