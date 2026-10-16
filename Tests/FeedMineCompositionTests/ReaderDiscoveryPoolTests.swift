@@ -415,6 +415,65 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
 
     }
 
+    /// The pool a launch reads **beside** the walk — for a warm launch, the one it reads behind the reader's own
+    /// window — is materialized as supply through the same owner an examined page goes through, and it does not
+    /// move the walk's cursor. Two facts are the point: a source the authority revoked is not made supply again by
+    /// a preview that names it, and adopting a preview is not evidence that the pages before it were examined.
+    @MainActor
+    func testAPoolReadBesideTheWalkBecomesSupplyWithoutMovingTheCursor() throws {
+        let catalogURL = try catalog()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let transport = URLSession(configuration: .ephemeral)
+        addTeardownBlock { transport.invalidateAndCancel() }
+        let context = FeedContext(request: .main)
+        // No language: the profile is a topic, so the catalogue's own first key is admitted and the walk's next
+        // page is observable.
+        let profile = ReaderDiscoveryProfile(topicNodeKeys: ["topics/science"])
+        let traversal = ReaderDiscoveryTraversal(builder: ReaderDiscoveryBuilder(catalogURL: catalogURL),
+            profile: profile, contextKey: context.key)
+        let acquisition = try SyndicationAcquisitionSnapshot(database: database, registrations: [],
+            session: transport, redirectCapacity: 0, discovery: traversal)
+
+        let pool = try ReaderDiscoveryBuilder(catalogURL: catalogURL).pool(for: profile, limit: 50).entries
+        let healthy = try XCTUnwrap(pool.first { $0.principal == "https://science.pt-two/feed" })
+        let revoked = try XCTUnwrap(pool.first { $0.principal == "https://science.pt/feed" })
+        // The authority revoked one of the two while the read was out.
+        let target = try AcquisitionTargetAuthority(database: database).register(id: revoked.targetID,
+            connectorKind: .syndication, authorizedSources: [revoked.source.id])
+        _ = try AcquisitionTargetAuthority(database: database).revoke(id: target.id, expectedGeneration: target.generation)
+
+        XCTAssertEqual(try acquisition.adoptDiscovered([revoked, healthy]).map(\.principal), [healthy.principal],
+            "only what really became supply is reported back")
+
+        let eligible = try acquisition.eligibleTargets(for: context)
+        XCTAssertTrue(eligible.contains { $0.id == healthy.targetID },
+            "the healthy source of the pool is acquirable without the walk having examined it")
+        XCTAssertFalse(eligible.contains { $0.id == revoked.targetID },
+            "a revoked source is not made supply again by a pool that names it")
+        let base = ResolvedSelectionPolicy(contextKey: context.key, userSelectionVersion: .init(rawValue: 1),
+            eligibilityPolicyVersion: .init(rawValue: 1), scoringPolicyVersion: .init(rawValue: 1),
+            sequencingPolicyVersion: .init(rawValue: 1), exposurePolicyVersion: .init(rawValue: 1),
+            selectionSchemaVersion: .init(rawValue: 1), eligibility: .selectedSources([SourceID()]),
+            scoring: .equal, sequencing: .recencyDescending, exposure: .excludePublishedMaterial)
+        guard case .selectedSources(let sources) = try acquisition.policyIncludingDiscovery(base).eligibility else {
+            return XCTFail("Discovery preserves the selected-source policy")
+        }
+        XCTAssertTrue(sources.contains(healthy.source.id), "the pool's supply enters the effective policy")
+        XCTAssertFalse(sources.contains(revoked.source.id))
+
+        // The walk still examines the catalogue where it was: the first page is the catalogue's **first** records,
+        // at positions 0 and 1 — not the ones a quality-ordered pool happens to start with.
+        let walk = try XCTUnwrap(acquisition.advanceDiscovery(for: context, examinedCapacity: 2))
+        XCTAssertEqual(walk.entries.map(\.principal).sorted(),
+            ["https://both.xx/feed", "https://science.en/feed"],
+            "adopting a pool is not evidence that the pages in between were examined")
+        XCTAssertEqual(Set(traversal.entries.map(\.principal)),
+            ["https://both.xx/feed", "https://science.en/feed", healthy.principal],
+            "and the adopted page is retained beside the examined one")
+    }
+
     nonisolated private static func prepareDiscovery(_ selection: SelectionResult) -> LocalPreparedPublication {
         .init(inputs: selection.orderedCandidates.map { candidate in
             .init(origin: .init(originRecordID: candidate.originRecordID, originRevisionID: candidate.originRevisionID,

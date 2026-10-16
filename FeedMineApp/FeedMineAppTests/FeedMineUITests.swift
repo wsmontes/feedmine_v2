@@ -1105,6 +1105,125 @@ final class FeedMineUITests: XCTestCase {
         return violations
     }
 
+    /// **A medição comparável de arranque frio e morno** — o pedido do arquiteto, depois de a primeira tentativa
+    /// comparar intervalos que não eram equivalentes (o frio levava o onboarding dentro). O que este caso faz, na
+    /// mesma execução e com o mesmo instrumento (`FeedLaunchWitness`, o relógio do próprio processo):
+    ///
+    /// 1. **uma primeira abertura que *não* é medida**: o leitor conhece o app, responde idioma e lugar, e o
+    ///    transporte está recusado — nada publica, então não há janela durável. Ela existe só para que o onboarding
+    ///    esteja concluído **antes** das duas medições;
+    /// 2. **a abertura fria medida**: mesmo contêiner, sem janela durável, com as respostas já no lugar e sem
+    ///    nenhuma superfície de onboarding — do começo do processo até o primeiro passo que carrega cartas;
+    /// 3. **a reabertura morna medida**: o mesmo contêiner, agora com a janela que a interação anterior deixou.
+    ///
+    /// As duas medições começam no mesmo instante (a construção do processo) e terminam no mesmo fato (a primeira
+    /// passagem do host que carregou cartas prontas do leitor): o que difere é a **condição**, não o intervalo.
+    /// Precondições, impressas e não cronometradas: o catálogo que a build carrega (117 993 472 bytes, o arquivo do
+    /// artefato), as respostas que a primeira abertura deu no compositor do onboarding (idioma e lugar, impressos
+    /// como o que foi realmente tocado — o relançamento as lê por `AppComposition.completeFirstRun`, que as grava),
+    /// o censo de cartas alcançáveis (> 20, exigido) e `FEEDMINE_FIXTURE_ITEMS` itens por feed. Que a metade fria é
+    /// **fria** não é presumido: é o registro dela que o diz (`kind=launch-progress`, a superfície que um arranque
+    /// sem janela durável desenha — o morno desenha zero). O que este instrumento **não** mede é a parcela da
+    /// descoberta: nada no processo cronometra a leitura do pool em separado — o número sai como `não medido`, com
+    /// essa razão, e nunca inventado. O veredito do critério é afirmado no teste acima, na mesma jornada; aqui as
+    /// duas metades são impressas cruas e o que se afirma é que a comparação é legítima (o frio declara a espera e
+    /// o morno não desenha nenhuma).
+    @MainActor
+    func testReopenMeasurementColdAndWarmWithTheOnboardingAlreadyConcluded() throws {
+        let namespace = UUID().uuidString
+        // 1. A primeira abertura: só ela vê o onboarding, e ela não é medida.
+        let first = XCUIApplication()
+        first.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
+        first.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        first.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
+        first.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        first.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "0"
+        first.launch()
+        XCTAssertTrue(first.staticTexts["welcome-headline"].waitForExistence(timeout: 60))
+        first.buttons["welcome-shape"].tap()
+        XCTAssertTrue(first.staticTexts["composer-subtitle"].waitForExistence(timeout: 20))
+        let languages = first.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-language-'"))
+        var answeredPortuguese = false
+        if languages.firstMatch.waitForExistence(timeout: 10) {
+            let portuguese = languages.matching(NSPredicate(format: "label CONTAINS[c] 'Portuguese'")).firstMatch
+            if portuguese.exists { portuguese.tap(); answeredPortuguese = true }
+        }
+        let places = first.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-region-'"))
+        XCTAssertTrue(places.firstMatch.waitForExistence(timeout: 30), "the shipped catalogue offers its places")
+        let brazil = places.matching(NSPredicate(format: "label CONTAINS[c] 'Brazil'")).firstMatch
+        let answeredBrazil = brazil.exists
+        (brazil.exists ? brazil : places.firstMatch).tap()
+        first.buttons["composer-open-feed"].tap()
+        // The gate closes as the answers are taken (`AppComposition.completeFirstRun` writes the profile and the
+        // flag): this launch has to leave behind a reader who answered — and **no** durable window, because the
+        // transport is refused, so nothing publishes. The coldness of the next launch is not assumed here: that
+        // launch's own record states it (`kind=launch-progress`, the surface a launch with no window draws).
+        XCTAssertTrue(waitForAbsence(first.staticTexts["composer-subtitle"], timeout: 60),
+            "o portão de primeira execução fecha depois de o leitor responder")
+        first.terminate()
+        Thread.sleep(forTimeInterval: 2)
+
+        // 2. A abertura **fria** medida: o mesmo contêiner, sem janela durável (a primeira abertura não publicou),
+        //    com as respostas no lugar e sem superfície de onboarding. O transporte de fixtures responde agora, e é
+        //    esta metade que carrega a leitura de descoberta do perfil respondido.
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "0"
+        app.launchEnvironment["FEEDMINE_FIXTURE_ITEMS"] = "120"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 120), "a abertura fria termina no feed")
+        let cards = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", Self.cardIdentifier))
+        XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 240), "a abertura fria publica conteúdo real")
+        let cold = try launchRecord(app, name: "cold")
+        let coldViolations = reopenCriterionViolations(cold, app: app)
+        print("REOPEN_WITNESS precondition catalogue_bytes=117993472"
+            + " answered_language_portuguese=\(answeredPortuguese) answered_place_brazil=\(answeredBrazil)"
+            + " fixture_items_per_feed=\(app.launchEnvironment["FEEDMINE_FIXTURE_ITEMS"] ?? "?")"
+            + " onboarding=answered-before-both-measurements")
+        print("REOPEN_WITNESS cold record=\(cold.raw)")
+        print("REOPEN_WITNESS cold verdict=\(coldViolations.isEmpty ? "satisfied" : "violated")"
+            + " violations=\(coldViolations.isEmpty ? "none" : coldViolations.joined(separator: " | "))")
+        XCTAssertGreaterThan(cold.waitPasses, 0,
+            "a abertura sem janela durável tem de declarar a espera, ou as duas metades não são condições "
+                + "diferentes — record=\(cold.raw)")
+
+        // A leitura que o relançamento tem de restaurar: o censo de cartas alcançáveis é a precondição "histórico
+        // longo", impressa e **exigida**, não uma duração.
+        let walked = collectCardIdentifiers(cards, scroll: scroll, passes: 24)
+        print("REOPEN_WITNESS history cards_reachable=\(walked.count)")
+        XCTAssertGreaterThan(walked.count, 20,
+            "o histórico que esta medição restaura tem de ser longo: alcançou \(walked.count) cartas")
+        Thread.sleep(forTimeInterval: 2)
+        app.terminate()
+        Thread.sleep(forTimeInterval: 2)
+
+        // 3. A reabertura **morna** medida: o mesmo contêiner, a mesma rede bloqueada — o que volta só pode ser o
+        //    que a interação anterior tornou pronto localmente.
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60),
+            "o feed que o leitor tinha está lá quando ele volta")
+        Thread.sleep(forTimeInterval: 3)
+        let warm = try launchRecord(app, name: "warm")
+        let warmViolations = reopenCriterionViolations(warm, app: app)
+        print("REOPEN_WITNESS warm record=\(warm.raw)")
+        print("REOPEN_WITNESS warm verdict=\(warmViolations.isEmpty ? "satisfied" : "violated")"
+            + " violations=\(warmViolations.isEmpty ? "none" : warmViolations.joined(separator: " | "))")
+        // A descoberta não é medida por este instrumento, e o relatório diz por quê em vez de inventar um número:
+        // a parcela do processo que a leitura do pool custa não tem relógio próprio em lugar nenhum.
+        print("REOPEN_WITNESS discovery=não medido (nenhum instrumento cronometra a leitura do pool em separado)")
+        print("REOPEN_WITNESS intervals cold_first_cards_ms=\(cold.firstCardsMS.map(String.init) ?? "n/a")"
+            + " warm_first_cards_ms=\(warm.firstCardsMS.map(String.init) ?? "n/a")"
+            + " (mesmo começo: construção do processo; mesmo fim: a primeira passagem que carregou cartas)")
+        XCTAssertGreaterThan(cold.cards, 0, "a metade fria mediu conteúdo")
+        XCTAssertGreaterThan(warm.cards, 0, "e a metade morna também")
+    }
+
     @MainActor
     func testNativeSwipeReachesRealRunwayAndReverseNavigation() throws {
         let app = XCUIApplication()

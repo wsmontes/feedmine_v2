@@ -116,6 +116,31 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
         }
     }
 
+    /// A pool a profile named — read **beside** the walk, which is what a warm launch does with it — materialized
+    /// as supply through the same owner an examined page goes through: durable target taken or registered, revoked
+    /// source refused, endpoint and language of the entry carried into the registration. It does **not** move
+    /// `cursor`: the walk still examines the catalogue where it was, because adopting a preview is not evidence
+    /// that those sources were examined, and pretending otherwise would skip the pages in between. Entries whose
+    /// target is already prepared (by a page or by an earlier adoption) are not registered twice, and the ones the
+    /// authority refused are not recorded at all — a revoked source must not become a permanent "already
+    /// examined" here. Returns the entries that really became supply.
+    func adopt(_ entries: [LegacyCatalogEntry],
+        materialize: ([LegacyCatalogEntry]) throws
+            -> (installed: [LegacyCatalogEntry], snapshot: SyndicationAcquisitionSnapshot)) throws
+        -> [LegacyCatalogEntry] {
+        try lock.withLock {
+            try Task.checkCancellation()
+            refreshIfNeeded()
+            let known = Set(pages.flatMap { $0.entries }.map(\.targetID))
+            let candidates = entries.filter { !known.contains($0.targetID) }
+            guard !candidates.isEmpty else { return [] }
+            let (installed, snapshot) = try materialize(candidates)
+            guard !installed.isEmpty else { return [] }
+            pages.append((entries: installed, snapshot: snapshot))
+            return installed
+        }
+    }
+
     func targets(for context: FeedContext) throws -> [AcquisitionTarget] {
         try lock.withLock {
             refreshIfNeeded()
@@ -158,20 +183,40 @@ extension SyndicationAcquisitionSnapshot {
         guard case .main = context.request, let discovery else { return nil }
         guard discovery.contextKey == context.key else { throw ReaderDiscoveryTraversalError.contextMismatch }
         return try discovery.advance(examinedCapacity: examinedCapacity) { entries in
-            let authority = AcquisitionTargetAuthority(database: runtimeDatabase)
-            let registrations = try entries.compactMap { entry -> SyndicationTargetRegistration? in
-                let target = try authority.target(id: entry.targetID) ?? authority.register(id: entry.targetID,
-                    connectorKind: .syndication, authorizedSources: [entry.source.id])
-                // Discovery cannot revive a revoked source or override its durable generation fence.
-                guard target.state == .enabled else { return nil }
-                let binding = SourceBinding(id: entry.bindingID, sourceID: entry.source.id,
-                    externalPrincipal: .init(connectorKind: .syndication, namespace: LegacyCatalogImport.principalNamespace,
-                        value: entry.principal, role: .principal), aliases: [], generation: 1, state: .enabled)!
-                return SyndicationTargetRegistration(targetID: target.id, targetGeneration: target.generation,
-                    endpoint: entry.endpoint, bindings: [binding], language: entry.language)!
-            }
-            return try discoverySnapshot(registrations: registrations)
+            try materialization(of: entries).snapshot
         }
+    }
+
+    /// The pool a launch read **beside** the walk — for a warm launch, the one read behind the reader's own
+    /// window — made supply through the same materialization an examined page goes through, and without moving the
+    /// walk's cursor. Returns the entries that really became supply: the authority's own refusals are not in it.
+    public func adoptDiscovered(_ entries: [LegacyCatalogEntry]) throws -> [LegacyCatalogEntry] {
+        guard let discovery else { return [] }
+        return try discovery.adopt(entries) { try self.materialization(of: $0) }
+    }
+
+    /// The one materialization discovery goes through, examination and adoption alike: the durable target is taken
+    /// or registered, a revoked target is refused (discovery cannot revive a source or override its durable
+    /// generation fence), and the registration carries the entry's own endpoint and language. `installed` is
+    /// exactly the entries that became supply — what a caller may publish as discovered.
+    private func materialization(of entries: [LegacyCatalogEntry])
+        throws -> (installed: [LegacyCatalogEntry], snapshot: SyndicationAcquisitionSnapshot) {
+        let authority = AcquisitionTargetAuthority(database: runtimeDatabase)
+        var installed: [LegacyCatalogEntry] = []
+        let registrations = try entries.compactMap { entry -> SyndicationTargetRegistration? in
+            let target = try authority.target(id: entry.targetID) ?? authority.register(id: entry.targetID,
+                connectorKind: .syndication, authorizedSources: [entry.source.id])
+            guard target.state == .enabled else { return nil }
+            guard let binding = SourceBinding(id: entry.bindingID, sourceID: entry.source.id,
+                externalPrincipal: .init(connectorKind: .syndication, namespace: LegacyCatalogImport.principalNamespace,
+                    value: entry.principal, role: .principal), aliases: [], generation: 1, state: .enabled),
+                let registration = SyndicationTargetRegistration(targetID: target.id,
+                    targetGeneration: target.generation, endpoint: entry.endpoint, bindings: [binding],
+                    language: entry.language) else { return nil }
+            installed.append(entry)
+            return registration
+        }
+        return (installed, try discoverySnapshot(registrations: registrations))
     }
 
     /// Eligibility grows with the examined profile, while all nominal policy identity stays fixed.

@@ -77,7 +77,13 @@ final class AppComposition {
     /// question that changes, not the database's answer.
     var hasSelectedSources: Bool {
         if !(preferences.flatMap { try? $0.load() }?.sourceKeys.isEmpty ?? true) { return true }
-        if let association, !association.discovery.isEmpty { return true }
+        // The two arms are one question read from both sides of the query: the sources discovery has already
+        // **brought** (a warm launch states them after its first frame, so this is the live fact and not the one
+        // the session was built with) and the profile it is working with — which is what this surface can know
+        // **before** any pool exists, and the arm that answers for a curated feed whose recipe names the interests.
+        if let association, !association.discovery.isEmpty || !association.discoveryProfile.isEmpty {
+            return true
+        }
         // One small preferences read: the surface asks whether discovery was given something, not what the whole
         // profile resolves to.
         guard let settings = (try? preferences?.load())??.settings else { return false }
@@ -158,7 +164,8 @@ final class AppComposition {
     /// discovery. It is deliberately not the catalogue — a test flag may not restore the default this comment
     /// forbids — and normal runs and release builds seed nothing.
     init(directory: URL? = nil, feeds: [TrustedFeed] = TrustedFeed.developmentSelection,
-        transportConfiguration: URLSessionConfiguration? = nil) {
+        transportConfiguration: URLSessionConfiguration? = nil,
+        discoveryQuery: DiscoveryQuery? = nil) {
         let support = RuntimeDatabaseLocation.applicationSupport(
             FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).directory
         #if DEBUG
@@ -168,6 +175,11 @@ final class AppComposition {
         self.directory = directory ?? support
         #endif
         self.selectedFeeds = feeds
+        // The one read of a profile's pool. A test that has to decide **when** a read concludes — A→B with A
+        // concluding last — hands its own and controls the interleaving without a sleep; the product hands
+        // nothing and gets the detached pass over the shipped catalogue. The same kind of seam the transport
+        // already is: what the query returns is a value, and this composition owns when it is adopted.
+        self.discoveryQuery = discoveryQuery ?? Self.liveDiscoveryQuery
         let config = transportConfiguration ?? .ephemeral
         if transportConfiguration == nil { config.timeoutIntervalForRequest = 20 }
         #if DEBUG
@@ -256,7 +268,9 @@ final class AppComposition {
         // A warm launch is local (INV-07) — and the reader must not perceive it: when the previous interaction left
         // a durable window, the association is built **here**, synchronously, so this launch's first frame already
         // carries the reader's own feed and no surface is drawn between the launch screen and it. `launch()` then
-        // activates what exists and lets everything that is not the reader's window continue behind it.
+        // activates what exists and lets everything that is not the reader's window continue behind it — including
+        // the pool the profile names, which walks the shipped catalogue and is therefore read **after** that frame
+        // (`warmAssociation()` states why, and `launch()` reads it into the association that is already reading).
         //
         // A launch with nothing durable keeps the asynchronous path exactly as it was: its preparation surface is the
         // legitimate one (doctrine item 1 — "the first open may be slow — that is what the loading screen is for"),
@@ -280,11 +294,16 @@ final class AppComposition {
     func launch() async {
         guard !replacingSession, startupFailure == nil else { return }
         let current: FeedAssociation
+        // Whether this launch started from the window the previous interaction left — built synchronously in `init`
+        // and therefore without discovery. What discovery brings arrives below, behind that window. (The adoption is
+        // idempotent — the read is the one cache and the merge deduplicates — so a repeated call states nothing new.)
+        var startedWarm = false
         if let warmed = association {
             // The warm launch already built this association **and** installed the reader's own window into it,
             // before this launch drew anything. What is left is everything that is not that window: activation,
             // acquisition, media, the discovery walk — the backend, behind the feed the reader already has.
             current = warmed
+            startedWarm = true
         } else {
             do { current = try await association(contextKey: currentContextKey) }
             catch {
@@ -294,6 +313,33 @@ final class AppComposition {
                 return
             }
             association = current
+        }
+        // Discovery resumes here, as the normal opportunity: the same read the asynchronous launch takes, released
+        // **after** the reader's own window is on screen — the criterion forbids work between the launch screen and
+        // the feed, not work behind it — and adopted by the association that is already reading it. The walk's own
+        // bounded page per opportunity follows from `current.launch()` below.
+        //
+        // What releases it is this host's first pass that carried the reader's cards (`FeedMineApp.body`'s branch
+        // decides it, and this launch runs from that view's task). That is **evaluation of the body**, not a
+        // presented frame: nothing here observes a commit of pixels, and a pass whose update is replaced before it
+        // is drawn would be counted. The claim this code can carry is therefore the weaker, true one — that no
+        // wait surface is drawn between the launch screen and the feed — and the stronger one is left
+        // INDETERMINADO (see the report of this gate).
+        if startedWarm {
+            let key = applied(currentContextKey)
+            let profile = discoveryProfile(for: key)
+            let fingerprint = catalogueSnapshot?.fingerprint
+            let read = await discoveryRead(profile: profile)
+            // After the await, before adopting: this launch's own association must still be the one reading, still
+            // active, still on the profile and the catalogue revision this read answers for. A read that concludes
+            // after the reader moved is stale **for this session** — it keeps its value under its own key in the
+            // one cache (`discoveryRead`) and changes nothing here. Without this, a pool prepared for profile A
+            // could be published into the session reading B (A→B, A concluding last).
+            if let read, association === current, current.active, current.contextKey == key,
+                current.discoveryProfile == profile, read.profile == profile,
+                read.fingerprint == fingerprint {
+                current.adopt(read)
+            }
         }
         do {
             try await current.launch()
@@ -1229,7 +1275,7 @@ final class AppComposition {
         let initial = try sessionState(for: contextKey)
         let profile = discoveryProfile(for: applied(initial.key))
         let requestedFingerprint = catalogueSnapshot?.fingerprint
-        let discovered = await discoveryFeeds(profile: profile)
+        let read = await discoveryRead(profile: profile)
         let snapshot = catalogueSnapshot
         // Actor reentrancy can allow an activation *between* returning an old cached pool and
         // resuming this constructor. Do not combine that pool with the replacement snapshot.
@@ -1241,15 +1287,15 @@ final class AppComposition {
             currentContextKey = session.key
             _ = try preferences?.setContext(session.key)
         }
-        return try makeAssociation(contextKey: session.key, discovered: discovered, profile: profile,
-            warmLaunch: false)
+        return try makeAssociation(contextKey: session.key, profile: profile, read: read, warmLaunch: false)
     }
 
     /// The one place an association is built. The **asynchronous** launch and the **warm** launch hand the same
     /// inputs to the same constructor, so there is one shape of session and not two: what differs is only when they
-    /// can run (the warm one cannot `await`, because the reader's own window has to exist before the first frame).
-    private func makeAssociation(contextKey: ContextKey, discovered: [TrustedFeed],
-        profile: ReaderDiscoveryProfile, warmLaunch: Bool) throws -> FeedAssociation {
+    /// can run (the warm one cannot `await`, because the reader's own window has to exist before the first frame)
+    /// — and therefore how much of discovery exists when it is built.
+    private func makeAssociation(contextKey: ContextKey, profile: ReaderDiscoveryProfile,
+        read: DiscoveryRead?, warmLaunch: Bool) throws -> FeedAssociation {
         let session = try sessionState(for: contextKey)
         if session.key != contextKey {
             currentContextKey = session.key
@@ -1258,7 +1304,7 @@ final class AppComposition {
         let key = applied(session.key)
         let (scoring, version) = scoring(for: key)
         return connecting(try FeedAssociation(directory: directory, feeds: session.feeds,
-            discovery: discovered,
+            discovery: read?.feeds ?? [], subjects: read?.subjects ?? [:],
             configuration: transportConfiguration, trace: trace, database: libraryDatabase(),
             discoveryTraversal: discoveryTraversal(for: key, profile: profile, snapshot: catalogueSnapshot),
             contextKey: key, selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
@@ -1266,34 +1312,33 @@ final class AppComposition {
             discoveryProfile: profile, warmLaunch: warmLaunch))
     }
 
-    /// The association a **warm** launch starts from — the same session `launch()` would build, with the two
-    /// differences a first frame demands: it is built **synchronously**, and the pool its profile names is read on
-    /// this thread rather than handed to a detached pass. At this moment the main actor is not drawing yet, and the
-    /// reader's own window must not wait behind a hop.
+    /// The association a **warm** launch starts from — the same session `launch()` would build, built
+    /// **synchronously** because the reader's own window has to exist before this launch's first frame, and built
+    /// over **nothing the catalogue has to be scanned for**.
+    ///
+    /// A warm launch is local (INV-07). The pool a profile names is not: it is a query that walks the shipped
+    /// catalogue until it has `limit × 4` candidates, and against that file it is the largest single cost of the
+    /// launch (measured: 2,5–2,8 s for the profile of a first run, more than this machine's whole warm first
+    /// frame). Reading it here put that cost **between the launch screen and the reader's own feed**, which is the
+    /// one place this criterion forbids work. What discovery brings therefore arrives the way every other
+    /// opportunity brings it: behind the reader's window, on the detached pass (`discoveryRead`), adopted by the
+    /// running association in `launch()` — and the walk keeps resuming its own bounded page per opportunity.
     ///
     /// Only a launch the previous interaction made durable takes this path (see the guard in `init`): a launch with
-    /// nothing to show keeps the asynchronous path and the preparation surface the doctrine gives it, because
-    /// blocking a first run's main actor on a pool read would trade a visible wait for an invisible one.
+    /// nothing to show keeps the asynchronous path and the preparation surface the doctrine gives it.
     private func warmAssociation() throws -> FeedAssociation {
         let initial = try sessionState(for: currentContextKey)
         let profile = discoveryProfile(for: applied(initial.key))
-        let discovered = try warmDiscoveryFeeds(profile: profile)
-        return try makeAssociation(contextKey: initial.key, discovered: discovered, profile: profile,
-            warmLaunch: true)
+        return try makeAssociation(contextKey: initial.key, profile: profile,
+            read: alreadyReadDiscovery(profile: profile), warmLaunch: true)
     }
 
-    /// The pool a profile names, read on the thread that asks — one computation behind both readers of it
-    /// (`discoveryFeeds` hands the same call to a detached pass), and the same caches are filled either way, so a
-    /// profile never costs the catalogue two reads.
-    private func warmDiscoveryFeeds(profile: ReaderDiscoveryProfile) throws -> [TrustedFeed] {
-        guard !profile.isEmpty, let snapshot = catalogueSnapshot else { return [] }
-        let cacheKey = DiscoveryCacheKey(profile: profile, fingerprint: snapshot.fingerprint)
-        if let cached = discoveryCache[cacheKey] { return cached }
-        let (entries, subjects) = Self.discoveryPool(profile: profile, catalogueURL: snapshot.catalogueURL)
-        let feeds = entries.map(Self.trustedFeed(from:))
-        discoveryCache[cacheKey] = feeds
-        discoverySubjects = subjects
-        return feeds
+    /// What **this process** has already read for the profile, and nothing more. It is the same cache
+    /// `discoveryRead` fills — there is no second one — so a launch that inherits a pool pays nothing for it,
+    /// and a launch that does not simply states no discovery yet.
+    private func alreadyReadDiscovery(profile: ReaderDiscoveryProfile) -> DiscoveryRead? {
+        guard !profile.isEmpty, let snapshot = catalogueSnapshot else { return nil }
+        return discoveryCache[DiscoveryCacheKey(profile: profile, fingerprint: snapshot.fingerprint)]
     }
 
     /// The walk discovery is on for this context's profile. Bounded by the same rule as the pool: no catalogue, no
@@ -1310,35 +1355,28 @@ final class AppComposition {
         return traversal
     }
 
-    /// The product's own promise: a reader who named interests gets sources they never named. The pool comes from
-    /// the bundled catalogue's labels for the context's profile, is cached per profile (a query, not a per-render
-    /// cost), and never changes the context's identity — the reader's checkpoints and position stay where they
-    /// were, and the feed simply has more of the open internet to draw from.
+    /// The one read of a profile's pool — **one result**, with the two facts that say what it is about. It used
+    /// to arrive as two pieces of composition state (`discoveryCache` plus a `discoverySubjects` map), so a query
+    /// that concluded after the reader had moved answered for the interests they have **now** with the pool of the
+    /// interests they had **then**: the map was written by whichever read finished last, and the invitation of the
+    /// session being read consulted it. A value cannot do that.
     ///
-    /// **It does not run on the main actor.** The shipped catalogue is 118 MB and a first-run profile reads
-    /// thousands of keys; measured against that file, one pool costs 2,5–2,8 s, which on the main actor is a
-    /// frozen first run (the acceptance driver observed the app's main thread busy for 30 s).
-    private func discoveryFeeds(profile: ReaderDiscoveryProfile) async -> [TrustedFeed] {
-        guard !profile.isEmpty, let snapshot = catalogueSnapshot else { return [] }
+    /// **It does not run on the main actor.** See `liveDiscoveryQuery` for the measured reason.
+    private func discoveryRead(profile: ReaderDiscoveryProfile) async -> DiscoveryRead? {
+        guard !profile.isEmpty, let snapshot = catalogueSnapshot else { return nil }
         let cacheKey = DiscoveryCacheKey(profile: profile, fingerprint: snapshot.fingerprint)
         if let cached = discoveryCache[cacheKey] { return cached }
         let url = snapshot.catalogueURL
-        // One detached pass: the pool query **and** the subject names. Opening the shipped 118 MB catalogue once
-        // per node key — which is what asking the catalogue for a name does — put seconds of work on the main
-        // actor, right where the reader is waiting for their feed.
-        let (entries, subjects) = await Task.detached(priority: .userInitiated) { () -> ([LegacyCatalogEntry],
-            [SourceID: AppComposition.EditorialSubject]) in
-            Self.discoveryPool(profile: profile, catalogueURL: url)
-        }.value
-        let feeds = entries.map(Self.trustedFeed(from:))
-        discoveryCache[cacheKey] = feeds
-        // Work prepared for revision 5 can finish after activation of 6. Keep its keyed result for any
-        // context still using 5, but do not let its subjects or feeds become the current authority.
+        let (entries, subjects) = await discoveryQuery(profile, url)
+        let read = DiscoveryRead(profile: profile, fingerprint: snapshot.fingerprint,
+            entries: entries, subjects: subjects)
+        discoveryCache[cacheKey] = read
+        // A read prepared for revision 5 can finish after activation of 6. Its keyed result stays valid for any
+        // context still reading 5; it simply does not answer for the revision this launch now reads through.
         guard catalogueSnapshot?.fingerprint == snapshot.fingerprint else {
-            return await discoveryFeeds(profile: profile)
+            return await discoveryRead(profile: profile)
         }
-        discoverySubjects = subjects
-        return feeds
+        return read
     }
 
     /// The interests a context states, in the catalogue's vocabulary. **The reader's own answers come first**
@@ -1424,11 +1462,11 @@ final class AppComposition {
     /// The facts the feed's own invitation depends on, recorded once per window change — off the render path.
     /// `traversed` is what round 10 needed and nothing measured: the cards the reader **really** passed, which is
     /// the budget's own unit — a rendered window is not a read window.
-    func recordWindowFacts(cards: Int, resolvedSources: Int, withSubject: Int, tipsHidden: Bool,
-        traversed: Int, offersShown: Int) {
+    func recordWindowFacts(cards: Int, resolvedSources: Int, withSubject: Int, knownSubjects: Int,
+        tipsHidden: Bool, traversed: Int, offersShown: Int) {
         trace?.record("window", ["cards": String(cards), "resolved_sources": String(resolvedSources),
             "with_subject": String(withSubject), "tips_hidden": String(tipsHidden),
-            "known_subjects": String(discoverySubjects.count),
+            "known_subjects": String(knownSubjects),
             "cards_traversed": String(traversed), "offers_shown": String(offersShown)])
     }
 
@@ -1487,15 +1525,18 @@ final class AppComposition {
     /// What the feed may invite the reader to explore, per source the app **discovered**: the catalogue's own
     /// section the source is filed under, with the catalogue's own name for it. A source the reader chose
     /// themselves is not offered one — the invitation is about discovery, and discovery is what the app did.
-    @ObservationIgnored private var discoverySubjects: [SourceID: EditorialSubject] = [:]
-
+    ///
+    /// It belongs to the **session** that did the discovering and lives on it (`FeedAssociation.subjects`): a map
+    /// held by the composition was written by whichever query concluded last, so a pool read for the interests the
+    /// reader had before could answer the invitations of the session they are reading now.
+    ///
     /// The subject a card may be asked about, and only when the invitation would be true (Codex's finding 2):
     /// a source the reader **chose** is not discovery, and a subject found under an earlier profile does not belong
     /// to the association being read. Explicit choice takes precedence over what the app went looking for.
     func editorialSubject(for sourceID: SourceID, in association: FeedAssociation) -> EditorialSubject? {
         guard !association.feeds.contains(where: { $0.sourceID == sourceID }) else { return nil }
         guard association.discovery.contains(where: { $0.sourceID == sourceID }) else { return nil }
-        return discoverySubjects[sourceID]
+        return association.subjects[sourceID]
     }
 
     /// The reader hid the invitations: a preference, and the settings page is where they come back. Read from the
@@ -1556,10 +1597,9 @@ final class AppComposition {
     /// not touch the main actor.
     nonisolated static let discoverySourceLimit = 120
 
-    /// The pool a profile names, over the installed catalogue, with the subjects a card is attributed with — one
-    /// computation behind both of its readers: `discoveryFeeds` (the launch that has a loading screen to show, off
-    /// the main actor) and `warmDiscoveryFeeds` (a warm launch, which has to have the reader's window before its
-    /// first frame and therefore cannot await).
+    /// The pool a profile names, over the installed catalogue, with the subjects a card is attributed with — the
+    /// one computation behind `discoveryRead`, the detached pass every launch reads it through. It is deliberately
+    /// on no path that must finish before a first frame: the query walks the shipped catalogue.
     nonisolated static func discoveryPool(profile: ReaderDiscoveryProfile, catalogueURL: URL)
         -> (entries: [LegacyCatalogEntry], subjects: [SourceID: EditorialSubject]) {
         let pool = (try? ReaderDiscoveryBuilder(catalogURL: catalogueURL).pool(for: profile,
@@ -1567,18 +1607,52 @@ final class AppComposition {
         return (pool, subjects(in: pool, catalogURL: catalogueURL))
     }
 
-    static func trustedFeed(from entry: LegacyCatalogEntry) -> TrustedFeed {
+    /// The catalogue read a profile's discovery comes from: what the catalogue offers, and the subject it
+    /// attributes to each source it offered. The product's own is the detached pass below; a test that must decide
+    /// **when** a read concludes hands its own (see `init`).
+    typealias DiscoveryQuery = @Sendable (ReaderDiscoveryProfile, URL) async
+        -> (entries: [LegacyCatalogEntry], subjects: [SourceID: EditorialSubject])
+
+    /// The product's read: the pool query **and** the subject names in one detached pass. Opening the shipped
+    /// 118 MB catalogue once per node key — which is what asking the catalogue for a name does — put seconds of
+    /// work on the main actor, right where the reader waits for their feed. Measured against that file, one pool
+    /// costs 2,5–2,8 s, which on the main actor is a frozen first run (the acceptance driver observed the app's
+    /// main thread busy for 30 s).
+    nonisolated static let liveDiscoveryQuery: DiscoveryQuery = { profile, catalogueURL in
+        await Task.detached(priority: .userInitiated) {
+            AppComposition.discoveryPool(profile: profile, catalogueURL: catalogueURL)
+        }.value
+    }
+    @ObservationIgnored private let discoveryQuery: DiscoveryQuery
+
+    /// What one profile's query answered, and the two facts the answer is about: the profile it was read for and
+    /// the catalogue revision it read. **One value, returned** — it used to arrive as two pieces of composition
+    /// state a later query overwrote, so a read prepared for the reader's previous interests could answer for the
+    /// ones they have now (A→B with A concluding last). The cache holds this value and nothing else.
+    struct DiscoveryRead: Sendable {
+        let profile: ReaderDiscoveryProfile
+        let fingerprint: String
+        let entries: [LegacyCatalogEntry]
+        let subjects: [SourceID: EditorialSubject]
+        /// The reader's own feed shape of the same entries, derived once: the pool is the entries.
+        var feeds: [TrustedFeed] { entries.map(AppComposition.trustedFeed(from:)) }
+    }
+
+    /// The reader's own feed shape of one catalogue entry. `nonisolated` because the read value derives it and a
+    /// read is not main-actor state: the entries are a value, the mapping is a pure function of them.
+    nonisolated static func trustedFeed(from entry: LegacyCatalogEntry) -> TrustedFeed {
         TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id, bindingID: entry.bindingID,
             principal: entry.principal, endpoint: entry.endpoint, displayName: entry.source.displayName)
     }
 
     /// Profiles already resolved this launch: the catalogue query is done once per profile, and a context
-    /// transition that asks for the same profile is free.
+    /// transition that asks for the same profile is free. The cached value **is** the answer — entries, subjects
+    /// and its two facts — so reading it again cannot pick up another profile's answer.
     struct DiscoveryCacheKey: Hashable {
         let profile: ReaderDiscoveryProfile
         let fingerprint: String
     }
-    @ObservationIgnored private var discoveryCache: [DiscoveryCacheKey: [TrustedFeed]] = [:]
+    @ObservationIgnored private var discoveryCache: [DiscoveryCacheKey: DiscoveryRead] = [:]
 
     /// The discovery **traversal** for a profile, remembered per profile. A page cursor **is** progress, so it
     /// cannot live in an array handed out once: recreating the traversal on every association would re-find the same
@@ -1646,6 +1720,10 @@ final class FeedAssociation {
     let media: MediaPrefetcher
     @ObservationIgnored private let tidy: MediaTidy
     @ObservationIgnored private let mediaWaitBudget: LiveValue<Double>
+    /// The display name preparation attributes a card with, read at the moment it prepares (`LiveValue`): discovery
+    /// reaches a session more than once (the walk's pages while the reader reads, and the pool a warm launch adopts
+    /// behind its window), so the map belongs to the association and not to one closure.
+    @ObservationIgnored private let names: LiveValue<[SourceID: String]>
     let acquisition: SyndicationAcquisitionSnapshot
     /// F05: the evidence the run is judged by, shared with the host that owns the file.
     let trace: RunwayTrace?
@@ -1825,7 +1903,15 @@ final class FeedAssociation {
     let feeds: [TrustedFeed]
     /// The sources the catalogue offered for the reader's profile, acquired with the selection but never shown
     /// as the reader's own. Empty for a reader who named no interest.
-    let discovery: [TrustedFeed]
+    ///
+    /// It is a fact of the **session**, not of its construction: a warm launch states the pool after the reader's
+    /// own window is on screen (`adopt(_:)`), because that read is a scan of the shipped catalogue and
+    /// INV-07 gives a warm launch no work before that window. One list, one owner of "what discovery brought".
+    private(set) var discovery: [TrustedFeed]
+    /// The catalogue's subject for each source discovery brought **to this session**, and nothing from anywhere
+    /// else: the invitations the feed places are answered from here. It is stated with the same read that stated
+    /// `discovery` — at construction for the asynchronous launch, at `adopt(_:)` for the warm one.
+    private(set) var subjects: [SourceID: AppComposition.EditorialSubject]
     /// The profile this session's discovery pool was built from. An explicit refresh compares it with the stored
     /// one: the reader's answers are about discovery, and a refresh the reader asked for is where a pending answer
     /// must land (po, 2026-10-11).
@@ -2002,7 +2088,9 @@ final class FeedAssociation {
                 observationCapacityPerBatch: 32, byteCapacityPerBatch: 1_000_000)!)
     }
 
-    init(directory: URL, feeds: [TrustedFeed], discovery: [TrustedFeed] = [], configuration: URLSessionConfiguration,
+    init(directory: URL, feeds: [TrustedFeed], discovery: [TrustedFeed] = [],
+        subjects: [SourceID: AppComposition.EditorialSubject] = [:],
+        configuration: URLSessionConfiguration,
         trace: RunwayTrace? = nil, database sharedDatabase: RuntimeDatabase? = nil,
         discoveryTraversal: ReaderDiscoveryTraversal? = nil,
         contextKey: ContextKey = ContextKey(request: .main), selectionVersion: UInt64 = 2,
@@ -2074,7 +2162,12 @@ final class FeedAssociation {
         // their profile. The reader's selection stays what it was — the sources screen and the context menu still
         // show exactly what they chose — while the feed is supplied by the open internet the catalogue describes.
         let supply = Self.supply(selection: feeds, discovery: discovery)
+        // What discovery has brought is a session fact, not a construction one: a warm launch starts with none of
+        // it (its first frame may not wait for the catalogue) and states it in `adopt(_:)`. The subjects come with
+        // it — the catalogue's name for each source the read offered — and they belong to *this* session, which is
+        // what keeps a pool read for the reader's earlier interests from answering this session's invitations.
         self.discovery = discovery
+        self.subjects = subjects
         let policy = ResolvedSelectionPolicy(contextKey: revision.contextKey,
             userSelectionVersion: revision.userSelectionVersion, eligibilityPolicyVersion: revision.eligibilityPolicyVersion,
             scoringPolicyVersion: revision.scoringPolicyVersion, sequencingPolicyVersion: revision.sequencingPolicyVersion,
@@ -2213,7 +2306,10 @@ final class FeedAssociation {
         self.session = session
         // The names preparation reads are **live** (see `LiveValue`): discovery finds sources while the reader
         // reads, so the closure below must consult them at the moment it prepares — not the map that existed here.
+        // It is stored as well, because discovery also arrives **after** this association exists: a warm launch
+        // adopts its pool behind the reader's own window (`adopt(_:)`).
         let names = LiveValue(Dictionary(uniqueKeysWithValues: supply.map { ($0.sourceID, $0.displayName) }))
+        self.names = names
         // T9: the playable payload a card's tap should use, read from the candidate the feed declared.
         let playback: @Sendable (OriginRevisionID) -> URL? = { revision in
             // `try?` flattens the store's own optional: a nil here means "no playable payload declared".
@@ -2320,6 +2416,44 @@ final class FeedAssociation {
         if let warm {
             try install(FeedPresentationHandoff.receive(snapshot: warm.snapshot, into: store.state))
         }
+    }
+
+    /// Discovery arriving **after** this association exists, as the normal opportunity of a launch whose first
+    /// frame could not wait for it (INV-07: a warm launch is local; the pool a profile names is a scan of the
+    /// shipped catalogue, and it is read behind the reader's own window in `AppComposition.launch()`).
+    ///
+    /// It is the same two steps the walk takes, in the same order:
+    ///
+    /// 1. **materialize** the entries as supply, through the owner that materializes an examined page
+    ///    (`SyndicationAcquisitionSnapshot.adoptDiscovered` → `ReaderDiscoveryTraversal.adopt`), so the sources a
+    ///    warm launch read get the durable authority, the generation fence, the enabled check and the endpoint
+    ///    snapshot every other discovered target gets — they become *acquirable* and enter the **effective**
+    ///    policy (`policyIncludingDiscovery` unions the walk's live source IDs), which is what makes them supply
+    ///    instead of decoration. The walk's cursor is untouched: adopting a preview is not evidence that the
+    ///    pages in between were examined. A source the authority revoked (or refuted) is not registered at all;
+    /// 2. **then** publish what that really installed — the display names preparation attributes a card with,
+    ///    which sources discovery brought, and the subject of each — and nothing else. The nominal policy is
+    ///    **not** rewritten (it states what the reader chose), nothing is published, no acquisition is scheduled
+    ///    here, and the presentation is not reinstalled: the reader's window was installed by this session's
+    ///    construction, and the walk's own pages keep being the mechanism an active association advances.
+    func adopt(_ read: AppComposition.DiscoveryRead) {
+        let installed: [LegacyCatalogEntry]
+        do { installed = try acquisition.adoptDiscovered(read.entries) }
+        catch {
+            Self.log("discovery pool could not be materialized as supply: \(String(describing: error))")
+            return
+        }
+        guard !installed.isEmpty else { return }
+        let feeds = installed.map(AppComposition.trustedFeed(from:))
+        // The same deduplication the supply uses: one source is one entry, under the identity that reached here
+        // first — a source the reader also chose is already theirs and stays theirs.
+        var seen = Set(discovery.map(\.sourceID))
+        discovery.append(contentsOf: feeds.filter { seen.insert($0.sourceID).inserted })
+        names.update { $0.merge(Dictionary(feeds.map { ($0.sourceID, $0.displayName) },
+            uniquingKeysWith: { _, later in later })) { _, later in later } }
+        // Only what became supply is published as discovered: a revoked source is not a source the app found.
+        let installedIDs = Set(installed.map(\.source.id))
+        subjects.merge(read.subjects.filter { installedIDs.contains($0.key) }) { _, later in later }
     }
 
     /// §5.3/PD-6: the media preparation window for one operation, stated once so the precedent is testable.

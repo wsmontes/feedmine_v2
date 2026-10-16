@@ -1,6 +1,19 @@
 # A jornada de reabertura: o feed aparece imediatamente, sem tela de carregamento no meio
 
 **Data:** 2026-10-15/16 · **Autor:** agente `ReopenJourney` (tarefa delegada pelo agente principal)
+
+> **Nota de revisão (2026-10-16, agente `ReopenBoundaryOwner`).** Este relatório descreve a **primeira entrega**
+> da branch `fix/reopen-journey` (commit `3e6c54b6`) e é mantido como está naquilo que ela mediu: a asserção do
+> critério, o controle frio e a ausência da superfície de espera na reabertura morna seguem válidos e são citados
+> pelo teste que os afirma. O que **mudou** na segunda entrega, na mesma branch, é a fronteira
+> restauração↔descoberta: o §3 item 3 ("o pool é resolvido … nesta linha em vez de numa passagem destacada") e o
+> residual do §5 ("num perfil que peça uma leitura pesada do catálogo, essa leitura passa a estar no caminho do
+> primeiro quadro") descrevem o estado que a segunda entrega **corrigiu** — a leitura do pool saiu do caminho
+> síncrono do arranque morno e passou a ser adotada como fornecimento atrás da janela do leitor. Os números de
+> §2 e de §3 foram medidos **com a leitura do pool dentro do intervalo morno**, e por isso não valem como
+> descrição do que existe hoje; o §6 lista as linhas alteradas. A revisão de oráculo/critério não é deste
+> trabalho. Ver `docs/reviews/2026-10-16-fronteira-restauracao-descoberta.md`.
+
 **Pergunta que este relatório responde:** a doutrina do dono do produto faz da reabertura o critério principal
 ("**fechar e reabrir o app: o feed deve aparecer imediatamente**, do conteúdo pronto da interação anterior … sem
 tela de carregamento no meio", `1.0-checklist.md:3131-3132`, reafirmado `:3220-3224`; o harness da V1 falhava o
@@ -164,9 +177,14 @@ O conserto tem três partes, e nenhuma delas inventa um caminho paralelo:
    síncrona da mesma projeção.
 3. **A composição constrói a associação antes do primeiro quadro** quando o leitor tem uma janela durável
    (`AppComposition.init` → `hasDurableWindow()` → `warmAssociation()`; `FeedAssociation.init` projeta e **instala**),
-   e `launch()` passa a ativar o que já existe em vez de construir de novo. O pool de descoberta é resolvido pelo
-   **mesmo** cálculo de antes (`discoveryPool`), chamado nesta linha em vez de numa passagem destacada; a
-   semântica da descoberta não mudou.
+   e `launch()` passa a ativar o que já existe em vez de construir de novo. Nesta entrega o pool de descoberta era
+   resolvido pelo **mesmo** cálculo de antes (`discoveryPool`), chamado nesta linha em vez de numa passagem
+   destacada, e essa chamada ficava **entre a tela de lançamento e o feed do leitor** — 2,5–2,8 s de leitura do
+   catálogo de 118 MB no caminho do primeiro quadro. A segunda entrega da branch removeu essa chamada do caminho
+   síncrono e passou a adotar o pool **atrás** da janela (`AppComposition.launch()` →
+   `FeedAssociation.adopt(_:)`, que materializa as entradas pelo mesmo dono que materializa uma página examinada);
+   o número `first_cards_ms` que aparece mais abaixo, portanto, **inclui** aquela leitura e não descreve o estado
+   de hoje.
 
 O diff é: `FeedSession.swift` +149/−61, `AppComposition.swift` +142/−?, e mais o que é testemunha (abaixo).
 
@@ -179,16 +197,17 @@ card: **1083 / 2233 ms** sem o conserto e **1707 / 3549 ms** com ele. A corrida 
 relatório compara ordens e não milissegundos. O único custo que este conserto acrescenta ao arranque frio são as
 duas leituras de uma linha.
 
-**O tempo que a janela morna leva hoje.** O registro da app diz `first_cards_ms=1931` na execução final (1278 ms
-antes do conserto; 1368 e 2101 ms em execuções anteriores): o primeiro quadro, **já com as cartas do leitor**,
-chega 1,3–2,1 s depois do arranque do processo, e o número inclui todo o trabalho local do arranque (a verificação
-do catálogo no `init` da composição, a leitura do pool do perfil, a construção da associação, a projeção do
-checkpoint com a decodificação da banda). O contraste que interessa, medido **na mesma execução**: no arranque frio
-o primeiro quadro (que não trazia nada) chegou a 1707 ms, e o primeiro card só a 3549 ms. Ou seja, o feed do leitor
-chega na primeira passagem do host, na mesma faixa em que a app leva para chegar ao seu primeiro quadro, seja ele
-qual for — a montagem morna não acrescenta um atraso medível sobre o que a app já paga para se construir nesta
-máquina. O valor absoluto é grande (a V1 media 234 ms num aparelho) e o orçamento é assunto de outra medição, de
-preferência no aparelho.
+**O tempo que a janela morna levava nesta entrega.** O registro da app disse `first_cards_ms=1931` na execução
+final (1278 ms antes do conserto; 1368 e 2101 ms em execuções anteriores): o primeiro quadro, **já com as cartas do
+leitor**, chegava 1,3–2,1 s depois do arranque do processo, e o número incluía todo o trabalho local do arranque
+(a verificação do catálogo no `init` da composição, **a leitura do pool do perfil** — 2,5–2,8 s nos perfis pesados
+— a construção da associação, a projeção do checkpoint com a decodificação da banda). Essa leitura do pool deixou de
+estar nesse caminho na segunda entrega da branch: o mesmo intervalo passou a conter só o trabalho local do arranque
+e a leitura foi para trás da janela. Os números acima ficam, portanto, como **histórico da primeira entrega**, e não
+como descrição do estado entregue hoje (`docs/reviews/2026-10-16-fronteira-restauracao-descoberta.md` traz a medição
+da fronteira nova). O contraste que interessa, medido **na mesma execução**: no arranque frio o primeiro quadro (que
+não trazia nada) chegou a 1707 ms, e o primeiro card só a 3549 ms. O valor absoluto é grande (a V1 media 234 ms num
+aparelho) e o orçamento é assunto de outra medição, de preferência no aparelho.
 
 ## 4. O que é testemunha e o que é produto (separação pedida pelo dono da rodada)
 
@@ -202,12 +221,14 @@ preferência no aparelho.
 
 - **A identidade da âncora** continua afirmada pelo teste que já existia
   (`testAForcedCloseReopensOnTheCardTheReaderWasReading`); este trabalho não a duplica.
-- **A descoberta não muda de dono.** O pool continua a ser resolvido com o mesmo cálculo, para o mesmo perfil, com
-  o mesmo limite e os mesmos caches; o que mudou é *onde* a leitura acontece no arranque morno (na linha, antes do
-  primeiro quadro, em vez de numa passagem destacada). Fica registado como residual a vigiar: num perfil que peça
-  uma leitura pesada do catálogo, essa leitura passa a estar no caminho do primeiro quadro (o comentário do
-  próprio código mede 2,5–2,8 s para um perfil de primeira execução contra o catálogo de 118 MB). Um perfil assim
-  é um trabalho de descoberta, com outro dono.
+- **A descoberta não mudou de dono** — e **mudou de lugar**, na segunda entrega da branch. O pool continua a ser
+  resolvido para o mesmo perfil, com o mesmo limite, pelo mesmo cálculo (`discoveryPool`); o que mudou é *onde* a
+  leitura acontece no arranque morno. Nesta entrega ela estava **na linha, antes do primeiro quadro** — o residual
+  registado aqui, e corretamente: um perfil que pedisse uma leitura pesada do catálogo (2,5–2,8 s contra os 118 MB)
+  pagava esse tempo **entre a tela de lançamento e o feed**, que é o lugar que o critério proíbe. A segunda entrega
+  removeu a leitura do caminho síncrono: ela é liberada depois de a janela do leitor estar em tela, roda na passagem
+  destacada de sempre e é **adotada como fornecimento** pelo mesmo dono que materializa uma página examinada. Ver
+  `docs/reviews/2026-10-16-fronteira-restauracao-descoberta.md`.
 - **Nada em `bench/**`, no oráculo, no corpus ou nos critérios congelados** foi tocado; nenhum gate foi rodado e
   nenhum veredito de B01–B06 é afirmado aqui.
 - **A superfície de ausência ganhou um identificador** (`feed-loading-surface`) e um contêiner de acessibilidade
@@ -257,15 +278,18 @@ Evidências brutas (logs completos do `xcodebuild`/`swift test`):
 | `/private/tmp/fm-swift-test-all2.log` | `swift test` completo (1399 testes, 0 falhas) |
 | `/private/tmp/fm-boundary.log` | a fronteira `U14` verde |
 
-Hashes (sha-256) do estado entregue, para conferir sem reabrir o diff:
+Hashes (sha-256) do estado entregue **nesta primeira entrega** (`3e6c54b6`), para conferir sem reabrir o diff —
+duas destas linhas **não** valem para o estado de hoje: `AppComposition.swift` e `FeedMineUITests.swift` mudaram na
+segunda entrega da mesma branch (a fronteira restauração↔descoberta), e os hashes de `FeedSession.swift`,
+`FeedLaunchWitness.swift`, `FeedLoadingView.swift` e `FeedMineApp.swift` seguem válidos:
 
 ```
 cfaa03fd97df897e494e9108b15fb3bf081e0669e9d2e184d5e681847fffaad6  Sources/FeedMineUI/FeedLaunchWitness.swift
 cb7e25b82c1750c4e4b53b9156ed4d7f340f9c0bdd875cf5fe1ee7badeee4487  Sources/FeedMineUI/FeedLoadingView.swift
 1bf7637cf1a01e10a562387db8f2692018d66b6b6e670701add99b820749eb76  Sources/FeedMineRuntime/FeedSession.swift
 b055607fefef1206005466cd92759418f322a5d8b861dd6d2cb3faf1c941797c  FeedMineApp/FeedMineApp/FeedMineApp.swift
-4d3586ff2b57de883b70e1c4f1ad3db546d670f50d8305afa92b8f6dba4991e9  FeedMineApp/FeedMineApp/AppComposition.swift
-fe73926827d8743d4d3d1fb7a8b06343c1a43c76261f6cd800aad4be3c87339e  FeedMineApp/FeedMineAppTests/FeedMineUITests.swift
+4d3586ff2b57de883b70e1c4f1ad3db546d670f50d8305afa92b8f6dba4991e9  FeedMineApp/FeedMineApp/AppComposition.swift  (primeira entrega; superado)
+fe73926827d8743d4d3d1fb7a8b06343c1a43c76261f6cd800aad4be3c87339e  FeedMineApp/FeedMineAppTests/FeedMineUITests.swift  (primeira entrega; superado)
 ```
 
 Base: `3b020a15abafef5f5ca5bcdaf056e436a4b92166` (`main`), branch `fix/reopen-journey`.
