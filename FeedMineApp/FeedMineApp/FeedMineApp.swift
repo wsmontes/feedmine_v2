@@ -70,7 +70,7 @@ struct FeedMineApp: App {
 
     /// U1/U2: one typed sheet surface per modal screen the reader can have up, so a second sheet modifier can
     /// never shadow the first. The reader's URL was resolved by the composition, never by a view.
-    private enum SheetSurface: Identifiable {
+    enum SheetSurface: Identifiable {
         case sources
         case bookmarkBoxes
         case collections
@@ -96,7 +96,7 @@ struct FeedMineApp: App {
 
     /// T9: the article the reader opened. A value: no storage handle, and no URL ever crosses back.
     /// Two ways to read, one presentation: the site in the app's own browser, or text the app already holds.
-    private enum ReaderPage: Equatable {
+    enum ReaderPage: Equatable {
         case site(URL)
         case local(FeedReadingContent)
     }
@@ -108,7 +108,7 @@ struct FeedMineApp: App {
     /// draws a sheet surface and the reader is the app's own presentation *over* the surface that asked for
     /// it, which keeps its state (a pushed list's path, the store it draws from) for the reader to come back
     /// to: a card in the feed returns to the feed, a saved article to the list it was opened from.
-    private enum AppSurface {
+    enum AppSurface {
         case sheet(SheetSurface)
         case reader(ReaderPage)
     }
@@ -138,8 +138,19 @@ struct FeedMineApp: App {
     }
     /// A surface the reader's chrome asks for replaces what is up: it is a surface of its own, not a level.
     private func present(_ surface: SheetSurface) { surfaces = [.sheet(surface)] }
-    /// U2: a reader is pushed over the surface that asked for it, and closing it pops back to that surface.
-    private func pushReader(_ page: ReaderPage) { surfaces.append(.reader(page)) }
+    /// U2: a reader is a level over the surface that asked for it, and closing it pops back to that surface.
+    private func pushReader(_ page: ReaderPage) { surfaces = Self.pushingReader(page, onto: surfaces) }
+    /// U2: one reader at a time. A page the reader's own chrome asks for — the site, from the text the app
+    /// already holds — replaces the page that is up instead of adding a level: the reader is one surface drawn
+    /// once, and a second level would be a page the host never draws while it holds the app's state, so the
+    /// close could only end one of the two. The rule is here, on the app's own surface stack, because that is
+    /// what says which surface the reader returns to.
+    static func pushingReader(_ page: ReaderPage, onto surfaces: [AppSurface]) -> [AppSurface] {
+        if case .reader? = surfaces.last {
+            return surfaces.dropLast() + [.reader(page)]
+        }
+        return surfaces + [.reader(page)]
+    }
     /// Closing the surface on top: a reader returns to the surface it was opened from, anything else to the
     /// feed.
     private func popSurface() { if !surfaces.isEmpty { surfaces.removeLast() } }
@@ -603,7 +614,13 @@ struct FeedMineApp: App {
     /// took the boxes sheet, and the saved list with it). This host lives in the app's own hierarchy, never in
     /// the surface that asked for the reader, so that surface survives the reader and is what the reader
     /// returns to. It draws nothing and takes no touch: it is a place, not a surface.
-    private struct ReaderHost: UIViewControllerRepresentable {
+    ///
+    /// One page at a time and one presentation of it: the page the reader draws follows the app's own state, and
+    /// whether it is really up is only ever what the platform reported. Both matter — a `present` the platform
+    /// refuses raises no error and calls no completion, so a host that inferred the reader's state from
+    /// `presentingViewController`, or that marked a page shown before it was, left the reader on screen with its
+    /// close and its site controls wired to nothing.
+    struct ReaderHost: UIViewControllerRepresentable {
         /// The reader that is up, if any, plus a token that changes while it is up: the reader's content reads
         /// the live playback state, so the host must re-render it when that state changes instead of keeping the
         /// view it was presented with (a review measured a bar frozen at whatever it was built with).
@@ -612,7 +629,9 @@ struct FeedMineApp: App {
         let reader: (ReaderPage, @escaping () -> Void) -> AnyView
         let onFinish: () -> Void
 
-        func makeCoordinator() -> Coordinator { Coordinator(reader: reader, onFinish: onFinish) }
+        func makeCoordinator() -> Coordinator {
+            Coordinator(platform: WindowReaderPresentation(), reader: reader, onFinish: onFinish)
+        }
 
         func makeUIViewController(context: Context) -> UIViewController {
             let host = UIViewController()
@@ -622,62 +641,59 @@ struct FeedMineApp: App {
         }
 
         func updateUIViewController(_ host: UIViewController, context: Context) {
+            // The app's body rebuilds this representable while the coordinator — and the presentation it owns —
+            // stays, so the closures the on-screen reader reports to are refreshed here. A control that kept the
+            // closures of the body the host was built with reports to a state that has moved on.
+            context.coordinator.refresh(reader: reader, onFinish: onFinish)
             context.coordinator.show(page)
         }
 
+        /// The platform acts this host performs, as one seam. They are one seam because the outcome of a
+        /// presentation cannot be taken from anything else the caller is given: UIKit raises no error for a
+        /// presentation it refuses and calls no completion either, so the act itself reports it — which is what
+        /// lets a refusal be exercised, and a refused page be made again instead of lost.
         @MainActor
-        final class Coordinator {
-            private let reader: (ReaderPage, @escaping () -> Void) -> AnyView
-            private let onFinish: () -> Void
-            private var shown: ReaderPage?
-            private weak var presented: UIViewController?
+        protocol Presentation: AnyObject {
+            /// Presents the reader over whatever the app has up, reporting whether the reader really went up.
+            func present(_ reader: UIViewController, done: @escaping (Bool) -> Void)
+            /// Takes the reader down, through whatever really has it up.
+            func dismiss(_ reader: UIViewController)
+        }
 
-            init(reader: @escaping (ReaderPage, @escaping () -> Void) -> AnyView,
-                onFinish: @escaping () -> Void) {
-                self.reader = reader
-                self.onFinish = onFinish
+        /// The app's own window surfaces. The reader is presented from the topmost one, so it covers whatever
+        /// asked for it and leaves that surface in place: measured, a presentation from this host — which is
+        /// inside the hierarchy, behind the boxes sheet — is refused, and the reader has to be the presentation
+        /// that is up.
+        @MainActor
+        final class WindowReaderPresentation: Presentation {
+            /// The surface the reader's presentation was attempted from. It is remembered because the
+            /// controller's own `presentingViewController` is nil while a transition is in flight and nil for a
+            /// presentation the platform refused: inferring the dismissal from that property is what skipped it.
+            private weak var presentedFrom: UIViewController?
+
+            func present(_ reader: UIViewController, done: @escaping (Bool) -> Void) {
+                guard let presenter = Self.topmost() else {
+                    done(false)
+                    return
+                }
+                presentedFrom = presenter
+                presenter.present(reader, animated: true)
+                // Where the controller ended up is the only account a refused presentation leaves behind.
+                done(presenter.presentedViewController === reader)
             }
 
-            /// The reader is presented once per page, and it goes away when the app's state says it is no
-            /// longer up. The reader's own close control reports back instead of dismissing the app's state,
-            /// so what is cleared is the host's, never the surface the reader was opened from.
-            func show(_ page: ReaderPage?) {
-                if let page {
-                    let content = reader(page) { [weak self] in self?.onFinish() }
-                    if shown == page, let host = presented as? UIHostingController<AnyView> {
-                        // The same reader, a newer state: re-render its content in place. Re-presenting would
-                        // take the reader down and back up, which is exactly what the reader must not see.
-                        host.rootView = content
-                        return
-                    }
-                    guard shown != page else { return }
-                    shown = page
-                    let controller = UIHostingController(rootView: content)
-                    controller.modalPresentationStyle = .fullScreen
-                    controller.view.backgroundColor = .systemBackground
-                    presented = controller
-                    open(controller, page: page, tries: 20)
-                } else if let controller = presented {
-                    shown = nil
-                    presented = nil
-                    if controller.presentingViewController != nil { controller.dismiss(animated: true) }
-                }
+            func dismiss(_ reader: UIViewController) {
+                guard let owner = Self.owner(of: reader, presentedFrom: presentedFrom) else { return }
+                owner.dismiss(animated: true)
             }
 
-            /// The reader is presented from the surface the app has on top, so it covers whatever asked for it
-            /// and leaves that surface in place: measured, a presentation from the app's own host behind the
-            /// boxes sheet is refused, and the reader has to be the presentation that is up. A presentation
-            /// also needs a laid-out app, so the attempt is retried for a moment rather than lost.
-            private func open(_ controller: UIViewController, page: ReaderPage, tries: Int) {
-                Task { @MainActor in
-                    guard tries > 0, shown == page, controller.presentingViewController == nil else { return }
-                    guard let presenter = Self.topmost() else {
-                        try? await Task.sleep(for: .milliseconds(50))
-                        open(controller, page: page, tries: tries - 1)
-                        return
-                    }
-                    presenter.present(controller, animated: true)
-                }
+            /// What really has the reader up: the controller's own `presentingViewController`, or — while a
+            /// transition is in flight — the surface the attempt was made from. Only a surface that really has
+            /// this reader is returned: taking down something else a surface has up is not this host's to do.
+            static func owner(of reader: UIViewController,
+                presentedFrom: UIViewController?) -> UIViewController? {
+                guard let owner = reader.presentingViewController ?? presentedFrom else { return nil }
+                return owner.presentedViewController === reader ? owner : nil
             }
 
             /// The topmost surface the app has up: the reader is presented over it, and it is what the reader
@@ -690,6 +706,112 @@ struct FeedMineApp: App {
                 while let presented = controller?.presentedViewController { controller = presented }
                 return controller
             }
+        }
+
+        @MainActor
+        final class Coordinator {
+            /// The reader's content and what its chrome reports: both are refreshed by every render of the host,
+            /// never kept as the values the coordinator happened to be built with.
+            private var reader: (ReaderPage, @escaping () -> Void) -> AnyView
+            private var onFinish: () -> Void
+            private let platform: Presentation
+            /// The page the reader's controller draws — the app's state, not the platform's, and the reason a
+            /// page the chrome asks for is a re-render instead of a second presentation.
+            private var shown: ReaderPage?
+            private weak var presented: UIHostingController<AnyView>?
+            /// Whether the platform reported the reader up. Only a report writes this; nothing is inferred from
+            /// the controller, because a controller that was refused looks exactly like one that was not asked.
+            private var isUp = false
+            /// An attempt is being made, and its report is still owed: one at a time, whatever re-renders.
+            private var isAttempting = false
+
+            init(platform: Presentation,
+                reader: @escaping (ReaderPage, @escaping () -> Void) -> AnyView,
+                onFinish: @escaping () -> Void) {
+                self.platform = platform
+                self.reader = reader
+                self.onFinish = onFinish
+            }
+
+            /// The closures the reader's own chrome reports to, kept current by the host's own render.
+            func refresh(reader: @escaping (ReaderPage, @escaping () -> Void) -> AnyView,
+                onFinish: @escaping () -> Void) {
+                self.reader = reader
+                self.onFinish = onFinish
+            }
+
+            /// The reader is one presentation that follows the app's state: the page it draws is the page the
+            /// app has up, and it goes away when the app's state says it is no longer up. The reader's own close
+            /// control reports back instead of dismissing the app's state, so what is cleared is the host's,
+            /// never the surface the reader was opened from.
+            func show(_ page: ReaderPage?) {
+                guard let page else {
+                    dismissReader()
+                    return
+                }
+                let content = reader(page) { [weak self] in self?.onFinish() }
+                if let controller = presented {
+                    // The reader that is up draws the page the app has now. Presenting again for a new page
+                    // would stack a second presentation on the first, and the one underneath would outlive the
+                    // app state that put it there.
+                    controller.rootView = content
+                    shown = page
+                    open(controller, page: page, tries: Self.presentationAttempts)
+                    return
+                }
+                let controller = UIHostingController(rootView: content)
+                controller.modalPresentationStyle = .fullScreen
+                controller.view.backgroundColor = .systemBackground
+                presented = controller
+                shown = page
+                isUp = false
+                open(controller, page: page, tries: Self.presentationAttempts)
+            }
+
+            /// The reader goes down when the app's state says it is no longer up, and the platform is asked to
+            /// take it down: the dismissal is never inferred from the controller's own state, which reports no
+            /// `presentingViewController` for a presentation that was refused.
+            private func dismissReader() {
+                shown = nil
+                isUp = false
+                isAttempting = false
+                guard let controller = presented else { return }
+                presented = nil
+                platform.dismiss(controller)
+            }
+
+            /// The reader is presented from the surface the app has on top, so it covers whatever asked for it
+            /// and leaves that surface in place. It also needs a laid-out app, so an attempt the platform
+            /// refused is made again — bounded, on the platform's own report — instead of that page staying
+            /// unshowable for the life of the process. Nothing here loops on its own: one attempt runs at a time,
+            /// and the chain is as long as it is because the platform refused.
+            private func open(_ controller: UIViewController, page: ReaderPage, tries: Int) {
+                guard tries > 0, !isUp, !isAttempting, shown == page, presented === controller else { return }
+                isAttempting = true
+                Task { @MainActor in
+                    guard isAttempting, shown == page, presented === controller else {
+                        isAttempting = false
+                        return
+                    }
+                    platform.present(controller) { [weak self] isReallyUp in
+                        guard let self, self.isAttempting else { return }
+                        self.isAttempting = false
+                        guard self.shown == page, self.presented === controller else { return }
+                        guard !isReallyUp else {
+                            self.isUp = true
+                            return
+                        }
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(50))
+                            self.open(controller, page: page, tries: tries - 1)
+                        }
+                    }
+                }
+            }
+
+            /// How many times one page's presentation is attempted: a transition in flight settles in a few
+            /// frames, and an attempt still refused after a second is not going to take.
+            private static let presentationAttempts = 20
         }
     }
 

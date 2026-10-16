@@ -135,6 +135,21 @@ final class ReadingSurfaceUITests: XCTestCase {
         return false
     }
 
+    /// The in-app browser's address field, once it shows what it was given. Its chrome arrives with the reader and
+    /// the field is populated in its own time — a wait rather than a read, the way every other arrival in this file
+    /// is asserted.
+    @discardableResult
+    private func waitForAddress(_ app: XCUIApplication, showing fragment: String,
+        within seconds: TimeInterval) -> Bool {
+        let address = app.buttons["URL"].firstMatch
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if address.exists, String(describing: address.value).contains(fragment) { return true }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return false
+    }
+
     func testABodyIsReadLocallyWithItsSourceHeadlineDateAndExit() throws {
         let app = launched(shape: "body")
         guard let (identity, frame) = openTheFirstCard(app) else { return XCTFail("no card to open") }
@@ -249,7 +264,11 @@ final class ReadingSurfaceUITests: XCTestCase {
             "the control the reader reached opens the article, at the largest text size")
     }
 
-    func testOpeningTheSiteFromTheLocalReaderIsAnExplicitRequestAndComesBack() throws {
+    /// The explicit request for the site, and the close that follows it. U-reading's rule is one reader drawing
+    /// one page: the site replaces the text inside that same presentation, so closing the site ends the reader
+    /// and the app comes back to the feed it was opened from — there is no text surface left behind it to return
+    /// to, and none stacked underneath it either.
+    func testOpeningTheSiteFromTheLocalReaderIsAnExplicitRequestAndComesBackToTheFeed() throws {
         let app = launched(shape: "body")
         guard openTheFirstCard(app) != nil else { return XCTFail("no card to open") }
         XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 20))
@@ -257,14 +276,17 @@ final class ReadingSurfaceUITests: XCTestCase {
         byIdentifier(app, "reading.open-site").tap()
         XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 20),
             "the explicit request opens the site in the app's own reader")
-        let address = app.buttons["URL"].firstMatch
-        XCTAssertTrue(address.exists && String(describing: address.value).contains("example.test"),
-            "and it is the article's own address, the one the card carries")
+        // The address the reader opened is the article's own. The stock browser's chrome arrives with the reader
+        // and its address field is populated in its own time, so what is claimed here is what the address shows,
+        // not the instant it shows it.
+        XCTAssertTrue(waitForAddress(app, showing: "example.test", within: 20),
+            "the address the reader opened is the article's own, the one the card carries")
         attach(app, "reading-explicit-site")
 
         app.buttons["Close"].tap()
-        XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 20),
-            "closing the site comes back to the text the reader was reading, not to the feed")
-        attach(app, "reading-back-to-the-text")
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForNonExistence(timeout: 20),
+            "closing the site ends the reader: the text does not come back as a surface of its own")
+        XCTAssertTrue(waitForAVisibleCard(app, within: 20), "and the feed the reader was opened from is back")
+        attach(app, "reading-back-in-the-feed")
     }
 }
