@@ -885,12 +885,124 @@ seria zero de qualquer forma (0 `media_ready`).
 
 ---
 
+## 10. F48-HITCH-X — a pergunta semântica, respondida com o dado que já existe
 
+O arquiteto pediu que a pergunta fosse de **semântica**, antes de coalescer: distinguir (a) instalações aceitas pelo
+store, (b) mudanças efetivas de snapshot/proveniência e (c) mudanças na lista renderizada que realmente exigem
+atualização SwiftUI — porque *"onze instalações registradas não significam onze reconstruções integrais do feed"*.
+Esta seção responde isso com a captura de F48-HITCH (a fase B), **sem build nem aparelho**. O experimento de
+coalescência vem depois, e só se estes números justificarem.
+
+### 10.1 A taxonomia das 113 instalações de 26 s, por dois canais independentes
+
+Classificação de cada instalação contra a anterior, pelo **traço** (`admitted`: geração, `order`, `head`, `tail`,
+`anchor`, `cards`) e pelo **log unificado** (`installed cards=… order=… ids=[…]`, que carrega a lista inteira na
+ordem):
+
+| classe | traço | log (`ids=[…]`) |
+|---|---|---|
+| **idêntica ao valor corrente** (mesma geração, mesma ordem, mesma janela, mesma âncora) | **54 (48%)** | **51 (46%)** |
+| muda só a **âncora** (e a proveniência `order`); a lista de cartas é a mesma | **32 (28%)** | **32 (29%)** |
+| **conteúdo da janela muda** (`cards` 17→59, `head`/`tail` mudam) | **26 (23%)** | **26 (24%)** |
+| primeira | 1 | 1 |
+
+Os dois canais concordam (a diferença de 3 linhas no log é o relay do syslog, que perde linhas do app — §9.7).
+Por janela de gesto: os 6 segundos com 4–5 observações têm **13 instalações cada**, das quais ~5–6 idênticas, ~4–5
+só de âncora e 3 de conteúdo; os segundos de repouso têm 2, **ambas idênticas**.
+
+### 10.2 O que o código já faz hoje — e onde está o custo
+
+**(c) já está guardado, e o comentário prova que foi medido antes.** `FeedScreenStore.install`
+(`Sources/FeedMineUI/FeedScreenStore.swift:137-158`) publica **só o que a lista desenha**, e só quando muda:
+
+```swift
+let rendered = presentationState.presentation?.window.items
+if rendered != renderedItems { renderedItems = rendered ?? [] }      // :150
+if received.work != work { work = received.work }                    // :151
+```
+
+com a nota do próprio arquivo: *"Sem isso, cada avanço re-renderizava a lista inteira — 12–14 vezes por segundo numa
+rajada (medido no aparelho, 2026-10-14)"*. Das 113 instalações desta jornada, portanto, **só as 26 de conteúdo
+republicam a lista**.
+
+**O que não é coalescido é a publicação do estado.** `state = presentationState.reporting(received.work)`
+(`:148`) acontece em **toda** instalação, e `state` é uma propriedade `@Observable`: toda view que lê `state` é
+invalidada — inclusive nas 54 que não mudam nada.
+
+**E há leitura no corpo de uma view.** `NativeFeedViewport.body` lê `store.state.presentation` duas vezes, em
+`.id(...)` (`Sources/FeedMineUI/FeedScreen.swift:654-655`), sobre o conteúdo que é o leitor inteiro. O autor
+documentou a intenção (`:625-627`: *"um avanço reavalia este modificador, **barato**, e não o corpo da lista"*),
+mas o modificador reavalia nas **113** — enquanto a lista, nas 26.
+
+Em números, o espaço exato que sobra para coalescer:
+
+| | hoje | mínimo necessário |
+|---|---|---|
+| publicações do **estado** (`state = …`) | **113** | **59** (as que mudam o valor: 26 de conteúdo + 32 de âncora + 1) |
+| publicações da **lista** (`renderedItems`) | 26 | 26 (já coalescido) |
+
+**48% das publicações de estado não têm o que publicar.** É esse o alvo do H4a — e é o único: coalescer as 32 de
+âncora junto com as 26 de conteúdo mexeria no compromisso semântico da posição, que é exatamente o que o arquiteto
+proibiu.
+
+### 10.3 O desenho dos dois experimentos
+
+**H3 (harness × app)** — `FeedMineApp/FeedMineAppTests/HitchGestureExperimentUITests.swift`, dois métodos com a
+**mesma instrumentação** (`FEEDMINE_TRACE_CAPTURE=1` **e** `FEEDMINE_JOURNEY_CONSOLE=1`; a segunda entrou aqui para
+os dois lados terem a mesma carga de logging — condição 2 do arquiteto):
+
+* `testA6FastSwipes` — 6 × `scroll.swipeUp(velocity: .fast)` (o gesto que mediu os engasgos);
+* `testB6SlowMultiStepDrags` — 6 × `press(forDuration: 0.4, thenDragTo: dy 0.8→0.3, withVelocity: .slow,
+  thenHoldForDuration: 0.1)`: mesma fração de deslocamento pedida (0,5 da altura), **mais passos**, velocidade lenta.
+
+O que decide: se os quadros severos seguirem o **número de observações do app** (`advance` no traço), é o app; se
+seguirem a síntese do gesto, é o harness. Como o deslocamento alcançado não é igual por construção, a comparação é
+**normalizada por posição de leitura movida**, com o deslocamento medido no `anchor` do traço — nunca estimado pelo
+teste. E os dois métodos afirmam que o ponto de leitura mudou (`initial_card ≠ final_card`): um experimento que
+"melhora" porque o leitor andou menos se refuta.
+
+**H4a (coalescer somente o redundante)** — um guard de igualdade no host, com o fato preservado
+(`FeedMineApp/FeedMineApp/AppComposition.swift:2381`):
+
+```swift
+let redundant = received == store.state
+if redundant { FeedFlowCounters.installRedundant += 1 }
+else { do { try store.install(received); FeedFlowCounters.installAccepts += 1 } catch { … } }
+```
+
+Tudo o mais do `install` segue idêntico ao controle (contador de tentativas, evento `admitted` no traço, a linha
+`[composition] installed …`, `frameMeter`, bookmarks): o que se pula é **a atribuição do valor observável**, e como
+o valor recebido é igual ao corrente, pular **não pode** atrasar o compromisso da posição — a posição do valor
+recebido é a que já está publicada. `FeedPresentationState` já é `Hashable`
+(`Sources/FeedMineUI/FeedPresentationState.swift:29`), então a comparação é a do próprio contrato. A ablação é
+contável na evidência pelo campo `redundant` do evento `admitted` e pelo contador `FeedFlowCounters.installRedundant`.
+
+**H4b (ablação agressiva, "uma instalação por gesto")** — **não implementada**. Só entra se o H4a mostrar que as
+redundantes custam algo; entra isolada, com a diferença de comportamento (âncora, janela, reposição) medida e
+reportada, como o arquiteto exigiu.
+
+### 10.4 O que ainda NÃO foi medido (lista explícita)
+
+1. **O custo do gesto por síntese** (H3) — precisa dos dois métodos rodando no aparelho.
+2. **O ganho de coalescer as 54 publicações redundantes** (H4a) — precisa do controle e do ramo, com a mesma
+   instrumentação e os mesmos gestos.
+3. **Se o custo está no modificador do viewport ou em outras views que leem `state`** — a captura mede o efeito
+   agregado; atribuir a uma view específica exigiria instrumentação por view (não autorizada, não feita).
+4. **Comportamento sob sessão longa** (memória/térmico acumulando) — a corrida mediu 26 s com gesto e 89 s ociosos.
+5. **A linha `feedmine journey` na jornada dirigida** — o novo arquivo de teste a declara no `launchEnvironment`;
+   se F48-HITCH-X não a trouxer, é bug do teste e a causa será medida de novo.
+6. **Nada de arquitetura**: o guard é um ramo experimental, revertível, e não uma decisão sobre o fluxo de
+   apresentação. Coalescer não é redesenhar.
+
+---
+
+## Anexo A — arquivos desta frente
 
 | Arquivo | Papel |
 |---|---|
 | `scripts/hitch-pass.sh` | a corrida física (build, fase A reusando `device-journey.sh`, fase B com syslog, contêiner, prova do app do dono, `--audit`, `--build-only`) |
 | `scripts/hitch-join.py` | a junção por segundo e o relatório por janela severa (5 dimensões, com `arquivo:linha`; `--json`; `--select severe|bad|late|any`) |
+| `FeedMineApp/FeedMineAppTests/HitchGestureExperimentUITests.swift` | F48-HITCH-X: os dois gestos com a mesma instrumentação (H3) e o controle/experimento do H4a (`project.pbxproj` com os ids `…0113`/`…0114` na fase `…0036` e no grupo `…000D`) |
 | `docs/reviews/2026-10-16-f48-hitch-caracterizacao.md` | este relatório |
 
 ## Anexo B — como reconferir cada número deste relatório

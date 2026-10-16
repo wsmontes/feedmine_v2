@@ -38,7 +38,8 @@
 # ---
 #   scripts/hitch-pass.sh --device <id-devicectl> [--udid <UDID-do-xcodebuild>] [--seconds N]
 #                         [--out DIR] [--skip-build] [--app CAMINHO.app] [--derived-data DIR]
-#                         [--skip-journey] [--skip-standalone] [--no-syslog] [--audit] [--build-only]
+#                         [--journey-test Alvo/Classe] [--skip-journey] [--skip-standalone]
+#                         [--no-syslog] [--audit] [--build-only]
 #   scripts/hitch-pass.sh --audit        # prova, sem tocar no aparelho, que o script não toca em com.feedmine.app
 #   scripts/hitch-pass.sh --build-only   # compila o Debug iphoneos e sai: NENHUM comando de aparelho é executado
 #
@@ -68,7 +69,7 @@ readonly OWNER_BUNDLE="com.feedmine.app"
 readonly SUPPORT="Library/Application Support/FeedMine"
 readonly PROJECT="FeedMineApp/FeedMineApp.xcodeproj"
 readonly SCHEME="FeedMine"
-readonly JOURNEY_TEST="FeedMineUITests/FluidityJourneyUITests"
+JOURNEY_TEST="${JOURNEY_TEST:-FeedMineUITests/FluidityJourneyUITests}"
 readonly MIN_FREE_KB=2097152        # 2 GB: abaixo disto o trabalho para (regra da frente)
 
 step() { printf '\n=== %s\n' "$1"; }
@@ -145,6 +146,7 @@ while [[ $# -gt 0 ]]; do
         --skip-build) SKIP_BUILD=1; shift ;;
         --skip-journey) SKIP_JOURNEY=1; shift ;;
         --skip-standalone) SKIP_STANDALONE=1; shift ;;
+        --journey-test) JOURNEY_TEST="$2"; shift 2 ;;
         --no-syslog) NO_SYSLOG=1; shift ;;
         --audit) AUDIT=1; shift ;;
         --help) sed -n '1,45p' "$0"; exit 0 ;;
