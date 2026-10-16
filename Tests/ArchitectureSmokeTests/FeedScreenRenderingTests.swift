@@ -309,6 +309,7 @@ final class FeedScreenRenderingTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(publishedSequence(in: screen.body)).occurrenceIDs, admitted)
     }
 
+
     func testU14UIBoundaryHasNoProductionImportsOrHiddenEffects() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let ui = root.appendingPathComponent("Sources/FeedMineUI")
@@ -319,29 +320,33 @@ final class FeedScreenRenderingTests: XCTestCase {
                 XCTAssertFalse(imports.contains("import " + forbidden), file.lastPathComponent + ": " + forbidden)
             }
         }
-        for file in ["FeedScreen.swift", "Cards/FeedItemCardView.swift", "Cards/FeedItemView.swift",
+        // O split de `FeedScreen.swift` moveu chrome, captura visual e viewport nativo para arquivos próprios: eles
+        // entram na mesma varredura, senão o guarda perderia cobertura justamente sobre o código que saiu.
+        for file in ["FeedScreen.swift", "FeedScreenChrome.swift", "FeedVisualCapture.swift", "FeedNativeViewport.swift",
+            "Cards/FeedItemCardView.swift", "Cards/FeedItemView.swift",
             "Cards/FeedItemRowView.swift", "FeedLoadingView.swift"] {
             let source = try String(contentsOf: ui.appendingPathComponent(file), encoding: .utf8)
             for forbidden in ["URLSession", "AsyncImage", "ContentStore", "RuntimeDatabase", "AcquisitionCoordinator", "SelectionEngine",
                 "PublicationCoordinator", "PublicationStore", "Task", ".task", ".onAppear", ".onDisappear", "Timer", "sleep",
                 "retry", "backoff", "scheduler", "cache", "generation", "checkpoint", "UUID(", "PublicationCardID(", "exhausted", "@State", "@Observable", "GeometryReader", "NavigationStack"] {
-                if file == "FeedScreen.swift" && (forbidden == "@State" || forbidden == ".onDisappear") { continue }
+                if (file == "FeedScreen.swift" || file == "FeedNativeViewport.swift") && (forbidden == "@State" || forbidden == ".onDisappear") { continue }
                 XCTAssertFalse(source.contains(forbidden), file + ": " + forbidden)
             }
         }
         let screen = try String(contentsOf: ui.appendingPathComponent("FeedScreen.swift"), encoding: .utf8)
+        // O wiring do viewport mora agora no arquivo dele; as presenças abaixo seguem o código, não o nome do arquivo.
+        let viewport = try String(contentsOf: ui.appendingPathComponent("FeedNativeViewport.swift"), encoding: .utf8)
         let states = screen.split(separator: "\n").filter { $0.contains("@State") }
         XCTAssertEqual(states.count, 1)
         XCTAssertEqual(states.first?.trimmingCharacters(in: .whitespaces), "@State private var capture = FeedVisualCapture()")
         XCTAssertTrue(screen.contains("#available(iOS 18, macOS 15, *)"))
-        XCTAssertTrue(screen.contains("onScrollGeometryChange"))
-        XCTAssertTrue(screen.contains("onScrollPhaseChange"))
-        XCTAssertTrue(screen.contains("store.submitViewport(event.observation, activity: event.activity, rendered:"))
-        XCTAssertTrue(screen.contains("capture.interaction.end()"))
-        XCTAssertTrue(screen.contains("capture.nativeScrollOffset.cancel()"))
+        XCTAssertTrue(viewport.contains("onScrollGeometryChange"))
+        XCTAssertTrue(viewport.contains("onScrollPhaseChange"))
+        XCTAssertTrue(viewport.contains("store.submitViewport(event.observation, activity: event.activity, rendered:"))
+        XCTAssertTrue(viewport.contains("capture.interaction.end()"))
+        XCTAssertTrue(viewport.contains("capture.nativeScrollOffset.cancel()"))
         // Lifecycle cleanup is visual only. The general forbidden list still excludes all execution.
         FeedViewportCaptureTests.assertVisualBoundary()
-
     }
 
     func testNativeHostingObservesStoreWithoutReplacingView() async throws {
