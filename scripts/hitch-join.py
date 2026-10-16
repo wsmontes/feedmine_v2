@@ -117,15 +117,41 @@ APP_NOTE_MARKERS = ("[composition]", "Runway opportunity", "viewport forwarded",
 
 
 def is_app_note(line: str) -> bool:
-    """Uma linha do app no console: ou o emissor é o próprio FeedMine, ou o texto é de um dono que só ele escreve.
+    """Uma linha **emitida** pelo app no log unificado.
 
-    O nome do processo é checado porque o host também imprime `com.feedmine.development` em linhas suas
-    ("Launched application with … bundle identifier") — casar a palavra `feedmine` no texto puro tomaria uma linha
-    do host por uma linha do app.
+    O processo é checado no começo da linha (depois do carimbo), não em qualquer posição: `runningboardd`,
+    `SpringBoard` e `symptomd` também escrevem o nome do app (`... FeedMine[7494] exited ...`), e casar o nome em
+    qualquer posição tomava dezenas de milhares de linhas de outros processos como linhas do app (medido nesta
+    frente em 2026-10-16: 41 mil linhas no recorte, das quais ~270 eram do app).
     """
-    if re.search(r"\bFeedMine(?:\(|\[)", line):
-        return True
-    return any(marker in line for marker in APP_NOTE_MARKERS)
+    match = CLOCK_PREFIX_RE.match(line)
+    rest = line[match.end():].lstrip() if match else line.lstrip()
+    return bool(re.match(r"FeedMine[\(\[]", rest)) or any(marker in line for marker in APP_NOTE_MARKERS)
+
+
+# Frases que são pressão **de verdade** — não basta a palavra aparecer: `Set jetsam priority to 0` do
+# `runningboardd` para o PosterBoard é rotina, e `Ping timer fired, resetting watchdog` é tagarelice.
+HARD_PRESSURE = ("killing", "exceeded", "highwater", "memory warning", "low memory", "panic",
+                 "terminated due to", "no space left", "enospc", "received memory warning")
+
+
+def pressure_kind(line: str) -> str | None:
+    """`"app"` quando o FeedMine é o emissor e o assunto é memória/térmico/sinal; `"aparelho"` quando a linha é
+    uma frase dura de pressão vinda de outro processo; `None` quando não é pressão.
+
+    A separação importa e foi medida nesta frente: o `FeedMineUITests-Runner` também carrega `FeedMine` no nome, e no
+    arranque do teste ele registra `jetsamMode` e o `runningboardd` põe **o runner** em prioridade 100 — ler isso como
+    pressão sobre o app seria falso. E `amsondevicestoraged … Received low memory warning` é pressão do aparelho, de
+    outro processo: o fato é do sistema, a atribuição não é do app.
+    """
+    lowered = line.lower()
+    if is_app_note(line) and any(term in lowered for term in ("jetsam", "memorystatus", "memory", "thermal")):
+        return "app"
+    if is_app_note(line) and re.search(r"signal \d+", lowered):
+        return "app"
+    if any(term in lowered for term in HARD_PRESSURE):
+        return "aparelho"
+    return None
 
 # Os eventos do traço que falam de **posição e movimento** e os que falam de **trabalho de fundo**. A lista é o
 # contrato do que este instrumento sabe atribuir a um segundo; evento fora dela é contado em "outros do traço" para
@@ -135,11 +161,11 @@ WORK_EVENTS = ("admitted", "candidate", "suspended", "media_ready", "replenishme
                "replenishment_arrived", "replenishment_concluded", "answer_applied", "answer_failed",
                "editorial_offer", "editorial_refusal", "trace_truncated")
 
-# Vocabulário de pressão do sistema: o que um console de aparelho pode carregar e que indica que o travamento
-# pode ser do sistema. Ausência **não** é prova de ausência — o texto abaixo é explícito sobre isso.
-PRESSURE_TERMS = ("malloc", "memory warning", "low memory", "jetsam", "highwater", "thermal", "watchdog",
-                  "hang", "stuck", "no space", "enospc", "disk", "signal", "terminated due to",
-                  "acquired tunnel", "usage assertion", "coredeviceerror", "respring", "spinlock")
+# Contexto de infraestrutura: não é pressão do aparelho, é o que a *captura* estava fazendo (túnel do devicectl,
+# asserção de uso, erro do CoreDevice) e um processo morto por sinal. Fica separado para a dimensão (e) não chamar
+# tagarelice de pressão — medido: com o vocabulário largo, `watchdog` pegava 470 linhas em 90 s, quase todas
+# `Ping timer fired, resetting watchdog` de daemons, e `thermalmonitord` em `Debug` iterando canais.
+CONTEXT_TERMS = ("acquired tunnel", "usage assertion", "coredeviceerror", "signal", "acquisition timeout")
 
 
 def sha256_file(path: str) -> str:
@@ -206,9 +232,9 @@ class Window:
         self.frames_origin: str | None = None       # `arquivo:linha` da linha crua do quadro
         self.clock: str | None = None               # carimbo verbatim do console
         self.day: float | None = None               # hora do dia do carimbo, em segundos (só diferenças importam)
-        self.pressure: list[tuple[int, str]] = []   # linhas do console desta janela no vocabulário de pressão
+        self.pressure: list[tuple[int, str]] = []   # pressão do aparelho sobre o app nesta janela
+        self.context: list[tuple[int, str]] = []    # contexto de infraestrutura desta janela
         self.notes_app: list[tuple[int, str]] = []  # linhas do app desta janela (log unificado, não o NSLog)
-        self.notes_other = 0                        # linhas de outros processos nesta janela (só contadas)
         self.journey: dict | None = None
         self.journey_line: str | None = None
         self.journey_origin: str | None = None
@@ -224,8 +250,8 @@ class Window:
                 "worst_at": self.worst_at, "mono": self.mono, "at": iso(self.at),
                 "clock": self.clock, "frames_origin": self.frames_origin,
                 "console_pressao": [{"linha": number, "texto": text} for number, text in self.pressure],
+                "console_contexto": [{"linha": number, "texto": text} for number, text in self.context],
                 "console_do_app": [{"linha": number, "texto": text} for number, text in self.notes_app],
-                "console_de_outros": self.notes_other,
                 "journey": self.journey, "journey_origin": self.journey_origin,
                 "events": [{"trace_line": line, "event": event.get("event"), "fields": event.get("fields"),
                             "at": iso(event.get("at")), "mono": event.get("mono")} for line, event in self.events]}
@@ -243,8 +269,10 @@ class Console:
         self.frames: list[tuple[int, str, dict]] = []   # (linha, texto cru, campos)
         self.journey: list[tuple[int, str, dict]] = []   # idem, em ordem de arquivo (o tique é o mesmo dos quadros)
         self.journey_without_t = 0
-        self.pressure: list[tuple[int, str]] = []
-        self.other: list[tuple[int, str]] = []
+        self.pressure: list[tuple[int, str]] = []   # pressão do aparelho (regra dura: is_pressure)
+        self.context: list[tuple[int, str]] = []    # contexto de infraestrutura (túnel, asserção, sinal)
+        self.app_notes: list[tuple[int, str]] = []   # linhas do próprio app no log unificado (`installed cards=…` …)
+        self.other_count = 0                    # linhas de outros processos: **contadas**, não guardadas
         self.invalid = 0
         with open(path, encoding="utf-8", errors="replace") as handle:
             for number, raw in enumerate(handle, start=1):
@@ -261,10 +289,19 @@ class Console:
                     self.journey.append((number, line, fields))
                     continue
                 lowered = line.lower()
-                if any(term in lowered for term in PRESSURE_TERMS):
+                if pressure_kind(line):
                     self.pressure.append((number, line))
+                elif any(term in lowered for term in CONTEXT_TERMS):
+                    self.context.append((number, line))
+                elif is_app_note(line):
+                    # As linhas do app são poucas (uns milhares no máximo) e são a metade de ouro do log unificado:
+                    # `installed cards=… ids=[…]`, `viewport forwarded activity=… anchor=…`, `published growth: …`.
+                    self.app_notes.append((number, line))
                 elif line.strip():
-                    self.other.append((number, line))
+                    # Um console de syslog de aparelho tem ~1 milhão de linhas de outros processos (medido: 99 MB em
+                    # ~90 s de `idevicesyslog`). Guardá-las custaria centenas de MB de RAM para nada: só o número é
+                    # usado (a dimensão (e) vive do vocabulário de pressão, que é raro).
+                    self.other_count += 1
 
     def clock_of(self, line: str) -> str | None:
         match = CLOCK_PREFIX_RE.match(line)
@@ -522,11 +559,50 @@ class Joined:
                     if mine is not None and theirs is not None and mine != theirs:
                         mismatches.append((index + 1, name, mine, theirs))
             if mismatches:
+                # O ordinal foi recusado — e é o instrumento funcionando: as duas séries não são a mesma série de
+                # linhas, porque o relay do log unificado pode perder/atrasar linhas do app (medido nesta frente:
+                # 26 linhas de console contra 23 eventos no traço, com discordância de campo já na janela 2).
+                # O alinhamento então é por **conteúdo**: a quíntupla `frames/late/bad/severe/worst_ms`, que é
+                # idêntica nos dois canais porque sai do mesmo tique do medidor. É verificável por construção, e
+                # quando duas janelas têm a MESMA quíntupla a ordem de ocorrência é a chave — o que troca entre
+                # gêmeas é o segundo, nunca o fato medido (os dois segundos têm os mesmos números).
+                buckets: dict[tuple, list] = {}
+                for position, (number, event) in enumerate(rows):
+                    fields = event.get("fields") or {}
+                    key = (as_int(fields.get("frames")), as_int(fields.get("late")), as_int(fields.get("bad")),
+                           as_int(fields.get("severe")), as_float(fields.get("worst_ms")))
+                    buckets.setdefault(key, []).append((number, event))
+                used: dict[tuple, int] = {}
+                matched = unattached = ambiguous = 0
+                for window in self.windows:
+                    key = (window.frames, window.late, window.bad, window.severe, window.worst_ms)
+                    bucket = buckets.get(key)
+                    if not bucket:
+                        unattached += 1
+                        continue
+                    if len(bucket) > 1:
+                        ambiguous += 1
+                    occurrence = used.get(key, 0)
+                    used[key] = occurrence + 1
+                    if occurrence >= len(bucket):
+                        unattached += 1
+                        continue
+                    fields = bucket[occurrence][1].get("fields") or {}
+                    window.mono = as_float(bucket[occurrence][1].get("mono"))
+                    window.at = as_float(bucket[occurrence][1].get("at"))
+                    window.worst_at = as_float(fields.get("worst_at"))
+                    if window.budget_ms is None:
+                        window.budget_ms = as_float(fields.get("budget_ms"))
+                    matched += 1
                 first = mismatches[0]
-                self.notes.append(f"ALINHAMENTO RECUSADO: console e traço discordam em {len(mismatches)} campos nos "
-                                  f"{shared} segundos em comum (primeira discordância na janela {first[0]}: "
-                                  f"{first[1]} = {first[2]} no console contra {first[3]} no traço) — nenhum relógio "
-                                  "do traço foi anexado, porque duas séries que discordam não são a mesma série")
+                self.notes.append(
+                    f"ALINHAMENTO POR POSIÇÃO RECUSADO: console e traço discordam em {len(mismatches)} campos nos "
+                    f"{shared} segundos em comum (primeira discordância na janela {first[0]}: {first[1]} = "
+                    f"{first[2]} no console contra {first[3]} no traço) — as duas séries não são as mesmas linhas "
+                    "(o relay do log unificado perde linhas do app). Alinhamento por CONTEÚDO (quíntupla "
+                    f"frames/late/bad/severe/worst_ms idêntica) aplicado: {matched} janelas casaram, "
+                    f"{ambiguous} delas em quíntuplas repetidas (a ordem de ocorrência é a chave; entre gêmeas o "
+                    f"segundo pode trocar, os números não), {unattached} sem par no traço")
             else:
                 for index in range(shared):
                     window = self.windows[index]
@@ -623,7 +699,8 @@ class Joined:
         # não traz numa jornada física (medido: 605 linhas de console, nenhuma `[composition]`).
         if self.console and axis == "console" and self.windows:
             days = [window.day for window in self.windows]
-            leftovers = sorted(self.console.pressure + self.console.other, key=lambda item: item[0])
+            leftovers = sorted(self.console.pressure + self.console.context + self.console.app_notes,
+                               key=lambda item: item[0])
             stops = [number for number, _, _ in self.console.frames]
             unattributed = 0
             cursor = 0
@@ -642,12 +719,12 @@ class Joined:
                 if window is None:
                     unattributed += 1
                     continue
-                if any(term in line.lower() for term in PRESSURE_TERMS):
+                if pressure_kind(line):
                     window.pressure.append((number, line))
-                elif is_app_note(line):
-                    window.notes_app.append((number, line))
+                elif any(term in line.lower() for term in CONTEXT_TERMS):
+                    window.context.append((number, line))
                 else:
-                    window.notes_other += 1
+                    window.notes_app.append((number, line))
             lines = [f"linhas do console atribuídas entre a (k−1)-ésima e a k-ésima `feedmine frames=` "
                      f"(`k` = ordinal do app) — quando todos os carimbos são legíveis a atribuição é por carimbo, "
                      f"senão por ordem de linha (medido: {len(leftovers)} linhas, {unattributed} não atribuídas)"]
@@ -885,20 +962,26 @@ def render_window(joined: Joined, position: int, window: Window, context: int) -
     lines.append("  (e) pressão do sistema")
     if window.pressure:
         for number, line in window.pressure:
-            lines.append(f"    [{os.path.basename(joined.console.path)}:{number}] {line}")
+            kind = pressure_kind(line)
+            label = "PRESSÃO(app)" if kind == "app" else "PRESSÃO(aparelho)"
+            lines.append(f"    {label:15s} [{os.path.basename(joined.console.path)}:{number}] {line}")
     else:
-        lines.append("    NOT_OBSERVED nesta janela (vocabulário procurado: " + ", ".join(PRESSURE_TERMS) + ")")
-    if window.notes_other:
-        lines.append(f"    e {window.notes_other} linhas de outros processos do aparelho nesta janela (só "
-                     "contadas; a captura não as guarda separadas por processo)")
+        lines.append("    NOT_OBSERVED nesta janela — nenhuma linha de pressão (frases duras: "
+                     + ", ".join(HARD_PRESSURE) + "; e nenhuma linha de memória/térmico emitida pelo app)")
+    for number, line in window.context:
+        lines.append(f"    CONTEXTO    [{os.path.basename(joined.console.path)}:{number}] {line}")
+    if not window.pressure and not window.context:
+        lines.append("    (e nenhuma linha de contexto de infraestrutura: "
+                     + ", ".join(CONTEXT_TERMS) + ")")
     if delta and [row for row in delta if "install_rejects" in row]:
         lines.append("    recusas de instalação mudaram nesta janela: "
                      + ", ".join(row.strip() for row in delta if "install_rejects" in row))
     lines.append("    o que uma captura de console NÃO vê por si: memória sob pressão (jetsam/memorystatus), "
                  "estado térmico e hang do watchdog só aparecem se o syslog do sistema tiver sido capturado "
                  "durante a jornada — `scripts/hitch-pass.sh` faz isso quando `idevicesyslog` está disponível, e "
-                 "o arquivo `console-journey.log` é a captura; `worst_ms` acima do orçamento é a única medida "
-                 "direta de atraso desta janela")
+                 "o arquivo `console-journey.log` é a captura bruta (o recorte de foco é "
+                 "`console-journey-focus.log`); `worst_ms` acima do orçamento é a única medida direta de atraso "
+                 "desta janela")
     return lines
 
 
@@ -918,7 +1001,7 @@ def render(joined: Joined, select: str, context: int, limit: int | None) -> list
     if joined.console:
         lines.append(f"      linhas `feedmine frames=`: {len(joined.console.frames)}   "
                      f"`feedmine journey`: {len(joined.console.journey)}   "
-                     f"linhas de pressão: {len(joined.console.pressure)}   outras: {len(joined.console.other)}")
+                     f"linhas de pressão: {len(joined.console.pressure)}   linhas do app: {len(joined.console.app_notes)}   outras (contadas, não guardadas): {joined.console.other_count}")
     if joined.trace:
         counts: dict[str, int] = {}
         for _, event in joined.trace.events:

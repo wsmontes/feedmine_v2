@@ -173,6 +173,14 @@ if (( SKIP_BUILD == 0 )); then
     [[ -f "FeedMineApp/FeedMineApp/Resources/catalog.sqlite" ]] \
         || refused "falta FeedMineApp/FeedMineApp/Resources/catalog.sqlite (gitignored, exigido pelo build): copie da árvore principal, ex.: cp ../feedmine_v2/FeedMineApp/FeedMineApp/Resources/catalog.sqlite FeedMineApp/FeedMineApp/Resources/"
 fi
+# O alvo de teste copia `../../bench/corpus/profiles.json` como recurso (única referência a `bench/corpus/` no
+# `project.pbxproj`). `bench/corpus/` é gitignored (`.gitignore:32`), então uma worktree nova não o tem e a fase B
+# morre em `CpResource` **antes** de rodar qualquer teste — medido nesta frente em 2026-10-16: `xcodebuild test`
+# exit 65 com 2 falhas, e nenhum teste executado. Recusar antes custa zero.
+if (( SKIP_JOURNEY == 0 )); then
+    [[ -f "bench/corpus/profiles.json" ]] \
+        || refused "falta bench/corpus/profiles.json (gitignored, recurso do alvo FeedMineUITests): copie da árvore principal, ex.: cp ../feedmine_v2/bench/corpus/profiles.json bench/corpus/"
+fi
 
 for cmd in xcrun xcodebuild python3 uuidgen sqlite3 awk; do
     command -v "$cmd" >/dev/null || refused "$cmd não está no PATH"
@@ -189,8 +197,22 @@ free_kb="$(df -k / | awk 'NR==2 {print $4}')"
 printf 'disco livre em /: %s KB\n' "$free_kb"
 
 if (( BUILD_ONLY == 0 )); then
-    xcrun devicectl list devices 2>/dev/null | grep -q -- "$DEVICE" \
-        || not_run "o dispositivo $DEVICE não aparece em 'devicectl list devices'" 3
+    # O aparelho desaparece do `devicectl` por alguns segundos quando o USB re-enumera — medido nesta frente em
+    # 2026-10-16, entre a fase A e a fase B, com `xcdevice` e `idevicesyslog` respondendo segundos depois. Uma espera
+    # limitada e **impressa** não é contorno: é não queimar a janela do dono por um hiccup de 5 s. Se o aparelho não
+    # voltar em ~1 min, o pass sai com NOT_RUN e diz por quê.
+    device_seen=0
+    for attempt in $(seq 1 7); do
+        if xcrun devicectl list devices 2>/dev/null | grep -q -- "$DEVICE"; then
+            device_seen=1
+            printf 'dispositivo %s presente (tentativa %s)\n' "$DEVICE" "$attempt"
+            break
+        fi
+        printf 'tentativa %s/7: %s ainda não aparece em "devicectl list devices"\n' "$attempt" "$DEVICE"
+        sleep 10
+    done
+    (( device_seen == 1 )) \
+        || not_run "o dispositivo $DEVICE não apareceu em 'devicectl list devices' em ~1 min" 3
 fi
 
 mkdir -p "$OUT" 2>/dev/null || refused "não foi possível criar $OUT"
@@ -343,14 +365,22 @@ if (( SKIP_JOURNEY == 0 )); then
         "$(wc -l <"$OUT/console-journey.log" 2>/dev/null | tr -d ' ' || echo 0)" \
         "$OUT/console-journey.log" "$(wc -c <"$OUT/console-journey.log" 2>/dev/null | tr -d ' ' || echo 0)"
 
-    # A captura derivada: as linhas do app, que é o que a junção lê. O bruto continua bruto ao lado.
-    grep -E 'feedmine (frames=|journey )|\[composition\]|Runway opportunity|viewport forwarded' \
-        "$OUT/console-journey.log" >"$OUT/console-journey-feedmine.log" 2>/dev/null || true
-    printf 'linhas do app no console da jornada: frames=%s journey=%s composition=%s\n' \
-        "$(grep -c 'feedmine frames=' "$OUT/console-journey-feedmine.log" 2>/dev/null || echo 0)" \
-        "$(grep -c 'feedmine journey' "$OUT/console-journey-feedmine.log" 2>/dev/null || echo 0)" \
-        "$(grep -c '\[composition\]' "$OUT/console-journey-feedmine.log" 2>/dev/null || echo 0)"
-    if ! grep -q 'feedmine journey' "$OUT/console-journey-feedmine.log" 2>/dev/null; then
+    # O recorte é por **processo** (`FeedMine(` / `FeedMine[`), não por vocabulário de mensagem: o log unificado põe
+    # a categoria no nome do processo (`FeedMine(Foundation)`, `FeedMine(composition)`) e o texto da linha é só o que
+    # o app disse — procurar `[composition]` literal no texto não acha `installed cards=… ids=[…]` nem
+    # `published growth: …`. Medido nesta frente em 2026-10-16: o mesmo arquivo tinha **0** linhas com
+    # `[composition]` e **113** `installed cards=` (os `ids=[…]` moram ali, não no traço). O vocabulário de pressão
+    # entra junto porque a dimensão (e) da junção vive dele.
+    grep -aE 'FeedMine[\(\[]|memorystatus|jetsam|low memory|memory warning|thermal state|cpu_speed_limit|watchdog (hang|stuck|timeout)|panic|Terminated due to|ENOSPC|no space left|malloc:' \
+        "$OUT/console-journey.log" >"$OUT/console-journey-focus.log" 2>/dev/null || true
+    printf 'recorte de foco: %s linhas (frames=%s journey=%s installed=%s viewport=%s runway=%s)\n' \
+        "$(wc -l <"$OUT/console-journey-focus.log" 2>/dev/null | tr -d ' ' || echo 0)" \
+        "$(grep -c 'feedmine frames=' "$OUT/console-journey-focus.log" 2>/dev/null || echo 0)" \
+        "$(grep -c 'feedmine journey' "$OUT/console-journey-focus.log" 2>/dev/null || echo 0)" \
+        "$(grep -c 'installed cards=' "$OUT/console-journey-focus.log" 2>/dev/null || echo 0)" \
+        "$(grep -c 'viewport forwarded' "$OUT/console-journey-focus.log" 2>/dev/null || echo 0)" \
+        "$(grep -c 'Runway opportunity completed' "$OUT/console-journey-focus.log" 2>/dev/null || echo 0)"
+    if ! grep -q 'feedmine journey' "$OUT/console-journey-focus.log" 2>/dev/null; then
         printf 'NOTA (a causa exata, medida e não suposta): a linha `feedmine journey` NÃO está no console da\n' >&2
         printf 'jornada. Causas possíveis, todas verificáveis no bruto: (a) o runner de teste não propaga\n' >&2
         printf 'FEEDMINE_JOURNEY_CONSOLE ao app sob teste (o teste só declara FEEDMINE_TRACE_CAPTURE em\n' >&2
@@ -454,12 +484,12 @@ step "artefatos (brutos, em $OUT)"
 ls -la "$OUT" 2>/dev/null | sed -n '2,40p'
 printf '\nos diretórios de bruto:\n'
 for item in build.log journey-standalone journey-test.log journey.xcresult attachments console-journey.log \
-            console-journey-feedmine.log console-journey.err container; do
+            console-journey-focus.log console-journey.err container; do
     [[ -e "$OUT/$item" ]] && printf '  %s\n' "$OUT/$item"
 done
 printf '\njunção por segundo (o que a corrida de hoje não pôde fazer):\n'
 printf '  python3 scripts/hitch-join.py --journey %s/journey-standalone --select severe\n' "$OUT"
-printf '  python3 scripts/hitch-join.py --console %s/console-journey-feedmine.log \\\n' "$OUT"
+printf '  python3 scripts/hitch-join.py --console %s/console-journey-focus.log \\\n' "$OUT"
 printf '      --trace  "$(ls -d "$OUT"/container/*/FeedMine/*/ 2>/dev/null | head -1)trace.jsonl" \\\n'
 printf '      --db     "$(ls -d "$OUT"/container/*/FeedMine/*/ 2>/dev/null | head -1)runtime.sqlite" \\\n'
 printf '      --series %s/attachments/*frame-series* --select severe\n' "$OUT"

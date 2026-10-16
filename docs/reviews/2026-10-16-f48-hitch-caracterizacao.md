@@ -17,10 +17,10 @@ e uma corrida instala o bundle de desenvolvimento e toma o primeiro plano dele. 
 | `scripts/hitch-join.py` — junção por segundo (quadros × jornada × traço) | **ENTREGUE** e executada sobre duas capturas reais (§3, §4) |
 | `scripts/hitch-pass.sh` — corrida física com o console **persistido em arquivo** | **ENTREGUE**; `bash -n` ok; recusas e auditoria provadas por execução (§2.1, §7) |
 | Build Debug iphoneos do candidato, armado para o GO | **EXECUTADO** (§8) |
-| Corrida no aparelho (fases A e B do `hitch-pass.sh`) | **NOT_RUN** — espera GO (dono usando o aparelho) |
-| Relatório com as cinco dimensões por evento severo | **PARCIAL**: dimensão (a) para as 19 janelas severas da captura de hoje; (b)-(e) `NOT_AVAILABLE` com o arquivo que falta, item por item (§3) — e as cinco completas na captura que as suporta (§4) |
+| Corrida no aparelho (fases A e B do `hitch-pass.sh`) | **EXECUTADA** em 2026-10-16 16:39–16:44 UTC (§9): fase A ociosa **PASS** (0,13% dos quadros fora do orçamento), fase B com rolagem **PASS** (12,7%; 90 severos; pior 289,3 ms) |
+| Relatório com as cinco dimensões por evento severo | **COMPLETO para a corrida do GO** (§9: cinco dimensões por janela pesada, com `arquivo:linha`) **e PARCIAL para a captura de 2026-10-16** (§3: só a dimensão (a) existe; (b)-(e) `NOT_AVAILABLE` com o arquivo que falta) |
 | Correção de produto | **NENHUMA** (esta frente é medição). Os dois consertos desta frente são de **instrumento**: um em `scripts/hitch-pass.sh` e outro no bloco do WAL de `scripts/device-journey.sh`, autorizado pelo arquiteto (§2.1) |
-| Commits | **dois** em `gate/f48-hitch`, sobre `03d05f5f`: um dos instrumentos + relatório, outro do conserto de instrumento autorizado |
+| Commits | em `gate/f48-hitch`, sobre `03d05f5f`: instrumentos + relatório, conserto de instrumento autorizado, e o resultado da corrida no aparelho |
 
 ---
 
@@ -78,7 +78,7 @@ O pass faz, em ordem: pré-voo (recusa `com.feedmine.app`, exige ≥2 GB livres,
 `FEEDMINE_JOURNEY_CONSOLE=1` + `FEEDMINE_TRACE_CAPTURE=1` e `--console`, persiste `console.log`, puxa o contêiner,
 dobra o WAL, imprime o censo) → **fase B** a jornada de rolagem por `xcodebuild test` com o log inteiro em
 `journey-test.log`, o result bundle em `journey.xcresult` e o **syslog do aparelho** capturado durante a corrida em
-`console-journey.log` (mais o derivado `console-journey-feedmine.log`) → **contêiner inteiro** de todos os
+`console-journey.log` (mais o recorte de foco `console-journey-focus.log`) → **contêiner inteiro** de todos os
 namespaces → prova de que `com.feedmine.app` ficou como estava (container antes = container depois) → imprime cada
 bruto e o comando de junção.
 
@@ -86,16 +86,25 @@ Três decisões que não são óbvias e que vieram de medição:
 
 1. **Duas capturas de console, não uma.** O app fala por duas vias: `NSLog` (`feedmine frames=`, `feedmine journey`,
    `FeedMineApp/FeedMineApp/FeedFrameMeter.swift:150,153`) e `Logger(subsystem:category:)`
-   (`FeedMineApp/FeedMineApp/AppComposition.swift:32,2879`, com o texto `[composition] …`). O `devicectl --console`
-   carrega a primeira e **não** a segunda (medido: 605 linhas de console na jornada de 2026-10-16, nenhuma
-   `[composition]`); o `idevicesyslog` carrega as duas. Por isso a fase B captura o syslog do sistema, sem filtro
-   (o filtro é aplicado depois, no arquivo derivado, para o bruto ficar bruto).
+   (`FeedMineApp/FeedMineApp/AppComposition.swift:32,2879`). O `devicectl --console` carrega a primeira e **não** a
+   segunda (medido: 605 linhas de console na jornada de 2026-10-16, nenhuma `[composition]`); o `idevicesyslog`
+   carrega as duas — medido na fase B: 26 `feedmine frames=`, **110 `installed cards=…`**, 39 `viewport forwarded`,
+   41 `Runway opportunity completed`. O recorte de foco (`console-journey-focus.log`) é por **processo**
+   (`FeedMine(`/`FeedMine[` no começo da linha), não por vocabulário de mensagem: o log unificado põe a categoria no
+   nome do processo e o texto é só o que o app disse, então procurar `[composition]` no texto não acha
+   `installed cards=…` nem `published growth: …` (medido: 0 linhas com `[composition]` e 110 `installed cards=` no
+   mesmo arquivo).
 2. **A variável tem de ser provada aplicada, não declarada.** O pass procura `feedmine journey` no console
    persistido e, quando não acha, grava a causa exata medida com a lista de causas verificáveis (o runner de teste
    não propaga a chave ao app; `idevicesyslog` ausente; app errado) — em vez de reportar medição sem sujeito. A
    fase B ainda tenta `TEST_RUNNER_FEEDMINE_JOURNEY_CONSOLE=1`, mas o resultado **não é presumido**.
 3. **`--build-only`**: compila e sai sem executar **nenhum** comando de aparelho. É o modo com que esta frente deixou
-   a corrida armada sem tocar no telefone do dono (§8).
+   a corrida armada sem tocar no telefone do dono (§8). Dois recursos gitignored que o build exige são checados no
+   pré-voo — `FeedMineApp/FeedMineApp/Resources/catalog.sqlite` (o build morre em `CpResource` sem ele: medido, 151 s
+   de build perdidos) e `bench/corpus/profiles.json` (o **alvo de teste** morre sem ele: medido na primeira tentativa
+   da fase B, `xcodebuild test` exit 65 e **nenhum** teste executado). E a presença do aparelho é esperada por até
+   7 tentativas de 10 s, **impressas** — o iPhone desapareceu do `devicectl` por alguns segundos entre as fases A e B
+   na corrida real, e esperar um hiccup de USB não é contornar a recusa, é não queimar a janela do dono.
 
 Um defeito do próprio pass foi encontrado e corrigido **exercitando o bloco de censo do contêiner sobre uma cópia de
 um contêiner real** (não no aparelho): o SQLite apaga o `-wal` quando a última conexão fecha, e o
@@ -468,8 +477,9 @@ mudar, a árvore/automação não é o gargalo. (Exige um teste novo **de mediç
 (`AppComposition.swift:2640-2652`) e `install` é onde o medidor começa e onde a janela é reescrita (`:2369-2375`);
 a rajada de crescimento roda a cada 0,75 s durante e depois do gesto.
 *Experimento que refuta*: medir, na corrida do GO, quantos segundos severos contêm um `admitted` **e** se o conjunto
-de ids admitidos muda dentro daquele segundo (`TRACE_CAPTURE=1` já imprime `ids=[…]` em
-`AppComposition.swift:2388-2390`). Se nenhum segundo severo contiver admissão com mudança de ids, H4 cai.
+de ids admitidos muda dentro daquele segundo. **Correção medida em 2026-10-16**: os `ids=[…]` **não** vão para o
+evento `admitted` do traço — eles são o sufixo da **linha de log unificado** `installed cards=… ids=[…]`
+(`AppComposition.swift:2389-2393`, dentro do `#if DEBUG` da chave `FEEDMINE_TRACE_CAPTURE`); o `invoke` do `[composition]` virou `FeedMine(FeedMine.debug.dylib)` na categoria e por isso o filtro do pass passou a recortar por **processo**, não por vocabulário (§2.1). Se nenhum segundo severo contiver admissão com mudança de ids, H4 cai.
 
 **H5 — Pressão do sistema (memória/térmico/watchdog).**
 *Dado que apoia*: **nenhum** — a hipótese existe porque nunca foi medida e porque é a explicação que sobra para
@@ -592,10 +602,9 @@ cometeu (acusou o próprio texto de ajuda do `device-journey.sh`).
 
 ---
 
-## 8. Procedimento do GO (o que falta executar)
+## 8. Procedimento do GO — **executado em 2026-10-16** (o resultado está na §9)
 
-1. **GO por mensagem** (o dono está instalando/validando a build 48; a corrida instala o bundle de desenvolvimento e
-   toma o primeiro plano dele). Piso de disco: ≥3 GB livres.
+1. **GO por mensagem** — dado pelo arquiteto na janela do dono. Piso de disco: ≥3 GB (havia 6,1 GB).
 2. `scripts/hitch-pass.sh --skip-build --app /tmp/fm-hitch-pre/derived/Build/Products/Debug-iphoneos/FeedMine.app
    --derived-data /tmp/fm-hitch-pre/derived --out /tmp/fm-hitch-pass-<UTC>`
    — as duas fases, o console em arquivo (com o caminho impresso no fim) e o contêiner inteiro.
@@ -604,8 +613,8 @@ cometeu (acusou o próprio texto de ajuda do `device-journey.sh`).
 4. **Se a linha `feedmine journey` não aparecer** no console persistido da fase B, a causa exata sai do pass
    (`hitch-pass.sh` procura a linha e imprime as causas verificáveis) e a fase A continua sendo o insumo da jornada —
    nenhuma medição é reportada sem sujeito.
-5. Este relatório ganha a seção §9 com as cinco dimensões por evento severo da corrida dirigida, a separação
-   rolagem efetiva × repouso (`advance`) e o veredito de H1-H6. **Nenhuma correção** é implementada nesta frente.
+5. Feito: a seção §9 traz as cinco dimensões por janela pesada, a separação rolagem efetiva × repouso (`advance`)
+   e o veredito de H1-H6. **Nenhuma correção de produto** foi implementada nesta frente.
 
 ### 8.1 Build armado (executado nesta frente, sem tocar no aparelho)
 
@@ -662,7 +671,221 @@ abaixo dele, libere espaço antes ou aponte `--derived-data` para outro lugar.
 
 ---
 
-## Anexo A — arquivos desta frente
+## 9. A corrida física (2026-10-16, 16:39–16:44 UTC) — fase A ociosa × fase B com rolagem
+
+Identidade: `.app` `com.feedmine.development`, build 48, **`FeedmineGitSHA=91b55a52`** (`= HEAD` desta branch; a
+estampa bate com a árvore medida e o código do app é **idêntico** ao da 48 — `git diff --stat 03d05f5f..HEAD --
+FeedMineApp Sources Package.swift` é vazio). Binário sha256 `8937560089990e518d02f9c201756c9a03019d83edf017e9702ae228b852a68b`.
+Brutos: fase A em `/tmp/fm-hitch-pass-20261016T163928Z/journey-standalone/`, fase B em
+`/tmp/fm-hitch-passB-20261016T164309Z/` (o teste foi re-rodado depois de o alvo de teste exigir
+`bench/corpus/profiles.json`, gitignored — o pass agora recusa antes, §2.1). `com.feedmine.app` **inalterado**:
+`apps-owner-before.json` e `-after.json` trazem o mesmo container
+(`file:///private/var/containers/Bundle/Application/C78B92AD-0DE7-47AA-A12D-8095BF104AFC/FeedMine.app/`), e o pass
+imprime o veredito.
+
+### 9.1 Fase A — ociosa (89 s, sem gesto)
+
+```
+totais da série: janelas=89 quadros=5316 late=1 bad=0 severe=6 pior_ms=268.1
+segundos com pelo menos um quadro: late=1 bad=0 severe=3
+janelas severas: #1 3 severos 62,7 ms | #2 2 severos (1 late) 268,1 ms | #3 1 severo 50,4 ms
+nenhum evento `advance` em 89 s
+```
+
+Os 6 quadros severos estão **nos três primeiros segundos medidos** (arranque: 3 admissões, `cards` 0→17,
+`media_prepared` 15→64 na linha de jornada) e os **86 segundos seguintes não têm um quadro sequer fora do
+orçamento**: 7 quadros fora do orçamento em 5316 = **0,13%**. A janela 1 é a única com evidência de pressão: uma
+linha `malloc: xzm: failed to initialize deferred reclamation buffer` do próprio app. Zero `advance`.
+
+### 9.2 Fase B — a jornada de rolagem (26 s medidos, 6 `swipeUp(velocity:.fast)`)
+
+```
+totais da série: janelas=26 quadros=1138 late=15 bad=39 severe=90 pior_ms=289.3
+segundos com pelo menos um quadro: late=11 bad=16 severe=21
+```
+
+**144 dos 1138 quadros fora do orçamento = 12,7%**, contra **0,13%** da fase A: a mesma build, o mesmo aparelho, a
+mesma hora — **97×**. E os engasgos **não** se concentram no arranque: **21 dos 26 segundos** têm pelo menos um
+quadro severo, do primeiro ao último.
+
+O que a captura conseguiu ver (e o que não):
+
+| canal | o que trouxe |
+|---|---|
+| `console-journey.log` (syslog do aparelho, 98.894.060 B) | 26 linhas `feedmine frames=`, **110 `installed cards=… ids=[…]`**, 54 `published growth`, 39 `viewport forwarded`, 41 `Runway opportunity completed`, ~600–800 `native card observed` por segundo de rolagem |
+| `trace.jsonl` do namespace do teste (`633D4BAF…`, 386 linhas) | 23 `frames`, 113 `admitted`, 80 `candidate`, **41 `advance`**, 60 `window`, 41 `runway_completed`, 9 `position_checkpoint`, 10 `replenishment_arrived` |
+| anexo do XCTest | a série publicada (o teste passou: 1 teste, 0 falhas, 35,4 s) |
+| `journey-test.log` | **zero** linhas do app — a confirmação independente de que no aparelho a saída do app não entra no log do `xcodebuild` |
+
+**`FEEDMINE_TRACE_CAPTURE=1` foi aplicado** (o app imprimiu os `ids=[…]` da janela admitida e publicou a série);
+**`FEEDMINE_JOURNEY_CONSOLE=1` não foi** — ver §9.7. Consequência prática: a dimensão dos fatos por segundo nesta
+fase vem do **traço + do log unificado**, não da linha de jornada.
+
+### 9.3 A estrutura por segundo — e ela é inequívoca
+
+| janela | frames | late | bad | severe | pior ms | `advance` | admissões | trabalho do traço |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 54 | 0 | 0 | 2 | 198,7 | 0 | 3 (cards 17) | 2 `window`, 31 `candidate` — **arranque** |
+| 4 | 59 | 1 | 0 | 0 | 33,3 | 0 | 0 | — |
+| 5 | 55 | 1 | 1 | 1 | 66,3 | 0 | 0 | — |
+| **6** | **10** | 0 | 0 | **9** | **289,3** | **4 forward** | **11** (cards→22) | 7 `window` |
+| 7 | 39 | 0 | 0 | 5 | 137,1 | 1 forward | 4 (→24) | 3 `window` |
+| 8 | 52 | 1 | 0 | 2 | 90,5 | 1 stationary | 2 (→24) | `position_checkpoint` |
+| **9** | **13** | 0 | 0 | **10** | **194,7** | **5 forward** | **13** (→28) | 7 `window` |
+| 10 | 49 | 1 | 0 | 4 | 66,4 | 1 forward | 3 (→29) | 2 `window` |
+| 11 | 53 | 0 | 1 | 1 | 99,3 | 1 stationary | 2 (→29) | `position_checkpoint` |
+| **12** | **22** | 0 | 2 | **8** | **150,7** | **5 forward** | **13** (→33) | 8 `window` |
+| 13 | 48 | 1 | 2 | 4 | 67,3 | 1 forward | 4 (→35) | 3 `window` |
+| 14 | 53 | 1 | 1 | 1 | 98,9 | 1 stationary | 2 (→35) | `position_checkpoint` |
+| **15** | **20** | 0 | 3 | **9** | **150,5** | **5 forward** | **13** (→39) | 7 `window` |
+| 16 | 51 | 0 | 1 | 3 | 63,6 | 1 forward | 3 (→40) | 2 `window` |
+| 17 | 53 | 0 | 1 | 1 | 99,2 | 1 stationary | 2 (→40) | `position_checkpoint` |
+| **18** | **21** | 1 | 3 | **7** | **140,6** | **5 forward** | **13** (→44) | 7 `window` |
+| 19 | 51 | 0 | 1 | 2 | 105,8 | 1 forward | 3 (→45) | 2 `window` |
+| 20 | 53 | 0 | 1 | 1 | 97,8 | 1 stationary | 2 (→45) | `position_checkpoint` |
+| **21** | **23** | 0 | 0 | **11** | **128,9** | **5 forward** | **9** (→49) | 6 `window` + **5 `replenishment_arrived`, 3 `requested`, 2 `concluded`** |
+| 22 | 39 | 2 | 1 | 7 | 73,0 | 1 forward | 7 (→51) | 4 `window` + `replenishment_*` |
+| 23 | 53 | 0 | 1 | 1 | 101,1 | 0 | 0 | — |
+| 24 | 53 | 1 | 5 | 0 | 42,9 | 0 | 0 | — |
+| 25 | 50 | 2 | 7 | 0 | 42,6 | 0 | 0 | — |
+| 26 | 44 | 3 | 8 | 1 | 59,5 | 0 | 0 | — |
+
+As janelas 23–26 são o **pós-teste** (o app já sem gesto, ainda medindo): 152 quadros em 4 segundos com `late/bad`
+miúdos e **um** severo — o regime "quieto" de novo.
+
+**A agregação por classe de segundo, que é o resultado:**
+
+| classe | janelas | quadro severo | admissões por janela |
+|---|---|---|---|
+| **≥4 avanços `forward`** (o gesto) | 6, 9, 12, 15, 18, 21 | **54 dos 90 severos (60%)** | 11, 13, 13, 13, 13, 9 |
+| exatamente 1 avanço `forward` | 7, 10, 13, 16, 19, 22 | 25 | 4, 3, 4, 3, 3, 7 |
+| só repouso (`stationary`) | 8, 11, 14, 17, 20 | 6 | todos 2 |
+| nenhum `advance` | 1, 4, 5, 23–26 | 5 (dos quais 2 na janela 1, arranque) | 0–3 |
+
+Os **6 segundos pesados são exatamente os 6 `swipeUp`** do teste (espaçados ~3 s, cada gesto com 4–5 observações do
+viewport), e a cada um segue um segundo de cauda (1 avanço, 3–4 admissões) e um de repouso (2 admissões). O
+**número de admissões dentro do segundo acompanha o número de observações**, e o **número de quadros severos
+acompanha as admissões**: 54 dos 90 severos estão nos 6 segundos em que o app instalou a janela 11–13 vezes.
+
+### 9.4 As cinco dimensões, verbatim, numa janela pesada (6) e numa com reposição (21)
+
+```
+--- janela 6  severe=9
+  (a) quadro: frames=10 late=0 bad=0 severe=9 worst_ms=289.3 budget_ms=16.67  [console-journey-focus.log:19791]
+      carimbo do aparelho (verbatim): Oct 16 09:44:07.433134
+      intervalo: mono 139567.381 → 139568.446 (1.065 s)   at=2026-10-16T16:44:07Z
+  (b) [trace.jsonl:86]  mono=139567.399 advance activity=forward anchor=FAB80204-…  ↳ âncora: pos 2 (seg 0, carta 2, BBC World)
+      [trace.jsonl:92]  mono=139567.778 advance anchor=C3A08ED7-… activity=forward ↳ pos 4
+      [trace.jsonl:100] mono=139568.054 advance anchor=E9385133-… activity=forward ↳ pos 5
+      [trace.jsonl:106] mono=139568.256 advance anchor=BE9A9EBA-… activity=forward ↳ pos 6
+      [trace.jsonl:96]  mono=139567.909 window cards=19 cards_traversed=2      [trace.jsonl:105] cards=22 cards_traversed=3
+      do log unificado: `native SwiftUI phase=idle->interacting`, `native phase active=true velocityUnverified=false`,
+      `native geometry offset=16.0 extent=2691.0 height=785.0`, e **116** `native card observed id=… frame=…`
+  (c) última admissão antes do fim [trace.jsonl:109] cards=22 order=8
+      ↳ head: pos 0 (seg 0, carta 0)   ↳ tail: pos 21 (seg 0, carta 21)   ↳ anchor: pos 6 (seg 0, carta 6)
+  (d) contagem por evento: admitted=11   (17, 19, 19, 21, 22 — a janela cresce sob o gesto)
+      NOT_AVAILABLE: a linha `feedmine journey` não está nesta captura
+  (e) NOT_OBSERVED nesta janela — nenhuma linha de pressão
+```
+
+```
+--- janela 21  severe=11
+  (a) quadro: frames=23 late=0 bad=0 severe=11 worst_ms=128.9 budget_ms=16.67
+      carimbo: Oct 16 09:44:22.625984   intervalo: mono 139582.609 → 139583.645 (1.036 s)
+  (b) 5 × `advance activity=forward` (âncoras pos 29, 30, 31, 32, 33) + 6 × `window`; o app também registra
+      `FeedMine(UIAccessibility) … Post notification failed … error:-25201` e `FeedMine(UIKitCore) … Evaluating dispatch of UIEvent …`
+  (c) [trace.jsonl:339] cards=49 order=55   ↳ tail: pos 48 (seg 1, carta 17)   ↳ anchor: pos 32
+  (d) admitted=9, **replenishment_arrived=5**, replenishment_requested=3, replenishment_concluded=2 —
+      e a reposição é de **rede**: `kind=network target=40000000-…-0001 bytes=26329 observations=32`, com o
+      fornecimento local declarado esgotado (`exhausted=true`) no mesmo segundo
+  (e) NOT_OBSERVED nesta janela — nenhuma linha de pressão
+```
+
+### 9.5 (e) Pressão do sistema: nenhuma nas janelas de engasgo
+
+Nenhuma das 21 janelas severas tem uma linha de pressão **do aparelho sobre o app**. As duas únicas linhas que a
+regra dura pegou em 26 s, e de quem são:
+
+```
+[console-journey-focus.log] FeedMineUITests-Runner(BaseBoard)[7493]  … for "jetsamMode": required --> optional
+[console-journey-focus.log] runningboardd(RunningBoard)[33]  [app<com.feedmine.development.FeedMineUITests.xctrunner…>:7493] Set jetsam priority to 100
+[console-journey-focus.log] amsondevicestoraged(OnDeviceStorageInternal)[1027]  Received low memory warning   (janela 26, sozinha)
+```
+
+A primeira é o **runner de teste** registrando `jetsamMode` no arranque (o nome dele contém "FeedMine" — por isso a
+regra agora separa emissor), e a terceira é um aviso de memória de **outro processo** do sistema, na última janela do
+recorte. Memória, térmico e watchdog, portanto, **não** explicam nenhuma janela desta corrida.
+
+### 9.6 O que a correlação sustenta agora (observação)
+
+1. **O engasgo é do gesto, não do repouso.** Ocioso: 0,13% dos quadros fora do orçamento (6 severos em 89 s). Com
+   rolagem: 12,7% (90 severos em 26 s). **97×** na mesma build, no mesmo aparelho, na mesma corrida (`hitch-pass.sh`
+   roda as duas fases em sequência, com o mesmo `.app`).
+2. **O engasgo acompanha o número de admissões no mesmo segundo**, e as admissões acompanham o número de
+   observações do viewport que o gesto produz: nos 6 segundos com ≥4 `advance forward` houve 11–13 admissões e **54
+   dos 90 quadros severos**; nos segundos de repouso, 2 admissões e 6 severos.
+3. **Os 6 segundos pesados são os 6 `swipeUp`**, com o ciclo gesto → cauda → repouso repetido 6 vezes. Nada disso é
+   visível na série do teste sozinha (que não tem `advance`): é a junção que dá a estrutura.
+4. **A janela admitida cresce sob o gesto** (17 → 51 cartas ao longo da jornada; 11–13 admissões por segundo pesado),
+   com o pico do gesto movendo a âncora 4–5 posições no mesmo segundo.
+5. **A telemetria da própria medição é uma carga constante**: ~600–800 linhas `native card observed id=… frame=…`
+   por segundo de rolagem, além de 39 `viewport forwarded` e 54 `published growth` — tudo isso só existe porque
+   `FEEDMINE_TRACE_CAPTURE=1` (a chave que a jornada liga). É custo do instrumento, não do feed.
+6. **O regime "quieto" volta quando o gesto para**: as janelas 23–26, já sem gesto, somam 152 quadros com um único
+   severo.
+
+### 9.7 O que ela NÃO sustenta
+
+1. **Não separa o custo do app do custo do harness.** Os 6 segundos pesados são os 6 gestos sintetizados pelo
+   XCTest; o app, no mesmo segundo, fez trabalho real (admissões, `UIEvent` dispatch, transições de fase do SwiftUI)
+   **e** o harness sintetizou o arrasto. Esta corrida não decide a fração de cada um.
+2. **Não sustenta mídia como causa nesta fase.** O traço da fase B tem **0 `media_ready`**: nos segundos pesados não
+   houve evento de mídia nenhum. O que a fase A mostrou (64 `media_ready` num segundo, junto de um severo) é um
+   fenômeno **de arranque**, e o arranque da fase B é a janela 1 (2 severos, 198,7 ms, 3 admissões).
+3. **Não sustenta publicação/reposição como causa geral.** Só as janelas 21 e 22 têm `replenishment_*`; as janelas
+   6, 9, 12, 15 e 18 são igualmente pesadas **sem** nenhum evento de reposição.
+4. **Não sustenta pressão de sistema** (§9.5).
+5. **Não é a média que diz nada**: 21 dos 26 segundos têm severo, então "razão média" esconderia que o problema é
+   concentrado nos 6 segundos de gesto.
+6. **Um limite do insumo, declarado**: o relay do log unificado **perde linhas** do app (26 linhas `frames=` no
+   console contra 23 eventos no traço, com discordância já na segunda janela), então o alinhamento console × traço
+   foi feito por **conteúdo** (quíntupla `frames/late/bad/severe/worst_ms` idêntica), não por posição — e onde duas
+   janelas têm a mesma quíntupla a ordem de ocorrência é a chave (entre gêmeas o segundo pode trocar; os números,
+   não). Além disso, o traço cobre 23 dos 26 segundos (o último lote não chegou ao disco) e a janela 1 não tem
+   limite inferior no console.
+
+### 9.8 Veredito por hipótese (o que o dado novo faz com cada uma)
+
+| # | Hipótese | Veredito com esta corrida | Experimento que decide (se ainda for preciso) |
+|---|---|---|---|
+| **H4** | Instalação/re-render da janela no caminho do gesto | **APOIADA (a mais forte)**: 6 janelas com 4–5 observações do gesto e 11–13 admissões no **mesmo segundo** concentram 54 dos 90 severos; repouso (2 admissões) tem 6 | medir a mesma jornada com as admissões coalescidas por gesto (uma instalação por gesto em vez de uma por observação) — ramo de **medição**, não de produto |
+| **H1** | Publicação/admissão no arranque | **APOIADA só para o arranque**: fase A concentra 6/6 severos nos 3 primeiros segundos; fase B, janela 1 (2 severos, 198,7 ms) é arranque. **Não** explica os 6 segundos de gesto | já delimitada: a hipótese vale para "arranque", não para "consumo" |
+| **H6** | Custo do instrumento ligado (`TRACE_CAPTURE`) | **APOIADA como carga constante**: 600–800 linhas `native card observed`/s durante toda a rolagem, em todos os segundos (não só nos pesados) | repetir a jornada com a **série publicada sem o log por carta** (hoje as duas coisas compartilham `FEEDMINE_TRACE_CAPTURE=1`) e comparar a série |
+| **H3** | Custo do XCTest + árvore de acessibilidade | **INDETERMINADA / enfraquecida como causa única**: o app registra trabalho próprio no mesmo segundo (`UIEvent` dispatch, fases do SwiftUI, 11–13 admissões), mas o gesto é sintetizado pelo harness | rodar a mesma sequência de gestos num teste que não leia a árvore e comparar; e/ou `press(forDuration:thenDragTo:)` (mais passos, mesmo deslocamento) contra `swipeUp(velocity:.fast)` — se o custo segue o **número de observações**, é o app; se segue a síntese do gesto, é o harness |
+| **H2** | Mídia no intervalo | **REFUTADA para esta fase**: 0 `media_ready`; o fenômeno de mídia medido é de arranque (fase A) | repetir com conteúdo sem mídia e mesma carga de gestos (verifica se o arranque muda, não os 6 segundos de gesto) |
+| **H5** | Pressão do sistema | **REFUTADA nesta corrida**: nenhuma linha de pressão sobre o app em 26 s; as duas únicas são do runner (arranque) e de outro processo (última janela) | capturar sob carga prolongada (sessão de minutos) para ver se memória/térmico aparecem quando o estado acumula |
+
+### 9.9 A armadilha da linha de jornada, medida (e o que entrou no lugar)
+
+A linha `feedmine journey` **não** aparece na fase B. Causa exata, medida, não suposta:
+
+1. `hitch-pass.sh` exporta `TEST_RUNNER_FEEDMINE_JOURNEY_CONSOLE=1` — que põe a chave no processo do **runner de
+   teste**, e o app sob teste **não a herda**: o teste declara em `launchEnvironment` apenas
+   `FEEDMINE_TRACE_CAPTURE` (`FluidityJourneyUITests.swift:9-14`);
+2. a chave para o app só existe pelo `launchEnvironment` do teste, e o teste não a declara — logo `feedmine journey`
+   é 0 em toda jornada dirigida, **por construção**, até que o teste (ou outro caminho) a declare;
+3. **não** foi o canal de captura: o syslog trouxe 26 `feedmine frames=`, 110 `installed cards=… ids=[…]` e 39
+   `viewport forwarded` do **processo certo** (`FeedMine(FeedMine.debug.dylib)[7494]`), e a fase A tem 89 linhas de
+   jornada com a chave ligada — a diferença é o caminho do lançamento, não a captura.
+
+O que substituiu a linha de jornada na fase B, e é melhor para esta pergunta: os `installed cards=… ids=[…]` (o
+texto da janela admitida, por instalação), o `published growth: …`, o `viewport forwarded activity=… anchor=…` e os
+eventos do traço. O que se perdeu com ela: o par `media_resident`/`media_prepared` por segundo — que nesta fase
+seria zero de qualquer forma (0 `media_ready`).
+
+---
+
+
 
 | Arquivo | Papel |
 |---|---|
@@ -681,6 +904,19 @@ python3 scripts/hitch-join.py --journey /tmp/fm-journey-20261016T075109Z --selec
 
 # os totais das duas séries
 python3 scripts/hitch-join.py --journey /tmp/int48-physical-evidence --select any --context 0 | sed -n '/totais/,+2p'
+
+# a corrida do GO: fase A (ociosa) e fase B (rolagem), com a junção por conteúdo
+python3 scripts/hitch-join.py --journey /tmp/fm-hitch-pass-20261016T163928Z/journey-standalone --select any --context 1
+B=/tmp/fm-hitch-passB-20261016T164309Z; NS=633D4BAF-C28B-4165-A246-4987532D643C
+python3 scripts/hitch-join.py --console "$B/console-journey-focus.log" \
+  --trace "$B/container/Library/Application Support/FeedMine/$NS/trace.jsonl" \
+  --db    "$B/container/Library/Application Support/FeedMine/$NS/runtime.sqlite" \
+  --series "$B/attachments/5B9BFA26-E680-46EE-A63E-D5ACE5A87BE9.txt" --select any --context 1
+
+# a prova de que o app foi tocado pelo syslog e de que a linha de jornada não veio
+grep -c 'feedmine frames=' /tmp/fm-hitch-passB-20261016T164309Z/console-journey-focus.log
+grep -c 'feedmine journey' /tmp/fm-hitch-passB-20261016T164309Z/console-journey-focus.log
+grep -m1 'installed cards=' /tmp/fm-hitch-passB-20261016T164309Z/console-journey-focus.log | cut -c1-200
 
 # os hashes dos insumos citados
 shasum -a 256 /tmp/int48-physical-evidence/62CB9727-697D-4E49-9FE1-1AADCB3CBFBD.txt
