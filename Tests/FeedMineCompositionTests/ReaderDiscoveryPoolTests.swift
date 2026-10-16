@@ -353,6 +353,47 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
         XCTAssertTrue(targets.allSatisfy { $0.checkpointRevision == 0 })
     }
 
+    /// PD8-R1: a caller opportunity that coalesces into an in-flight drain still owns one catalogue page — the
+    /// page is the caller's fact, never a conclusion the drain may reach by itself. Two opportunities here (the
+    /// owning one and the coalesced one) and therefore exactly two pages: the drain passes between them earn none.
+    @MainActor
+    func testCoalescedCallerOpportunityStillOwnsItsCataloguePage() async throws {
+        let f = try await progressiveFixture(count: 5)
+        let pages = DiscoveryPageJournal()
+        let entered = expectation(description: "The owning call holds its own catalogue page")
+        let (release, signal) = AsyncStream<Void>.makeStream()
+        defer { signal.finish() }
+        let runway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1, releaseMarginSeconds: 0)!,
+            consumptionSampleLimit: 2, replenishmentSampleLimit: 2)!)
+        let driver = try FeedRunwayDriver(session: f.session, runway: runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            makeSegmentIdentity: { .init(segmentID: .init(), segmentSeed: 1, segmentCreatedAt: Date())! },
+            prepare: Self.prepareDiscovery, onDiscoveryPage: { _ in
+                guard pages.record() == 1 else { return }
+                entered.fulfill()
+                for await _ in release { break }
+            })
+        let resources = FeedRunwayDriverResources(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 8,
+            readyProbeBound: 4, readyProbeCeiling: 8, forwardAdvanceProbeBound: 8, reserveCards: 1)!,
+            acquisition: .init(targetWorkCapacity: 2, batchCapacityPerNewExecution: 1,
+                observationCapacityPerBatch: 8, byteCapacityPerBatch: 100_000)!, discoveryExaminedCapacity: 3)
+        let activation = Task { try await driver.activateCurrentPresentation(resources: resources) }
+        await fulfillment(of: [entered], timeout: 5)
+        XCTAssertEqual(pages.served, 1)
+        let firstPage = f.discovery.entries.count
+        XCTAssertGreaterThan(firstPage, 0, "The fixture must serve a first page")
+        // An external opportunity arrives while the owning call is still inside its own page: it coalesces.
+        _ = try await driver.drive(resources: resources)
+        XCTAssertEqual(pages.served, 1, "A coalesced caller cannot examine a page while another owns the examination")
+        signal.yield(())
+        _ = try await activation.value
+        XCTAssertEqual(pages.served, 2, "The opportunity that coalesced into the drain still owns its page")
+        XCTAssertGreaterThan(f.discovery.entries.count, firstPage, "The coalesced opportunity reached the pool")
+        let snapshot = await f.session.currentPresentation()
+        XCTAssertEqual(snapshot, f.initial, "Discovery cannot move or admit the reader's position")
+    }
+
     @MainActor
     func testColdDiscoveryResumesAfterAnEmptyProfilePageUsingTheSameCoordinator() async throws {
         let url = try catalog()
@@ -606,6 +647,15 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
         XCTAssertTrue(principals.contains("https://both.xx/feed"),
             "a source that is also filed under a wanted subject stays")
     }
+}
+
+/// Counts the catalogue pages one driver serves, so a test can hold the first one while an external
+/// opportunity arrives and then see whether the coalesced opportunity still reaches the pool.
+private final class DiscoveryPageJournal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded = 0
+    func record() -> Int { lock.withLock { recorded += 1; return recorded } }
+    var served: Int { lock.withLock { recorded } }
 }
 
 private final class ProgressiveDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
