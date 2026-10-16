@@ -63,6 +63,11 @@ public struct CandidateProvider: Sendable {
             return Candidate(originRecordID: record.originRecordID, originRevisionID: record.originRevisionID,
                 headline: record.headline.map(ReadablePublicationText.convert), summary: record.summary.map(ReadablePublicationText.convert),
                 timestamp: CandidateTimestamp(value: record.sortDate, kind: kind),
+                // TX-05D: the evidence is reconstructed from canonical supply — the subjects the story's
+                // own document declared, as acquisition recorded them — and never from the Source's
+                // taxonomy, the catalogue or the story's text. Absence stays absence, and ordering still
+                // reads `timestamp`.
+                topics: CandidateTopicEvidence(record.declaredSubjects),
                 language: record.language, providerID: record.providerID, sourceIDs: Set(record.sourceIDs),
                 primaryMediaLocator: record.primaryMediaLocator, primaryLink: record.primaryLink,
                 declaredBody: record.declaredBody, bodyObserved: record.bodyObserved)
