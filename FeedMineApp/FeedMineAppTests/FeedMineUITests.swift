@@ -576,6 +576,147 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
 
+    /// §4 of the journey audit (`docs/reviews/2026-10-15-jornadas-de-usuario-v1-vs-v2.md:281`), and V1's own
+    /// closure rule — "do not ship dead buttons" (`1.0-application-closure-plan.md:30`): the export sheet's share
+    /// control is the one control the battery only ever **found** (`app.buttons["export-share"].exists`,
+    /// `FeedMineUITests.swift:567`); it was never tapped, so the app's `ActivityView`
+    /// (`FeedMineApp/FeedMineApp/PlatformSurfaces.swift:39`) had never been proven to reach the screen. This
+    /// journey taps it and asserts what is honestly observable:
+    ///
+    /// - the platform's own share surface goes up, over the app's own sheet;
+    /// - leaving it leaves the app's own sheet up;
+    /// - and closing that returns the reader to the session and the reading point they had: the same counters and
+    ///   the same card at the top of the viewport.
+    ///
+    /// What is **not** asserted, and why: the activity list's contents. What the sheet offers belongs to the
+    /// platform — it varies with the device, the installed apps and the language — so asserting an entry would be
+    /// an assertion about iOS. What this app owns is the document it wrote and the presentation it asked for.
+    ///
+    /// **Achado medido em 2026-10-16 — a folha do app bloqueia a superfície do sistema.** Tocar `Compartilhar`
+    /// **não** põe a superfície de compartilhamento do sistema sobre a folha de exportação. Medido em seis
+    /// corridas, uma delas num simulador **apagado antes** (`simctl erase`): 30 s e 240 s depois do toque a tela
+    /// ainda era a folha do app — a captura `export-share-system-surface` do `xcresult` mostra a folha de
+    /// exportação com o OPML real e nenhuma lista de atividades — e a árvore de acessibilidade ainda tinha a
+    /// folha do app no topo (`export-done` e `export-share` presentes, nenhum `ActivityListView`). Fechando
+    /// aquela folha, a superfície do sistema aparece **4 s** depois (`ActivityListView`,
+    /// `ShareSheet.RemoteContainerView`, `header.closeButton`): a apresentação é **adiada**, não recusada — o
+    /// leitor toca Compartilhar, nada acontece, e a folha de compartilhamento só sobe quando ele sai da folha
+    /// de exportação. Vale para `Salvar arquivo` também, que usa a mesma apresentação
+    /// (`FeedMineApp/FeedMineApp/FeedMineApp.swift:1111-1112` define os dois no mesmo `sharedExport`).
+    /// A causa provável (leitura de código, não medida) é a forma do host: a folha de exportação é desenhada
+    /// pelo host de superfícies (`.sheet(item: sheetItem)`, `FeedMineApp.swift:319`) e a superfície do sistema
+    /// por um segundo `.sheet(item: $sharedExport)` (`:448`) da **mesma** view — uma segunda apresentação do
+    /// mesmo apresentador enquanto a primeira está no ar. Nada aqui muda o app: o defeito é pré-existente e
+    /// está relatado em `docs/reviews/2026-10-16-superficies-honestas.md`, que é onde a correção deve começar.
+    @MainActor
+    func testSharingTheExportOpensTheSystemSurfaceAndKeepsTheReadingPoint() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        // A reading point that is not the top of the feed: the reader's own scroll, and the opportunity it
+        // completed is what makes the position real.
+        scroll.swipeUp()
+        let delivered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label MATCHES %@",
+            ".*completed=[1-9][0-9]*.*"), object: proof)
+        XCTAssertEqual(XCTWaiter.wait(for: [delivered], timeout: 20), .completed,
+            "a real scroll must complete a real opportunity; observed: \(proof.label)")
+        let counters = proof.label
+        let anchor = try XCTUnwrap(topmostCardIdentifier(app: app, scroll: scroll),
+            "a card must be visible inside the viewport")
+
+        openMenu(app)
+        // The menu entry is selected by the identifier SwiftUI gives it — the entry's own SF Symbol — not by
+        // its visible title: a menu item's `accessibilityIdentifier` is discarded and the label is the
+        // translated string, which is exactly what `ReaderMenu.swift:93-97` records. A journey that queried the
+        // word would only pass on a device whose language happens to be the app's source language; this one
+        // measures the flow on any device.
+        app.buttons["square.and.arrow.up"].tap()
+        XCTAssertTrue(app.buttons["export-done"].waitForExistence(timeout: 20),
+            "the reader's own menu opens V1's export sheet; on screen: \(app.debugDescription)")
+        // The sheet's preview states the document. Tapping a share that had no document would prove nothing, so
+        // the row the app draws when there is nothing to write must be absent first.
+        XCTAssertTrue(scrollIntoView(app.staticTexts["export-preview"], in: app, timeout: 20),
+            "the sheet shows the document it would share")
+        XCTAssertFalse(app.staticTexts["export-empty"].exists,
+            "sharing is only meaningful over a real document, and the sheet states there is nothing to write")
+        let share = app.buttons["export-share"]
+        XCTAssertTrue(scrollIntoView(share, in: app, timeout: 20), "the sheet offers sharing its document")
+        XCTAssertTrue(share.isEnabled, "and it is offered because there is a document to share")
+        share.tap()
+
+        // The platform's own surface, over the app's own sheet. The wait is bounded and generous, not because
+        // the platform is slow but because **its own latency is not this app's to choose**: when nothing blocks
+        // it, the surface became addressable between 4 s and ~90 s across the runs on this machine (load average
+        // 34 → 5 during the session). The elapsed time is printed either way, so a slow platform and a
+        // presentation that never came are told apart by a fact instead of by a guess.
+        let asked = Date()
+        let systemSurface = systemShareSurface(app)
+        let surfaced = systemSurface.waitForExistence(timeout: 60)
+        XCTAssertTrue(surfaced,
+            "Compartilhar must open the system's own share surface over the app's own sheet; measured on "
+                + "2026-10-16: it does not (see the finding in this test's own documentation); on screen: "
+                + "\(app.debugDescription)")
+        // The rest of the journey leaves a surface that must be up. A build in which it never came cannot measure
+        // the return, and the failure above states exactly that — so the journey stops where its premise does.
+        guard surfaced else { return }
+        print("export-share: system surface addressable "
+            + String(format: "%.2f", Date().timeIntervalSince(asked)) + " s after the tap")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "export-share-system-surface"
+        shot.lifetime = .keepAlways
+        add(shot)
+
+        // Leaving it: by the platform's own way out, awaited as its own fact (its contents materialise after its
+        // container does), then the app's own sheet is what is up again — and closing that returns the reader to
+        // the feed they were in.
+        let close = systemShareCloseControl(app)
+        XCTAssertNotNil(close,
+            "the system's share surface must offer its own way out; on screen: \(app.debugDescription)")
+        print("export-share: system's own close control reachable "
+            + String(format: "%.2f", Date().timeIntervalSince(asked)) + " s after the tap")
+        close?.tap()
+        XCTAssertTrue(waitForAbsence(systemSurface, timeout: 240),
+            "leaving the share surface dismisses it; on screen: \(app.debugDescription)")
+        XCTAssertTrue(app.buttons["export-done"].waitForExistence(timeout: 60),
+            "and the export sheet is the surface that is up again; on screen: \(app.debugDescription)")
+        app.buttons["export-done"].tap()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 20), "closing the export sheet returns to the feed")
+        XCTAssertEqual(proof.label, counters,
+            "sharing a document must not replace the session the reader is reading in")
+        XCTAssertEqual(topmostCardIdentifier(app: app, scroll: scroll), anchor,
+            "nor move the reading point: the visible prefix is the card the reader was on")
+    }
+
+    /// The system's own share surface as this app's process can see it. `UIActivityViewController` draws its
+    /// activity list in the presenting process under this identifier, whatever the device's language is.
+    @MainActor
+    private func systemShareSurface(_ app: XCUIApplication) -> XCUIElement {
+        app.otherElements["ActivityListView"]
+    }
+
+    /// The platform's own way out of its share surface: the close control it draws, whose identifier is the
+    /// platform's own (`header.closeButton`, measured on iOS 26.5) and whose label follows the device's language.
+    /// The surface publishes its container before its contents — measured, tens of seconds apart under load — so
+    /// the handle is awaited as a fact of its own, bounded, and `nil` means the surface offered no way out.
+    @MainActor
+    private func systemShareCloseControl(_ app: XCUIApplication,
+        timeout: TimeInterval = 240) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(timeout)
+        let handles = [app.buttons["header.closeButton"], app.buttons["Close"], app.buttons["Fechar"]]
+        while Date() < deadline {
+            for control in handles where control.exists && control.isHittable { return control }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return nil
+    }
+
     /// NN-07: the welcome scene's own headline is **drawn** where the reader reads it. It used to be an `.overlay`
     /// of a `Text(verbatim: "")` — a placeholder with no size of its own — so the sentence the app announces
     /// painted nothing, and the element the tests address had no area: measured, and classified P1 by the PO, in
