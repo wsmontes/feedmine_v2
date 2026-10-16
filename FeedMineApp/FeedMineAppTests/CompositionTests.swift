@@ -2635,3 +2635,14 @@ extension AppComposition {
             + "presentation=\(association.store.state.presentation == nil ? "nil" : "present")"
     }
 }
+
+
+// NN-06 declaration proof. System scheduling, expiration and force quit require physical iOS.
+final class BackgroundRefreshCapabilityTests: XCTestCase {
+    func testNN06SinglePermittedRefreshPreservesAudioAndEnablesFetch() {
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String],
+            [BackgroundFeedRefresh.identifier])
+        XCTAssertEqual(Set(Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []),
+            Set(["audio", "fetch"]))
+    }
+}

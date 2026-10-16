@@ -1,34 +1,19 @@
-//
-// File: BackgroundFeedRefresh.swift
-// Module: FeedMineRuntime
-//
-// Responsibility:
-//   Entrada para oportunidades de execução em background.
-//
-// Owns:
-//   Future ownership: Entry for background execution opportunities through the main pipeline.
-//
-// Does not own:
-//   Secondary background pipeline or visible history mutation.
-//
-// Allowed dependencies:
-//   FeedMineDomain, FeedMinePersistence, FeedMineAcquisition, FeedMineEditorial, FeedMineMedia, FeedMinePublication. No imports are necessary in this scaffold.
-//
-// Architectural invariants:
-//   INV-05, INV-09, INV-14; Background increases future capacity.
-//
-// Planned public surface:
-//   Entry for background execution opportunities through the main pipeline. Documentation only; no API is declared in this phase.
-//
-// Status:
-//   Architecture scaffold only. Production behavior is intentionally absent.
-//
+import Foundation
 
-// Specification notes:
-// Responsibility:
-//
-// Entrada para oportunidades de execução em background.
-//
-// Background usa a mesma pipeline principal.
-//
-// Não criar uma segunda pipeline específica de background.
+// A short optional iOS opportunity. Scheduling, acquisition, publication and persistence
+// remain with the system and the existing composition, not a second background engine.
+public enum BackgroundFeedRefresh {
+    public static let identifier = "com.feedmine.background-refresh"
+
+    /// A denied or expired grant must not invoke pipeline work. Admission and commits remain
+    /// the responsibility of the normal pipeline; the iOS host completes the BG task once.
+    public static func run(
+        allowed: @Sendable () async -> Bool,
+        opportunity: @Sendable () async -> Bool
+    ) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        guard await allowed(), !Task.isCancelled else { return false }
+        let completed = await opportunity()
+        return completed && !Task.isCancelled
+    }
+}

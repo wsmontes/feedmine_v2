@@ -33,6 +33,8 @@ final class AppComposition {
         #endif
     }
     private var replacingSession = false
+    /// One verification shared between foreground and a BGAppRefresh grant.
+    @ObservationIgnored private var catalogueSyncInFlight = false
     private let directory: URL
     /// The reader's persisted selection. The active session may instead show a collection.
     private var selectedFeeds: [TrustedFeed]
@@ -277,7 +279,23 @@ final class AppComposition {
     /// snapshot is verified *locally* at launch; it does not count as a successful check of the authority.
     /// The only durable clock/validator is the existing sync record, committed after a successful remote
     /// verification (200 up-to-date, 200 activated, or a consistent conditional 304).
-    private func syncCatalogueIfDue() async {
+    /// A short iOS grant reuses the existing single-manifest verification, never the potentially
+    /// expensive OPML download/compilation. It cannot create an association or rebuild a view.
+    func backgroundRefreshOpportunity() async -> Bool {
+        #if canImport(UIKit)
+        guard UIApplication.shared.backgroundRefreshStatus == .available,
+            UIApplication.shared.applicationState == .background else { return false }
+        #endif
+        guard association?.active == true, !replacingSession, !catalogueSyncInFlight,
+            !Task.isCancelled else { return false }
+        await syncCatalogueIfDue(installNewRevisions: false)
+        return !Task.isCancelled
+    }
+
+    private func syncCatalogueIfDue(installNewRevisions: Bool = true) async {
+        guard !catalogueSyncInFlight, !Task.isCancelled else { return }
+        catalogueSyncInFlight = true
+        defer { catalogueSyncInFlight = false }
         let installation = CatalogInstallation(appDirectory: directory)
         let recordURL = installation.directory.appendingPathComponent("sync.json")
         let readRecord: @Sendable () -> CatalogSyncRecord? = { [recordURL] in
@@ -319,9 +337,14 @@ final class AppComposition {
         }
         // Only the published authority persists sync.json. The test-only authority is intentionally isolated.
         func commit(_ record: CatalogSyncRecord) {
+            guard !Task.isCancelled else { return }
             if authority == nil { writeRecord(record) }
         }
-        switch await channel.fetch() {
+        let fetched = await channel.fetch()
+        // Expiration cancels URLSession's async request. Never record a successful
+        // verification or validator after that cancellation, even if a response raced it.
+        guard !Task.isCancelled else { return }
+        switch fetched {
         case .notModified:
             guard consistent, validator != nil, let revision = stored.verifiedRevision else {
                 write(.deferred, nil, "304 without a matching previously verified snapshot", "policy")
@@ -358,6 +381,9 @@ final class AppComposition {
             case .collision(let revision):
                 write(.rejected, revision, "revision \(revision) declares a different snapshot than the active one", "payload")
             case .accept:
+                // A newer revision requires OPML downloads and catalogue compilation. Do not
+                // start those under a short BG grant or advance the verification clock for them.
+                guard installNewRevisions, !Task.isCancelled else { return }
                 // Stage and activate before committing either the verifier's clock or its ETag. An interrupted or
                 // refused install must be retried on the next opportunity, rather than answered by a stranded 304.
                 let updater = CatalogUpdater(installation: installation, channel: channel)

@@ -4,10 +4,14 @@ import FeedMineUI
 import FeedMineDomain
 import FeedMinePersistence
 import FeedMineRuntime
+#if os(iOS)
+@preconcurrency import BackgroundTasks
+import UIKit
+#endif
 
 @main
 struct FeedMineApp: App {
-    @State private var composition = AppComposition()
+    @State private var composition: AppComposition
     /// One typed destination model for the routes that exist today. No booleans per future screen and
     /// no placeholder routes for T6–T11 work.
     @State private var savedPath: [ReaderDestination] = []
@@ -15,6 +19,54 @@ struct FeedMineApp: App {
     /// The lens hidden by a swipe, keyed by the selection it was hidden for: a new selection shows it again.
     @State private var hiddenLensSignature: String?
     @Environment(\.scenePhase) private var phase
+
+    init() {
+        // Register before launch finishes, bound to the very same composition used by the UI.
+        // A BG grant never constructs another runtime or invokes cold bootstrap.
+        let composition = AppComposition()
+        _composition = State(initialValue: composition)
+        #if os(iOS)
+        Self.registerBackgroundRefresh(for: composition)
+        #endif
+    }
+
+    #if os(iOS)
+    private static func registerBackgroundRefresh(for composition: AppComposition) {
+        _ = BGTaskScheduler.shared.register(forTaskWithIdentifier: BackgroundFeedRefresh.identifier, using: nil) {
+            [weak composition] task in
+            guard let refresh = task as? BGAppRefreshTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            // Only the worker reports completion. Expiration cancels that cooperative task,
+            // which observes cancellation before updating any durable verification record.
+            let worker = Task {
+                let completed = await BackgroundFeedRefresh.run(
+                    allowed: {
+                        await MainActor.run {
+                            UIApplication.shared.backgroundRefreshStatus == .available
+                        }
+                    },
+                    opportunity: { [weak composition] in
+                        guard let composition else { return false }
+                        return await composition.backgroundRefreshOpportunity()
+                    })
+                refresh.setTaskCompleted(success: completed)
+            }
+            refresh.expirationHandler = { worker.cancel() }
+        }
+    }
+
+    private static func requestBackgroundRefresh() {
+        // Only at a lifecycle transition: no timer, polling or immediate resubmission.
+        let request = BGAppRefreshTaskRequest(identifier: BackgroundFeedRefresh.identifier)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            // Scheduling is optional. A refusal does not change the offline reader.
+        }
+    }
+    #endif
 
     /// U1/U2: one typed sheet surface per modal screen the reader can have up, so a second sheet modifier can
     /// never shadow the first. The reader's URL was resolved by the composition, never by a view.
@@ -504,7 +556,12 @@ struct FeedMineApp: App {
                 #endif
             }
             .onChange(of: phase) { _, next in
-                if next == .background { Task { await composition.background() } }
+                if next == .background {
+                    #if os(iOS)
+                    Self.requestBackgroundRefresh()
+                    #endif
+                    Task { await composition.background() }
+                }
                 if next == .active {
                     // T10: the hour can move the palette, so the appearance is re-derived when the reader comes
                     // back. The feed's own identity is untouched.
