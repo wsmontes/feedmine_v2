@@ -628,6 +628,88 @@ final class FeedMineUITests: XCTestCase {
         add(shot)
     }
 
+    /// NN-08: the first contact offers the reader's own file beside its two ways forward, and the whole import is
+    /// the app's own — the same preview, the same counts, the same confirmation that writes.
+    ///
+    /// Importing is never a prerequisite: a picker the reader dismisses, a preview they cancel and an import they
+    /// confirm each leave the first run the reader's to finish, and the reader still enters without answering
+    /// anything. What the file brought is, from then on, one of their own sources.
+    ///
+    /// `FEEDMINE_IMPORT_FIXTURE` is the app's own DEBUG stand-in for the platform dialog: `1` is the file a picker
+    /// would hand over, `cancel` is the reader dismissing it. A UI test cannot drive the system file dialog, and
+    /// T10's launch-time fixture does the same for the flow that starts outside the first run.
+    @MainActor
+    func testFirstRunImportsOPMLWithoutMakingItAPrerequisite() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        app.launchEnvironment["FEEDMINE_IMPORT_FIXTURE"] = "cancel"
+        app.launch()
+
+        // First contact: three ways forward, all of them the reader's, and asking for a file writes nothing.
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 45))
+        XCTAssertTrue(app.buttons["welcome-import"].exists, "the reader's own file is offered here")
+        XCTAssertTrue(app.buttons["welcome-shape"].exists, "beside the two answers V1's gate had")
+        XCTAssertTrue(app.buttons["welcome-broad"].exists, "and entering wide open is one of them")
+        app.buttons["welcome-import"].tap()
+        // The picker the reader dismissed: the gate is the surface they answer on again, unanswered.
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 30))
+        app.buttons["welcome-shape"].tap()
+        XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForExistence(timeout: 15),
+            "a cancelled import left the first run exactly where it was")
+
+        // The file itself, at first contact: the preview T10 pins, before anything is written.
+        app.terminate()
+        app.launchEnvironment["FEEDMINE_IMPORT_FIXTURE"] = "1"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 45))
+        app.buttons["welcome-import"].tap()
+        XCTAssertTrue(app.navigationBars["Importar OPML"].waitForExistence(timeout: 30))
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "import-entry").count, 1)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "import-rejection").count, 1)
+        let summary = app.staticTexts["import-summary"].label
+        XCTAssertTrue(summary.contains("1 fontes"), summary)
+        XCTAssertTrue(summary.contains("1 repetidas"), summary)
+        XCTAssertTrue(summary.contains("1 ignoradas"), summary)
+
+        // Cancelling the preview is free, and takes the reader back to the surface that asked for the file.
+        app.buttons["import-cancel"].tap()
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 30),
+            "a cancelled import brings the first contact back")
+        XCTAssertTrue(app.buttons["welcome-broad"].exists, "with both of its own answers untouched")
+
+        // The confirmation is what writes it — the app's own commit, over the app's own database.
+        app.buttons["welcome-import"].tap()
+        XCTAssertTrue(app.navigationBars["Importar OPML"].waitForExistence(timeout: 30))
+        app.buttons["import-confirm"].tap()
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 30),
+            "importing does not complete the first run: the reader still chooses how the feed begins")
+        XCTAssertFalse(app.staticTexts["composer-subtitle"].exists, "and no interest is asked for it")
+        XCTAssertTrue(app.buttons["welcome-broad"].exists, "entering wide open is still the reader's")
+
+        // The reader enters without answering anything, and the file they brought is part of what they read: the
+        // export of the reader's own sources carries the feed the file named.
+        app.buttons["welcome-broad"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 120),
+            "the first run ends in the feed, without a form in the way")
+        XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForNonExistence(timeout: 30))
+        openMenu(app)
+        app.buttons["Exportar"].tap()
+        XCTAssertTrue(app.navigationBars["Exportar"].waitForExistence(timeout: 15))
+        XCTAssertTrue(scrollIntoView(app.staticTexts["export-preview"], in: app, timeout: 15),
+            "the export sheet shows the document it would produce")
+        let document = app.staticTexts["export-preview"].label
+        XCTAssertTrue(document.contains("revista.example/feed"),
+            "the import the reader confirmed at first contact is one of their sources: \(document)")
+        app.buttons["export-done"].tap()
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "v2-first-run-opml"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     /// T12: the native gestures and the reader's own settings — a long scroll down and back, a rotation, a
     /// larger Dynamic Type — leave the admitted card where it was: an update the reader did not ask for never
     /// moves the viewport.

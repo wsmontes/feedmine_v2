@@ -170,6 +170,10 @@ struct FeedMineApp: App {
     @State private var showsFileImporter = false
     @State private var importPreview: ReaderImportPreview?
     @State private var importIsCommitting = false
+    /// T11/NN-08: the reader asked the first contact to import a file. The picker and the preview are presented
+    /// by the app's own host — a presentation from behind a `fullScreenCover` is refused — so the gate steps aside
+    /// for the file flow and comes back exactly as it was. This says the gate owes the reader that return.
+    @State private var onboardingImportPending = false
     @State private var sharedExport: SharedLink?
     /// T11: the onboarding gate and the curated feed's own hood.
     @State private var showsOnboarding = false
@@ -397,7 +401,11 @@ struct FeedMineApp: App {
                         EmptyView()
                     }
                 }
-                .fullScreenCover(isPresented: $showsOnboarding) { onboardingCover }
+                // NN-08: the first contact can hand the file flow over to the app's own host, so the picker is
+                // presented once the gate is really gone (a presentation from behind it is refused) — and the
+                // gate returns when the flow ends.
+                .fullScreenCover(isPresented: $showsOnboarding,
+                    onDismiss: { presentOnboardingImportIfPending() }) { onboardingCover }
                 // U2: the reader's own presentation, above whatever surface asked for it.
                 .background(ReaderHost(page: readerPage, playback: composition.mediaState.isPlaying,
                     reader: { page, close in AnyView(readerBody(page, close: close)) },
@@ -409,7 +417,9 @@ struct FeedMineApp: App {
                     Text(verbatim: link.url.absoluteString).padding()
                     #endif
                 }
-                .sheet(item: $importPreview) { preview in
+                // NN-08: the preview the first contact asked for is gone — confirmed or cancelled — and, if the
+                // reader came from the gate, the gate comes back.
+                .sheet(item: $importPreview, onDismiss: { resumeOnboardingAfterImport() }) { preview in
                     NavigationStack {
                         ReaderImportPreviewView(preview: preview, isCommitting: importIsCommitting,
                             onCancel: { importPreview = nil },
@@ -547,8 +557,10 @@ struct FeedMineApp: App {
                     await composition.startSimulatedPlayback()
                 }
                 // T10 UI evidence: a real import preview over a document built here, so the surface and the
-                // commit are exercised without a file picker the tests cannot drive.
+                // commit are exercised without a file picker the tests cannot drive. NN-08: while the first
+                // contact is up the picker is the gate's own journey, so this launch-time stand-in stays out of it.
                 if ProcessInfo.processInfo.environment["FEEDMINE_IMPORT_FIXTURE"] == "1",
+                    showsOnboarding == false,
                     let data = Self.importFixture.data(using: .utf8),
                     let preview = try? await composition.previewImport(data) {
                     importPreview = preview
@@ -712,6 +724,13 @@ struct FeedMineApp: App {
             previewCards: composition.onboardingPreviewCards(),
             topics: options.topics, regions: options.regions, languages: options.languages,
             deviceLanguage: Self.deviceLanguage,
+            // NN-08: the reader's own sources can be imported at first contact without becoming a requirement.
+            // The file flow (picker → preview → commit) is the app's own, presented by the host, so the gate
+            // steps aside for it and this host brings it back when it ends. Asking writes nothing at all.
+            onImport: {
+                onboardingImportPending = true
+                showsOnboarding = false
+            },
             // F02: the first run's answers are the reader's discovery profile, and the feed is the destination —
             // no feed is created to be activated, and no name is asked for.
             onSave: { recipe in
@@ -993,18 +1012,71 @@ struct FeedMineApp: App {
     }
 
     /// A file the reader picked: read it and show what importing it would do. Nothing is written here — the
-    /// preview's own confirmation does that.
+    /// preview's own confirmation does that. Every path that leaves no preview behind gives a gate that asked for
+    /// this flow its surface back (NN-08); for every other import it is nothing at all.
     private func readImportedFile(_ result: Result<URL, any Error>) async {
-        guard case .success(let url) = result else { return }
+        guard case .success(let url) = result else {
+            // The reader dismissed the picker: nothing was read, nothing was written, nothing was completed.
+            resumeOnboardingAfterImport()
+            return
+        }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let data = try? Data(contentsOf: url) else {
             associationStoreToast(String(localized: "Não foi possível ler o arquivo"))
+            resumeOnboardingAfterImport()
             return
         }
-        do { importPreview = try await composition.previewImport(data) }
-        catch { associationStoreToast(String(localized: "Não foi possível ler o arquivo")) }
+        do {
+            importPreview = try await composition.previewImport(data)
+            // A file the app cannot turn into a preview leaves nothing to confirm, so the gate does not wait for
+            // a sheet that will never come.
+            if importPreview == nil { resumeOnboardingAfterImport() }
+        } catch {
+            associationStoreToast(String(localized: "Não foi possível ler o arquivo"))
+            resumeOnboardingAfterImport()
+        }
     }
+
+    /// NN-08: the gate is gone and asked for a file. The picker is presented here — once the cover is really
+    /// dismissed — and the DEBUG fixture stands in for the chosen file, through the very same reader an actually
+    /// picked file goes through, because a UI test cannot drive the platform's file dialog.
+    private func presentOnboardingImportIfPending() {
+        guard onboardingImportPending else { return }
+        #if DEBUG
+        let fixture = ProcessInfo.processInfo.environment["FEEDMINE_IMPORT_FIXTURE"]
+        if fixture == "1", let url = Self.onboardingImportFixtureURL() {
+            Task { await readImportedFile(.success(url)) }
+            return
+        }
+        if fixture == "cancel" {
+            Task { await readImportedFile(.failure(CocoaError(.userCancelled))) }
+            return
+        }
+        #endif
+        showsFileImporter = true
+    }
+
+    /// NN-08: the file flow the gate asked for ended — the preview was dismissed, the picker was cancelled, or
+    /// the file could not be read — and the gate comes back where it was, as the only surface that can complete a
+    /// first run. Nothing was written by being here and no first run was completed: the reader still chooses how
+    /// their feed begins.
+    private func resumeOnboardingAfterImport() {
+        guard onboardingImportPending else { return }
+        onboardingImportPending = false
+        showsOnboarding = true
+    }
+
+    #if DEBUG
+    /// T10's fixture, written where the app's own import path can read it, so NN-08 walks the reader → preview →
+    /// commit path a picked file walks without the file dialog the tests cannot drive.
+    private static func onboardingImportFixtureURL() -> URL? {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("feedmine-import-fixture.opml")
+        guard (try? importFixture.write(to: url, atomically: true, encoding: .utf8)) != nil else { return nil }
+        return url
+    }
+    #endif
 
     /// What an import did, in V1's own words.
     private func importSummary(_ result: ReaderImportResult) -> String {
