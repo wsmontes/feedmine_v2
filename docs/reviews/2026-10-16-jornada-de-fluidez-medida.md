@@ -62,7 +62,13 @@ FluidityJourneyUITests: Executed 1 test, with 0 failures (28.513 s)
 A validação final após o ajuste do relógio é registrada no relatório de entrega desta candidata, não inferida
 pelos resultados acima. Capturas e séries estão no `.xcresult` indicado pelo log.
 
-## Aparelho físico: tentativa e bloqueio observado
+## Aparelho físico: tentativa e bloqueio observado (SUPERADO — ver o relatório do aparelho)
+
+> **Correção posterior (2026-10-16):** esta seção registrava a primeira tentativa, que falhou por infraestrutura de
+> automação. Depois do replug do cabo — sem alterar permissões — as mesmas jornadas **passaram no iPhone 14 Plus**
+> (`Executed 3 tests, with 0 failures`, `TEST SUCCEEDED`), com prova de pixels desenhados e série de quadros do
+> aparelho. Os fatos medidos estão em `docs/reviews/2026-10-16-build-48-aparelho-e-publicacao.md`. O que **não**
+> mudou: fluidez segue **não certificada** e B06 segue `NOT_RUN`.
 
 O iPhone 14 Plus, iOS 18.6.2, UDID `00008110-00067D861486201E`, foi reconhecido, pareado por cabo e com Developer
 Mode ativo. `xcodebuild test` das duas classes de jornada, na candidata `ec9016aa`, instalou o runner, mas encerrou:
