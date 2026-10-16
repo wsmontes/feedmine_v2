@@ -7,6 +7,7 @@
 //
 // Owns:
 //   ExternalIdentity, OriginRecord, OriginRevision, SourceMembership, ContentRelation, ContentEntity and ContentCluster with their enums.
+//   OriginDeclaredInstant and StoryTemporalNature: the temporal evidence vocabulary over those revisions.
 //
 // Does not own:
 //   Protocol parsing, raw protocol models, acquisition provenance, deduplication/clustering algorithms or published history ownership.
@@ -106,6 +107,10 @@ public struct OriginRecord: Hashable, Codable, Sendable {
 /// modifiedAt: external/editorial modification time when known.
 /// observedAt: time FeedMine observed this accepted revision; always FeedMine-controlled.
 /// Missing authorship remains absent; observedAt never substitutes for authoredAt.
+/// The three instants stay distinct and are never interchanged: authoredAt may only ever hold an
+/// instant the origin itself declared, and modifiedAt only ever a declared change instant. A claim
+/// the observation could not accept is not stored here either (see OriginDeclaredInstant): what the
+/// origin claimed is evidence carried beside the accepted value, never a canonical date by itself.
 /// headline and primaryLink may be absent. providerID is known canonical revision attribution.
 /// When externalVersionIdentity exists, connector consistency with OriginRecord belongs
 /// to future admission, not this initializer: only originRecordID is available here;
@@ -154,6 +159,61 @@ public struct OriginRevision: Hashable, Codable, Sendable {
         self.searchProjection = searchProjection
         self.providerID = providerID
     }
+}
+
+/// One temporal instant an origin itself declared for a revision, kept as evidence that is separate
+/// from the value canonical supply accepted and from FeedMine's own observation.
+///
+/// A declared date is the publisher's own statement; it is never an independently verified date.
+/// Presence of a declaration is not reliability of it, and this type deliberately carries no score:
+/// it states what was claimed and whether the claim could be accepted.
+///
+/// A claim that lies ahead of the observation instant cannot be the accepted value (an unaccepted
+/// future date would pin an item to the top of a recency order forever), so it is kept as
+/// `notYetReached` evidence instead of being replaced, silently, by an apparently reliable date.
+/// The acceptance rule lives here and nowhere else, so no caller re-derives it.
+///
+/// TRANSIENT: this value describes the claim while it is still available. It is carried from translation
+/// through admission, which validates it and then drops it — canonical supply keeps the accepted instant
+/// only — so a stored revision never holds the original declaration.
+public struct OriginDeclaredInstant: Hashable, Codable, Sendable {
+    /// Exactly what the origin stated. Never rounded, clamped or re-derived.
+    public let claimed: Date
+
+    public init(claimed: Date) {
+        self.claimed = claimed
+    }
+
+    /// The value canonical supply may accept: the claim itself, or the observation instant when the
+    /// claim lies ahead of it. Never a value the observation did not reach.
+    public func accepted(observingAt observedAt: Date) -> Date {
+        min(claimed, observedAt)
+    }
+
+    /// Whether this claim lies ahead of the observation instant it was compared against. This
+    /// reconstructs the acceptance decision above; it is a stated fact, not a confidence estimate.
+    public func consistency(observingAt observedAt: Date) -> OriginDeclaredInstantConsistency {
+        claimed > observedAt ? .notYetReached : .consistent
+    }
+}
+
+/// Whether a declared instant could become the accepted canonical value. Stated as a fact, never scored.
+public enum OriginDeclaredInstantConsistency: String, Hashable, Codable, Sendable {
+    /// The claim was not ahead of the observation and is the instant the revision carries.
+    case consistent
+    /// The claim lies ahead of the observation instant: the accepted value is the observation, and
+    /// the claim stays recorded rather than passing for a credible date.
+    case notYetReached
+}
+
+/// Contextual temporal nature of a story: a different dimension from date reliability, and UNKNOWN
+/// until real evidence and an approved interpretation rule exist. Age alone, subject, source name,
+/// isolated words in the title, or the mere presence of a date are not evidence, and no producer may
+/// derive a category from them. Adding a case requires the approved rule that produces it together
+/// with the policy version that activates it, so an unknown representation never becomes a presumed
+/// category by default.
+public enum StoryTemporalNature: String, Hashable, Codable, Sendable {
+    case unknown
 }
 
 /// Canonical membership relationship; not operational acquisition provenance.

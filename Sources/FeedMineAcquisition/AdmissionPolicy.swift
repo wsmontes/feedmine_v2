@@ -27,6 +27,9 @@ public struct AdmissionPolicy: Sendable {
                 }
                 return mapped
             }
+            // The origin's declarations are carried here and then validated-and-dropped by the store: they
+            // are transient exchange evidence, never canonical state, so no reader of a stored revision
+            // can recover them.
             return AcquisitionAdmissionStore.ObservationCommand(objectIdentity: value.objectIdentity,
                 versionIdentity: value.versionIdentity, precedence: value.precedence == .makeCurrent ? .makeCurrent : .historicalOnly,
                 availability: value.availability, headline: value.headline, summary: value.summary, bodyText: value.bodyText,
@@ -35,7 +38,8 @@ public struct AdmissionPolicy: Sendable {
                 providerID: value.providerID, memberships: value.memberships.map {
                     .init(sourceID: $0.sourceID, kind: $0.kind)
                 }, mediaCandidates: media, fingerprintGeneration: value.fingerprintGeneration,
-                legacyVersionIdentity: value.legacyVersionIdentity, bodySourceElement: value.bodySourceElement)
+                legacyVersionIdentity: value.legacyVersionIdentity, bodySourceElement: value.bodySourceElement,
+                declaredAuthoredAt: value.declaredAuthoredAt, declaredModifiedAt: value.declaredModifiedAt)
         }
         let checkpoint = try batch.nextCheckpoint.map { value in
             guard let mapped = AcquisitionTargetStore.CheckpointRecord(blob: value.blob,

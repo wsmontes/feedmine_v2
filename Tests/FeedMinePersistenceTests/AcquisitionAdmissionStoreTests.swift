@@ -71,12 +71,14 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
         authored: Date? = Date(timeIntervalSince1970: 5), modified: Date? = nil, time: Double = 10,
         language: String? = " PT ", link: URL? = URL(string: "https://example.test/Article?A=a"),
         search: String? = " search ", provider: ProviderID? = nil,
-        memberships: [Store.MembershipCommand]? = nil, media: [Store.MediaCandidateCommand]? = nil) -> Store.ObservationCommand {
+        memberships: [Store.MembershipCommand]? = nil, media: [Store.MediaCandidateCommand]? = nil,
+        declaredAuthored: Date? = nil, declaredModified: Date? = nil) -> Store.ObservationCommand {
         .init(objectIdentity: objectIdentity ?? Self.identity(object),versionIdentity: versionIdentity ?? version.map { Self.identity($0,role: .version) },
             precedence: precedence,availability: availability,headline: headline,summary: summary,bodyText: body,
             authoredAt: authored,modifiedAt: modified,observedAt: Date(timeIntervalSince1970: time),language: language,
             primaryLink: link,searchProjection: search,providerID: provider,
-            memberships: memberships ?? [.init(sourceID: f.sourceID,kind: .direct)],mediaCandidates: media ?? [self.media("one"),self.media("two")])
+            memberships: memberships ?? [.init(sourceID: f.sourceID,kind: .direct)],mediaCandidates: media ?? [self.media("one"),self.media("two")],
+            declaredAuthoredAt: declaredAuthored,declaredModifiedAt: declaredModified)
     }
     private func checkpoint() -> AcquisitionTargetStore.CheckpointRecord {
         .init(blob: Data([0,255,1]),serializationSchema: 2,connectorVersion: " V ")!
@@ -130,6 +132,73 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
         }
         XCTAssertEqual(try f.snapshot(),before)
     }
+    /// TX-07D: a declared instant is evidence about the origin, and its acceptance is the domain rule
+    /// (`OriginDeclaredInstant.accepted(observingAt:)`) rather than a convention. The accepted canonical
+    /// value is the claim itself, or the observation instant when the claim lies ahead of it; a producer
+    /// cannot hand the store a pair that says otherwise, and a claim never becomes a canonical date on
+    /// its own. It also states the limit: a clamped claim is indistinguishable, in canonical supply, from
+    /// a declaration that genuinely equalled the observation instant.
+    func testDeclaredInstantAcceptanceRuleIsEnforcedAndAClampedClaimStaysInvisible() throws {
+        let location = location(), f = try fixture(at: location)
+        let claim = Date(timeIntervalSince1970: 5), ahead = Date(timeIntervalSince1970: 50)
+        let stamped = Date(timeIntervalSince1970: 10)
+        // Not ahead of the observation: the accepted value is the claim itself.
+        _ = try f.store.admit(f.command([observation(f,declaredAuthored: claim)]))
+        XCTAssertEqual(try f.current()?.authoredAt, claim)
+        XCTAssertEqual(try f.current()?.observedAt, stamped)
+        // Ahead of the observation: accepted as the observation instant, never as the claimed future date.
+        _ = try f.store.admit(f.command([observation(f,object: "ahead",authored: stamped,declaredAuthored: ahead)]))
+        let clamped = try XCTUnwrap(try f.current("ahead"))
+        XCTAssertEqual(clamped.authoredAt, stamped)
+        XCTAssertEqual(clamped.authoredAt, clamped.observedAt)
+        // These two equal instants are the whole canonical trace of an accepted future declaration, and the
+        // editorial contract must read them as `ambiguousAtObservation` — never as a publication date proven
+        // to be current (the claim itself is transient and is not persisted).
+        XCTAssertNotEqual(clamped.authoredAt, ahead)
+        // Declaring the observation instant itself leaves exactly the same canonical facts.
+        _ = try f.store.admit(f.command([observation(f,object: "today",authored: stamped,declaredAuthored: stamped)]))
+        let declared = try XCTUnwrap(try f.current("today"))
+        XCTAssertEqual(clamped.authoredAt, declared.authoredAt)
+        XCTAssertEqual(clamped.observedAt, declared.observedAt)
+        XCTAssertEqual(try f.count("origin_revisions"), 3)
+        // Contradicting or non-finite pairs are refused before any canonical write.
+        let before = try f.snapshot()
+        let rejected: [Store.ObservationCommand] = [
+            observation(f,authored: claim,declaredAuthored: ahead),
+            observation(f,authored: nil,declaredAuthored: claim),
+            observation(f,authored: claim,declaredAuthored: claim.addingTimeInterval(1)),
+            observation(f,modified: claim,declaredModified: Date(timeIntervalSince1970: .nan)),
+            observation(f,authored: claim,declaredAuthored: Date(timeIntervalSince1970: .infinity)),
+        ]
+        for value in rejected {
+            let field = value.declaredAuthoredAt == nil ? "declaredModifiedAt" : "declaredAuthoredAt"
+            XCTAssertThrowsError(try f.store.admit(f.command([value]))) {
+                XCTAssertEqual($0 as? AcquisitionAdmissionStoreError,.invalidObservation(index: 0,field: field))
+            }
+        }
+        XCTAssertEqual(try f.snapshot(),before)
+        // An unchanged claim replays as the same revision: acceptance is idempotent, not a new version.
+        let replay = try f.store.admit(f.command([observation(f,declaredAuthored: claim)]))
+        XCTAssertTrue(replay.rejectedObservations.isEmpty)
+        XCTAssertEqual(try f.count("origin_revisions"), 3)
+        // Reopening preserves the accepted facts exactly: no claim was invented and none was promoted.
+        let reopened = try fixture(at: location)
+        XCTAssertEqual(try reopened.current()?.authoredAt, claim)
+        XCTAssertEqual(try reopened.current("ahead")?.authoredAt, stamped)
+        XCTAssertEqual(try reopened.current("today")?.authoredAt, stamped)
+        XCTAssertEqual(try reopened.count("origin_revisions"), 3)
+        // The same revision observed with a declaration and without one is one revision: carrying the new
+        // evidence rewrites no canonical content, changes no supply and republishes nothing.
+        let plain = try fixture()
+        _ = try plain.store.admit(plain.command([observation(plain)]))
+        let established = try XCTUnwrap(plain.current())
+        let withClaim = try plain.store.admit(plain.command([observation(plain,declaredAuthored: claim)]))
+        XCTAssertTrue(withClaim.rejectedObservations.isEmpty)
+        XCTAssertFalse(withClaim.selectableSupplyChanged)
+        XCTAssertEqual(try plain.current(), established)
+        XCTAssertEqual(try plain.count("origin_revisions"), 1)
+    }
+
     func testMechanicalMediaStructuralValidation() {
         for url in ["file:///a","relative","https:/missing","ftp://example.test/a"] {
             XCTAssertNil(Store.MediaCandidateCommand(role: .cardVisual,mediaClass: .image,remoteURL: URL(string: url)!,declaredMimeType: nil,declaredPixelWidth: nil,declaredPixelHeight: nil))

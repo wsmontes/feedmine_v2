@@ -49,6 +49,11 @@ public struct ContentStore: Sendable {
         /// True for generation 2 and for an observed legacy baseline, even when body is absent.
         public let bodyObserved: Bool
         public let authoredAt: Date?
+        /// The accepted change instant this revision carries, when the origin declared one (F03: a change
+        /// date is a different fact from the publication date and from the observation, and the three are
+        /// never interchanged). The accepted value is the origin's claim or the observation instant when a
+        /// claim lay ahead of it, so evidence built from it states the ambiguity instead of promoting it.
+        public let modifiedAt: Date?
         public let observedAt: Date
         public let language: String?
         public let providerID: ProviderID?
@@ -130,7 +135,8 @@ public struct ContentStore: Sendable {
                     }
                     // No broad revision decode: excluded payloads are never selected.
                     guard let payload = try Row.fetchOne(db, sql: """
-                        SELECT id, origin_record_id, headline, summary, authored_at, observed_at, language, provider_id,
+                        SELECT id, origin_record_id, headline, summary, authored_at, modified_at, observed_at,
+                            language, provider_id,
                             primary_link,
                             CASE WHEN r.fingerprint_generation = 2 THEN r.body_text
                                 WHEN e.origin_revision_id IS NOT NULL THEN e.body_text
@@ -152,7 +158,8 @@ public struct ContentStore: Sendable {
                         headline: try p.optionalString("headline"), summary: try p.optionalString("summary"),
                         declaredBody: try p.optionalString("declared_body"),
                         bodyObserved: try p.integer("body_observed") == 1,
-                        authoredAt: try p.optionalDate("authored_at"), observedAt: try p.date("observed_at"),
+                        authoredAt: try p.optionalDate("authored_at"), modifiedAt: try p.optionalDate("modified_at"),
+                        observedAt: try p.date("observed_at"),
                         language: try p.optionalString("language"),
                         providerID: try p.optionalUUID("provider_id").map { ProviderID(rawValue: $0) },
                         sourceIDs: try String.fetchAll(db, sql: "SELECT source_id FROM source_memberships WHERE origin_record_id = ? ORDER BY source_id COLLATE BINARY ASC",
@@ -716,6 +723,15 @@ public struct ContentStore: Sendable {
             return
         }
         guard let revision = try current(record, in: db) else { throw ContentStoreError.corruption("current_revision_id") }
+        // TX-07D: the supply key is the accepted authored instant, or the observation instant when the
+        // origin declared no publication date. That is the honest value the canonical authority holds,
+        // and it is also the measured limit this contract names instead of hiding: the key is what
+        // `candidateWindow` orders by (ORDER BY sort_date DESC, origin_record_id DESC LIMIT ?), so a
+        // corpus dominated by undated records observed recently fills the bounded prefix with
+        // `observedFallback` entries and a story with a reliable, older declared date never enters the
+        // examined window. Nothing is lost — the keyset still walks to it — but nothing here may change
+        // the key, the cursor or the examined bound to compensate: that would change the order the
+        // reader traverses and invalidate every recorded verdict, so it is proposed separately.
         let date = revision.authoredAt ?? revision.observedAt
         try db.execute(sql: """
             INSERT INTO selection_supply (origin_record_id, origin_revision_id, sort_date, sort_date_basis)
