@@ -212,6 +212,9 @@ public enum FeedFlowCounters {
     public nonisolated(unsafe) static var installAttempts = 0
     public nonisolated(unsafe) static var installAccepts = 0
     public nonisolated(unsafe) static var installRejects = 0
+    /// F48-HITCH-X / H4a: instalações cujo valor **recebido é igual ao já instalado** — o fato continua contado e
+    /// registrado, mas a publicação do valor observável é pulada (é ela que invalida toda view que lê `store.state`).
+    public nonisolated(unsafe) static var installRedundant = 0
 }
 
 /// A linha editorial desenhada no **próprio corpo**: o que ela lê (posição do leitor, orçamento de ofertas,

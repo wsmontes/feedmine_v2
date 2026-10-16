@@ -2369,8 +2369,25 @@ final class FeedAssociation {
     func install(_ received: FeedPresentationState) throws {
         FeedFlowCounters.installAttempts += 1
         guard active else { throw FeedPresentationStateError.projectionSequenceMismatch }
-        do { try store.install(received); FeedFlowCounters.installAccepts += 1 }
-        catch { FeedFlowCounters.installRejects += 1; throw error }
+        // F48-HITCH-X / H4a (ramo experimental, revertível): quando o valor recebido é **igual** ao que já está
+        // instalado, a publicação não tem o que publicar — e é ela que invalida toda view que lê `store.state`
+        // (`Sources/FeedMineUI/FeedScreen.swift:654-655` lê `editionID`/`contextKey` no corpo do modificador, e o
+        // `state` é atribuído em toda instalação: `FeedScreenStore.install`). Medido na corrida F48-HITCH: 54 das
+        // 113 instalações de uma jornada de 26 s são idênticas ao valor corrente (mesma geração, mesma ordem, mesma
+        // janela, mesma âncora) e outras 32 mudam só a âncora.
+        //
+        // O fato continua registrado exatamente como no controle: contadores de tentativa/aceite, log
+        // `[composition] installed …`, evento `admitted` do traço, `frameMeter`, bookmarks. **Só** a atribuição do
+        // valor observável é pulada — e como o valor é igual, pular não pode atrasar o compromisso semântico da
+        // posição (a posição do valor recebido é a que já está publicada). O contador `installRedundant` e o campo
+        // `redundant` do `admitted` existem para a ablação ser visível na evidência, não para o produto.
+        let redundant = received == store.state
+        if redundant {
+            FeedFlowCounters.installRedundant += 1
+        } else {
+            do { try store.install(received); FeedFlowCounters.installAccepts += 1 }
+            catch { FeedFlowCounters.installRejects += 1; throw error }
+        }
         // O feed está em tela: a partir daqui o intervalo entre quadros é medido e escrito no trace.
         frameMeter.start()
         let installed = store.state.presentation
@@ -2395,6 +2412,10 @@ final class FeedAssociation {
                 "edition": snapshot.editionID.rawValue.uuidString,
                 "sequence": String(describing: snapshot.provenance.sequenceID),
                 "order": String(describing: snapshot.provenance.position),
+                // F48-HITCH-X / H4a: `redundant=1` marca a instalação cujo valor recebido era igual ao já instalado
+                // (o ramo experimental pula a publicação dessas; o controle publica e o campo é sempre "0"). Fica no
+                // traço para a ablação ser contável na evidência.
+                "redundant": redundant ? "1" : "0",
                 // The host installation, told in card ids: `replenishment_concluded` names the head and tail of the
                 // segment it published, and these two name what the app actually installed. Admission in the pool
                 // is not an offer the reader can reach; this line is where that gap can be measured.
