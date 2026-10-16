@@ -56,7 +56,7 @@ A future caller's continuity decision does not become an implicit loop or scan p
 
 | Boundary | Responsibility |
 | --- | --- |
-| FeedPlanResolver | Future owner of resolving FeedPlan together with a matching ResolvedSelectionPolicy. Its implementation is outside 3D/3E. |
+| FeedPlanResolver | Future owner of resolving FeedPlan together with a matching ResolvedSelectionPolicy. Its implementation is outside 3D/3E and has not happened: the name was a code-free scaffold, removed on 2026-10-15 ([SCAFFOLDS.md](SCAFFOLDS.md)). |
 | CandidateProvider | Exactly one bounded structural local supply window for Main or Source, with Editorial-owned Candidate/cursor values. |
 | Persistence | Canonical authority, schema, source membership checks, keyset mechanics and bounded examined work. |
 | SelectionEngine | Pure deterministic execution of the supplied policy and explicit total ordering over one finite window. |
@@ -214,4 +214,4 @@ Phase 3E implemented only:
 
 It must not call CandidateProvider, import Persistence in SelectionEngine.swift, implement history/exposure, scoring weights, soft relaxation, quotas, language personalization, clustering, repetition or acquisition. It must not introduce requested count, card limit, pool limit, a seed without exploration semantics or a refill loop.
 
-FeedPlanResolver remains the future owner of resolving both plan identity and executable policy; this gate does not authorize implementing that resolver. Phase 3E pure deterministic baseline Selection is complete. SelectionEngineTests construct values directly with @testable import FeedMineEditorial, without SQLite, ContentStore or CandidateProvider. The implementation performs no I/O, no refill, no target-count handling, no history/exposure, no scoring weights and no acquisition. No package or CandidateProvider API change was required.
+FeedPlanResolver remains the future owner of resolving both plan identity and executable policy; this gate does not authorize implementing that resolver, and the code-free scaffold carrying the name was removed on 2026-10-15 ([SCAFFOLDS.md](SCAFFOLDS.md)). Phase 3E pure deterministic baseline Selection is complete. SelectionEngineTests construct values directly with @testable import FeedMineEditorial, without SQLite, ContentStore or CandidateProvider. The implementation performs no I/O, no refill, no target-count handling, no history/exposure, no scoring weights and no acquisition. No package or CandidateProvider API change was required.

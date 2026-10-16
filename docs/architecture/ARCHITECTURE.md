@@ -107,9 +107,6 @@ PresentationCard
 FeedPresentationSnapshot
     │
     ▼
-FeedSessionUI
-    │
-    ▼
 FeedScreenStore
     │
     ▼
@@ -146,7 +143,7 @@ FeedMineComposition é o único composition root e o único lugar que conhece o 
 
 Existe apenas FeedMine nos nomes de produção. O projeto histórico não é base arquitetural; nenhum código foi copiado. Não há runtime de compatibilidade, caminhos alternativos ou pipeline de background separado. Cada responsabilidade possui um único owner. Não criar FeedStore, FeedRuntime monolítico, event bus, registries, managers genéricos ou protocols por testability. FeedConnector é a boundary de protocolo intencional para conectores de aquisição, já implementada e tipada. Não criar interfaces de serviços genéricos adicionais só para testabilidade.
 
-Alarmes de tamanho futuros: FeedSession idealmente < 300 LOC; FeedSessionReducer < 500; SelectionEngine < 400; PublicationCoordinator < 400; RunwayController < 300. São sinais para revisar ownership, não limites mecânicos nem justificativa para divisão artificial.
+Alarmes de tamanho futuros: FeedSession idealmente < 300 LOC; SelectionEngine < 400; PublicationCoordinator < 400; RunwayController < 300. São sinais para revisar ownership, não limites mecânicos nem justificativa para divisão artificial. (`FeedSessionReducer` foi um scaffold sem código, removido em 2026-10-15: [SCAFFOLDS.md](SCAFFOLDS.md).)
 
 ## Architecture references
 
