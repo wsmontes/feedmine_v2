@@ -37,6 +37,19 @@ public final class MediaReadiness: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         return settled.contains(revision)
     }
+
+    /// How many revisions this index has decided at all, and how many of those carry a prepared image. Stated for
+    /// the device console's journey line (PO, 2026-10-15): the media pipeline's own numbers, so a run says what it
+    /// really prepared instead of a second registry having to guess. No state is added — these read what the two
+    /// members above already keep, under the same lock.
+    public var settledCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return settled.count
+    }
+    public var preparedCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return ready.count
+    }
     @discardableResult
     func record(_ revision: OriginRevisionID, _ value: Ready?) -> Bool {
         lock.lock(); defer { lock.unlock() }
