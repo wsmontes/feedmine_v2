@@ -486,6 +486,8 @@ class Joined:
         self.missing: list[str] = []
         self.notes: list[str] = []
         self.beyond: list[tuple[int, dict]] = []
+        self.trace_choice: tuple[str, int, int, int] | None = None   # (caminho, casaram, janelas, candidatos)
+        self.summary: dict = {}                                      # números do insumo inteiro, não só das janelas severas
 
     # -- construção ---------------------------------------------------------------------------------------------
     def build(self) -> None:
@@ -772,6 +774,58 @@ class Joined:
                 "segundos_com_bad": sum(1 for window in self.windows if (window.bad or 0) > 0),
                 "segundos_com_late": sum(1 for window in self.windows if (window.late or 0) > 0)}
 
+    def summarise(self) -> dict:
+        """Os números do **insumo inteiro** (não só das janelas com quadro fora do orçamento), para comparações entre
+        corridas: contagens por evento, observações do leitor, admissões e a taxonomia delas.
+
+        A taxonomia é a do relatório §10.1 e é a mesma que o arquiteto pediu (a) idêntica ao valor corrente, (b) só
+        a âncora/proveniência, (c) conteúdo da janela — decidida pelo traço, com a ordem dos testes importando:
+        janela mudou ⇒ conteúdo; senão, ordem e âncora iguais ⇒ idêntica; senão, âncora igual ⇒ só ordem; senão ⇒
+        só âncora. Contar fora dessa ordem foi o que misturou as 32 de âncora com as de conteúdo numa versão
+        anterior.
+        """
+        summary = {"eventos": {}, "admissoes": 0, "admissoes_redundantes": 0, "advance": 0, "advance_forward": 0,
+                   "ancoras_distintas": 0, "taxonomia": {"idêntica": 0, "só ordem": 0, "só âncora": 0, "conteúdo": 0,
+                                                         "primeira": 0}}
+        if not self.trace:
+            return summary
+        anchors: list[str] = []
+        previous = None
+        for _, event in self.trace.events:
+            name = event.get("event")
+            summary["eventos"][name] = summary["eventos"].get(name, 0) + 1
+            fields = event.get("fields") or {}
+            if name == "advance":
+                summary["advance"] += 1
+                if fields.get("activity") == "forward":
+                    summary["advance_forward"] += 1
+                if fields.get("anchor"):
+                    anchors.append(fields["anchor"].lower())
+            elif name == "position_checkpoint" and fields.get("anchor"):
+                anchors.append(fields["anchor"].lower())
+            elif name == "admitted":
+                summary["admissoes"] += 1
+                if fields.get("redundant") == "1":
+                    summary["admissoes_redundantes"] += 1
+                current = (fields.get("sequence"), fields.get("order"), fields.get("head"), fields.get("tail"),
+                           fields.get("anchor"), fields.get("cards"))
+                if previous is None:
+                    summary["taxonomia"]["primeira"] += 1
+                else:
+                    ps, po, ph, pt, pa, pc = previous
+                    cs, co, ch, ct, ca, cc = current
+                    if (ps, ph, pt, pc) != (cs, ch, ct, cc):
+                        summary["taxonomia"]["conteúdo"] += 1
+                    elif po == co and pa == ca:
+                        summary["taxonomia"]["idêntica"] += 1
+                    elif pa == ca:
+                        summary["taxonomia"]["só ordem"] += 1
+                    else:
+                        summary["taxonomia"]["só âncora"] += 1
+                previous = current
+        summary["ancoras_distintas"] = len(set(anchors))
+        return summary
+
     def admitted_before(self, window: Window) -> tuple[int, dict] | None:
         """O último `admitted` anterior ao fim da janela — inclui os eventos dentro dela."""
         if window.mono is None:
@@ -1002,6 +1056,10 @@ def render(joined: Joined, select: str, context: int, limit: int | None) -> list
         lines.append(f"      linhas `feedmine frames=`: {len(joined.console.frames)}   "
                      f"`feedmine journey`: {len(joined.console.journey)}   "
                      f"linhas de pressão: {len(joined.console.pressure)}   linhas do app: {len(joined.console.app_notes)}   outras (contadas, não guardadas): {joined.console.other_count}")
+    if joined.trace and joined.trace_choice:
+        chosen, matched, windows, candidates = joined.trace_choice
+        lines.append(f"      ESCOLHA DO TRAÇO entre {candidates} no contêiner: {os.path.basename(os.path.dirname(chosen))}"
+                     f" (casou {matched} das {windows} janelas do console; os outros casaram menos)")
     if joined.trace:
         counts: dict[str, int] = {}
         for _, event in joined.trace.events:
@@ -1066,19 +1124,60 @@ def joined_from_directory(path: str) -> Joined:
     found = find_files(path)
     joined = Joined(path)
     console_path = None
-    for candidate in found["consoles"]:
-        if os.path.basename(candidate) in ("console.log", "console-standalone.log", "console-journey.log",
-                                           "console-journey-feedmine.log"):
-            console_path = candidate
+    # O console é escolhido por **prioridade**, não por pertinência: quando dois recortes existem no mesmo diretório,
+    # a ordem do `os.walk` decidia — e escolhia o recorte antigo (só linhas `feedmine`) em vez do recorte de foco
+    # (app + pressão), perdendo as dimensões (b)/(d) que vivem no log unificado. Medido em 2026-10-16 no insumo da
+    # fase B, que tinha os dois arquivos.
+    for name in ("console.log", "console-standalone.log", "console-journey-focus.log", "console-journey.log",
+                 "console-journey-feedmine.log"):
+        for candidate in found["consoles"]:
+            if os.path.basename(candidate) == name:
+                console_path = candidate
+                break
+        if console_path:
             break
     if console_path is None and found["consoles"]:
         console_path = found["consoles"][0]
     if console_path:
         joined.console = Console(console_path)
     if found["traces"]:
-        joined.trace = Trace(sorted(found["traces"])[0])
+        # Um contêiner puxado inteiro traz **todos** os namespaces (a corrida de 2026-10-16 tinha 10), e escolher o
+        # traço pelo primeiro nome dava o namespace errado em silêncio. A escolha agora é pelo **casamento de
+        # conteúdo** com a série do console: quantas janelas do console encontram um evento `frames` de mesmo
+        # `frames/late/bad/severe/worst_ms` naquele traço. O escolhido e o placar são ditos.
+        if joined.console and joined.console.frames:
+            scores = []
+            for candidate in sorted(found["traces"]):
+                trace = Trace(candidate)
+                available: dict[tuple, int] = {}
+                for _, event in trace.of("frames"):
+                    fields = event.get("fields") or {}
+                    key = (as_int(fields.get("frames")), as_int(fields.get("late")), as_int(fields.get("bad")),
+                           as_int(fields.get("severe")), as_float(fields.get("worst_ms")))
+                    available[key] = available.get(key, 0) + 1
+                matched = 0
+                for _, _, groups in joined.console.frames:
+                    key = (as_int(groups.get("frames")), as_int(groups.get("late")), as_int(groups.get("bad")),
+                           as_int(groups.get("severe")), as_float(groups.get("worst")))
+                    if available.get(key, 0) > 0:
+                        available[key] -= 1
+                        matched += 1
+                scores.append((matched, candidate))
+            scores.sort(key=lambda item: (-item[0], item[1]))
+            best, chosen = scores[0][0], scores[0][1]
+            joined.trace = Trace(chosen)
+            if len(found["traces"]) > 1:
+                joined.trace_choice = (chosen, best, len(joined.console.frames), len(found["traces"]))
+        else:
+            joined.trace = Trace(sorted(found["traces"])[0])
     if found["databases"]:
-        joined.cards = Cards(sorted(found["databases"])[0])
+        # O banco é o **irmão do traço escolhido** (os dois moram no diretório do namespace). Escolher por nome dava
+        # o banco de outro namespace: o `Cards` resolvia âncoras com a ordem de leitura de outra corrida (medido em
+        # 2026-10-16: traço 633D4BAF com o banco de 15A73270).
+        chosen_dir = os.path.dirname(joined.trace.path) if joined.trace else None
+        database = next((candidate for candidate in sorted(found["databases"])
+                         if chosen_dir and os.path.dirname(candidate) == chosen_dir), None)
+        joined.cards = Cards(database or sorted(found["databases"])[0])
     if found["series"]:
         joined.series = Series(sorted(found["series"])[0])
     # O que falta, dito pelo nome do arquivo — nunca inferido de outro campo.
@@ -1157,7 +1256,7 @@ def main() -> int:
         document = []
         for joined in insumos:
             document.append({"insumo": joined.title, "notas": joined.notes, "falta": joined.missing,
-                             "totais": joined.totals(),
+                             "totais": joined.totals(), "resumo_do_insumo": joined.summarise(),
                              "janelas_selecionadas": [window.as_dict() for window in joined.selected(arguments.select)]})
         print(json.dumps(document, indent=2, ensure_ascii=False))
         return 0
