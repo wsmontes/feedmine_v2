@@ -92,7 +92,7 @@ Provider attribution in this conceptual diagram is carried by each OriginRevisio
 
 ## Scope
 
-MediaCandidate and InteractionOffer remain scaffolds. FeedContext, FeedIntent and FeedPlan are Phase 1B values; no execution behavior is introduced. Persistence, acquisition, connectors, networking, editorial selection, media preparation, publication, runtime and UI are not implemented in Phase 1A. The Publication/Persistence representation gate remains unresolved.
+MediaCandidate is an implemented value (Phase 3I1). `InteractionOffer` was a code-free scaffold, removed on 2026-10-15: see [SCAFFOLDS.md](SCAFFOLDS.md). FeedContext, FeedIntent and FeedPlan are Phase 1B values; no execution behavior is introduced. Persistence, acquisition, connectors, networking, editorial selection, media preparation, publication, runtime and UI are not implemented in Phase 1A. The Publication/Persistence representation gate remains unresolved.
 
 ## Context and editorial revision
 

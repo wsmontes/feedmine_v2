@@ -27,7 +27,7 @@ Canonical ContentStore admits immutable OriginRevision and MediaCandidate facts.
 
 MediaPreparation accepts one candidate and explicit local bytes/key/unavailable input, returning actual usable asset facts or semantic unavailable/unsuitable; corruption/storage errors propagate. Pure Runtime PublicationPreparation preserves Selection order, exact text/time and explicit presentation decisions. PublicationCoordinator alone creates or appends immutable history with caller-supplied IDs, seeds and times; its transactional tail validation remains authoritative.
 
-FeedSession restores retained local presentation, owns logical anchor movement and saves only explicit checkpoint milestones. Existing ViewportObservation remains a logical PresentationAnchor only. RunwayPolicy and RunwayController now implement the 3K3 boundaries below; FeedPlanResolver remains a scaffold. No existing API is silently reinterpreted by this design.
+FeedSession restores retained local presentation, owns logical anchor movement and saves only explicit checkpoint milestones. Existing ViewportObservation remains a logical PresentationAnchor only. RunwayPolicy and RunwayController now implement the 3K3 boundaries below; FeedPlanResolver was a code-free scaffold, removed on 2026-10-15 ([SCAFFOLDS.md](SCAFFOLDS.md)). No existing API is silently reinterpreted by this design.
 
 ## 3. Legacy evidence: preserve/reject
 
@@ -88,7 +88,7 @@ This describes the new production-pressure path. Existing Phase 2H FeedSession.s
 
 ## 7. Local production slice
 
-Future LocalProductionSlice receives explicit resolved production context: FeedPlan, matching ResolvedSelectionPolicy, target Edition/action, episode cursor, examined work budget, explicit prepared attribution/actions and presentation choices/local media inputs, caller-owned IDs/seeds/times and cancellation opportunity. RunwayController cannot resolve user policy/catalog, synthesize EditorialRevision or derive behavior from opaque PolicyVersion. FeedPlanResolver stays scaffold until real inputs and consumer are gated; no internal PolicyVersion(1), CatalogGeneration(1) or magic recency plan.
+Future LocalProductionSlice receives explicit resolved production context: FeedPlan, matching ResolvedSelectionPolicy, target Edition/action, episode cursor, examined work budget, explicit prepared attribution/actions and presentation choices/local media inputs, caller-owned IDs/seeds/times and cancellation opportunity. RunwayController cannot resolve user policy/catalog, synthesize EditorialRevision or derive behavior from opaque PolicyVersion. FeedPlanResolver stays unimplemented until real inputs and consumer are gated (the code-free scaffold carrying the name was removed on 2026-10-15: [SCAFFOLDS.md](SCAFFOLDS.md)); no internal PolicyVersion(1), CatalogGeneration(1) or magic recency plan.
 
 One invocation: at most ONE CandidateProvider.candidates call, bounded history exposure snapshot for those candidate revision IDs, ONE SelectionEngine.select call with explicit exposure facts, preparation of that result, and at most ONE Coordinator append/create action. Future Selection exposure eligibility needs a reviewed explicit input; it remains pure and does not drive history reads. Normal visible runway uses append only. Create is an explicit initial/transition request, not a refill fallback. All preparation inputs must align; no hidden canonical join/resolver is introduced to fill missing facts.
 
