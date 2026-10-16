@@ -1152,6 +1152,16 @@
         }
       }
     },
+    "Entendido. Vamos excluir %@ das próximas descobertas.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Understood. We’ll exclude %@ from upcoming discoveries."
+          }
+        }
+      }
+    },
     "Episódio": {
       "localizations": {
         "en": {
@@ -1808,16 +1818,6 @@
         }
       }
     },
-    "Menos de %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Less than %@"
-          }
-        }
-      }
-    },
     "Meu feed": {
       "localizations": {
         "en": {
@@ -2408,6 +2408,16 @@
         }
       }
     },
+    "Não quero mais sobre %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I don’t want more about %@"
+          }
+        }
+      }
+    },
     "Não serão importados": {
       "localizations": {
         "en": {
@@ -2938,12 +2948,12 @@
         }
       }
     },
-    "Sua resposta orienta a busca por mais ou menos fontes desse grupo nas próximas descobertas. Você pode mudar de ideia.": {
+    "Sua resposta orienta as próximas descobertas: mais fontes desse grupo, ou esse grupo excluído da descoberta. Você pode mudar de ideia.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your answer guides the search for more or fewer sources in that group in upcoming discoveries. You can change your mind."
+            "value": "Your answer guides upcoming discoveries: more sources in this group, or this group excluded from discovery. You can change your mind."
           }
         }
       }
@@ -3206,16 +3216,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "You asked for more sources in %@. We’ll look for more of them."
-          }
-        }
-      }
-    },
-    "Você pediu menos fontes em %@. Vamos procurar menos delas.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You asked for fewer sources in %@. We’ll look for fewer of them."
           }
         }
       }
