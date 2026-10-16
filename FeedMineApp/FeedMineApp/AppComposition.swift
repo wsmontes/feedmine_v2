@@ -2714,7 +2714,14 @@ final class FeedAssociation {
                     return
                 }
             }
-            let snapshot = try await driver.drive(resources: Self.resources)
+            // Um foreground é uma **oportunidade**, não só um evento de ciclo de vida: o consumo foi marcado
+            // inativo quando a tela saiu (`markConsumptionInactive`), então a observação do runway está zerada e
+            // um `drive` puro não tem fato nenhum para agir — o pipeline ficava morto até o leitor rolar. O
+            // mecanismo já existe e é o mesmo do launch/restore: reativar a apresentação corrente devolve ao
+            // runway a observação do próprio leitor (`.stationary`, sem gesto, sem mudar a lista admitida) e
+            // então o trabalho decide. INV-04: o runway antecipa o consumo; rolar não é o que acorda o pipeline
+            // (diretiva de execução V2, linha 86).
+            let snapshot = try await driver.activateCurrentPresentation(resources: Self.resources)
             try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
             // O fim é decidido **antes** de a janela crescer: se a admissão trouxe cards, o crescimento retrata o
             // fim na mesma oportunidade, em vez de o fim ser reinstalado por cima da retratação (revisão,

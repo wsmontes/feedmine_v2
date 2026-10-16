@@ -230,12 +230,25 @@ public actor RunwayController {
         lastAcknowledgedAcquisitionIntent = intent
     }
 
+    /// The network demand the reader's own continuation already justifies.
+    ///
+    /// It is read from the **measured deficit** the policy computed out of the reader's own facts
+    /// (`RunwayPolicy.evaluate`) — never from the count ahead having been *proven* below the probe. Requiring an
+    /// exact reading made the network's fate depend on the absence of a tail measurement: a saturated
+    /// (`.atLeast`) reading was answered with a bounded larger probe and, at the resource ceiling, with a plain
+    /// refusal, so "the reserve looks healthy" was standing in for a measurement. Local supply still comes first
+    /// (INV-04: local order is ready stock → local supply → demand), so the demand is still emitted only once the
+    /// bounded local walk cannot close the deficit: what changed is the trigger, which is the policy's own
+    /// coverage verdict, not the shape of the reading.
+    ///
+    /// The demand carries the ready stock the deficit was measured against, as the probe established it; a
+    /// saturated reading is a floor, and `AcquisitionDemand` accepts a coverage deficit only while the deficit
+    /// exceeds that stock, so the demand can never describe a shortage the reader does not have.
     private func acquisitionIntentIfEligible(coverage: RunwayCoverage) -> RunwayAcquisitionIntent? {
         guard let scope, let observation = latestObservation, let readyAhead,
             readyAhead.editionID == scope.editionID, readyAhead.anchorCardID == observation.anchorCardID,
-            case .exact(let count) = readyAhead.amount, localSupplyExhausted,
-            inFlight == nil, lastFailure == nil,
-            let localSupply = ExhaustedLocalSupply(readyCards: count) else { return nil }
+            localSupplyExhausted, inFlight == nil, lastFailure == nil,
+            let localSupply = Self.readySupply(readyAhead.amount) else { return nil }
         let pressure: AcquisitionPressure
         switch coverage {
         case .pressured(let required): pressure = .coverageDeficit(requiredCards: required)
@@ -246,6 +259,16 @@ public actor RunwayController {
             editorialRevisionID: scope.editorialRevisionID, purpose: .readerContinuation,
             pressure: pressure, localSupply: localSupply) else { return nil }
         return RunwayAcquisitionIntent(scope: scope, demand: demand)
+    }
+
+    /// The ready stock a measured deficit is stated against, as the bounded probe actually established it: an
+    /// exact reading is that count, a saturated one is only a floor — and the demand states the floor, never a
+    /// count the probe did not prove.
+    private static func readySupply(_ amount: ReadyAheadAmount) -> ExhaustedLocalSupply? {
+        switch amount {
+        case .exact(let count): return ExhaustedLocalSupply(readyCards: count)
+        case .atLeast(let bound): return ExhaustedLocalSupply(readyCards: bound)
+        }
     }
 
     public init(configuration: RunwayControllerConfiguration, trace: ReplenishmentTrace? = nil) {
@@ -342,12 +365,6 @@ public actor RunwayController {
                     ready: readyAhead.amount))
             }
             return .requestAcquisition(intent)
-        }
-        // Logical pressure still needs exact shortage evidence before handoff.
-        if localSupplyExhausted, evaluation.coverage == .logicalPressure,
-            case .atLeast(let bound) = readyAhead.amount {
-            guard bound < resources.readyProbeCeiling else { return .none }
-            return measurementRequest(observation, scope: scope, bound: resources.readyProbeCeiling, advanceBound: nil)
         }
         switch evaluation.action {
         case .hold: return .none

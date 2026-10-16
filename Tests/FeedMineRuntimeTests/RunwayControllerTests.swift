@@ -341,6 +341,13 @@ final class RunwayControllerTests: XCTestCase {
         XCTAssertNotNil(make(.logicalTailPressure))
     }
 
+    /// A reserva medida abaixo do alvo, com a lane local **ainda capaz de produzir**, continua sendo trabalho
+    /// local: a ordem do design é reserva pronta → supply local → preparação local → demanda de rede
+    /// (`CONTINUOUS_FEED_RUNWAY_DESIGN.md` §12/§18), e é isso que `test04LocalSupplyPrecedesNetwork` prova na
+    /// composição. O que muda neste gate é como a demanda é lida quando a lane local **já não** pode fechar o
+    /// déficit: da cobertura que a política mediu, sem exigir prova exata abaixo do probe (ver
+    /// `testLogicalTailDemandsFromMeasuredPressureWithoutExactProbeEvidence`). A medição pós-settle continua
+    /// obrigatória antes do handoff.
     func testNonexhaustedKnownPressureStaysLocalAndExhaustionForcesPostSettleMeasurement() async throws {
         let sut = controller(), o = try await knownPressure(sut)
         let first = try await intent(sut,at: 20)
@@ -352,6 +359,36 @@ final class RunwayControllerTests: XCTestCase {
         guard case .measure(let request) = action else { return XCTFail("Post-settle measurement required") }
         XCTAssertEqual(request.observation,o); XCTAssertNil(request.advance)
         XCTAssertNil(snap.outstandingAcquisition)
+    }
+
+    /// Pressão lógica (o leitor chegou ao fim por geometria/ritmo) é pressão medida: com a lane local já
+    /// gasta, a demanda sai daí sem exigir prova exata de escassez abaixo do probe. O que a demanda carrega é o
+    /// piso que o probe estabeleceu — nunca uma contagem que ele não provou — e o antigo caminho de recusa
+    /// ("pede um probe maior e, no teto de recursos, recusa a rede") deixa de existir.
+    func testLogicalTailDemandsFromMeasuredPressureWithoutExactProbeEvidence() async throws {
+        let logical = controller(); await logical.activate(scope())
+        let tail = observation(1,0,activity: .explicitTailApproach)
+        try await logical.submitObservation(tail); try await logical.acceptMeasurement(facts(tail))
+        let first = try await intent(logical,at: 10)
+        try await logical.completeLocalSlice(first,outcome: outcome(first,exhausted: true),at: time(11))
+        let later = observation(1,2,activity: .explicitTailApproach)
+        try await logical.submitObservation(later)
+        try await logical.acceptMeasurement(facts(later,amount: .atLeast(5),from: tail.anchorCardID))
+        let action = try await logical.reconsider(resources: resources(),at: time(12))
+        guard case .requestAcquisition(let demand) = action else {
+            return XCTFail("Pressão lógica medida pede rede sem prova exata: \(action)")
+        }
+        XCTAssertEqual(demand.demand.pressure,.logicalTailPressure)
+        XCTAssertEqual(demand.demand.localSupply?.readyCards,5)
+        var snap = await logical.snapshot(); XCTAssertEqual(snap.outstandingAcquisition,demand)
+        // Um piso saturado muda a evidência local, não a pressão: a demanda continua saindo da medida.
+        try await logical.acceptMeasurement(facts(later,amount: .atLeast(100)))
+        let saturated = try await logical.reconsider(resources: resources(),at: time(13))
+        guard case .requestAcquisition(let saturatedDemand) = saturated else {
+            return XCTFail("Piso saturado continua sendo pressão lógica: \(saturated)")
+        }
+        XCTAssertEqual(saturatedDemand.demand.localSupply?.readyCards,100)
+        snap = await logical.snapshot(); XCTAssertEqual(snap.outstandingAcquisition,saturatedDemand)
     }
 
     func testCoverageDemandContentCoalescingAndAcknowledgementPreserveLocalFacts() async throws {
@@ -405,21 +442,7 @@ final class RunwayControllerTests: XCTestCase {
         let probe = try await known.reconsider(resources: resources(),at: time(23))
         guard case .measure(let larger) = probe else { return XCTFail("Bounded larger probe") }
         XCTAssertEqual(larger.readyProbeBound,6)
-        // Logical pressure cannot use a saturated stock as shortage evidence either.
-        let logical = controller(); await logical.activate(scope())
-        let tail = observation(1,0,activity: .explicitTailApproach)
-        try await logical.submitObservation(tail); try await logical.acceptMeasurement(facts(tail))
-        let first = try await intent(logical,at: 10)
-        try await logical.completeLocalSlice(first,outcome: outcome(first,exhausted: true),at: time(11))
-        let later = observation(1,2,activity: .explicitTailApproach)
-        try await logical.submitObservation(later)
-        try await logical.acceptMeasurement(facts(later,amount: .atLeast(5),from: tail.anchorCardID))
-        let action = try await logical.reconsider(resources: resources(),at: time(12))
-        guard case .measure(let ceiling) = action else { return XCTFail("Exact tail evidence required") }
-        XCTAssertEqual(ceiling.readyProbeBound,100); XCTAssertNil(ceiling.advance)
-        try await logical.acceptMeasurement(facts(later,amount: .atLeast(100)))
-        let saturated = try await logical.reconsider(resources: resources(),at: time(13)); XCTAssertEqual(saturated,.none)
-        let snap = await logical.snapshot(); XCTAssertNil(snap.outstandingAcquisition)
+        let snap = await known.snapshot(); XCTAssertNil(snap.outstandingAcquisition)
     }
 
     func testFailedLocalExecutorDoesNotBecomeRemoteShortage() async throws {

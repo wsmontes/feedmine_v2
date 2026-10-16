@@ -292,6 +292,26 @@ RunwayController requires completed structural local exhaustion, no in-flight lo
 
 Local-first is mandatory whenever a lane can progress. Successful local progress, new observation, inactive consumption, scope replacement/deactivation, changed accepted ready amount and supply admission invalidate remembered shortage ownership. Admission preserves 3K3 head restart/fairness and reopens local consideration. Failed local execution does not imply remote shortage. One outstanding semantic intent is reserved before returning; repeated reconsiderations coalesce, exact acknowledgement moves it to internal suppression, and unchanged facts cannot immediately re-demand. A stale or superseded acknowledgement is rejected without mutation. No durable demand state, identifier/generation, queue or attempt counter exists.
 
+> **Emenda 2026-10-15 — o déficit medido decide, não a forma da leitura (INV-04; diretiva de execução V2, linha
+> 86).** A demanda de rede nasce do **déficit que a política mediu** (`RunwayCoverage.pressured` /
+> `.logicalPressure`), e não de a contagem à frente estar *provada* abaixo do probe. Com a lane local gasta, uma
+> leitura saturada (`.atLeast`) era respondida com um probe maior e, no teto de recursos, com recusa: "a reserva
+> parece saudável" fazia o papel de medida, e a rede só era pedida com o leitor já no fim do prefixo publicado —
+> o "buscar quando faltarem exatamente N cards" que o INV-04 proíbe. O que passa a valer: (a) a leitura saturada
+> entra na demanda como o **piso** que o probe provou, e a inicialização de `AcquisitionDemand` continua exigindo
+> que o déficit exceda essa reserva; (b) o caminho "probe maior até o teto e então recusa" deixa de existir;
+> (c) cobertura medida como saudável e cobertura não medida (`.unknown`) continuam recusando rede; (d) a ordem
+> local-first continua obrigatória — reserva pronta → supply local → preparação local → demanda —, então a demanda
+> segue exigindo o fim estrutural do walk local, sem trabalho local em voo, sem lane de cabeça/pending reset e sem
+> falha local pendente. Coalescência, acknowledgement, admission, medição pós-settle e ausência de estado durável
+> seguem exatamente como acima.
+>
+> **Oportunidade de ciclo de vida.** Voltar do background não é mais o gesto do leitor que acorda o pipeline: o
+> foreground reativa a apresentação corrente (`FeedRunwayDriver.activateCurrentPresentation`), o mesmo mecanismo
+> do launch/restore, devolvendo ao runway a observação do leitor na âncora corrente (`.stationary`, sem evento de
+> viewport). A lane/observação que a ativação zera é contrato existente de `RunwayController.activate`
+> compartilhado com launch e restore.
+
 This phase implements no planner, frontier, target, coordinator, connector or network execution. FeedSession wiring and background/UI work remain separate future gates. No next phase is started.
 
 

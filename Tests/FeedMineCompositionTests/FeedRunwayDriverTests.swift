@@ -394,6 +394,42 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertNil(snap.latestObservation); XCTAssertNil(snap.outstandingAcquisition); XCTAssertEqual(before,after)
         _ = try await f.driver.drive(resources:resources()); XCTAssertEqual(f.http.calls,0)
     }
+    /// A reserva de apresentação pronta, como a composição de produção a declara: uma oportunidade que não mede
+    /// nada novo (a transição zerou consumo e latência) ainda mantém cartas prontas à frente do leitor.
+    private func reservedResources(targets:Int = 1) -> FeedRunwayDriverResources {
+        .init(runway:.init(localWorkAllowed:true,examinedCandidateCapacity:8,readyProbeBound:8,
+            readyProbeCeiling:64,forwardAdvanceProbeBound:64,reserveCards:4)!,
+            acquisition:.init(targetWorkCapacity:targets,batchCapacityPerNewExecution:1,
+                observationCapacityPerBatch:8,byteCapacityPerBatch:100_000)!)
+    }
+    /// INV-04 e a diretiva de execução V2 (linha 86): o runway adquire *antecipando* o consumo, e rolar não é o
+    /// que acorda o pipeline. O background zera a observação (`markConsumptionInactive`), e um `drive` depois
+    /// disso não tem fato nenhum para agir: era esse o estado que só um gesto do leitor desfazia. O foreground
+    /// reativa a apresentação corrente — o mesmo mecanismo do launch/restore — devolvendo ao runway a observação
+    /// do leitor na âncora corrente (`.stationary`, nenhum evento de viewport) e a produção acontece.
+    func testForegroundReactivationIsAnOpportunityWithoutViewportEvent() async throws {
+        let f = try fixture(), store = PublicationStore(database:f.database)
+        let p = try await restore(f,resources:reservedResources(targets:0))
+        await f.driver.markConsumptionInactive()
+        // O mesmo `drive` que o foreground fazia, sem observação: nenhuma oportunidade existe nele.
+        _ = try await f.driver.drive(resources:reservedResources(targets:0))
+        let empty = await f.runway.snapshot()
+        XCTAssertNil(empty.latestObservation)
+        XCTAssertNil(empty.outstandingAcquisition)
+        let segmentsBefore = try store.segments(editionID:f.edition).count
+        let callsBefore = f.http.calls + f.otherHTTP.calls
+        // A transição de foreground, sem gesto nenhum.
+        let resumed = try await f.driver.activateCurrentPresentation(resources:reservedResources())
+        XCTAssertNotNil(resumed)
+        let active = await f.runway.snapshot()
+        XCTAssertEqual(active.latestObservation?.anchorCardID,p.window.anchor.cardID)
+        XCTAssertEqual(active.latestObservation?.activity,.stationary)
+        XCTAssertEqual(active.lastCoverage,.pressured(requiredCards:4))
+        XCTAssertGreaterThan(try store.segments(editionID:f.edition).count,segmentsBefore,
+            "O foreground produziu sem evento de viewport")
+        XCTAssertGreaterThan(f.http.calls + f.otherHTTP.calls,callsBefore,
+            "A oportunidade do foreground pediu a reposição sem gesto nenhum")
+    }
     func test22DeactivatePreservesPresentation() async throws {
         let f = try fixture(),p = try await restore(f); await f.driver.deactivate()
         let snap = await f.runway.snapshot(),current = await f.session.currentPresentation(); XCTAssertNil(snap.scope); XCTAssertEqual(current,p)
