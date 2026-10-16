@@ -127,7 +127,7 @@ do NN-07 na BASE), `nn08-composition-and-onboarding-journey.log` (corrida do par
 
 **Transformação aplicada aos logs, declarada (o `git diff --check` do repo exige árvore sem espaço em
 branco no fim de linha, e os logs de `xcodebuild` têm muitos):** removido apenas espaço/tab no fim de
-cada linha; nenhum outro byte alterado. Quatro arquivos mudaram e dois ficaram idênticos:
+cada linha; nenhum outro byte alterado. Quatro arquivos mudaram e dois não:
 
 | Arquivo | bytes | SHA-256 (normalizado) |
 |---|---|---|
@@ -219,8 +219,37 @@ migração, e `Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:
 keyset ficaram intocados pela cláusula STOP, com a regra demonstrada só em teste; e natureza temporal
 segue `unknown` porque não existe evidência nem regra de interpretação aprovada.
 
-**TX-05D — não iniciado.** A ordem fixada pelo arquiteto (integração → TX-07D → TX-05D) foi seguida:
-o gate de procedência temática só começa depois deste.
+**Reconciliação e segundo veredito.** O gate foi reconciliado contra a `main` que o lote produziu
+(branch nova, identidade nova: `omp/tx07d-temporal-evidence-recut`, commit `ebfa1289` sobre
+`cca2bc4b`, 13 arquivos, allowlist inalterada). O cherry-pick colidiu em *add/add* em
+`ContextualFreshnessCharacterizationTests.swift`, porque esse arquivo já existe na `main` desde o
+TX-07; resolvido pela versão do gate depois de conferir que ela é superconjunto (9 testes contra 5,
+os 5 originais presentes verbatim, o diff `114+/5−` sendo só cabeçalho) e que o cabeçalho novo
+**preserva a ressalva não normativa** ("characterization, NOT implementation", "a test-only label must
+never become an implicit classifier", "`observed` is an observation timestamp, NOT a publication
+date"). Re-verificado na árvore vigente: `swift build` 0 · `swift test` **1378 testes, 4 skipped,
+0 falhas** · `git diff --check` 0.
+
+O arquiteto então **bloqueou a integração** dele por um defeito real de contrato, e não por grafo,
+conflito ou verificação:
+
+> O contrato novo ainda permite que uma declaração de publicação futura seja apresentada ao consumidor
+> como uma data de publicação declarada no instante atual.
+
+Caminho: o publicador declara 2100 → `SyndicationTranslator` aceita `min(declarado, observado)` →
+`authoredAt = observedAt` → `CandidateProvider` recupera isso como `acceptedAuthoredAt` →
+`publicationDate` devolve `.declared(observedAt)`. O próprio teste do gate
+(`testF03ClampedDeclarationIsIndistinguishableFromADeclarationOfTheObservationInstant`) confirmava o
+comportamento. Isso contraria a condição do gate *"data futura ou inconsistente não vira
+automaticamente publicação válida de hoje"* e F03 §2. Correção autorizada, sem migração: quando
+`acceptedAuthoredAt == observedAt` e a declaração original não está disponível, `publicationDate` deve
+representar a **ambiguidade** (um terceiro caso no enum), o mesmo exame vale para `acceptedModifiedAt`,
+e o contrato deve declarar que a declaração original é transitória e não sobrevive à persistência
+atual. Sete provas adicionais foram exigidas. **`main` não avançou para `ebfa1289`.**
+
+**TX-05D — em implementação**, cortado de `a77df011` (mesma árvore de código de `cca2bc4b`; os dois
+commits entre eles são só documentação), conforme a ordem que o arquiteto fixou (integração → TX-07D →
+TX-05D).
 
 ## 4. Veredito e integração (2026-10-15)
 
