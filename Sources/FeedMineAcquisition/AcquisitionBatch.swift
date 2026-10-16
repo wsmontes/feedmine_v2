@@ -57,6 +57,13 @@ public struct AcquisitionObservation: Hashable, Sendable {
     public let authoredAt: Date?
     public let modifiedAt: Date?
     public let observedAt: Date
+    /// What the origin itself declared as the publication instant, when it declared one. `authoredAt`
+    /// is the *accepted* value (the claim, or the observation instant when the claim lies ahead of it);
+    /// this is the claim exactly as the origin made it, so the acceptance rule is never silent here.
+    /// nil is absence of a declaration, never a declaration of recency.
+    public let declaredAuthoredAt: Date?
+    /// What the origin itself declared as the change instant, when it declared one.
+    public let declaredModifiedAt: Date?
     public let language: String?
     public let primaryLink: URL?
     public let searchProjection: String?
@@ -69,7 +76,18 @@ public struct AcquisitionObservation: Hashable, Sendable {
         primaryLink: URL?, searchProjection: String?, providerID: ProviderID?,
         memberships: [AcquisitionMembershipClaim], mediaCandidates: [AcquisitionMediaCandidateClaim],
         fingerprintGeneration: Int = 1, legacyVersionIdentity: ExternalIdentity? = nil,
-        bodySourceElement: String? = nil) {
+        bodySourceElement: String? = nil, declaredAuthoredAt: Date? = nil,
+        declaredModifiedAt: Date? = nil) {
+        // A declaration is evidence about the origin; it never replaces the observation instant and it
+        // never becomes an accepted value whose acceptance the observation did not perform. A missing
+        // declaration constrains nothing: it is unknown evidence, not a claim of recency.
+        for (claim, candidateAccepted) in [(declaredAuthoredAt, authoredAt), (declaredModifiedAt, modifiedAt)] {
+            guard let claim else { continue }
+            guard claim.timeIntervalSince1970.isFinite,
+                candidateAccepted == OriginDeclaredInstant(claimed: claim).accepted(observingAt: observedAt) else {
+                return nil
+            }
+        }
         guard objectIdentity.role == .object, !objectIdentity.connectorKind.rawValue.utf8.isEmpty,
             versionIdentity.map({ $0.role == .version && $0.connectorKind.rawValue.utf8.elementsEqual(objectIdentity.connectorKind.rawValue.utf8) }) ?? true,
             (fingerprintGeneration == 1 || fingerprintGeneration == 2),
@@ -93,6 +111,8 @@ public struct AcquisitionObservation: Hashable, Sendable {
         self.authoredAt = authoredAt
         self.modifiedAt = modifiedAt
         self.observedAt = observedAt
+        self.declaredAuthoredAt = declaredAuthoredAt
+        self.declaredModifiedAt = declaredModifiedAt
         self.language = language
         self.primaryLink = primaryLink
         self.searchProjection = searchProjection

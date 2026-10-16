@@ -72,6 +72,11 @@ public struct AcquisitionAdmissionStore: Sendable {
         public let authoredAt: Date?
         public let modifiedAt: Date?
         public let observedAt: Date
+        /// What the origin itself declared, when it declared something. The accepted values above are
+        /// the claim or the observation instant, and the store refuses a pair that does not follow
+        /// `OriginDeclaredInstant.accepted(observingAt:)`. nil is unknown evidence, not recency.
+        public let declaredAuthoredAt: Date?
+        public let declaredModifiedAt: Date?
         public let language: String?
         public let primaryLink: URL?
         public let searchProjection: String?
@@ -83,7 +88,8 @@ public struct AcquisitionAdmissionStore: Sendable {
             bodyText: String?, authoredAt: Date?, modifiedAt: Date?, observedAt: Date, language: String?,
             primaryLink: URL?, searchProjection: String?, providerID: ProviderID?, memberships: [MembershipCommand],
             mediaCandidates: [MediaCandidateCommand], fingerprintGeneration: Int = 1,
-            legacyVersionIdentity: ExternalIdentity? = nil, bodySourceElement: String? = nil) {
+            legacyVersionIdentity: ExternalIdentity? = nil, bodySourceElement: String? = nil,
+            declaredAuthoredAt: Date? = nil, declaredModifiedAt: Date? = nil) {
             self.objectIdentity = objectIdentity
             self.versionIdentity = versionIdentity
             self.legacyVersionIdentity = legacyVersionIdentity
@@ -97,6 +103,8 @@ public struct AcquisitionAdmissionStore: Sendable {
             self.authoredAt = authoredAt
             self.modifiedAt = modifiedAt
             self.observedAt = observedAt
+            self.declaredAuthoredAt = declaredAuthoredAt
+            self.declaredModifiedAt = declaredModifiedAt
             self.language = language
             self.primaryLink = primaryLink
             self.searchProjection = searchProjection
@@ -320,6 +328,18 @@ public struct AcquisitionAdmissionStore: Sendable {
         guard value.observedAt.timeIntervalSince1970.isFinite else { throw invalid("observedAt") }
         guard value.authoredAt.map({ $0.timeIntervalSince1970.isFinite }) ?? true else { throw invalid("authoredAt") }
         guard value.modifiedAt.map({ $0.timeIntervalSince1970.isFinite }) ?? true else { throw invalid("modifiedAt") }
+        // TX-07D: a declaration is evidence, and acceptance is a stated rule, not a convention. When an
+        // origin's claim is present the accepted value must be exactly what the observation could accept
+        // (`OriginDeclaredInstant.accepted(observingAt:)`), so no producer can present a claim as though
+        // the observation had accepted it, and a claim ahead of the observation never becomes a real date.
+        for (claim, accepted, field) in [(value.declaredAuthoredAt, value.authoredAt, "declaredAuthoredAt"),
+                                         (value.declaredModifiedAt, value.modifiedAt, "declaredModifiedAt")] {
+            guard let claim else { continue }
+            guard claim.timeIntervalSince1970.isFinite else { throw invalid(field) }
+            guard accepted == OriginDeclaredInstant(claimed: claim).accepted(observingAt: value.observedAt) else {
+                throw invalid(field)
+            }
+        }
     }
 
     private static func sameExceptBody(_ incoming: ObservationCommand, _ old: OriginRevision) -> Bool {
