@@ -8,6 +8,14 @@ Catálogo empacotado (gitignored, copiado da árvore principal): `catalog.sqlite
 `com.feedmine.app` (TestFlight do dono): **nunca instalado, nunca lançado, nunca terminado, nunca apagado** — a
 ferramenta recusa esse bundle por duas vias independentes.
 
+> **Precisão de escopo na candidata 48:** esta corrida histórica mediu o commit `d4403ff3`, não o binário de
+> TestFlight 48. `media_resident` conta imagens decodificadas na projeção; blob no disco ou imagem residente não
+> provam que o pixel apareceu na tela. A prova de desenho é distinta (jornada de screenshot com controle).
+> A instrumentação de console é DEBUG e desligada por padrão; não se afirma que a distribuição Release coleta
+> essas linhas. A tentativa posterior de screenshot via XCTest no físico foi `NOT_RUN` por timeout ao ativar
+> automação, não impossibilidade demonstrada de capturar a tela. Ver o relatório de rolagem desta data.
+
+
 ## 1. O que o PO pediu e o que existe agora
 
 O relato dele: "desenvolva métodos inteligentes de monitoramento do telefone físico" e "conteúdos precisam ser
