@@ -213,3 +213,23 @@ do `simctl list devices` está vazia) e o projeto é iOS-only (três targets: `F
 **Regra operacional que sai daqui** (para a próxima rodada, e ela vai ter várias): antes de comissionar mais de três
 agentes que compilam, medir o disco e checar `simctl runtime list`; e **nunca** deixar um build de gate ou de medida
 competir com builds de agentes — foi exatamente assim que uma medição morreu em 2026-10-14 e de novo agora.
+
+## 11. Livro-razão das branches desta rodada
+
+Nenhuma destas foi mergeada na `main`: cada uma espera verdict do arquiteto (a `main` só avança por fast-forward
+com verdict explícito). A coluna "verifiquei" diz o que **eu** rodei, não o que o agente relatou.
+
+| Branch | Commit | Base | O que é | Verifiquei |
+|---|---|---|---|---|
+| `refactor/scaffold-purge` | `32f4ff34` | `4e405995` | oito arquivos comment-only removidos; intenção em `docs/architecture/SCAFFOLDS.md`; seis docs atualizados | `swift build` + `swift test` → **1399 testes, 3 skipped, 0 falhas**; `diff --check` limpo; `bench/` intocado |
+| `fix/image-journey` | `9698346b` | `4e405995` | a lacuna nº 1: fixture de mídia (forma nova, default `off`) + asserção de pixel com controle | o alvo de UI: **2 testes, 0 falhas** (jornada 58,9 s; controle sem mídia 9,2 s) |
+| `fix/reopen-journey` | `3e6c54b6` | `3b020a15` | o critério de cabeçalho da V1: testemunha no host + asserção que distingue frio de morno | `swift test` **1399/3 skipped/0 falhas**; fronteira U14 **18/0**; o teste novo **passa (40,3 s)** |
+| `refactor/dedup-sweep` | `c25acf57` (WIP) | `4e405995` | F6/F7/F8/F9/F11 + `#if DEBUG` das três escritas de contador | **não** — WIP preservado, parado por disco; reverificar ao retomar |
+| `fix/fluidity-journey` | `a7cc70a7` (WIP) | `2202cdd8` | jornada de fluidez com teto derivado de linha de base medida | **não** — WIP; agente novo retomando do commit |
+| `feat/device-journey-instrument` | `951a208a` (WIP) | `2202cdd8` | resumo de jornada no console + `scripts/device-journey.sh` | **não** — WIP; agente novo retomando do commit |
+| `fix/honest-surfaces` | `cbd9060c` (WIP) | `48c01010` | remoção do banner de clipboard (superfície morta) + jornada do share | **não** — WIP, aguardando verdict sobre remover ou ligar o banner |
+
+Duas notas de integração que o diff engana: as branches nascidas de `4e405995` e `3b020a15` **aparecem** apagando
+relatórios desta rodada, mas só porque nasceram antes de eu commitá-los — o cherry-pick de cada commit único na
+`main` resolve sem arrastar deleção nenhuma. E as duas nascidas de `2202cdd8` carregam o bump `CFBundleVersion 47`
+da branch de release; o cherry-pick precisa deixar o bump fora.
