@@ -34,6 +34,10 @@ public struct ReaderOnboardingView: View {
     private let languages: [OnboardingLanguage]
     private let isSaving: Bool
     private let deviceLanguage: String
+    /// The reader's own file, imported at first contact. The file picker belongs to the host (`SourceManagementView`
+    /// reports the same intent the same way: a `Button` that calls a closure), and so does the preview and the
+    /// commit — this scene never reads a file and never writes one.
+    private let onImport: () -> Void
     private let onSave: (FeedRecipeDefinition) -> Void
     private let onClose: () -> Void
 
@@ -42,7 +46,8 @@ public struct ReaderOnboardingView: View {
     public init(recipe: FeedRecipeDefinition = .neutral(), isFirstRun: Bool = true,
         previewCards: [PresentationCard] = [], topics: [OnboardingTopic] = [], regions: [OnboardingRegion] = [],
         languages: [OnboardingLanguage] = [], isSaving: Bool = false, deviceLanguage: String = "en",
-        onSave: @escaping (FeedRecipeDefinition) -> Void, onClose: @escaping () -> Void) {
+        onImport: @escaping () -> Void = {}, onSave: @escaping (FeedRecipeDefinition) -> Void,
+        onClose: @escaping () -> Void) {
         _stage = State(initialValue: isFirstRun ? .welcome : .composer)
         _recipe = State(initialValue: recipe)
         self.previewCards = previewCards
@@ -51,6 +56,7 @@ public struct ReaderOnboardingView: View {
         self.languages = languages
         self.isSaving = isSaving
         self.deviceLanguage = deviceLanguage
+        self.onImport = onImport
         self.onSave = onSave
         self.onClose = onClose
     }
@@ -184,6 +190,16 @@ public struct ReaderOnboardingView: View {
             .foregroundStyle(.white.opacity(0.8))
             .disabled(isSaving)
             .accessibilityIdentifier("welcome-broad")
+            // F18 R1: the reader who already has a file of sources can bring it now, and the gate keeps its own
+            // two ways forward — importing is neither a step of the first run nor a condition for leaving it.
+            // R7's naming: what this file carries is the reader's own sources, never a backup of the app's data.
+            Button(action: onImport) {
+                Text(verbatim: String(localized: "Importar OPML")).font(.subheadline)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white.opacity(0.8))
+            .disabled(isSaving)
+            .accessibilityIdentifier("welcome-import")
         }
     }
 
