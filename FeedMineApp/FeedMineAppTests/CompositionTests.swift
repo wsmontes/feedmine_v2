@@ -8,7 +8,10 @@ import FeedMinePersistence
 import FeedMineDomain
 import FeedMineRuntime
 import FeedMineUI
-import FeedMineComposition
+// `@testable` on purpose: the app smoke asserts the **effective** policy (`policyIncludingDiscovery`), which is
+// what the drivers ask the acquisition snapshot for before a slice — and that is an internal of the module.
+@testable import FeedMineComposition
+import FeedMineAcquisition
 import FeedMineEditorial
 import FeedMinePublication
 @testable import FeedMine
@@ -164,6 +167,80 @@ final class StandardCatalogueTransport: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+/// The one read of a profile's pool, held open so the test decides **when** it concludes. The composition awaits
+/// a value, so the test owns both ends of that await — which is the only way to stage "the reader moved while the
+/// pool was being read, and the old read concluded last" without a sleep, a timer or a retry loop. It is the same
+/// kind of instrument the controlled transport already is: the product's own seam, answered by the test.
+final class DiscoveryGate: @unchecked Sendable {
+    /// What a read answers: the entries the catalogue offered, and the subject of each.
+    struct Answer: @unchecked Sendable {
+        let entries: [LegacyCatalogEntry]
+        let subjects: [SourceID: AppComposition.EditorialSubject]
+    }
+
+    /// One read as it arrived at the composition: the profile it was for, and the box its answer goes in.
+    final class Read: @unchecked Sendable {
+        let profile: ReaderDiscoveryProfile
+        private let lock = NSLock()
+        private var waiting: CheckedContinuation<Answer, Never>?
+        private var ready: Answer?
+        fileprivate init(profile: ReaderDiscoveryProfile) { self.profile = profile }
+
+        fileprivate func take() async -> Answer {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Answer, Never>) in
+                var immediate: Answer?
+                lock.withLock {
+                    if let ready { immediate = ready; self.ready = nil } else { waiting = continuation }
+                }
+                if let immediate { continuation.resume(returning: immediate) }
+            }
+        }
+
+        fileprivate func give(_ answer: Answer) {
+            var parked: CheckedContinuation<Answer, Never>?
+            lock.withLock {
+                if let waiting { parked = waiting; self.waiting = nil } else { ready = answer }
+            }
+            parked?.resume(returning: answer)
+        }
+    }
+
+    private let lock = NSLock()
+    private var arrived: [Read] = []
+    private var waiting: [CheckedContinuation<Read, Never>] = []
+
+    /// The composition's replacement query.
+    var query: AppComposition.DiscoveryQuery {
+        { [self] profile, _ in
+            let read = Read(profile: profile)
+            var parked: CheckedContinuation<Read, Never>?
+            lock.withLock {
+                if waiting.isEmpty { arrived.append(read) } else { parked = waiting.removeFirst() }
+            }
+            parked?.resume(returning: read)
+            let answer = await read.take()
+            return (answer.entries, answer.subjects)
+        }
+    }
+
+    /// The next read the composition started, in the order it happened.
+    func nextRead() async -> Read {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Read, Never>) in
+            var available: Read?
+            lock.withLock {
+                if arrived.isEmpty { waiting.append(continuation) } else { available = arrived.removeFirst() }
+            }
+            if let available { continuation.resume(returning: available) }
+        }
+    }
+
+    /// Answers one read, which resumes the composition at exactly that point.
+    func answer(_ read: Read, entries: [LegacyCatalogEntry],
+        subjects: [SourceID: AppComposition.EditorialSubject]) {
+        read.give(Answer(entries: entries, subjects: subjects))
+    }
 }
 
 @MainActor
@@ -2630,6 +2707,199 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(try ReaderPreferencesStore(database: try XCTUnwrap(reopened.association).database)
             .load()?.sourceKeys, [a.principal], "Collection navigation never rewrites the reader's selection")
         await reopened.association?.close()
+    }
+
+    // MARK: - A fronteira restauração ↔ descoberta
+
+    /// A container the reader has already used, with a durable window: one real launch over the development
+    /// feeds, its position written as durable. What comes after it is the relaunch these smokes are about — the
+    /// only path in which the pool a profile names is read **behind** the reader's own window.
+    private func containerWithADurableWindow(answering topic: String) async throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 60
+        let first = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration)
+        await first.launch()
+        XCTAssertNil(first.startupFailure)
+        let association = try XCTUnwrap(first.association, "the first launch has to build a session")
+        XCTAssertNotNil(association.store.state.presentation, "and there has to be a window to leave durable")
+        // The reader's answers are a preference, and the relaunch reads them: without them there is no profile,
+        // and therefore no read to stage.
+        await first.voteOnTopic(nodeKey: topic, level: .more)
+        _ = try await association.session.checkpointCurrentPosition(at: Date())
+        await association.close()
+        return directory
+    }
+
+    /// Two default-enabled text sources of the shipped catalogue, far past any first page, as the entries a read
+    /// could bring. The walk examines the catalogue in **key order**; these sit at positions 300 and 301, which is
+    /// what makes "eligible without examining the pages in between" a claim with a measurement behind it.
+    private func catalogueEntriesOutsideTheWalkFirstPage() throws -> (catalogue: URL, records: [LegacyCatalogSourceRecord],
+        first: LegacyCatalogEntry, second: LegacyCatalogEntry) {
+        let catalogue = try XCTUnwrap(Bundle.main.url(forResource: "catalog", withExtension: "sqlite"))
+        let records = try LegacyCatalogReader(catalogURL: catalogue)
+            .sources(after: nil, limit: 400, onlyDefaultEnabled: true, mediaKinds: ["text"])
+        XCTAssertGreaterThan(records.count, 302, "the shipped catalogue is deeper than the positions this uses")
+        return (catalogue, records,
+            try XCTUnwrap(LegacyCatalogImport.entry(records[300])),
+            try XCTUnwrap(LegacyCatalogImport.entry(records[301])))
+    }
+
+    /// **Smoke (a).** A seed read **behind** the reader's window is supply, and only for the sources the authority
+    /// still allows. Two catalogue sources far past the walk's first page are what the read brings; one of them is
+    /// revoked **while the read is out**, which is the case a warm launch has to survive. What has to hold after
+    /// the await: the revoked source is not discovery, not eligible for acquisition and not in the effective
+    /// policy; the healthy one is all three, and became so **without** the walk examining the pages before it;
+    /// the reader's window and its anchor are exactly what they were.
+    @MainActor
+    func testAWarmSeedOutsideTheWalkFirstPageIsSupplyOnlyIfTheAuthorityStillAllowsIt() async throws {
+        let entries = try catalogueEntriesOutsideTheWalkFirstPage()
+        // The profile names the **root** placement of the catalogue's first default-enabled text record. That is
+        // what makes "the walk still begins at the first record" observable: the walk examines records in key order
+        // and reports the ones the profile admits, and the first record is admitted by the profile derived from its
+        // own placement — so a cursor faked past the pool would come back with a page that does not contain it.
+        let walkFirst = try XCTUnwrap(entries.records[0].nodeKeys.first?.split(separator: "/").first.map(String.init),
+            "the catalogue's first record has to be placed somewhere for the walk to admit it")
+        let directory = try await containerWithADurableWindow(answering: walkFirst)
+        let gate = DiscoveryGate()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 60
+        let warm = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration, discoveryQuery: gate.query)
+
+        // The window and the anchor this launch starts from, read **before** anything discovery does with it: the
+        // claim that the adoption leaves them alone is about exactly this value.
+        let before = try XCTUnwrap(warm.association?.store.state.presentation,
+            "a launch with a durable window starts from the reader's own window")
+        let cardsBefore = before.window.items.map(\.id)
+        let anchorBefore = before.window.anchor.cardID
+        XCTAssertFalse(cardsBefore.isEmpty)
+
+        // ...and the walk the adoption will find, read here for the same reason: it is at its **first page**, so
+        // what the pool brings is supply it has not reached. The two sources sit at positions 300 and 301 of the
+        // catalogue, and one page examines 120 records from where the walk is — so "eligible without crossing the
+        // pages in between" is a fact about this walk and not about a cursor someone moved.
+        //
+        // (That adopting a pool does **not** move this cursor is asserted where it is observable without a driver
+        // in the middle — `ReaderDiscoveryPoolTests.testAPoolReadBesideTheWalkBecomesSupplyWithoutMovingTheCursor`,
+        // the package smoke of the same boundary. Here the launch's own first opportunity advances the walk
+        // legitimately, which is its mechanism and not the adoption's doing.)
+        let starting = try XCTUnwrap(warm.association)
+        let context = FeedContext(key: starting.contextKey)
+        let firstPage = try XCTUnwrap(starting.acquisition.advanceDiscovery(for: context, examinedCapacity: 2))
+        let admittedFirstRecords = Set(entries.records.prefix(2)
+            .filter { $0.nodeKeys.contains { $0 == walkFirst || $0.hasPrefix(walkFirst + "/") } }.map(\.key))
+        XCTAssertGreaterThan(admittedFirstRecords.count, 0, "the profile admits the catalogue's first records")
+        XCTAssertEqual(Set(firstPage.entries.map(\.principal)), admittedFirstRecords,
+            "the walk begins at the catalogue's first records: \(firstPage.entries.map(\.principal))")
+        XCTAssertFalse(firstPage.entries.contains { $0.targetID == entries.first.targetID },
+            "and it has not reached the source the pool brings")
+        print("BOUNDARY_WITNESS profile=\(walkFirst) walk_first_page=\(firstPage.entries.map(\.principal).sorted())"
+            + " seed=\(entries.first.principal) revoked=\(entries.second.principal)")
+
+        // The reader's window is what the host is drawing, and this launch's own read is out — it concludes only
+        // when the test says.
+        let launching = Task { await warm.launch() }
+        let read = await gate.nextRead()
+        XCTAssertEqual(read.profile.topicNodeKeys, [walkFirst],
+            "the read answers for the profile this session is on")
+        // **The revocation happens while the read is out.**
+        let association = try XCTUnwrap(warm.association)
+        let authority = AcquisitionTargetAuthority(database: association.database)
+        let doomed = try authority.register(id: entries.second.targetID, connectorKind: .syndication,
+            authorizedSources: [entries.second.source.id])
+        _ = try authority.revoke(id: doomed.id, expectedGeneration: doomed.generation)
+        gate.answer(read, entries: [entries.second, entries.first],
+            subjects: [entries.first.source.id: .init(nodeKey: "smoke/seed", name: "Semente")])
+        await launching.value
+
+        XCTAssertTrue(association.active)
+        XCTAssertFalse(association.discovery.contains { $0.sourceID == entries.second.source.id },
+            "a source the authority revoked is not discovery this session brought")
+        XCTAssertTrue(association.discovery.contains { $0.sourceID == entries.first.source.id },
+            "the healthy source the read brought is discovery, at position 301 of the catalogue")
+        XCTAssertNil(association.subjects[entries.second.source.id])
+        XCTAssertEqual(association.subjects[entries.first.source.id]?.name, "Semente")
+        XCTAssertNotNil(warm.editorialSubject(for: entries.first.source.id, in: association),
+            "the invitation may be asked about the source discovery brought")
+        XCTAssertNil(warm.editorialSubject(for: entries.second.source.id, in: association),
+            "and never about the revoked one")
+
+        // Supply, not decoration: the target is eligible for acquisition and enters the **effective** policy.
+        let eligible = try association.acquisition.eligibleTargets(for: context)
+        XCTAssertTrue(eligible.contains { $0.id == entries.first.targetID },
+            "a read behind the window is supply: the healthy source is acquirable")
+        XCTAssertFalse(eligible.contains { $0.id == entries.second.targetID },
+            "and a revoked one is not")
+        guard case .selectedSources(let sources) = try association.acquisition
+            .policyIncludingDiscovery(association.policy).eligibility else {
+            return XCTFail("discovery preserves the selected-source policy")
+        }
+        XCTAssertTrue(sources.contains(entries.first.source.id))
+        XCTAssertFalse(sources.contains(entries.second.source.id),
+            "a revoked discovery cannot publish cards")
+
+        let after = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertEqual(after.window.items.map(\.id), cardsBefore, "the adoption changed no card")
+        XCTAssertEqual(after.window.anchor.cardID, anchorBefore, "nor the anchor")
+        await association.close()
+    }
+
+    /// **Smoke (b).** A→B with A concluding last. The reader answers again while the pool of the session they are
+    /// reading is out, so a second session is built for the new answers; then the first read concludes, after the
+    /// session it was for is retired. What has to hold: the session reading now keeps **its own** facts — the
+    /// subject its own read stated and the supply its own read materialized — and the stale read adopts nothing
+    /// and activates nothing. Both answers bring the **same** catalogue source with a different subject, which is
+    /// exactly the collision a composition-level map of subjects could not tell apart.
+    @MainActor
+    func testAReadConcludingAfterTheReaderMovedChangesNothingOfTheSessionReadingNow() async throws {
+        let entries = try catalogueEntriesOutsideTheWalkFirstPage()
+        let directory = try await containerWithADurableWindow(answering: "04-technology-science")
+        let gate = DiscoveryGate()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 60
+        let warm = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration, discoveryQuery: gate.query)
+        let shared = entries.first
+
+        let launching = Task { await warm.launch() }
+        let readOfA = await gate.nextRead()
+        XCTAssertEqual(readOfA.profile.topicNodeKeys, ["04-technology-science"])
+        let a = try XCTUnwrap(warm.association)
+
+        // The reader moves while that read is out: an answer about discovery is a preference, and the session is
+        // rebuilt around it — B, on B's own profile.
+        await warm.voteOnTopic(nodeKey: "90_countries/brazil", level: .more)
+        let replacing = Task { try await warm.replaceSession() }
+        let readOfB = await gate.nextRead()
+        XCTAssertNotEqual(readOfB.profile, readOfA.profile, "B reads its own profile, not the one A was reading")
+        gate.answer(readOfB, entries: [shared],
+            subjects: [shared.source.id: .init(nodeKey: "smoke/b", name: "Assunto B")])
+        try await replacing.value
+        let b = try XCTUnwrap(warm.association)
+        XCTAssertFalse(b === a, "the reader's new session is the one reading now")
+        XCTAssertFalse(a.active, "the retired session is not active")
+
+        // A's read concludes **last**.
+        gate.answer(readOfA, entries: [shared],
+            subjects: [shared.source.id: .init(nodeKey: "smoke/a", name: "Assunto A")])
+        await launching.value
+
+        XCTAssertTrue(warm.association === b)
+        XCTAssertEqual(b.subjects[shared.source.id]?.name, "Assunto B",
+            "the subject of the session being read is the one its own read stated")
+        XCTAssertEqual(warm.editorialSubject(for: shared.source.id, in: b)?.name, "Assunto B")
+        XCTAssertTrue(b.discovery.contains { $0.sourceID == shared.source.id })
+        XCTAssertTrue(try b.acquisition.eligibleTargets(for: FeedContext(key: b.contextKey))
+            .contains { $0.id == shared.targetID }, "B's supply is B's own read")
+        XCTAssertTrue(a.subjects.isEmpty, "a read that arrives after the reader moved states nothing for A")
+        XCTAssertTrue(a.discovery.isEmpty, "and A is not adopted: it brought nothing after it was retired")
+        await b.close()
     }
 
 }

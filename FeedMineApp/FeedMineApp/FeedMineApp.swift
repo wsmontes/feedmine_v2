@@ -1053,7 +1053,8 @@ struct FeedMineApp: App {
         let resolved = cards.compactMap(\.sourceID)
         let withSubject = resolved.filter { composition.editorialSubject(for: $0, in: association) != nil }.count
         composition.recordWindowFacts(cards: cards.count, resolvedSources: resolved.count,
-            withSubject: withSubject, tipsHidden: composition.editorialTipsHidden,
+            withSubject: withSubject, knownSubjects: association.subjects.count,
+            tipsHidden: composition.editorialTipsHidden,
             traversed: composition.editorialExposure.count, offersShown: cadence.offersShown)
     }
 
