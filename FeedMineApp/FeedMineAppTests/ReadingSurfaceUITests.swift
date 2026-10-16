@@ -49,11 +49,14 @@ final class ReadingSurfaceUITests: XCTestCase {
             .first { $0.frame.minY > window.minY + 120 && $0.frame.maxY < window.maxY - 80 }
     }
 
-    /// The card's own *open* control: the bookmark comes first in the tree and carries an identifier, this one
-    /// does not.
+    /// The card's own *open* control. It carries `card.open`: measured on the device
+    /// (`docs/reviews/2026-10-11-article-reading-diagnosis.md` §3), the card's tree had the bookmark control with
+    /// an identifier and the opening label with **none**, so a test had to guess ("the first button with an empty
+    /// identifier") — and the bookmark comes first, so guessing wrong saved the article instead of opening it. The
+    /// compact row answers the same tap with a gesture and has no control of its own, hence the card itself.
     private func openControl(_ card: XCUIElement) -> XCUIElement {
-        let candidate = card.buttons.matching(NSPredicate(format: "identifier == '' AND label != ''")).firstMatch
-        return candidate.exists ? candidate : card
+        let control = card.buttons["card.open"]
+        return control.exists ? control : card
     }
 
     private func attach(_ app: XCUIApplication, _ name: String) {
@@ -218,6 +221,32 @@ final class ReadingSurfaceUITests: XCTestCase {
         XCTAssertEqual(byIdentifier(app, "reading.open-site-footer").label, "Abrir no site",
             "the footer keeps the full wording")
         attach(app, "reading-large-text")
+    }
+
+    /// NN-07: the card's own controls are the reader's at the largest text size too. The open surface states
+    /// itself (`card.open`) and is reached by that identifier, and the save control states its action in the
+    /// interface's own words — the same words the card's own menu uses for the same act — instead of the symbol's
+    /// name. Both stay reachable, and the control the reader reached really opens the article.
+    func testTheCardsOwnControlsAreReachableAndNamedAtTheLargestTextSize() throws {
+        let app = launched(shape: "body", largeText: true)
+        let deadline = Date().addingTimeInterval(180)
+        while Date() < deadline, visibleCard(app) == nil { Thread.sleep(forTimeInterval: 1.0) }
+        guard let card = visibleCard(app) else { return XCTFail("the local fixture feed publishes cards") }
+
+        let open = card.buttons["card.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 20), "the card's own open surface states itself")
+        XCTAssertFalse(open.label.isEmpty, "and it carries the card's own words")
+        XCTAssertTrue(open.isHittable, "the largest accessibility size does not take the control away")
+        let save = card.buttons["card.bookmark"]
+        XCTAssertTrue(save.waitForExistence(timeout: 20), "the card offers saving")
+        XCTAssertTrue(save.isHittable)
+        XCTAssertEqual(save.label, "Salvar artigo", "the save control states its action in words")
+        XCTAssertEqual(save.value as? String, "not bookmarked", "and the state the reader's own list records")
+        attach(app, "nn07-card-controls-at-the-largest-text-size")
+
+        open.tap()
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 25),
+            "the control the reader reached opens the article, at the largest text size")
     }
 
     func testOpeningTheSiteFromTheLocalReaderIsAnExplicitRequestAndComesBack() throws {

@@ -136,20 +136,21 @@ public struct ReaderOnboardingView: View {
         }
     }
 
+    /// V1 tints the last word with the accent colour; the words themselves are its own.
+    ///
+    /// The sentence **is** the element, drawn where the reader reads it. It used to be an `.overlay` of an empty
+    /// `Text(verbatim: "")`: measured (`docs/reviews/2026-10-11-round9-language-choice-and-localization.md` §8,
+    /// PO-classified P1), that placeholder has no size of its own, so the app's own headline painted nothing — the
+    /// element VoiceOver could reach (`welcome-headline`) carried words no reader could see, in a box with no area.
     private var headline: some View {
-        Text(verbatim: "")
+        (Text(String(localized: "The open web,\narranged by "))
+            + Text(String(localized: "you")).foregroundColor(.accentColor)
+            + Text(verbatim: "."))
             .font(FeedDesignTokens.Typography.pageTitle)
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
             .accessibilityIdentifier("welcome-headline")
             .accessibilityLabel(Text(verbatim: Self.welcomeHeadline))
-            .overlay {
-                // V1 tints the last word with the accent colour; the words themselves are its own.
-                (Text(String(localized: "The open web,\narranged by "))
-                    + Text(String(localized: "you")).foregroundColor(.accentColor)
-                    + Text(verbatim: "."))
-                    .font(FeedDesignTokens.Typography.pageTitle)
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-            }
     }
 
     static let welcomeHeadline = String(localized: "The open web, arranged by you.")
@@ -159,7 +160,9 @@ public struct ReaderOnboardingView: View {
             ForEach([String(localized: "No aparelho"), String(localized: "Sem conta"),
                 String(localized: "Editável")], id: \.self) { badge in
                 HStack(spacing: 4) {
+                    // Decoration: the badge is its own words.
                     Image(systemName: "checkmark.shield.fill").font(.caption2)
+                        .accessibilityHidden(true)
                     Text(verbatim: badge).font(.caption2)
                 }
                 .foregroundStyle(.white.opacity(0.7))

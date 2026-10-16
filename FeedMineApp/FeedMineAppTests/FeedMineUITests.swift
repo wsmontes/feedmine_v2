@@ -576,6 +576,38 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
 
+    /// NN-07: the welcome scene's own headline is **drawn** where the reader reads it. It used to be an `.overlay`
+    /// of a `Text(verbatim: "")` — a placeholder with no size of its own — so the sentence the app announces
+    /// painted nothing, and the element the tests address had no area: measured, and classified P1 by the PO, in
+    /// `docs/reviews/2026-10-11-round9-language-choice-and-localization.md` §8. The element is now the sentence
+    /// itself, above the body it introduces, and the scene's own ways forward are untouched.
+    @MainActor
+    func testTheWelcomeHeadlineIsDrawnWhereTheReaderReadsIt() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        app.launch()
+        let headline = app.staticTexts["welcome-headline"]
+        XCTAssertTrue(headline.waitForExistence(timeout: 45))
+        XCTAssertFalse(headline.label.isEmpty, "the sentence is what the reader hears")
+        XCTAssertGreaterThan(headline.frame.width, 60,
+            "the headline has an area of its own: a box without size draws nothing")
+        XCTAssertGreaterThan(headline.frame.height, 20, "and its own lines")
+        let body = app.staticTexts["welcome-body"]
+        XCTAssertTrue(body.exists)
+        XCTAssertLessThan(headline.frame.maxY, body.frame.minY,
+            "and it is read where it is written: above the body it introduces")
+        XCTAssertTrue(app.buttons["welcome-shape"].exists)
+        XCTAssertTrue(app.buttons["welcome-broad"].exists)
+        XCTAssertTrue(app.otherElements["welcome-trust"].exists)
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "nn07-welcome-headline"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     /// F02's first run (the journey the acceptance benchmark walks): the reader answers **idiomas e lugares**,
     /// enters the feed, and **no thematic question** stands between them and discovery. The controls the product
     /// keeps for whoever wants to tune the machinery are reachable *by choice*, in the discovery preferences.
