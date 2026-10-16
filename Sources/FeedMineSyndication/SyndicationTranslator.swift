@@ -48,8 +48,15 @@ public struct SyndicationTranslator: Sendable {
             media: [AcquisitionMediaCandidateClaim]) -> Result<AcquisitionObservation, ItemFailure> {
             guard let object else { return .failure(.missingStableIdentity) }
             // v1 lesson IN-4 / review M12: a future-dated item would pin itself to the top of a
-            // recency order forever. Clamp claimed times to the observation; identity is unchanged.
-            func clamped(_ date: Date?) -> Date? { date.map { min($0, observedAt) } }
+            // recency order forever, so the accepted value is clamped to the observation; identity is
+            // unchanged. TX-07D: the clamp is not silent. The origin's own claim travels beside the
+            // accepted value (`declaredAuthoredAt` / `declaredModifiedAt`), and the acceptance rule is
+            // the domain's `OriginDeclaredInstant.accepted(observingAt:)`, stated once and nowhere else.
+            let declaredAuthored = authored.map(OriginDeclaredInstant.init(claimed:))
+            let declaredModified = modified.map(OriginDeclaredInstant.init(claimed:))
+            func accepted(_ declared: OriginDeclaredInstant?) -> Date? {
+                declared.map { $0.accepted(observingAt: observedAt) }
+            }
             // PD-1 / review H1 follow-up 1: publishers edit articles without touching `updated` /
             // `date_modified`. The version identity is the claimed date plus a fingerprint of the
             // material content, so a real edit is a genuinely new version and identical replay is
@@ -70,11 +77,11 @@ public struct SyndicationTranslator: Sendable {
                 materialVersion = legacyVersion
             }
             guard let value = AcquisitionObservation(objectIdentity: object, versionIdentity: materialVersion, precedence: .makeCurrent,
-                availability: .available, headline: title, summary: summary, bodyText: body, authoredAt: clamped(authored),
-                modifiedAt: clamped(modified), observedAt: observedAt, language: language, primaryLink: Self.webURL(link),
+                availability: .available, headline: title, summary: summary, bodyText: body, authoredAt: accepted(declaredAuthored),
+                modifiedAt: accepted(declaredModified), observedAt: observedAt, language: language, primaryLink: Self.webURL(link),
                 searchProjection: nil, providerID: nil, memberships: configuration.memberships, mediaCandidates: media,
                 fingerprintGeneration: fingerprintGeneration, legacyVersionIdentity: fingerprintGeneration == 2 ? legacyVersion : nil,
-                bodySourceElement: bodySourceElement)
+                bodySourceElement: bodySourceElement, declaredAuthoredAt: authored, declaredModifiedAt: modified)
             else { return .failure(.invalidCanonicalObservation) }
             return .success(value)
         }

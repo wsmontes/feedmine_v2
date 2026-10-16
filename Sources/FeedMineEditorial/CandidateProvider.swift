@@ -63,6 +63,12 @@ public struct CandidateProvider: Sendable {
             return Candidate(originRecordID: record.originRecordID, originRevisionID: record.originRevisionID,
                 headline: record.headline.map(ReadablePublicationText.convert), summary: record.summary.map(ReadablePublicationText.convert),
                 timestamp: CandidateTimestamp(value: record.sortDate, kind: kind),
+                // TX-07D: the evidence is reconstructed from canonical supply, not restated from the
+                // ordering key. `record.authoredAt` is the accepted publication instant (and is nil when
+                // the origin declared none), `modifiedAt` is the declared change instant, and
+                // `observedAt` is FeedMine's own observation. Ordering still reads `timestamp`.
+                temporal: CandidateTemporalEvidence(observedAt: record.observedAt,
+                    acceptedAuthoredAt: record.authoredAt, acceptedModifiedAt: record.modifiedAt),
                 language: record.language, providerID: record.providerID, sourceIDs: Set(record.sourceIDs),
                 primaryMediaLocator: record.primaryMediaLocator, primaryLink: record.primaryLink,
                 declaredBody: record.declaredBody, bodyObserved: record.bodyObserved)

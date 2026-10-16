@@ -19,10 +19,10 @@ final class ContentStoreCandidateWindowTests: XCTestCase {
     }
     @discardableResult
     private func insert(_ number: Int, into store: ContentStore, date: Date? = nil, source: SourceID? = nil,
-        authored: Date? = nil, headline: String? = "", summary: String? = nil,
+        authored: Date? = nil, modified: Date? = nil, headline: String? = "", summary: String? = nil,
         provider: ProviderID? = nil, expected: ContentStore.CurrentRevisionExpectation = .none) throws -> OriginRevision {
         let revision = OriginRevision(id: OriginRevisionID(), originRecordID: origin(number), externalVersionIdentity: nil,
-            headline: headline, summary: summary, bodyText: "body excluded", authoredAt: authored, modifiedAt: nil,
+            headline: headline, summary: summary, bodyText: "body excluded", authoredAt: authored, modifiedAt: modified,
             observedAt: date ?? time, language: "pt-BR", primaryLink: URL(string: "https://example.test/content")!,
             searchProjection: "search excluded", providerID: provider)
         try store.commitCanonicalChange(ContentStore.CanonicalChange(recordID: origin(number),
@@ -227,6 +227,44 @@ final class ContentStoreCandidateWindowTests: XCTestCase {
             XCTAssertEqual(filtered.records, [])
             XCTAssertEqual(filtered.examinedCount, 1)
             assertCorruption { _ = try window(store, capacity: 1) }
+        }
+    }
+
+    /// TX-07D: measures the extent of the retrieval problem F03 inherits. The supply key is the accepted
+    /// authored instant or the observation instant (`refreshSupply`, ContentStore.swift:734-741), and the
+    /// bounded prefix is ordered by that one key (`candidateWindow`, `ORDER BY sort_date DESC ... LIMIT ?`,
+    /// ContentStore.swift:85, read columns at :84). An undated record observed now therefore outranks a
+    /// story published long ago, and six of them fill a window of six completely: zero reliably dated
+    /// stories are examined, even though every one of them stays reachable through the keyset. Nothing
+    /// here changes the key, the cursor or the bound — the measurement states what the current contract
+    /// cannot see.
+    func testUndatedObservedSupplyFillsTheBoundedWindowAndHidesReliablePublications() throws {
+        try withDatabase { _, store in
+            let published = time.addingTimeInterval(-365 * 86_400)
+            for n in 101...106 { try insert(n, into: store) }
+            let reliable = try insert(1, into: store, authored: published, modified: published.addingTimeInterval(60))
+            let bounded = try window(store, capacity: 6)
+            XCTAssertEqual(bounded.examinedCount, 6)
+            XCTAssertEqual(bounded.records.count, 6)
+            XCTAssertTrue(bounded.records.allSatisfy { $0.sortDateBasis == .observedFallback })
+            XCTAssertEqual(bounded.records.filter { $0.originRecordID == reliable.originRecordID }.count, 0)
+            XCTAssertFalse(bounded.records.contains { $0.authoredAt != nil })
+            XCTAssertFalse(bounded.exhausted)
+            // The record itself keeps the facts: absence stays absence, and a declared pair stays distinct.
+            let undated = try XCTUnwrap(bounded.records.first)
+            XCTAssertNil(undated.authoredAt)
+            XCTAssertNil(undated.modifiedAt)
+            XCTAssertEqual(undated.sortDate, time)
+            let wider = try window(store, capacity: 8)
+            let buried = try XCTUnwrap(wider.records.last)
+            XCTAssertEqual(buried.originRecordID, reliable.originRecordID)
+            XCTAssertEqual(buried.originRevisionID, reliable.id)
+            XCTAssertEqual(buried.sortDate, published)
+            XCTAssertEqual(buried.sortDateBasis, .authored)
+            XCTAssertEqual(buried.authoredAt, published)
+            XCTAssertEqual(buried.modifiedAt, published.addingTimeInterval(60))
+            XCTAssertEqual(buried.observedAt, time)
+            XCTAssertTrue(wider.exhausted)
         }
     }
 }
