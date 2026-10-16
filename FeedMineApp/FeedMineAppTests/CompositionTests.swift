@@ -2693,45 +2693,65 @@ final class BackgroundRefreshCapabilityTests: XCTestCase {
     }
 }
 
-/// The journey line is a **contract with a machine**, not prose: `scripts/device-journey.sh` greps it out of
-/// `feedmine journey …` and reads every key by name. A key silently renamed here would turn a device run into a run
-/// that looks like it saw nothing, so the shape is pinned. The owner's ask of 2026-10-15 is the content: the cards
-/// that were admitted, the media they declare against the media that arrived, the sources contacted against the
-/// ones that answered, and the failures counted — one bounded line, never a stream of events.
+/// O orçamento de quadro é do **display**, e não uma constante — e é um número só: o registro e os buckets leem a
+/// mesma função (`FeedFrameMeter.budgetMilliseconds(target:)`), que é o alvo que o próprio `CADisplayLink` publica
+/// por quadro.
 ///
-/// The switch itself (`FeedJourneyConsole.enabled`, off unless `FEEDMINE_JOURNEY_CONSOLE=1`) is deliberately not
-/// asserted here: a test process inherits whatever environment runs it, so asserting the default would be a test
-/// of the runner. Its cost is stated by construction — the whole type is `#if DEBUG` and the frame meter asks for
-/// nothing when the sampler is `nil` — and it is measured on a shipping build, not inferred from a test.
-final class JourneyConsoleTests: XCTestCase {
-    func testTheJourneyLineStatesEveryFactOnceWithTheFrameSeriesKeys() {
-        var facts = FeedJourneyConsole.Facts()
-        facts.elapsedSeconds = 61.4
-        facts.cards = 22
-        facts.hero = 9
-        facts.thumbnail = 5
-        facts.textOnly = 8
-        facts.mediaResident = 11
-        facts.mediaPrepared = 37
-        facts.mediaSettled = 40
-        facts.sourcesContacted = 4
-        facts.sourcesResponded = 2
-        facts.sourcesUnreachable = 1
-        facts.preparationLive = true
-        facts.installRejects = 3
-        let line = FeedJourneyConsole.line(facts)
-        XCTAssertEqual(line, "t=61s cards=22 hero=9 thumb=5 text=8 media_resident=11"
-            + " media_prepared=37 media_settled=40 sources_contacted=4 sources_responded=2"
-            + " sources_unreachable=1 preparation=live install_rejects=3")
-        XCTAssertFalse(line.contains("\n"), "one bounded line: the journey is stated, never streamed")
+/// Medido em 2026-10-16, nas duas pontas: o alvo do display é 16,67 ms tanto no simulador desta máquina
+/// (`budget_ms=16.67` na série que a jornada publicou) quanto no iPhone 14 Plus do dono (`budget_ms=16.67` na
+/// linha do console capturada com `devicectl device process launch --console`). É por isso que a constante
+/// `1000/60` que o `flush` escrevia *parecia* certa: nos dois ambientes em uso os dois números coincidem, e a
+/// divergência só aparece num painel de 120 Hz — onde o registro declararia 16,67 ms enquanto os buckets julgavam
+/// 8,33 ms, ou seja, o mesmo quadro viraria "no orçamento" no traço e "dois orçamentos perdidos" na contagem. É o
+/// defeito latente que estes casos fixam, já que nenhum painel de 120 Hz está nesta mesa para ser medido ao vivo.
+@MainActor
+final class FeedFrameBudgetTests: XCTestCase {
+    func testTheBudgetIsTheDisplaysOwnTarget() {
+        XCTAssertEqual(FeedFrameMeter.budgetMilliseconds(target: 1.0 / 60), 16.667, accuracy: 0.01)
+        XCTAssertEqual(FeedFrameMeter.budgetMilliseconds(target: 1.0 / 120), 8.333, accuracy: 0.01)
+        // O piso declarado no medidor: um alvo degenerado julga contra 1/120 em vez de contra zero.
+        XCTAssertEqual(FeedFrameMeter.budgetMilliseconds(target: 0), 8.333, accuracy: 0.01)
     }
 
-    /// The line exists from the first tick, before anything was published: "nothing yet" has to be readable, and
-    /// `preparation=done` is the truth when no cold chain is being observed.
-    func testAnEmptyJourneyStillStatesItselfInsteadOfBeingAbsent() {
-        XCTAssertEqual(FeedJourneyConsole.line(FeedJourneyConsole.Facts()),
-            "t=0s cards=0 hero=0 thumb=0 text=0 media_resident=0 media_prepared=0 media_settled=0"
-                + " sources_contacted=0 sources_responded=0 sources_unreachable=0 preparation=done"
-                + " install_rejects=0")
+    func testTheSameIntervalIsJudgedByTheDisplayItArrivedOn() {
+        let seventeenAt120 = FeedFrameMeter.bucket(intervalMilliseconds: 17,
+            budgetMilliseconds: FeedFrameMeter.budgetMilliseconds(target: 1.0 / 120))
+        XCTAssertTrue(seventeenAt120.bad, "17 ms são dois orçamentos num painel de 120 Hz")
+        let seventeenAt60 = FeedFrameMeter.bucket(intervalMilliseconds: 17,
+            budgetMilliseconds: FeedFrameMeter.budgetMilliseconds(target: 1.0 / 60))
+        XCTAssertFalse(seventeenAt60.late || seventeenAt60.bad || seventeenAt60.severe,
+            "e nada num painel de 60 Hz — as fronteiras são 1,5/2/3 orçamentos")
+        // A fronteira é o `>` **estrito**, e medido no valor exato: 50 ms são exatamente três orçamentos de 16,67 ms,
+        // e um quadro dessa duração perde **dois** quadros — por isso é `bad`, e 51 ms é `severe`. (A primeira
+        // versão deste caso afirmava `severe` para 50 ms: errava o caso exato, não a fronteira.)
+        let exactlyThreeAt60 = FeedFrameMeter.bucket(intervalMilliseconds: 50,
+            budgetMilliseconds: FeedFrameMeter.budgetMilliseconds(target: 1.0 / 60))
+        XCTAssertTrue(exactlyThreeAt60.bad && !exactlyThreeAt60.severe,
+            "50 ms são exatamente três orçamentos e o `>` estrito os deixa em `bad`")
+        let aboveThreeAt60 = FeedFrameMeter.bucket(intervalMilliseconds: 51,
+            budgetMilliseconds: FeedFrameMeter.budgetMilliseconds(target: 1.0 / 60))
+        XCTAssertTrue(aboveThreeAt60.severe, "51 ms passam de três orçamentos num painel de 60 Hz")
+        let twentySixAt60 = FeedFrameMeter.bucket(intervalMilliseconds: 26,
+            budgetMilliseconds: FeedFrameMeter.budgetMilliseconds(target: 1.0 / 60))
+        XCTAssertTrue(twentySixAt60.late, "26 ms passam de um orçamento e meio")
+    }
+
+    func testTheRecordStatesTheBudgetThatJudgedTheWindow() {
+        var window = FeedFrameMeter.Window()
+        window.frames = 41
+        window.severe = 2
+        window.worstMilliseconds = 235.6
+        let onSixty = FeedFrameMeter.recordFields(window, budgetMilliseconds: 
+            FeedFrameMeter.budgetMilliseconds(target: 1.0 / 60))
+        let onOneTwenty = FeedFrameMeter.recordFields(window, budgetMilliseconds:
+            FeedFrameMeter.budgetMilliseconds(target: 1.0 / 120))
+        // A constante que este arquivo escrevia antes declararia 16,67 ms nos dois casos: no painel de 120 Hz o
+        // traço diria o dobro do orçamento que de fato julgou.
+        XCTAssertEqual(onSixty["budget_ms"], "16.67")
+        XCTAssertEqual(onOneTwenty["budget_ms"], "8.33")
+        XCTAssertEqual(Double(onOneTwenty["budget_ms"] ?? "") ?? 0,
+            FeedFrameMeter.budgetMilliseconds(target: 1.0 / 120), accuracy: 0.005)
+        XCTAssertEqual(onOneTwenty["severe"], "2")
+        XCTAssertEqual(onOneTwenty["worst_ms"], "235.6")
     }
 }
