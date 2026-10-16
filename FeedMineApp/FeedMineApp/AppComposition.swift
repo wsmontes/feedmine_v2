@@ -253,20 +253,48 @@ final class AppComposition {
                 Self.log("startup failure loading the source selection: \(String(describing: error))")
             }
         }
+        // A warm launch is local (INV-07) — and the reader must not perceive it: when the previous interaction left
+        // a durable window, the association is built **here**, synchronously, so this launch's first frame already
+        // carries the reader's own feed and no surface is drawn between the launch screen and it. `launch()` then
+        // activates what exists and lets everything that is not the reader's window continue behind it.
+        //
+        // A launch with nothing durable keeps the asynchronous path exactly as it was: its preparation surface is the
+        // legitimate one (doctrine item 1 — "the first open may be slow — that is what the loading screen is for"),
+        // and the pool its profile names must not block a first run's main actor.
+        if startupFailure == nil, hasDurableWindow() {
+            association = try? warmAssociation()
+        }
+    }
+
+    /// Whether the previous interaction left a window at all: two one-row reads, taken only to decide whether this
+    /// launch is warm. What a launch can actually restore is answered precisely, and only, by
+    /// `FeedSession.warmStart` inside the association.
+    private func hasDurableWindow() -> Bool {
+        guard let library else { return false }
+        let store = SessionStore(database: library)
+        // A read that throws is not a durable window: this launch then keeps the asynchronous path, which reports
+        // its own failures to the reader.
+        return (try? store.checkpoint()) != nil || (try? store.checkpoint(for: currentContextKey)) != nil
     }
 
     func launch() async {
-        guard !replacingSession, association == nil, startupFailure == nil else { return }
+        guard !replacingSession, startupFailure == nil else { return }
         let current: FeedAssociation
-        do {
-            current = try await association(contextKey: currentContextKey)
-        } catch {
-            startupFailure = "Não foi possível abrir o feed local."
-            startupFailureDetail = String(describing: error)
-            Self.log("startup failure opening the association: \(String(describing: error))")
-            return
+        if let warmed = association {
+            // The warm launch already built this association **and** installed the reader's own window into it,
+            // before this launch drew anything. What is left is everything that is not that window: activation,
+            // acquisition, media, the discovery walk — the backend, behind the feed the reader already has.
+            current = warmed
+        } else {
+            do { current = try await association(contextKey: currentContextKey) }
+            catch {
+                startupFailure = "Não foi possível abrir o feed local."
+                startupFailureDetail = String(describing: error)
+                Self.log("startup failure opening the association: \(String(describing: error))")
+                return
+            }
+            association = current
         }
-        association = current
         do {
             try await current.launch()
         } catch {
@@ -1213,14 +1241,59 @@ final class AppComposition {
             currentContextKey = session.key
             _ = try preferences?.setContext(session.key)
         }
+        return try makeAssociation(contextKey: session.key, discovered: discovered, profile: profile,
+            warmLaunch: false)
+    }
+
+    /// The one place an association is built. The **asynchronous** launch and the **warm** launch hand the same
+    /// inputs to the same constructor, so there is one shape of session and not two: what differs is only when they
+    /// can run (the warm one cannot `await`, because the reader's own window has to exist before the first frame).
+    private func makeAssociation(contextKey: ContextKey, discovered: [TrustedFeed],
+        profile: ReaderDiscoveryProfile, warmLaunch: Bool) throws -> FeedAssociation {
+        let session = try sessionState(for: contextKey)
+        if session.key != contextKey {
+            currentContextKey = session.key
+            _ = try preferences?.setContext(session.key)
+        }
         let key = applied(session.key)
         let (scoring, version) = scoring(for: key)
         return connecting(try FeedAssociation(directory: directory, feeds: session.feeds,
             discovery: discovered,
             configuration: transportConfiguration, trace: trace, database: libraryDatabase(),
-            discoveryTraversal: discoveryTraversal(for: key, profile: profile, snapshot: snapshot), contextKey: key,
-            selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
-            catalogueURL: snapshot?.catalogueURL, editorialExposure: editorialExposure, discoveryProfile: profile))
+            discoveryTraversal: discoveryTraversal(for: key, profile: profile, snapshot: catalogueSnapshot),
+            contextKey: key, selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
+            catalogueURL: catalogueSnapshot?.catalogueURL, editorialExposure: editorialExposure,
+            discoveryProfile: profile, warmLaunch: warmLaunch))
+    }
+
+    /// The association a **warm** launch starts from — the same session `launch()` would build, with the two
+    /// differences a first frame demands: it is built **synchronously**, and the pool its profile names is read on
+    /// this thread rather than handed to a detached pass. At this moment the main actor is not drawing yet, and the
+    /// reader's own window must not wait behind a hop.
+    ///
+    /// Only a launch the previous interaction made durable takes this path (see the guard in `init`): a launch with
+    /// nothing to show keeps the asynchronous path and the preparation surface the doctrine gives it, because
+    /// blocking a first run's main actor on a pool read would trade a visible wait for an invisible one.
+    private func warmAssociation() throws -> FeedAssociation {
+        let initial = try sessionState(for: currentContextKey)
+        let profile = discoveryProfile(for: applied(initial.key))
+        let discovered = try warmDiscoveryFeeds(profile: profile)
+        return try makeAssociation(contextKey: initial.key, discovered: discovered, profile: profile,
+            warmLaunch: true)
+    }
+
+    /// The pool a profile names, read on the thread that asks — one computation behind both readers of it
+    /// (`discoveryFeeds` hands the same call to a detached pass), and the same caches are filled either way, so a
+    /// profile never costs the catalogue two reads.
+    private func warmDiscoveryFeeds(profile: ReaderDiscoveryProfile) throws -> [TrustedFeed] {
+        guard !profile.isEmpty, let snapshot = catalogueSnapshot else { return [] }
+        let cacheKey = DiscoveryCacheKey(profile: profile, fingerprint: snapshot.fingerprint)
+        if let cached = discoveryCache[cacheKey] { return cached }
+        let (entries, subjects) = Self.discoveryPool(profile: profile, catalogueURL: snapshot.catalogueURL)
+        let feeds = entries.map(Self.trustedFeed(from:))
+        discoveryCache[cacheKey] = feeds
+        discoverySubjects = subjects
+        return feeds
     }
 
     /// The walk discovery is on for this context's profile. Bounded by the same rule as the pool: no catalogue, no
@@ -1250,14 +1323,12 @@ final class AppComposition {
         let cacheKey = DiscoveryCacheKey(profile: profile, fingerprint: snapshot.fingerprint)
         if let cached = discoveryCache[cacheKey] { return cached }
         let url = snapshot.catalogueURL
-        let limit = Self.discoverySourceLimit
         // One detached pass: the pool query **and** the subject names. Opening the shipped 118 MB catalogue once
         // per node key — which is what asking the catalogue for a name does — put seconds of work on the main
         // actor, right where the reader is waiting for their feed.
         let (entries, subjects) = await Task.detached(priority: .userInitiated) { () -> ([LegacyCatalogEntry],
             [SourceID: AppComposition.EditorialSubject]) in
-            let pool = (try? ReaderDiscoveryBuilder(catalogURL: url).pool(for: profile, limit: limit))?.entries ?? []
-            return (pool, Self.subjects(in: pool, catalogURL: url))
+            Self.discoveryPool(profile: profile, catalogueURL: url)
         }.value
         let feeds = entries.map(Self.trustedFeed(from:))
         discoveryCache[cacheKey] = feeds
@@ -1481,7 +1552,20 @@ final class AppComposition {
 
     /// How many sources one profile may pull out of the catalogue. B01 asks for at least fifty distinct sources
     /// acquired automatically; this is the ceiling the runtime may contact, not a page size.
-    static let discoverySourceLimit = 120
+    /// `nonisolated` because `discoveryPool` is: a constant is not state, and the detached pass that reads it must
+    /// not touch the main actor.
+    nonisolated static let discoverySourceLimit = 120
+
+    /// The pool a profile names, over the installed catalogue, with the subjects a card is attributed with — one
+    /// computation behind both of its readers: `discoveryFeeds` (the launch that has a loading screen to show, off
+    /// the main actor) and `warmDiscoveryFeeds` (a warm launch, which has to have the reader's window before its
+    /// first frame and therefore cannot await).
+    nonisolated static func discoveryPool(profile: ReaderDiscoveryProfile, catalogueURL: URL)
+        -> (entries: [LegacyCatalogEntry], subjects: [SourceID: EditorialSubject]) {
+        let pool = (try? ReaderDiscoveryBuilder(catalogURL: catalogueURL).pool(for: profile,
+            limit: discoverySourceLimit))?.entries ?? []
+        return (pool, subjects(in: pool, catalogURL: catalogueURL))
+    }
 
     static func trustedFeed(from entry: LegacyCatalogEntry) -> TrustedFeed {
         TrustedFeed(targetID: entry.targetID, sourceID: entry.source.id, bindingID: entry.bindingID,
@@ -1924,7 +2008,7 @@ final class FeedAssociation {
         contextKey: ContextKey = ContextKey(request: .main), selectionVersion: UInt64 = 2,
         scoring: ResolvedSelectionPolicy.ScoringBehavior = .equal, scoringVersion: UInt64 = 1,
         catalogueURL: URL?, editorialExposure: EditorialExposureLedger,
-        discoveryProfile: ReaderDiscoveryProfile = .init()) throws {
+        discoveryProfile: ReaderDiscoveryProfile = .init(), warmLaunch: Bool = false) throws {
         self.trace = trace
         self.catalogueURL = catalogueURL
         self.editorialExposure = editorialExposure
@@ -2111,10 +2195,22 @@ final class FeedAssociation {
                 .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
         }, usage: { try PublicationStore(database: db).mediaUsage() })
         coldRetryFallbackSeconds = configuration.timeoutIntervalForRequest
-        let session = FeedSession(publicationHistory: history, imageDecoder: PresentationImageDecoder(
-            assetDirectory: assetDirectory, heroMaxPixel: device.heroPixelWidth, thumbnailMaxPixel: device.thumbnailPixelWidth))
-        self.session = session
+        let imageDecoder = PresentationImageDecoder(assetDirectory: assetDirectory,
+            heroMaxPixel: device.heroPixelWidth, thumbnailMaxPixel: device.thumbnailPixelWidth)
         bounds = Self.presentationBounds(context.key)
+        // A warm launch is local (INV-07) and the reader must not perceive it: the window the previous interaction
+        // left is read and projected **here**, so this association's first frame already carries it and no surface
+        // is drawn between the launch screen and the reader's own feed. It is the projection `.initial` performs in
+        // `launch()` — the session below adopts this one, so the checkpoint is read once and the sequence continues.
+        let warm: FeedSession.WarmStart?
+        if warmLaunch {
+            warm = try FeedSession.warmStart(publicationHistory: history, imageDecoder: imageDecoder,
+                bounds: bounds)
+        } else {
+            warm = nil
+        }
+        let session = FeedSession(publicationHistory: history, imageDecoder: imageDecoder, warmStart: warm)
+        self.session = session
         // The names preparation reads are **live** (see `LiveValue`): discovery finds sources while the reader
         // reads, so the closure below must consult them at the moment it prepares — not the map that existed here.
         let names = LiveValue(Dictionary(uniqueKeysWithValues: supply.map { ($0.sourceID, $0.displayName) }))
@@ -2218,6 +2314,12 @@ final class FeedAssociation {
         targetNames = Dictionary(uniqueKeysWithValues: feeds.map { ($0.targetID, $0.displayName) })
         let provider = CandidateProvider(contentStore: ContentStore(database: db))
         admittedHeadlines = { (try? provider.candidates(for: plan, after: nil, examinedCapacity: 12))?.candidates.compactMap(\.headline) ?? [] }
+        // The reader's window reaches the screen **here**, before this launch has drawn anything: it is the whole
+        // point of a warm start. The handoff and the store keep their own validation, and a later `.initial`
+        // admission returns this same projection, so installing it again is a no-op by the store's own rule.
+        if let warm {
+            try install(FeedPresentationHandoff.receive(snapshot: warm.snapshot, into: store.state))
+        }
     }
 
     /// §5.3/PD-6: the media preparation window for one operation, stated once so the precedent is testable.

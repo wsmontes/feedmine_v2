@@ -74,6 +74,11 @@ public struct FeedLoadingView: View {
         }
         .padding(FeedDesignTokens.Spacing.page)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The surface is nameable, so a journey can assert its **absence** — the half of the PO's headline criterion
+        // ("close and reopen the app … with no loading screen in between") that no test ever asserted. The container
+        // keeps its children (V1 named its own loading surface the same way, `initial-feed-loading`).
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("feed-loading-surface")
     }
 
     /// The actions the PO approved, and only where they are the honest next step: a walk that ended
