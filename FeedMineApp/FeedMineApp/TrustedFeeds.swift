@@ -1,5 +1,8 @@
 import Foundation
 import Synchronization
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 import FeedMineDomain
 import FeedMinePersistence
 import FeedMineComposition
@@ -286,6 +289,81 @@ enum DevelopmentLocalFeeds {
 
     static var textShape: TextShape { TextShape.current }
 
+    /// **A forma de mídia que esta execução serve.** O default (`off`) mantém o documento byte-idêntico ao que
+    /// este transporte sempre serviu: item sem imagem, cartão text-only, nenhuma corrida de hoje muda. Com
+    /// `image`, cada item declara o seu visual de cartão — e a imagem percorre então o caminho de produção
+    /// inteiro (candidato → busca → materialização → decodificação → o slot congelado do card), sem rede e sem
+    /// servidor, porque quem responde o endereço é este mesmo processo.
+    ///
+    /// É a jornada que faltava na bateria: nenhum teste da V2 afirmava que uma imagem foi **desenhada** (os dois
+    /// desenhos do slot são decorativos e não existem na árvore de acessibilidade), e as fontes de
+    /// desenvolvimento não declaravam mídia nenhuma, então a jornada não era construível. O custo em corrida
+    /// normal é zero: a forma `off` é o default e nada é desenhado, gerado ou servido.
+    enum MediaShape: String {
+        /// O default: sem candidato de mídia, exatamente como sempre foi.
+        case off
+        /// Cada item declara `cardImageURL` como o seu visual.
+        case image
+
+        static var current: MediaShape {
+            MediaShape(rawValue: ProcessInfo.processInfo.environment["FEEDMINE_FIXTURE_MEDIA"] ?? "") ?? .off
+        }
+    }
+
+    static var mediaShape: MediaShape { MediaShape.current }
+
+    /// O endereço que cada item declara. É um nome público de verdade — o localizador de mídia e a política de
+    /// host exigem um, e nada no caminho de produção é especial-cased para teste — e esta sessão responde por ele,
+    /// então a corrida não toca a rede.
+    static let cardImageURL = "https://feeds.bbci.co.uk/fixture/card-visual.png"
+
+    /// O PNG que essa imagem é: campo magenta sólido em 16:9 de hero, **desenhado aqui** — nenhum arquivo de
+    /// recurso, nenhum asset catalog, nada novo no bundle. Magenta é uma cor que nenhuma paleta, placeholder,
+    /// texto ou chrome do app desenha, e é isso que deixa um teste de jornada afirmar "estes pixels são a imagem"
+    /// em vez de "há algo ali".
+    ///
+    /// O espaço é **sRGB** de propósito: com o `deviceRGB` genérico que estava aqui primeiro, os bytes eram
+    /// (255, 64, 255) depois da conversão de cor (medido no blob em disco, 1200×675), e uma testemunha declarada
+    /// em (255, 0, 255) não reconheceria o próprio desenho que ela mesma produziu.
+    ///
+    /// `static let` é preguiçoso: em corrida sem a forma `image` ele nunca é desenhado.
+    static let cardImagePNG: Data = {
+        let width = 1200, height = 675
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            return Data()
+        }
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        guard let image = context.makeImage() else { return Data() }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {
+            return Data()
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return Data() }
+        return data as Data
+    }()
+
+    /// O elemento que declara o visual no documento desta execução (vazio na forma `off`).
+    static var imageElement: String {
+        guard mediaShape == .image else { return "" }
+        return "<enclosure url=\"\(cardImageURL)\" type=\"image/png\" length=\"\(cardImagePNG.count)\"/>"
+    }
+
+    /// O mesmo visual no JSON Feed, que nomeia o seu campo (`item.image`).
+    private static var imageField: String {
+        guard mediaShape == .image else { return "" }
+        return "\"image\": \"\(cardImageURL)\", "
+    }
+
+    /// Whether this is the fixture's own card visual — the third endpoint of this transport, and only when the
+    /// run asked for it: a `off` run answers it exactly as an unreachable address.
+    static func answersCardImage(_ url: URL) -> Bool {
+        mediaShape == .image && url.absoluteString == cardImageURL
+    }
+
     /// **Quantos itens por feed esta execução serve.** O default (6) mantém todo documento byte-idêntico ao que este
     /// transporte sempre serviu — seis itens por feed, dois feeds, doze cartas, que é *menos* que uma janela. Um teste
     /// que precisa de histórico **mais fundo que uma janela** (para exercitar poda de verdade, e não a re-projeção da
@@ -321,7 +399,7 @@ enum DevelopmentLocalFeeds {
         let items = (0..<itemCount).map { index in
             """
             {"id": "\(url.absoluteString)#\(index + 1)",
-             "url": "https://example.test/\(isScience ? "science" : "world")/\(index + 1)",
+             \(DevelopmentLocalFeeds.imageField)"url": "https://example.test/\(isScience ? "science" : "world")/\(index + 1)",
              "title": "\(feedTitle) story \(index + 1)",
              "summary": "Fixture summary \(index + 1) for \(feedTitle).",
              "content_text": "\(DevelopmentLocalFeeds.longText)",
@@ -349,6 +427,7 @@ enum DevelopmentLocalFeeds {
               <link>https://example.test/\(isScience ? "science" : "world")/\(index + 1)</link>
               <guid>\(url.absoluteString)#\(index + 1)</guid>
               \(summaryElement(index, feedTitle))
+              \(DevelopmentLocalFeeds.imageElement)
               <pubDate>Sun, 05 Oct 2026 12:00:00 GMT</pubDate>
             </item>
             """
@@ -388,14 +467,18 @@ enum DevelopmentLocalFeeds {
 
 private final class LocalFeedProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool {
-        guard let url = request.url?.absoluteString else { return false }
-        return DevelopmentLocalFeeds.endpoints.contains(url)
+        guard let url = request.url else { return false }
+        return DevelopmentLocalFeeds.endpoints.contains(url.absoluteString)
+            || DevelopmentLocalFeeds.answersCardImage(url)
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
         guard let url = request.url else { return }
+        // A imagem do fixture é o único byte que este transporte serve além dos documentos: o mesmo dono,
+        // o mesmo `URLSessionConfiguration` da composição, então o caminho de mídia é o de produção.
+        guard !DevelopmentLocalFeeds.answersCardImage(url) else { return deliverCardImage(url) }
         // R7: the second endpoint can answer *after* any timed follow-up has finished, so a publication that
         // completes later is reproducible instead of hoped for (the acceptance question the round asks).
         let delay = DevelopmentLocalFeeds.slowFeedSeconds(answering: url)
@@ -403,6 +486,15 @@ private final class LocalFeedProtocol: URLProtocol {
         DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.deliver(url)
         }
+    }
+
+    private func deliverCardImage(_ url: URL) {
+        let body = DevelopmentLocalFeeds.cardImagePNG
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "image/png", "Content-Length": String(body.count)])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
     }
 
     private func deliver(_ url: URL) {
