@@ -64,9 +64,9 @@ O parecer do arquiteto fixou o critério:
 | TX-05 | — | **BLOCKED**: nenhum fato temático por história em `Candidate`/`CandidateRecord`/`origin_revisions`/`selection_supply`; inventar por palavra-chave ou taxonomia da fonte é proibido pela própria spec | não aplicável (nenhum commit) |
 | TX-07 | `chatgpt/tx07-contextual-freshness` | **BLOCKED/parcial**: caracterização de F03 em teste novo; nenhum código de produção alterado | `swift build` 0 · `swift test` **1362 testes, 4 skipped, 0 falhas** · suíte nova `ContextualFreshnessCharacterizationTests` **5/0** |
 | TX-11 | `omp/tx11-negative-feedback-copy` | Redação de PD-11 ("Não quero mais sobre X" / "Entendido. Vamos excluir X das próximas descobertas."), identificadores preservados | `swift build` 0 · `swift test` **1357 testes, 4 skipped, 0 falhas** (o gate não adiciona nem remove teste) |
-| NN-06 | `chatgpt/nn06-opportunistic-bg-refresh` | `BGAppRefreshTask` única, `BGTaskSchedulerPermittedIdentifiers` + `fetch`, reuso de `syncCatalogueIfDue(installNewRevisions: false)`, single-flight e cancelamento cooperativo | `swift build` 0 · `swift test` **1361 testes, 4 skipped, 0 falhas** · suíte nova 4/0 |
-| NN-07 | `omp/nn07-accessibility` | `card.open` nomeado, rótulos de salvar com as palavras do menu, ação acessível "Tocar" para mídia, decoração oculta, badge escalado por `@ScaledMetric`; defeito **estrutural** corrigido no primeiro contato: na BASE a manchete era `Text(verbatim: "")` com o texto real pendurado em `.overlay` sobre um placeholder sem área própria (`ReaderOnboardingView.swift:135-147`) — o código sustenta o defeito de construção; se isso resultava em pixels visíveis depende de execução e está sendo medido | `swift build` 0 · `swift test` **1357 testes, 4 skipped, 0 falhas** (os 2 testes novos são do alvo do app e não são compilados por `swift test`) |
-| NN-08 | `omp/nn08-onboarding-opml` | Ação "Importar OPML" no primeiro contato pelo mesmo fileImporter/preview/commit do gerenciamento de fontes; o gate se retira e volta; cancelar não escreve nem conclui | a preencher |
+| NN-06 | `chatgpt/nn06-opportunistic-bg-refresh` | `BGAppRefreshTask` única, `BGTaskSchedulerPermittedIdentifiers` + `fetch`, reuso de `syncCatalogueIfDue(installNewRevisions: false)`, single-flight e cancelamento cooperativo | `swift build` 0 · `swift test` **1361 testes, 4 skipped, 0 falhas** · suíte nova 4/0 · **alvo do app na árvore integrada**: `CompositionTests` **63/0** — o seletor casa por **classe**, então o caso novo do NN-06 **não** entra nessa conta; ele vive em `BackgroundRefreshCapabilityTests` e foi medido à parte: `-only-testing:FeedMineAppTests/BackgroundRefreshCapabilityTests` → **1/0**, `** TEST SUCCEEDED **` (é o que prova que a declaração no `Info.plist` vale e que o código de BG compila em Swift 6) |
+| NN-07 | `omp/nn07-accessibility` | `card.open` nomeado, rótulos de salvar com as palavras do menu, ação acessível "Tocar" para mídia, decoração oculta, badge escalado por `@ScaledMetric`; **defeito medido, não afirmado** no primeiro contato: na BASE o elemento `welcome-headline` tem frame **0,0 × 14,0** (controle positivo, abaixo) — o texto real vinha pendurado em `.overlay` sobre um `Text(verbatim: "")` sem área própria; o gate fecha o P1 que a rodada 9 registrou (`docs/reviews/2026-10-11-round9-language-choice-and-localization.md:115-124`, cujas capturas vivem em `docs/evidence/`, pasta gitignored, e por isso não são artefato citável) | `swift build` 0 · `swift test` **1357 testes, 4 skipped, 0 falhas** (os 2 testes novos são do alvo do app) · **controle BASE**: `xcodebuild test -only-testing:FeedMineUITests/FeedMineUITests/testTheWelcomeHeadlineIsDrawnWhereTheReaderReadsIt` sobre BASE + o teste da branch → `Executed 1 test, with 2 failures`, `** TEST FAILED **`, largura 0,0 (log `docs/reviews/evidence/2026-10-15-aplicacao-dos-relatorios/nn07-base-control.log`) · **tratamento**: o mesmo teste na árvore integrada **passa** (`2/0` junto da jornada de OPML, `** TEST SUCCEEDED **`) — controle vermelho na BASE, verde depois, no mesmo caso |
+| NN-08 | `omp/nn08-onboarding-opml` | Ação "Importar OPML" no primeiro contato pelo mesmo fileImporter/preview/commit do gerenciamento de fontes; o gate se retira e volta; cancelar não escreve nem conclui | pacote em worktree com paridade de corpus · **alvo do app, executado pelo par**: `CompositionTests` **63/0** e `FeedMineUITests/testFirstRunImportsOPMLWithoutMakingItAPrerequisite` **1/0 em 46,2 s**, `** TEST SUCCEEDED **` (`docs/reviews/evidence/2026-10-15-aplicacao-dos-relatorios/nn08-composition-and-onboarding-journey.log`); a tentativa anterior falhou com `profiles.json` ausente — ambiente, não produto |
 
 ### 3.0 Comparabilidade das corridas em worktree (medida, não presumida)
 
@@ -107,9 +107,55 @@ seguinte virar no-op — o ensaio foi refeito por isso):
 ### 7d33ede4 (TX-07)           exit=0 conflicts=0
 ```
 
-Caminho: `main` → branch `integration/apply-reports-2026-10-15` (criada de `801f017d`) recebe os
-cinco merges; `main` avança por `--ff-only` para o topo dela depois do verdict. Verificação de
-pré-publicação planejada sobre a árvore integrada: `swift build`, `swift test`, `git diff --check`.
+Caminho: `main` → branch `integration/tx11-nn06-nn07-nn08-tx07-characterization` (criada de
+`801f017d`) recebe os cinco merges; `main` avança por `--ff-only` para o topo dela depois do verdict.
+
+**Verificação da árvore integrada (executada):**
+
+| Passo | Comando | Resultado |
+|---|---|---|
+| árvore | `1f9042d4` (cinco merges, sem o relatório) | `swift build` 0 · `swift test` **1366 testes, 4 skipped, 0 falhas** · `git diff --check` vazio |
+| árvore com o relatório e a evidência (a que se publica) | `1b41d492`, tree `a0f7c8f21689c10b88d8fccf646bcf8715686ab6` | `git diff --check 801f017d..HEAD` **0** · `swift build` 0 · `swift test` **1366 testes, 1 skipped, 0 falhas** · 20 arquivos contra a BASE, **0** em `bench/` |
+| alvo do app, árvore integrada | `xcodebuild test … -only-testing:FeedMineAppTests/CompositionTests -only-testing:FeedMineUITests/FeedMineUITests/testTheWelcomeHeadlineIsDrawnWhereTheReaderReadsIt -only-testing:…/testFirstRunImportsOPMLWithoutMakingItAPrerequisite` sobre `/tmp/fm-integration` | `CompositionTests` **63/0**, as duas jornadas **2/0 em 41,6 s**, `** TEST SUCCEEDED **` — é o único artefato onde NN-06 e NN-08 coexistem em `FeedMineApp.swift`; log `integrated-tree-app-tests.log` (o seletor de `CompositionTests` é por **classe**: o caso novo do NN-06, em `BackgroundRefreshCapabilityTests`, não entra nessa conta) |
+
+**Logs brutos desta rodada (persistidos no repo, nunca só em `/tmp`):**
+`docs/reviews/evidence/2026-10-15-aplicacao-dos-relatorios/` — `fm-int-test-final.log` e
+`fm-int-test-parity.log` (suíte do pacote na árvore integrada), `integrated-tree-app-tests.log`
+(`CompositionTests` + as duas jornadas de UI na árvore integrada), `nn07-base-control.log` (controle
+do NN-07 na BASE), `nn08-composition-and-onboarding-journey.log` (corrida do par no alvo do app) e
+`app-target-build-precondition-peer.log` (a precondição de build ausente num worktree novo).
+
+**Transformação aplicada aos logs, declarada (o `git diff --check` do repo exige árvore sem espaço em
+branco no fim de linha, e os logs de `xcodebuild` têm muitos):** removido apenas espaço/tab no fim de
+cada linha; nenhum outro byte alterado. Quatro arquivos mudaram e dois ficaram idênticos:
+
+| Arquivo | bytes | SHA-256 (normalizado) |
+|---|---|---|
+| `nn07-base-control.log` | 818304 → 816158 | `ed6de407060f7ff4f9f999112924dda14b96f819c9435f6b52a3b47d1ccbd1b3` → `fb51d0d7ed9ddb567dad169d3e207ab8f9923932057739029a2eb7d21f76e517` |
+| `integrated-tree-app-tests.log` | 2348203 → 2346057 | `a5c4479a9da53906680ad70c419e609332e56e96691783be18890d481facda4f` → `d8ff17c554b132c1136a458e3f200db1a46ed6d6b4f24b3f4f68da108c19138b` |
+| `app-target-build-precondition-peer.log` | 228975 → 228841 | `7d4a3882fe8e5ad1432e13b61dd777c71a2d4f3c4260f80419b8542b66eea1fe` → `797f2aac5d330022353633f4205524a96e77aa6de7902170aa6271372dbf49de` |
+| `nn08-composition-and-onboarding-journey.log` | 1671789 → 1671779 | `4ea9a1411fff51f55e72e07a7b7f0639f0c9c7b79c84d580cfec792a4f7a8dcf` → `af9fe2f4253009d2a346d8eb479f51b37396e7d6c69d37063d4ef0e2fea17159` |
+| `fm-int-test-final.log` | 397937 → 397937 | `b192c414ea06e6ebb4fa8c5dab00fa9dc26a945aa1e113456ddd58d60e26ee2b` (inalterado) |
+| `fm-int-test-parity.log` | 397937 → 397937 | `5a6e0fae2fba484a169fe4d3dbae892f423e1ac27d65817173499717356c8b3f` (inalterado) |
+
+Os dois últimos têm o mesmo tamanho por coincidência e **conteúdo diferente** (`cmp` diverge no byte 1):
+são duas corridas distintas da mesma suíte (uma antes e uma depois do commit do relatório), não uma
+cópia da outra.
+
+Paridade de corpus exigiu **dois** artefatos, não um: `bench/corpus/` (89 MB) **e**
+`FeedMineApp/FeedMineApp/Resources/catalog.sqlite` (118 MB). Sem o segundo,
+`LegacyCatalogMetadataTests.swift:120` continua pulado; sem o primeiro, três testes pulam.
+
+E os dois são **pré-requisito de build**, não só de teste. Medido, com artefato citável em
+`docs/reviews/evidence/2026-10-15-aplicacao-dos-relatorios/app-target-build-precondition-peer.log`:
+num worktree novo, onde os dois insumos são gitignored e portanto ausentes, o `xcodebuild test` morre
+em `error: The file “profiles.json” couldn't be opened … (in target 'FeedMineUITests')`,
+`Testing cancelled because the build failed` e `** TEST FAILED **` — sem executar um único teste.
+A minha própria cadeia de alvo do app bateu na mesma classe de falha com o outro insumo
+(`error: The file “catalog.sqlite” couldn't be opened`, `CpResource … FeedMine.app/catalog.sqlite`);
+esse log foi sobrescrito pela repetição corrigida antes de ser copiado, então o que se cita dele é o
+texto observado, e a prova durável da classe é o log do par. Em nenhum dos dois casos é falha de
+teste: é **precondição de ambiente**. O par independente classificou igualmente `PRECONDITION`.
 
 ## 3.2 Veredito do arquiteto (2026-10-15)
 
@@ -133,6 +179,49 @@ acima: `chatgpt/tx05-story-topic-provenance` (contrato de evidência temática p
 distintos, confiança separada de presença, natureza temporal explícita e nunca inferida de idade,
 assunto, nome da fonte ou palavra do título).
 
+## 3.3 Gates de dependência abertos pelo veredito
+
+**TX-07D — `omp/tx07-temporal-evidence`, commit `7cf3f552` (um commit sobre `801f017d`, 13 arquivos,
+todos na allowlist).** Estado do autor: **CONTRACT READY** para procedência temporal; **natureza
+contextual UNKNOWN** — não provada e não fabricada. Sem migração, sem `bench/**`, sem tocar
+`SelectionEngine`, `EditorialPolicy`, `SourceAlternation`, Publication/Runway ou `AppComposition`.
+
+O que ele entrega: o clamp de datas futuras deixa de ser silencioso (a reivindicação crua da origem
+viaja junto da observação, com uma única regra de aceitação `min(reivindicado, observado)`), o
+admission recusa pares contraditórios, e `Candidate.temporal` passa a expor
+`CandidateTemporalEvidence` (`observedAt`, autoria/modificação aceitas, `publicationDate`,
+`inconsistencies`, `nature == .unknown`) reconstruída da oferta canônica — **sem** que nada consuma
+isso para ordenar: `timestamp` continua como estava.
+
+**Achado derivado da leitura do código (ainda não de execução):** `ContentStore.swift:734`
+(`let date = revision.authoredAt ?? revision.observedAt`) alimenta
+`ORDER BY sort_date DESC, origin_record_id DESC LIMIT ?` (`:84-85`, consumido em `:100`). Com 6
+registros sem data observados num mesmo instante mais 1 história declarando publicação 365 dias
+antes, uma janela de 6 examina 6 registros — **100 % `observedFallback`, nenhum com data de
+publicação**; a história datada só entra quando o limite chega a 8 linhas examinadas (7 no total,
+`exhausted=true`). É viés de janela examinada, não perda: o keyset continua caminhando até ela.
+
+**Verificação nativa (executada pelo ORCH, reprova o gate):** `swift build` exit 0 ·
+`swift test` → **`Executed 1374 tests, with 4 tests skipped and 2 failures (0 unexpected)`**. As duas
+falhas são do teste novo do próprio gate,
+`CandidateProviderTests.testMaterialEditKeepsTheDeclaredPublicationDateAndManufacturesNoNovelty`, e
+ambas em `observedAt`: o candidato da **nova revisão** continua reportando a observação da **primeira**
+admissão (`22:13:20` onde o teste injeta e espera `23:13:20`, delta exatamente o `3600 s` do fixture —
+não é fuso). A outra metade do teste passou (ordenação `timestamp` inalterada,
+`publicationDate == .declared(declared)`, `acceptedModifiedAt == nil`, troca de `originRevisionID`).
+**O gate não está verde**: a correção foi devolvida ao implementador com o log literal e a exigência de
+decidir, pelo esquema canônico, se o errado é a propagação ou a expectativa — reescrevendo o commit
+único na mesma branch (que ainda não foi publicada).
+
+**Não feito, com a razão no código:** a reivindicação clampada **não** é persistida — fazer isso exige
+migração, e `Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift:244` fixa a lista
+*exata e ordenada* de `grdb_migrations`, arquivo congelado e fora da allowlist; ordenação, cursor e
+keyset ficaram intocados pela cláusula STOP, com a regra demonstrada só em teste; e natureza temporal
+segue `unknown` porque não existe evidência nem regra de interpretação aprovada.
+
+**TX-05D — não iniciado.** A ordem fixada pelo arquiteto (integração → TX-07D → TX-05D) foi seguida:
+o gate de procedência temática só começa depois deste.
+
 ## 4. Achados que ficam para a próxima rodada
 
 - **TX-05** só é implementável quando existir contrato de fato temático por história *antes* de
@@ -141,9 +230,10 @@ assunto, nome da fonte ou palavra do título).
   distinguir `CandidateTimestampKind.authored` de `.observed` — uma história sem data de publicação,
   observada hoje, ultrapassa uma notícia publicada ontem.
 - **TX-11 (residual)**: o chip de nível do controle de descoberta
-  (`ReaderDiscoveryControls.swift:203-213` via `FeedRecommendationDefinition.topicLabel`) ainda
-  mostra "Menos" para o mesmo `.less` que a ação do convite agora declara como exclusão — é
-  exatamente a "distinção futura" que PD-11 difere.
+  (`ReaderDiscoveryControls.swift:203-213`, via `FeedRecipeDefinition.topicLabel` em
+  `Sources/FeedMineDomain/FeedRecipeDefinition.swift:25`) ainda mostra "Menos" para o mesmo `.less`
+  que a ação do convite agora declara como exclusão — é exatamente a "distinção futura" que PD-11
+  difere, e por isso ficou fora da allowlist do gate.
 - **NN-06**: o arquivo `Sources/FeedMineRuntime/BackgroundFeedRefresh.swift` perdeu o cabeçalho
   estrutural (`File/Module/Owns/Does not own`) que os arquivos implementados do módulo mantêm
   (`FeedSession.swift:1-4`, `RunwayController.swift:1`). Desvio de forma, não de comportamento —
