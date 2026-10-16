@@ -94,9 +94,21 @@ public struct FeedItemCardView: View, Equatable {
     /// view and by no ancestor — the wrapper above stops taking touches — so a control placed as a *sibling* of this
     /// surface keeps its own touch instead of competing for it. `buttonStyle(.plain)` because the label already
     /// draws everything: the button adds a hit area, not chrome.
-    @ViewBuilder private func openingSurface<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        Button { emit(.open) } label: { content().contentShape(Rectangle()) }
+    ///
+    /// `mediaAction` is the hero's own tap for a playable card. `heroSlot` answers it with a gesture, and a gesture
+    /// is not in the accessibility tree: measured on the device (`docs/reviews/2026-10-11-article-reading-diagnosis.md`
+    /// §3), the card's tree carried the bookmark control and the opening label, and the play tap had no element at
+    /// all. A playable card therefore states the same action here, where VoiceOver reaches it.
+    @ViewBuilder private func openingSurface<Content: View>(mediaAction: Bool = false,
+        @ViewBuilder content: () -> Content) -> some View {
+        let surface = Button { emit(.open) } label: { content().contentShape(Rectangle()) }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("card.open")
+        if mediaAction {
+            surface.accessibilityAction(named: Text(String(localized: "Tocar"))) { emit(.openMedia) }
+        } else {
+            surface
+        }
     }
 
     /// The surface that opens the article in the portrait card. Title, summary and date are a single target; the
@@ -104,7 +116,10 @@ public struct FeedItemCardView: View, Equatable {
     /// own touch. Measured before the separation: a 44×44 bookmark target reported *not hittable*, because the
     /// wrapper's gesture sat above it, and the same layer swallowed the long press meant for the card's menu.
     private var contentSurface: some View {
-        openingSurface {
+        // The hero above answers a playable card's tap with `openMedia`; the card states that action here too, so
+        // playing an episode never depends on a gesture only a touch screen can make. Nothing is added for a card
+        // the host cannot play (`availableActions`), which is the same rule every other control follows.
+        openingSurface(mediaAction: isAudio && availableActions.contains(.openMedia)) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(verbatim: card.title ?? "")
                     .font(appearance.font(.cardTitle))
@@ -241,9 +256,14 @@ public struct FeedItemCardView: View, Equatable {
             .resizable()
             .aspectRatio(contentMode: .fill)
             .opacity(0.5)
+            // The slot is a drawing: it says nothing a reader needs, and an unlabelled image in the tree is one
+            // more stop before the card's own texts (which are the card's content).
+            .accessibilityHidden(true)
     }
 
-    /// V1's code-drawn audio placeholder (no asset involved).
+    /// V1's code-drawn audio placeholder (no asset involved). A drawing, never the control: the play glyph reads
+    /// as a button to a reader who cannot see it, and the card's own element states the play action
+    /// (`openingSurface(mediaAction:)`).
     private var audioPlaceholder: some View {
         ZStack {
             LinearGradient(colors: [Color.purple.opacity(0.25), Color.indigo.opacity(0.10)],
@@ -270,6 +290,7 @@ public struct FeedItemCardView: View, Equatable {
                     .offset(y: 12)
             }
         }
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder private var mediaOverlay: some View {
@@ -279,6 +300,8 @@ public struct FeedItemCardView: View, Equatable {
                 .foregroundStyle(.white)
                 .frame(width: 40, height: 40)
                 .background(.black.opacity(0.35), in: Circle())
+                // The kind is already stated in words by the source row's own badge; the glyph only repeats it.
+                .accessibilityHidden(true)
         }
     }
 
@@ -327,9 +350,23 @@ public struct FeedItemCardView: View, Equatable {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("card.bookmark")
+            // The glyph states nothing to a reader who cannot see it: without these words the control is
+            // announced by the symbol's own name (`bookmark`), which names neither the article nor the act. The
+            // two phrases are the card menu's own (`contextMenu`), so the button and the menu say the same thing.
+            .accessibilityLabel(Text(verbatim: bookmarkActionLabel))
             .accessibilityValue(isBookmarked ? "bookmarked" : "not bookmarked")
         }
     }
+
+    /// What activating the card's own save control does, in the interface's own words. The box variant is left as
+    /// it is: there the glyph always reads as saved, and whether the host removes or moves the card is the host's
+    /// rule (`isInBookmarkBox`), which this card does not know.
+    private var bookmarkActionLabel: String {
+        isBookmarked ? Self.removeFromSavedLabel : Self.saveArticleLabel
+    }
+
+    static let saveArticleLabel = String(localized: "Salvar artigo")
+    static let removeFromSavedLabel = String(localized: "Remover dos salvos")
 
     @ViewBuilder private var bookmarkOverlay: some View {
         if !availableActions.contains(.save) {
@@ -342,6 +379,7 @@ public struct FeedItemCardView: View, Equatable {
             Button { emit(.save) } label: { bookmarkOverlayLabel(filled: isBookmarked) }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("card.bookmark")
+                .accessibilityLabel(Text(verbatim: bookmarkActionLabel))
                 .accessibilityValue(isBookmarked ? "bookmarked" : "not bookmarked")
         }
     }
@@ -350,11 +388,22 @@ public struct FeedItemCardView: View, Equatable {
         Image(systemName: filled ? "bookmark.fill" : "bookmark")
             .font(.title3)
             .foregroundStyle(filled ? AnyShapeStyle(.yellow) : AnyShapeStyle(.white))
-            .frame(width: appearance.overlayBadgeSize, height: appearance.overlayBadgeSize)
+            .frame(width: overlayBadgeSide, height: overlayBadgeSide)
             .background(.ultraThinMaterial, in: Circle())
             .shadow(color: .black.opacity(0.15), radius: 4)
             .padding(appearance.overlayBadgePadding)
     }
+
+    /// The badge's own side, after Dynamic Type: the glyph inside it is a text style (`.title3`), so the circle
+    /// must follow the reader's text size instead of holding 36 pt while the glyph grows past it. It stays
+    /// relative to the appearance's own value (`overlayBadgeSize`) rather than replacing it: a side the reader's
+    /// preferences state, scaled by how much larger than the default they need their text, is the product.
+    private var overlayBadgeSide: CGFloat {
+        appearance.overlayBadgeSize * (overlayBadgeReference / ReaderAppearance.standard.overlayBadgeSize)
+    }
+
+    @ScaledMetric(relativeTo: .title3)
+    private var overlayBadgeReference: CGFloat = ReaderAppearance.standard.overlayBadgeSize
 
     private func accentBar(verticalInset: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: 2)
