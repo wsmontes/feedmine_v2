@@ -576,6 +576,97 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
     }
 
+    /// §4 of the journey audit (`docs/reviews/2026-10-15-jornadas-de-usuario-v1-vs-v2.md:281`): the export
+    /// sheet's own share control is the one control the battery only ever *found* (`app.buttons["export-share"]
+    /// .exists`). V1's closure rule is the other way round — "do not ship dead buttons" — so this journey taps it
+    /// on screen and states what is honestly observable:
+    ///
+    /// - the platform's own share surface goes up, over the app's own sheet;
+    /// - leaving that surface leaves the app's own sheet up;
+    /// - and the reader ends where they were reading: the same session, and the same visible prefix — the card
+    ///   at the top of the viewport is the card it was, not one the sheet moved.
+    ///
+    /// What is **not** asserted, and why: the system surface's contents. The activity list belongs to the
+    /// platform — it changes with the device, the installed apps and the language — so an assertion on one of its
+    /// entries would be an assertion about iOS rather than about this app. What the app owns is the file it
+    /// produced and the presentation it asked for; that the presentation really reaches the screen is the half
+    /// nothing but a journey on screen can measure.
+    @MainActor
+    func testExportShareOpensTheSystemShareSurfaceAndKeepsTheReadingPoint() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        // A reading point that is not the top of the feed: "the prefix did not move" is a fact about a real
+        // position, not about a list nobody has touched.
+        scroll.swipeUp()
+        let delivered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label MATCHES %@",
+            ".*completed=[1-9][0-9]*.*"), object: proof)
+        XCTAssertEqual(XCTWaiter.wait(for: [delivered], timeout: 20), .completed,
+            "a real scroll must complete a real opportunity; observed: \(proof.label)")
+        let counters = proof.label
+        let anchor = try XCTUnwrap(topmostCardIdentifier(app: app, scroll: scroll),
+            "a card must be visible inside the viewport")
+
+        openMenu(app)
+        app.buttons["Exportar"].tap()
+        XCTAssertTrue(app.navigationBars["Exportar"].waitForExistence(timeout: 20),
+            "the reader's own menu opens V1's export sheet")
+        let share = app.buttons["export-share"]
+        XCTAssertTrue(scrollIntoView(share, in: app, timeout: 20), "the sheet offers sharing its document")
+        XCTAssertTrue(share.isEnabled, "and it is offered because there is a document to share")
+        share.tap()
+
+        // The platform's own surface, drawn over the app's sheet.
+        let systemSurface = systemShareSurface(app)
+        XCTAssertTrue(systemSurface.waitForExistence(timeout: 20),
+            "Compartilhar must open the system's share surface; on screen: \(app.debugDescription)")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "export-share-system-surface"
+        shot.lifetime = .keepAlways
+        add(shot)
+
+        // Coming back: the system surface is dismissed, the app's own sheet is what is up again, and closing it
+        // returns the reader to the feed they were in.
+        dismissSystemShareSurface(app)
+        XCTAssertTrue(waitForAbsence(systemSurface, timeout: 20),
+            "leaving the share surface dismisses it; on screen: \(app.debugDescription)")
+        XCTAssertTrue(app.navigationBars["Exportar"].exists, "and the export sheet is still the surface that is up")
+        app.buttons["export-done"].tap()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 20), "closing the export sheet returns to the feed")
+        XCTAssertEqual(proof.label, counters,
+            "sharing a document must not replace the session the reader is reading in")
+        XCTAssertEqual(topmostCardIdentifier(app: app, scroll: scroll), anchor,
+            "nor move the reading point: the visible prefix is the card the reader was on")
+    }
+
+    /// The system's own share surface as the app's process can see it: `UIActivityViewController` draws its
+    /// activity list in the presenting process under this identifier, whatever the device's language is.
+    @MainActor
+    private func systemShareSurface(_ app: XCUIApplication) -> XCUIElement {
+        app.otherElements["ActivityListView"]
+    }
+
+    /// Leaving the system's share surface by the means the system offers: its own close control, whose label
+    /// follows the device language, and the dismissal gesture it also accepts. Both are tried once, bounded, so a
+    /// surface that refuses to go is a failure the test states rather than a wait it hides.
+    @MainActor
+    private func dismissSystemShareSurface(_ app: XCUIApplication) {
+        for label in ["Close", "Fechar", "Cancel", "Cancelar"] {
+            let control = app.buttons[label].firstMatch
+            guard control.exists, control.isHittable else { continue }
+            control.tap()
+            return
+        }
+        app.swipeDown(velocity: .fast)
+    }
+
     /// NN-07: the welcome scene's own headline is **drawn** where the reader reads it. It used to be an `.overlay`
     /// of a `Text(verbatim: "")` — a placeholder with no size of its own — so the sentence the app announces
     /// painted nothing, and the element the tests address had no area: measured, and classified P1 by the PO, in
