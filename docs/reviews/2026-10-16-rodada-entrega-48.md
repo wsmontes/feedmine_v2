@@ -177,7 +177,7 @@ o que a doutrina da V1 proíbe (*do not ship dead buttons*). Vale igual para **"
 `sharedExport` (`FeedMineApp.swift:1086-1087`). O defeito é **pré-existente** e está no binário distribuído.
 
 Reproduções: **4**, sempre a mesma asserção — três do dono do teste e **duas minhas**, em simulador próprio e derived
-data próprio, com log bruto preservado (`/tmp/sharecheck-ORCH-repro.log`; `Test Case … failed (94.005 seconds)`,
+data próprio, com log bruto preservado (`docs/reviews/evidence/2026-10-16-rodada-48/sharecheck-ORCH-repro.log`; `Test Case … failed (94.005 seconds)`,
 `** TEST FAILED **`). A minha reprodução não é relato de agente: é um vermelho que eu rodei.
 
 Causa provável, confirmada por leitura: `FeedMineApp.swift` tem **cinco `.sheet` irmãos** no mesmo apresentador
@@ -268,17 +268,21 @@ o aparelho está com a outra sessão OMP (as medições de referência externa) 
 
 | Artefato | Identificador |
 |---|---|
-| Log UI físico (jornadas 3/0) | `/tmp/int48-physical-authorized.log` — sha256 `03fd1799f7d269ba9ac441812fa94bc0c4f58e276c47c313c8531b0c2bac37be` |
+| Log UI físico (jornadas 3/0) | `docs/reviews/evidence/2026-10-16-rodada-48/int48-physical-authorized.log` — sha256 `03fd1799f7d269ba9ac441812fa94bc0c4f58e276c47c313c8531b0c2bac37be` |
+| Reprodução do share (Orquestrador) | `docs/reviews/evidence/2026-10-16-rodada-48/sharecheck-ORCH-repro.log` — sha256 `d23b63268c7b78cfcaf0d90e7c2719b8b6855f15a8f334c3a8015d7e2ff6d23d` |
 | Captura do aparelho (imagem desenhada) | `/tmp/int48-physical-evidence/2FAFF157-….png` — sha256 `49e770cd7c1581edbb346945dc0fa70a27e19fbda1a655a6920b1480846350d7` |
 | Série de quadros do aparelho | `/tmp/int48-physical-evidence/62CB9727-….txt` — sha256 `39c4fd95eae06dccc10c0174a9ef0396a49acdf3ef30bd4cc6ab8c5571a1fb` |
 | Log da primeira tentativa física (infra) | `/tmp/int48-physical-journeys.log` — sha256 `d08b538f1b72acc025ebb2aad2d6393a4d5913cf799102eba096a5e41b07cc35` |
 | Confirmação da Apple | `/tmp/int48-apple-confirmed.json` |
 | Pré-validação da árvore combinada | `/tmp/int48-final-ui.log`, `/tmp/int48-final-package.log` |
 | Corrida F48-HITCH | `/tmp/hx-run-control`, `/tmp/hx-run-branch`, `/tmp/hx-run-control-v1-b-falhou` |
-| Registro de ambiente do B06 | `/tmp/b06-preflight-registro.md` (a versionar junto do relatório do gate) |
+| Registro de ambiente do B06 | `docs/reviews/2026-10-16-b06-registro-de-ambiente.md` — cópia versionada, byte a byte, do `/tmp/b06-preflight-registro.md` |
 
-Estes artefatos são **referências locais desta máquina**, não arquivos versionados: os hashes estão aqui para que uma
-cópia futura possa ser conferida, e os comandos das seções 2 e 3 reproduzem cada um deles.
+O log UI físico, a reprodução do share e o registro do B06 **estão versionados** (os dois primeiros em
+`docs/reviews/evidence/2026-10-16-rodada-48/`, o terceiro em `docs/reviews/2026-10-16-b06-registro-de-ambiente.md`),
+com os hashes acima conferidos já na cópia versionada. Os demais continuam **referências locais desta máquina**, não
+arquivos versionados: os hashes estão aqui para que uma cópia futura possa ser conferida, e os comandos das seções 2 e
+3 reproduzem cada um deles.
 
 ## 7. Corte da migração para o iMac (2026-10-16, fim da rodada)
 
@@ -305,7 +309,8 @@ Duas correções de rota registradas nesta rodada, para não serem repetidas:
 2. **Uma corrida que falha antes da premissa não é testemunho.** A minha primeira tentativa de reproduzir o defeito do
    share falhou por ambiente (o feed não apareceu — faltavam os insumos gitignored na worktree nova) e eu a descartei em
    vez de contá-la como segunda observação. O que vale é a corrida com os insumos no lugar, que falhou **na asserção do
-   share** (`FeedMineUITests.swift:662`) — e é essa que está em `relatorios/sharecheck-ORCH-repro.log`.
+   share** (`FeedMineUITests.swift:662`) — e é essa que está em
+   `docs/reviews/evidence/2026-10-16-rodada-48/sharecheck-ORCH-repro.log`.
 
 ## 8. Anexo — registro de ambiente e preflight do B06 (o que nenhum instrumento coleta)
 

@@ -19,7 +19,9 @@ Ele **não** substitui B06, **não** certifica fluidez e **não** declara releas
 
 ### Sobre onde a evidência vive
 
-Os artefatos citados (`/tmp/int48-physical-evidence/`, `/tmp/int48-physical-authorized.log`,
+O log do aparelho está versionado em
+`docs/reviews/evidence/2026-10-16-rodada-48/int48-physical-authorized.log` — o sha256 citado na §2 foi conferido já
+contra essa cópia versionada. Os artefatos restantes citados (`/tmp/int48-physical-evidence/`,
 `/tmp/int48-apple-confirmed.json`, os `.xcresult`) são **referências locais desta máquina, não arquivos
 versionados no repositório**. Os hashes estão no texto para que uma cópia futura possa ser conferida contra eles.
 Quem precisar de uma cópia durável deve **reproduzir** as corridas: a §2 tem o comando exato e a §4 tem a consulta
@@ -48,7 +50,7 @@ xcodebuild test -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine \
   -only-testing:FeedMineUITests/FluidityJourneyUITests
 ```
 
-Saída bruta (`/tmp/int48-physical-authorized.log`, sha256 `03fd1799f7d269ba9ac441812fa94bc0c4f58e276c47c313c8531b0c2bac37be`):
+Saída bruta (`docs/reviews/evidence/2026-10-16-rodada-48/int48-physical-authorized.log`, sha256 `03fd1799f7d269ba9ac441812fa94bc0c4f58e276c47c313c8531b0c2bac37be`):
 
 ```
 CardImageJourneyUITests: Executed 2 tests, with 0 failures (0 unexpected)
