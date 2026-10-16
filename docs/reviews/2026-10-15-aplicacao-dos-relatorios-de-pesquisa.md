@@ -247,9 +247,34 @@ representar a **ambiguidade** (um terceiro caso no enum), o mesmo exame vale par
 e o contrato deve declarar que a declaração original é transitória e não sobrevive à persistência
 atual. Sete provas adicionais foram exigidas. **`main` não avançou para `ebfa1289`.**
 
-**TX-05D — em implementação**, cortado de `a77df011` (mesma árvore de código de `cca2bc4b`; os dois
-commits entre eles são só documentação), conforme a ordem que o arquiteto fixou (integração → TX-07D →
-TX-05D).
+**Desfecho dos dois gates de dependência (2026-10-15).** Ambos foram reconciliados contra a árvore
+vigente, verificados e integrados — cada um por `--ff-only` com verdict explícito, guardas conferidas
+e `origin/main` verificado depois do push. `main` terminou em
+`8faef1fa7e5714c8b52ce5fb419eb27cd2ad12d6`.
+
+| Gate | Candidato aprovado | O que o verdict diz |
+|---|---|---|
+| TX-07D | `d589741e` | **APPROVED / CONTRACT READY** para procedência temporal. A regra ficou total e ordenada (ausente → `.absent`; estritamente anterior → `.declared`; igual → `.ambiguousAtObservation`; **posterior → `.absent`**, nunca `.declared`). O quarto caso `.unusable(Date)` foi **REJECT** — o bruto já distingue os dois fatos e INV-15 desaconselha ampliar o vocabulário |
+| TX-05D | `8faef1fa` | **APPROVED / DECLARED-SUBJECT EVIDENCE READY**. Reutilização do slot `search_projection` **RATIFIED**, com escopo limitado: não é campo genérico, e uma futura busca textual que precise coexistir exige decisão de schema própria. Migração **REJECT FOR NOW**. Limitação Atom/FeedKit **ACCEPTED** como limite da dependência, sem parser paralelo |
+
+O arquiteto exigiu, como commit documental separado e não bloqueante,
+`docs/architecture/CANONICAL_SUPPLY_DESIGN.md` complementado: o slot pode carregar a representação
+marcada e versionada das declarações temáticas, continua não material, só um dos dois usos o ocupa
+por revisão, a hidratação de candidatos pode ler esse texto sem alterar índice nem keyset, revisões
+históricas e valores opacos permanecem legíveis, e coexistência futura com busca textual exige decisão
+própria. Isso está no commit que acompanha este registro.
+
+**Limites registrados, não resolvidos aqui:** a identidade temática semântica entre vocabulários
+diferentes **não** existe (o contrato entrega identidade verificável da *declaração*: superfície,
+taxonomia declarada e texto normalizado); a diversidade temática na Selection continua sendo o gate
+TX-05, não autorizado por esse verdict; e a prioridade indevida de `observedAt` na seleção, a
+interação entre a ordenação da oferta e a janela limitada de candidatos e a natureza temporal da
+história ficam para gates posteriores.
+
+**TX-05D** fechou o ciclo na ordem que o arquiteto fixou (integração dos cinco → TX-07D → TX-05D):
+implementado, reprovado na verificação nativa por uma falha do próprio teste (o **fixture** Atom, não o
+tradutor), corrigido, reconciliado contra a árvore vigente, verificado com **1397 testes / 4 skipped /
+0 falhas** e integrado em `8faef1fa`.
 
 ## 4. Veredito e integração (2026-10-15)
 
