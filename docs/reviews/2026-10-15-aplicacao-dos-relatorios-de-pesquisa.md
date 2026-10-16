@@ -66,7 +66,7 @@ O parecer do arquiteto fixou o critério:
 | TX-11 | `omp/tx11-negative-feedback-copy` | Redação de PD-11 ("Não quero mais sobre X" / "Entendido. Vamos excluir X das próximas descobertas."), identificadores preservados | `swift build` 0 · `swift test` **1357 testes, 4 skipped, 0 falhas** (o gate não adiciona nem remove teste) |
 | NN-06 | `chatgpt/nn06-opportunistic-bg-refresh` | `BGAppRefreshTask` única, `BGTaskSchedulerPermittedIdentifiers` + `fetch`, reuso de `syncCatalogueIfDue(installNewRevisions: false)`, single-flight e cancelamento cooperativo | `swift build` 0 · `swift test` **1361 testes, 4 skipped, 0 falhas** · suíte nova 4/0 · **alvo do app na árvore integrada**: `CompositionTests` **63/0** — o seletor casa por **classe**, então o caso novo do NN-06 **não** entra nessa conta; ele vive em `BackgroundRefreshCapabilityTests` e foi medido à parte: `-only-testing:FeedMineAppTests/BackgroundRefreshCapabilityTests` → **1/0**, `** TEST SUCCEEDED **` (é o que prova que a declaração no `Info.plist` vale e que o código de BG compila em Swift 6) |
 | NN-07 | `omp/nn07-accessibility` | `card.open` nomeado, rótulos de salvar com as palavras do menu, ação acessível "Tocar" para mídia, decoração oculta, badge escalado por `@ScaledMetric`; **defeito medido, não afirmado** no primeiro contato: na BASE o elemento `welcome-headline` tem frame **0,0 × 14,0** (controle positivo, abaixo) — o texto real vinha pendurado em `.overlay` sobre um `Text(verbatim: "")` sem área própria; o gate fecha o P1 que a rodada 9 registrou (`docs/reviews/2026-10-11-round9-language-choice-and-localization.md:115-124`, cujas capturas vivem em `docs/evidence/`, pasta gitignored, e por isso não são artefato citável) | `swift build` 0 · `swift test` **1357 testes, 4 skipped, 0 falhas** (os 2 testes novos são do alvo do app) · **controle BASE**: `xcodebuild test -only-testing:FeedMineUITests/FeedMineUITests/testTheWelcomeHeadlineIsDrawnWhereTheReaderReadsIt` sobre BASE + o teste da branch → `Executed 1 test, with 2 failures`, `** TEST FAILED **`, largura 0,0 (log `docs/reviews/evidence/2026-10-15-aplicacao-dos-relatorios/nn07-base-control.log`) · **tratamento**: o mesmo teste na árvore integrada **passa** (`2/0` junto da jornada de OPML, `** TEST SUCCEEDED **`) — controle vermelho na BASE, verde depois, no mesmo caso |
-| NN-08 | `omp/nn08-onboarding-opml` | Ação "Importar OPML" no primeiro contato pelo mesmo fileImporter/preview/commit do gerenciamento de fontes; o gate se retira e volta; cancelar não escreve nem conclui | pacote em worktree com paridade de corpus · **alvo do app, executado pelo par**: `CompositionTests` **63/0** e `FeedMineUITests/testFirstRunImportsOPMLWithoutMakingItAPrerequisite` **1/0 em 46,2 s**, `** TEST SUCCEEDED **` (`docs/reviews/evidence/2026-10-15-aplicacao-dos-relatorios/nn08-composition-and-onboarding-journey.log`); a tentativa anterior falhou com `profiles.json` ausente — ambiente, não produto |
+| NN-08 | `omp/nn08-onboarding-opml` | Ação "Importar OPML" no primeiro contato pelo mesmo fileImporter/preview/commit do gerenciamento de fontes; o gate se retira e volta; cancelar não escreve nem conclui | o pacote **não** foi re-executado pelo ORCH nesta branch isolada (o gate não adiciona teste de pacote); o que o cobre é a suíte da árvore integrada, que o inclui: **1366 testes, 1 skipped, 0 falhas** · **alvo do app, executado pelo par**: `CompositionTests` **63/0** e `FeedMineUITests/testFirstRunImportsOPMLWithoutMakingItAPrerequisite` **1/0 em 46,2 s**, `** TEST SUCCEEDED **` (`docs/reviews/evidence/2026-10-15-aplicacao-dos-relatorios/nn08-composition-and-onboarding-journey.log`); a tentativa anterior falhou com `profiles.json` ausente — precondição de ambiente, não produto |
 
 ### 3.0 Comparabilidade das corridas em worktree (medida, não presumida)
 
@@ -222,7 +222,35 @@ segue `unknown` porque não existe evidência nem regra de interpretação aprov
 **TX-05D — não iniciado.** A ordem fixada pelo arquiteto (integração → TX-07D → TX-05D) foi seguida:
 o gate de procedência temática só começa depois deste.
 
-## 4. Achados que ficam para a próxima rodada
+## 4. Veredito e integração (2026-10-15)
+
+O arquiteto aprovou o lote e autorizou o avanço por `--ff-only`, com uma ressalva registrada e três
+condições de conferência — todas cumpridas antes do merge.
+
+| Gate | Veredito |
+|---|---|
+| TX-07 | **ACCEPTED / CHARACTERIZATION ONLY** — entra como evidência de comportamento atual; nenhuma política nova ativada |
+| TX-11 | **APPROVED FOR INTEGRATION** |
+| NN-06 | **APPROVED / UX23 NOT_RUN** — compilação Swift 6, capabilities e a classe `BackgroundRefreshCapabilityTests` verificadas; a execução efetiva concedida pelo iOS em aparelho físico **não** foi provada, e isso não bloqueia o código |
+| NN-07 | **APPROVED** — "o controle vermelho na BASE e verde na árvore integrada … demonstra que o teste discrimina o defeito corrigido, em vez de apenas passar nas duas versões" |
+| NN-08 | **APPROVED** |
+| Cabeçalho estrutural do NN-06 | **ACCEPT AS IS** — restaurar agora criaria uma terceira árvore sem benefício comportamental; fica como limpeza documental não bloqueante |
+
+**Identidades publicadas.** `main` avançou por `--ff-only` de `801f017d` para
+`7a60595ede66749d434683ab63ecae0908124c8f` (tree `1445d84b2aee601d9edd000c5dcca8c91e4b8284`), e
+`origin/main` confere com esse SHA. Guardas conferidas imediatamente antes: `origin/main` ainda em
+`801f017d`, árvore local limpa, HEAD e tree da branch exatamente os aprovados, BASE ancestral da
+integração, e o delta entre a árvore medida (`1b41d492`) e a publicada restrito a este relatório
+(`1 arquivo, 12 inserções, 8 remoções`, zero código). Sem force push.
+
+**Ressalva que permanece aberta:** a execução real de `BGAppRefreshTask` concedida pelo iOS
+(UX23-A/B/E, expiração, execução negada, Background App Refresh desligado) exige aparelho físico e
+segue `NOT_RUN`. Nada neste lote a declara aprovada.
+
+**Fora deste lote:** TX-07D (verificado à parte, corrigido e publicado em `omp/tx07-temporal-evidence`,
+`f742b184`) e TX-05D, ainda não iniciado.
+
+## 5. Achados que ficam para a próxima rodada
 
 - **TX-05** só é implementável quando existir contrato de fato temático por história *antes* de
   Selection; introduzi-lo exige um gate próprio (fora da allowlist aprovada).
