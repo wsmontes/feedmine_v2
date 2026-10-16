@@ -1292,12 +1292,21 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(scroll.waitForExistence(timeout: 180), "the first run ends in the feed")
         let cards = app.buttons.matching(identifier: "card.bookmark")
         XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 240), "the first card is the first fact")
-        // The acceptance the PO asked for: cards the store already published reach the screen without a
-        // gesture. Measured open defect (R5): with the shipped catalogue the growth runs and admits nothing —
-        // the log says `published growth: admitted 1 -> 1` while the store holds 22 published cards (1+1+20
-        // segments) and the screen keeps one. The window's materialisation stops at the segment boundary, which
-        // is publication-side work owned elsewhere. This expectation is deliberately left FAILING (the PO's
-        // decision on the round: a red acceptance test documents the defect; it must not be hidden or softened).
+        // The acceptance the PO asked for: cards the store already published reach the screen without a gesture.
+        //
+        // Provenance, corrected 2026-10-15. This comment used to be a defect record, and it was stale: it claimed
+        // the expectation was "deliberately left FAILING" and that the window's materialisation "stops at the
+        // segment boundary". Both were refuted — the second by the query itself, which walks the whole edition by
+        // `(s.ordinal, c.ordinal)` without a segment filter (`Sources/FeedMinePersistence/PublicationStore.swift:608-615`),
+        // and the first by the round that closed the defect on 2026-10-11:
+        // `docs/reviews/2026-10-11-round6-cross-segment-materialisation.md` records the spontaneous growth
+        // `admitted 1 -> 1, 1 -> 2, 2 -> 17` inside four seconds and this test PASSing in 16.9 s with zero gestures
+        // (`received=0 completed=0 backward=0`). The open defect observed on 2026-10-11 was real — the store held
+        // 22 published cards (segments 1+1+20) while the screen kept one — but it was a missing re-read of the
+        // published reserve after the burst, not a boundary.
+        //
+        // What this test asserts is therefore a standing invariant, not a pending defect: it fails only if the
+        // growth regresses.
         let expanded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count >= 2"), object: cards)
         XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 60), .completed,
             "already-published cards must arrive without a gesture; observed \(cards.count)")
