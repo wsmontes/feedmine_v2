@@ -133,3 +133,57 @@ corrigida e que `bench/expand.py` não estava congelado. Ambos são falsos hoje 
 - Nenhuma captura de tela do aparelho; a evidência de "imagem apareceu" é o censo do contêiner (blob presente por
   card), não o pixel desenhado — a asserção de pixel é justamente a lacuna que a build 48 ataca.
 - Os 25 quadros severos estão medidos, não explicados.
+
+## 8. Correção de proveniência: o R5 não estava aberto, e o comentário que dizia isso foi corrigido
+
+Dois artefatos **documentais** descreviam um passado como se fosse o presente, e os dois foram corrigidos nesta
+rodada com data, evidência e proveniência. O primeiro foi `docs/evidence/ACCEPTANCE_RECORD.md` (§6). O segundo é o
+comentário de `testFirstRunOverTheRealCatalogueExpandsWithoutAGesture`, que declarava o defeito R5 aberto e a
+expectativa "deliberately left FAILING".
+
+**O que eu verifiquei por leitura direta, e não por relato:**
+
+1. **A consulta não para na fronteira do segmento.** `Sources/FeedMinePersistence/PublicationStore.swift:608-615`
+   monta o universo como `feed_segments s JOIN published_cards c` com `WHERE s.edition_id = ?` e avanço por
+   `(s.ordinal, c.ordinal) > (?, ?)` — sem filtro de segmento. A explicação que o comentário dava era falsa.
+2. **O defeito foi fechado em 2026-10-11.**
+   `docs/reviews/2026-10-11-round6-cross-segment-materialisation.md:42-53` registra o traço cru do crescimento
+   espontâneo (`admitted 1 -> 1`, `1 -> 2`, `2 -> 17`) e o teste **PASS em 16,9 s, sem gesto**
+   (`received=0 completed=0 backward=0`), com a frase "O defeito P0 da rodada 5 está fechado". O gatilho é
+   `startGrowthFollowUp()`: cadeia **limitada** (8 tentativas, 0,75 s entre elas) iniciada no fato da publicação.
+3. **O que sobra como fragilidade é o acoplamento a polling**: a continuação do crescimento termina quando o
+   contador acaba (`AppComposition.swift:2380-2407`), e `.settled` só reinicia a cadeia quando muda *supply* —
+   e supply adquirida não é publicação (no bootstrap o `.settled` sai antes da tentativa de publicação,
+   `ColdFeedBootstrap.swift:220-229`). São exatamente duas das constantes mágicas que o estudo de benchmarks
+   listou para apagar.
+
+O arquiteto **retratou o verdict anterior** que tratava o R5 como P0 comprovadamente aberto, e autorizou a correção
+do comentário (documentação apenas, preservando corpo executável, asserções e timeouts, sem afirmar PASS novo antes
+da medição desta revisão). O comentário foi corrigido citando o relatório R6, a consulta e a data. A execução do
+teste nesta revisão **está em curso** quando este parágrafo foi escrito; o resultado — passando ou falhando — entra
+aqui assim que fechar, sem reabrir a causa já refutada.
+
+## 9. PD-8: o que o diagnóstico do Codex sustenta, e o que eu conferi no código
+
+O Codex (aplicativo, leitura somente, sem build) entregou o diagnóstico em `/tmp/pd8-diagnostico.md`. Duas
+afirmações dele foram **verificadas por mim**, linha por linha:
+
+1. **A oportunidade coalescida não renova o exame do catálogo.** `FeedRunwayDriver.drive` marca
+   `reconsiderRequested` e retorna quando já há execução causal em curso (`:189-193`), e o laço que reconsidera
+   (`while true { … if reconsiderRequested { continue } }`, `:224-229`) fica **depois** do `advanceDiscovery`
+   (`:211-220`). O próprio código declara a fronteira como deliberada: *"One catalogue page per caller opportunity,
+   outside the causal drain. Coverage may settle this page through the existing planner; it cannot load the next
+   page here."* — ou seja, é contrato escrito, não descuido, e a decisão passa a ser sobre o fluxo de oportunidades
+   e não sobre "renovar o exame".
+2. **A cobertura não retenta falha da mesma geração.** `RunwayAcquisitionCycle.runCoverage` filtra
+   `settled[$0.id] != $0.generation` (`:75-79`): uma vez que a geração de um alvo foi *settled* — e qualquer
+   resultado não cancelado a marca, **inclusive falha operacional** (`AcquisitionCoordinator.swift:171-177`) —, a
+   cobertura nunca a retenta. O caminho de déficit pode, porque filtra apenas `cooling`
+   (`runway`/`runCoverage`: `available = eligibleTargets.filter { !cooling.contains($0.id) }`).
+
+O Codex contesta, com razão, a premissa histórica: o código **atual** já pagina a descoberta, e atribuir a parada de
+2026-10-11 ao código de hoje é **INDETERMINADO** sem a build e os artefatos daquela corrida. Ele também desarmou uma
+armadilha do instrumento congelado: `bench/expand.py:last_window_new > 0` dá **PASS falso**, porque o instrumento só
+cria buckets que contêm primeiras ocorrências (`expand.py:47-57`) — se todas caírem no primeiro minuto, a "última
+janela" dele **é** a primeira. É o argumento decisivo para o instrumento novo de jornada nascer com hash próprio em
+vez de editar o oráculo.
