@@ -592,22 +592,32 @@ final class FeedMineUITests: XCTestCase {
     /// platform — it varies with the device, the installed apps and the language — so asserting an entry would be
     /// an assertion about iOS. What this app owns is the document it wrote and the presentation it asked for.
     ///
-    /// **Achado medido em 2026-10-16 — a folha do app bloqueia a superfície do sistema.** Tocar `Compartilhar`
-    /// **não** põe a superfície de compartilhamento do sistema sobre a folha de exportação. Medido em seis
-    /// corridas, uma delas num simulador **apagado antes** (`simctl erase`): 30 s e 240 s depois do toque a tela
-    /// ainda era a folha do app — a captura `export-share-system-surface` do `xcresult` mostra a folha de
-    /// exportação com o OPML real e nenhuma lista de atividades — e a árvore de acessibilidade ainda tinha a
-    /// folha do app no topo (`export-done` e `export-share` presentes, nenhum `ActivityListView`). Fechando
-    /// aquela folha, a superfície do sistema aparece **4 s** depois (`ActivityListView`,
-    /// `ShareSheet.RemoteContainerView`, `header.closeButton`): a apresentação é **adiada**, não recusada — o
-    /// leitor toca Compartilhar, nada acontece, e a folha de compartilhamento só sobe quando ele sai da folha
-    /// de exportação. Vale para `Salvar arquivo` também, que usa a mesma apresentação
-    /// (`FeedMineApp/FeedMineApp/FeedMineApp.swift:1111-1112` define os dois no mesmo `sharedExport`).
-    /// A causa provável (leitura de código, não medida) é a forma do host: a folha de exportação é desenhada
-    /// pelo host de superfícies (`.sheet(item: sheetItem)`, `FeedMineApp.swift:319`) e a superfície do sistema
-    /// por um segundo `.sheet(item: $sharedExport)` (`:448`) da **mesma** view — uma segunda apresentação do
-    /// mesmo apresentador enquanto a primeira está no ar. Nada aqui muda o app: o defeito é pré-existente e
-    /// está relatado em `docs/reviews/2026-10-16-superficies-honestas.md`, que é onde a correção deve começar.
+    /// **Achado medido em 2026-10-16 — a folha do app bloqueava a superfície do sistema; corrigido nesta
+    /// branch.** Tocar `Compartilhar` **não** punha a superfície de compartilhamento do sistema sobre a folha de
+    /// exportação: medido em seis corridas, uma delas num simulador **apagado antes** (`simctl erase`), 30 s e
+    /// 240 s depois do toque a tela ainda era a folha do app — a captura `export-share-system-surface` do
+    /// `xcresult` mostrava a folha de exportação com o OPML real e nenhuma lista de atividades — e a árvore de
+    /// acessibilidade ainda tinha a folha do app no topo (`export-done` e `export-share` presentes, nenhum
+    /// `ActivityListView`). A apresentação era **adiada**, não recusada: fechando aquela folha, a superfície do
+    /// sistema aparecia **4 s** depois (`ActivityListView`, `ShareSheet.RemoteContainerView`,
+    /// `header.closeButton`) — o leitor tocava Compartilhar, nada acontecia, e a folha de compartilhamento só
+    /// subia quando ele saía da folha de exportação. Valia para `Salvar arquivo` também, que usa a mesma
+    /// apresentação (`FeedMineApp/FeedMineApp/FeedMineApp.swift` define os dois no mesmo `sharedExport`).
+    /// A causa era o **apresentador**: a folha de exportação é desenhada pelo host de superfícies
+    /// (`.sheet(item: sheetItem)`) e a superfície do sistema por um segundo `.sheet(item: $sharedExport)`
+    /// **irmão**, na mesma view (`FeedMineApp.swift:448`, antes da correção) — uma segunda apresentação pedida
+    /// por um apresentador que já tinha uma no ar (relato: `docs/reviews/2026-10-16-superficies-honestas.md`;
+    /// saída bruta: `/tmp/sharecheck-ORCH-repro.log`).
+    /// **O conserto ancora a apresentação na folha que a pede** — `.sheet(item: $sharedExport)` dentro de
+    /// `exportSheet`, a folha de exportação apresentando a sua própria superfície de sistema — e é a propriedade
+    /// abaixo que o dirige, **não** a quantidade de `.sheet` que o SwiftUI permite declarar:
+    ///
+    /// > Quando o leitor toca Compartilhar ou Salvar arquivo, o sistema apresenta a ação solicitada **naquele
+    /// > fluxo**, sem exigir outra ação inesperada. Sair da superfície devolve o leitor ao contexto anterior, sem
+    /// > perder a leitura.
+    ///
+    /// Por isso as medidas que seguem não são condicionais a premissa nenhuma: a superfície sobe, a folha que a
+    /// pediu é a que está em cima quando ela sai, e o ponto de leitura no fim é o do começo.
     @MainActor
     func testSharingTheExportOpensTheSystemSurfaceAndKeepsTheReadingPoint() throws {
         let app = XCUIApplication()
@@ -630,6 +640,12 @@ final class FeedMineUITests: XCTestCase {
         let counters = proof.label
         let anchor = try XCTUnwrap(topmostCardIdentifier(app: app, scroll: scroll),
             "a card must be visible inside the viewport")
+        // The reading point as a number, not only as an identity: a shift that leaves the same card on top at a
+        // different offset would satisfy the identity comparison below and still have moved what the reader is
+        // reading. Measured the way this file measures offsets elsewhere (`:1760`, `:1806`: `frame.minY` against
+        // a captured reference, `accuracy: 1`): the card's own top edge, in points, tolerance 1.
+        let anchorTop = try XCTUnwrap(topmostCard(app: app, scroll: scroll),
+            "a card must be visible inside the viewport").frame.minY
 
         openMenu(app)
         // The menu entry is selected by the identifier SwiftUI gives it — the entry's own SF Symbol — not by
@@ -658,14 +674,21 @@ final class FeedMineUITests: XCTestCase {
         // presentation that never came are told apart by a fact instead of by a guess.
         let asked = Date()
         let systemSurface = systemShareSurface(app)
-        let surfaced = systemSurface.waitForExistence(timeout: 60)
-        XCTAssertTrue(surfaced,
-            "Compartilhar must open the system's own share surface over the app's own sheet; measured on "
-                + "2026-10-16: it does not (see the finding in this test's own documentation); on screen: "
-                + "\(app.debugDescription)")
-        // The rest of the journey leaves a surface that must be up. A build in which it never came cannot measure
-        // the return, and the failure above states exactly that — so the journey stops where its premise does.
-        guard surfaced else { return }
+        XCTAssertTrue(systemSurface.waitForExistence(timeout: 60),
+            "Compartilhar must open the system's own share surface over the app's own sheet, in the flow that "
+                + "asked for it and without another action first; on screen: \(app.debugDescription)")
+        // And the surface it was asked for **over** is still up at this instant: the platform's list is
+        // presented over the app's own export sheet, not after it. This is the fact the other assertions only
+        // reach transitively — nothing in between dismisses the sheet — and a presentation that closed the sheet
+        // first and went up afterwards would satisfy every other assertion in this journey (the surface appears,
+        // the sheet is up when the surface leaves, the reading point returns). It cannot be shown red on the base
+        // commit, which never gets this far (it fails at the assertion above); its value is guarding that
+        // different regression, and it is measured here as a fact of its own.
+        XCTAssertTrue(app.buttons["export-done"].exists,
+            "Compartilhar's system surface is presented over the app's own export sheet, not after it: that "
+                + "sheet must still be up while the surface is addressable; on screen: \(app.debugDescription)")
+        // The premise is the app's own now — the sheet that asks is the sheet that presents — so the journey
+        // measures the return below without a gate of its own.
         print("export-share: system surface addressable "
             + String(format: "%.2f", Date().timeIntervalSince(asked)) + " s after the tap")
         let shot = XCTAttachment(screenshot: app.screenshot())
@@ -692,6 +715,133 @@ final class FeedMineUITests: XCTestCase {
             "sharing a document must not replace the session the reader is reading in")
         XCTAssertEqual(topmostCardIdentifier(app: app, scroll: scroll), anchor,
             "nor move the reading point: the visible prefix is the card the reader was on")
+        // The same position, measured as a distance and not only as an identity: a shift that keeps the same
+        // card on top at a different offset would pass the line above.
+        let returned = try XCTUnwrap(topmostCard(app: app, scroll: scroll),
+            "a card must be visible inside the viewport")
+        print("export-share: reading point offset reference=" + String(format: "%.1f", anchorTop)
+            + " final=" + String(format: "%.1f", returned.frame.minY) + " pt")
+        XCTAssertEqual(returned.frame.minY, anchorTop, accuracy: 1,
+            "nor shift it: the card's own top edge must be where the reader left it")
+    }
+
+    /// A jornada irmã da anterior, para a **segunda porta** da folha de exportação: `Salvar arquivo`
+    /// (`Sources/FeedMineUI/Tools/ReaderImportExportViews.swift:120`, id `export-save`). A propriedade do
+    /// arquiteto citada em `docs/reviews/2026-10-16-share-do-export-na-folha-que-o-pede.md:33-34` vale para as
+    /// **duas** portas — "Quando o usuário toca Compartilhar **ou Salvar arquivo**, o sistema apresenta a ação
+    /// solicitada naquele fluxo, sem exigir outra ação inesperada. Cancelar devolve o usuário ao contexto
+    /// anterior, sem perder a leitura." —, mas até agora só uma delas era medida: a bateria para em
+    /// `app.buttons["export-share"].exists` (`FeedMineUITests.swift:567`), e `export-save` aparecia em **zero**
+    /// testes. A equivalência das duas portas era uma leitura do código
+    /// (`FeedMineApp/FeedMineApp/FeedMineApp.swift:1103-1104`: `onShare` e `onSave` escrevem o mesmo
+    /// `sharedExport`), não uma medição — e o achado de 2026-10-16 (relatado na jornada anterior) afirma
+    /// justamente que valia para `Salvar arquivo` também, por inferência do mesmo caminho.
+    ///
+    /// Esta jornada troca a inferência pela medida: o mesmo fluxo, o mesmo documento, a mesma plataforma, com o
+    /// **outro** identificador tocado. Ela mede, e nada mais:
+    ///
+    /// - a folha de exportação mostra o documento real (a mesma prévia, e nenhuma linha "Nada para exportar");
+    /// - `Salvar arquivo` põe a superfície **do sistema** sobre a folha do app, no fluxo que a pediu;
+    /// - a saída da plataforma devolve a folha do app, e fechá-la devolve o leitor ao ponto de leitura que ele
+    ///   tinha: os mesmos contadores e o mesmo cartão no topo do viewport.
+    ///
+    /// Por que as medidas **não** são condicionais a premissa nenhuma: quem pede a apresentação é a folha que
+    /// está no ar (`.sheet(item: $sharedExport)` dentro de `exportSheet`, o conserto desta branch), e a folha que
+    /// pede é a folha que volta — as três medidas abaixo são fatos do app e do sistema, e falham por si. O que
+    /// **não** se afirma continua sendo o conteúdo da lista de atividades: ele pertence à plataforma e varia com
+    /// o aparelho, os apps instalados e o idioma.
+    @MainActor
+    func testSavingTheExportOpensTheSystemSurfaceAndKeepsTheReadingPoint() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 45))
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10))
+        // A reading point that is not the top of the feed: the reader's own scroll, and the opportunity it
+        // completed is what makes the position real. Same establishment as the share journey, so the two
+        // journeys measure the reader's return over the same kind of position.
+        scroll.swipeUp()
+        let delivered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label MATCHES %@",
+            ".*completed=[1-9][0-9]*.*"), object: proof)
+        XCTAssertEqual(XCTWaiter.wait(for: [delivered], timeout: 20), .completed,
+            "a real scroll must complete a real opportunity; observed: \(proof.label)")
+        let counters = proof.label
+        let anchor = try XCTUnwrap(topmostCardIdentifier(app: app, scroll: scroll),
+            "a card must be visible inside the viewport")
+        // The reading point as a number, not only as an identity (the same establishment as the share journey,
+        // `:643-648`): the card's own top edge, in points, tolerance 1.
+        let anchorTop = try XCTUnwrap(topmostCard(app: app, scroll: scroll),
+            "a card must be visible inside the viewport").frame.minY
+
+        openMenu(app)
+        app.buttons["square.and.arrow.up"].tap()
+        XCTAssertTrue(app.buttons["export-done"].waitForExistence(timeout: 20),
+            "the reader's own menu opens V1's export sheet; on screen: \(app.debugDescription)")
+        // The same document the share journey checks, for the same reason: tapping a save that had no document
+        // would prove nothing, so the row the app draws when there is nothing to write must be absent first.
+        XCTAssertTrue(scrollIntoView(app.staticTexts["export-preview"], in: app, timeout: 20),
+            "the sheet shows the document it would save")
+        XCTAssertFalse(app.staticTexts["export-empty"].exists,
+            "saving is only meaningful over a real document, and the sheet states there is nothing to write")
+        let save = app.buttons["export-save"]
+        XCTAssertTrue(scrollIntoView(save, in: app, timeout: 20), "the sheet offers saving its document")
+        XCTAssertTrue(save.isEnabled, "and it is offered because there is a document to save")
+        save.tap()
+
+        // The platform's own surface, over the app's own sheet, asked for by the sheet that is up. The wait is
+        // bounded and generous for the reason the share journey records — the platform's latency is not this
+        // app's to choose — and the elapsed time is printed either way, so a slow platform and a presentation
+        // that never came are told apart by a fact instead of by a guess.
+        let asked = Date()
+        let systemSurface = systemShareSurface(app)
+        XCTAssertTrue(systemSurface.waitForExistence(timeout: 60),
+            "Salvar arquivo must open the system's own share surface over the app's own sheet, in the flow that "
+                + "asked for it and without another action first; on screen: \(app.debugDescription)")
+        // And the surface it was asked for **over** is still up at this instant: the platform's list is
+        // presented over the app's own export sheet, not after it — the same measurement the share journey makes
+        // (`:680-689`), for the same reason. It cannot be shown red on the base commit, which never gets this
+        // far; its value is guarding a presentation that dismissed the sheet first and went up afterwards.
+        XCTAssertTrue(app.buttons["export-done"].exists,
+            "Salvar arquivo's system surface is presented over the app's own export sheet, not after it: that "
+                + "sheet must still be up while the surface is addressable; on screen: \(app.debugDescription)")
+        print("export-save: system surface addressable "
+            + String(format: "%.2f", Date().timeIntervalSince(asked)) + " s after the tap")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "export-save-system-surface"
+        shot.lifetime = .keepAlways
+        add(shot)
+
+        // Leaving it by the platform's own way out, awaited as its own fact (its contents materialise after its
+        // container does), then the app's own sheet is what is up again — and closing that returns the reader to
+        // the feed they were in, at the card they were on.
+        let close = systemShareCloseControl(app)
+        XCTAssertNotNil(close,
+            "the system's share surface must offer its own way out; on screen: \(app.debugDescription)")
+        print("export-save: system's own close control reachable "
+            + String(format: "%.2f", Date().timeIntervalSince(asked)) + " s after the tap")
+        close?.tap()
+        XCTAssertTrue(waitForAbsence(systemSurface, timeout: 240),
+            "leaving the share surface dismisses it; on screen: \(app.debugDescription)")
+        XCTAssertTrue(app.buttons["export-done"].waitForExistence(timeout: 60),
+            "and the export sheet is the surface that is up again; on screen: \(app.debugDescription)")
+        app.buttons["export-done"].tap()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 20), "closing the export sheet returns to the feed")
+        XCTAssertEqual(proof.label, counters,
+            "saving a document must not replace the session the reader is reading in")
+        XCTAssertEqual(topmostCardIdentifier(app: app, scroll: scroll), anchor,
+            "nor move the reading point: the visible prefix is the card the reader was on")
+        // The same reading point, measured as a distance and not only as an identity.
+        let returned = try XCTUnwrap(topmostCard(app: app, scroll: scroll),
+            "a card must be visible inside the viewport")
+        print("export-save: reading point offset reference=" + String(format: "%.1f", anchorTop)
+            + " final=" + String(format: "%.1f", returned.frame.minY) + " pt")
+        XCTAssertEqual(returned.frame.minY, anchorTop, accuracy: 1,
+            "nor shift it: the card's own top edge must be where the reader left it")
     }
 
     /// The system's own share surface as this app's process can see it. `UIActivityViewController` draws its
