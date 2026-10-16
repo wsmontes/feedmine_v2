@@ -458,5 +458,154 @@ final class SyndicationTranslatorTests: XCTestCase {
         XCTAssertEqual(try content("one  \n   two", type: "text").bodyText, "one two")
     }
 
+    // MARK: - TX-05D: the story's own declared subjects
 
+    /// The item's own `<category>` is the story's declared subject, with the taxonomy it names. The
+    /// channel's own `<category>` is the *feed's* taxonomy — a different identity — and never fills it:
+    /// FeedKit decodes both, and only the item-level one is read.
+    func testTX05RSSItemCategoriesAreTheStorysDeclarationAndTheChannelsAreNot() throws {
+        let data = Data("""
+        <rss version="2.0"><channel><title>Feed</title>
+        <category>Media</category><category domain="dmoz">News/Media/Science</category>
+        <item><guid>a</guid><title>A</title><category>movies</category>
+        <category domain="rec.arts.movies.reviews">1983/V</category></item>
+        <item><guid>b</guid><title>B</title></item>
+        <item><guid>c</guid><title>C</title><category/><category>sports</category></item>
+        </channel></rss>
+        """.utf8)
+        let value = try translate(data)
+        XCTAssertEqual(value.observations.count, 3)
+        let declared = try XCTUnwrap(value.observations[0].declaredSubjects)
+        // Canonical order: same surface, then no named taxonomy before a named one.
+        XCTAssertEqual(declared.claims, [
+            DeclaredSubjectClaim(surface: .rssItemCategory, label: "movies")!,
+            DeclaredSubjectClaim(surface: .rssItemCategory, scheme: "rec.arts.movies.reviews", label: "1983/V")!])
+        XCTAssertEqual(declared.equivalence, .declaredLabelOnly)
+        XCTAssertEqual(declared.identities, declared.claims.map(\.identity))
+        // An item that declared nothing has nothing: absence is never filled from the feed's taxonomy.
+        XCTAssertNil(value.observations[1].declaredSubjects)
+        // An empty `<category/>` declares no subject and, unlike the Atom case below, does not hide its
+        // text-carrying siblings: `XMLNode.child(for:)` prefers a child that carries text, so the empty
+        // element is never the one the decoder looks at.
+        XCTAssertEqual(try XCTUnwrap(value.observations[2].declaredSubjects).claims,
+            [DeclaredSubjectClaim(surface: .rssItemCategory, label: "sports")!])
+    }
+
+    /// An Atom entry declares its subject in the `term` attribute, inside the `scheme` it names; the
+    /// element carries no text, and Atom's display `label` is not the declared subject.
+    func testTX05AtomEntryTermAndSchemeAreTheDeclarationAndFeedCategoriesAreNot() throws {
+        let data = Data("""
+        <feed xmlns="http://www.w3.org/2005/Atom"><title>Feed</title>
+        <category term="feed-only"/>
+        <entry><id>a</id><title>A</title><category term="music" scheme="urn:example:subjects" label="Música"/></entry>
+        <entry><id>b</id><title>B</title><category/></entry>
+        <entry><id>c</id><title>C</title><category term="  music  "/></entry>
+        <entry><id>d</id><title>D</title><category/><category term="music"/></entry>
+        </feed>
+        """.utf8)
+        let value = try translate(data)
+        XCTAssertEqual(value.observations.count, 4)
+        // `term` is the declaration and `scheme` the taxonomy it names. The display `label` cannot change
+        // an identity: the identity is the declared term.
+        let named = try XCTUnwrap(value.observations[0].declaredSubjects)
+        XCTAssertEqual(named.claims, [DeclaredSubjectClaim(surface: .atomEntryCategory,
+            scheme: "urn:example:subjects", label: "music")!])
+        // A lone `<category/>` declares nothing.
+        XCTAssertNil(value.observations[1].declaredSubjects)
+        // A declared `term` is whitespace-collapsed like any declared text, and the same word in no named
+        // taxonomy is a different declaration from the one above.
+        let plain = try XCTUnwrap(value.observations[2].declaredSubjects)
+        XCTAssertEqual(plain.claims, [DeclaredSubjectClaim(surface: .atomEntryCategory, label: "music")!])
+        XCTAssertNotEqual(named.identities, plain.identities)
+        // Measured FeedKit rule, stated instead of wished away: an attribute-only protocol has no text to
+        // prefer, so `XMLNode.child(for:)` falls back to the first same-named sibling, and
+        // `XMLKeyedDecodingContainer.decodeNil(forKey:)` reports the whole key as null when that sibling is
+        // an *empty* element (`<category/>` has no children at all, so `child.children?.isEmpty ?? true`
+        // holds). The document declared a subject; FeedKit's structure does not deliver it, and this build
+        // reports the absence it was given rather than inventing the declaration the element never carried.
+        XCTAssertNil(value.observations[3].declaredSubjects)
+    }
+
+    /// A JSON Feed item declares its subjects in `tags`: plain text, in no named taxonomy.
+    func testTX05JSONTagsAreTheDeclarationInNoNamedTaxonomy() throws {
+        let value = try translate(json("""
+        {"id":"a","tags":["Futebol"," futebol ","FUTEBOL","Premier League"]},{"id":"b","tags":[]}
+        """))
+        XCTAssertEqual(value.observations.count, 2)
+        let declared = try XCTUnwrap(value.observations[0].declaredSubjects)
+        // Text normalization only: the three spellings are one declaration and the byte-smallest label is
+        // the one recorded, so the record does not depend on the order the document listed them in.
+        XCTAssertEqual(declared.claims, [
+            DeclaredSubjectClaim(surface: .jsonFeedItemTag, label: "FUTEBOL")!,
+            DeclaredSubjectClaim(surface: .jsonFeedItemTag, label: "Premier League")!])
+        XCTAssertEqual(declared.identities.count, 2)
+        XCTAssertNil(value.observations[1].declaredSubjects)
+    }
+
+    /// The declared subjects are evidence about the story and never part of its material identity: two
+    /// items that differ only in what they declared are one version of one story, so a classification
+    /// change can never fabricate a new editorial occurrence (PD-1).
+    func testTX05DeclarationsNeverChangeTheMaterialIdentity() throws {
+        func translateItem(_ categories: String) throws -> AcquisitionObservation {
+            try item(rss("<item><guid>same</guid><title>Same</title><description>Same</description>\(categories)</item>"))
+        }
+        let none = try translateItem(""), declared = try translateItem("<category>movies</category>"),
+            other = try translateItem("<category>sports</category>")
+        XCTAssertNil(none.declaredSubjects)
+        XCTAssertNotNil(declared.declaredSubjects)
+        XCTAssertNotEqual(declared.declaredSubjects, other.declaredSubjects)
+        XCTAssertEqual(none.versionIdentity, declared.versionIdentity)
+        XCTAssertEqual(declared.versionIdentity, other.versionIdentity)
+        XCTAssertEqual(none.objectIdentity, declared.objectIdentity)
+        XCTAssertEqual(none.mediaCandidates, declared.mediaCandidates)
+        // And an item that declares nothing stays eligible: absence is not a rejection.
+        let value = try translate(rss("<item><guid>plain</guid></item>"))
+        XCTAssertEqual(value.observations.count, 1)
+        XCTAssertTrue(value.rejections.isEmpty)
+    }
+
+    /// One set of declarations has one representation — element order and repetition cannot change it —
+    /// and its canonical text is the only form this build reads back.
+    func testTX05DeclarationsHaveOneCanonicalRepresentationAndText() throws {
+        func subjects(_ categories: String) throws -> StoryDeclaredSubjects {
+            try XCTUnwrap(try item(rss("<item><guid>g</guid>\(categories)</item>")).declaredSubjects)
+        }
+        let first = try subjects("<category>b</category><category>a</category>")
+        let reordered = try subjects("<category>a</category><category>b</category><category>a</category>")
+        XCTAssertEqual(first, reordered)
+        XCTAssertEqual(first.canonicalText, reordered.canonicalText)
+        XCTAssertEqual(try StoryDeclaredSubjects.decode(canonicalText: first.canonicalText), first)
+        // A text this build did not write is absence, never declarations.
+        XCTAssertNil(try StoryDeclaredSubjects.decode(canonicalText: "search projection text"))
+        XCTAssertNil(try StoryDeclaredSubjects.decode(canonicalText: ""))
+        // A marked text must be readable, and must be from this schema version.
+        XCTAssertThrowsError(try StoryDeclaredSubjects.decode(canonicalText: "feedmine.declared-subjects/1|{\"claims\":[]}")) {
+            XCTAssertEqual($0 as? DeclaredSubjectsTextError, .malformedCanonicalText)
+        }
+        XCTAssertThrowsError(try StoryDeclaredSubjects.decode(canonicalText: "feedmine.declared-subjects/2|{}")) {
+            XCTAssertEqual($0 as? DeclaredSubjectsTextError, .unsupportedSchemaVersion(2))
+        }
+        // A declaration with nothing but whitespace is not a claim, and only whitespace is no declaration.
+        XCTAssertNil(DeclaredSubjectClaim(surface: .jsonFeedItemTag, label: "   "))
+        XCTAssertNil(DeclaredSubjectClaim(surface: .jsonFeedItemTag, label: nil))
+        XCTAssertNil(StoryDeclaredSubjects([]))
+    }
+
+    /// A revision has one non-material text fact. The producer that translates a declaration states it and
+    /// no opaque value beside it, and the observation refuses the combination outright — so two facts can
+    /// never compete for one canonical slot (the admission store enforces the same rule on its command).
+    func testTX05DeclarationsAndAnOpaqueProjectionAreNeverBothStated() throws {
+        let declared = try XCTUnwrap(try item(rss("<item><guid>g</guid><category>movies</category></item>")).declaredSubjects)
+        XCTAssertNil(try item(rss("<item><guid>g</guid><category>movies</category></item>")).searchProjection)
+        func build(search: String?, subjects: StoryDeclaredSubjects?) -> AcquisitionObservation? {
+            AcquisitionObservation(objectIdentity: .init(connectorKind: .syndication, namespace: "obs", value: "g",
+                role: .object), versionIdentity: nil, precedence: .makeCurrent, availability: .available,
+                headline: "h", summary: nil, bodyText: nil, authoredAt: nil, modifiedAt: nil, observedAt: observed,
+                language: nil, primaryLink: nil, searchProjection: search, providerID: nil,
+                memberships: [.init(sourceID: source, kind: .direct)], mediaCandidates: [], declaredSubjects: subjects)
+        }
+        XCTAssertNotNil(build(search: " opaque ", subjects: nil))
+        XCTAssertNotNil(build(search: nil, subjects: declared))
+        XCTAssertNil(build(search: " opaque ", subjects: declared))
+    }
 }

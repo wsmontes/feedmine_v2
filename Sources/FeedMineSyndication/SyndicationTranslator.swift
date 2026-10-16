@@ -45,7 +45,7 @@ public struct SyndicationTranslator: Sendable {
         func observation(_ object: ExternalIdentity?, version: ExternalIdentity? = nil, title: String?, summary: String?,
             body: String? = nil, bodySourceElement: String? = nil, fingerprintGeneration: Int = 1,
             authored: Date?, modified: Date? = nil, language: String? = nil, link: String?,
-            media: [AcquisitionMediaCandidateClaim]) -> Result<AcquisitionObservation, ItemFailure> {
+            media: [AcquisitionMediaCandidateClaim], declaredSubjects: StoryDeclaredSubjects? = nil) -> Result<AcquisitionObservation, ItemFailure> {
             guard let object else { return .failure(.missingStableIdentity) }
             // v1 lesson IN-4 / review M12: a future-dated item would pin itself to the top of a
             // recency order forever, so the accepted value is clamped to the observation; identity is
@@ -84,7 +84,8 @@ public struct SyndicationTranslator: Sendable {
                 modifiedAt: accepted(declaredModified), observedAt: observedAt, language: language, primaryLink: Self.webURL(link),
                 searchProjection: nil, providerID: nil, memberships: configuration.memberships, mediaCandidates: media,
                 fingerprintGeneration: fingerprintGeneration, legacyVersionIdentity: fingerprintGeneration == 2 ? legacyVersion : nil,
-                bodySourceElement: bodySourceElement, declaredAuthoredAt: authored, declaredModifiedAt: modified)
+                bodySourceElement: bodySourceElement, declaredAuthoredAt: authored, declaredModifiedAt: modified,
+                declaredSubjects: declaredSubjects)
             else { return .failure(.invalidCanonicalObservation) }
             return .success(value)
         }
@@ -108,7 +109,8 @@ public struct SyndicationTranslator: Sendable {
             let body = Self.readableBody(item.content?.encoded)
             return observation(object, title: item.title, summary: item.description, body: body,
                 bodySourceElement: body == nil ? nil : "content:encoded", fingerprintGeneration: 2,
-                authored: item.pubDate, language: language, link: item.link, media: Self.unique(media))
+                authored: item.pubDate, language: language, link: item.link, media: Self.unique(media),
+                declaredSubjects: Self.declaredSubjects(in: item.categories))
         }
         switch feed {
         case .rss(let document):
@@ -160,7 +162,8 @@ public struct SyndicationTranslator: Sendable {
                 }
                 return observation(object, version: version, title: item.title, summary: item.summary?.text,
                     body: body, bodySourceElement: body == nil ? nil : "content", fingerprintGeneration: 2,
-                    authored: item.published, modified: item.updated, link: link, media: Self.unique(media))
+                    authored: item.published, modified: item.updated, link: link, media: Self.unique(media),
+                    declaredSubjects: Self.declaredSubjects(in: item.categories))
             }
         case .json(let document):
             return try window(document.items ?? [], kind: .json, start: startIndex, capacity: itemCapacity) { item in
@@ -180,7 +183,7 @@ public struct SyndicationTranslator: Sendable {
                 }
                 return observation(object, version: version, title: item.title, summary: item.summary, body: item.contentText,
                     authored: item.datePublished, modified: item.dateModified, language: item.language,
-                    link: link, media: Self.unique(media))
+                    link: link, media: Self.unique(media), declaredSubjects: Self.declaredSubjects(in: item.tags))
             }
         }
     }
@@ -202,6 +205,38 @@ public struct SyndicationTranslator: Sendable {
         return .init(documentKind: kind, observations: observations, rejections: rejections,
             declaredItemCount: items.count, examinedItemCount: examined, nextItemIndex: end < items.count ? end : nil)
     }
+    /// The item's own `<category>` declarations as neutral claims: the element text is the declared
+    /// subject and its optional `domain` attribute names the taxonomy — exactly what FeedKit's
+    /// `RSSFeedItem.categories` carries (`XMLElement<RSSFeedCategoryAttributes>`, whose `text` and
+    /// `attributes.domain` the decoder fills from `<category>movies</category>` and
+    /// `<category domain="...">1983/V</category>`). The channel's own `<category>` elements are the feed's
+    /// taxonomy, not the story's subject, and are never consulted here.
+    private static func declaredSubjects(in categories: [RSSFeedCategory]?) -> StoryDeclaredSubjects? {
+        StoryDeclaredSubjects((categories ?? []).compactMap { element in
+            DeclaredSubjectClaim(surface: .rssItemCategory, scheme: element.attributes?.domain, label: element.text)
+        })
+    }
+
+    /// The entry's own `atom:category` declarations. FeedKit's `AtomFeedEntry.categories` is an
+    /// `XMLAttributesElement<AtomFeedCategoryAttributes>`: it carries no element text, only attributes, so
+    /// the declared subject is `term` and the named taxonomy is `scheme`. Atom's `label` attribute is
+    /// display text for an end-user application rather than the declared subject, so it is not carried and
+    /// cannot change an identity. The feed's own categories are not consulted.
+    private static func declaredSubjects(in categories: [AtomFeedCategory]?) -> StoryDeclaredSubjects? {
+        StoryDeclaredSubjects((categories ?? []).compactMap { element in
+            DeclaredSubjectClaim(surface: .atomEntryCategory, scheme: element.attributes?.scheme,
+                label: element.attributes?.term)
+        })
+    }
+
+    /// The item's own `tags`, which name no taxonomy (`JSONFeedItem.tags`, whose own documentation notes
+    /// that some formats call these categories). The feed's own tags are not consulted.
+    private static func declaredSubjects(in tags: [String]?) -> StoryDeclaredSubjects? {
+        StoryDeclaredSubjects((tags ?? []).compactMap { tag in
+            DeclaredSubjectClaim(surface: .jsonFeedItemTag, label: tag)
+        })
+    }
+
     private static func nonempty(_ value: String?) -> String? { value.flatMap { $0.utf8.isEmpty ? nil : $0 } }
     private static func literalBody(_ value: String?) -> String? {
         guard let value else { return nil }

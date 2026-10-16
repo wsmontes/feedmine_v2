@@ -29,11 +29,12 @@ final class CandidateProviderTests: XCTestCase {
     @discardableResult
     private func insert(_ number: Int, source: SourceID, into store: ContentStore,
         authored: Date? = nil, modified: Date? = nil, observed: Date? = nil, headline: String? = "", summary: String? = nil,
-        language: String? = nil, provider: ProviderID? = nil) throws -> OriginRevision {
+        language: String? = nil, provider: ProviderID? = nil,
+        nonMaterialText: String = "not a candidate field") throws -> OriginRevision {
         let revision = OriginRevision(id: OriginRevisionID(), originRecordID: origin(number), externalVersionIdentity: nil,
             headline: headline, summary: summary, bodyText: "not a candidate field", authoredAt: authored,
             modifiedAt: modified, observedAt: observed ?? time, language: language,
-            primaryLink: URL(string: "https://example.test/item")!, searchProjection: "not a candidate field", providerID: provider)
+            primaryLink: URL(string: "https://example.test/item")!, searchProjection: nonMaterialText, providerID: provider)
         try store.commitCanonicalChange(ContentStore.CanonicalChange(recordID: origin(number),
             externalObjectIdentity: ExternalIdentity(connectorKind: ConnectorKind(rawValue: "test"),
                 namespace: "objects", value: String(number), role: .object), revision: revision, mediaCandidates: [],
@@ -753,6 +754,77 @@ final class CandidateProviderTests: XCTestCase {
             nextCursor: nil, exhausted: true)
         XCTAssertEqual(try SelectionEngine().select(plan: plan, policy: policy,
             window: window, exposure: published).orderedCandidates, [removed])
+    }
+
+    // MARK: - TX-05D: the subject a story's own document declared
+
+    private func declared(_ label: String) -> String {
+        StoryDeclaredSubjects([DeclaredSubjectClaim(surface: .rssItemCategory, label: label)!])!.canonicalText
+    }
+
+    /// A candidate carries the subject its own document declared, rebuilt from canonical supply. Two
+    /// stories of one source that declared different subjects never share an identity — the Source's
+    /// taxonomy does not fill it — and two sources that wrote incompatible labels are never unified.
+    func testTopicEvidenceComesFromTheStorysOwnDeclarationAndNotFromItsSource() throws {
+        try withProvider { store, provider in
+            let shared = SourceID(), other = SourceID()
+            let declared = try insert(1, source: shared, into: store, nonMaterialText: self.declared("Futebol"))
+            let different = try insert(2, source: shared, into: store, nonMaterialText: self.declared("Premier League"))
+            let incompatible = try insert(3, source: other, into: store, nonMaterialText: self.declared("sports"))
+            let sameWords = try insert(4, source: other, into: store, nonMaterialText: self.declared("futebol"))
+            let silent = try insert(5, source: other, into: store)
+            let candidates = try provider.candidates(for: plan(.main), after: nil, examinedCapacity: 5).candidates
+            let byOrigin = Dictionary(uniqueKeysWithValues: candidates.map { ($0.originRecordID,$0) })
+            func topics(_ revision: OriginRevision) throws -> CandidateTopicEvidence {
+                try XCTUnwrap(byOrigin[revision.originRecordID]).topics
+            }
+            let first = try topics(declared)
+            XCTAssertEqual(first.identities.map(\.key),["futebol"])
+            XCTAssertEqual(first.identities.map(\.surface),[.rssItemCategory])
+            XCTAssertNil(first.identities.first?.scheme)
+            XCTAssertEqual(first.equivalence,.declaredLabelOnly)
+            XCTAssertEqual(first.declaredSubjects.map(\.label),["Futebol"])
+            XCTAssertFalse(first.sharesDeclaredSubject(with: try topics(different)))
+            XCTAssertFalse(first.sharesDeclaredSubject(with: try topics(incompatible)))
+            XCTAssertTrue(first.sharesDeclaredSubject(with: try topics(sameWords)))
+            // A story whose document declared nothing has no topic evidence, and a value another producer
+            // stored in that slot is not a declaration either.
+            let absent = try topics(silent)
+            XCTAssertTrue(absent.isAbsent)
+            XCTAssertTrue(absent.identities.isEmpty)
+            XCTAssertFalse(absent.sharesDeclaredSubject(with: first))
+            XCTAssertEqual(Candidate(originRecordID: origin(9),originRevisionID: OriginRevisionID(),
+                headline: nil,summary: nil,timestamp: CandidateTimestamp(value: time,kind: .observed),
+                language: nil,providerID: nil).topics,.absent)
+        }
+    }
+
+    /// The identity a candidate exposes is the one canonical supply holds, admitted through the real
+    /// admission path: the projection is reconstructed from the canonical fact, never restated.
+    func testTopicIdentityIsDeliveredFromAdmittedCanonicalEvidence() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let db = try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))
+        let content = ContentStore(database: db), source = SourceID()
+        let target = try AcquisitionTargetStore(database: db).register(id: AcquisitionTargetID(),
+            connectorKind: .syndication, authorizedSources: [source])
+        let subjects = try XCTUnwrap(StoryDeclaredSubjects([DeclaredSubjectClaim(surface: .atomEntryCategory,
+            scheme: "urn:example:subjects", label: "Music")!]))
+        let observation = AcquisitionAdmissionStore.ObservationCommand(
+            objectIdentity: ExternalIdentity(connectorKind: .syndication,namespace: "admitted",value: "a",role: .object),
+            versionIdentity: nil,precedence: .makeCurrent,availability: .available,headline: "Admitted",summary: nil,
+            bodyText: nil,authoredAt: time,modifiedAt: nil,observedAt: time,language: nil,primaryLink: nil,
+            searchProjection: nil,providerID: nil,memberships: [.init(sourceID: source,kind: .direct)],
+            mediaCandidates: [], declaredSubjects: subjects)
+        _ = try AcquisitionAdmissionStore(database: db).admit(.init(targetID: target.id,
+            targetGeneration: target.generation,expectedCheckpointRevision: target.checkpointRevision,
+            observations: [observation],nextCheckpoint: nil))
+        let candidate = try XCTUnwrap(CandidateProvider(contentStore: content)
+            .candidates(for: try plan(.main), after: nil, examinedCapacity: 4).candidates.first)
+        XCTAssertEqual(candidate.topics.declaredSubjects,subjects.claims)
+        XCTAssertEqual(candidate.topics.identities,subjects.identities)
+        XCTAssertEqual(candidate.topics.identities.map(\.key),["music"])
+        XCTAssertEqual(candidate.topics.equivalence,.declaredLabelOnly)
     }
 
 }

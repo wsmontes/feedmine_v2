@@ -88,13 +88,18 @@ public struct AcquisitionAdmissionStore: Sendable {
         public let providerID: ProviderID?
         public let memberships: [MembershipCommand]
         public let mediaCandidates: [MediaCandidateCommand]
+        /// The subjects the story's own document declared, as the neutral canonical value the connector
+        /// translated. Absence stays absent. It is what the revision's one non-material text slot will
+        /// carry, so an observation may state either this or `searchProjection`, never both.
+        public let declaredSubjects: StoryDeclaredSubjects?
         public init(objectIdentity: ExternalIdentity, versionIdentity: ExternalIdentity?,
             precedence: PrecedenceCommand, availability: OriginAvailability, headline: String?, summary: String?,
             bodyText: String?, authoredAt: Date?, modifiedAt: Date?, observedAt: Date, language: String?,
             primaryLink: URL?, searchProjection: String?, providerID: ProviderID?, memberships: [MembershipCommand],
             mediaCandidates: [MediaCandidateCommand], fingerprintGeneration: Int = 1,
             legacyVersionIdentity: ExternalIdentity? = nil, bodySourceElement: String? = nil,
-            declaredAuthoredAt: Date? = nil, declaredModifiedAt: Date? = nil) {
+            declaredAuthoredAt: Date? = nil, declaredModifiedAt: Date? = nil,
+            declaredSubjects: StoryDeclaredSubjects? = nil) {
             self.objectIdentity = objectIdentity
             self.versionIdentity = versionIdentity
             self.legacyVersionIdentity = legacyVersionIdentity
@@ -116,6 +121,7 @@ public struct AcquisitionAdmissionStore: Sendable {
             self.providerID = providerID
             self.memberships = memberships
             self.mediaCandidates = mediaCandidates
+            self.declaredSubjects = declaredSubjects
         }
     }
 
@@ -345,13 +351,25 @@ public struct AcquisitionAdmissionStore: Sendable {
                 throw invalid(field)
             }
         }
+        // A revision has one non-material text fact, so an observation states the subjects its document
+        // declared or an opaque value, never both. A command that would write two facts into one slot is
+        // refused before any canonical work, instead of one of them being dropped in silence.
+        guard value.searchProjection == nil || value.declaredSubjects == nil else { throw invalid("declaredSubjects") }
     }
 
     private static func sameExceptBody(_ incoming: ObservationCommand, _ old: OriginRevision) -> Bool {
         incoming.headline == old.headline && incoming.summary == old.summary
             && incoming.authoredAt == old.authoredAt && incoming.modifiedAt == old.modifiedAt
             && incoming.language == old.language && incoming.primaryLink == old.primaryLink
-            && incoming.searchProjection == old.searchProjection && incoming.providerID == old.providerID
+            && declaredText(incoming) == old.searchProjection && incoming.providerID == old.providerID
+    }
+
+    /// What the revision's one non-material text slot will hold for this observation: the subjects the
+    /// story's document declared, spelled as their canonical text, or the opaque value the caller
+    /// supplied. The rule is stated once, here, so the value that is written and the value a comparison
+    /// reads can never be derived differently.
+    private static func declaredText(_ value: ObservationCommand) -> String? {
+        value.declaredSubjects?.canonicalText ?? value.searchProjection
     }
 
     private static func revision(_ value: ObservationCommand, recordID: OriginRecordID,
@@ -359,7 +377,7 @@ public struct AcquisitionAdmissionStore: Sendable {
         OriginRevision(id: id, originRecordID: recordID, externalVersionIdentity: value.versionIdentity,
             headline: value.headline, summary: value.summary, bodyText: value.bodyText, authoredAt: value.authoredAt,
             modifiedAt: value.modifiedAt, observedAt: observedAt, language: value.language, primaryLink: value.primaryLink,
-            searchProjection: value.searchProjection, providerID: value.providerID)
+            searchProjection: declaredText(value), providerID: value.providerID)
     }
 
     private static func media(_ value: ObservationCommand, revisionID: OriginRevisionID,

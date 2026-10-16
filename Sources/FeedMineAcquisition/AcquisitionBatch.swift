@@ -75,6 +75,12 @@ public struct AcquisitionObservation: Hashable, Sendable {
     public let providerID: ProviderID?
     public let memberships: [AcquisitionMembershipClaim]
     public let mediaCandidates: [AcquisitionMediaCandidateClaim]
+    /// The subjects the story's own document declared for it, as a neutral canonical representation; nil
+    /// is the absence of any declaration. This is not a Source's taxonomy and is never derived from one:
+    /// it is what the item itself declared (an RSS `<category>`, an Atom `atom:category`, a JSON Feed
+    /// tag), with no classifier and no inference from the headline. Absence stays absence — nothing here
+    /// may fill it from the feed, the catalogue or the story's text.
+    public let declaredSubjects: StoryDeclaredSubjects?
     public init?(objectIdentity: ExternalIdentity, versionIdentity: ExternalIdentity?,
         precedence: AcquisitionPrecedence, availability: OriginAvailability, headline: String?, summary: String?,
         bodyText: String?, authoredAt: Date?, modifiedAt: Date?, observedAt: Date, language: String?,
@@ -82,7 +88,7 @@ public struct AcquisitionObservation: Hashable, Sendable {
         memberships: [AcquisitionMembershipClaim], mediaCandidates: [AcquisitionMediaCandidateClaim],
         fingerprintGeneration: Int = 1, legacyVersionIdentity: ExternalIdentity? = nil,
         bodySourceElement: String? = nil, declaredAuthoredAt: Date? = nil,
-        declaredModifiedAt: Date? = nil) {
+        declaredModifiedAt: Date? = nil, declaredSubjects: StoryDeclaredSubjects? = nil) {
         // A declaration is evidence about the origin; it never replaces the observation instant and it
         // never becomes an accepted value whose acceptance the observation did not perform. A missing
         // declaration constrains nothing: it is unknown evidence, not a claim of recency.
@@ -93,6 +99,10 @@ public struct AcquisitionObservation: Hashable, Sendable {
                 return nil
             }
         }
+        // A revision has one non-material text fact. An observation states either the declarations the
+        // document made or an opaque value a caller supplied, never both, so two facts can never compete
+        // for the same canonical slot and one of them be dropped without a word.
+        guard searchProjection == nil || declaredSubjects == nil else { return nil }
         guard objectIdentity.role == .object, !objectIdentity.connectorKind.rawValue.utf8.isEmpty,
             versionIdentity.map({ $0.role == .version && $0.connectorKind.rawValue.utf8.elementsEqual(objectIdentity.connectorKind.rawValue.utf8) }) ?? true,
             (fingerprintGeneration == 1 || fingerprintGeneration == 2),
@@ -124,6 +134,7 @@ public struct AcquisitionObservation: Hashable, Sendable {
         self.providerID = providerID
         self.memberships = memberships
         self.mediaCandidates = mediaCandidates
+        self.declaredSubjects = declaredSubjects
     }
 }
 

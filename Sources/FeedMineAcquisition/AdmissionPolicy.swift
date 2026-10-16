@@ -39,7 +39,8 @@ public struct AdmissionPolicy: Sendable {
                     .init(sourceID: $0.sourceID, kind: $0.kind)
                 }, mediaCandidates: media, fingerprintGeneration: value.fingerprintGeneration,
                 legacyVersionIdentity: value.legacyVersionIdentity, bodySourceElement: value.bodySourceElement,
-                declaredAuthoredAt: value.declaredAuthoredAt, declaredModifiedAt: value.declaredModifiedAt)
+                declaredAuthoredAt: value.declaredAuthoredAt, declaredModifiedAt: value.declaredModifiedAt,
+                declaredSubjects: value.declaredSubjects)
         }
         let checkpoint = try batch.nextCheckpoint.map { value in
             guard let mapped = AcquisitionTargetStore.CheckpointRecord(blob: value.blob,

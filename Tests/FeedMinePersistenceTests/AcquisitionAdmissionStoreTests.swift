@@ -72,13 +72,15 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
         language: String? = " PT ", link: URL? = URL(string: "https://example.test/Article?A=a"),
         search: String? = " search ", provider: ProviderID? = nil,
         memberships: [Store.MembershipCommand]? = nil, media: [Store.MediaCandidateCommand]? = nil,
-        declaredAuthored: Date? = nil, declaredModified: Date? = nil) -> Store.ObservationCommand {
+        declaredAuthored: Date? = nil, declaredModified: Date? = nil,
+        subjects: StoryDeclaredSubjects? = nil) -> Store.ObservationCommand {
         .init(objectIdentity: objectIdentity ?? Self.identity(object),versionIdentity: versionIdentity ?? version.map { Self.identity($0,role: .version) },
             precedence: precedence,availability: availability,headline: headline,summary: summary,bodyText: body,
             authoredAt: authored,modifiedAt: modified,observedAt: Date(timeIntervalSince1970: time),language: language,
             primaryLink: link,searchProjection: search,providerID: provider,
             memberships: memberships ?? [.init(sourceID: f.sourceID,kind: .direct)],mediaCandidates: media ?? [self.media("one"),self.media("two")],
-            declaredAuthoredAt: declaredAuthored,declaredModifiedAt: declaredModified)
+            declaredAuthoredAt: declaredAuthored,declaredModifiedAt: declaredModified,
+            declaredSubjects: subjects)
     }
     private func checkpoint() -> AcquisitionTargetStore.CheckpointRecord {
         .init(blob: Data([0,255,1]),serializationSchema: 2,connectorVersion: " V ")!
@@ -687,6 +689,66 @@ final class AcquisitionAdmissionStoreTests: XCTestCase {
         XCTAssertEqual(try f.current()?.bodyText, "Publisher added body")
         XCTAssertEqual(try f.content.originRevision(id: previous.id), previous)
         XCTAssertEqual(try f.count("origin_revisions"), 2)
+    }
+
+    // MARK: - TX-05D: the story's declared subjects
+
+    private func subjects(_ labels: String...) -> StoryDeclaredSubjects {
+        StoryDeclaredSubjects(labels.map { DeclaredSubjectClaim(surface: .rssItemCategory, label: $0)! })!
+    }
+
+    /// The declared subjects survive with the revision they belong to: they are written into the
+    /// revision's one non-material text slot, rebuilt from it, and still there after a reopen.
+    func testTX05DeclaredSubjectsAreAdmittedWithTheRevisionAndSurviveReopen() throws {
+        let location = self.location(), f = try fixture(at: location)
+        let declared = subjects("movies","1983/V")
+        XCTAssertTrue(try f.store.admit(f.command([observation(f,search: nil,subjects: declared)])).selectableSupplyChanged)
+        let revision = try XCTUnwrap(f.current())
+        XCTAssertEqual(try f.content.originRevision(id: revision.id)?.searchProjection, declared.canonicalText)
+        let reopened = ContentStore(database: try RuntimeDatabase(location: location))
+        let stored = try XCTUnwrap(reopened.originRevision(id: revision.id))
+        let text = try XCTUnwrap(stored.searchProjection)
+        XCTAssertEqual(text, declared.canonicalText)
+        XCTAssertEqual(try StoryDeclaredSubjects.decode(canonicalText: text), declared)
+        XCTAssertEqual(try reopened.currentRevision(originRecordID: revision.originRecordID), revision)
+    }
+
+    /// Replaying the same observation writes nothing: the same declarations rebuild the same revision.
+    func testTX05ReplayOfTheSameDeclarationWritesNothing() throws {
+        let f = try fixture()
+        let declared = subjects("movies")
+        _ = try f.store.admit(f.command([observation(f,search: nil,subjects: declared)]))
+        let before = try f.snapshot()
+        let receipt = try f.store.admit(f.command([observation(f,search: nil,subjects: declared)]))
+        XCTAssertTrue(receipt.rejectedObservations.isEmpty)
+        XCTAssertFalse(receipt.selectableSupplyChanged)
+        XCTAssertEqual(try f.snapshot(), before)
+        XCTAssertEqual(try f.count("origin_revisions"), 1)
+    }
+
+    /// A declaration-only change is not a material edit: it becomes no new revision, the admitted one is
+    /// never rewritten, and the change is refused as the payload conflict it is (PD-1).
+    func testTX05DeclarationOnlyChangeIsAConflictAndNeverANewOccurrence() throws {
+        let f = try fixture()
+        _ = try f.store.admit(f.command([observation(f,search: nil,subjects: subjects("movies"))]))
+        let admitted = try XCTUnwrap(f.current())
+        let receipt = try f.store.admit(f.command([observation(f,search: nil,subjects: subjects("sports"))]))
+        XCTAssertEqual(receipt.rejectedObservations, [.init(index: 0,reason: .knownVersionPayloadConflict)])
+        XCTAssertFalse(receipt.selectableSupplyChanged)
+        XCTAssertEqual(try f.count("origin_revisions"), 1)
+        XCTAssertEqual(try f.current(), admitted)
+        XCTAssertEqual(try f.content.originRevision(id: admitted.id)?.searchProjection,
+            subjects("movies").canonicalText)
+    }
+
+    /// A revision has one non-material text fact: a command that would state two is refused before any
+    /// canonical work, so neither of them can be dropped in silence.
+    func testTX05TwoNonMaterialTextsInOneSlotAreRefused() throws {
+        let f = try fixture(), before = try f.snapshot()
+        XCTAssertThrowsError(try f.store.admit(f.command([observation(f,search: " opaque ",subjects: subjects("movies"))]))) {
+            XCTAssertEqual($0 as? AcquisitionAdmissionStoreError, .invalidObservation(index: 0,field: "declaredSubjects"))
+        }
+        XCTAssertEqual(try f.snapshot(), before)
     }
 
 }

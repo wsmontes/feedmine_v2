@@ -71,6 +71,11 @@ public struct CandidateProvider: Sendable {
                 // evidence as ambiguous rather than as a declared date. Ordering still reads `timestamp`.
                 temporal: CandidateTemporalEvidence(observedAt: record.observedAt,
                     acceptedAuthoredAt: record.authoredAt, acceptedModifiedAt: record.modifiedAt),
+                // TX-05D: the evidence is reconstructed from canonical supply — the subjects the story's
+                // own document declared, as acquisition recorded them — and never from the Source's
+                // taxonomy, the catalogue or the story's text. Absence stays absence, and ordering still
+                // reads `timestamp`.
+                topics: CandidateTopicEvidence(record.declaredSubjects),
                 language: record.language, providerID: record.providerID, sourceIDs: Set(record.sourceIDs),
                 primaryMediaLocator: record.primaryMediaLocator, primaryLink: record.primaryLink,
                 declaredBody: record.declaredBody, bodyObserved: record.bodyObserved)

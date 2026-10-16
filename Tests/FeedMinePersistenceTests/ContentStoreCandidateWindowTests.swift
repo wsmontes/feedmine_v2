@@ -20,11 +20,12 @@ final class ContentStoreCandidateWindowTests: XCTestCase {
     @discardableResult
     private func insert(_ number: Int, into store: ContentStore, date: Date? = nil, source: SourceID? = nil,
         authored: Date? = nil, modified: Date? = nil, headline: String? = "", summary: String? = nil,
-        provider: ProviderID? = nil, expected: ContentStore.CurrentRevisionExpectation = .none) throws -> OriginRevision {
+        provider: ProviderID? = nil, expected: ContentStore.CurrentRevisionExpectation = .none,
+        nonMaterialText: String? = "search excluded") throws -> OriginRevision {
         let revision = OriginRevision(id: OriginRevisionID(), originRecordID: origin(number), externalVersionIdentity: nil,
             headline: headline, summary: summary, bodyText: "body excluded", authoredAt: authored, modifiedAt: modified,
             observedAt: date ?? time, language: "pt-BR", primaryLink: URL(string: "https://example.test/content")!,
-            searchProjection: "search excluded", providerID: provider)
+            searchProjection: nonMaterialText, providerID: provider)
         try store.commitCanonicalChange(ContentStore.CanonicalChange(recordID: origin(number),
             externalObjectIdentity: ExternalIdentity(connectorKind: ConnectorKind(rawValue: "test"),
                 namespace: "objects", value: String(number), role: .object),
@@ -265,6 +266,40 @@ final class ContentStoreCandidateWindowTests: XCTestCase {
             XCTAssertEqual(buried.modifiedAt, published.addingTimeInterval(60))
             XCTAssertEqual(buried.observedAt, time)
             XCTAssertTrue(wider.exhausted)
+        }
+    }
+
+    /// The story's declared subjects are read from the revision's one non-material text slot, beside the
+    /// narrow payload, and a value in that slot this build did not write stays absence.
+    func testDeclaredSubjectsAreReadBesideTheNarrowPayload() throws {
+        try withDatabase { _, store in
+            let declared = try XCTUnwrap(StoryDeclaredSubjects(
+                [DeclaredSubjectClaim(surface: .rssItemCategory, label: "movies")!]))
+            let withDeclaration = try insert(1, into: store, nonMaterialText: declared.canonicalText)
+            let opaque = try insert(2, into: store)
+            let result = try window(store, capacity: 2)
+            XCTAssertEqual(result.records.map(\.originRevisionID), [opaque.id, withDeclaration.id])
+            XCTAssertNil(result.records[0].declaredSubjects)
+            XCTAssertEqual(result.records[1].declaredSubjects, declared)
+            // Nothing else about the narrow payload changed: no body is hydrated for either revision.
+            XCTAssertTrue(result.records.allSatisfy { $0.declaredBody == nil && !$0.bodyObserved })
+        }
+    }
+
+    /// A marked text that cannot be read is corruption rather than silence, and a value that is not text
+    /// at all is not a declaration: it stays out of the window exactly as it did before.
+    func testDeclaredSubjectTextIsReadOnlyWhenItIsText() throws {
+        try withDatabase { database, store in
+            let revision = try insert(1, into: store, nonMaterialText: "search excluded")
+            let readable = try XCTUnwrap(window(store, capacity: 1).records.first)
+            XCTAssertNil(readable.declaredSubjects)
+            try database.write { db in
+                try db.execute(sql: "UPDATE origin_revisions SET search_projection = ? WHERE id = ?",
+                    arguments: ["feedmine.declared-subjects/1|{\"claims\":[]}", revision.id.rawValue.uuidString.lowercased()])
+            }
+            assertCorruption { _ = try window(store, capacity: 1) }
+            try database.write { db in try db.execute(sql: "UPDATE origin_revisions SET search_projection = x'ff'") }
+            XCTAssertNil(try XCTUnwrap(window(store, capacity: 1).records.first).declaredSubjects)
         }
     }
 }

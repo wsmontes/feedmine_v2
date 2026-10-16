@@ -8,6 +8,8 @@
 // Owns:
 //   ExternalIdentity, OriginRecord, OriginRevision, SourceMembership, ContentRelation, ContentEntity and ContentCluster with their enums.
 //   OriginDeclaredInstant and StoryTemporalNature: the temporal evidence vocabulary over those revisions.
+//   DeclaredSubjectClaim and StoryDeclaredSubjects: the subject a story's own document declared for it,
+//   which is neither the story's identity nor its Source's taxonomy.
 //
 // Does not own:
 //   Protocol parsing, raw protocol models, acquisition provenance, deduplication/clustering algorithms or published history ownership.
@@ -111,6 +113,11 @@ public struct OriginRecord: Hashable, Codable, Sendable {
 /// instant the origin itself declared, and modifiedAt only ever a declared change instant. A claim
 /// the observation could not accept is not stored here either (see OriginDeclaredInstant): what the
 /// origin claimed is evidence carried beside the accepted value, never a canonical date by itself.
+/// searchProjection is the revision's one non-material text fact. A story's declared subjects are stored
+/// there as `StoryDeclaredSubjects.canonicalText` (admission states them; a caller may instead supply an
+/// opaque value), so the subject evidence survives with the revision it belongs to and is rebuilt from
+/// canonical supply alone. It is deliberately not part of the material identity: a declaration is
+/// evidence about the story, and no declaration can make a new version of it.
 /// headline and primaryLink may be absent. providerID is known canonical revision attribution.
 /// When externalVersionIdentity exists, connector consistency with OriginRecord belongs
 /// to future admission, not this initializer: only originRecordID is available here;
@@ -214,6 +221,220 @@ public enum OriginDeclaredInstantConsistency: String, Hashable, Codable, Sendabl
 /// category by default.
 public enum StoryTemporalNature: String, Hashable, Codable, Sendable {
     case unknown
+}
+
+/// Where a story's own document declared one of its subjects: the protocol element that carried it.
+///
+/// The surface is provenance and part of every identity derived from it. A JSON Feed tag, an Atom `term`
+/// inside a named scheme and an RSS `<category>` inside a taxonomy `domain` are different declarations,
+/// and nothing here unifies two of them because they read alike. Only *item-level* elements are surfaces:
+/// a feed-level category or a catalogue placement is the Source's taxonomy, a different identity, and it
+/// never reaches this vocabulary.
+public enum DeclaredSubjectSurface: String, Hashable, Codable, Sendable {
+    /// An item's own `<category>` element (RSS 2.0 and RSS 1.0/RDF items alike). Its element text is the
+    /// declared subject; its optional `domain` attribute names the taxonomy it belongs to.
+    case rssItemCategory
+    /// An entry's own `atom:category` element. Its `term` attribute is the declared subject; its optional
+    /// `scheme` attribute names the taxonomy. The element carries no text of its own.
+    case atomEntryCategory
+    /// A JSON Feed item's own `tags` entry: a plain text value, in no named taxonomy.
+    case jsonFeedItemTag
+}
+
+/// One subject a story's own document declared for that story: a topical claim with its provenance.
+///
+/// This is evidence of a *declaration*, not proof of a subject. The label is the publisher's own text in
+/// the publisher's own vocabulary, and nothing here says it is equivalent to a FeedMine taxonomic node
+/// (see `DeclaredSubjectEquivalence`). A declaration is not a statement about what the story is about.
+///
+/// It belongs to the story, not to the feed: it carries no SourceID, no ProviderID and no catalogue
+/// placement, and no Source's taxonomy may fill it. A missing declaration stays missing — it is never
+/// filled from the feed, the catalogue, the headline or a classifier.
+public struct DeclaredSubjectClaim: Hashable, Codable, Sendable {
+    /// The protocol element that declared it.
+    public let surface: DeclaredSubjectSurface
+    /// The taxonomy the publisher named for this declaration, when it named one (RSS `domain`, Atom
+    /// `scheme`), with surrounding whitespace removed. nil is "the publisher named none" — never "the
+    /// vocabulary is FeedMine's" and never "the same vocabulary as a declaration that named none
+    /// elsewhere". A named taxonomy is compared exactly: it is opaque text, not an IRI to normalize.
+    public let scheme: String?
+    /// The declared text as the document carried it, with runs of whitespace collapsed to one space and
+    /// both ends trimmed. A declaration with no text at all is not a claim and has no representation.
+    public let label: String
+
+    public init?(surface: DeclaredSubjectSurface, scheme: String? = nil, label: String?) {
+        guard let declared = Self.collapsed(label) else { return nil }
+        self.surface = surface
+        self.scheme = Self.collapsed(scheme)
+        self.label = declared
+    }
+
+    /// The identity this declaration may carry. See `DeclaredSubjectIdentity` for what equality means.
+    public var identity: DeclaredSubjectIdentity {
+        DeclaredSubjectIdentity(surface: surface, scheme: scheme, key: Self.folded(label))
+    }
+
+    /// Whitespace-collapsed text, or nil when nothing but whitespace was declared.
+    private static func collapsed(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let result = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return result.isEmpty ? nil : result
+    }
+
+    /// Textual normalization only: the Unicode precomposed form and the locale-independent lowercase
+    /// mapping. It makes `Sports` and `sports` one declared subject, and it can never make two
+    /// differently-spelled subjects one. A stated rule, not a guess about meaning.
+    private static func folded(_ label: String) -> String {
+        label.precomposedStringWithCanonicalMapping.lowercased()
+    }
+}
+
+/// The identity one declared subject may carry.
+///
+/// Equality means exactly this: the same item-level surface, the same named taxonomy (or none on both
+/// sides) and text that normalizes the same way. It compares *declarations* in the publisher's own words;
+/// it is never a claim that two stories share a concept, and it is derived from nothing else — not from
+/// the Source, the catalogue, the headline, a score or a classifier.
+public struct DeclaredSubjectIdentity: Hashable, Codable, Sendable {
+    public let surface: DeclaredSubjectSurface
+    public let scheme: String?
+    /// The declared text, precomposed and lowercased. The declared label itself is never rewritten.
+    public let key: String
+
+    public init(surface: DeclaredSubjectSurface, scheme: String?, key: String) {
+        self.surface = surface
+        self.scheme = scheme
+        self.key = key
+    }
+}
+
+/// How far a declared subject's identity reaches in this build. One state exists, and it exists to be
+/// read: a declared subject is the publisher's own text and states nothing about FeedMine's taxonomy.
+///
+/// A canonical taxonomic identifier may only be assigned where a defined, verifiable mapping exists. No
+/// such mapping, taxonomy or classification authority exists in this build, so no producer may derive a
+/// node from a label — not by word, stem, slug, prefix or resemblance, all of which would be an
+/// improvised heuristic and a false identity. Adding a case requires the approved mapping that produces
+/// it together with the authority that owns it, so an unmapped declaration never passes for a mapped one.
+public enum DeclaredSubjectEquivalence: String, Hashable, Codable, Sendable {
+    /// The identity is the declaration itself: same surface, same named taxonomy, same declared text.
+    /// Nothing else is claimed — not topical equivalence between stories, and not any catalogue node.
+    case declaredLabelOnly
+}
+
+/// Why a text in a revision's non-material slot is not the declarations this build writes.
+public enum DeclaredSubjectsTextError: Error, Equatable, Sendable {
+    /// The text carries this build's marker but was written by another schema version.
+    case unsupportedSchemaVersion(Int)
+    /// The text carries this build's marker and is not the canonical text of any declarations this build
+    /// can produce: truncated, tampered with, or spelled in a way this build never writes.
+    case malformedCanonicalText
+}
+
+/// Every subject one story's own document declared for it, as one canonical accepted value.
+///
+/// One set of declarations has exactly one representation: claims are deduplicated by identity and
+/// ordered by surface, named taxonomy and normalized text, so the same declarations in any element order
+/// — and a repeated declaration — produce the same value and the same `canonicalText`. An empty set is
+/// absent: there is no value at all, because absence has no other representation here.
+///
+/// `canonicalText` is what canonical supply stores beside the revision, in the revision's one
+/// non-material text slot (`OriginRevision.searchProjection`), and what this value is rebuilt from on
+/// read. The identity a candidate exposes is therefore reconstructed from the canonical fact alone.
+///
+/// Deliberately not here: a FeedMine node, a confidence, a match against the catalogue, and any inference
+/// from the title, the summary or the Source. A claim is only ever what the document declared.
+public struct StoryDeclaredSubjects: Hashable, Codable, Sendable {
+    /// Bumped only when the canonical *text* changes; every persisted text carries it in its marker.
+    public static let currentSchemaVersion = 1
+    /// What every canonical text starts with. A text without this marker is not this value's text, and
+    /// reads as absence rather than being misread as declarations.
+    private static let textPrefix = "feedmine.declared-subjects/"
+
+    /// The story's declared subjects, deduplicated and in canonical order. Never empty.
+    public let claims: [DeclaredSubjectClaim]
+
+    public init?(_ claims: [DeclaredSubjectClaim]) {
+        let canonical = Self.canonical(claims)
+        guard !canonical.isEmpty else { return nil }
+        self.claims = canonical
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let claims = try container.decode([DeclaredSubjectClaim].self, forKey: .claims)
+        guard let subjects = Self(claims) else {
+            throw DecodingError.dataCorruptedError(forKey: .claims, in: container,
+                debugDescription: "StoryDeclaredSubjects requires at least one declared subject.")
+        }
+        self = subjects
+    }
+
+    /// The identities these declarations carry, in the same canonical order. This is what a consumer
+    /// compares: two stories declare a common subject exactly when these sets intersect.
+    public var identities: [DeclaredSubjectIdentity] { claims.map(\.identity) }
+
+    /// How far those identities reach. Only `.declaredLabelOnly` exists in this build.
+    public var equivalence: DeclaredSubjectEquivalence { .declaredLabelOnly }
+
+    /// The one text that represents this value: the marker, the schema version and the declarations as
+    /// JSON with sorted keys, so the same declarations always produce the same bytes.
+    public var canonicalText: String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(self), let json = String(data: data, encoding: .utf8) else {
+            // Unreachable for these value types. A marker with no payload is a text this build refuses to
+            // read, so an impossible failure can never pass for absence.
+            return Self.textPrefix + "\(Self.currentSchemaVersion)|"
+        }
+        return Self.textPrefix + "\(Self.currentSchemaVersion)|" + json
+    }
+
+    /// The declarations a non-material revision text carries.
+    ///
+    /// nil when the text is not this value's text at all — any value another producer stored in the same
+    /// slot reads as absence, never as declarations. A text that carries the marker must be readable;
+    /// nothing this build writes may be silently dropped, so an unreadable one is thrown, not ignored.
+    public static func decode(canonicalText text: String) throws -> StoryDeclaredSubjects? {
+        guard text.hasPrefix(textPrefix) else { return nil }
+        let payload = text.dropFirst(textPrefix.count)
+        guard let separator = payload.firstIndex(of: "|"),
+            let version = Int(payload[payload.startIndex..<separator]) else {
+            throw DeclaredSubjectsTextError.malformedCanonicalText
+        }
+        guard version == currentSchemaVersion else {
+            throw DeclaredSubjectsTextError.unsupportedSchemaVersion(version)
+        }
+        let json = String(payload[payload.index(after: separator)...])
+        guard let data = json.data(using: .utf8), let decoded = try? JSONDecoder().decode(Self.self, from: data),
+            decoded.canonicalText == text else {
+            throw DeclaredSubjectsTextError.malformedCanonicalText
+        }
+        return decoded
+    }
+
+    /// One declaration per identity, in an order that does not depend on the document's element order.
+    /// A decoded claim is normalized through the initializer, so a value read back is the same value any
+    /// producer would have built.
+    private static func canonical(_ claims: [DeclaredSubjectClaim]) -> [DeclaredSubjectClaim] {
+        var byIdentity: [DeclaredSubjectIdentity: DeclaredSubjectClaim] = [:]
+        for claim in claims {
+            guard let normalized = DeclaredSubjectClaim(surface: claim.surface, scheme: claim.scheme,
+                label: claim.label) else { continue }
+            let identity = normalized.identity
+            if let existing = byIdentity[identity],
+                existing.label.utf8.lexicographicallyPrecedes(normalized.label.utf8) { continue }
+            byIdentity[identity] = normalized
+        }
+        return byIdentity.values.sorted { left, right in
+            if left.surface != right.surface { return left.surface.rawValue < right.surface.rawValue }
+            let leftScheme = left.scheme ?? "", rightScheme = right.scheme ?? ""
+            if leftScheme != rightScheme { return leftScheme.utf8.lexicographicallyPrecedes(rightScheme.utf8) }
+            return left.identity.key.utf8.lexicographicallyPrecedes(right.identity.key.utf8)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey { case claims }
 }
 
 /// Canonical membership relationship; not operational acquisition provenance.

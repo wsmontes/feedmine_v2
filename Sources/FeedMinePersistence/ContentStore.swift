@@ -63,6 +63,10 @@ public struct ContentStore: Sendable {
         public let primaryMediaLocator: String?
         /// Article URL to open (review F10); nil when the revision has none.
         public let primaryLink: URL?
+        /// The subjects the story's own document declared for it, rebuilt from the revision's
+        /// non-material text. nil is absence of evidence: no Source's taxonomy, no catalogue placement,
+        /// no title and no classifier ever fills this.
+        public let declaredSubjects: StoryDeclaredSubjects?
     }
 
     public struct CandidateWindow: Hashable, Sendable {
@@ -133,7 +137,10 @@ public struct ContentStore: Sendable {
                         arguments: [key, Self.key(sourceID.rawValue)]) != true {
                         continue
                     }
-                    // No broad revision decode: excluded payloads are never selected.
+                    // No broad revision decode: excluded payloads are never selected. The one addition is
+                    // the revision's non-material text, which carries the story's declared subjects, and
+                    // it is read only when it is text — a value in that slot this build did not write
+                    // reads as absence, exactly as the window tolerates every other excluded field.
                     guard let payload = try Row.fetchOne(db, sql: """
                         SELECT id, origin_record_id, headline, summary, authored_at, modified_at, observed_at,
                             language, provider_id,
@@ -142,7 +149,9 @@ public struct ContentStore: Sendable {
                                 WHEN e.origin_revision_id IS NOT NULL THEN e.body_text
                                 ELSE NULL END AS declared_body,
                             CASE WHEN r.fingerprint_generation = 2 OR e.origin_revision_id IS NOT NULL
-                                THEN 1 ELSE 0 END AS body_observed
+                                THEN 1 ELSE 0 END AS body_observed,
+                            CASE WHEN typeof(r.search_projection) = 'text' THEN r.search_projection
+                                ELSE NULL END AS declared_subject_text
                         FROM origin_revisions r
                         LEFT JOIN origin_revision_body_enrichment e ON e.origin_revision_id = r.id
                         WHERE r.id = ?
@@ -169,7 +178,8 @@ public struct ContentStore: Sendable {
                                 AND media_class = 'image'
                             """,
                             arguments: [Self.key(revision.rawValue)]),
-                        primaryLink: try p.optionalString("primary_link").flatMap { URL(string: $0) }))
+                        primaryLink: try p.optionalString("primary_link").flatMap { URL(string: $0) },
+                        declaredSubjects: try Self.declaredSubjects(from: p.optionalString("declared_subject_text"))))
                 }
                 return CandidateWindow(records: records, examinedCount: rows.count,
                     nextCursor: nextCursor, exhausted: rows.count < examinedCapacity)
@@ -524,6 +534,13 @@ public struct ContentStore: Sendable {
         guard change.mediaCandidates.allSatisfy({ $0.originRevisionID == revision.id }) else {
             throw ContentStoreError.invalidChange("media candidate revision")
         }
+        // The revision's non-material text carries either the declaration this build writes or an opaque
+        // value a caller supplied. A text that carries this build's marker must be readable as its
+        // declarations, so a tampered text is refused here instead of surfacing as corruption at read.
+        if let text = revision.searchProjection {
+            do { _ = try StoryDeclaredSubjects.decode(canonicalText: text) }
+            catch { throw ContentStoreError.invalidChange("declared subjects") }
+        }
         guard Set(change.mediaCandidates.map(\.id)).count == change.mediaCandidates.count else {
             throw ContentStoreError.invalidChange("duplicate media candidate id")
         }
@@ -611,6 +628,16 @@ public struct ContentStore: Sendable {
             modifiedAt: try f.optionalDate("modified_at"), observedAt: try f.date("observed_at"),
             language: try f.optionalString("language"), primaryLink: link, searchProjection: try f.optionalString("search_projection"),
             providerID: try f.optionalUUID("provider_id").map { ProviderID(rawValue: $0) })
+    }
+
+    /// The declarations a revision's non-material text carries. A text this build did not write reads as
+    /// absence — the slot holds one opaque value, and another producer's value is not our declaration. A
+    /// text that carries this build's marker and cannot be read is corruption, never absence: this build
+    /// never writes declarations it cannot read back, and the projection must stay reconstructible.
+    private static func declaredSubjects(from text: String?) throws -> StoryDeclaredSubjects? {
+        guard let text else { return nil }
+        do { return try StoryDeclaredSubjects.decode(canonicalText: text) }
+        catch { throw ContentStoreError.corruption("declared subjects") }
     }
 
     private static func sameMediaCandidate(_ a: MediaCandidate, _ b: MediaCandidate) -> Bool {
