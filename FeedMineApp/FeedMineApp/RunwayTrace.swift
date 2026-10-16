@@ -208,3 +208,66 @@ final class RunwayTrace: @unchecked Sendable {
         }
     }
 }
+
+#if DEBUG
+/// The journey's own facts, spoken on the **device console**.
+///
+/// Why it exists: on a physical phone the console is the only channel a run has. The instrumented journey of
+/// 2026-10-15 wrote 529 console lines in seven minutes — 523 of them per-second frame telemetry and **none** about
+/// acquisition, contact or media — so a problem the owner reports would have arrived with no trace at all (the
+/// screenshot route is closed on this Mac: `idevicescreenshot` cannot start `screenshotr` and no phone-mirroring
+/// window exists). The console plus the container census is the route that works, and this is the console half.
+///
+/// Why it is not a state store: every number below is already owned elsewhere. The cards and their media kinds come
+/// from the host's own published projection; the sources contacted and the ones that answered come from PD-3's
+/// `PreparationProgress`, the pipeline-evidence value that exists for the preparation screen; the media counts come
+/// from the media pipeline's own `MediaReadiness` index; the refused installations come from `FeedFlowCounters`.
+/// This type only states them, once per second, and stores nothing.
+///
+/// Cost: nothing when the switch is off, and nothing at all in a shipping build — the switch is the same kind the
+/// other debug instrumentation uses (`FEEDMINE_TRACE_CAPTURE`), it is read once, and the whole type is `#if DEBUG`.
+enum FeedJourneyConsole {
+    /// Off by default: the console is a channel, not a product surface. `scripts/device-journey.sh` launches the
+    /// development app with it on.
+    static let enabled = ProcessInfo.processInfo.environment["FEEDMINE_JOURNEY_CONSOLE"] == "1"
+
+    /// One second's facts, as their owners hold them. The card counts are the reader's admitted window; the media
+    /// counts are the media owner's own revisions — `prepared` carries a ready image, `settled` was decided at all,
+    /// so a revision that is neither is still pending (F06).
+    struct Facts {
+        var elapsedSeconds: Double = 0
+        var cards = 0
+        var hero = 0
+        var thumbnail = 0
+        var textOnly = 0
+        /// Cards of the admitted window whose pixels are ready to draw right now. Same unit as `hero`/`thumbnail`/
+        /// `textOnly` — a card — so the pair the owner asks for ("declared media" versus "prepared media") is read
+        /// on one line: a card that declares media (`hero + thumb`) and has no resident image is media that did not
+        /// arrive. The two `media_*` counters below are the media pipeline's own numbers and are counted per
+        /// revision, not per card; they are stated beside these and never compared as if they were the same unit.
+        var mediaResident = 0
+        var mediaPrepared = 0
+        var mediaSettled = 0
+        var sourcesContacted = 0
+        var sourcesResponded = 0
+        var sourcesUnreachable = 0
+        /// Whether the source facts are still being observed (first-launch preparation) or are the last known
+        /// values. A frozen count that reads as live is worse than no count.
+        var preparationLive = false
+        var installRejects = 0
+    }
+
+    /// One bounded line: the counts, never a stream of events and never a per-card id. The keys are the frame
+    /// line's own style, so one `grep` finds both series.
+    static func line(_ facts: Facts) -> String {
+        "t=\(Int(facts.elapsedSeconds.rounded()))s cards=\(facts.cards)"
+            + " hero=\(facts.hero) thumb=\(facts.thumbnail) text=\(facts.textOnly)"
+            + " media_resident=\(facts.mediaResident)"
+            + " media_prepared=\(facts.mediaPrepared) media_settled=\(facts.mediaSettled)"
+            + " sources_contacted=\(facts.sourcesContacted) sources_responded=\(facts.sourcesResponded)"
+            + " sources_unreachable=\(facts.sourcesUnreachable)"
+            + " preparation=\(facts.preparationLive ? "live" : "done")"
+            + " install_rejects=\(facts.installRejects)"
+    }
+}
+#endif

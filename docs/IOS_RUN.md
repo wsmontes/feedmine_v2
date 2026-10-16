@@ -327,3 +327,37 @@ e prova de exit não zero. O SHA-256 usado pelos heredocs do verificador é dele
 à mesma `bootstrap_catalog.sha256_file` usada pelo bootstrap e pelo helper de release;
 não há uma implementação independente de hash. O helper de release continua apenas
 como orquestrador do manifesto atual, compilador, staging, preflight e archive.
+
+## Jornada medida em aparelho físico — `scripts/device-journey.sh` (2026-10-16)
+
+Uma jornada física só é julgável pelo que o aparelho deixa para trás, e a rota de captura nesta máquina é
+estreita: `idevicescreenshot` não inicia `screenshotr` e não existe janela de espelhamento. O que existe é o
+**console** do app e o **container** de dados, e os dois passaram a ser medidos por um comando.
+
+```sh
+# o catálogo empacotado é git-ignored: copie FeedMineApp/FeedMineApp/Resources/catalog.sqlite da árvore principal
+# para a árvore de trabalho antes de construir
+xcodebuild -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine -configuration Debug \
+  -destination 'platform=iOS,id=<UDID>' -derivedDataPath /tmp/fm-device-derived build
+scripts/device-journey.sh --device <UDID> \
+  --app /tmp/fm-device-derived/Build/Products/Debug-iphoneos/FeedMine.app --seconds 300
+scripts/device-journey.sh --help
+```
+
+O app Debug diz os seus próprios fatos no console — **uma linha limitada por segundo**, `feedmine journey …`,
+ligada por `FEEDMINE_JOURNEY_CONSOLE=1`, ausente em Release e sem relógio próprio (ela pega carona no tique que o
+`FeedFrameMeter` já tem). O script instala o `.app`, lança com o console em arquivo por um tempo limitado, analisa
+o console e puxa o container inteiro para imprimir o censo (cartas por tipo de mídia, blobs e bytes de mídia,
+fontes contactadas, alvos, rastro da F05) junto das séries. Ele **recusa** `com.feedmine.app` (o TestFlight do
+dono, com o container pessoal dele) pelo `--bundle` e pelo `CFBundleIdentifier` de dentro do `.app`, nunca
+desinstala nem apaga nada, e imprime `REFUSED`/`NOT_RUN` com a razão em vez de um palpite. Por padrão a jornada
+roda em um namespace novo (`--namespace auto`), então o censo é o **desta** corrida e nada existente é lido ou
+tocado; `--namespace none` passa a incluir o histórico do container compartilhado, e o script diz isso.
+
+Duas armadilhas medidas, ambas do `devicectl`: o diretório do namespace é nomeado com a forma canônica
+**MAIÚSCULA** do UUID, não com o que foi digitado (`uuidgen` minúsculo leva a `CoreDeviceError 7000`, que se lê
+como "o app não escreveu nada" quando ele escreveu tudo) — o script normaliza; e o `runtime.sqlite` chega junto
+com o `-wal` (4 KB de principal contra 832 KB de WAL), que é dobrado com `pragma wal_checkpoint(TRUNCATE)` **na
+cópia**, nunca no aparelho. A armadilha de assinatura registrada em `v1-study/PORT_LOG.md` (`ApplicationVerificationFailed`
+quando algo injeta catálogo/ATS **depois** do build) não se aplica aqui: o `catalog.sqlite` está em `Resources/`
+antes do build, então nada é injetado depois dele e a assinatura continua válida.

@@ -2692,3 +2692,46 @@ final class BackgroundRefreshCapabilityTests: XCTestCase {
             Set(["audio", "fetch"]))
     }
 }
+
+/// The journey line is a **contract with a machine**, not prose: `scripts/device-journey.sh` greps it out of
+/// `feedmine journey …` and reads every key by name. A key silently renamed here would turn a device run into a run
+/// that looks like it saw nothing, so the shape is pinned. The owner's ask of 2026-10-15 is the content: the cards
+/// that were admitted, the media they declare against the media that arrived, the sources contacted against the
+/// ones that answered, and the failures counted — one bounded line, never a stream of events.
+///
+/// The switch itself (`FeedJourneyConsole.enabled`, off unless `FEEDMINE_JOURNEY_CONSOLE=1`) is deliberately not
+/// asserted here: a test process inherits whatever environment runs it, so asserting the default would be a test
+/// of the runner. Its cost is stated by construction — the whole type is `#if DEBUG` and the frame meter asks for
+/// nothing when the sampler is `nil` — and it is measured on a shipping build, not inferred from a test.
+final class JourneyConsoleTests: XCTestCase {
+    func testTheJourneyLineStatesEveryFactOnceWithTheFrameSeriesKeys() {
+        var facts = FeedJourneyConsole.Facts()
+        facts.elapsedSeconds = 61.4
+        facts.cards = 22
+        facts.hero = 9
+        facts.thumbnail = 5
+        facts.textOnly = 8
+        facts.mediaResident = 11
+        facts.mediaPrepared = 37
+        facts.mediaSettled = 40
+        facts.sourcesContacted = 4
+        facts.sourcesResponded = 2
+        facts.sourcesUnreachable = 1
+        facts.preparationLive = true
+        facts.installRejects = 3
+        let line = FeedJourneyConsole.line(facts)
+        XCTAssertEqual(line, "t=61s cards=22 hero=9 thumb=5 text=8 media_resident=11"
+            + " media_prepared=37 media_settled=40 sources_contacted=4 sources_responded=2"
+            + " sources_unreachable=1 preparation=live install_rejects=3")
+        XCTAssertFalse(line.contains("\n"), "one bounded line: the journey is stated, never streamed")
+    }
+
+    /// The line exists from the first tick, before anything was published: "nothing yet" has to be readable, and
+    /// `preparation=done` is the truth when no cold chain is being observed.
+    func testAnEmptyJourneyStillStatesItselfInsteadOfBeingAbsent() {
+        XCTAssertEqual(FeedJourneyConsole.line(FeedJourneyConsole.Facts()),
+            "t=0s cards=0 hero=0 thumb=0 text=0 media_resident=0 media_prepared=0 media_settled=0"
+                + " sources_contacted=0 sources_responded=0 sources_unreachable=0 preparation=done"
+                + " install_rejects=0")
+    }
+}

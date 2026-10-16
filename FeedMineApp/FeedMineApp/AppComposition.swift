@@ -2314,9 +2314,57 @@ final class FeedAssociation {
     /// Mede o que o dono sente e a suíte não vê (decisão de 2026-10-14). O trace da corrida passa a ter, por
     /// segundo, quantos quadros passaram do orçamento e qual foi o pior — o **hitch ratio** que julga cada mudança
     /// de fluidez, em vez de mais uma rodada de testes verdes.
-    @ObservationIgnored private lazy var frameMeter = FeedFrameMeter { [weak self] event, fields in
-        self?.trace?.record(event, fields)
+    ///
+    /// O **mesmo tique** carrega a linha da jornada no console do aparelho (ordem do PO, 2026-10-15): o console é o
+    /// único canal que uma jornada física tem neste Mac, e um relato do dono precisa deixar rastro. Nada de um
+    /// segundo relógio: o amostrador pega carona neste, e é `nil` fora do DEBUG e com a chave desligada.
+    @ObservationIgnored private lazy var frameMeter = FeedFrameMeter(
+        record: { [weak self] event, fields in self?.trace?.record(event, fields) },
+        journey: journeySampler())
+
+    /// O amostrador da jornada. `nil` é o caso de Release e o caso de fábrica: o medidor não pergunta nada e não
+    /// gasta nada por segundo.
+    private func journeySampler() -> (@MainActor (Double) -> String?)? {
+        #if DEBUG
+        guard FeedJourneyConsole.enabled else { return nil }
+        return { [weak self] elapsed in self?.journeyLine(elapsedSeconds: elapsed) }
+        #else
+        return nil
+        #endif
     }
+
+    #if DEBUG
+    /// Os fatos de um segundo, lidos dos donos que já os têm: a projeção publicada (as cartas e o tipo de mídia que
+    /// cada uma declara), o índice da própria camada de mídia (`media.readiness`), a evidência de pipeline do PD-3
+    /// (`preparation`) e os contadores de fluxo que o host já lê. Nenhum contador novo é aberto aqui.
+    private func journeyLine(elapsedSeconds: Double) -> String {
+        var facts = FeedJourneyConsole.Facts()
+        facts.elapsedSeconds = elapsedSeconds
+        for card in store.state.presentation?.window.items ?? [] {
+            facts.cards += 1
+            switch card.layout {
+            case .hero: facts.hero += 1
+            case .thumbnail: facts.thumbnail += 1
+            case .textOnly: facts.textOnly += 1
+            }
+            // A carta traz os pixels com os quais ela **desenha**; nil é o placeholder congelado do layout (PD-5).
+            // É o par que o dono pediu — mídia declarada (`hero + thumb`) contra mídia pronta —, na mesma unidade.
+            if card.image != nil { facts.mediaResident += 1 }
+        }
+        facts.mediaPrepared = media.readiness.preparedCount
+        facts.mediaSettled = media.readiness.settledCount
+        if let progress = preparation {
+            facts.sourcesContacted = progress.sources.count
+            facts.sourcesResponded = progress.contributingSources
+            facts.sourcesUnreachable = progress.sources.filter { $0.state == .unreachable }.count
+        }
+        // `preparation` é mantido depois do fim da cadeia fria para a linha poder repetir o último valor
+        // conhecido; o que diz se os números ainda estão sendo observados é o relé, desligado junto com ela.
+        facts.preparationLive = relay.receive != nil
+        facts.installRejects = FeedFlowCounters.installRejects
+        return FeedJourneyConsole.line(facts)
+    }
+    #endif
 
     func install(_ received: FeedPresentationState) throws {
         FeedFlowCounters.installAttempts += 1
@@ -2456,7 +2504,11 @@ final class FeedAssociation {
             preparation = started
             try install(store.state.reporting(.preparing(started)))
             relay.receive = { [weak self] in self?.receive($0) }
-            defer { relay.receive = nil; preparation = nil }
+            // A última evidência de pipeline **fica**: `receive` para de ser chamado quando o relé é desligado, e a
+            // linha de jornada do console continua podendo dizer quantas fontes foram contactadas e quantas
+            // responderam depois que a cadeia fria terminou (ordem do PO, 2026-10-15). Nada a lê além dela: a tela
+            // de preparação é alimentada por `install`, não por esta variável.
+            defer { relay.receive = nil }
             Self.log("cold bootstrap started")
             let now = Date()
             let outcome = try await cold.run(identity: .init(editionID: FeedEditionID(), publicationSchemaVersion: .init(rawValue: 1),
