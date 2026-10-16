@@ -231,6 +231,49 @@ final class SyndicationTranslatorTests: XCTestCase {
         // Past dates are untouched.
         XCTAssertEqual(try item(rss("<item><guid>p</guid><pubDate>Tue, 03 Jun 2003 09:39:21 GMT</pubDate></item>")).authoredAt,
             date("2003-06-03T09:39:21Z"))
+        // TX-07D: the clamp is not silent. What the origin claimed travels beside the accepted value, so an
+        // implausible declaration cannot pass for a credible publication date, and the accepted values above
+        // stay exactly what they were.
+        XCTAssertEqual(rssItem.declaredAuthoredAt,date("2100-01-01T00:00:00Z")); XCTAssertNil(rssItem.declaredModifiedAt)
+        XCTAssertEqual(atomItem.declaredAuthoredAt,date("2100-01-01T00:00:00Z"))
+        XCTAssertEqual(atomItem.declaredModifiedAt,future)
+        XCTAssertEqual(jsonItem.declaredAuthoredAt,date("2100-01-01T00:00:00Z"))
+        XCTAssertEqual(jsonItem.declaredModifiedAt,future)
+    }
+    /// TX-07D: one statement of the acceptance rule, carried on every observation. A declaration is
+    /// evidence about the origin: absence stays absence, an accepted claim equals the claim, and a claim
+    /// ahead of the observation is kept as `notYetReached` instead of becoming a date of today.
+    func test26bDeclaredInstantsCarryClaimAndAcceptanceWithoutChangingIdentity() throws {
+        func consistency(_ value: AcquisitionObservation) -> OriginDeclaredInstantConsistency? {
+            value.declaredAuthoredAt.map { OriginDeclaredInstant(claimed: $0).consistency(observingAt: value.observedAt) }
+        }
+        let undated = try item(rss("<item><guid>g</guid><title>Title</title></item>"))
+        XCTAssertNil(undated.authoredAt); XCTAssertNil(undated.declaredAuthoredAt); XCTAssertNil(undated.declaredModifiedAt)
+        XCTAssertNil(consistency(undated))
+        let past = try item(rss("<item><guid>p</guid><pubDate>Tue, 03 Jun 2003 09:39:21 GMT</pubDate></item>"))
+        XCTAssertEqual(past.declaredAuthoredAt,past.authoredAt)
+        XCTAssertEqual(consistency(past),.consistent)
+        let ahead = try item(atom("<entry><id>f</id><published>2100-01-01T00:00:00Z</published></entry>"))
+        XCTAssertEqual(ahead.authoredAt,observed)
+        XCTAssertNotEqual(ahead.declaredAuthoredAt,ahead.authoredAt)
+        XCTAssertEqual(consistency(ahead),.notYetReached)
+        // The accepted value is the domain rule applied to the claim, for every document kind, and an
+        // observation is never accepted as a value the observation did not reach.
+        let documents = [rss("<item><guid>g</guid><pubDate>Fri, 01 Jan 2100 00:00:00 GMT</pubDate></item>"),
+            rss("<item><guid>g</guid><pubDate>Tue, 03 Jun 2003 09:39:21 GMT</pubDate></item>"),
+            atom("<entry><id>a</id><published>2100-01-01T00:00:00Z</published><updated>2020-01-02T00:00:00Z</updated></entry>"),
+            atom("<entry><id>a</id><published>2003-06-03T09:39:21Z</published></entry>"),
+            json("{\"id\":\"j\",\"date_published\":\"2100-01-01T00:00:00Z\",\"date_modified\":\"2020-01-02T00:00:00Z\"}")]
+        for data in documents {
+            let value = try item(data)
+            for (claim, accepted) in [(value.declaredAuthoredAt,value.authoredAt),(value.declaredModifiedAt,value.modifiedAt)] {
+                XCTAssertEqual(accepted,claim.map { OriginDeclaredInstant(claimed: $0).accepted(observingAt: observed) })
+            }
+            if let authored = value.authoredAt { XCTAssertLessThanOrEqual(authored,observed) }
+        }
+        // Identical bytes translate to identical evidence: the claim does not make replay unstable.
+        let bytes = documents[0]
+        XCTAssertEqual(try translate(bytes).observations,try translate(bytes).observations)
     }
     // MARK: - v1 media admission lessons (MD / IN quirks 4–8)
     func test27RelativeProtocolRelativeAndEscapedLocatorsResolveAgainstItemLink() throws {
