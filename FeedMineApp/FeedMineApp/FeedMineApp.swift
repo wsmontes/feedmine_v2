@@ -21,6 +21,11 @@ struct FeedMineApp: App {
     @Environment(\.scenePhase) private var phase
 
     init() {
+        #if DEBUG
+        // The launch record's clock starts here, at the top of the app's own construction, so every fact it states
+        // is "milliseconds since this launch began" — before any view exists and long before the first frame.
+        FeedLaunchWitness.arm()
+        #endif
         // Register before launch finishes, bound to the very same composition used by the UI.
         // A BG grant never constructs another runtime or invokes cold bootstrap.
         let composition = AppComposition()
@@ -270,9 +275,23 @@ struct FeedMineApp: App {
                     } else if let failure = composition.startupFailure {
                         Text(failure).padding()
                     } else {
+                        #if DEBUG
+                        // The app's own launch progress, nameable so a journey can assert its absence once the app
+                        // is idle (V1 named its own surface the same way).
                         ProgressView("Abrindo feed local")
+                            .accessibilityIdentifier("feed-launch-progress")
+                        #else
+                        ProgressView("Abrindo feed local")
+                        #endif
                     }
                 }
+                #if DEBUG
+                // The launch record, published where a journey can read it (the same shape as `feed-window-proof`
+                // and `native-viewport-delivery`): invisible, non-interactive. The branch this pass is drawing is
+                // stated from the host, which owns that decision; the `U14` boundary keeps effects like this out of
+                // the UI module on purpose, and the host is where the branch is decided anyway.
+                .overlay(alignment: .bottomLeading) { FeedLaunchWitnessProof(branch: launchBranch) }
+                #endif
                 // T5: the reader draws its own floating header; the navigation bar exists only for
                 // pushed destinations, so it stays out of the reading surface.
                 // T9: the reader's playback is reported under the feed, in a bar whose height never depends on
@@ -1317,4 +1336,51 @@ struct FeedMineApp: App {
         case .search(let context): return String(localized: "Busca: \(context.query)")
         }
     }
+
+    #if DEBUG
+    /// What this pass of the host's own body is about to draw. The host owns this branch — it holds the association
+    /// and the screen's inputs — so the launch record is taken from the same values the screen reads, never from a
+    /// second opinion about them: the branch read here and the branch `FeedScreen` draws are one decision.
+    private var launchBranch: FeedLaunchWitness.Branch {
+        guard let association = composition.association else { return .launchProgress }
+        guard composition.hasSelectedSources else { return .notAWaitSurface }
+        let rendered = association.store.renderedItems
+        guard rendered.isEmpty else { return .cards(rendered.count) }
+        return .feedAbsence(Self.absenceKind(association.store.state.work))
+    }
+
+    /// The work an absence surface states, as the short token the launch record carries.
+    private static func absenceKind(_ work: FeedPresentationState.Work) -> String {
+        switch work {
+        case .idle, .pending: return "idle"
+        case .preparing: return "preparing"
+        case .deferred: return "deferred"
+        case .unavailable: return "unavailable"
+        case .unreachable: return "unreachable"
+        case .failed: return "failed"
+        case .endOfContent: return "end-of-content"
+        }
+    }
+    #endif
 }
+
+#if DEBUG
+/// The app's own launch record (`FeedLaunchWitness`) as one accessibility element, so the reopen journey can assert
+/// what no post-idle sampling can see: whether the reader's first reading surface in this process was already their
+/// feed. Invisible and non-interactive — it draws nothing for the reader, and it changes no layout.
+private struct FeedLaunchWitnessProof: View {
+    /// The branch this pass of the host is drawing. Stating it here (a declaration in the body, evaluated with the
+    /// pass) is what puts the fact on the record.
+    let branch: FeedLaunchWitness.Branch
+
+    var body: some View {
+        let _: Void = FeedLaunchWitness.note(branch)
+        Text(verbatim: FeedLaunchWitness.record)
+            .font(.system(size: 1))
+            .frame(width: 1, height: 1)
+            .opacity(0)
+            .allowsHitTesting(false)
+            .accessibilityIdentifier("feed-launch-record")
+    }
+}
+#endif

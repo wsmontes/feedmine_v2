@@ -33,7 +33,10 @@ public actor FeedSession {
     /// Cards whose decoded pixels were released to bound residency. They are re-decoded from the same
     /// local asset when the reader comes back to them; their frozen descriptor never changed.
     private var releasedImageCards: Set<PublicationCardID> = []
-    private let projectionSequenceID = UUID()
+    /// The projection sequence this actor publishes under. It is fixed for the life of a session — a screen
+    /// refuses a projection from another sequence — so a warm start that projected the reader's own window
+    /// **before** this actor existed hands its sequence here rather than letting a second one begin.
+    private var projectionSequenceID = UUID()
     private var projectionPosition: UInt64 = 0
     private var lastRenderedViewportOrdinal: UInt64 = 0
     /// What this association last made durable: the anchor the record holds and when it was written. It is the
@@ -48,9 +51,44 @@ public actor FeedSession {
     /// Composition-only exception: accepts the semantic Publication boundary.
     /// UI consumes Runtime presentation results without importing Publication.
     /// With a decoder, projected cards carry slot-sized local images; without one they render placeholders.
-    public init(publicationHistory: PublicationHistory, imageDecoder: PresentationImageDecoder? = nil) {
+    ///
+    /// `warmStart` is a window already read and projected from this context's durable checkpoint by
+    /// `FeedSession.warmStart(...)`, for a host that must have the reader's own feed **before its first frame**
+    /// (INV-07: a warm launch is local). The session adopts it as the state `.initial` would have installed — the
+    /// same proposition, the same projection sequence, the same released pixels — so nothing is read twice and a
+    /// later `.initial` admission returns exactly this window instead of restoring a second one.
+    public init(publicationHistory: PublicationHistory, imageDecoder: PresentationImageDecoder? = nil,
+        warmStart: WarmStart? = nil) {
         self.publicationHistory = publicationHistory
         self.imageDecoder = imageDecoder
+        guard let warmStart else { return }
+        state = warmStart.projection.state
+        releasedImageCards = warmStart.projection.releasedImageCards
+        projectionSequenceID = warmStart.projection.sequenceID
+        projectionPosition = warmStart.projection.position
+        // The window is admitted: `.initial` is the admission that installs a session's first presentation once,
+        // and this is that admission, made before the actor existed.
+        hasAdmittedInitial = true
+    }
+
+    /// The reader's own window, projected from this context's durable checkpoint **without the actor** — the same
+    /// projection `.initial`/`.restore` perform (one implementation, `FeedCheckpointProjection`), so a warm start
+    /// cannot disagree with the restore a later admission would do.
+    ///
+    /// A host takes it when the previous interaction left something durable, and hands it straight back to the
+    /// session it builds (`init(..., warmStart:)`). Nil means this context has no checkpoint: a cold launch, where
+    /// the preparation surface is the honest thing to show and this value has nothing to say.
+    public struct WarmStart: Sendable {
+        /// The reader's own window, as the launch draws it.
+        public let snapshot: FeedPresentationSnapshot
+        let projection: FeedCheckpointProjection
+    }
+
+    public static func warmStart(publicationHistory: PublicationHistory,
+        imageDecoder: PresentationImageDecoder?, bounds: FeedPresentationBounds) throws -> WarmStart? {
+        guard let projection = try FeedCheckpointProjection.read(publicationHistory: publicationHistory,
+            imageDecoder: imageDecoder, bounds: bounds, sequenceID: UUID()) else { return nil }
+        return WarmStart(snapshot: projection.snapshot, projection: projection)
     }
 
     public func currentPresentation() -> FeedPresentationSnapshot? {
@@ -338,27 +376,16 @@ public actor FeedSession {
     /// position). A list bounded around the reader keeps its bounded restore: there a card cut behind the anchor is
     /// reachable by the next backward admission.
     private func installFromCheckpoint(_ bounds: FeedPresentationBounds) throws -> FeedPresentationSnapshot? {
-        let restored = bounds.keepsAdmittedHead
-            ? try publicationHistory.restoreFromEditionStart(forwardCapacity: bounds.forwardCapacity,
-                contextKey: bounds.contextKey)
-            : try publicationHistory.restore(backwardCapacity: bounds.backwardCapacity,
-                forwardCapacity: bounds.forwardCapacity, contextKey: bounds.contextKey)
-        guard let restored else {
+        guard let projected = try FeedCheckpointProjection.read(publicationHistory: publicationHistory,
+            imageDecoder: imageDecoder, bounds: bounds, sequenceID: projectionSequenceID,
+            after: projectionPosition) else {
             state = nil
             return nil
         }
-        try publicationHistory.markSeen(editionID: restored.edition.id, cardID: restored.cursor.anchor.cardID)
-        let current = state?.presentation
-        let reusable = current.flatMap { snapshot in
-            snapshot.contextKey == restored.edition.contextKey && snapshot.editionID == restored.edition.id
-                ? Dictionary(uniqueKeysWithValues: snapshot.window.items.map { ($0.id, $0) }) : nil
-        } ?? [:]
-        let window = restoredWindow(restored.window, bounds: bounds, reusable: reusable)
-        let snapshot = try projectWindow(contextKey: restored.edition.contextKey,
-            editionID: restored.edition.id, window: window)
-        state = FeedSessionState(editorialRevisionID: restored.edition.editorialRevision.id,
-            presentation: snapshot, bounds: bounds)
-        return snapshot
+        releasedImageCards.formUnion(projected.releasedImageCards)
+        projectionPosition = projected.position
+        state = projected.state
+        return projected.snapshot
     }
 
     /// The restored window as a presentation, with the pixel decision made the way the running session makes it.
@@ -368,30 +395,70 @@ public actor FeedSession {
     /// for **every** admitted card would therefore hold — and pay, in one actor hop — one image per card the reader
     /// had ever passed, a state the session it restores never reached. So the band is decoded and the rest keeps
     /// its frozen values with the bitmap released, which is exactly what those cards had before the close.
-    private func restoredWindow(_ published: FeedWindow, bounds: FeedPresentationBounds,
-        reusable: [PublicationCardID: PresentationCard]) -> FeedWindowSnapshot {
-        // FeedWindow guarantees its anchor is one of its cards; a window without a numbered band would have no
-        // outside to release, so the plain projection is the total answer.
-        guard let anchorIndex = published.cards.firstIndex(where: { $0.id == published.anchor.cardID }) else {
-            return FeedWindowSnapshot(publishedWindow: published, decoder: imageDecoder, reusable: reusable)
+    ///
+    /// **One implementation of a restore**, and it deliberately lives outside the actor: a warm launch has to
+    /// materialize the reader's own window **before its first frame** (INV-07), i.e. before it can `await` anything,
+    /// and the actor's own `.initial`/`.restore` admissions call the same function — so the two can never disagree
+    /// about what a durable checkpoint means, and no host needs a second restore path to have the feed on screen.
+    ///
+    /// It reads nothing but the checkpoint. The state a restore installs is always the fresh one: both admissions
+    /// that reach here refuse to run while a presentation is admitted, so there are no already-materialized cards to
+    /// reuse — the `reusable` map this used to build from `state?.presentation` could only ever be empty.
+    struct FeedCheckpointProjection: Sendable {
+        let state: FeedSessionState
+        let snapshot: FeedPresentationSnapshot
+        let releasedImageCards: Set<PublicationCardID>
+        let sequenceID: UUID
+        let position: UInt64
+
+        static func read(publicationHistory: PublicationHistory, imageDecoder: PresentationImageDecoder?,
+            bounds: FeedPresentationBounds, sequenceID: UUID, after position: UInt64 = 0) throws
+            -> FeedCheckpointProjection? {
+            let restored = bounds.keepsAdmittedHead
+                ? try publicationHistory.restoreFromEditionStart(forwardCapacity: bounds.forwardCapacity,
+                    contextKey: bounds.contextKey)
+                : try publicationHistory.restore(backwardCapacity: bounds.backwardCapacity,
+                    forwardCapacity: bounds.forwardCapacity, contextKey: bounds.contextKey)
+            guard let restored else { return nil }
+            try publicationHistory.markSeen(editionID: restored.edition.id,
+                cardID: restored.cursor.anchor.cardID)
+            var released: Set<PublicationCardID> = []
+            let window = projectedWindow(restored.window, bounds: bounds, imageDecoder: imageDecoder,
+                released: &released)
+            let next = try FeedProjectionProvenance.nextPosition(after: position)
+            let snapshot = FeedPresentationSnapshot(contextKey: restored.edition.contextKey,
+                editionID: restored.edition.id, window: window,
+                provenance: .init(sequenceID: sequenceID, position: next))
+            return FeedCheckpointProjection(
+                state: FeedSessionState(editorialRevisionID: restored.edition.editorialRevision.id,
+                    presentation: snapshot, bounds: bounds),
+                snapshot: snapshot, releasedImageCards: released, sequenceID: sequenceID, position: next)
         }
-        let first = max(0, anchorIndex - bounds.backwardCapacity)
-        let last = min(published.cards.count - 1, anchorIndex + bounds.forwardCapacity)
-        var items: [PresentationCard] = []
-        items.reserveCapacity(published.cards.count)
-        for (index, card) in published.cards.enumerated() {
-            if let existing = reusable[card.id] {
-                items.append(existing)
-            } else if first...last ~= index {
-                items.append(PresentationCard(publishedCard: card, decoder: imageDecoder))
-            } else {
-                let released = PresentationCard(publishedCard: card)
-                releasedImageCards.insert(released.id)
-                items.append(released)
+
+        private static func projectedWindow(_ published: FeedWindow, bounds: FeedPresentationBounds,
+            imageDecoder: PresentationImageDecoder?, released: inout Set<PublicationCardID>) -> FeedWindowSnapshot {
+            // FeedWindow guarantees its anchor is one of its cards; a window without a numbered band would have no
+            // outside to release, so the plain projection is the total answer.
+            guard let anchorIndex = published.cards.firstIndex(where: { $0.id == published.anchor.cardID }) else {
+                return FeedWindowSnapshot(publishedWindow: published, decoder: imageDecoder, reusable: [:])
             }
+            let first = max(0, anchorIndex - bounds.backwardCapacity)
+            let last = min(published.cards.count - 1, anchorIndex + bounds.forwardCapacity)
+            var items: [PresentationCard] = []
+            items.reserveCapacity(published.cards.count)
+            for (index, card) in published.cards.enumerated() {
+                if first...last ~= index {
+                    items.append(PresentationCard(publishedCard: card, decoder: imageDecoder))
+                } else {
+                    // Fora da faixa: os valores congelados ficam, os pixels voltam.
+                    let outside = PresentationCard(publishedCard: card)
+                    released.insert(outside.id)
+                    items.append(outside)
+                }
+            }
+            return FeedWindowSnapshot(items: items, publishedAnchor: published.anchor)
+                ?? FeedWindowSnapshot(publishedWindow: published, decoder: imageDecoder, reusable: [:])
         }
-        return FeedWindowSnapshot(items: items, publishedAnchor: published.anchor)
-            ?? FeedWindowSnapshot(publishedWindow: published, decoder: imageDecoder, reusable: reusable)
     }
 
     /// Allocate only after a successful read, alongside the actor's synchronous state transition.

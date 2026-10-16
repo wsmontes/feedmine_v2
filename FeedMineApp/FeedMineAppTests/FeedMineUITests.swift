@@ -937,6 +937,174 @@ final class FeedMineUITests: XCTestCase {
             "and the card they saved is drawn as saved")
     }
 
+    /// The PO's headline criterion, in the half the V2 never measured: "**close and reopen the app: the feed must
+    /// appear immediately**, from the ready content of the previous interaction … with no loading screen in between"
+    /// (`1.0-checklist.md:3131-3132`, restated `:3220-3224`; the V1 harness failed its own run when a loading
+    /// surface survived the relaunch, `PersonaExplorationUITests.swift:386-388`).
+    ///
+    /// **Why the witness is the app's own record and not a sampled element.** The V2 asserts the *identity* of the
+    /// reopened anchor (`testAForcedCloseReopensOnTheCardTheReaderWasReading`) and has never asserted the absence of
+    /// a loading surface; and no UI test could have: `XCUIApplication.launch()` returns only once the app is idle,
+    /// so a loading surface that lived for the whole launch transition is exactly the surface a sample taken
+    /// afterwards can never see (the V1's own harness documented that blind window). The app can see it. So the
+    /// witness is `FeedLaunchWitness` — the process's own record of the order in which it put its surfaces on the
+    /// reader's screen: the ones that say "wait" (the launch's progress and the feed's absence surface) and the
+    /// first one that carried the reader's ready cards. The V1-shaped half is asserted too, on the surface a reader
+    /// actually perceives: once the app is idle, no loading surface is on screen.
+    ///
+    /// **The control is the cold launch inside this test.** Both launches are judged by the same function
+    /// (`reopenCriterionViolations`): a container with nothing ready must violate the criterion (otherwise the
+    /// instrument states nothing), and the warm relaunch must satisfy it. The evidence of both halves is printed so
+    /// the run can be read without trusting the verdict.
+    @MainActor
+    func testWarmRelaunchShowsTheFeedWithoutRenderingAWaitSurface() throws {
+        let namespace = UUID().uuidString
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = namespace
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+
+        // COLD — this namespace has never run, so there is no ready content and a wait surface is the honest thing
+        // to show (doctrine item 1: "the first open may be slow — that is what the loading screen is for").
+        app.launch()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 60), "the first run reaches the feed")
+        let card = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", Self.cardIdentifier)).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 45), "the first run publishes real content")
+        let cold = try launchRecord(app, name: "cold")
+        let coldViolations = reopenCriterionViolations(cold, app: app)
+        print("REOPEN_WITNESS cold record=\(cold.raw)")
+        print("REOPEN_WITNESS cold verdict=\(coldViolations.isEmpty ? "satisfied" : "violated")"
+            + " violations=\(coldViolations.isEmpty ? "none" : coldViolations.joined(separator: " | "))")
+        XCTAssertFalse(coldViolations.isEmpty,
+            "the control must fail: a launch with no ready content cannot satisfy the reopen criterion, or the "
+                + "instrument states nothing — record=\(cold.raw)")
+
+        // The reader reads. A filter first, so the context names something discovery must look for (the pool the
+        // launch path resolves), and then one real forward gesture: the position it settles on is what a close keeps.
+        app.buttons["filter-button"].tap()
+        XCTAssertTrue(app.buttons["filter-done"].waitForExistence(timeout: 15), "the sheet is up")
+        let english = app.buttons["language-en"]
+        XCTAssertTrue(scrollIntoView(english, in: app, timeout: 15), "the sheet offers the language criterion")
+        english.tap()
+        app.buttons["filter-done"].tap()
+        let proof = app.staticTexts["native-viewport-delivery"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 45), "the filtered context publishes its feed")
+        scroll.swipeUp()
+        Thread.sleep(forTimeInterval: 2)
+        // Evidence, not a verdict: the driver's own counters say whether the gesture reached a real opportunity.
+        // The criterion under test does not depend on it, and a filtered window that fits the viewport produces no
+        // opportunity at all — so this line is printed rather than asserted.
+        print("REOPEN_WITNESS after-the-gesture \(proof.label)")
+        XCTAssertTrue(app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", Self.cardIdentifier)).firstMatch.exists,
+            "the reader has real content on screen before the close")
+        Thread.sleep(forTimeInterval: 2)
+        app.terminate()
+        Thread.sleep(forTimeInterval: 2)
+
+        // WARM — the same container: the reader's ready content from the previous interaction, and nothing else.
+        // The relaunch runs with the network blocked, so what comes back can only be what the previous interaction
+        // made ready locally (INV-11; the criterion's own words: "from the ready content of the previous interaction").
+        app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
+        let warmStarted = Date()
+        app.launch()
+        // `launch()` returns once the app is idle, so this is an **upper bound** on the feed appearing — the app's
+        // own clock (`first_cards_ms` in the record) is the honest number, and it is printed below.
+        let launchReturnedMS = Int(Date().timeIntervalSince(warmStarted) * 1000)
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60),
+            "the feed the reader had is there when they come back")
+        Thread.sleep(forTimeInterval: 3)
+        let warm = try launchRecord(app, name: "warm")
+        let warmViolations = reopenCriterionViolations(warm, app: app)
+        print("REOPEN_WITNESS warm record=\(warm.raw)")
+        print("REOPEN_WITNESS warm launch_returned_ms=\(launchReturnedMS)"
+            + " (XCTest's idle bound on the same launch; the app's own first_cards_ms is in the record)")
+        print("REOPEN_WITNESS warm verdict=\(warmViolations.isEmpty ? "satisfied" : "violated")"
+            + " violations=\(warmViolations.isEmpty ? "none" : warmViolations.joined(separator: " | "))")
+        let attachment = XCTAttachment(string: "cold: \(cold.raw)\nwarm: \(warm.raw)")
+        attachment.name = "reopen-witness"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertTrue(app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@", Self.cardIdentifier)).firstMatch.exists,
+            "the warm relaunch shows ready content, not a promise of it")
+        XCTAssertTrue(warmViolations.isEmpty,
+            "a warm relaunch must satisfy the reopen criterion — record=\(warm.raw) violations=\(warmViolations)")
+    }
+
+    /// One launch, as the app itself recorded it (`FeedLaunchWitness`): the wait surfaces it drew and the first pass
+    /// that carried ready cards, both on the process's own clock.
+    private struct LaunchRecord {
+        let raw: String
+        let waitPasses: Int
+        let waitKind: String
+        let firstWaitMS: Int?
+        let lastWaitMS: Int?
+        let cards: Int
+        let firstCardsMS: Int?
+
+        /// The window the reader sat through a surface that was not their feed, when there was one.
+        var waitWindow: String {
+            guard let first = firstWaitMS else { return "never" }
+            return "\(first)…\(lastWaitMS.map(String.init) ?? "?") ms"
+        }
+    }
+
+    @MainActor
+    private func launchRecord(_ app: XCUIApplication, name: String) throws -> LaunchRecord {
+        let element = app.descendants(matching: .any)["feed-launch-record"]
+        XCTAssertTrue(element.waitForExistence(timeout: 30), "\(name): the app's own launch record is published")
+        // The record settles once the launch has drawn cards; until then the labels are the earlier facts.
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label MATCHES %@", ".*cards=[1-9].*"),
+            object: element)
+        _ = XCTWaiter.wait(for: [settled], timeout: 30)
+        let label = element.label
+        func value(_ field: String) -> String? {
+            label.split(separator: " ").map(String.init).first { $0.hasPrefix(field + "=") }
+                .map { String($0.dropFirst(field.count + 1)) }
+        }
+        func milliseconds(_ field: String) -> Int? {
+            guard let raw = value(field), raw != "n/a" else { return nil }
+            return Int(raw)
+        }
+        return LaunchRecord(raw: label,
+            waitPasses: Int(value("wait_passes") ?? "") ?? -1,
+            waitKind: value("kind") ?? "unknown",
+            firstWaitMS: milliseconds("first_wait_ms"),
+            lastWaitMS: milliseconds("last_wait_ms"),
+            cards: Int(value("cards") ?? "") ?? -1,
+            firstCardsMS: milliseconds("first_cards_ms"))
+    }
+
+    /// The criterion itself, in one place, so both launches are judged by the same rule: on the reading surface the
+    /// reader asked for, from the ready content of the previous interaction, **with no loading screen in between**.
+    /// Every violation is returned, not the first one: a relaunch that failed has to say how.
+    @MainActor
+    private func reopenCriterionViolations(_ record: LaunchRecord, app: XCUIApplication) -> [String] {
+        var violations: [String] = []
+        if record.cards <= 0 {
+            violations.append("the feed never drew ready content (cards=\(record.cards))")
+        }
+        if record.waitPasses > 0, let firstWait = record.firstWaitMS,
+            record.firstCardsMS.map({ firstWait < $0 }) ?? true {
+            violations.append("a loading surface was drawn before the feed: \(record.waitPasses) pass(es) of "
+                + "\(record.waitKind) over \(record.waitWindow), cards at "
+                + "\(record.firstCardsMS.map(String.init) ?? "never") ms")
+        } else if record.waitPasses > 0 {
+            violations.append("the record counted \(record.waitPasses) wait pass(es) without a first one on the "
+                + "clock — it cannot be read: \(record.raw)")
+        }
+        // The half the reader perceives: once the app is idle, nothing that says "wait" is on screen.
+        for identifier in ["feed-loading-surface", "feed-launch-progress"]
+        where app.descendants(matching: .any)[identifier].exists {
+            violations.append("\(identifier) is still on screen after the app reached idle")
+        }
+        return violations
+    }
+
     @MainActor
     func testNativeSwipeReachesRealRunwayAndReverseNavigation() throws {
         let app = XCUIApplication()
