@@ -159,9 +159,17 @@ expectativa "deliberately left FAILING".
 
 O arquiteto **retratou o verdict anterior** que tratava o R5 como P0 comprovadamente aberto, e autorizou a correção
 do comentário (documentação apenas, preservando corpo executável, asserções e timeouts, sem afirmar PASS novo antes
-da medição desta revisão). O comentário foi corrigido citando o relatório R6, a consulta e a data. A execução do
-teste nesta revisão **está em curso** quando este parágrafo foi escrito; o resultado — passando ou falhando — entra
-aqui assim que fechar, sem reabrir a causa já refutada.
+da medição desta revisão). O comentário foi corrigido citando o relatório R6, a consulta e a data.
+
+**A execução nesta revisão fechou, e o teste PASSA:**
+
+```
+Test Case '-[FeedMineUITests.FeedMineUITests testFirstRunOverTheRealCatalogueExpandsWithoutAGesture]' started.
+Test Case '-[FeedMineUITests.FeedMineUITests testFirstRunOverTheRealCatalogueExpandsWithoutAGesture]' passed (33.019 seconds).
+EXIT=0
+```
+
+Método: dispositivo de simulador **criado para a medição e apagado antes dela** (o cenário de primeira execução exige contêiner limpo), alvo `FeedMineUITests`, árvore em `3b020a15` (a `main` de então, que é a revisão que a build 47 carrega — o comentário corrigido não altera o executável). O teste levou 33,0 s contra os 16,9 s do R6: o crescimento aconteceu, com folga confortável dentro do timeout de 60 s da asserção. **Não há regressão**, e a causa já refutada (fronteira de segmento) não foi reaberta.
 
 ## 9. PD-8: o que o diagnóstico do Codex sustenta, e o que eu conferi no código
 
