@@ -19,7 +19,8 @@ e uma corrida instala o bundle de desenvolvimento e toma o primeiro plano dele. 
 | Build Debug iphoneos do candidato, armado para o GO | **EXECUTADO** (§8) |
 | Corrida no aparelho (fases A e B do `hitch-pass.sh`) | **NOT_RUN** — espera GO (dono usando o aparelho) |
 | Relatório com as cinco dimensões por evento severo | **PARCIAL**: dimensão (a) para as 19 janelas severas da captura de hoje; (b)-(e) `NOT_AVAILABLE` com o arquivo que falta, item por item (§3) — e as cinco completas na captura que as suporta (§4) |
-| Correção de qualquer espécie | **NENHUMA** (esta frente é medição) |
+| Correção de produto | **NENHUMA** (esta frente é medição). Os dois consertos desta frente são de **instrumento**: um em `scripts/hitch-pass.sh` e outro no bloco do WAL de `scripts/device-journey.sh`, autorizado pelo arquiteto (§2.1) |
+| Commits | **dois** em `gate/f48-hitch`, sobre `03d05f5f`: um dos instrumentos + relatório, outro do conserto de instrumento autorizado |
 
 ---
 
@@ -109,18 +110,49 @@ namespaces no contêiner copiado:
 exit=0
 ```
 
-O mesmo idioma existe em `scripts/device-journey.sh:397-402` (`wc -c <"$DB-wal"` **depois** do checkpoint, sob
-`set -euo pipefail`): se o SQLite remover o `-wal` ao fechar — foi o que aconteceu na cópia que eu testei —, aquele
-`wc` falha e o script sai no meio do censo, **depois** de já ter escrito o console (o dano é um `NOT_RUN` espúrio da
-fase A, não a perda da medida). Nas corridas de 2026-10-16 isso **não** foi observado (o script imprimiu
-`TRUNCATE em 0 bytes`). O arquivo é de outro dono e **não foi editado**: fica registrado aqui e no resultado desta
-frente para handoff.
+O mesmo idioma existia em `scripts/device-journey.sh:397-402` (`wc -c <"$DB-wal"` **depois** do checkpoint). Ali, a
+medição que fiz depois mostra que **o problema é de fidelidade do número, não de o script morrer** — e a primeira
+versão deste relatório afirmava a queda erradamente. Quem remove o `-wal` é o **cliente que fecha a última conexão**,
+e os dois clientes desta árvore divergem; medido na mesma cópia real, com um escritor morto deixando 94.792 bytes
+pendentes:
+
+| cliente | `-wal` antes | depois de `pragma wal_checkpoint(TRUNCATE)` |
+|---|---|---|
+| `sqlite3` (CLI — o de `device-journey.sh`) | 94.792 B | 0 B, **arquivo mantido** |
+| `sqlite3` (módulo do Python — o de `hitch-pass.sh`) | 94.792 B | **arquivo removido** |
+
+Duas consequências:
+
+1. O `wc -c` **depois** do checkpoint **não** falhou em nenhuma execução com o CLI: controle negativo rodado na
+   fixture (com `-wal` de 0 B) e na cópia com 94.792 B pendentes — as duas exit **0**. A queda que eu supus naquele
+   arquivo **não se reproduziu**; o que se reproduziu (e foi corrigido) é o `FileNotFoundError` no bloco **do
+   Python**, que é o do `hitch-pass.sh`.
+2. O que a linha antiga fazia de errado é reportar um número que **esconde o fato**: com 94.792 bytes pendentes ela
+   imprimia `wal_checkpoint: TRUNCATE em 0 bytes` — a **mesma** linha de uma corrida em que nada estava pendente, e
+   foi essa a linha que a corrida de 2026-10-16 deixou. Quem lê não consegue distinguir "o app gravou pelo WAL" de
+   "o app não tocou no WAL".
+
+O conserto em `device-journey.sh` (commit separado, autorizado pelo arquiteto) lê o tamanho **antes** e imprime os
+dois, nomeados:
+
+```console
+$ bash <bloco corrigido> ; echo exit=$?      # cópia com escritor morto: 94.792 B pendentes
+wal_checkpoint: TRUNCATE: antes=94792 bytes, depois=0 bytes
+exit=0
+$ bash <bloco ANTIGO>  ; echo exit=$?        # a MESMA condição: não morreu, e escondeu os 94.792 B
+wal_checkpoint: TRUNCATE em 0 bytes
+exit=0
+$ bash <bloco corrigido>                     # fixture real, `-wal` de 0 B (o caso do primeiro estouro)
+wal_checkpoint: TRUNCATE: antes=0 bytes, depois=0 bytes
+```
 
 Uso (GO):
 
 ```sh
-scripts/hitch-pass.sh --skip-build --app /tmp/fm-hitch-pre/Build/Products/Debug-iphoneos/FeedMine.app \
-  --derived-data /tmp/fm-hitch-pre/derived --out /tmp/fm-hitch-pass-<UTC>
+scripts/hitch-pass.sh --skip-build \
+  --app /tmp/fm-hitch-pre/derived/Build/Products/Debug-iphoneos/FeedMine.app \
+  --derived-data /tmp/fm-hitch-pre/derived \
+  --out /tmp/fm-hitch-pass-<UTC>
 ```
 
 ### 2.2 `scripts/hitch-join.py` — a junção por segundo
@@ -356,7 +388,9 @@ processou 64 `media_ready`. Nos **297 segundos restantes** não há um único qu
    severos em 19 segundos, 12,7% dos quadros fora do orçamento, pior 277,2 ms). Evidência: a série anexada, sha256
    `39c4fd95…`.
 2. **5 dos 75 quadros severos são anteriores a qualquer gesto** — a própria estrutura do teste prova a fronteira
-   (`before` lido antes dos 6 `swipeUp`). O arranque não é limpo.
+   (`before` lido antes dos 6 `swipeUp`). O arranque não é limpo. **Estes 5 não podem ser somados aos 70 restantes
+   sem dizer que a condição é outra**: são arranque **dentro de um teste dirigido** (app recém-lançado, com fixture),
+   não uso do leitor; o que a série prova é que o arranque não é limpo, não que o consumo seja.
 3. **A condição da medição muda o resultado em duas ordens de grandeza.** Jornada dirigida: 75/1208 = **6,2%** de
    quadros severos. Uso normal (passagem de 2026-10-15, citada em
    `main:docs/reviews/2026-10-16-build-48-aparelho-e-publicacao.md` §2.2): 25/31479 = **0,08%**. Mesmo app, mesmo
@@ -364,7 +398,14 @@ processou 64 `media_ready`. Nos **297 segundos restantes** não há um único qu
    ociosa** e uma **fase B dirigida**, para que as duas condições existam na mesma corrida.
 4. **Quando o app está ocioso depois de arrancar, ele não engasga**: 297 segundos sem um quadro severo na §4.
 5. **Quando o app publica arrancando, ele engasga**: na §4 o único segundo com 3 severos é o da publicação de dois
-   segmentos + admissão de 17 cartas + 64 `media_ready`.
+   segmentos + admissão de 17 cartas + 64 `media_ready`. **E é a hipótese de trabalho desta frente**: o engasgo que
+   o leitor percebe vem de **publicação/admissão/mídia chegando**, não da rolagem em si. O que sustenta essa leitura
+   nesta rodada é a coincidência exata (um só segundo com trabalho de publicação e três quadros severos) **mais** a
+   ausência total de trabalho e de quadros severos nos 297 segundos seguintes. O que ela **não** é: uma medida de
+   consumo — **esta captura não teve rolagem nenhuma** (zero `advance` em 299 s), logo ela não fala de consumo. Para
+   este insumo, e só para ele, o dado também **refuta** a leitura de que "o medidor está errado": o medidor acusa no
+   mesmo segundo em que o app publica, e fica mudo quando o app está parado, que é precisamente o que se espera de
+   um medidor que mede a apresentação.
 6. **`worst_ms` mede o pior intervalo, e o medidor diz onde ele caiu** — na §4, `worst_at=107593.991` está no meio da
    janela (0,83 s antes do fim), entre a avalanche de `media_ready` (107593.840) e o segundo bloco de publicação
    (107594.271). Essa é a granularidade temporal que o instrumento oferece.
@@ -392,12 +433,14 @@ processou 64 `media_ready`. Nos **297 segundos restantes** não há um único qu
 
 Ordem = força do dado que já existe, do mais apoiado ao menos.
 
-**H1 — Trabalho de publicação/admissão no mesmo segundo (arranque e bursts de crescimento).**
+**H1 — Trabalho de publicação/admissão no mesmo segundo (arranque e bursts de crescimento). [hipótese de trabalho]**
 *Dado que apoia*: na §4, o único segundo severo de três quadros é o da publicação de dois segmentos (20 + 21 cartas,
 `trace.jsonl:76,123`), da admissão da janela de 17 cartas (`trace.jsonl:125`) e de 64 `media_ready`
-(`trace.jsonl:4…`), com a linha de jornada pulando `cards` 0→17 e `media_prepared` 31→64 (`console.log:12`); e os 297
-segundos ociosos seguintes não têm um quadro severo. O crescimento da janela é agendado em rajada
-(`AppComposition.swift:2428-2434` — 8 tentativas de 0,75 s — disparadas em `:2595` e `:2604`).
+(`trace.jsonl:4..:100`), com a linha de jornada pulando `cards` 0→17 e `media_prepared` 31→64 (`console.log:12`); e os
+297 segundos ociosos seguintes não têm um quadro severo. O crescimento da janela é agendado em rajada
+(`AppComposition.swift:2428-2434` — 8 tentativas de 0,75 s — disparadas em `:2595` e `:2604`). É a hipótese de
+trabalho da rodada, e **não** uma medida de consumo: a captura que a apoia não teve rolagem (itens 3 e 5 de "o que a
+evidência sustenta", §5).
 *Experimento que refuta*: na corrida do GO com captura completa, exigir que ≥50% dos segundos severos tenham **ou**
 um `admitted`/`replenishment_*`/`window` na janela **ou** mudança de `cards`/`media_prepared` na linha de jornada. Se
 a maioria dos segundos severos tiver a janela admitida estável e nenhum evento de publicação, H1 cai para o caso
@@ -553,7 +596,8 @@ cometeu (acusou o próprio texto de ajuda do `device-journey.sh`).
 
 1. **GO por mensagem** (o dono está instalando/validando a build 48; a corrida instala o bundle de desenvolvimento e
    toma o primeiro plano dele). Piso de disco: ≥3 GB livres.
-2. `scripts/hitch-pass.sh --skip-build --app <prebuild> --derived-data <prebuild>/derived --out /tmp/fm-hitch-pass-<UTC>`
+2. `scripts/hitch-pass.sh --skip-build --app /tmp/fm-hitch-pre/derived/Build/Products/Debug-iphoneos/FeedMine.app
+   --derived-data /tmp/fm-hitch-pre/derived --out /tmp/fm-hitch-pass-<UTC>`
    — as duas fases, o console em arquivo (com o caminho impresso no fim) e o contêiner inteiro.
 3. `python3 scripts/hitch-join.py --journey <OUT>/journey-standalone --select severe` (fase A, ociosa) e o mesmo
    sobre `<OUT>` inteiro (fase B, dirigida), com `--select bad` e `--context 2` para o entorno.

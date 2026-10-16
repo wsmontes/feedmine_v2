@@ -397,9 +397,22 @@ printf 'runtime.sqlite=%s bytes\n' "$(wc -c <"$DB" | tr -d ' ')"
 if [[ -f "$DB-wal" ]]; then
     # Sem dobrar o WAL, o censo diz "vazio" com 40 cartas na tela — o erro mais fácil de cometer aqui. O checkpoint
     # é feito na CÓPIA; o arquivo do aparelho não é tocado.
+    #
+    # O tamanho é lido **antes** do checkpoint, e os dois números são impressos dizendo qual é qual: o SQLite apaga o
+    # `-wal` quando a última conexão fecha (medido em 2026-10-16, no bloco de censo de `hitch-pass.sh`, onde um
+    # `getsize` depois do `close()` estourou `FileNotFoundError`), e um `wc -c <"$DB-wal"` **depois** do checkpoint
+    # falharia sob `set -euo pipefail` — derrubando o script depois de o console já estar escrito. O número que
+    # importa é quanto estava pendente no WAL copiado; o "depois" só confirma que o checkpoint dobrou tudo.
+    wal_before="$(wc -c <"$DB-wal" | tr -d ' ')"
     sqlite3 "$DB" "pragma wal_checkpoint(TRUNCATE)" >/dev/null \
         || not_run "o checkpoint do WAL falhou em $DB" 6
-    printf 'wal_checkpoint: TRUNCATE em %s bytes\n' "$(wc -c <"$DB-wal" | tr -d ' ')"
+    if [[ -f "$DB-wal" ]]; then
+        printf 'wal_checkpoint: TRUNCATE: antes=%s bytes, depois=%s bytes\n' "$wal_before" \
+            "$(wc -c <"$DB-wal" | tr -d ' ')"
+    else
+        printf 'wal_checkpoint: TRUNCATE: antes=%s bytes, depois=removido pelo SQLite ao fechar a conexão\n' \
+            "$wal_before"
+    fi
 fi
 
 # --- censo ------------------------------------------------------------------------------
