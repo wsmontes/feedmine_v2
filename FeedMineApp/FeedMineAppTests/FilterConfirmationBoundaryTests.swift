@@ -67,7 +67,9 @@ final class FilterConfirmationBoundaryTests: XCTestCase {
             try await root.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
             XCTFail("the refused context write must not be reported as applied")
         } catch {
-            // Expected: persistence failed before confirmation.
+            let failure = error as? ReaderFilterFailure
+            XCTAssertEqual(failure?.selectionIsSaved, false,
+                "a failure before confirmation must be reported as not saved: \(error)")
         }
 
         XCTAssertEqual(root.currentContextKey, before,
@@ -101,7 +103,9 @@ final class FilterConfirmationBoundaryTests: XCTestCase {
             try await root.applyFilter(ReaderFilter(mood: .fun), preset: .everything)
             XCTFail("the refused expiry write must not be reported as applied")
         } catch {
-            // Expected: the combined write was refused.
+            let failure = error as? ReaderFilterFailure
+            XCTAssertEqual(failure?.selectionIsSaved, false,
+                "a refused combined write is a persistence failure, not a presentation one: \(error)")
         }
 
         let after = try persisted(directory)
@@ -135,7 +139,10 @@ final class FilterConfirmationBoundaryTests: XCTestCase {
             try await root.applyFilter(filter, preset: .everything)
             XCTFail("a presentation failure after confirmation must be reported, never hidden")
         } catch {
-            // Expected: presentation failed after the selection was confirmed.
+            XCTAssertTrue(error is ReaderFilterFailure, "the failure is a domain outcome, not a raw storage error")
+            let failure = error as? ReaderFilterFailure
+            XCTAssertEqual(failure?.selectionIsSaved, true,
+                "the reader must be told the selection was saved — nothing was rolled back")
         }
 
         let confirmed = readerKey(root: root, filter: filter)

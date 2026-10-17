@@ -141,6 +141,19 @@ final class ReaderFilterStoreTests: XCTestCase {
         XCTAssertFalse(subject.isDirty)
     }
 
+    /// The two failures are distinguishable by the one fact the reader's message must not get wrong.
+    func testFilterFailuresTellTheReaderWhetherTheSelectionWasSaved() {
+        let notSaved = ReaderFilterFailure.persistenceFailed(detail: "disk")
+        let saved = ReaderFilterFailure.presentationFailed(detail: "session")
+        XCTAssertFalse(notSaved.selectionIsSaved)
+        XCTAssertTrue(saved.selectionIsSaved)
+        XCTAssertTrue(saved.readerMessage.contains("salvo"),
+            "a confirmed selection is never reported as nothing saved")
+        XCTAssertFalse(notSaved.readerMessage.contains("salvo"),
+            "a refused write never claims the selection was saved")
+        XCTAssertNotEqual(notSaved.readerMessage, saved.readerMessage)
+    }
+
     /// T6 lens: the chips mirror what is applied, in V1's order, with names resolved by the host.
     func testLensChipsMirrorTheAppliedSelection() {
         let filter = ReaderFilter(regionIDs: ["br"], taxonomyNodeIDs: ["tech"], languages: ["en-US"],

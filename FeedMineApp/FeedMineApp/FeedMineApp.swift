@@ -1302,8 +1302,21 @@ struct FeedMineApp: App {
             ReaderFilterLens(chips: chips,
                 onRemove: { chip in
                     guard let removal = chip.removal else { return }
-                    Task { try? await composition.applyFilter(filter.removing(removal),
-                        preset: composition.currentPreset) }
+                    Task {
+                        do {
+                            try await composition.applyFilter(filter.removing(removal),
+                                preset: composition.currentPreset)
+                        } catch {
+                            // R5: a raw error description is diagnostics, never the reader's copy. The failure
+                            // states whether the selection was saved, so a confirmed-but-not-presented filter
+                            // is never reported as "nothing happened".
+                            #if DEBUG
+                            print("filter removal failed: \(String(describing: error))")
+                            #endif
+                            readerError = (error as? ReaderFilterFailure)?.readerMessage
+                                ?? String(localized: "Não foi possível aplicar o filtro agora.")
+                        }
+                    }
                 },
                 onDismiss: { hiddenLensSignature = signature(of: filter, chips) })
         }
