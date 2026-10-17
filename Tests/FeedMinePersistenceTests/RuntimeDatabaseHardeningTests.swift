@@ -93,4 +93,21 @@ final class RuntimeDatabaseHardeningTests: XCTestCase {
         }
         XCTAssertThrowsError(try RuntimeDatabase(location: location), "a database written by a newer build must be refused")
     }
+
+    /// Pins the refusal's identity once it exists: the error names exactly the identifiers this build
+    /// does not know, so the failure says which build wrote the file.
+    func testUnknownAppliedMigrationIsRefusedByItsOwnCase() throws {
+        let location = location()
+        _ = try RuntimeDatabase(location: location)
+        let raw = try DatabaseQueue(path: location.databaseURL.path)
+        try raw.write { db in
+            try db.execute(sql: "INSERT INTO grdb_migrations (identifier) VALUES ('future-build-v9')")
+        }
+        XCTAssertThrowsError(try RuntimeDatabase(location: location)) { error in
+            guard case RuntimeDatabaseError.incompatibleSchema(let identifiers) = error else {
+                return XCTFail("expected incompatibleSchema, got \(error)")
+            }
+            XCTAssertEqual(identifiers, ["future-build-v9"])
+        }
+    }
 }
