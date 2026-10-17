@@ -37,6 +37,26 @@ final class FluidityJourneyUITests: XCTestCase {
         case drags(Int, press: TimeInterval, hold: TimeInterval)
     }
 
+    /// Whether this configuration publishes the series in the accessibility tree.
+    ///
+    /// `FeedFrameMeter`'s ring buffer and its `feed-frame-proof` surface are `#if DEBUG` by construction, so a
+    /// Release journey has no such element and an assertion on it would fail for the configuration rather than for
+    /// the product. The launch environment and the gestures are identical in both configurations, but the fixture
+    /// flags are inert in Release for the same reason (`TrustedFeed.developmentSelection`,
+    /// `DevelopmentLocalFeeds` and `FEEDMINE_RUNTIME_NAMESPACE` are DEBUG-only): a Release reader scrolls whatever
+    /// sources its own container already persisted. What changes in the test is only where the series is read. The
+    /// app writes the same one-second windows (`frames/late/bad/severe/worst_ms`) to its own `trace.jsonl` through
+    /// `RunwayTrace`, which is **not** conditional — that file is the channel both configurations share, and
+    /// `FRAME-WINDOW` below states the seconds the gestures occupied so the proportion is recomputed from the
+    /// app's own record instead of from a summary the test produced.
+    private var publishesSeries: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
     private func scrollJourney(gestures load: Load, evidenceName: String) throws {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
@@ -60,13 +80,19 @@ final class FluidityJourneyUITests: XCTestCase {
                 .min { $0.frame.minY < $1.frame.minY }?.identifier
         }
         let initialCard = try XCTUnwrap(visibleCardIdentifier(), "uma carta deve estar visível")
-        let proof = app.staticTexts["feed-frame-proof"]
-        let started = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label CONTAINS %@", ";seconds="), object: proof)
-        XCTAssertEqual(XCTWaiter.wait(for: [started], timeout: 15), .completed,
-            "o medidor deve publicar sua série")
-        let before = proof.label
+        var before = ""
+        if publishesSeries {
+            let proof = app.staticTexts["feed-frame-proof"]
+            let started = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label CONTAINS %@", ";seconds="), object: proof)
+            XCTAssertEqual(XCTWaiter.wait(for: [started], timeout: 15), .completed,
+                "o medidor deve publicar sua série")
+            before = proof.label
+        }
 
+        // A carga medida é esta janela, e ela se declara em segundos de relógio: a série é recomputada do traço do
+        // app, que é o canal comum a Debug e Release, e não de um resumo que o teste já tenha feito.
+        let windowStart = Date()
         // Não consultar a árvore durante os gestos: a própria consulta interfere na carga medida.
         switch load {
         case let .swipes(count):
@@ -80,23 +106,33 @@ final class FluidityJourneyUITests: XCTestCase {
             }
         }
 
+        let windowEnd = Date()
+        print("FRAME-WINDOW start=\(windowStart.timeIntervalSince1970) end=\(windowEnd.timeIntervalSince1970) "
+            + "seconds=\(windowEnd.timeIntervalSince(windowStart))")
+
         XCTAssertEqual(app.state, .runningForeground)
         let finalCard = try XCTUnwrap(visibleCardIdentifier(), "a rolagem deve deixar conteúdo visível")
         XCTAssertNotEqual(finalCard, initialCard,
             "gestos para frente devem levar a outro ponto de leitura")
-        let after = app.staticTexts["feed-frame-proof"].label
-        XCTAssertNotEqual(after, before, "a série deve continuar sendo registrada durante a jornada")
+        var after = ""
+        if publishesSeries {
+            after = app.staticTexts["feed-frame-proof"].label
+            XCTAssertNotEqual(after, before, "a série deve continuar sendo registrada durante a jornada")
+        }
 
         // A série bruta sai no log da corrida além do anexo: medir exige poder recomputar a partir do que o app
         // publicou, e não de um número que o teste já tenha resumido.
         print("FRAME-JOURNEY initial_card=\(initialCard)")
         print("FRAME-JOURNEY final_card=\(finalCard)")
-        print("FRAME-JOURNEY before=\(before)")
-        print("FRAME-JOURNEY after=\(after)")
+        if publishesSeries {
+            print("FRAME-JOURNEY before=\(before)")
+            print("FRAME-JOURNEY after=\(after)")
+        }
 
         let evidence = XCTAttachment(string: """
             initial_card=\(initialCard)
             final_card=\(finalCard)
+            series_read=\(publishesSeries ? "accessibility" : "trace.jsonl")
             before=\(before)
             after=\(after)
             Fluidez: série observada, sem limiar de aprovação. Não substitui medição no aparelho nem B06.
