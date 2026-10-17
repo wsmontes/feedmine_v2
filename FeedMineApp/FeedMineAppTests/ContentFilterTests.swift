@@ -139,7 +139,9 @@ final class ContentFilterTests: XCTestCase {
     }
 
     /// A template the reader turns on hides what its own words match, resolved for their language: the fixture's
-    /// headline carries the word "fixture", which the template below carries in English.
+    /// headline carries the word "fixture", which the template below carries in English. V1's resolution is the
+    /// reader's words **plus** English, so a Portuguese reader turns on two words and an English reader one — the
+    /// count the sheet states is that number, which is why the language is stated here rather than borrowed.
     func testATemplateTheReaderTurnsOnHidesWhatItsWordsMatch() async throws {
         let directory = directory()
         let catalog = [ReaderContentFilterTemplate(key: "fixture",
@@ -148,11 +150,18 @@ final class ContentFilterTests: XCTestCase {
                 names: ["en": "Unused"], keywords: ["en": ["nothing matches this"]])]
         let database = try RuntimeDatabase(location: .init(directory: directory))
         _ = try ReaderPreferencesStore(database: database).initialize(sourceKeys: [])
-        let adapter = ReaderContentFilterAdapter(database: database, templates: catalog)
+        let adapter = ReaderContentFilterAdapter(database: database, templates: catalog,
+            languages: ["pt-BR", "pt"])
         let store = ReaderContentFilterStore(backend: adapter)
         await store.load()
         XCTAssertEqual(store.templates.map(\.id), ["fixture", "unused"])
-        XCTAssertEqual(store.templates.first?.ruleCount, 1, "the template states how many rules it adds")
+        XCTAssertEqual(store.templates.first?.ruleCount, 2,
+            "a Portuguese reader's template adds its Portuguese words and its English ones")
+        let english = ReaderContentFilterStore(backend: ReaderContentFilterAdapter(database: database,
+            templates: catalog, languages: ["en"]))
+        await english.load()
+        XCTAssertEqual(english.templates.first?.ruleCount, 1,
+            "an English reader's template adds only its English words")
 
         await store.toggleTemplate("fixture")
         let root = root(directory: directory)
