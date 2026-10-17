@@ -2094,6 +2094,9 @@ final class FeedAssociation {
     /// each, 250 ms per answer, three fresh launches per set. Ten cards: 2 → 3 480 ms (spread 338), 8 → 2 867 ms
     /// (spread 41), 16 → 2 928 ms (spread 71). Eight is the selection: it reaches ten cards in under three seconds,
     /// and sixteen is slower because the coordinator's window is `max(2, activeProcessorCount)` = 8 on this host.
+    /// A paired replication (`2,8 | 8,2 | 2,8`, fresh install and fresh namespace per run, load1 < 5 before every
+    /// start) kept eight: all six pairs (two series) had eight ahead by 579–762 ms, against 85 ms of spread in the
+    /// settled series, and all six eight-runs stayed under three seconds (2 760–2 904 ms).
     /// The full table is in `docs/reviews/2026-10-17-cold-start-width.md`.
     ///
     /// A run may name another width (DEBUG only) so that measurement is repeatable without a rebuild:
