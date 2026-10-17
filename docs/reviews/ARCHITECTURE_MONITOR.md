@@ -5,6 +5,7 @@
 ## Índice de handoff — documentos de trabalho de 17/out/2026
 
 - [**Intenções, entregas, lacunas e decisões de integração**](FEEDMINE_INTENTIONS_VS_DELIVERIES_2026-10-17.md): inventário e fila de decisão; `main@5e4e2142`.
+- [**Auditoria do backend: folga, concorrência e acoplamentos**](FEEDMINE_BACKEND_HEADROOM_KERNEL_AUDIT_2026-10-17.md): K-01–K-10, barreiras sequenciais entre aquisição/mídia/seleção/publicação, objetivo de 10× por estágio, mudança de filtros com reuso e roteiro sem outro scheduler.
 - [**Estudo arquitetural do engasgo na rolagem**](FEEDMINE_SCROLL_ARCHITECTURAL_STUDY_2026-10-17.md): caminho visual→MainActor→atores→instalação, distinção entre correlação e causa, medição discriminante e critérios de correção.
 - Ambos são **consultivos e somente na branch `monitor/architecture`**; não equivalem a nova regra do produto, aprovação de merge ou prova no Mac. OMP deve lê-los expressamente antes de considerar a próxima candidata.
 
