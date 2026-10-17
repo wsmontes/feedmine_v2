@@ -65,6 +65,12 @@ public enum FeedLaunchWitness {
     /// The first pass that carried the reader's own ready cards: how many, and when. One value, for the same reason.
     private static var firstCards: (count: Int, at: Double)?
 
+    /// The card counts a cold start is judged on, and the first time each count was on screen. `firstCards` states
+    /// the first pass that carried *any* card; these state when the window reached 1, 5 and 10 — the thresholds the
+    /// cold-start measurement asks for — and they are read on the same clock as every other fact here.
+    public static let cardMilestones = [1, 5, 10]
+    private static var milestoneAt: [Int: Double] = [:]
+
     /// The origin every fact is stated from. The app arms it at the very top of its own construction
     /// (`FeedMineApp.init`), so the record's numbers read as "milliseconds since this launch began".
     ///
@@ -86,6 +92,9 @@ public enum FeedLaunchWitness {
         case .feedAbsence(let kind): noteWaitSurface("absence:" + kind)
         case .notAWaitSurface: break
         case .cards(let count):
+            for milestone in Self.cardMilestones where count >= milestone && milestoneAt[milestone] == nil {
+                milestoneAt[milestone] = elapsedMilliseconds()
+            }
             guard firstCards == nil else { return }
             firstCards = (count, elapsedMilliseconds())
         }
@@ -106,6 +115,7 @@ public enum FeedLaunchWitness {
             + " first_wait_ms=\(wait.map { clock($0.at) } ?? "n/a")"
             + " last_wait_ms=\(lastWaitAt.map(clock) ?? "n/a")"
             + " cards=\(cards?.count ?? 0) first_cards_ms=\(cards.map { clock($0.at) } ?? "n/a")"
+            + Self.cardMilestones.map { " cards\($0)_ms=\(milestoneAt[$0].map(clock) ?? "n/a")" }.joined()
     }
 
     /// Whether the reader's first reading surface was already their feed: no wait surface was rendered at all, or

@@ -3289,3 +3289,64 @@ final class FeedFrameBudgetTests: XCTestCase {
         XCTAssertEqual(onOneTwenty["worst_ms"], "235.6")
     }
 }
+
+/// The cold pass's width is its own stated value, and the steady runway keeps the one production always had. The
+/// launch record publishes the instants the cold-start measurement reads; this test only holds the configuration
+/// they are measured against, so a measurement can vary the width through the environment without a rebuild.
+@MainActor
+final class ColdStartWidthConfigurationTests: XCTestCase {
+    func testTheColdPassHasItsOwnWidthAndTheSteadyRunwayKeepsTwo() {
+        XCTAssertEqual(FeedAssociation.steadyWorkCapacity, 2)
+        XCTAssertEqual(FeedAssociation.resources.acquisition.targetWorkCapacity, 2,
+            "the steady runways keep the width production has always used")
+        XCTAssertEqual(FeedAssociation.acquisition(targetWorkCapacity: 2), FeedAssociation.resources.acquisition,
+            "one constructor builds both passes, so no other capacity can drift with the width")
+        XCTAssertEqual(FeedAssociation.acquisition(targetWorkCapacity: 16).targetWorkCapacity, 16)
+    }
+
+    func testTheMeasuredWidthCanBeStatedByARunAndInvalidValuesAreNotAdopted() {
+        unsetenv("FEEDMINE_INITIAL_WORK_CAPACITY")
+        let configuredDefault = FeedAssociation.initialWorkCapacity
+        XCTAssertGreaterThanOrEqual(configuredDefault, 2, "the cold pass is never narrower than the steady one")
+        XCTAssertLessThanOrEqual(configuredDefault, 16, "and a run may measure up to sixteen")
+        for raw in ["8", "16"] {
+            setenv("FEEDMINE_INITIAL_WORK_CAPACITY", raw, 1)
+            XCTAssertEqual(FeedAssociation.initialWorkCapacity, Int(raw))
+        }
+        for raw in ["0", "-1", "not a number", ""] {
+            setenv("FEEDMINE_INITIAL_WORK_CAPACITY", raw, 1)
+            XCTAssertEqual(FeedAssociation.initialWorkCapacity, configuredDefault,
+                "an unusable declaration falls back to the measured default")
+        }
+        unsetenv("FEEDMINE_INITIAL_WORK_CAPACITY")
+        XCTAssertEqual(FeedAssociation.initialWorkCapacity, configuredDefault)
+    }
+
+    /// The measurement's fixture: a stated number of distinct sources, each answered by the local transport with its
+    /// own document and one item. Without distinct identities the width would be measured against a set the
+    /// publication pipeline deduplicates, which would read as "width does not matter".
+    func testTheFixtureFanoutStatesDistinctSourcesAndDocuments() {
+        setenv("FEEDMINE_FIXTURE_FANOUT", "16", 1)
+        setenv("FEEDMINE_FIXTURE_ITEMS", "1", 1)
+        defer {
+            unsetenv("FEEDMINE_FIXTURE_FANOUT")
+            unsetenv("FEEDMINE_FIXTURE_ITEMS")
+        }
+        let fanout = TrustedFeed.developmentFanout
+        XCTAssertEqual(fanout.count, 16)
+        XCTAssertEqual(Set(fanout.map(\.sourceID)).count, 16)
+        XCTAssertEqual(Set(fanout.map(\.endpoint)).count, 16)
+        let endpoints = DevelopmentLocalFeeds.endpoints
+        for feed in fanout {
+            XCTAssertTrue(endpoints.contains(feed.endpoint.absoluteString), "the local transport answers \(feed.endpoint)")
+        }
+        let documents = Set(fanout.map { DevelopmentLocalFeeds.document(for: $0.endpoint) })
+        XCTAssertEqual(documents.count, 16, "each fanout feed carries its own stories")
+        for document in documents {
+            let text = String(decoding: document, as: UTF8.self)
+            XCTAssertEqual(text.components(separatedBy: "<item>").count - 1, 1, "one item per fanout feed")
+        }
+        unsetenv("FEEDMINE_FIXTURE_FANOUT")
+        XCTAssertTrue(TrustedFeed.developmentFanout.isEmpty, "and no ordinary run gets a fanout")
+    }
+}

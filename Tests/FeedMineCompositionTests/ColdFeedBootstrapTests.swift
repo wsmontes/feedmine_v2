@@ -111,7 +111,8 @@ final class ColdFeedBootstrapTests: XCTestCase {
             now: { Date(timeIntervalSince1970: 50) })
     }
     private func fixture(sourceContext: Bool = false, search: Bool = false, registrations: Bool = true,
-        items: Int = 1, status: Int = 200, error: URLError? = nil, laterError: URLError? = nil, paused: Bool = false) throws -> Fixture {
+        items: Int = 1, status: Int = 200, error: URLError? = nil, laterError: URLError? = nil, paused: Bool = false,
+        fanoutTargets: Int = 0) throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let db = try RuntimeDatabase(location: .init(directory: root)), source = SourceID()
@@ -128,7 +129,22 @@ final class ColdFeedBootstrapTests: XCTestCase {
         let journal = ColdJournal()
         let http = ColdHTTPFixture(items: items, status: status, error: error, laterError: laterError, paused: paused, journal: journal)
         addTeardownBlock { http.release(); http.remove() }
-        let acquisition = try snapshot(db, registrations ? [registration(target, source: source, http: http)] : [])
+        var registered: [SyndicationTargetRegistration] = []
+        if registrations {
+            registered.append(registration(target, source: source, http: http))
+            if fanoutTargets > 0 {
+                let authority = AcquisitionTargetAuthority(database: db)
+                for index in 1...fanoutTargets {
+                    let extraSource = SourceID()
+                    let extraTarget = try authority.register(id: AcquisitionTargetID(),
+                        connectorKind: .syndication, authorizedSources: [extraSource])
+                    let extra = ColdHTTPFixture(journal: journal, label: "F\(index)")
+                    addTeardownBlock { extra.release(); extra.remove() }
+                    registered.append(registration(extraTarget, source: extraSource, http: extra))
+                }
+            }
+        }
+        let acquisition = try snapshot(db, registered)
         return .init(database: db, plan: plan, policy: policy, source: source, target: target,
             session: FeedSession(publicationHistory: .init(database: db)), acquisition: acquisition,
             coordinator: acquisition.makeCoordinator(), http: http, journal: journal)
@@ -509,6 +525,18 @@ final class ColdFeedBootstrapTests: XCTestCase {
     }
     func testC19FinitePlanSequentialOrderAndSettlement() async throws { try await finitePlanProof() }
     func testC20FinitePlanOnlyOnceWithoutReplanning() async throws { try await finitePlanProof() }
+    /// The cold path makes **one** plan, so the width a caller states is the whole of its parallelism: with sixteen
+    /// eligible targets and a stated width of eight, exactly eight are contacted — never the eligible set, and never
+    /// fewer than stated. This is the width the app's `initialWorkCapacity` hands this bootstrap.
+    func testC23ColdPassContactsExactlyTheStatedWidth() async throws {
+        let f = try fixture(fanoutTargets: 15)   // the fixture's own target plus fifteen: sixteen eligible
+        let outcome = try await owner(f).run(identity: identity(),
+            resources: resources(local: 16, targets: 8), backwardCapacity: 0, forwardCapacity: 16)
+        guard case .published = outcome else { return XCTFail("A healthy target must publish, got \(outcome)") }
+        XCTAssertEqual(f.journal.values.filter { $0.hasSuffix(" start") }.count, 8,
+            "one plan of the stated width, not the whole eligible set")
+        XCTAssertEqual(f.http.calls, 1)
+    }
     func testC21ResourcesHaveOnlyExplicitMechanicalBounds() {
         let value = resources(local: 3, targets: 2)
         XCTAssertEqual(value.localExaminedCapacity, 3); XCTAssertEqual(value.acquisition, planningResources(targets: 2))
