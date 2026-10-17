@@ -227,7 +227,8 @@ final class FeedScreenRenderingTests: XCTestCase {
             (.deferred, ["Procurando mais novidades...", "Ainda não encontramos conteúdo suficiente. Vamos tentar novamente em instantes."],
                 ["Procurando mais novidades...", "Ainda não encontramos conteúdo suficiente. Vamos tentar novamente em instantes."]),
             (.failed(message: "Falha recebida da composição"),
-                ["Falha recebida da composição"], ["Falha recebida da composição"])
+                ["Falha recebida da composição", "Tentar novamente", "Fontes", "Ajustes"],
+                ["Falha recebida da composição"])
         ]
         for (work, expectedScreen, expectedView) in cases {
             let store = FeedScreenStore { _, _ in XCTFail("Automatic work") }
@@ -235,6 +236,66 @@ final class FeedScreenRenderingTests: XCTestCase {
             XCTAssertEqual(try renderedText(FeedScreen(store: store).frame(height: 900)), expectedScreen)
             XCTAssertEqual(try renderedText(FeedLoadingView(work: work).frame(height: 900)), expectedView)
         }
+    }
+
+    /// F-UX-1: a failed feed is the one absence drawn without the reader's chrome — no shell, no header menu —
+    /// so the surface itself must keep the routes the shell would have offered. They are the routes the host
+    /// already owns (the retry command, the source sheet, the settings sheet), not new navigation.
+    func testU15FailedSurfaceOffersRetrySourcesAndSettings() throws {
+        let failed = FeedPresentationState.Work.failed(message: "Falha ao atualizar o feed")
+        XCTAssertEqual(failed.recoveryRoutes, [.tryAgain, .sources, .settings])
+        // A host that supplies no route draws none: the surface never invents an attempt or a destination.
+        XCTAssertEqual(try renderedText(FeedLoadingView(work: failed).frame(height: 900)),
+            ["Falha ao atualizar o feed"])
+        let store = FeedScreenStore { _, _ in XCTFail("Automatic work") }
+        try store.install(FeedPresentationHandoff.report(failed, into: store.state))
+        XCTAssertEqual(try renderedText(FeedScreen(store: store).frame(height: 900)),
+            ["Falha ao atualizar o feed", "Tentar novamente", "Fontes", "Ajustes"])
+    }
+
+    /// F-UX-2 must not regress: the two states it separated keep their copy and their own actions. A proven
+    /// connection failure still offers only another attempt; an exhausted walk still offers the interests and
+    /// none of the destinations a generic failure needs.
+    func testU16UnreachableAndUnavailableKeepTheirRatifiedCopyAndActions() throws {
+        XCTAssertEqual(FeedPresentationState.Work.unreachable.recoveryRoutes, [.tryAgain])
+        XCTAssertEqual(FeedPresentationState.Work.unavailable.recoveryRoutes, [.tryAgain, .adjustInterests])
+        let cases: [(FeedPresentationState.Work, [String])] = [
+            (.unreachable, ["Não foi possível conectar.", "Não conseguimos buscar novas histórias agora.",
+                "Tentar novamente"]),
+            (.unavailable, ["Ainda não encontramos histórias para você.", "Tentar novamente",
+                "Ajustar interesses"])
+        ]
+        for (work, expected) in cases {
+            let store = FeedScreenStore { _, _ in XCTFail("Automatic work") }
+            try store.install(FeedPresentationHandoff.report(work, into: store.state))
+            let text = try renderedText(FeedScreen(store: store).frame(height: 900))
+            XCTAssertEqual(text, expected)
+            XCTAssertFalse(text.contains("Fontes"), text.description)
+            XCTAssertFalse(text.contains("Ajustes"), text.description)
+        }
+    }
+
+    /// The retry the failed surface offers is the host's real attempt; its success is the same handoff
+    /// reception every opportunity installs (`AppComposition.foreground()`). Once it lands, the reader is
+    /// back on the feed: cards are drawn and the recovery surface is gone.
+    func testU17SuccessfulRetryReturnsToTheFeed() async throws {
+        let f = try fixture(), restored = try await snapshot(f)
+        let store = FeedScreenStore { _, _ in XCTFail("Automatic work") }
+        let screen = FeedScreen(store: store)
+        try store.install(FeedPresentationHandoff.report(.failed(message: "Falha ao atualizar o feed"),
+            into: store.state))
+        XCTAssertNil(publishedSequence(in: screen.body), "the failed surface draws no cards")
+        XCTAssertTrue(try renderedText(screen.frame(height: 900)).contains("Tentar novamente"))
+
+        try store.install(try FeedPresentationHandoff.receive(snapshot: restored, into: store.state))
+
+        let sequence = try XCTUnwrap(publishedSequence(in: screen.body))
+        XCTAssertEqual(sequence.occurrenceIDs, Array(f.cardIDs.prefix(2)))
+        let text = try renderedText(screen.frame(height: 900))
+        XCTAssertEqual(text.filter { $0.hasSuffix("headline") }, ["Zebra headline", "Amber headline"])
+        XCTAssertFalse(text.contains("Tentar novamente"), text.description)
+        XCTAssertFalse(text.contains("Fontes"), text.description)
+        XCTAssertFalse(text.contains("Ajustes"), text.description)
     }
 
     func testU11NewSameEditionWindowRendersExactReceivedSequence() async throws {
