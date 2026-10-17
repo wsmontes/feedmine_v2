@@ -48,11 +48,32 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
         }
         respond()
     }
+    /// How many items a feed response carries, so one run can watch supply arrive **later**: a case lowers it
+    /// before the launch and raises it afterwards, and the second publication brings stories the first could not.
+    /// `nil` — the default, and what the case that raises it restores in its own `defer` — keeps every response
+    /// byte-identical to `ReadingFixture.payload()`, item for item: `payload(for:)` is the same fixture document,
+    /// and only a case that set a count gets a different number of items inside it.
+    static let feedItemCount = Mutex<Int?>(nil)
+
+    private static func payload(for url: URL?) -> (contentType: String, body: Data) {
+        guard let count = feedItemCount.withLock({ $0 }), url?.host()?.contains("bbci.co.uk") == true else {
+            return ReadingFixture.payload()
+        }
+        let items = (1...count).map {
+            "<item><guid>fixture-\($0)</guid><title>Published fixture \($0)</title>"
+                + "<link>https://fixture.invalid/story-\($0)</link>"
+                + "<description>Readable local story \($0)</description></item>"
+        }.joined()
+        let body = "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Trusted fixture</title>"
+            + "<link>https://fixture.invalid/</link><description>Integration</description>\(items)</channel></rss>"
+        return ("application/rss+xml", Data(body.utf8))
+    }
+
     private func respond() {
         FixtureTransport.requests.withLock { $0.append(request.url?.absoluteString ?? "") }
         // The shape is the default (`shortSummary`) unless a test set another one, and the default payload is the
         // exact document this transport always served.
-        let payload = ReadingFixture.payload()
+        let payload = FixtureTransport.payload(for: request.url)
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": payload.contentType])!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: payload.body)
         client?.urlProtocolDidFinishLoading(self)
@@ -381,6 +402,83 @@ final class CompositionTests: XCTestCase {
         for (left, right) in zip(cards, cards.dropFirst()) {
             XCTAssertNotEqual(left.sourceDisplayName, right.sourceDisplayName)
         }
+        await association.close()
+    }
+
+    /// R6-E — o vermelho que a decisão do arquiteto exige **antes** de qualquer implementação: uma publicação
+    /// legitimamente concluída depois da janela antiga tem de fazer a apresentação crescer sozinha.
+    ///
+    /// A janela antiga é a cadeia de polling que `AppComposition.swift` ainda carrega: as constantes em `:2664-2665`,
+    /// a consulta que `startGrowthFollowUp()` agenda na hora (`:2667-2670`) e o rearmamento de `:2686-2692` — uma
+    /// consulta imediata mais oito de 0,75 s, isto é **6,0 s** contados do último armar. Em `launch()` esse último
+    /// armar é a linha imediatamente anterior ao retorno (`:2777`), e o relé frio que também arma (`:2831`, `:2840`)
+    /// já foi desligado no fim da corrida fria (`:2747`). Daí a espera de **8,0 s**: os 6,0 s da janela mais 2,0 s de
+    /// margem para o retorno do próprio `launch` e para o agendador. Depois disso a cadeia está morta por aritmética,
+    /// e nenhum outro chamador de `admitPresentation(.publishedGrowth)` pode rodar sem gesto: são o `viewport`
+    /// (`:2910`) e o `foreground` (`:3025`), e este caso não chama nenhum dos dois.
+    ///
+    /// O que ele faz é o caminho do próprio produto: libera a **segunda publicação** na pista do runway por
+    /// `driver.activateCurrentPresentation` — a mesma ativação que `launch()` e um foreground fazem, sem o
+    /// `growAdmittedWindowIfPublished()` que os acompanha. O transporte controlado serve dois itens por fonte antes
+    /// da espera e vinte e quatro depois, então a primeira publicação não enche a janela (4 cartas de 17 possíveis,
+    /// pelo teto congelado) e a segunda publica cartas novas na reserva da mesma edição.
+    ///
+    /// Estratégia de espera, declarada: `Task.sleep` **só** para atravessar a janela antiga, que é o objeto do caso,
+    /// e uma observação limitada a 3,0 s (a `waitUntil` deste arquivo) para o valor admitido mudar — nenhum timer
+    /// como correção. Os dois fatos que o determinismo exige são afirmados, nunca supostos: (a) a publicação tem de
+    /// chegar à reserva, lida no `PublicationStore` antes e depois, com a falha dizendo que a **premissa** não valeu;
+    /// e (b) nenhum prazo derivado de fato pode disparar um `foreground()` no meio da medida — com o transporte
+    /// saudável `localRetryEligibleAt()` e `acquisitionResumeAt()` são nulos, e é isso que o caso afirma antes de
+    /// medir, em vez de supor (é o `scheduleLocalRetryIfNeeded` de `:2789`).
+    func testAPublicationConcludedAfterTheFollowUpWindowGrowsTheAdmittedWindow() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 2 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let publication = PublicationStore(database: association.database)
+        let editionID = try XCTUnwrap(association.store.state.presentation).editionID
+        let anchor = try XCTUnwrap(association.store.state.presentation).window.anchor.cardID
+        func admitted() -> [PublicationCardID] {
+            association.store.state.presentation?.window.items.map(\.id) ?? []
+        }
+        /// O que a reserva já publicou **além da âncora**, lido do store: é a premissa do caso.
+        func reservedAhead() throws -> Int {
+            try publication.cards(editionID: editionID, around: anchor, backwardCapacity: 0,
+                forwardCapacity: 400).count - 1
+        }
+        let before = admitted()
+        let reservedBefore = try reservedAhead()
+        let anchorIndex = try XCTUnwrap(before.firstIndex(of: anchor), "a âncora do leitor tem de estar na janela")
+        let ceiling = anchorIndex + association.bounds.forwardCapacity + 1
+        XCTAssertLessThan(before.count, ceiling,
+            "premissa: a janela admitida tem de ter espaço dentro do teto congelado — cheia, o crescimento seria impossível por outra razão")
+
+        // A janela antiga inteira, e mais margem.
+        try await Task.sleep(for: .seconds(8))
+        XCTAssertEqual(admitted(), before,
+            "premissa: nada pode crescer a janela admitida enquanto a janela antiga se esgota; a reserva estava inteiramente admitida")
+        XCTAssertEqual(try reservedAhead(), reservedBefore,
+            "premissa: a reserva tem de estar quieta durante a janela antiga — nada publicou neste intervalo")
+        let localRetryDeadline = await association.driver.localRetryEligibleAt()
+        let acquisitionResumeDeadline = await association.driver.acquisitionResumeAt()
+        XCTAssertNil(localRetryDeadline,
+            "premissa: com o transporte saudável não há prazo de retry local para disparar um foreground() na medida")
+        XCTAssertNil(acquisitionResumeDeadline, "premissa: nem uma aquisição adiada para retomar")
+
+        // A segunda publicação: mais itens por fonte e a ativação da pista — sem viewport e sem foreground.
+        FixtureTransport.feedItemCount.withLock { $0 = 24 }
+        _ = try await association.driver.activateCurrentPresentation(resources: FeedAssociation.resources)
+
+        let reservedAfter = try reservedAhead()
+        XCTAssertGreaterThan(reservedAfter, reservedBefore,
+            "premissa: a segunda publicação tem de chegar à reserva da edição \(editionID.rawValue.uuidString): "
+                + "cartas além da âncora \(reservedBefore) -> \(reservedAfter). Esta falha é a premissa, não o defeito do R6-E")
+
+        _ = await Self.waitUntil(3) { admitted().count > before.count }
+        XCTAssertGreaterThan(admitted().count, before.count,
+            "uma publicação concluída depois da janela antiga (6,0 s) tem de crescer a janela admitida sem gesto: "
+                + "a reserva foi de \(reservedBefore) para \(reservedAfter) cartas além da âncora e a janela admitida "
+                + "ficou em \(admitted().count) cartas (antes: \(before.count), teto: \(ceiling)) — "
+                + root.diagnosticsForTheWiringTest(association))
         await association.close()
     }
 
