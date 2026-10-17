@@ -42,13 +42,16 @@ insumo: nenhum evento a mede). Cada sub-fato não medido carrega um **motivo**, 
                          da lista "sem evidência hoje"). Cláusula **não aplicável**.
 ``evidencia_incompleta`` o sujeito existe, mas o traço anuncia perdas (`trace_truncated`) ou tem linha
                          ilegível: zero violação não prova nada. **Lacuna** → `3`.
+``traco_sem_fim``        o sujeito existe, mas o traço **parou** sem que o fim da corrida se prove: uma
+                         oportunidade aberta e não fechada (`advance` sem `runway_completed`) ou o relógio
+                         durável do app mais novo que a última linha do traço. **Lacuna** → `3`.
 ``nao_resolvido``        o sujeito existe, mas uma referência não se resolve na ordem do leitor. **Lacuna** → `3`.
 ``nao_identificado``     o sujeito existe e o registro é ambíguo (0 ou ≥2 linhas duráveis para a edição
                          medida). **Lacuna** → `3`.
 ``nao_comparavel``       o sujeito existe, mas os dois registros não são do mesmo instante (linha durável mais
                          nova que o fim do traço, ou falta metade do par). **Lacuna** → `3`.
 
-Os dois primeiros motivos deixam a cláusula **fora do escopo do insumo** e não forçam `3`; os quatro últimos são
+Os dois primeiros motivos deixam a cláusula **fora do escopo do insumo** e não forçam `3`; os cinco últimos são
 **lacuna de medição** e forçam. O veredito agregado impresso continua sendo o do contrato 3 (`FAIL` > `NOT_RUN` >
 `PASS`), então M5 imprime `NOT_RUN` pela metade visual mesmo em `0` — o código de saída diz que *aquela* metade
 não é medição deste insumo, e a linha ``cláusula:`` ao lado diz qual dos dois casos é.
@@ -59,8 +62,31 @@ Três contratos de evidência, porque sem eles uma cláusula mente:
    `PASS` (a regra de `bench/oracle.py:357-378`).
 2. **Ausência sobre evidência incompleta não é prova.** Se o próprio traço anuncia eventos perdidos
    (`trace_truncated`) ou há linha ilegível, uma cláusula que **contou zero** violações não pode concluir nada:
-   `NOT_RUN`. Violação **observada** continua `FAIL` — o que se perdeu foi a chance de ver mais, não a
-   legitimidade do que se viu.
+   `NOT_RUN`. O mesmo vale quando o traço **para sem que o fim se prove** — `trace_truncated` é o app dizendo que
+   perdeu eventos, não é o único jeito de perder: um kill, um crash ou um `terminate` deixam o arquivo bem
+   formado e mais curto que a corrida. Violação **observada** continua `FAIL` — o que se perdeu foi a chance de
+   ver mais, não a legitimidade do que se viu.
+
+   **O formato não tem terminador** (2026-10-17, lido do código): `RunwayTrace` grava `trace_truncated` quando
+   perde evento e mais nada no fim; o vocabulário do app é fechado (`ReplenishmentEvent` tem quatro constantes, e
+   os `trace?.record` de `AppComposition.swift`/`FeedFrameMeter.swift` são os eventos que as cláusulas leem) e
+   **nenhum deles é linha de encerramento**. `scripts/device-journey.sh` e o bench terminam o app com
+   `terminate`/`app.terminate()`, que descartam o lote pendente do `RunwayTrace` (64 linhas, `RunwayTrace.swift:29`)
+   sem deixar rastro. O que existe, então, é o que o app grava **em volta** do fim, e são duas coisas independentes:
+
+   * o **pareamento** `advance` → `runway_completed`: o avanço é gravado antes do trabalho e o fecho no mesmo
+     caminho, depois do `await` (`AppComposition.swift:2897-2898,2956-2958`). Contagem de aberturas maior que de
+     fechos = uma oportunidade que o app começou e não terminou: o traço parou dentro dela;
+   * o **relógio durável**: `context_checkpoints.updated_at`/`session_checkpoint.updated_at` são escritos pelo app
+     fora do traço (`PublicationHistory.saveCursor` → `SessionStore.saveCheckpoint`, Sources/FeedMinePersistence/
+     SessionStore.swift:39-52, chamado em `FeedSession.checkpointCurrentPosition` — o caminho do `background()` —
+     e em cada posição estabelecida). Se o banco registra um instante mais de um segundo-de-quadro
+     (`FeedFrameMeter.swift:140`, a mesma tolerância que M7 já usa) depois da última linha do traço, o app estava
+     vivo e gravando e nenhuma linha daquele intervalo chegou ao disco: o traço parou antes da corrida.
+
+   Um traço que para **em repouso, entre segundos, com o banco sem escrita posterior** é indistinguível de uma
+   corrida que acabou; esse caso continua `PASS`, e essa é a fronteira declarada deste contrato — não há no
+   arquivo o que o separe.
 3. **Fato obrigatório não observado contamina a afirmação composta.** Um veredito agregado com qualquer
    sub-fato não medido é `NOT_RUN` (`[PASS, NOT_RUN]` → `NOT_RUN`), inclusive porque é assim que
    `bench/oracle.py:624-631` decide.
@@ -201,11 +227,18 @@ class InputError(Exception):
 SEM_SUJEITO = "sem_sujeito"
 NAO_IMPLEMENTADO = "nao_implementado"
 EVIDENCIA_INCOMPLETA = "evidencia_incompleta"
+TRACO_SEM_FIM = "traco_sem_fim"
 NAO_RESOLVIDO = "nao_resolvido"
 NAO_IDENTIFICADO = "nao_identificado"
 NAO_COMPARAVEL = "nao_comparavel"
-REASONS = (SEM_SUJEITO, NAO_IMPLEMENTADO, EVIDENCIA_INCOMPLETA, NAO_RESOLVIDO, NAO_IDENTIFICADO, NAO_COMPARAVEL)
-GAP_REASONS = (EVIDENCIA_INCOMPLETA, NAO_RESOLVIDO, NAO_IDENTIFICADO, NAO_COMPARAVEL)
+REASONS = (SEM_SUJEITO, NAO_IMPLEMENTADO, EVIDENCIA_INCOMPLETA, TRACO_SEM_FIM, NAO_RESOLVIDO, NAO_IDENTIFICADO,
+    NAO_COMPARAVEL)
+GAP_REASONS = (EVIDENCIA_INCOMPLETA, TRACO_SEM_FIM, NAO_RESOLVIDO, NAO_IDENTIFICADO, NAO_COMPARAVEL)
+
+# Um segundo-de-quadro: `FeedFrameMeter.flush` fecha a janela no primeiro quadro depois de 1 s
+# (`FeedMineApp/FeedMineApp/FeedFrameMeter.swift:140,145-148`), então enquanto o app desenha existe uma linha
+# `frames` por segundo. É a mesma tolerância que M7 já aplica ao comparar a linha durável com o último evento.
+FRAME_SECOND = 1.0
 
 # Códigos de saída: a tabela que a automação lê.
 EXIT_OK = 0
@@ -358,11 +391,66 @@ class Insumo:
             "perdidos_pela_escrita": as_int(last.get("dropped_by_write")),
             "perdidos_pela_codificação": as_int(last.get("dropped_by_encoding"))}
 
+    def durable_clock(self) -> float | None:
+        """O instante mais novo que o **banco** registra — o relógio do app fora do traço.
+
+        `PublicationHistory.saveCursor` → `SessionStore.saveCheckpoint`
+        (Sources/FeedMinePersistence/SessionStore.swift:39-52) escreve `session_checkpoint` **e** a linha de
+        `context_checkpoints` com o mesmo `updated_at`, chamado pelo checkpoint de sessão
+        (`FeedSession.checkpointCurrentPosition`, o caminho de `AppComposition.background()`) e por cada posição
+        estabelecida (`FeedSession.recordSettledPosition`). É a única testemunha da vida do app que **não** passa
+        pelo buffer do traço, e por isso é ela que diz se o app continuou depois da última linha.
+        """
+        moments = [float(row["updated_at"]) for rows in self.durable.values() for row in (rows or [])
+            if isinstance(row.get("updated_at"), (int, float))]
+        return max(moments) if moments else None
+
+    def truncation(self) -> dict | None:
+        """Evidência de que o traço **não** cobre a corrida inteira; `None` quando nada contradiz o fim.
+
+        O formato não tem terminador (contrato 2 do docstring): o que se pode ler é o que o app grava em volta do
+        fim. Duas medidas independentes, cada uma suficiente para dizer que o traço parou antes da corrida:
+
+        * **oportunidade aberta e não fechada** — `advance` é gravado antes do trabalho e `runway_completed` depois
+          do `await`, no mesmo caminho (AppComposition.swift:2897-2898,2956-2958). Mais aberturas que fechos = o
+          app começou a medir um movimento e o traço acabou antes do desfecho. (Um `background()` no meio de uma
+          oportunidade produz a mesma contagem — e a cláusula de movimento também nada pode sobre ela.)
+        * **relógio durável mais novo que a última linha** — o banco registrou `updated_at` mais de um
+          segundo-de-quadro depois da última linha do traço. Com a tela desenhando, `FeedFrameMeter` escreve uma
+          linha `frames` por segundo; um intervalo maior que isso com escrita do app no meio e nada no arquivo é
+          o lote pendente do `RunwayTrace` perdido. Medido no B05 de 2026-10-17: 22,2 s.
+        """
+        last = self.events[-1] if self.events else None
+        openings = len(self.events_of("advance"))
+        closures = len(self.events_of("runway_completed"))
+        clock = self.durable_clock()
+        last_at = last.get("at") if last else None
+        reasons = []
+        if openings > closures:
+            reasons.append(f"{openings - closures} oportunidade(s) aberta(s) e não fechada(s): advance={openings}, "
+                f"runway_completed={closures}")
+        if isinstance(clock, (int, float)) and isinstance(last_at, (int, float)) \
+            and clock > last_at + FRAME_SECOND:
+            reasons.append(f"o banco gravou {clock - last_at:.1f}s depois da última linha do traço "
+                f"({clock:.3f} > {last_at:.3f} + {FRAME_SECOND})")
+        if not reasons:
+            return None
+        return {"motivo": TRACO_SEM_FIM, "razao": "; ".join(reasons), "abertos": openings, "fechados": closures,
+            "ultimo_evento": (last or {}).get("event"), "ultima_linha_em": last_at, "banco_em": clock}
+
+    def gap_reason(self) -> str:
+        """O motivo que a cláusula imprime quando `absence()` devolveu `None`.
+
+        Dois casos distintos que o código de saída trata igual (lacuna): o traço **anunciou** a perda
+        (`trace_truncated`) ou o traço **parou** sem anunciar (`traco_sem_fim`). O leitor precisa saber qual.
+        """
+        return TRACO_SEM_FIM if self.truncation() else EVIDENCIA_INCOMPLETA
+
     def complete(self) -> bool:
-        """O traço é evidência completa? Sem perda anunciada e sem linha ilegível, sim."""
+        """O traço é evidência completa? Sem perda anunciada, sem linha ilegível **e com um fim que se prova**."""
         losses = self.losses() or {}
         dropped = sum(value or 0 for key, value in losses.items() if key.startswith("perdidos_"))
-        return dropped == 0 and self.invalid_lines == 0
+        return dropped == 0 and self.invalid_lines == 0 and self.truncation() is None
 
     def absence(self, observed: int) -> bool | None:
         """Contrato 2: zero violação só é prova sobre evidência completa."""
@@ -418,6 +506,7 @@ class Insumo:
             "traco_linhas": len(self.raw_lines), "traco_ilegiveis": self.invalid_lines,
             "traco_janela": (iso(first.get("at")) if first else None, iso(last.get("at")) if last else None),
             "traco_perda": self.losses(), "traco_completo": self.complete() if self.trace else None,
+            "traco_truncacao": self.truncation() if self.trace else None,
             "banco": self.database, "banco_bruto": raw,
             "console": self.console, "console_sha256": sha256_file(self.console) if self.console else None,
             "console_linhas": len(self.journey) + len(self.frame_lines), "midia": self.media_dir,
@@ -533,7 +622,7 @@ def measure_m1(ins: Insumo) -> dict:
                 break
     m1_verdict = None if not per_generation else ins.absence(empty_then_content)
     facts = [fact("empty_then_content == 0", empty_then_content, "0", m1_verdict,
-        _gap(m1_verdict, SEM_SUJEITO if not per_generation else EVIDENCIA_INCOMPLETA))]
+        _gap(m1_verdict, SEM_SUJEITO if not per_generation else ins.gap_reason()))]
     cards_series = sorted({as_int(line.get("cards")) for line in ins.journey if as_int(line.get("cards")) is not None})
     rejects = [as_int(line.get("install_rejects")) for line in ins.journey]
     return measurement("M1", "A abertura entrega conteúdo na mesma geração",
@@ -629,8 +718,8 @@ def measure_m3(ins: Insumo) -> dict:
     window_verdict = ins.absence_with_gap(outside, bool(advances and generations), bool(unresolved))
     behind_verdict = ins.absence_with_gap(forward_behind, bool(comparable), bool(unresolved))
     window_motivo = SEM_SUJEITO if not (advances and generations) \
-        else (NAO_RESOLVIDO if unresolved else EVIDENCIA_INCOMPLETA)
-    behind_motivo = SEM_SUJEITO if not comparable else (NAO_RESOLVIDO if unresolved else EVIDENCIA_INCOMPLETA)
+        else (NAO_RESOLVIDO if unresolved else ins.gap_reason())
+    behind_motivo = SEM_SUJEITO if not comparable else (NAO_RESOLVIDO if unresolved else ins.gap_reason())
     return measurement("M3", "Rolar atinge carta que existe e para frente é para frente",
         "Rolei — e cheguei a cartas de verdade, sem o app me dizer que avancei para um lugar onde eu já estava?",
         "`advance.activity`/`.anchor` (AppComposition.swift:2577-2579) cruzados com a janela instalada "
@@ -683,8 +772,8 @@ def measure_m4(ins: Insumo) -> dict:
         reference = row
     # O mesmo `absence_with_gap` de M3: a instalação que não resolve alhures não apaga uma violação observada
     # aqui (contrato 2), e sem sujeito a cláusula é escopo, não lacuna.
-    series_motivo = SEM_SUJEITO if not series else (NAO_RESOLVIDO if unresolved else EVIDENCIA_INCOMPLETA)
-    holes_motivo = SEM_SUJEITO if not measurable else (NAO_RESOLVIDO if unresolved else EVIDENCIA_INCOMPLETA)
+    series_motivo = SEM_SUJEITO if not series else (NAO_RESOLVIDO if unresolved else ins.gap_reason())
+    holes_motivo = SEM_SUJEITO if not measurable else (NAO_RESOLVIDO if unresolved else ins.gap_reason())
     anchored = ins.absence_with_gap(contains_anchor, bool(series), bool(unresolved))
     shrunk_verdict = ins.absence_with_gap(shrunk, bool(series), bool(unresolved))
     tail_verdict = ins.absence_with_gap(tail_back, bool(series), bool(unresolved))
@@ -796,10 +885,10 @@ def measure_m7(ins: Insumo) -> dict:
         context_motivo = NAO_COMPARAVEL
     elif not isinstance(stored_at, (int, float)):
         context_motivo = NAO_COMPARAVEL
-    elif stored_at > last_event_at + 1.0:
+    elif stored_at > last_event_at + FRAME_SECOND:
         context_motivo = NAO_COMPARAVEL
     elif not ins.complete():
-        context_motivo = EVIDENCIA_INCOMPLETA
+        context_motivo = ins.gap_reason()
     else:
         context_verdict = stored == reported
     session_verdict, session_motivo = None, None
@@ -1215,6 +1304,9 @@ def render(ins: Insumo, results: list[dict], series: list[str] | None) -> str:
             f"{provenance['traco_janela'][1]} completo={provenance['traco_completo']}")
         if provenance["traco_perda"]:
             lines.append(f"    perda declarada pelo traço: {provenance['traco_perda']}")
+        if provenance["traco_truncacao"]:
+            lines.append(f"    fim não provado ({provenance['traco_truncacao']['motivo']}): "
+                f"{provenance['traco_truncacao']['razao']}")
     if provenance["banco"]:
         lines.append(f"  banco: {provenance['banco']}")
         for name, meta in provenance["banco_bruto"].items():
@@ -1284,7 +1376,12 @@ def _fixture_trace(complete_series: bool, truncated: bool) -> list[dict]:
     """Duas instalações na mesma geração e dois avanços para frente — o mínimo que M1/M3/M4 leem, com a segunda
     instalação começando depois da primeira carta (é o que a injeção `m4` precisa para ter o que retirar) e a
     carta de mídia **dentro** da janela final (o que `m5`/`m5b` precisam). Com `complete_series=False` saem os
-    avanços, a série de quadros e os checkpoints: M3/M7/M10 ficam sem sujeito."""
+    avanços, a série de quadros e os checkpoints: M3/M7/M10 ficam sem sujeito.
+
+    Cada `advance` tem o `runway_completed` que o app grava do **mesmo caminho**, depois do `await`
+    (`AppComposition.swift:2897-2898,2956-2958`): em 116 traços reais de 2026-10-17 a contagem é 1:1, e o
+    instrumento passou a exigir esse pareamento como evidência de fim (contrato 2). Um fixture sem o fecho não
+    seria um traço que o app produz — seria o defeito que `fim-cedo-sem-fecho` reproduz de propósito."""
     cards = [_fixture_card(index) for index in range(1, FIXTURE_CARDS + 1)]
     events = [
         {"at": 1000.0, "mono": 1000.0, "event": "admitted", "fields": {"edition": FIXTURE_EDITION, "sequence": "1",
@@ -1307,9 +1404,13 @@ def _fixture_trace(complete_series: bool, truncated: bool) -> list[dict]:
     if complete_series:
         events += [
             {"at": 1002.75, "mono": 1002.75, "event": "position_checkpoint", "fields": {"anchor": cards[2]["id"]}},
+            {"at": 1002.9, "mono": 1002.9, "event": "runway_completed",
+                "fields": {"activity": "forward", "admitted_cards": "4"}},
             {"at": 1003.0, "mono": 1003.0, "event": "advance",
                 "fields": {"activity": "forward", "anchor": cards[3]["id"]}},
             {"at": 1004.0, "mono": 1004.0, "event": "position_checkpoint", "fields": {"anchor": cards[3]["id"]}},
+            {"at": 1004.5, "mono": 1004.5, "event": "runway_completed",
+                "fields": {"activity": "forward", "admitted_cards": "4"}},
             {"at": 1005.0, "mono": 1005.0, "event": "frames",
                 "fields": {"frames": "58", "late": "1", "bad": "0", "severe": "0", "worst_ms": "18.4",
                     "budget_ms": "16.67"}},
@@ -1400,6 +1501,48 @@ def _fixture_observed_with_gap(root: str) -> str:
     return path
 
 
+def _set_durable(database: str, moment: float, card_id: str | None = None) -> None:
+    """Move o instante (e, se dado, a carta) das duas linhas duráveis — é assim que se reproduz o app **vivo
+    depois do traço** sem inventar violação nenhuma no que foi gravado."""
+    connection = sqlite3.connect(database)
+    try:
+        connection.execute("UPDATE context_checkpoints SET updated_at = ?", (moment,))
+        connection.execute("UPDATE session_checkpoint SET updated_at = ?", (moment,))
+        if card_id is not None:
+            connection.execute("UPDATE context_checkpoints SET card_id = ?", (card_id,))
+            connection.execute("UPDATE session_checkpoint SET card_id = ?", (card_id,))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _fixture_early_end(root: str, name: str, *, clock: float | None) -> str:
+    """O defeito medido: um traço que **para no meio** e não tem violação nenhuma.
+
+    `clock=None` — o traço é o prefixo do `completo` que termina no segundo `advance`: a oportunidade foi aberta
+    e o `runway_completed` que o app grava do mesmo caminho, depois do `await`, nunca chegou ao arquivo. As linhas
+    duráveis ficam **mais velhas** que a última linha de propósito, para que a única evidência em jogo seja o
+    pareamento.
+
+    `clock=1010.0` — o traço é o `completo` inteiro (pareamento fechado), mas o banco registra uma posição 5 s
+    depois do último evento: a forma medida no B05 de 2026-10-17 (22,2 s), em que o app continuou gravando e o
+    traço não.
+    """
+    path = _fixture(root, name, complete_series=True, durable=True, media=True)
+    events = _fixture_trace(complete_series=True, truncated=False)
+    cards = [_fixture_card(index) for index in range(1, FIXTURE_CARDS + 1)]
+    if clock is None:
+        cut = max(index for index, event in enumerate(events) if event["event"] == "advance") + 1
+        events = events[:cut]
+        # A linha durável concorda com o último `position_checkpoint` que **sobreviveu** ao corte: a única
+        # evidência em jogo é o fecho que não chegou.
+        _set_durable(os.path.join(path, "runtime.sqlite"), 1002.75, cards[2]["id"])
+    else:
+        _set_durable(os.path.join(path, "runtime.sqlite"), clock)
+    write_file(os.path.join(path, "trace.jsonl"), "".join(compact(event) + "\n" for event in events))
+    return path
+
+
 def build_fixtures(root: str) -> dict:
     """Monta os insumos sintéticos dos controles em `root` (que precisa não existir ou estar vazio).
 
@@ -1419,6 +1562,8 @@ def build_fixtures(root: str) -> dict:
         "fora-de-escopo": _fixture(root, "fora-de-escopo", complete_series=False, durable=False, media=False),
         "lacuna": _fixture(root, "lacuna", complete_series=True, durable=True, media=True, truncated=True),
         "observado-com-lacuna": _fixture_observed_with_gap(root),
+        "fim-cedo-sem-fecho": _fixture_early_end(root, "fim-cedo-sem-fecho", clock=None),
+        "fim-cedo-relogio": _fixture_early_end(root, "fim-cedo-relogio", clock=1010.0),
         "vazio": vazio, "sqlite-ilegivel": quebrado,
         "console-vazio": _console_fixture(root, "console-vazio", ""),
         "console-sem-medicao": _console_fixture(root, "console-sem-medicao",
@@ -1460,9 +1605,12 @@ def selftest() -> int:
         {"nome": "lacuna", "espera": EXIT_INCOMPLETE, "argv": ["--run", built["lacuna"]], "falhas": 0,
          "linha": "código de saída do insumo: 3 — sem FAIL, mas cláusula aplicável não medida: M1 "
              "(evidencia_incompleta)"},
-        # Grupo 2: os três defeitos que este arquivo já teve, um controle cada — para nenhum deles voltar.
+        # Grupo 2: os defeitos que este arquivo já teve, um controle cada — para nenhum deles voltar.
         # (a)/(b) console que existe e não mede nada saía `0 — todas as cláusulas aplicáveis medidas e PASS`;
-        # (c) violação observada com âncora não resolvida ao lado saía `3` (lacuna mascarando `FAIL`).
+        # (c) violação observada com âncora não resolvida ao lado saía `3` (lacuna mascarando `FAIL`);
+        # (d)/(e) traço que para sem terminador e sem violação saía `0` — uma cláusula que contou zero sobre um
+        # traço mais curto que a corrida. (d) prova o pareamento `advance`/`runway_completed`; (e) o relógio
+        # durável do banco mais novo que a última linha, cada um sozinho.
         {"nome": "entrada-console-vazio", "espera": EXIT_INPUT, "falhas": None,
          "argv": ["--journey", built["console-vazio"]], "linha": "insumo sem medição",
          "ausente": "todas as cláusulas aplicáveis medidas e PASS"},
@@ -1472,6 +1620,14 @@ def selftest() -> int:
         {"nome": "observado-com-lacuna", "espera": EXIT_FAIL, "falhas": 2,
          "argv": ["--run", built["observado-com-lacuna"]],
          "linha": "código de saída do insumo: 1 — cláusula FAIL: M3, M4"},
+        {"nome": "fim-cedo-sem-fecho", "espera": EXIT_INCOMPLETE, "falhas": 0,
+         "argv": ["--run", built["fim-cedo-sem-fecho"]],
+         "linha": "sem FAIL, mas cláusula aplicável não medida: M1 (traco_sem_fim)",
+         "ausente": "todas as cláusulas aplicáveis medidas e PASS"},
+        {"nome": "fim-cedo-relogio", "espera": EXIT_INCOMPLETE, "falhas": 0,
+         "argv": ["--run", built["fim-cedo-relogio"]],
+         "linha": "sem FAIL, mas cláusula aplicável não medida: M1 (traco_sem_fim)",
+         "ausente": "todas as cláusulas aplicáveis medidas e PASS"},
     ]
     for injection, clause, espera in (("m1", "M1", EXIT_FAIL), ("m2", "M2", EXIT_FAIL), ("m3a", "M3", EXIT_FAIL),
         ("m3b", "M3", EXIT_FAIL), ("m4", "M4", EXIT_FAIL), ("m5", "M5", EXIT_FAIL), ("m7", "M7", EXIT_FAIL),
@@ -1483,12 +1639,12 @@ def selftest() -> int:
 
     observed: dict[str, int] = {}
     failures: list[str] = []
-    for position, control in enumerate(controls):
-        if position == 8:
+    for control in controls:
+        if control["nome"] == "entrada-console-vazio":
             print("=" * 96)
-            print("os três defeitos que este arquivo já teve (controle de regressão; um por defeito)")
+            print("os defeitos que este arquivo já teve (controle de regressão; um por defeito)")
             print("=" * 96)
-        if position == 11:
+        if control["nome"] == "injeção m1":
             print("=" * 96)
             print("os dez controles de injeção que já existiam (nenhum pode ter mudado de veredito)")
             print("=" * 96)
@@ -1539,8 +1695,10 @@ o que cada medição mede:
 sem evidência hoje: M1/M6 (superfície: vazio/fim declarados), M8 (rede bloqueada), M9 (conjunto congelado de
 B01), M11 (bench/expand.py), M12 (instante de lançamento) e M7-pouso (tipo de admissão).
 
-contratos de evidência: sem sujeito é NOT_RUN; zero violação sobre traço incompleto é NOT_RUN (o traço anuncia
-suas perdas em `trace_truncated`); qualquer sub-fato não medido torna o agregado NOT_RUN.
+contratos de evidência: sem sujeito é NOT_RUN; zero violação sobre traço incompleto é NOT_RUN — o traço anuncia
+suas perdas em `trace_truncated` (`evidencia_incompleta`) ou para sem que o fim se prove, com uma oportunidade
+aberta e não fechada ou o relógio durável do banco mais novo que a última linha (`traco_sem_fim`); qualquer
+sub-fato não medido torna o agregado NOT_RUN.
 
 código de saída (o que a automação lê):
   0  toda cláusula aplicável medida e PASS
