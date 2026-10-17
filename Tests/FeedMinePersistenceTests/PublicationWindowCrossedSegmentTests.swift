@@ -78,13 +78,17 @@ final class PublicationWindowCrossedSegmentTests: XCTestCase {
         }
     }
 
-    func testCrossedSegmentSchemaMismatchIsStillRejected() throws {
+    /// A schema-mismatched Segment whose cards are inside the window is rejected by the touched-Segment
+    /// validation (`segment membership/schema`), which runs before the crossed interval. The crossed
+    /// loop's own schema guard is unreachable for a non-empty Segment: any Segment with cards that the
+    /// window does not return is empty, and emptiness is rejected first.
+    func testSegmentSchemaMismatchInsideTheWindowIsRejected() throws {
         let (database, store, edition, cards) = try fixture()
         try database.write { db in
             try db.execute(sql: "UPDATE feed_segments SET publication_schema_version = 99 WHERE ordinal = 2")
         }
         XCTAssertThrowsError(try read(store, edition, cards[4])) {
-            XCTAssertEqual($0 as? PublicationStoreError, .corruption("segment schema"))
+            XCTAssertEqual($0 as? PublicationStoreError, .corruption("segment membership/schema"))
         }
     }
 }
