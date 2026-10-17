@@ -1744,7 +1744,11 @@ final class FeedAssociation {
     @ObservationIgnored private let relay: EvidenceRelay
     /// The concluded-publication facts this association acts on (R6-E): the driver's drain and the cold bootstrap
     /// both deliver them here, to the owner of the admitted window.
-    @ObservationIgnored private let publicationRelay: PublicationRelay
+    ///
+    /// Internal, like `driver`, `session` and `bounds`: the app target's tests exercise the recipient's own
+    /// validation by handing **this** object the receipt the product would hand it — the product's entry point,
+    /// not a second delivery path and not a second owner of the admitted window.
+    @ObservationIgnored let publicationRelay: PublicationRelay
     @ObservationIgnored private var preparation: PreparationProgress?
     @ObservationIgnored private let targetNames: [AcquisitionTargetID: String]
     @ObservationIgnored private let admittedHeadlines: @Sendable () -> [String]
@@ -2691,9 +2695,19 @@ final class FeedAssociation {
     /// R6-E: a publication that concluded, stated as the fact it is. The driver delivers the receipt of the segment
     /// its drain just executed, so the window follows the publication at that moment — a launch, a viewport, a
     /// foreground, a retry, or a publication nobody's opportunity followed, which is the case the timed chain could
-    /// not serve (the red regression R6-E). Nothing else is derived from the receipt: the identity of the segment is
-    /// already the store's, and what the window does with it is `growAdmittedWindowIfPublished`.
+    /// not serve (the red regression R6-E).
+    ///
+    /// **O destinatário valida a identidade que o recibo transporta.** O recibo nomeia a edição para a qual ele foi
+    /// publicado, e só a edição vigente pode ser admitida: `admitPublishedGrowth` age sobre a edição instalada
+    /// *neste instante*, então sem esta verificação um recibo de edição que o leitor já deixou admitiria, na edição
+    /// vigente, cartas que só a publicação dela autoriza. O controlador valida o recibo quando conclui a fatia, mas
+    /// existe uma suspensão entre essa validação e esta entrega — a checagem do produtor não substitui a do
+    /// destinatário. Nada é criado aqui: nem fila, nem estado, nem segundo dono; é a identidade já transportada.
     private func publicationConcluded(_ receipt: PublicationReceipt) async {
+        guard active,
+            let scope = await session.currentRunwayScope(),
+            scope.editionID == receipt.editionID
+        else { return }
         Self.log("publication concluded edition=\(receipt.editionID.rawValue.uuidString) "
             + "segment=\(receipt.segmentID.rawValue.uuidString) ordinal=\(receipt.segmentOrdinal)")
         await growAdmittedWindowIfPublished()
