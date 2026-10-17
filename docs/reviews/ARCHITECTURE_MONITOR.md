@@ -2,6 +2,12 @@
 
 > **Canal consultivo:** este documento é atualizado apenas na branch `monitor/architecture`. Não revoga o Norte/PDs/invariantes, não autoriza merges e não é resultado de testes executados pelo revisor.
 
+## Índice de handoff — documentos de trabalho de 17/out/2026
+
+- [**Intenções, entregas, lacunas e decisões de integração**](FEEDMINE_INTENTIONS_VS_DELIVERIES_2026-10-17.md): inventário e fila de decisão; `main@5e4e2142`.
+- [**Estudo arquitetural do engasgo na rolagem**](FEEDMINE_SCROLL_ARCHITECTURAL_STUDY_2026-10-17.md): caminho visual→MainActor→atores→instalação, distinção entre correlação e causa, medição discriminante e critérios de correção.
+- Ambos são **consultivos e somente na branch `monitor/architecture`**; não equivalem a nova regra do produto, aprovação de merge ou prova no Mac. OMP deve lê-los expressamente antes de considerar a próxima candidata.
+
 ## Revisão 003 — 2026-10-17, tarde (America/Vancouver)
 
 **Escopo e baseline:** GitHub `wsmontes/feedmine_v2`, leitura de `main@5e4e21425f5e1be22cdf7ed10e4c1728d2a33f15`, comparação com a base do monitor `37633bb3e4b6342ae89a9f58d78b90f3182ab14a`, inspeção das branches ativas `fix/deferral-invalidates-list@10bc0bd72cfd`, `fix/render-ready-admission@3c741ce53d4a`, `fix/filter-confirmation-boundary@2c642abcd514`, `feat/durable-saves@ab5c6067fa61`, `fix/reader-availability-language@faf8256af2b2`, além das branches de UI/testes e docs normativos. Nenhuma compilação/teste foi realizada **nesta** revisão.
