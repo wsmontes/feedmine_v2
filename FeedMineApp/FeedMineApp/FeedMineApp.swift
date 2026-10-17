@@ -876,7 +876,7 @@ struct FeedMineApp: App {
     /// T11: V1's own gate — the reader meets the app before the feed, and what they answer becomes a feed.
     @ViewBuilder private var onboardingCover: some View {
         let options = composition.onboardingOptions()
-        ReaderOnboardingView(recipe: .neutral(languages: [Self.deviceLanguage]), isFirstRun: true,
+        ReaderOnboardingView(recipe: Self.firstRunDraft(regions: options.regions), isFirstRun: true,
             previewCards: composition.onboardingPreviewCards(),
             topics: options.topics, regions: options.regions, languages: options.languages,
             deviceLanguage: Self.deviceLanguage,
@@ -1076,6 +1076,18 @@ struct FeedMineApp: App {
 
     private static var deviceLanguage: String {
         Locale.current.language.languageCode?.identifier ?? "en"
+    }
+
+    /// The first run's opening draft: the language the device reads in, and — when the device states a place it
+    /// can trust — the region it is set to. Both are **drafts**: the recipe is written only when the reader
+    /// confirms, and the place chip takes the answer back exactly as if the reader had tapped it.
+    private static func firstRunDraft(regions: [OnboardingRegion]) -> FeedRecipeDefinition {
+        var draft = FeedRecipeDefinition.neutral(languages: [deviceLanguage])
+        if let region = DeviceRegionDraft.region(deviceRegion: Locale.current.region?.identifier,
+            preferredLanguage: Locale.preferredLanguages.first, among: regions) {
+            draft.topicPreferences[region.preferenceKey] = .more
+        }
+        return draft
     }
 
     /// T11: V1's "open hood", over the feed the reader is on.

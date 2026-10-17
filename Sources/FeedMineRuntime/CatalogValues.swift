@@ -153,7 +153,28 @@ public enum CatalogRegionNaming {
 
     /// The catalogue names a country by its English name (`90_countries/south_africa`), so the reversal is
     /// Foundation's own list of regions read backwards. Built once: 292 regions, no network, no table.
-    public static func regionCode(forCatalogueName name: String) -> String? { codesBySlug[slug(name)] }
+    public static func regionCode(forCatalogueName name: String) -> String? {
+        code(forCatalogueSlug: slug(name))
+    }
+
+    /// A country node's own key (`90_countries/south_africa` → `ZA`). The key is the slug, so this is the
+    /// name-free path a caller holding the catalogue's vocabulary uses.
+    public static func regionCode(forCatalogueKey key: String) -> String? {
+        code(forCatalogueSlug: key.split(separator: "/").last.map(String.init) ?? key)
+    }
+
+    private static func code(forCatalogueSlug slug: String) -> String? {
+        catalogueSpellings[slug] ?? codesBySlug[slug]
+    }
+
+    /// The shipped catalogue's OPML names are not all CLDR's English names: it says `usa` for the United States,
+    /// `czech_republic` where CLDR now says Czechia, and its own spelling for five more. Those slugs are named
+    /// here so the reversal places them. A country the catalogue spells differently and this table does not know
+    /// stays unplaced rather than being mapped by resemblance.
+    private static let catalogueSpellings: [String: String] = [
+        "china": "CN", "czech_republic": "CZ", "ivory_coast": "CI", "myanmar": "MM",
+        "turkey": "TR", "uae": "AE", "usa": "US",
+    ]
 
     private static let codesBySlug: [String: String] = {
         let english = Locale(identifier: "en")

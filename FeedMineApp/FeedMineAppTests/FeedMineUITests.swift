@@ -2618,4 +2618,43 @@ final class FeedMineUITests: XCTestCase {
         add(attachment)
         app.buttons["filter-done"].tap()
     }
+
+    /// The first run pre-ticks the place the device states: a pt-BR device in Brazil opens with the Brazil chip
+    /// chosen, beside the Portuguese draft. And the pre-tick is still only a draft — the feed is not opened, and
+    /// nothing is answered, until the reader taps the composer's own confirm.
+    @MainActor
+    func testABrazilianDeviceOpensWithBrazilPreTickedAndStillConfirms() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(pt-BR)", "-AppleLocale", "pt_BR"]
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 90))
+        app.buttons["welcome-shape"].tap()
+
+        let composer = app.otherElements["onboarding"].scrollViews.firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 60), "the first run's composer is up")
+        XCTAssertTrue(app.buttons["composer-language-pt"].isSelected,
+            "the device's language is still the draft the reader sees")
+
+        let brazil = app.buttons["composer-region-90_countries/brazil"]
+        var found = false
+        for _ in 0..<8 where !found {
+            if brazil.exists && brazil.isHittable { found = true; break }
+            composer.swipeUp()
+        }
+        XCTAssertTrue(found, "the composer offers the catalogue's Brazil chip")
+        XCTAssertTrue(brazil.isSelected, "the device's own place is pre-ticked: pt-BR/pt_BR is Brazil")
+
+        // A draft, not an answer: the reader is still in the first run, and the feed still waits for the reader's
+        // own confirm. A pre-ticked chip that opened the feed would be a decision taken for them.
+        let open = app.buttons["composer-open-feed"]
+        for _ in 0..<6 where !open.isHittable { composer.swipeUp() }
+        XCTAssertTrue(open.isHittable, "the first run's own action is what starts the feed")
+        XCTAssertFalse(app.buttons["more-menu"].exists, "no feed opened itself from a pre-ticked draft")
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "region-draft-brazil-pre-ticked"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
 }
