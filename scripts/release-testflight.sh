@@ -10,8 +10,17 @@
 #
 # It never pushes: `git tag` is local.
 #
-# Usage: scripts/release-testflight.sh [--dry-run]
-#   --dry-run  run the same preflight and archive checks (no ASC key, upload or tag)
+# Usage: scripts/release-testflight.sh [--dry-run] [--no-upload] [--print-export-options]
+#   --dry-run               run the same preflight and archive checks (no ASC key, upload or tag)
+#   --no-upload             export the archive without publishing it (alias: --export-only).
+#                           Selects scripts/ExportOptions-export-only.plist, whose only difference
+#                           from the default plist is `destination` = `export` instead of `upload`.
+#                           Without the flag the default is unchanged: the normal plist is used and
+#                           -exportArchive uploads to App Store Connect.
+#   --print-export-options  print the export options plist that would be passed to xcodebuild plus
+#                           its `destination`, then exit without running xcodebuild. Exists so the
+#                           selection and the refusal below can be asserted cheaply
+#                           (scripts/test-export-options.sh).
 
 set -euo pipefail
 # K-03 (Kiro): -e makes any unchecked failure stop the release instead of uploading or tagging
@@ -21,7 +30,24 @@ trap 'echo "ABORTADO: comando falhou na linha $LINENO (exit $?)" >&2' ERR
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
 DRY_RUN=0
-if [ "${1:-}" = "--dry-run" ]; then DRY_RUN=1; fi
+NO_UPLOAD=0
+PRINT_EXPORT_OPTS=0
+usage_error() {
+  echo "ABORTADO: $1" >&2
+  echo "uso: scripts/release-testflight.sh [--dry-run] [--no-upload|--export-only] [--print-export-options]" >&2
+  exit 2
+}
+# An unknown flag is refused rather than ignored: a typo such as `--no-uplaod` would otherwise
+# fall back to the default path and upload, which is exactly the hazard this script guards.
+while [ $# -gt 0 ]; do
+  case "${1:-}" in
+    --dry-run) DRY_RUN=1 ;;
+    --no-upload|--export-only) NO_UPLOAD=1 ;;
+    --print-export-options) PRINT_EXPORT_OPTS=1 ;;
+    *) usage_error "argumento desconhecido: $1" ;;
+  esac
+  shift
+done
 
 # App Store Connect API key identity comes only from the environment (no account defaults in Git):
 #   ASC_KEY_ID     required, e.g. export ASC_KEY_ID=<key id from App Store Connect>
@@ -40,9 +66,44 @@ RESOURCES="FeedMineApp/FeedMineApp/Resources"
 CATALOG="$RESOURCES/catalog.sqlite"
 DESCRIPTOR="$RESOURCES/catalog.manifest.json"
 ARCHIVE=".build/feedmine-v2.xcarchive"
-EXPORT_OPTS="scripts/ExportOptions.plist"
+EXPORT_OPTS_UPLOAD="scripts/ExportOptions.plist"
+EXPORT_OPTS_EXPORT_ONLY="scripts/ExportOptions-export-only.plist"
+EXPORT_OPTS="$EXPORT_OPTS_UPLOAD"
+if [ "$NO_UPLOAD" = "1" ]; then EXPORT_OPTS="$EXPORT_OPTS_EXPORT_ONLY"; fi
 STAGING="${P0C_STAGING_ROOT:-build/catalog-bootstrap}"
 EVIDENCE_DIR="${P0C_EVIDENCE_DIR:-.build}"
+
+plist_destination() {
+  /usr/libexec/PlistBuddy -c 'Print :destination' "$1" 2>/dev/null || echo '?'
+}
+
+# H-EXPORT (measured 2026-10-17): $EXPORT_OPTS_UPLOAD declares method=app-store-connect and
+# destination=upload, so -exportArchive PUBLISHES the ipa as a side effect of exporting. A
+# rehearsal had to hand-edit a copy to destination=export to avoid the upload. The opt-in is
+# therefore checked against the plist that will actually reach xcodebuild, never against the
+# intent of the flag: a missing or still-uploading plist must refuse here, before any xcodebuild.
+if [ "$NO_UPLOAD" = "1" ]; then
+  if [ ! -f "$EXPORT_OPTS" ]; then
+    echo "ABORTADO: --no-upload exige $EXPORT_OPTS, que não existe — sem esse plist o export não tem como recusar destination=upload" >&2
+    exit 9
+  fi
+  EXPORT_DEST="$(plist_destination "$EXPORT_OPTS")"
+  if [ "$EXPORT_DEST" != "export" ]; then
+    echo "ABORTADO: --no-upload com $EXPORT_OPTS, mas o plist diz destination=$EXPORT_DEST — exportar publicaria a build. A chave destination precisa ser 'export' (nenhuma outra) para esta opção" >&2
+    exit 9
+  fi
+fi
+
+if [ "$PRINT_EXPORT_OPTS" = "1" ]; then
+  PRINTED_DEST="$(plist_destination "$EXPORT_OPTS")"
+  echo "EXPORT_OPTS=$EXPORT_OPTS"
+  echo "destination=$PRINTED_DEST"
+  case "$PRINTED_DEST" in
+    upload) echo "upload=yes" ;;
+    *) echo "upload=no" ;;
+  esac
+  exit 0
+fi
 
 if [ -n "$(git status --porcelain)" ]; then
   echo "ABORTADO: working tree is dirty — commit first, or the uploaded binary maps to no SHA"
@@ -119,7 +180,7 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-# Only an actual upload needs App Store Connect secrets.
+# Only the export/upload step needs App Store Connect secrets (the export re-signs the archive).
 if [ -z "${ASC_KEY_ID:-}" ]; then missing_env ASC_KEY_ID; fi
 if [ -z "${ASC_ISSUER_ID:-}" ]; then missing_env ASC_ISSUER_ID; fi
 KEY_ID="$ASC_KEY_ID"
@@ -130,14 +191,23 @@ if [ ! -f "$KEY_PATH" ]; then
   exit 9
 fi
 
-if xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist "$EXPORT_OPTS" \
+if ! xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist "$EXPORT_OPTS" \
   -exportPath .build/tf-export -authenticationKeyPath "$KEY_PATH" \
   -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID" > /tmp/fm-v2-tf-upload.log 2>&1; then
-  # A log without the marker must not abort after a successful upload (the tag still records it).
-  grep -aE "Upload succeeded|Uploaded" /tmp/fm-v2-tf-upload.log | tail -1 || true
-else
   echo "ABORTADO: export/upload falhou"; grep -aE "error:" /tmp/fm-v2-tf-upload.log | head -5 || true; exit 8
 fi
+
+if [ "$NO_UPLOAD" = "1" ]; then
+  # Nothing was published, so neither the upload marker nor the delivery tag applies: the tag
+  # names an uploaded TestFlight build, and creating it here would claim a delivery that never
+  # happened. The ipa stays in .build/tf-export for inspection/hand-off.
+  echo "NO UPLOAD: export em .build/tf-export com $EXPORT_OPTS (destination=export) — nada enviado e nenhuma tag criada"
+  ls -1 .build/tf-export/*.ipa 2>/dev/null || true
+  exit 0
+fi
+
+# A log without the marker must not abort after a successful upload (the tag still records it).
+grep -aE "Upload succeeded|Uploaded" /tmp/fm-v2-tf-upload.log | tail -1 || true
 
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
   echo "tag $TAG already exists"
