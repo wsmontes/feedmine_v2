@@ -52,6 +52,10 @@ public enum RuntimeDatabaseError: Error, Sendable {
     case couldNotCreateDirectory(directory: URL, message: String)
     case open(databaseURL: URL, message: String)
     case storage(resultCode: Int32, message: String)
+    /// The file carries applied migrations this build does not know: newer code wrote it, and the
+    /// migrator would ignore those identifiers rather than reject them. Opening would present newer
+    /// state as current (for example after a TestFlight rollback), so it is refused instead.
+    case incompatibleSchema(unknownIdentifiers: [String])
 }
 
 /// Explicit modes, not an automatic maintenance or checkpoint policy.
@@ -109,16 +113,21 @@ public final class RuntimeDatabase: Sendable {
         fileManager: FileManager = .default,
         sqlTrace: (@Sendable (String) -> Void)? = nil
     ) throws {
-        try self.init(location: location, migrator: RuntimeMigrations.current,
-            fileManager: fileManager, sqlTrace: sqlTrace)
+        // The product path is the only one that opens a file another build can have written, so it is the
+        // only one that refuses applied migrations it does not know.
+        try self.init(location: location, migrator: RuntimeMigrations.current, fileManager: fileManager,
+            sqlTrace: sqlTrace, refusesUnknownAppliedMigrations: true)
     }
 
-    /// Internal injection supports migration tests without exposing GRDB to consumers.
+    /// Internal injection supports migration tests without exposing GRDB to consumers. Those tests build
+    /// synthetic databases with partial migrators, where identifiers the migrator does not register are
+    /// expected by construction — so the downgrade refusal belongs to the product path and is off here.
     init(
         location: RuntimeDatabaseLocation,
         migrator: DatabaseMigrator,
         fileManager: FileManager = .default,
-        sqlTrace: (@Sendable (String) -> Void)? = nil
+        sqlTrace: (@Sendable (String) -> Void)? = nil,
+        refusesUnknownAppliedMigrations: Bool = false
     ) throws {
         // The **exact** spelling wins whenever it can exist: on a case-sensitive volume (the iPhone's) `Feedmine`
         // and `FeedMine` are genuinely distinct directories, and V2's store must never be opened inside V1's
@@ -157,6 +166,18 @@ public final class RuntimeDatabase: Sendable {
             // Enforce non-erasure even for an internally supplied test migrator.
             nonErasingMigrator.eraseDatabaseOnSchemaChange = false
             try nonErasingMigrator.migrate(pool)
+            // GRDB ignores applied identifiers this migrator does not know, so a file written by a
+            // newer build would open as if it were current (a rollback across a TestFlight build).
+            // Refuse instead of presenting newer state as this build's own.
+            let appliedButUnknown: Set<String> = refusesUnknownAppliedMigrations
+                ? try pool.read { db in
+                    try nonErasingMigrator.appliedIdentifiers(db)
+                        .subtracting(Set(nonErasingMigrator.migrations))
+                }
+                : []
+            if !appliedButUnknown.isEmpty {
+                throw RuntimeDatabaseError.incompatibleSchema(unknownIdentifiers: appliedButUnknown.sorted())
+            }
             self.pool = pool
         } catch let error as DatabaseError {
             throw RuntimeDatabaseError.storage(resultCode: error.extendedResultCode.rawValue, message: error.message ?? error.description)
