@@ -7,6 +7,7 @@ import FeedMineEditorial
 import FeedMinePublication
 @testable import FeedMineRuntime
 import FeedMineComposition
+import FeedMineUI
 
 private final class ColdJournal: @unchecked Sendable {
     private let lock = NSLock()
@@ -738,6 +739,29 @@ final class ColdFeedBootstrapTests: XCTestCase {
 }
 
 extension ColdFeedBootstrapTests {
+    /// H(a), spec "Estabilidade de coleta e UI": an empty database and the fixture transport must put at least
+    /// ten cards on the first screen within three seconds. The criterion is stated on the app's own clock —
+    /// `FeedLaunchWitness`, the same instrument the device journey reads — not on a test's wall clock.
+    func testHFirstColdBatchReachesTenCardsWithinThreeSeconds() async throws {
+        let f = try fixture(items: 12)
+        FeedLaunchWitness.reset()
+        FeedLaunchWitness.arm()
+        let outcome = try await owner(f).run(identity: identity(),
+            resources: .init(localExaminedCapacity: 32,
+                acquisition: .init(targetWorkCapacity: CollectionLaunchSettings.defaultInitialParallelism,
+                    batchCapacityPerNewExecution: 1, observationCapacityPerBatch: 20,
+                    byteCapacityPerBatch: 100_000)!)!,
+            backwardCapacity: 0, forwardCapacity: 20)
+        let snapshot = try published(outcome)
+        FeedLaunchWitness.note(.cards(snapshot.window.items.count))
+        print("H(a) " + FeedLaunchWitness.record)
+        let cards = try XCTUnwrap(FeedLaunchWitness.firstCardsCount)
+        let milliseconds = try XCTUnwrap(FeedLaunchWitness.firstCardsMilliseconds)
+        XCTAssertGreaterThanOrEqual(cards, 10)
+        XCTAssertLessThanOrEqual(milliseconds, 3_000)
+        XCTAssertEqual(cards, snapshot.window.items.count, "the witness states the batch it observed")
+    }
+
     func test3R2ColdHTTPFailureDoesNotBlockHealthyTarget() async throws {
         let f = try fixture(status: 500)
         let b = try AcquisitionTargetAuthority(database: f.database).register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])

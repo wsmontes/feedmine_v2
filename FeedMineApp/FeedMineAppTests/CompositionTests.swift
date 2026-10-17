@@ -302,7 +302,7 @@ final class CompositionTests: XCTestCase {
     /// `RunwayActivity.admitsForwardContent` accepts, so `.forward` observes the position and never extends
     /// the admitted list. The anchor is the admitted tail, so the append lands after it.
     private func produceAndAdmit(_ association: FeedAssociation) async throws {
-        _ = try await association.driver.drive(resources: FeedAssociation.resources)
+        _ = try await association.driver.drive(resources: association.resources)
         guard let anchor = association.store.state.presentation?.window.items.last else { return }
         await association.viewport(.init(anchor: .init(cardID: anchor.id, placement: .top)), activity: .explicitTailApproach)
     }
@@ -513,7 +513,7 @@ final class CompositionTests: XCTestCase {
 
         // A segunda publicação: mais itens por fonte e a ativação da pista — sem viewport e sem foreground.
         FixtureTransport.feedItemCount.withLock { $0 = 24 }
-        _ = try await association.driver.activateCurrentPresentation(resources: FeedAssociation.resources)
+        _ = try await association.driver.activateCurrentPresentation(resources: association.resources)
 
         let reservedAfter = try reservedAhead()
         XCTAssertGreaterThan(reservedAfter, reservedBefore,
@@ -575,7 +575,7 @@ final class CompositionTests: XCTestCase {
         var leftBehind: [PublicationReceipt] = []
         superseded.publicationRelay.receive = { leftBehind.append($0) }
         FixtureTransport.feedItemCount.withLock { $0 = 8 }
-        _ = try await superseded.driver.activateCurrentPresentation(resources: FeedAssociation.resources)
+        _ = try await superseded.driver.activateCurrentPresentation(resources: superseded.resources)
         let stale = try XCTUnwrap(leftBehind.first,
             "premissa: a segunda publicação da edição que o leitor vai deixar tem de entregar um recibo")
         XCTAssertTrue(leftBehind.allSatisfy { $0.editionID == supersededEdition },
@@ -614,7 +614,7 @@ final class CompositionTests: XCTestCase {
         var currentEditionReceipts: [PublicationReceipt] = []
         live.publicationRelay.receive = { currentEditionReceipts.append($0) }
         FixtureTransport.feedItemCount.withLock { $0 = 24 }
-        _ = try await live.driver.activateCurrentPresentation(resources: FeedAssociation.resources)
+        _ = try await live.driver.activateCurrentPresentation(resources: live.resources)
         XCTAssertFalse(currentEditionReceipts.isEmpty,
             "premissa: a segunda publicação da edição vigente tem de concluir e entregar um recibo")
         XCTAssertTrue(currentEditionReceipts.allSatisfy { $0.editionID == liveEdition },

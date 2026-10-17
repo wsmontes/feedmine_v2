@@ -116,6 +116,21 @@ public enum FeedLaunchWitness {
         return wait.at > cards.at
     }
 
+    /// The first pass that carried ready cards, as numbers. This is the same fact `record` prints; a criterion
+    /// test asserts it without parsing the line.
+    public static var firstCardsCount: Int? { firstCards?.count }
+    public static var firstCardsMilliseconds: Double? { firstCards?.at }
+
+    /// Clear the record. One process runs many launches — a test suite among them — and a witness that only ever
+    /// appends could not state *this* launch's facts. Diagnostics only: nothing reads it to decide anything.
+    public static func reset() {
+        waitPasses = 0
+        firstWait = nil
+        lastWaitAt = nil
+        firstCards = nil
+        origin = nil
+    }
+
     private static func elapsedMilliseconds() -> Double {
         let now = ProcessInfo.processInfo.systemUptime
         guard let origin else {

@@ -111,6 +111,17 @@ public actor FeedRunwayDriver {
         self.monotonicNow = monotonicNow; self.makeSegmentIdentity = makeSegmentIdentity; self.prepare = prepare
     }
 
+    /// B (spec "Estabilidade de coleta e UI"): a media readiness transition is a **local-supply fact**. This is
+    /// the same notification a committed acquisition receipt gives the runway (`noteLocalSupplyChanged`), so the
+    /// next drive opportunity is the existing one — no second pipeline and no publication from the callback.
+    public func noteMediaReadinessChanged() async {
+        guard let scope = try? await validateCurrentScope() else { return }
+        do { try await runway.noteLocalSupplyChanged(scope: scope) }
+        catch RunwayControllerError.noActiveScope {}
+        catch RunwayControllerError.scopeMismatch {}
+        catch {}
+    }
+
     private func validateCurrentScope() async throws -> RunwayScope? {
         guard let scope = await session.currentRunwayScope() else { return nil }
         guard scope.contextKey == plan.context.key else {

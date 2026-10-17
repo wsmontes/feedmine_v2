@@ -166,7 +166,7 @@ final class ReadingCompositionTests: XCTestCase {
             ReadingFixture.generation.withLock { $0 += 1 }
             for _ in 0..<8 {
                 if association.store.state.presentation?.window.items.contains(where: { $0.id == first.id }) == false { break }
-                _ = try await association.driver.drive(resources: FeedAssociation.resources)
+                _ = try await association.driver.drive(resources: association.resources)
                 let tail = try XCTUnwrap(association.store.state.presentation?.window.items.last)
                 await association.viewport(.init(anchor: .init(cardID: tail.id, placement: .center)), activity: .explicitTailApproach)
                 try await Task.sleep(nanoseconds: 50_000_000)

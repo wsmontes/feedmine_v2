@@ -79,7 +79,7 @@ final class AddFeedTests: XCTestCase {
             "the session must ask for the feed the reader added; it asked for \(AddFeedFixtureSite.recordedRequests())")
         let published = await Self.waitUntil(20) { association.store.state.presentation != nil }
         XCTAssertTrue(published, "the added feed must publish a first Edition")
-        _ = try await association.driver.drive(resources: FeedAssociation.resources)
+        _ = try await association.driver.drive(resources: association.resources)
         let cards = try XCTUnwrap(association.store.state.presentation).window.items
         XCTAssertFalse(cards.isEmpty, "the feed the reader just added must produce cards")
         XCTAssertTrue(cards.contains { $0.sourceDisplayName == AddFeedFixtureSite.siteTitle },
