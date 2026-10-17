@@ -216,10 +216,30 @@ extension PublicationStore {
             // With no backward limit there is no request to fall short of: the read reached the Edition's start.
             let requiredFirst = backwardLimit.map { backward.count < $0 ? 0 : firstPosition } ?? 0
             let requiredLast = forward.count < forwardCapacity ? high : lastPosition
-            let crossed = try Row.fetchAll(db, sql: "SELECT * FROM feed_segments WHERE edition_id = ? AND ordinal BETWEEN ? AND ? ORDER BY ordinal", arguments: [editionKey, requiredFirst, requiredLast])
+            // Validate the crossed interval against the same facts `decodeSegment` enforces — a
+            // non-empty Segment, card ordinals 0…n-1, schema equal to the Edition — without
+            // materialising every card id. The cards of a crossed Segment are not part of the window;
+            // they are validated when they are read. Cost per crossed Segment is one index aggregate
+            // instead of one decoded row per card, which is what made this read grow with edition size.
+            let crossed = try Row.fetchAll(db, sql: """
+                SELECT s.publication_schema_version AS schema_version,
+                    (SELECT COUNT(*) FROM published_cards c WHERE c.segment_id = s.id) AS card_count,
+                    (SELECT MIN(c.ordinal) FROM published_cards c WHERE c.segment_id = s.id) AS low_ordinal,
+                    (SELECT MAX(c.ordinal) FROM published_cards c WHERE c.segment_id = s.id) AS high_ordinal
+                FROM feed_segments s
+                WHERE s.edition_id = ? AND s.ordinal BETWEEN ? AND ?
+                ORDER BY s.ordinal
+                """, arguments: [editionKey, requiredFirst, requiredLast])
             for row in crossed {
-                let segment = try Self.decodeSegment(row, db: db)
-                guard segment.publicationSchemaVersion == edition.publicationSchemaVersion else { throw PublicationStoreError.corruption("segment schema") }
+                let f = PublicationRecordFields(row)
+                let count = try f.integer("card_count")
+                guard count > 0 else { throw PublicationStoreError.corruption("empty segment") }
+                guard try f.integer("low_ordinal") == 0, try f.integer("high_ordinal") == count - 1 else {
+                    throw PublicationStoreError.corruption("card ordinal")
+                }
+                guard try f.counter("schema_version") == edition.publicationSchemaVersion else {
+                    throw PublicationStoreError.corruption("segment schema")
+                }
             }
             return try rows.map(Self.decodeCard)
         }

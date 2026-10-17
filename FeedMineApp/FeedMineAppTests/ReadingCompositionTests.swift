@@ -150,10 +150,18 @@ final class ReadingCompositionTests: XCTestCase {
         XCTAssertEqual(adapter.maximumVisualResidual, 0, accuracy: 0.5)
     }
 
-    func testAStillRenderedCardOpensAfterCanonicalPruningButAStaleOwnerCannot() async throws {
+    /// A card still drawn opens when the reader taps it; a retired owner opens nothing it rendered.
+    ///
+    /// The premise this test was written against (2026-10-12) was a window that **pruned** its head, so a card an
+    /// earlier gesture had drawn could already have left the canonical window. The owner's decision of
+    /// **2026-10-13** superseded it: `keepsAdmittedHead` (`AppComposition.presentationBounds`,
+    /// `RUNTIME_PRESENTATION_CONTRACT.md` §2) never removes a card the reader has passed, so the drawn card stays
+    /// in the window for the life of the session. What the test proves is unchanged — the tap on a card the screen
+    /// still shows is not discarded, and a retired owner cannot act.
+    func testAStillRenderedCardInTheKeptHeadOpensButAStaleOwnerCannot() async throws {
         try await withShape(.body) { _, association in
             // Like the existing long-navigation fixture, publish distinct future items before admission.
-            // A cold single-card result and a saturated corpus cannot exercise pruning.
+            // A cold single-card result and a saturated corpus cannot put the reader deep in the edition.
             let generation = ReadingFixture.generation.withLock { $0 }
             defer { ReadingFixture.generation.withLock { $0 = generation } }
             for _ in 0..<400 {
@@ -164,14 +172,16 @@ final class ReadingCompositionTests: XCTestCase {
             XCTAssertGreaterThan(rendered.window.items.count, association.bounds.backwardCapacity + 1)
             let first = try XCTUnwrap(rendered.window.items.first)
             ReadingFixture.generation.withLock { $0 += 1 }
+            // Walk the reader to the tail: the card tapped below is then one they have already passed, which is the
+            // case a released tap is about — not the card under their finger.
             for _ in 0..<8 {
-                if association.store.state.presentation?.window.items.contains(where: { $0.id == first.id }) == false { break }
                 _ = try await association.driver.drive(resources: FeedAssociation.resources)
                 let tail = try XCTUnwrap(association.store.state.presentation?.window.items.last)
                 await association.viewport(.init(anchor: .init(cardID: tail.id, placement: .center)), activity: .explicitTailApproach)
                 try await Task.sleep(nanoseconds: 50_000_000)
             }
-            XCTAssertFalse(association.store.state.presentation?.window.items.contains(where: { $0.id == first.id }) == true)
+            XCTAssertTrue(association.store.state.presentation?.window.items.contains(where: { $0.id == first.id }) == true,
+                "The kept head never cuts what the reader passed: the drawn card stays in the window (owner's decision, 2026-10-13)")
             var opens = 0
             association.onReading = { _ in opens += 1 }
             association.store.perform(.init(action: .open, cardID: first.id), rendered: rendered)

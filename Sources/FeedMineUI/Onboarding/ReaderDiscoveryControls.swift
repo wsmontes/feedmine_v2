@@ -85,6 +85,12 @@ public struct ReaderDiscoveryControls: View {
                                     ? "chevron.down" : "chevron.right")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
+                                    // F-UI-5: the glyph alone was a ~12 pt target. The tappable area is the
+                                    // HIG minimum; the glyph keeps its size.
+                                    .frame(
+                                        minWidth: ReaderAccessibilityMetrics.minimumTapTarget,
+                                        minHeight: ReaderAccessibilityMetrics.minimumTapTarget)
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("\(identifierPrefix)-language-regions-\(language.code)")

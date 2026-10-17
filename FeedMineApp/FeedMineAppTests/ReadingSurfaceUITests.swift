@@ -256,7 +256,8 @@ final class ReadingSurfaceUITests: XCTestCase {
         XCTAssertTrue(save.waitForExistence(timeout: 20), "the card offers saving")
         XCTAssertTrue(save.isHittable)
         XCTAssertEqual(save.label, "Salvar artigo", "the save control states its action in words")
-        XCTAssertEqual(save.value as? String, "not bookmarked", "and the state the reader's own list records")
+        XCTAssertTrue(["not bookmarked", "não salvo"].contains(save.value as? String ?? ""),
+            "and the state the reader's own list records: \(save.value ?? "nil")")
         attach(app, "nn07-card-controls-at-the-largest-text-size")
 
         open.tap()

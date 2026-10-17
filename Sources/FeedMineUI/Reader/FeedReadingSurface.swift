@@ -88,7 +88,7 @@ public struct FeedReadingSurface: View {
                         .fixedSize()
                 }
                 .accessibilityIdentifier("reading.open-site")
-                .accessibilityLabel("Abrir no site")
+                .accessibilityLabel(String(localized: "Abrir no site"))
             }
         }
         .tint(appearance.accent)

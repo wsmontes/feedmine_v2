@@ -61,6 +61,22 @@ replay = 'bash scripts/b06-evidence.sh --udid ' + shlex.quote(udid) + ' --host '
 journey = ['bash', 'scripts/run-discovery-benchmark.sh', '--gate', 'B03', '--profile', 'A', '--full-trace']
 app_id = 'com.feedmine.development.benchmark'
 now = lambda: dt.datetime.now(dt.timezone.utc).isoformat()
+# Template chains are read from the installed toolchain. The historical iOS
+# 'Energy Log' template is absent from Xcode 26.6 (17F113); 'Power Profiler' is
+# the documented successor (iOS/iPadOS only). Its exported tables carry per-process
+# Power Impact relative indices and device thermal state, but no energy-labelled
+# column and no Joules, so B06 declares that gap instead of relabelling power as
+# energy. The declaration is accepted by --validate only while the installed
+# toolchain still shows Energy Log missing AND the successor template present.
+TEMPLATE_CHAINS = {'hitches': ('Animation Hitches',),
+                   'resources': ('Activity Monitor',),
+                   'energy': ('Energy Log', 'Power Profiler')}
+ENERGY_GAP_CODE = 'ENERGY_TEMPLATE_ENERGY_LOG_ABSENT_SUCCESSOR_HAS_NO_ENERGY_METRIC'
+ENERGY_GAP_REASON = ("Template 'Energy Log' absent from xctrace list templates; "
+                     "successor 'Power Profiler' exports per-process Power Impact "
+                     "relative indices and device thermal state, but no per-process "
+                     "energy column (no Joules), so no energy measurement is bindable "
+                     "on this toolchain")
 
 def write_json(p, obj):
     p.write_text(json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False) + '\n')
@@ -279,7 +295,7 @@ status={'status':'NOT_RUN','started_at':now(),'device_udid':udid,
         'record_duration_seconds':record_seconds,
         'metrics':{key:missing('Measurement not yet attempted') for key in
                    ('rss','cpu','memory','energy','thermal','hitches','scroll_time','peaks_and_trends')},
-        'recordings':{},'errors':[]}
+        'recordings':{},'errors':[],'templates_used':{},'declared_absences':[]}
 out=None
 runner=None
 streams={}
@@ -299,12 +315,18 @@ with tempfile.TemporaryDirectory(prefix='feedmine-b06-control-') as d:
         if tmpl.returncode: raise RuntimeError('xctrace list templates failed')
         # Human-readable names from installed Xcode; not static schema names.
         available={line.strip().strip('"') for line in tmpl.stdout.splitlines()}
-        requested={'hitches':'Animation Hitches','resources':'Activity Monitor','energy':'Energy Log'}
-        if requested['hitches'] not in available:
+        if TEMPLATE_CHAINS['hitches'][0] not in available:
             raise RuntimeError('Animation Hitches template unavailable; cannot record required B06 frames')
-        for key,name in requested.items():
-            status['recordings'][key]={'template':name,'status':'NOT_MEASURED',
-                'reason':None if name in available else f'Template {name!r} absent from xctrace list templates'}
+        for key,names in TEMPLATE_CHAINS.items():
+            chosen=next((name for name in names if name in available),None)
+            status['recordings'][key]={'template':chosen,'template_candidates':list(names),
+                'template_source':None if chosen is None else
+                    ('PRIMARY' if chosen==names[0] else 'SUCCESSOR'),
+                'status':'NOT_MEASURED',
+                'reason':None if chosen else 'No candidate template present: '+', '.join(names)}
+            status['templates_used'][key]={'template':chosen,
+                'source':status['recordings'][key]['template_source'],
+                'candidates_tried':list(names)}
         stream=(temp/'journey.log').open('w')
         runner=subprocess.Popen(journey,cwd=root,stdout=stream,stderr=subprocess.STDOUT,
                                  start_new_session=True)
@@ -546,6 +568,23 @@ with tempfile.TemporaryDirectory(prefix='feedmine-b06-control-') as d:
             status['metrics']['energy']=dict(status['metrics']['energy_impact'])
             status['metrics']['energy']['note']='Relative Energy Impact index, NOT joules'
             binding_proofs['energy']=list(binding_proofs['energy_impact'])
+        # The successor template records, but carries no energy metric. Declare that
+        # absence by code instead of relabelling Power Impact as energy; the reason
+        # names the toolchain gap and validate re-checks both halves of it.
+        if (status['metrics']['energy']['status']!='MEASURED'
+                and 'Energy Log' not in available
+                and status['templates_used']['energy']['template'] in available
+                and status['templates_used']['energy']['template']!='Energy Log'):
+            status['declared_absences'].append({
+                'dimension':'energy', 'code':ENERGY_GAP_CODE, 'reason':ENERGY_GAP_REASON,
+                'evidence':{'energy_log_in_templates':False,
+                            'successor_template':status['templates_used']['energy']['template'],
+                            'successor_schema_carries_energy':False,
+                            'note':'Power Profiler exports per-process Power Impact indices, not Joules'}})
+            status['metrics']['energy']=missing(ENERGY_GAP_REASON,
+                metric_commands['energy'] or [
+                    'xcrun xctrace export --input <energy.trace> --toc (no energy-labelled table)'])
+            status['metrics']['energy']['declared_absence']=ENERGY_GAP_CODE
         if thermal_rows:
             status['metrics']['thermal']={'status':'MEASURED','scope':'device',
                   'observed_states':thermal_rows,'peak':None,
@@ -609,10 +648,31 @@ with tempfile.TemporaryDirectory(prefix='feedmine-b06-control-') as d:
         status['metric_bindings']=binding_proofs
         if validate:
             required=('rss','cpu','memory','energy','thermal','hitches','scroll_time')
+            declared_verified=[]
             for name in required:
                 metric=status['metrics'][name]
                 proofs=binding_proofs[name]
                 bound=metric['status']=='MEASURED' and bool(proofs)
+                declaration=next((d for d in status['declared_absences']
+                                  if d['dimension']==name
+                                  and d['code']==metric.get('declared_absence')),None)
+                # Exactly one documented absence exists: the Energy Log template gap.
+                # It is accepted only while the installed toolchain still shows Energy
+                # Log missing AND the named successor template present. Any other
+                # unbound dimension stays a hard failure.
+                if (not bound and declaration is not None
+                        and declaration['code']==ENERGY_GAP_CODE
+                        and declaration['evidence']['energy_log_in_templates'] is False
+                        and 'Energy Log' not in available
+                        and declaration['evidence']['successor_template'] in available):
+                    declared_verified.append({'dimension':name, 'code':declaration['code'],
+                                              'reason':declaration['reason'],
+                                              'evidence':declaration['evidence']})
+                    print(f'VALIDATE {name}: DECLARED_ABSENT code={declaration["code"]}'
+                          f' successor_template={declaration["evidence"]["successor_template"]}'
+                          f' metric_status={metric["status"]}',flush=True)
+                    print('  reason='+declaration['reason'],flush=True)
+                    continue
                 if not bound:
                     errors.append(f'UNBOUND {name}: '+metric.get('reason','no verifiable source columns'))
                 print(f'VALIDATE {name}: '+('BOUND' if bound else 'UNBOUND')+
@@ -638,8 +698,17 @@ with tempfile.TemporaryDirectory(prefix='feedmine-b06-control-') as d:
                 elif not spec.get('tables'):
                     errors.append(key+': zero tables exported from the recorded trace')
             status['is_gate_evidence']=False
-            status['validation_verdict']='BINDINGS_VERIFIED_NOT_GATE' if not errors else 'BINDINGS_FAILED_NOT_GATE'
-            status['status']='VALIDATION_ONLY_NOT_GATE' if not errors else 'VALIDATION_FAILED_NOT_GATE'
+            status['declared_absences_verified']=declared_verified
+            if errors:
+                status['validation_verdict']='BINDINGS_FAILED_NOT_GATE'
+                status['status']='VALIDATION_FAILED_NOT_GATE'
+            elif declared_verified:
+                # Declared incompleteness is not a verified binding and never gate proof.
+                status['validation_verdict']='BINDINGS_INCOMPLETE_DECLARED'
+                status['status']='VALIDATION_INCOMPLETE_DECLARED'
+            else:
+                status['validation_verdict']='BINDINGS_VERIFIED_NOT_GATE'
+                status['status']='VALIDATION_ONLY_NOT_GATE'
         else:
             # Certification retains the original gate-evidence completeness checks.
             for key,spec in status['recordings'].items():
@@ -651,7 +720,11 @@ with tempfile.TemporaryDirectory(prefix='feedmine-b06-control-') as d:
                 errors.append('Animation Hitches recording has no exportable tables')
             for name in ('rss','cpu','memory','energy','thermal','hitches','scroll_time'):
                 if status['metrics'][name]['status']!='MEASURED':
-                    errors.append(name+': '+status['metrics'][name].get('reason','not measured'))
+                    code=status['metrics'][name].get('declared_absence')
+                    # A declared absence stays a certification failure: only an
+                    # actual measurement can make B06 gate evidence.
+                    errors.append(name+': '+(code+' — ' if code else '')+
+                                  status['metrics'][name].get('reason','not measured'))
             status['status']='EVIDENCE_ONLY_NOT_PASS' if not errors else 'INCOMPLETE'
             status['is_gate_evidence']=not errors
     except BaseException as exc:

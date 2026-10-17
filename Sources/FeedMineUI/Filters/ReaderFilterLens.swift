@@ -105,7 +105,7 @@ public struct ReaderFilterLens: View {
                 removal: .region(region)))
         }
         if filter.contentType != .all {
-            chips.append(.init(id: "content-type", kind: .contentType, label: filter.contentType.rawValue,
+            chips.append(.init(id: "content-type", kind: .contentType, label: filter.contentType.displayName,
                 systemImage: filter.contentType.icon, removal: .contentType))
         }
         for node in filter.taxonomyNodeIDs.sorted() {
@@ -118,7 +118,7 @@ public struct ReaderFilterLens: View {
                 removal: .language(language)))
         }
         if filter.mood != .all {
-            chips.append(.init(id: "mood", kind: .mood, label: filter.mood.rawValue,
+            chips.append(.init(id: "mood", kind: .mood, label: filter.mood.displayName,
                 systemImage: filter.mood.icon, removal: .mood))
         }
         if filter.effectiveExclusionRules != nil {

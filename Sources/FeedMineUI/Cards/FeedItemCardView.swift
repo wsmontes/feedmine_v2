@@ -122,7 +122,7 @@ public struct FeedItemCardView: View, Equatable {
         openingSurface(mediaAction: isAudio && availableActions.contains(.openMedia)) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(verbatim: card.title ?? "")
-                    .font(appearance.font(.cardTitle))
+                    .readerFont(.cardTitle, in: appearance)
                     .fontWeight(appearance.titleWeight)
                     .lineLimit(2)
                     .foregroundStyle(isRead ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
@@ -133,7 +133,7 @@ public struct FeedItemCardView: View, Equatable {
 
                 if let summary = card.primaryText, !summary.isEmpty {
                     Text(verbatim: summary)
-                        .font(appearance.font(.cardSummary))
+                        .readerFont(.cardSummary, in: appearance)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                         .padding(.horizontal, appearance.contentPadding)
@@ -195,7 +195,7 @@ public struct FeedItemCardView: View, Equatable {
                 .lineLimit(1)
 
             Text(verbatim: card.title ?? "")
-                .font(appearance.font(.cardTitle))
+                .readerFont(.cardTitle, in: appearance)
                 .fontWeight(appearance.titleWeight)
                 .lineLimit(2)
                 .foregroundStyle(isRead ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
@@ -203,7 +203,7 @@ public struct FeedItemCardView: View, Equatable {
 
             if let summary = card.primaryText, !summary.isEmpty {
                 Text(verbatim: summary)
-                    .font(.system(size: 11))
+                    .readerFont(size: 11, relativeTo: .caption2, in: appearance)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .padding(.top, 3)
@@ -354,7 +354,8 @@ public struct FeedItemCardView: View, Equatable {
             // announced by the symbol's own name (`bookmark`), which names neither the article nor the act. The
             // two phrases are the card menu's own (`contextMenu`), so the button and the menu say the same thing.
             .accessibilityLabel(Text(verbatim: bookmarkActionLabel))
-            .accessibilityValue(isBookmarked ? "bookmarked" : "not bookmarked")
+            .accessibilityValue(isBookmarked
+                ? String(localized: "bookmarked") : String(localized: "not bookmarked"))
         }
     }
 
@@ -380,7 +381,8 @@ public struct FeedItemCardView: View, Equatable {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("card.bookmark")
                 .accessibilityLabel(Text(verbatim: bookmarkActionLabel))
-                .accessibilityValue(isBookmarked ? "bookmarked" : "not bookmarked")
+                .accessibilityValue(isBookmarked
+                    ? String(localized: "bookmarked") : String(localized: "not bookmarked"))
         }
     }
 

@@ -1346,7 +1346,14 @@ struct FeedMineApp: App {
                     .font(.caption2)
                     .foregroundStyle(.orange)
                     .accessibilityHidden(true)
-                Text(verbatim: "Feedmine").font(.subheadline).fontWeight(.semibold)
+                // The wordmark is a brand mark, not reader copy: it keeps one line at every Dynamic Type size.
+                // Measured at AccessibilityXXXL on 2026-10-17, the text wrapped inside the header's own width and
+                // drew as `Fe-` / `ed-` / `min` / `e`; the scale floor keeps the whole word while the reader's
+                // category still scales it as far as the header's controls allow.
+                Text(verbatim: "Feedmine")
+                    .font(.subheadline).fontWeight(.semibold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.3)
                 if let label = activeContextLabel {
                     Text(verbatim: "·").font(.caption2).foregroundStyle(.secondary)
                     Text(verbatim: label)

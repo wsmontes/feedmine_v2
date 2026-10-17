@@ -336,6 +336,22 @@
         }
       }
     },
+    "Abrir no site": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open on site"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir no site"
+          }
+        }
+      }
+    },
     "Abrir o capô do feed curado": {
       "localizations": {
         "en": {
@@ -516,6 +532,22 @@
         }
       }
     },
+    "Ampliar fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widen your sources"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ampliar fontes"
+          }
+        }
+      }
+    },
     "Apagar": {
       "localizations": {
         "en": {
@@ -572,6 +604,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Articles"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Artigos"
           }
         }
       }
@@ -906,6 +944,22 @@
         }
       }
     },
+    "Conteúdo parcial: o artigo completo está no site.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partial content: the full article is on the site."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conteúdo parcial: o artigo completo está no site."
+          }
+        }
+      }
+    },
     "Continuar aprendendo": {
       "localizations": {
         "en": {
@@ -1118,6 +1172,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dismiss"
+          }
+        }
+      }
+    },
+    "Divertido": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fun"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Divertido"
           }
         }
       }
@@ -1342,6 +1412,22 @@
         }
       }
     },
+    "Explore outros assuntos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explore other topics"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explore outros assuntos"
+          }
+        }
+      }
+    },
     "Exportado pelo Feedmine": {
       "localizations": {
         "en": {
@@ -1368,6 +1454,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Export collection"
+          }
+        }
+      }
+    },
+    "Falha ao atualizar o feed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't refresh the feed"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falha ao atualizar o feed"
           }
         }
       }
@@ -1542,6 +1644,22 @@
         }
       }
     },
+    "Fóruns": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forums"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fóruns"
+          }
+        }
+      }
+    },
     "Georgia": {
       "localizations": {
         "en": {
@@ -1684,6 +1802,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Going after what’s worth reading"
+          }
+        }
+      }
+    },
+    "Inspirador": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inspiring"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inspirador"
           }
         }
       }
@@ -2178,6 +2312,22 @@
         }
       }
     },
+    "Não foi possível abrir o feed local.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't open the local feed."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível abrir o feed local."
+          }
+        }
+      }
+    },
     "Não foi possível adicionar as fontes.": {
       "localizations": {
         "en": {
@@ -2585,6 +2735,12 @@
             "state": "translated",
             "value": "Podcasts"
           }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Podcasts"
+          }
         }
       }
     },
@@ -2968,6 +3124,22 @@
         }
       }
     },
+    "Sério": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serious"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sério"
+          }
+        }
+      }
+    },
     "Só escolhas explícitas — nunca uma rolagem de passagem.": {
       "localizations": {
         "en": {
@@ -3137,6 +3309,12 @@
             "state": "translated",
             "value": "Everything"
           }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tudo"
+          }
         }
       }
     },
@@ -3146,6 +3324,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Everything in %@"
+          }
+        }
+      }
+    },
+    "Técnico": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technical"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Técnico"
           }
         }
       }
@@ -3200,6 +3394,22 @@
         }
       }
     },
+    "Você chegou ao fim das histórias disponíveis para sua seleção.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You've reached the end of the stories available for your selection."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Você chegou ao fim das histórias disponíveis para sua seleção."
+          }
+        }
+      }
+    },
     "Você entra no feed agora. Os assuntos, você responde dentro dele.": {
       "localizations": {
         "en": {
@@ -3216,6 +3426,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "You asked for more sources in %@. We’ll look for more of them."
+          }
+        }
+      }
+    },
+    "Voltar ao início": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to the start"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voltar ao início"
           }
         }
       }
@@ -3240,6 +3466,22 @@
         }
       }
     },
+    "Vídeos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Videos"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vídeos"
+          }
+        }
+      }
+    },
     "amanhecer": {
       "localizations": {
         "en": {
@@ -3256,6 +3498,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "bookmarked"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "salvo"
           }
         }
       }
@@ -3387,6 +3635,12 @@
             "state": "translated",
             "value": "not bookmarked"
           }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "não salvo"
+          }
         }
       }
     },
@@ -3396,6 +3650,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "not selected"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "não selecionado"
           }
         }
       }
@@ -3432,6 +3692,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "selected"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "selecionado"
           }
         }
       }

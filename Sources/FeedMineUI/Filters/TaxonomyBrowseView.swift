@@ -139,7 +139,7 @@ public struct TaxonomyBrowseView: View {
                 Button { toggle(row) } label: { label(row) }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("topic-node-\(row.id)")
-                    .accessibilityValue(row.isSelected ? "selected" : "not selected")
+                    .accessibilityValue(row.isSelected ? String(localized: "selected") : String(localized: "not selected"))
                 Button {
                     guard let node = children.first(where: { $0.id == row.id }) else { return }
                     Task { await open(node) }
@@ -154,7 +154,7 @@ public struct TaxonomyBrowseView: View {
             Button { toggle(row) } label: { label(row) }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("topic-node-\(row.id)")
-                .accessibilityValue(row.isSelected ? "selected" : "not selected")
+                .accessibilityValue(row.isSelected ? String(localized: "selected") : String(localized: "not selected"))
         }
     }
 
@@ -166,7 +166,7 @@ public struct TaxonomyBrowseView: View {
         } label: { label(row) }
             .buttonStyle(.plain)
             .accessibilityIdentifier("taxonomy-node-\(row.id)")
-            .accessibilityValue(row.isSelected ? "selected" : "not selected")
+            .accessibilityValue(row.isSelected ? String(localized: "selected") : String(localized: "not selected"))
     }
 
     private func label(_ row: TaxonomyNodeRow) -> some View {
