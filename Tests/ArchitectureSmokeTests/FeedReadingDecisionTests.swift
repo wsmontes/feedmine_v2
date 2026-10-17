@@ -65,9 +65,59 @@ final class FeedReadingDecisionTests: XCTestCase {
         XCTAssertEqual(link, url)
     }
 
+    /// A teaser's text is not nothing. Without an address the stored summary is the only reading the card has, so
+    /// the reader opens locally with it instead of the tap ending in no target. This is also the saved/offline
+    /// case: `AppComposition.openSaved` routes a saved card through this same decision, and its text must stay
+    /// readable when the address no longer resolves.
+    func testATeaserWithoutAnAddressKeepsItsOwnTextLocally() {
+        guard case .local(let content) = target(summary: "So easy!", siteURL: nil) else {
+            return XCTFail("stored text with no address must not drop the reader with no target")
+        }
+        XCTAssertEqual(content.origin, .sourceSummary)
+        XCTAssertEqual(content.text, "So easy!", "the reader holds exactly the text the app has, and no more")
+        XCTAssertNil(content.siteURL, "no address means no site action and no promise about the site")
+        XCTAssertTrue(content.isPartial, "completeness is still unconfirmed, so the note says so")
+    }
+
+    /// The address can exist and still be unusable. A scheme the in-app browser cannot open is not a door, and it
+    /// must not cost the reader the text the app already holds.
+    func testASavedArticleWithAnUnusableAddressReadsItsStoredTextLocally() {
+        guard case .local(let content) = target(summary: "Guardado para ler offline.",
+            siteURL: URL(string: "mailto:redacao@example.test")) else {
+            return XCTFail("an address the browser cannot open is not a reason to lose the saved text")
+        }
+        XCTAssertEqual(content.text, "Guardado para ler offline.")
+        XCTAssertNil(content.siteURL, "an address the app cannot open is not offered, because it cannot work")
+
+        guard case .local(let body) = target(body: "Corpo do feed",
+            siteURL: URL(string: "mailto:redacao@example.test")) else {
+            return XCTFail("the stored body is readable whatever the address does")
+        }
+        XCTAssertEqual(body.origin, .sourceBody)
+        XCTAssertNil(body.siteURL)
+    }
+
+    func testOnlyHTTPAddressesWithAHostAreDoors() {
+        XCTAssertEqual(FeedReadingDecision.usableSiteURL(url), url)
+        XCTAssertEqual(FeedReadingDecision.usableSiteURL(URL(string: "http://example.test/a")),
+            URL(string: "http://example.test/a"))
+        XCTAssertNil(FeedReadingDecision.usableSiteURL(nil))
+        XCTAssertNil(FeedReadingDecision.usableSiteURL(URL(string: "mailto:redacao@example.test")))
+        XCTAssertNil(FeedReadingDecision.usableSiteURL(URL(string: "javascript:alert(1)")))
+        XCTAssertNil(FeedReadingDecision.usableSiteURL(URL(string: "feedmine://article")))
+        XCTAssertNil(FeedReadingDecision.usableSiteURL(URL(string: "https:/article")), "no host is no door")
+    }
+
+    /// `nil` is reserved for the card that has neither text nor address: there is nothing to show and nothing a
+    /// tap could offer. Text without an address is never nil — that is the local exit above.
     func testACardWithNothingToReadAndNoAddressOffersNothing() {
         XCTAssertNil(target(siteURL: nil), "no text and no address is not a reading experience")
-        XCTAssertNil(target(body: "\n", summary: "  ", siteURL: nil))
+        XCTAssertNil(target(body: "\n", summary: "  ", siteURL: nil), "whitespace is not text")
+
+        guard case .site(let link) = target(body: "\n", summary: "  ", siteURL: url) else {
+            return XCTFail("nothing to read with an address is still the site, the one thing the card offers")
+        }
+        XCTAssertEqual(link, url)
     }
 
     func testLocalTextIsNeverPresentedAsTheWholeArticle() {
