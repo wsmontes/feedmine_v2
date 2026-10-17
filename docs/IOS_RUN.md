@@ -289,12 +289,16 @@ Nota: `catalog.sqlite` está excluído pelo `.gitignore` e não é identificado 
 Depois, verifica novamente o par **dentro** de
 `.build/feedmine-v2.xcarchive/Products/Applications/FeedMine.app`, o bundle ID,
 a versão/build e o Git SHA, antes de export/upload. Em `--dry-run`, não exige
-credenciais ASC, não exporta, não faz upload nem tag. Os resultados são escritos em
+credenciais ASC, não exporta, não faz upload nem tag. Numa execução real a chave ASC é resolvida
+**antes** do archive, e `archive` + `-exportArchive` recebem as mesmas flags de assinatura a partir
+de uma única definição (`SIGNING_FLAGS`) — o export re-assina com as mesmas credenciais. Os resultados são escritos em
 `.build/pd10-p0c-preflight.json` e
 `.build/pd10-p0c-<version>-build-<build>-<sha>.json` somente após verificações completas.
 
 ```sh
 bash -n scripts/fetch-catalog.sh scripts/release-testflight.sh scripts/verify_product_catalogue.sh
+scripts/test-export-options.sh
+scripts/test-export-signing-flags.sh
 python3 -m unittest discover -s Tests/ReleaseScripts -p 'test_catalog_*.py'
 python3 -m unittest discover -s Tests/ReleaseScripts -p 'test_release_preflight.py'
 swift build
