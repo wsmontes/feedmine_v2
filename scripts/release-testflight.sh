@@ -6,6 +6,9 @@
 #   * refuses archive unless current public inventory, compiler and bundled SQLite provenance agree;
 #   * archives, then verifies the git SHA stamped inside the archive against HEAD, aborting on mismatch;
 #   * uploads with the App Store Connect API key (the Xcode Apple-ID path fails on this machine);
+#   * hands `archive` and `-exportArchive` the SAME signing flags — one array, never two literals —
+#     so a clean machine mints the identity at archive time and the export re-signs with the same
+#     credentials instead of failing only after the ~130 s archive (scripts/test-export-signing-flags.sh);
 #   * snapshots the export-options plist before the archive, validates that private copy and hands
 #     Xcode that same file — so the destination that was checked is the destination Xcode reads;
 #   * creates the local annotated tag `ios/<version>-build.<build>-<sha>` and prints the pairing.
@@ -163,10 +166,30 @@ python3 scripts/verify_catalog_release.py preflight --resources "$RESOURCES" \
   --head "$SHA" --staging "$STAGING" --evidence-dir "$EVIDENCE_DIR" || {
   echo "ABORTADO: public catalogue provenance could not be verified before archive" >&2; exit 9;
 }
+# Signing flags for BOTH xcodebuild calls (archive below, -exportArchive further down): defined
+# once, so the export cannot drift from the archive. The archive gets the ASC key too — on a clean
+# machine that is what mints/renews the signing identity, and the export must re-sign with the very
+# same credentials; otherwise export fails by signing only after the ~130 s archive. A dry run
+# never exports and is documented to run without secrets, so it stays on -allowProvisioningUpdates.
+SIGNING_FLAGS=(-allowProvisioningUpdates)
+if [ "$DRY_RUN" != "1" ]; then
+  if [ -z "${ASC_KEY_ID:-}" ]; then missing_env ASC_KEY_ID; fi
+  if [ -z "${ASC_ISSUER_ID:-}" ]; then missing_env ASC_ISSUER_ID; fi
+  KEY_ID="$ASC_KEY_ID"
+  ISSUER_ID="$ASC_ISSUER_ID"
+  KEY_PATH="${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8}"
+  if [ ! -f "$KEY_PATH" ]; then
+    echo "ABORTADO: API key ausente em $KEY_PATH" >&2
+    exit 9
+  fi
+  SIGNING_FLAGS+=(-authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$KEY_ID" \
+    -authenticationKeyIssuerID "$ISSUER_ID")
+fi
+
 echo "== archiving $VERSION ($BUILD) from $SHORT =="
 rm -rf "$ARCHIVE" .build/tf-export
 if xcodebuild archive -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
-  -destination "generic/platform=iOS" -archivePath "$ARCHIVE" -allowProvisioningUpdates \
+  -destination "generic/platform=iOS" -archivePath "$ARCHIVE" "${SIGNING_FLAGS[@]}" \
   > /tmp/fm-v2-tf-archive.log 2>&1; then
   :
 else
@@ -203,20 +226,9 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-# Only the export/upload step needs App Store Connect secrets (the export re-signs the archive).
-if [ -z "${ASC_KEY_ID:-}" ]; then missing_env ASC_KEY_ID; fi
-if [ -z "${ASC_ISSUER_ID:-}" ]; then missing_env ASC_ISSUER_ID; fi
-KEY_ID="$ASC_KEY_ID"
-ISSUER_ID="$ASC_ISSUER_ID"
-KEY_PATH="${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8}"
-if [ ! -f "$KEY_PATH" ]; then
-  echo "ABORTADO: API key ausente em $KEY_PATH" >&2
-  exit 9
-fi
-
+# The export must re-sign with the SAME credentials as the archive: one array, expanded here.
 if ! xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist "$EXPORT_SNAPSHOT" \
-  -exportPath .build/tf-export -authenticationKeyPath "$KEY_PATH" \
-  -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID" > /tmp/fm-v2-tf-upload.log 2>&1; then
+  -exportPath .build/tf-export "${SIGNING_FLAGS[@]}" > /tmp/fm-v2-tf-upload.log 2>&1; then
   echo "ABORTADO: export/upload falhou"; grep -aE "error:" /tmp/fm-v2-tf-upload.log | head -5 || true; exit 8
 fi
 
