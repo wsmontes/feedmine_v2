@@ -485,6 +485,124 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
+    /// R6-E, a cerca do **destinatário**: um recibo de edição **superada** não admite na edição vigente.
+    ///
+    /// O dreno valida o recibo quando conclui a fatia (`FeedRunwayDriver`: `intent.scope == scope` e
+    /// `session.currentRunwayScope() == scope`), mas existe uma suspensão entre essa validação e a entrega ao host.
+    /// E `admitPublishedGrowth()` opera sobre a **edição instalada**, não sobre a edição que o recibo identifica
+    /// (lê `current.presentation.editionID`): a validação do produtor não substitui a verificação do destinatário,
+    /// porque um recibo de edição superada entregue depois do movimento admitiria na edição vigente cartas que só a
+    /// publicação dela autoriza.
+    ///
+    /// O vinco usado é o que existe: o `PublicationRelay` por onde o dreno entrega, cujo receptor é
+    /// `publicationConcluded` — o destinatário, **lido** aqui e em nenhum momento reescrito por política. O caso,
+    /// em ordem:
+    ///
+    /// 1. **Retém** o recibo real de uma segunda publicação da edição que o leitor vai deixar (o mecanismo da
+    ///    R6-E: mais itens por fonte e a ativação da pista, que é o que conclui a fatia no dreno). É a suspensão
+    ///    nomeada, instanciada: a fatia concluiu, o recibo existe, e ainda não chegou ao host.
+    /// 2. **Move o leitor** por um caminho do produto — `selectContext` — de modo que a edição acima fica superada
+    ///    (a associação que a carregava está retirada) e a vigente é outra.
+    /// 3. **Publica na edição vigente e retém o recibo dela.** Sem esta retenção o recibo obsoleto não teria o que
+    ///    admitir: toda admissão deixa a janela no teto congelado ou com toda a reserva já admitida, de modo que só
+    ///    uma publicação **sem fato de crescimento** abre espaço — e a publicação cujo recibo está retido é
+    ///    exatamente isso. A R6-E é a outra metade: com o recibo entregue, a janela cresce.
+    /// 4. **Entrega** o recibo obsoleto ao mesmo destinatário, por um instrumento que só registra e encaminha — a
+    ///    política exercitada é a do produto.
+    ///
+    /// As premissas são afirmadas antes de medir, como na R6-E: a publicação tem de chegar à reserva (lida no
+    /// `PublicationStore` antes e depois), a janela admitida não pode ter crescido enquanto o recibo dela estava
+    /// retido, e nenhum prazo derivado de fato pode disparar um `foreground()` na medida — com o transporte
+    /// saudável `localRetryEligibleAt()` e `acquisitionResumeAt()` são nulos (`scheduleLocalRetryIfNeeded`).
+    func testAReceiptForASupersededEditionDoesNotGrowTheCurrentEditionsWindow() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 2 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        let superseded = try XCTUnwrap(root.association)
+        let supersededEdition = try XCTUnwrap(superseded.store.state.presentation).editionID
+
+        // 1. O recibo da edição que o leitor vai deixar, retido na entrega real do dreno. O acréscimo é modesto
+        //    de propósito: os itens que ele traz ficam no `ContentStore`, que é **um só** para o diretório, e a
+        //    edição vigente do passo 2 nasce dessa mesma oferta local — com vinte e quatro itens por fonte ela
+        //    nasceria já no teto congelado e não sobraria espaço para o caso medir nada.
+        var leftBehind: [PublicationReceipt] = []
+        superseded.publicationRelay.receive = { leftBehind.append($0) }
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        _ = try await superseded.driver.activateCurrentPresentation(resources: FeedAssociation.resources)
+        let stale = try XCTUnwrap(leftBehind.first,
+            "premissa: a segunda publicação da edição que o leitor vai deixar tem de entregar um recibo")
+        XCTAssertTrue(leftBehind.allSatisfy { $0.editionID == supersededEdition },
+            "premissa: os recibos retidos identificam a edição \(supersededEdition.rawValue.uuidString)")
+
+        // 2. O leitor muda de contexto: a edição acima fica superada, e a vigente é outra.
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+        let live = try XCTUnwrap(root.association)
+        XCTAssertTrue(root.association === live)
+        XCTAssertFalse(live === superseded)
+        XCTAssertFalse(superseded.active, "premissa: a associação que carregava a edição superada está retirada")
+        let liveEdition = try XCTUnwrap(live.store.state.presentation).editionID
+        XCTAssertNotEqual(liveEdition, supersededEdition,
+            "premissa: a edição vigente tem de ser outra — o recibo obsoleto identifica a que o leitor deixou")
+
+        let publication = PublicationStore(database: live.database)
+        let anchor = try XCTUnwrap(live.store.state.presentation).window.anchor.cardID
+        func admitted() -> [PublicationCardID] {
+            live.store.state.presentation?.window.items.map(\.id) ?? []
+        }
+        /// O que a reserva já publicou **além da âncora**, lido do store: é a premissa do caso.
+        func reservedAhead() throws -> Int {
+            try publication.cards(editionID: liveEdition, around: anchor, backwardCapacity: 0,
+                forwardCapacity: 400).count - 1
+        }
+        let before = admitted()
+        let reservedBefore = try reservedAhead()
+        let anchorIndex = try XCTUnwrap(before.firstIndex(of: anchor), "a âncora do leitor tem de estar na janela")
+        let ceiling = anchorIndex + live.bounds.forwardCapacity + 1
+        XCTAssertLessThan(before.count, ceiling,
+            "premissa: a janela admitida tem de ter espaço dentro do teto congelado — cheia, a admissão seria impossível por outra razão")
+
+        // 3. A publicação da edição vigente, com o recibo dela retido: publicada, ainda não admitida.
+        let recipient = live.publicationRelay.receive
+        var currentEditionReceipts: [PublicationReceipt] = []
+        live.publicationRelay.receive = { currentEditionReceipts.append($0) }
+        FixtureTransport.feedItemCount.withLock { $0 = 24 }
+        _ = try await live.driver.activateCurrentPresentation(resources: FeedAssociation.resources)
+        XCTAssertFalse(currentEditionReceipts.isEmpty,
+            "premissa: a segunda publicação da edição vigente tem de concluir e entregar um recibo")
+        XCTAssertTrue(currentEditionReceipts.allSatisfy { $0.editionID == liveEdition },
+            "premissa: os recibos retidos identificam a edição vigente \(liveEdition.rawValue.uuidString)")
+        let reservedAfter = try reservedAhead()
+        XCTAssertGreaterThan(reservedAfter, reservedBefore,
+            "premissa: a segunda publicação da edição vigente tem de chegar à reserva: cartas além da âncora \(reservedBefore) -> \(reservedAfter)")
+        XCTAssertEqual(admitted(), before,
+            "premissa: com o recibo da edição vigente retido, nada cresce a janela admitida")
+        let localRetryDeadline = await live.driver.localRetryEligibleAt()
+        let acquisitionResumeDeadline = await live.driver.acquisitionResumeAt()
+        XCTAssertNil(localRetryDeadline,
+            "premissa: com o transporte saudável não há prazo de retry local para disparar um foreground() na medida")
+        XCTAssertNil(acquisitionResumeDeadline, "premissa: nem uma aquisição adiada para retomar")
+
+        // 4. A entrega do recibo obsoleto: o destinatário do produto decide; o instrumento só observa.
+        var delivered: [PublicationReceipt] = []
+        live.publicationRelay.receive = { receipt in
+            delivered.append(receipt)
+            await recipient?(receipt)
+        }
+        await live.publicationRelay.deliver(stale)
+        XCTAssertEqual(delivered.map(\.editionID), [supersededEdition],
+            "premissa: o recibo obsoleto tem de ser entregue ao destinatário da edição vigente — a falha seguinte é do defeito, não da entrega")
+        XCTAssertEqual(admitted(), before,
+            "um recibo de edição superada (\(supersededEdition.rawValue.uuidString)) não pode admitir na edição "
+                + "vigente (\(liveEdition.rawValue.uuidString)): a reserva foi de \(reservedBefore) para "
+                + "\(reservedAfter) cartas além da âncora e a janela admitida ficou em \(admitted().count) cartas "
+                + "(antes: \(before.count), teto: \(ceiling)) — \(root.diagnosticsForTheWiringTest(live))")
+        await live.close()
+    }
+
     // MARK: - PD10-P0A: public sync contract, through the production URL and the real composition root
 
     private func publicCatalogueRoot(directory: URL) -> AppComposition {
