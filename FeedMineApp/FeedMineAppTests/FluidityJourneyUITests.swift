@@ -64,7 +64,13 @@ final class FluidityJourneyUITests: XCTestCase {
         app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["FEEDMINE_FIXTURE_ITEMS"] = "95"
-        app.launchEnvironment["FEEDMINE_TRACE_CAPTURE"] = "1"
+        // O padrão continua a captura ligada (a jornada lê a série nela). `TEST_RUNNER_FEEDMINE_FRAMES_CAPTURE`
+        // deixa a mesma jornada rodar com a captura desligada: em Release a publicação da série é `#if DEBUG` e
+        // não existe, então o que o par mede é o custo do traço que ambos os braços pagam — o teste tem de poder
+        // declarar o braço em vez de supor que a flag muda alguma coisa.
+        let capture = ProcessInfo.processInfo.environment["FEEDMINE_FRAMES_CAPTURE"] ?? "1"
+        print("FRAME-CAPTURE requested=\(capture)")
+        app.launchEnvironment["FEEDMINE_TRACE_CAPTURE"] = capture
         app.launch()
 
         let scroll = app.scrollViews.firstMatch
