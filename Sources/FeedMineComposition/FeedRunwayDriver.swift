@@ -1,4 +1,7 @@
 // Executes controller-owned causal effects for an explicitly driven local session.
+// Reports the publication facts a slice concludes (the receipt `PublicationOutcome.published` carries) to the host
+// that owns the admitted list: the drain is where a publication becomes visible to this process, so the fact is
+// stated there instead of being guessed later from the clock.
 import Foundation
 import FeedMineDomain
 import FeedMineAcquisition
@@ -63,6 +66,11 @@ public actor FeedRunwayDriver {
     private let candidateProvider: CandidateProvider
     /// Optional evidence of the replenishment attempts this driver executes; nil records nothing.
     private let trace: ReplenishmentTrace?
+    /// The publication fact of this drain, delivered the moment it is concluded: the receipt
+    /// `PublicationOutcome.published` carries, once `completeLocalSlice` accepted it. Reporting is not installing —
+    /// nothing here changes the admitted list; the host that owns what the reader sees decides what follows. Nil
+    /// when the host asks for no report.
+    private let onPublication: (@Sendable (PublicationReceipt) async -> Void)?
     /// What the causal drain last settled: the acquisition it executed, or nil when it executed none.
     /// It is read once — where the reader's whole situation is drawn — and carries no lifetime of its own:
     /// the next drain clears it, and any newer observation or supply change moves the runway past it.
@@ -80,7 +88,8 @@ public actor FeedRunwayDriver {
         readiness: MediaReadiness? = nil,
         onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)? = nil,
         makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil,
-        trace: ReplenishmentTrace? = nil) throws {
+        trace: ReplenishmentTrace? = nil,
+        onPublication: (@Sendable (PublicationReceipt) async -> Void)? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw FeedRunwayDriverError.policyContextMismatch }
         if let demand = selectedSourceCoverage {
             guard demand.contextKey == plan.context.key, demand.editorialRevisionID == plan.revision.id,
@@ -98,6 +107,7 @@ public actor FeedRunwayDriver {
         acquisitionCycle = RunwayAcquisitionCycle(runway: runway, coordinator: coordinator, trace: trace)
         self.coordinator = coordinator
         self.trace = trace
+        self.onPublication = onPublication
         self.monotonicNow = monotonicNow; self.makeSegmentIdentity = makeSegmentIdentity; self.prepare = prepare
     }
 
@@ -327,6 +337,11 @@ public actor FeedRunwayDriver {
                     try await runway.completeLocalSlice(intent, outcome: outcome, at: monotonicNow())
                     // Publication extends the reserve only. Installing a different admitted list here
                     // was the defect this task removes (analysis §2): no gesture, new cards on screen.
+                    // R6-E: what the publication *is*, stated where it concludes — the receipt the line above just
+                    // accepted, with scope and time already checked by it. Reporting it is not installing it: the
+                    // host owns the admitted list, and the window that follows is its own `publishedGrowth`
+                    // admission, which preserves the anchor and appends only already-published cards.
+                    if case .published(_, let receipt) = outcome { await onPublication?(receipt) }
                 } catch {
                     try await runway.failLocalSlice(intent, failure: error is CancellationError ? .cancelled : .failed, at: monotonicNow())
                     throw error

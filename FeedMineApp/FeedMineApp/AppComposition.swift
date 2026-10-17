@@ -1742,6 +1742,9 @@ final class FeedAssociation {
     @ObservationIgnored private let maintainTail: @Sendable (PublicationStore.HiddenTailLease) async throws -> PublicationStore.TailSuccessionResult
     private let cold: ColdFeedBootstrap
     @ObservationIgnored private let relay: EvidenceRelay
+    /// The concluded-publication facts this association acts on (R6-E): the driver's drain and the cold bootstrap
+    /// both deliver them here, to the owner of the admitted window.
+    @ObservationIgnored private let publicationRelay: PublicationRelay
     @ObservationIgnored private var preparation: PreparationProgress?
     @ObservationIgnored private let targetNames: [AcquisitionTargetID: String]
     @ObservationIgnored private let admittedHeadlines: @Sendable () -> [String]
@@ -2387,6 +2390,12 @@ final class FeedAssociation {
         // the slice is about to examine** (the bootstrap asks the slice which ones, prepares them, then examines), so
         // the head-fetching closure that used to stand here is gone rather than kept as a second, competing view of
         // what the first screen needs.
+        // R6-E: the publication fact gets a channel of its own, built **before** the driver exists. The driver
+        // reports every segment a slice concludes; this association — the owner of the admitted list — decides what
+        // the window does with it. Nothing can publish before the association exists, so the receiver (set at the
+        // end of this initializer) is always in place before the first fact.
+        let publicationRelay = PublicationRelay()
+        self.publicationRelay = publicationRelay
         driver = try FeedRunwayDriver(session: session, runway: runway, plan: plan, policy: policy,
             acquisition: acquisition, coordinator: coordinator,
             monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
@@ -2394,7 +2403,7 @@ final class FeedAssociation {
             prepare: prepare,
             selectedSourceCoverage: .init(selectedSourceCoverageFor: plan.context.key, editorialRevisionID: plan.revision.id),
             readiness: readiness, onDiscoveryPage: onDiscoveryPage, makeMediaOpportunity: makeMediaOpportunity,
-            trace: replenishment)
+            trace: replenishment, onPublication: { receipt in await publicationRelay.deliver(receipt) })
         let relay = EvidenceRelay()
         self.relay = relay
         cold = try ColdFeedBootstrap(session: session, plan: plan, policy: policy,
@@ -2410,6 +2419,11 @@ final class FeedAssociation {
         targetNames = Dictionary(uniqueKeysWithValues: feeds.map { ($0.targetID, $0.displayName) })
         let provider = CandidateProvider(contentStore: ContentStore(database: db))
         admittedHeadlines = { (try? provider.candidates(for: plan, after: nil, examinedCapacity: 12))?.candidates.compactMap(\.headline) ?? [] }
+        // Every stored property is set: the channel's target is this association from here on. It is the same shape
+        // the cold evidence relay has, and for the same reason — the driver is built before this object finishes
+        // being built, so it holds a value that outlives the initializer and is pointed at the association once
+        // there is one.
+        publicationRelay.receive = { [weak self] receipt in await self?.publicationConcluded(receipt) }
         // The reader's window reaches the screen **here**, before this launch has drawn anything: it is the whole
         // point of a warm start. The handoff and the store keep their own validation, and a later `.initial`
         // admission returns this same projection, so installing it again is a no-op by the store's own rule.
@@ -2640,35 +2654,23 @@ final class FeedAssociation {
         }
     }
 
-    /// F05/R4: the runtime — never a reader gesture — extends the admitted window with cards the local
-    /// store already published. The anchor, the reading position and every already-admitted card are
-    /// preserved; a window with nothing new installs nothing. The evidence callback is synchronous, so
-    /// the actor call is scheduled rather than awaited.
-    @ObservationIgnored private var growthTask: Task<Void, Never>?
-    /// Remaining bounded follow-up attempts after a fresh presentation (R6).
-    @ObservationIgnored private var growthFollowUp = 0
-
-    private func schedulePublishedGrowth() {
-        growthTask?.cancel()
-        growthTask = Task { [weak self] in
-            guard !Task.isCancelled else { return }
-            await self?.growAdmittedWindowIfPublished()
-        }
-    }
-
-    /// R6: publications arrive in **bursts**, and a burst that lands after the install that followed it would
-    /// otherwise never be materialised — measured: the shipped catalogue published 22 cards (segments 1+1+20)
-    /// while the window kept the first one, because nothing triggered a later read. Each attempt is a fact (it
-    /// asks the session for already-published cards beyond the tail) and the follow-up is bounded and cheap, so
-    /// a quiet reserve costs nothing and a burst converges.
-    private static let growthFollowUpAttempts = 8
-    private static let growthFollowUpSeconds: Double = 0.75
-
-    private func startGrowthFollowUp() {
-        growthFollowUp = Self.growthFollowUpAttempts
-        schedulePublishedGrowth()
-    }
-
+    /// F05/R4 + R6-E: the runtime — never a reader gesture, never the clock — extends the admitted window with
+    /// cards the local store already published. The anchor, the reading position and every already-admitted card
+    /// are preserved; a window with nothing new installs nothing.
+    ///
+    /// Every caller is a **fact**, and the two kinds of caller are the two kinds of fact there are:
+    ///
+    /// - a concluded publication — the receipt the driver delivers from the drain that executed the slice
+    ///   (`publicationConcluded`), and the cold bootstrap's own `.published` (the outcome `launch()` returns and the
+    ///   evidence raised while slower feeds still answer);
+    /// - a reader opportunity (`viewport`, `foreground`), which is the reader's own and is what carries a reserve
+    ///   the reader had no screen for (the hidden tail succeeded in `background()`).
+    ///
+    /// The bounded chain of timed reads that stood here is **gone**: it could not state when a publication
+    /// concluded, so a publication that concluded after it — or while a driver drain awaited media and acquisition
+    /// for minutes — had no fact with which to reach the window, and the window kept only the first segment. The
+    /// growth itself is unchanged and stays the session's own admission (`FeedPresentationAdmission.publishedGrowth`),
+    /// bounded by the frozen forward capacity of the anchor and a no-op when repeated.
     private func growAdmittedWindowIfPublished() async {
         do {
             guard active else { return }
@@ -2683,14 +2685,18 @@ final class FeedAssociation {
                 // Cards arrived: whatever end the reader was shown is no longer true.
                 if store.state.work == .endOfContent { try install(store.state.reporting(.idle)) }
             }
-            guard growthFollowUp > 0 else { return }
-            growthFollowUp -= 1
-            growthTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(Self.growthFollowUpSeconds * 1_000_000_000))
-                guard !Task.isCancelled else { return }
-                await self?.growAdmittedWindowIfPublished()
-            }
         } catch { reportFailure(error) }
+    }
+
+    /// R6-E: a publication that concluded, stated as the fact it is. The driver delivers the receipt of the segment
+    /// its drain just executed, so the window follows the publication at that moment — a launch, a viewport, a
+    /// foreground, a retry, or a publication nobody's opportunity followed, which is the case the timed chain could
+    /// not serve (the red regression R6-E). Nothing else is derived from the receipt: the identity of the segment is
+    /// already the store's, and what the window does with it is `growAdmittedWindowIfPublished`.
+    private func publicationConcluded(_ receipt: PublicationReceipt) async {
+        Self.log("publication concluded edition=\(receipt.editionID.rawValue.uuidString) "
+            + "segment=\(receipt.segmentID.rawValue.uuidString) ordinal=\(receipt.segmentOrdinal)")
+        await growAdmittedWindowIfPublished()
     }
 
     /// PO 2026-10-14: the end of the reader's eligible offer is stated only from the full settled evidence the
@@ -2739,7 +2745,7 @@ final class FeedAssociation {
             let started = PreparationProgress(startedAt: ProcessInfo.processInfo.systemUptime)
             preparation = started
             try install(store.state.reporting(.preparing(started)))
-            relay.receive = { [weak self] in self?.receive($0) }
+            relay.receive = { [weak self] in await self?.receive($0) }
             // A última evidência de pipeline **fica**: `receive` para de ser chamado quando o relé é desligado, e a
             // linha de jornada do console continua podendo dizer quantas fontes foram contactadas e quantas
             // responderam depois que a cadeia fria terminou (ordem do PO, 2026-10-15). Nada a lê além dela: a tela
@@ -2755,10 +2761,11 @@ final class FeedAssociation {
             try install(FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state))
             Self.log("cold bootstrap settled")
             if case .published = outcome {
-                // R6: the driver's activation below can await media/acquisition for a long time on the shipped
-                // catalogue (measured: minutes, while the reserve already held 22 published cards). The window
-                // must fill from the publication fact, not from the end of that await.
-                startGrowthFollowUp()
+                // R6/E-F: the bootstrap's own publication is a fact, and the window follows it here — before the
+                // driver's activation below, which can await media and acquisition for a long time on the shipped
+                // catalogue (measured: minutes, while the reserve already held 22 published cards). Where a
+                // publication concludes inside the driver instead, its receipt arrives from there.
+                await growAdmittedWindowIfPublished()
             } else {
                 // Review F16: no first Edition yet. Recover without a gesture at the earliest fact-based
                 // time: a cooling feed's expiry, else one request timeout (what one attempt may cost).
@@ -2772,9 +2779,10 @@ final class FeedAssociation {
         let snapshot = try await driver.activateCurrentPresentation(resources: Self.resources)
         try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
         try await installSettledEligibleOffer()
-        // R5: growth belongs to a *fresh* presentation. A reopen shows exactly what the reader left (S5);
-        // the reader's own window is extended later by the opportunities they trigger.
-        if restored == nil { startGrowthFollowUp() }
+        // R5/S5: nothing is armed here, and nothing needs to be. A reopen shows exactly what the reader left — the
+        // window installed above is the projection of their own checkpoint — and the window that does grow is the
+        // one a **concluded publication** grows: the driver delivered any receipt of this drain from inside it, and
+        // the bootstrap's own publication was followed above. The end of the launch is not a fact about the reserve.
         await scheduleLocalRetryIfNeeded()
     }
 
@@ -2810,9 +2818,11 @@ final class FeedAssociation {
     }
 
     /// PD-3: reduce pipeline evidence into the preparation screen value.
-    private func receive(_ evidence: ColdFeedEvidence) {
+    private func receive(_ evidence: ColdFeedEvidence) async {
         guard active, var progress = preparation else { return }
         let now = ProcessInfo.processInfo.systemUptime
+        // Whether this delivery installed the first Edition — the publication fact whose window follows it.
+        var concludedPublication = false
         switch evidence {
         case .contacting(let targets):
             for target in targets {
@@ -2825,10 +2835,12 @@ final class FeedAssociation {
             progress = progress.applying(.settled(id: target.rawValue.uuidString, contributed: changed, reachable: reachable), at: now)
             if changed {
                 progress = progress.applying(.admitted(headlines: admittedHeadlines()), at: now)
-                // R7: a source that brought supply *is* the publication-completed event — the burst may land
-                // after any timed follow-up has finished, so this restarts the bounded chain (it does not
-                // cancel it, which is what the first version got wrong).
-                startGrowthFollowUp()
+                // R7-E: a source that brought supply is **not** the publication-completed event, and the earlier
+                // claim here ("a source that brought supply *is* the publication-completed event") was false in
+                // both directions: `ColdFeedBootstrap.run` raises `.settled` **before** the publication attempt a
+                // supply change may open, and it raises it even when no attempt follows (`first.snapshot == nil`
+                // already published). Nothing grows the window from a settle: the publication fact is the
+                // `.published` case below — the same segment the bootstrap returns as its outcome.
             }
         case .preparingMedia:
             break
@@ -2837,12 +2849,18 @@ final class FeedAssociation {
             // F06: show the first Edition now; slower feeds keep answering behind the badge.
             do {
                 try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
-                startGrowthFollowUp()
+                concludedPublication = true
             }
             catch { Self.log("early publication rejected") }
         }
+        // The value and its report are written **before** the growth: a delivery that suspends waiting for the
+        // window must not lose a concurrent target's progress (`executeConcurrently` settles several at once).
         preparation = progress
         do { try install(store.state.reporting(.preparing(progress))) } catch { Self.log("preparation update rejected") }
+        // R6-E: this case is the publication fact — the snapshot it installed is the outcome of the segment
+        // `InitialProductionSlice` published, and the window that already existed for it is filled here, while the
+        // slower feeds are still answering behind the badge.
+        if concludedPublication { await growAdmittedWindowIfPublished() }
     }
 
     func viewport(_ observation: ViewportObservation, activity: RunwayActivity,
@@ -2903,10 +2921,15 @@ final class FeedAssociation {
             // no corpo de uma view nem no quadro que está sendo desenhado. Um repouso (`stationary`) é o fato que
             // a decisão nomeia e grava na hora; as observações em movimento são as que a janela limita.
             await recordSettledPosition(settled: activity == .stationary)
-            // O fim é decidido **antes** de a janela crescer: se a admissão trouxe cards, o crescimento retrata o
-            // fim na mesma oportunidade, em vez de o fim ser reinstalado por cima da retratação (revisão,
-            // 2026-10-14).
+            // O fim é decidido antes desta leitura: se esta oportunidade trouxer cards, o crescimento retrata o fim
+            // em vez de o fim ser reinstalado por cima da retratação (revisão, 2026-10-14). Uma publicação que
+            // conclui **dentro** deste drain já cresceu a janela pelo fato (o recibo que o driver entrega), e o fim
+            // não volta por cima disso: publicar zera o `readyAhead` da pista e sem ele o settlement não é o fim.
             try await installSettledEligibleOffer()
+            // A leitura abaixo é a **oportunidade do leitor**, nunca um relógio: as publicações crescem a janela no
+            // fato, e o que ela pega é a reserva cujo fato o leitor não tinha tela para receber — a cauda oculta
+            // sucedida no `background()`, publicada com a tela desligada e materializada quando ele volta. Repetir é
+            // no-op: a admissão é append-only e limitada pelo teto congelado da âncora.
             await growAdmittedWindowIfPublished()
             await scheduleLocalRetryIfNeeded()
             #if DEBUG
@@ -3018,10 +3041,12 @@ final class FeedAssociation {
             // (diretiva de execução V2, linha 86).
             let snapshot = try await driver.activateCurrentPresentation(resources: Self.resources)
             try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
-            // O fim é decidido **antes** de a janela crescer: se a admissão trouxe cards, o crescimento retrata o
-            // fim na mesma oportunidade, em vez de o fim ser reinstalado por cima da retratação (revisão,
-            // 2026-10-14).
+            // O fim é decidido antes desta leitura (mesma razão do `viewport`): uma publicação concluída já cresceu a
+            // janela pelo fato, e o fim não se reinstala por cima disso.
             try await installSettledEligibleOffer()
+            // A mesma oportunidade do leitor que o `viewport` oferece, no outro caminho por onde ele volta à tela: é
+            // aqui que a reserva publicada enquanto ele não tinha tela — a cauda oculta sucedida no `background()` —
+            // é materializada. Não é relógio: nada dispara isto por tempo decorrido.
             await growAdmittedWindowIfPublished()
             await scheduleLocalRetryIfNeeded()
         } catch { reportFailure(error); await scheduleLocalRetryIfNeeded() }
@@ -3189,11 +3214,23 @@ final class NetworkPathObserver: @unchecked Sendable {
     }
 }
 
-/// Delivers cold-bootstrap evidence to the main-actor association after it is constructed.
+/// Delivers cold-bootstrap evidence to the main-actor association after it is constructed. The delivery is
+/// `async` because one of its cases — `.published` — *is* a publication fact, and the window that follows it is the
+/// association's own (`growAdmittedWindowIfPublished`): the fact is acted on where it arrives, not scheduled.
 @MainActor
 final class EvidenceRelay {
-    var receive: ((ColdFeedEvidence) -> Void)?
-    func deliver(_ evidence: ColdFeedEvidence) { receive?(evidence) }
+    var receive: ((ColdFeedEvidence) async -> Void)?
+    func deliver(_ evidence: ColdFeedEvidence) async { await receive?(evidence) }
+}
+
+/// Delivers a concluded publication to the main-actor association after it is constructed. The driver executes the
+/// slice, so the receipt exists inside its drain; the association owns the admitted list, so the fact crosses to it
+/// here. This is the channel the R6-E decision names — `PublicationOutcome.published` and its receipt, the type of
+/// fact the publication side already has — and never a trace event, a timer or a queue.
+@MainActor
+final class PublicationRelay {
+    var receive: ((PublicationReceipt) async -> Void)?
+    func deliver(_ receipt: PublicationReceipt) async { await receive?(receipt) }
 }
 
 /// A value both sides of an `await` boundary need: written by whoever learns it (a discovery page, a measured
