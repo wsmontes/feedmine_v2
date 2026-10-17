@@ -35,14 +35,17 @@ final class FeedViewportCaptureTests: XCTestCase {
         render.begin(first, owner: ObjectIdentifier(store))
         store.setReadingInteractionActive(true)
         try store.install(.init(presentation: moved))
-        render.noteIncoming(store)
+        XCTAssertEqual(render.incoming(store), .retained,
+            "uma janela adiada sob o gesto não encerra o empréstimo: o gesto continua dono do desenho")
         XCTAssertEqual(render.presentation(for: store), first)
         XCTAssertEqual(render.deferredWindows, 1)
         render.end(afterReading: ids[0], store: store)
         XCTAssertTrue(render.isHolding, "Do not drop the real rendered reader before Runtime acknowledgement")
         let acknowledged = try snapshot(0..<7, position: 3)
         try store.install(.init(presentation: acknowledged))
-        render.noteIncoming(store)
+        XCTAssertEqual(render.incoming(store), .released)
+        render.end()
+        store.setReadingInteractionActive(false)
         XCTAssertFalse(render.isHolding)
         XCTAssertFalse(store.isReadingInteractionActive)
         XCTAssertEqual(render.presentation(for: store), acknowledged)
@@ -50,7 +53,9 @@ final class FeedViewportCaptureTests: XCTestCase {
         let other = FeedScreenStore { _, _ in }
         try other.install(.init(presentation: moved))
         XCTAssertEqual(render.presentation(for: other), moved)
-        render.noteIncoming(other)
+        XCTAssertEqual(render.incoming(other), .released,
+            "outra loja não é dona do empréstimo; a janela dela o encerra")
+        render.end()
         XCTAssertFalse(render.isHolding)
     }
 
