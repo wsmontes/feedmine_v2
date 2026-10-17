@@ -154,7 +154,11 @@ struct NativeFeedViewport: ViewModifier {
                 capture.invalidateLayout()
             }
             .onChange(of: store.state.presentation?.window) { _, _ in
-                capture.interaction.noteIncoming(store)
+                // Só o fim do empréstimo escreve o estado observado da view; uma janela adiada sob o gesto é
+                // contada no livro que o corpo não observa, e não custa uma segunda avaliação da lista.
+                guard capture.interaction.incoming(store) == .released else { return }
+                capture.interaction.end()
+                store.setReadingInteractionActive(false)
             }
             .onChange(of: ObjectIdentifier(store), initial: true) { _, _ in
                 capture.renderOwner = ObjectIdentifier(store)
