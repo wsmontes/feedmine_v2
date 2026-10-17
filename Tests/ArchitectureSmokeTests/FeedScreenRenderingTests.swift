@@ -329,7 +329,10 @@ final class FeedScreenRenderingTests: XCTestCase {
             for forbidden in ["URLSession", "AsyncImage", "ContentStore", "RuntimeDatabase", "AcquisitionCoordinator", "SelectionEngine",
                 "PublicationCoordinator", "PublicationStore", "Task", ".task", ".onAppear", ".onDisappear", "Timer", "sleep",
                 "retry", "backoff", "scheduler", "cache", "generation", "checkpoint", "UUID(", "PublicationCardID(", "exhausted", "@State", "@Observable", "GeometryReader", "NavigationStack"] {
-                if (file == "FeedScreen.swift" || file == "FeedNativeViewport.swift") && (forbidden == "@State" || forbidden == ".onDisappear") { continue }
+                if (file == "FeedScreen.swift" && forbidden == "@State") ||
+                    ((file == "FeedScreen.swift" || file == "FeedNativeViewport.swift") && forbidden == ".onDisappear") {
+                    continue
+                }
                 XCTAssertFalse(source.contains(forbidden), file + ": " + forbidden)
             }
         }
