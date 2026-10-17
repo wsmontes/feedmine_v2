@@ -4,6 +4,32 @@
 // transport proved one. Recovery actions are host callbacks: this view executes nothing.
 import SwiftUI
 
+/// One way out the absence surface can offer. The host owns the attempt or the destination behind it; this
+/// value only names it, so the surface's decision is stated without rendering.
+public enum FeedRecoveryRoute: String, CaseIterable, Hashable, Sendable {
+    case tryAgain
+    case adjustInterests
+    case sources
+    case settings
+}
+
+public extension FeedPresentationState.Work {
+    /// R3/F-UX-2: the routes that are the honest next step for each work fact, in drawing order. A walk that
+    /// ended without eligible stories offers another attempt and the interests it was walked for; a proven
+    /// connection failure offers the attempt alone. A generic failure is the one state drawn without the
+    /// reader's chrome — the shell is not drawn without a feed — so it must also offer the reader's own way
+    /// out: the sources the session reads and the settings surface. Those are the destinations the shell's
+    /// menu already presents; this adds no navigation, it keeps the routes the reader lost with the shell.
+    var recoveryRoutes: [FeedRecoveryRoute] {
+        switch self {
+        case .unavailable: return [.tryAgain, .adjustInterests]
+        case .unreachable: return [.tryAgain]
+        case .failed: return [.tryAgain, .sources, .settings]
+        default: return []
+        }
+    }
+}
+
 @MainActor
 public struct FeedLoadingView: View {
     private let work: FeedPresentationState.Work
@@ -81,32 +107,44 @@ public struct FeedLoadingView: View {
         .accessibilityIdentifier("feed-loading-surface")
     }
 
-    /// The actions the PO approved, and only where they are the honest next step: a walk that ended
-    /// without eligible stories offers both; a proven connection failure offers trying again alone.
+    /// The actions the PO approved, drawn from the plan the work fact states. A route the host did not
+    /// supply draws nothing, so the surface never invents a destination or an attempt.
     @ViewBuilder private var recoveryActions: some View {
-        switch work {
-        case .unavailable:
-            actions(tryAgain: true, adjust: true)
-        case .unreachable:
-            actions(tryAgain: true, adjust: false)
-        default:
-            EmptyView()
-        }
-    }
-
-    @ViewBuilder private func actions(tryAgain: Bool, adjust: Bool) -> some View {
-        if (tryAgain && onTryAgain != nil) || (adjust && onAdjustInterests != nil) {
+        let routes = work.recoveryRoutes
+        if !routes.isEmpty {
             HStack(spacing: FeedDesignTokens.Spacing.deck) {
-                if tryAgain, let onTryAgain {
-                    Button("Tentar novamente", action: onTryAgain)
-                        .buttonStyle(.borderedProminent)
-                }
-                if adjust, let onAdjustInterests {
-                    Button("Ajustar interesses", action: onAdjustInterests)
-                        .buttonStyle(.bordered)
+                ForEach(routes, id: \.self) { route in
+                    action(for: route)
                 }
             }
             .accessibilityIdentifier("feed-recovery-actions")
+        }
+    }
+
+    @ViewBuilder private func action(for route: FeedRecoveryRoute) -> some View {
+        switch route {
+        case .tryAgain:
+            if let onTryAgain {
+                Button("Tentar novamente", action: onTryAgain)
+                    .buttonStyle(.borderedProminent)
+            }
+        case .adjustInterests:
+            if let onAdjustInterests {
+                Button("Ajustar interesses", action: onAdjustInterests)
+                    .buttonStyle(.bordered)
+            }
+        case .sources:
+            if let onChooseSources {
+                Button(String(localized: "Fontes"), action: onChooseSources)
+                    .buttonStyle(.bordered)
+            }
+        case .settings:
+            // The same settings surface the interests route opens in this build; the label is the
+            // destination's own title, as the shell's menu states it.
+            if let onAdjustInterests {
+                Button(String(localized: "Ajustes"), action: onAdjustInterests)
+                    .buttonStyle(.bordered)
+            }
         }
     }
 }
