@@ -84,4 +84,32 @@ final class SyndicationAcquisitionLanguageTests: XCTestCase {
         let acquisition = try snapshot(database: db, registrations: [portuguese, english], discovery: traversal)
         XCTAssertEqual(try acquisition.eligibleTargets(for: context), [englishTarget])
     }
+
+    /// Item C, end to end at the value the first run writes: the reader's language answer is a recipe, the recipe
+    /// is the discovery profile, and the profile is the acquisition scope. Naming a language keeps only sources in
+    /// it; the skip names none, and nothing is restricted. `ReaderDiscoveryProfile(recipe:)` is the one mapping the
+    /// onboarding and the host share — no `Locale` reads anywhere on this path.
+    func testTheOnboardingAnswerScopesAcquisitionAndTheSkipLeavesItUnrestricted() throws {
+        let db = try database(), authority = AcquisitionTargetAuthority(database: db)
+        let (portugueseTarget, portuguese) = try registered(language: "pt-BR", authority: authority)
+        let (englishTarget, english) = try registered(language: "en", authority: authority)
+        let context = FeedContext(request: .main)
+        func traversal(_ profile: ReaderDiscoveryProfile) -> ReaderDiscoveryTraversal {
+            ReaderDiscoveryTraversal(
+                builder: ReaderDiscoveryBuilder(catalogURL: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("unused-language-catalog.sqlite")),
+                profile: profile, contextKey: context.key)
+        }
+
+        let answered = try snapshot(database: db, registrations: [portuguese, english],
+            discovery: traversal(ReaderDiscoveryProfile(recipe: .neutral(languages: ["pt-BR"]))))
+        XCTAssertEqual(try answered.eligibleTargets(for: context), [portugueseTarget],
+            "a named language is strict eligibility, and the regional code answers its own language")
+
+        let skipped = try snapshot(database: db, registrations: [portuguese, english],
+            discovery: traversal(ReaderDiscoveryProfile(recipe: .neutral())))
+        XCTAssertEqual(try skipped.eligibleTargets(for: context), [portugueseTarget, englishTarget],
+            "the skip names no language, so every target stays eligible")
+        XCTAssertTrue(ReaderDiscoveryProfile(recipe: .neutral()).isEmpty, "and the skip is an empty profile")
+    }
 }

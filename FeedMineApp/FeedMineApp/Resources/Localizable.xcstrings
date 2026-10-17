@@ -1152,6 +1152,16 @@
         }
       }
     },
+    "Em quais idiomas você quer ler?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Which languages do you want to read in?"
+          }
+        }
+      }
+    },
     "Entendido. Vamos excluir %@ das próximas descobertas.": {
       "localizations": {
         "en": {

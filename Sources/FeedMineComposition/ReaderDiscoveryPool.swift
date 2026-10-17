@@ -44,6 +44,28 @@ public struct ReaderDiscoveryProfile: Hashable, Sendable {
     public var isEmpty: Bool { languages.isEmpty && topicNodeKeys.isEmpty }
 }
 
+public extension ReaderDiscoveryProfile {
+    /// The reader's own answer — the recipe the first run and the preferences page keep — in the catalogue's
+    /// vocabulary: `topic:<node>` placements with `more` as interest and `less` as an exclusion, the editorial
+    /// answers that only exclude, and the content languages. One mapping, so the onboarding answer, the settings
+    /// page and discovery cannot read the same recipe differently.
+    init(recipe: FeedRecipeDefinition) {
+        var interested: Set<String> = [], excluded: Set<String> = []
+        for (key, level) in recipe.topicPreferences {
+            let node = key.hasPrefix("topic:") ? String(key.dropFirst("topic:".count)) : key
+            guard !node.isEmpty else { continue }
+            if level == .more { interested.insert(node) } else { excluded.insert(node) }
+        }
+        for (key, level) in recipe.editorialPreferences where level == .less {
+            let node = key.hasPrefix("topic:") ? String(key.dropFirst("topic:".count)) : key
+            guard !node.isEmpty else { continue }
+            excluded.insert(node)
+        }
+        self.init(languages: Set(recipe.languages), topicNodeKeys: interested,
+            excludedTopicNodeKeys: excluded)
+    }
+}
+
 /// A bounded, deterministic set of sources for one profile.
 public struct ReaderDiscoveryPool: Sendable {
     public let profile: ReaderDiscoveryProfile

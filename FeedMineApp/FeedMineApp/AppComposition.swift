@@ -1399,21 +1399,10 @@ final class AppComposition {
         !recipe.languages.isEmpty || !recipe.topicPreferences.isEmpty || !recipe.editorialPreferences.isEmpty
     }
 
-    /// A recipe in the catalogue's vocabulary: `topic:<node>` keys, `more` as interest and `less` as exclusion.
+    /// A recipe in the catalogue's vocabulary. The rule lives on `ReaderDiscoveryProfile` so the onboarding answer
+    /// and the acquisition snapshot read it the same way (and a test can state it without the app host).
     static func discoveryProfile(from recipe: FeedRecipeDefinition) -> ReaderDiscoveryProfile {
-        var interested: Set<String> = [], excluded: Set<String> = []
-        for (key, level) in recipe.topicPreferences {
-            let node = key.hasPrefix("topic:") ? String(key.dropFirst("topic:".count)) : key
-            guard !node.isEmpty else { continue }
-            if level == .more { interested.insert(node) } else { excluded.insert(node) }
-        }
-        for (key, level) in recipe.editorialPreferences where level == .less {
-            let node = key.hasPrefix("topic:") ? String(key.dropFirst("topic:".count)) : key
-            guard !node.isEmpty else { continue }
-            excluded.insert(node)
-        }
-        return ReaderDiscoveryProfile(languages: Set(recipe.languages), topicNodeKeys: interested,
-            excludedTopicNodeKeys: excluded)
+        ReaderDiscoveryProfile(recipe: recipe)
     }
 
     /// F02's in-feed answer: the reader says where to explore more (or less) of, answering a card the app itself

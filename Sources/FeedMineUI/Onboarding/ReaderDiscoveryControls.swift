@@ -53,25 +53,53 @@ public struct ReaderDiscoveryControls: View {
         }
     }
 
+    /// The reader's language answer as the control set writes it. Choosing names the language; choosing it again
+    /// takes it back, and taking the **last** one back is a real answer — "todos os idiomas" — not a blocked tap:
+    /// the empty set is the state acquisition already reads as "whichever language the catalogue has".
+    public static func choosing(_ code: String, in recipe: FeedRecipeDefinition) -> FeedRecipeDefinition {
+        var next = recipe
+        let choice = ReaderLanguageCode.choice(code)
+        if next.languages.contains(choice) {
+            next.languages.removeAll { $0 == choice }
+        } else {
+            next.languages.append(choice)
+        }
+        return next
+    }
+
+    /// The skip: no language named at all. It is the unrestricted scope, and it is the only thing this control
+    /// ever writes from the reader's own answer — never the system language.
+    public static func namingNoLanguage(in recipe: FeedRecipeDefinition) -> FeedRecipeDefinition {
+        var next = recipe
+        next.languages = []
+        return next
+    }
+
     private var languageControl: some View {
-        OnboardingSection(title: String(localized: "Idiomas")) {
+        // The first run **asks**: the reader chooses or skips, and nothing is pre-selected from the device. The
+        // settings page keeps the plain heading, because the answer there is a value to adjust, not a question.
+        OnboardingSection(title: scope == .firstRun
+            ? String(localized: "Em quais idiomas você quer ler?")
+            : String(localized: "Idiomas"),
+            identifier: scope == .firstRun ? "\(identifierPrefix)-language-question" : nil) {
             let available = languages.isEmpty
                 ? recipe.languages.map { OnboardingLanguage(recipeCode: $0) }
                 : languages
             VStack(alignment: .leading, spacing: 8) {
+                // The way out of the question, stated where the question is: an answer that names no language,
+                // selected like any other answer so the reader who skipped can see that they did.
+                Button {
+                    recipe = Self.namingNoLanguage(in: recipe)
+                } label: {
+                    chip(String(localized: "Todos os idiomas"), isOn: recipe.languages.isEmpty)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("\(identifierPrefix)-languages-unrestricted")
                 FlowRow(items: available) { language in
                     let isOn = recipe.languages.contains(language.code)
                     HStack(spacing: 4) {
                         Button {
-                            var next = recipe
-                            if isOn {
-                                // V1 kept at least one language: removing the last one is not a state it allowed.
-                                guard next.languages.count > 1 else { return }
-                                next.languages.removeAll { $0 == language.code }
-                            } else {
-                                next.languages = next.languages + [language.code]
-                            }
-                            recipe = next
+                            recipe = Self.choosing(language.code, in: recipe)
                         } label: {
                             chip(language.name, isOn: isOn)
                         }
