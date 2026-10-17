@@ -92,5 +92,9 @@ let package = Package(
             name: "ArchitectureSmokeTests",
             dependencies: ["FeedMineDomain", "FeedMinePersistence", "FeedMineAcquisition", "FeedMineSyndication", "FeedMineEditorial", "FeedMineMedia", "FeedMinePublication", "FeedMineRuntime", "FeedMineUI", "FeedMineComposition"]
         ),
+        .testTarget(
+            name: "FeedMineUITests",
+            dependencies: ["FeedMineUI", "FeedMineDomain", "FeedMineRuntime"]
+        ),
     ]
 )

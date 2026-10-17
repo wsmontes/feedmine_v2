@@ -148,6 +148,20 @@ public enum ReaderFontRole: String, CaseIterable, Hashable, Sendable {
         case .cardSummary: .regular
         }
     }
+
+    /// The text style the role follows under Dynamic Type (F-UI-4).
+    ///
+    /// Card text is content, not chrome: a reader who asks for larger type must get larger titles and
+    /// summaries. The style is only the *scaling reference* — the point size still comes from
+    /// `ReaderTypeScale`, so V1's ruler is untouched.
+    public var textStyle: Font.TextStyle {
+        switch self {
+        case .cardTitle: .headline
+        case .cardBody: .callout
+        case .cardMeta: .caption2
+        case .cardSummary: .footnote
+        }
+    }
 }
 
 /// The reader's text-size preference (V1 `fontSize`).
@@ -216,10 +230,23 @@ public struct ReaderAppearance: Hashable, Sendable {
     public var overlayBadgePadding: CGFloat { 12 }
 
     // MARK: - Typography
+    /// The role's font at the reader's chosen text scale, at V1's fixed point size.
+    ///
+    /// Views must not call this directly for card text: they use `readerFont(_:in:)`, which resolves the
+    /// reader's Dynamic Type setting and passes the scaled size to `font(_:size:)`. This overload stays for
+    /// callers with no environment (and for tests that pin the ruler).
     public func font(_ role: ReaderFontRole) -> Font {
-        let size = typeScale.size(for: role)
-        let weight = role.defaultWeight
-        switch fontStyle {
+        font(role, size: typeScale.size(for: role))
+    }
+
+    /// The role's font at an explicit point size — the entry the Dynamic Type resolver uses.
+    public func font(_ role: ReaderFontRole, size: CGFloat) -> Font {
+        Self.font(style: fontStyle, size: size, weight: role.defaultWeight)
+    }
+
+    /// The family at an explicit size and weight.
+    public static func font(style: ReaderFontStyle, size: CGFloat, weight: Font.Weight) -> Font {
+        switch style {
         case .system: return .system(size: size, weight: weight)
         case .newYork: return .custom("New York", size: size).weight(weight)
         case .sfMono: return .system(size: size, weight: weight, design: .monospaced)

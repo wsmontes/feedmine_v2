@@ -37,14 +37,14 @@ public struct FeedItemRowView: View, Equatable {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: card.title ?? "")
-                    .font(appearance.font(.cardTitle))
+                    .readerFont(.cardTitle, in: appearance)
                     .fontWeight(appearance.titleWeight)
                     .lineLimit(2)
                     .foregroundStyle(isRead ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
 
                 if let summary = card.primaryText, !summary.isEmpty {
                     Text(verbatim: summary)
-                        .font(.system(size: 12))
+                        .readerFont(size: 12, relativeTo: .footnote, in: appearance)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
