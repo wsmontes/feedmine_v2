@@ -620,6 +620,17 @@ struct FeedMineApp: App {
             // One interface language for the whole app: the bundle's own resolution of the reader's device
             // settings. Copy, dates and numbers all read from it, so a screen cannot mix two languages.
             .environment(\.locale, CatalogLanguageNaming.interfaceLocale)
+            // UI-READABILITY-01 (architect, 2026-10-17, route A): 1.0 declares **one** presentation, light.
+            // `ReaderAppearance` pins every page tint to a light value per period (`pageTintHex`) and every
+            // surface that paints it pairs it with `.foregroundStyle(.primary)`; under a dark device appearance
+            // `.primary` resolved to white over those light pages and the heading measured 1.19:1. The declaration
+            // belongs to the app's presentation owner — this window's content — so the feed and every SwiftUI
+            // presentation over it (the sheets, the covers) inherit it, instead of each surface answering for
+            // itself. The reader is the one surface the window does not own: `ReaderHost` presents its controller
+            // through UIKit, so that controller states the same declaration where it is made (below).
+            // This is not dark mode: it is 1.0 offering a consistent light presentation. Route B (real dark mode,
+            // with coherent semantic pairs) is a separate decision and opens no refactor here.
+            .preferredColorScheme(.light)
         }
     }
 
@@ -778,6 +789,13 @@ struct FeedMineApp: App {
                 let controller = UIHostingController(rootView: content)
                 controller.modalPresentationStyle = .fullScreen
                 controller.view.backgroundColor = .systemBackground
+                // UI-READABILITY-01: the reader is the app's second presentation root, and this controller is
+                // where its appearance is declared. The window content's `.preferredColorScheme(.light)` reaches
+                // every SwiftUI presentation but not a controller presented through UIKit (`presenter.present`),
+                // and a `.preferredColorScheme` inside the reader's own content measured inert here: the page
+                // still resolved dark and drew white text over its light tint (1.19:1). The declaration is the
+                // same one — the light presentation 1.0 ships — stated where this presentation is made.
+                controller.overrideUserInterfaceStyle = .light
                 presented = controller
                 shown = page
                 isUp = false
