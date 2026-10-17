@@ -1866,15 +1866,15 @@ final class FeedMineUITests: XCTestCase {
         app.buttons["welcome-shape"].tap()
         XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForExistence(timeout: 20))
         // The journey round 3 measured: a language and a place, which is what makes the shipped catalogue
-        // answer with more than a single story.
-        let languages = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-language-'"))
-        if languages.firstMatch.waitForExistence(timeout: 10) {
-            let portuguese = languages.matching(NSPredicate(format: "label CONTAINS[c] 'Portuguese'")).firstMatch
-            if portuguese.exists { portuguese.tap() }
-        }
+        // answer with more than a single story. Addressed by identifier, never by the interface's copy: the suite
+        // declares pt-BR (`FeedMine.xctestplan`), and a lookup for the English word "Brazil" never matches the
+        // Portuguese "Brasil" — the fallback then chose the first place (Algeria) and the journey was no longer
+        // the one the acceptance is about.
+        let portuguese = app.buttons["composer-language-pt"]
+        if portuguese.waitForExistence(timeout: 10) { portuguese.tap() }
         let places = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-region-'"))
         XCTAssertTrue(places.firstMatch.waitForExistence(timeout: 30), "the shipped catalogue offers its places")
-        let brazil = places.matching(NSPredicate(format: "label CONTAINS[c] 'Brazil'")).firstMatch
+        let brazil = places.matching(NSPredicate(format: "identifier CONTAINS[c] 'brazil'")).firstMatch
         (brazil.exists ? brazil : places.firstMatch).tap()
         app.buttons["composer-open-feed"].tap()
         let scroll = app.scrollViews.firstMatch
@@ -2511,10 +2511,13 @@ final class FeedMineUITests: XCTestCase {
     /// Round 9: the composer offers one chip per language — never the catalogue's code, never two chips a reader
     /// cannot tell apart — and the catalogue's regional codes appear as information, counted, with nothing
     /// selectable inside the expansion.
+    ///
+    /// The language is the subject here, so this test declares it on its own launch: the suite's pt-BR
+    /// (`FeedMine.xctestplan`) is the default, and `LaunchLocale` is the one place a test states another one.
     @MainActor
     func testComposerOffersOneChipPerLanguage() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(pt-BR)", "-AppleLocale", "pt_BR"]
+        LaunchLocale.portugueseBrazil.apply(to: app)
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
         app.launch()
@@ -2556,12 +2559,13 @@ final class FeedMineUITests: XCTestCase {
         add(attachment)
     }
 
-    /// The interface follows the device: in English the same screen is English, the languages are named in
-    /// English, and the counts are stated in English.
+    /// The interface follows the language the launch declares, not a hardcoded one: in English the same screen is
+    /// English, the languages are named in English, and the counts are stated in English. This is the override
+    /// against the suite's pt-BR declaration, so it also proves the declaration is what the app reads.
     @MainActor
-    func testInterfaceFollowsTheDeviceLanguage() throws {
+    func testInterfaceFollowsTheDeclaredLanguage() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        LaunchLocale.english.apply(to: app)
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
         app.launch()
@@ -2590,11 +2594,12 @@ final class FeedMineUITests: XCTestCase {
 
     /// Round 9: the filter sheet offers one selectable row per language with the count the catalogue holds, and
     /// the catalogue's own codes appear only inside the expansion, as information. The sheet is the same row model
-    /// as the composer's chips, on the surface that persists a selection.
+    /// as the composer's chips, on the surface that persists a selection. It states pt-BR on its own launch
+    /// because the wording it asserts is the subject.
     @MainActor
     func testFilterSheetOffersOneRowPerLanguage() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(pt-BR)", "-AppleLocale", "pt_BR"]
+        LaunchLocale.portugueseBrazil.apply(to: app)
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"

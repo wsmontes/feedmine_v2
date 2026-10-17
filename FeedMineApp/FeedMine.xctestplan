@@ -1,0 +1,40 @@
+{
+  "configurations" : [
+    {
+      "id" : "9F1C1A7E-3B42-4C0D-8E5A-6D2B7F0A1C01",
+      "name" : "pt-BR",
+      "options" : {
+        "language" : "pt-BR",
+        "region" : "BR",
+        "timeZone" : "America/Sao_Paulo"
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "environmentVariableEntries" : [
+      {
+        "key" : "TZ",
+        "value" : "America/Sao_Paulo"
+      }
+    ]
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:FeedMineApp.xcodeproj",
+        "identifier" : "000000000000000000000035",
+        "name" : "FeedMineAppTests"
+      }
+    },
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:FeedMineApp.xcodeproj",
+        "identifier" : "00000000000000000000003D",
+        "name" : "FeedMineUITests"
+      }
+    }
+  ],
+  "version" : 1
+}
