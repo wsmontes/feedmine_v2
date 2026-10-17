@@ -2,7 +2,9 @@
 
 Este documento é a regra e o registro da redação aplicada à ponta do repositório
 público (`github.com/feedmine_v2`), decidida pelo dono em 2026-10-16: **limpar a ponta,
-sem reescrever histórico**, e adotar a regra abaixo como mecanismo.
+sem reescrever histórico**, e adotar a regra abaixo como mecanismo. O risco que essa
+decisão deixa em pé — o que a limpeza não alcança, o que é inevitável por construção e
+quanto custaria ir além — está registrado na §8.
 
 ## 1. A regra
 
@@ -182,3 +184,121 @@ ponta. As citações não foram apagadas: cada uma passou a dizer **de quais byt
 
 Nenhuma citação de hash de arquivo redigido ficou sem dizer a quais bytes se refere. O
 registro por arquivo, com o sha256 original completo, é a §5.
+
+## 8. Risco residual da limpeza da ponta
+
+A decisão de 2026-10-16 foi **limpar a ponta, sem reescrever histórico**, e o dono a tomou
+com este resíduo em vista. Esta seção registra o resíduo explicitamente — o que continua
+legível e por quanto tempo, o que é inevitável por construção, o que as quatro branches
+publicadas antes da limpeza carregam, por que o saldo foi aceito e quanto custaria ir além.
+Ela não reduz o alcance da §1: é o outro lado da mesma decisão.
+
+### 8.1 O que a limpeza não alcança
+
+A redação troca o valor por placeholder **na ponta** (§2). Ela não apaga o que já foi
+publicado:
+
+- **No histórico deste repositório.** Os bytes originais continuam recuperáveis, byte a
+  byte, no commit que publicou cada arquivo pela primeira vez: a tabela da §5 dá esse
+  commit por arquivo, então `git show <commit>:<path>` devolve o conteúdo pré-redação em
+  qualquer clone do repositório.
+- **Na API do GitHub.** As mesmas revisões históricas continuam sendo servidas (árvore, blob
+  e `raw` daquele commit) a quem pedir o commit antigo. Num repositório público não há como
+  retirar essa leitura sem reescrever o histórico.
+- **Em clones existentes.** Qualquer cópia clonada durante a janela de exposição mantém os
+  objetos originais no próprio disco, fora do alcance de qualquer ação do dono.
+- **Em cache ou arquivo de terceiro.** Rastreador, espelho e indexador de código que tenham
+  capturado o repositório na janela mantêm o que capturaram, pela duração que decidirem.
+
+A janela de cada classe começa no commit que a publicou pela primeira vez e termina na
+limpeza da ponta (`e5fd319a`, 2026-10-16 16:46 −07:00):
+
+| Classe | Publicada pela primeira vez em | Data | Janela até a limpeza |
+|---|---|---|---|
+| Conta local anterior (caminho de home e nome solto) | `35331510` | 2026-10-09 | 6 d 19 h |
+| UDID de aparelho físico | `ba0866da` (dois aparelhos) e `d964a41f` (o terceiro) | 2026-10-12 / 2026-10-15 | 4 d 16 h / 1 d 13 h |
+| Endereço no sujeito do certificado | `ba0866da` | 2026-10-12 | 4 d 16 h |
+| UUID de perfil de provisionamento | `ef519465` | 2026-10-16 | 3 h 53 min |
+| Impressão digital do certificado de assinatura | `ef519465` | 2026-10-16 | 3 h 53 min |
+
+O commit `ef519465` é o que versionou os logs crus do aparelho e registrou os sha256 deles
+em prosa (§7): ele entrou às 12:53 −07:00 e a limpeza veio às 16:46 −07:00 do mesmo dia.
+Ou seja, a classe mais recente ficou pública por menos de quatro horas, e as mais antigas,
+por dias.
+
+Medição das pontas que ainda carregam cada classe, feita nesta revisão (2026-10-16) sobre
+todas as refs locais e branches remotas, com `git grep -l -F` pelas agulhas do verificador
+da §6: conta local anterior em 130 refs (71 locais + 59 remotas), endereço no sujeito do
+certificado em 121 (69 + 52), UDID de aparelho físico em 125 (71 + 54), UUID de perfil e
+impressão digital em 6 cada (3 + 3). A limpeza alcançou a ponta de `main`; das 126 branches
+publicadas, todas menos `main` continuam com a árvore anterior à redação na ponteira.
+
+### 8.2 O que é inevitável por construção
+
+O endereço do dono **é** metadado, não conteúdo de arquivo: ele é a identidade de autor ou
+committer de 693 dos 711 commits existentes (medido com `git rev-list --all` e os campos
+`%ae`/`%ce`) e de 624 dos 639 commits da ascendência de `main`. Redigir o endereço dentro
+dos arquivos (§2, §5) não toca nesse metadado: `git log`, `git blame` e a leitura da API o
+devolvem junto com o commit, em qualquer clone. Removê-lo dali exigiria reescrever as
+identidades e o histórico — exatamente o que a decisão de 2026-10-16 recusou (§8.6).
+
+### 8.3 O que foi deixado de propósito
+
+A lista fechada do que **não** foi redigido, item por item com a razão, é a §3, e não se
+repete aqui. O ponto que importa ao risco residual é um só: entre os itens que a §3 mantém,
+o team ID e a terminação de Common Name são **públicos por construção** — a Apple emite os
+dois no certificado, e eles viajam dentro de todo binário assinado e de todo perfil de
+provisionamento. Redigi-los da prosa não os tornaria segredo; só deixaria as instruções de
+build e de assinatura inúteis para quem precisa reproduzir o binário.
+
+### 8.4 As quatro branches publicadas antes da limpeza
+
+Quatro branches foram enviadas ao remoto **antes** da decisão de limpeza, e a ponteira de
+cada uma é anterior ao commit de limpeza — nenhuma delas contém `e5fd319a`. Resultado de
+`sh scripts/check_public_redaction.sh origin/<branch>` em cada ponteira:
+
+| Branch | Ponteira | Data da ponteira | Resultado na ponteira |
+|---|---|---|---|
+| `gate/pd8-r1-coalesced-discovery-opportunity` | `6d02dfa1` | 2026-10-16 09:46 −07:00 | suja: 4308 ofensores, sai 1 |
+| `refactor/publication-store-split` | `c5cda2af` | 2026-10-16 09:08 −07:00 | suja: 4313 ofensores, sai 1 |
+| `refactor/feed-screen-split` | `af9f8515` | 2026-10-16 09:05 −07:00 | suja: 4313 ofensores, sai 1 |
+| `instruments/journey-measurements` | `06723998` | 2026-10-16 16:40 −07:00 | suja: 4316 ofensores, sai 1 |
+
+Nenhuma das quatro está limpa. Esse resíduo **não** é efeito da limpeza: foi criado pela
+publicação que precedeu a decisão do dono, e a limpeza não o alcançou porque alcançou só a
+ponta de `main`. Nada aqui propõe nem promete reescrita — re-apontar essas ponteiras para
+uma revisão redigida, ou apagá-las, é **decisão do dono**, não ação feita. (Existe
+localmente uma variante redigida do instrumento, `instruments/journey-sanitized`
+(`109d2b53`), que passa no verificador com 0 ofensores; ela não foi publicada, e publicá-la
+é a mesma decisão.)
+
+### 8.5 Por que o resíduo é o trade-off aceito
+
+Sem minimizar: o resíduo existe e é recuperável por quem for olhar o histórico. O saldo que
+o dono aceitou se apoia em três medições, não em suposição:
+
+- o repositório é público e tem **0 forks e 0 stars** (API do GitHub, 2026-10-16); com esse
+  público, a audiência realista é rastreador e arquivo, não pessoa;
+- o resíduo é **divulgação de identificador, não de credencial**: a auditoria não encontrou
+  chave, token nem senha — as ocorrências da forma `sk-` são todas substring de palavra
+  comum (status de build, erro de disco), nenhuma no formato de chave —, então não há
+  comprometimento de credencial a relatar;
+- a alternativa custava mais e não apagava o passado: a reescrita invalidaria todos os SHAs
+  já fixados e revisados nos relatórios e nos vereditos de gate, obrigaria a reverificar
+  gates já aprovados, e ainda assim não atingiria clones e caches existentes (§8.1).
+
+O dono escolheu limpar a ponta em vez de reescrever com esse resíduo em vista. A limpeza
+reduz a exposição da versão corrente; ela não desfaz a divulgação histórica.
+
+### 8.6 Como reduzir mais, se o dono quiser
+
+A única via que toca o histórico é reescrevê-lo: um `git filter-repo` (ou equivalente) sobre
+**todas** as refs, trocando também o endereço nas identidades de autor e committer, seguido
+de force-push em cada uma das 126 branches publicadas — `main` inclusive, que por regra só
+anda com a palavra do dono. O custo é alto e conhecido: todo SHA citado nos relatórios e nos
+vereditos de gate deixa de existir, os gates já aprovados precisam ser reverificados, e o
+que está em clones, caches e arquivos de terceiro fica exatamente onde está. E não é um push
+normal: o hook local `destructive-guard` do ambiente do agente bloqueia `git push --force`
+por desenho (ele explicitamente não bloqueia push normal), de modo que essa opção só se
+executa com bypass deliberado, à mão. Esta seção registra o custo para que a decisão
+continue sendo do dono; ela não propõe a reescrita.
