@@ -63,6 +63,12 @@ public struct FeedScreen: View {
     }
 
     public var body: some View {
+        // A lista desenha **conteúdo**: a janela segurada durante um gesto e, fora dele, o que a loja publica.
+        // A leitura é feita **uma vez**, aqui, e não no corpo do feed: durante o gesto ela não toca
+        // `renderedItems` (a janela segurada responde primeiro), e é isso que impede a loja de reavaliar o
+        // desenho a cada janela canônica que chega sob o dedo — a loja continua publicando o que mudou, mas o
+        // corpo não observa essa publicação enquanto o gesto é dono da rolagem.
+        let items = capture.interaction.heldItems(matching: store) ?? store.renderedItems
         // The reader's chrome belongs to the feed surface: before the first presentation there is no
         // feed to read, so the preparation state keeps its own full-screen surface (V1 too drew its
         // header for the session, and T11 owns the preparation experience).
@@ -87,7 +93,7 @@ public struct FeedScreen: View {
                 // the reader's own header (context chip, sources, saved, filters, menu) stays usable while the
                 // preparation cover is up, which is the surface's stated intent and the only way out of a context
                 // that is still preparing.
-                feedBody
+                feedBody(items)
                     // While the cover is up, the laid-out cards are not on screen: they are measured, not shown,
                     // and the accessibility tree must say the same thing the pixels do.
                     .accessibilityHidden(drawsPreparationCover)
@@ -148,16 +154,15 @@ public struct FeedScreen: View {
         if store.renderedItems.isEmpty { FeedWorkFeedback(work: store.work) }
     }
 
-    @ViewBuilder private var feedBody: some View {
-        // A lista desenha **conteúdo**: os itens que a loja publica (mudam quando a janela muda) e, durante um
-        // gesto, a janela segurada. A posição do leitor **não** é lida aqui — era ela que fazia a lista inteira ser
-        // reavaliada a cada avanço (medido no aparelho, 2026-10-14: 12–14 instalações por segundo numa rajada).
+    @ViewBuilder private func feedBody(_ items: [PresentationCard]) -> some View {
+        // Os itens chegam decididos pelo `body`: a janela segurada, quando há gesto, ou o que a loja publicou.
+        // A posição do leitor **não** é lida aqui — era ela que fazia a lista inteira ser reavaliada a cada
+        // avanço (medido no aparelho, 2026-10-14: 12–14 instalações por segundo numa rajada).
         // Princípio do dono: a UI é imediata; o backend corre atrás e se antecipa.
         // Physical cells only: store.renderedItems is a contiguous ready run,
         // and a gesture borrows the exact same drawn cells. The full causal
         // snapshot stays in store.state for identity, saved position and actions.
         // Never substitute window.items here: that includes deferred pixels.
-        let items = capture.interaction.heldItems(matching: store) ?? store.renderedItems
         if !items.isEmpty {
             if #available(iOS 18, macOS 15, *) {
                 ScrollView {

@@ -525,7 +525,13 @@ struct FeedMineApp: App {
                                     return
                                 }
                             }
-                            .task(id: association.store.state.presentation?.window) {
+                            // O host é a raiz da cena: toda leitura observada que muda aqui reconstrói a
+                            // superfície inteira, a lista inclusive. Enquanto um gesto é dono da rolagem, a
+                            // janela canônica avança e a desenhada não — o id segue a **desenhada** (`renderedItems`)
+                            // e é `nil` sob o gesto, para que o avanço não reconstrua a cena sob o dedo. No fim do
+                            // gesto a projeção é republicada e o registro roda uma vez com a janela final.
+                            .task(id: association.store.isReadingInteractionActive
+                                ? nil : association.store.renderedItems) {
                                 recordWindowFacts(of: association)
                             }
                             .id(ObjectIdentifier(association))
@@ -1537,7 +1543,10 @@ struct ReaderHost: UIViewControllerRepresentable {
         // so placing a block is not showing it: the card the reader's own position is at is the only one whose
         // block has been met. Counting at placement counted blocks the reader never reached (the ledger's own
         // unit is the cards they really passed), and the frequency clause then read offers that no one saw.
-        if let anchorCardID = association.store.state.presentation?.window.anchor.cardID,
+        // A âncora canônica só é lida fora do gesto: durante ele a janela desenhada é a segurada, e ler o estado
+        // canônico aqui assinava o corpo da lista inteiro para a loja, uma vez por janela adiada.
+        if !association.store.isReadingInteractionActive,
+            let anchorCardID = association.store.state.presentation?.window.anchor.cardID,
             anchorCardID == card.id, let hosted = cadence.hosts[card.id],
             cadence.presented(on: card.id, cardsTraversed: traversed) {
             composition.recordEditorialOffer(subject: hosted.subject, cardsTraversed: traversed,
@@ -2007,6 +2016,19 @@ struct ReaderHost: UIViewControllerRepresentable {
         }
     }
 
+    /// O trabalho que o chip diz, lido **aqui** e não no corpo do host: o host reconstrói a cena inteira — e a
+    /// lista, com ela — a cada leitura observada que muda, e o trabalho muda a cada avanço. Nesta view só o
+    /// rótulo reavalia; o chip continua dizendo exatamente o mesmo texto.
+    private struct ReaderWorkChipText: View {
+        let store: FeedScreenStore
+        var body: some View {
+            Text(verbatim: "· \(store.work.shortDescription)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
     /// T5: the status chip carries the reading context. V1 stated the active context here and the
     /// session's counters live next to it; this keeps the context switcher that U3 introduced (T6
     /// replaces it with the V1 filter/preset surfaces) without inventing navigation chrome.
@@ -2054,10 +2076,7 @@ struct ReaderHost: UIViewControllerRepresentable {
                         .lineLimit(1)
                         .accessibilityIdentifier("reader-context-label")
                 } else if association.active {
-                    Text(verbatim: "· \(association.store.state.work.shortDescription)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    ReaderWorkChipText(store: association.store)
                 }
             }
         }

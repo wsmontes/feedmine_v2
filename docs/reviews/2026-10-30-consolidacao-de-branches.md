@@ -41,6 +41,12 @@ Também entraram, sem conflito de conteúdo, `c0ee5fb4` (script que prova que `a
 `-exportArchive` recebem as mesmas flags — o script já usava `SIGN_ARGS` para o mesmo fim) e
 `9608ac04` (B06 declara o *gap* do Energy Log em vez de renomear o template).
 
+De `fix/deferral-invalidates-list`, o commit `10bc0bd7` foi trazido por cherry-pick: o livro de
+janelas adiadas sai do estado observado (`FeedDeferralLedger`), `incoming` não muta, e a captura só
+escreve no fim do empréstimo. A parte de reestruturação de `FeedScreen`/`FeedMineApp` não foi adotada
+porque a tela já tinha sido reescrita (busca, D4, cover de preparação); o ganho principal — nenhuma
+reavaliação da lista por janela canônica sob o gesto — está no livro e no `incoming`.
+
 ## 2. Resolução semântica da cadeia P0
 
 Os PRs #16–#28 foram escritos sobre a main antiga, que ainda tinha a cauda oculta. A linha de produto
@@ -94,8 +100,8 @@ worktree `/tmp/fm-consolidate` (APFS, sem `.build` herdado).
 ```
 swift build                                    → OK
 swift build --build-tests                      → OK
-swift test                                     → Executed 1891 tests, with 4 tests skipped and 0 failures
-xcodebuild ... -scheme FeedMine build          → BUILD SUCCEEDED
+swift test                                     → Executed 1891 tests, with 3 tests skipped and 0 failures
+xcodebuild ... -scheme FeedMine build          → BUILD SUCCEEDED (duas vezes: antes e depois do cherry-pick do deferral)
 xcodebuild test -only-testing:FeedMineAppTests → resultado no §4.1
 git diff --check origin/main..HEAD             → limpo em código; só artefatos históricos (§4.2)
 ```

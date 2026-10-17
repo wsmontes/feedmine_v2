@@ -205,12 +205,12 @@ struct NativeFeedViewport: ViewModifier {
                 capture.invalidateLayout()
             }
             .onChange(of: store.state.presentation?.window) { _, _ in
-                capture.interaction.noteIncoming(store)
-                settlePendingJump()
-            }
-            // A failed reconstruction preserves the card and the window; only the unavailable fact changes. Without
-            // observing it, the pending jump would keep waiting for a preparation the session already concluded.
-            .onChange(of: store.state.presentation?.unavailableImageCardIDs) { _, _ in
+                // Só o fim do empréstimo escreve o estado observado da view; uma janela adiada sob o gesto é
+                // contada no livro que o corpo não observa, e não custa uma segunda avaliação da lista.
+                if capture.interaction.incoming(store) == .released {
+                    capture.interaction.end()
+                    store.setReadingInteractionActive(false)
+                }
                 settlePendingJump()
             }
             .onChange(of: ObjectIdentifier(store), initial: true) { _, _ in
