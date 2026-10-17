@@ -45,7 +45,8 @@ public struct PresentationImageDecoder: Sendable {
         self.thumbnailMaxPixel = thumbnailMaxPixel
     }
 
-    /// nil when bytes are absent, corrupt or undecodable: the card keeps its frozen placeholder.
+    /// nil when bytes are absent, corrupt or undecodable. Admission turns that into a declared `.textOnly` card;
+    /// it never publishes an image slot that will draw a placeholder.
     func image(key: PublishedMediaKey, layout: PresentationCardLayout) -> PresentationImage? {
         let maxPixel: Int
         switch layout {

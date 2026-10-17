@@ -50,7 +50,9 @@ public actor FeedSession {
 
     /// Composition-only exception: accepts the semantic Publication boundary.
     /// UI consumes Runtime presentation results without importing Publication.
-    /// With a decoder, projected cards carry slot-sized local images; without one they render placeholders.
+    /// With a decoder, projected cards carry slot-sized local images. An image card whose pixels cannot be decoded —
+    /// bytes absent or corrupt, or a composition built without a decoder — is admitted as a declared `.textOnly`
+    /// card; it never crosses the boundary as an image slot waiting for bytes.
     ///
     /// `warmStart` is a window already read and projected from this context's durable checkpoint by
     /// `FeedSession.warmStart(...)`, for a host that must have the reader's own feed **before its first frame**
@@ -151,7 +153,7 @@ public actor FeedSession {
                     backwardCapacity: kept,
                     forwardCapacity: original.bounds.forwardCapacity)
                 let cards = history.cards.filter { allowed.contains($0.id) }
-                    .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+                    .map { PresentationCard(admitting: $0, decoder: imageDecoder) }
                 guard let window = FeedWindowSnapshot(items: cards, anchor: observation.anchor) else { return nil }
                 let restored = try projectWindow(contextKey: original.presentation.contextKey,
                     editionID: original.presentation.editionID, window: window)
@@ -206,7 +208,7 @@ public actor FeedSession {
                 around: FeedWindowAnchor(cardID: items[first].id, placement: .center),
                 backwardCapacity: 0, forwardCapacity: last - first)
             let decoded = Dictionary(uniqueKeysWithValues: published.cards.map {
-                ($0.id, PresentationCard(publishedCard: $0, decoder: imageDecoder))
+                ($0.id, PresentationCard(admitting: $0, decoder: imageDecoder))
             })
             for index in returning {
                 guard let fresh = decoded[items[index].id] else { continue }
@@ -237,7 +239,7 @@ public actor FeedSession {
         let admitted = Set(items.map(\.id))
         let extensionCards = published.cards.dropFirst().filter { !admitted.contains($0.id) }
             .prefix(current.bounds.forwardCapacity)
-            .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+            .map { PresentationCard(admitting: $0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
         // O teto vale para a janela inteira, **nas duas direções** (decisão do arquiteto): crescer para frente sem
         // limite também é defeito. O corte é em volta da âncora, então ordem, identidade, âncora e posição ficam, e
@@ -302,7 +304,7 @@ public actor FeedSession {
         // the suffix keeps the cards closest to the head — the reader's next step back, not the far end of history.
         let extensionCards = published.cards.dropLast().filter { !admitted.contains($0.id) }
             .suffix(allowed)
-            .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+            .map { PresentationCard(admitting: $0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
         let (bounded, _) = try boundedResidency(
             items: boundedToTotalWindow(extensionCards + items, around: observation.anchor.cardID,
@@ -340,7 +342,7 @@ public actor FeedSession {
         let admitted = Set(items.map(\.id))
         let extensionCards = published.cards.dropFirst().filter { !admitted.contains($0.id) }
             .prefix(allowed - items.count)
-            .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+            .map { PresentationCard(admitting: $0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
         let anchor = current.presentation.window.anchor
         // Mesma regra do arquiteto, e agora num lugar só: o teto vale para a janela inteira nas duas direções.
@@ -437,10 +439,12 @@ public actor FeedSession {
 
         private static func projectedWindow(_ published: FeedWindow, bounds: FeedPresentationBounds,
             imageDecoder: PresentationImageDecoder?, released: inout Set<PublicationCardID>) -> FeedWindowSnapshot {
-            // FeedWindow guarantees its anchor is one of its cards; a window without a numbered band would have no
-            // outside to release, so the plain projection is the total answer.
+            // FeedWindow guarantees its anchor is one of its cards; a window without a numbered band has no outside
+            // to release, so every card is admitted and the admission gate is the whole answer.
             guard let anchorIndex = published.cards.firstIndex(where: { $0.id == published.anchor.cardID }) else {
-                return FeedWindowSnapshot(publishedWindow: published, decoder: imageDecoder, reusable: [:])
+                let items = published.cards.map { PresentationCard(admitting: $0, decoder: imageDecoder) }
+                return FeedWindowSnapshot(items: items, publishedAnchor: published.anchor)
+                    ?? FeedWindowSnapshot(publishedWindow: published, decoder: imageDecoder, reusable: [:])
             }
             let first = max(0, anchorIndex - bounds.backwardCapacity)
             let last = min(published.cards.count - 1, anchorIndex + bounds.forwardCapacity)
@@ -448,7 +452,11 @@ public actor FeedSession {
             items.reserveCapacity(published.cards.count)
             for (index, card) in published.cards.enumerated() {
                 if first...last ~= index {
-                    items.append(PresentationCard(publishedCard: card, decoder: imageDecoder))
+                    items.append(PresentationCard(admitting: card, decoder: imageDecoder))
+                } else if imageDecoder == nil {
+                    // Nothing can reconstruct pixels in this composition, so an outside-band card would come back
+                    // into the band as a slot with no image. It is a declared text card from the start.
+                    items.append(PresentationCard(admitting: card, decoder: nil))
                 } else {
                     // Fora da faixa: os valores congelados ficam, os pixels voltam.
                     let outside = PresentationCard(publishedCard: card)

@@ -47,7 +47,8 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     public let layout: PresentationCardLayout
     public let mediaAspectRatio: Double?
     public let primaryActionKind: PresentationPrimaryActionKind?
-    /// Slot-sized local image ready to draw; nil renders the layout's frozen placeholder.
+    /// Slot-sized local image ready to draw. An admitted image card always carries it; nil means either a declared
+    /// `.textOnly` card or a bitmap released outside the pixel band, which is reconstructed before it is drawn.
     public let image: PresentationImage?
 
     /// Residency-only reconstruction: identical frozen values with different decoded pixels.
@@ -84,6 +85,23 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     /// A layout that was published with an image slot, whatever its residency state is right now.
     public var isImageBearing: Bool { layout != .textOnly }
 
+    /// Admission projection: the value that may cross the feed's presentation boundary.
+    ///
+    /// An image card is admitted only with its slot-sized pixels decoded. When the media cannot be decoded — the
+    /// bytes are absent or corrupt, or this composition has no decoder — the occurrence is **not** admitted as an
+    /// image slot waiting for pixels: it keeps its frozen identity and text as a **declared** `.textOnly` card, the
+    /// legitimate final presentation the owner's rule allows a text card to be. The `init(publishedCard:decoder:)`
+    /// below stays the residency projection: cards outside the pixel band keep their frozen layout with the bitmap
+    /// released, and they are reconstructed through this initializer before they are drawn again.
+    init(admitting publishedCard: PublishedCard, decoder: PresentationImageDecoder?) {
+        self.init(publishedCard: publishedCard, decoder: decoder)
+        guard layout != .textOnly, image == nil else { return }
+        self = PresentationCard(id: id, title: title, primaryText: primaryText, timestamp: timestamp,
+            sourceID: sourceID, sourceDisplayName: sourceDisplayName, providerDisplayName: providerDisplayName,
+            layout: .textOnly, mediaAspectRatio: nil, primaryActionKind: primaryActionKind, image: nil)
+    }
+
+    /// Residency projection (never admission): frozen values, pixels only when a decoder supplies them.
     init(publishedCard: PublishedCard, decoder: PresentationImageDecoder? = nil) {
         id = publishedCard.id
         title = publishedCard.text.title

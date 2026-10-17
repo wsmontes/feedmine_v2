@@ -67,8 +67,11 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
             XCTAssertEqual(item.timestamp?.kind, .observed)
             XCTAssertEqual(item.sourceDisplayName, " Frozen source ")
             XCTAssertEqual(item.providerDisplayName, "Provider É")
-            XCTAssertEqual(item.layout, .hero)
-            XCTAssertEqual(item.mediaAspectRatio, 1.5)
+            // This session has no decoder, so the occurrence cannot be admitted as an image presentation: the
+            // warm restore keeps every frozen value and the checkpoint, and declares the card text-only instead
+            // of putting a slot on screen that could never receive its pixels.
+            XCTAssertEqual(item.layout, .textOnly)
+            XCTAssertNil(item.mediaAspectRatio)
             XCTAssertEqual(item.primaryActionKind, .externalURL)
             XCTAssertEqual(try SessionStore(database: database).checkpoint(), savedCheckpoint)
         }

@@ -167,8 +167,13 @@ final class ProjectionDecodeMeasurementTests: XCTestCase {
         XCTAssertEqual(retained?.window.items[0].image, initial.window.items[0].image, "Visible projection stays frozen")
         let reopened = FeedSession(publicationHistory: .init(database: database), imageDecoder: .init(assetDirectory: directory.appendingPathComponent("Media"), heroMaxPixel: 300, thumbnailMaxPixel: 88))
         let missing = try await reopened.admitPresentation(.restore(.init(backwardCapacity: 8, forwardCapacity: 16)))
+        // The local bytes are gone: the occurrence cannot be presented as an image card. Admitting it with a nil
+        // image and its frozen ratio would certify exactly the placeholder admission the owner's rule forbids; the
+        // card is a declared text card instead, and memory resident in the live session is untouched (above).
         XCTAssertNil(missing?.window.items[0].image)
-        XCTAssertEqual(missing?.window.items[0].mediaAspectRatio, initial.window.items[0].mediaAspectRatio)
+        XCTAssertEqual(missing?.window.items[0].layout, .textOnly,
+            "a card whose media cannot be decoded is not admitted as an image slot waiting for bytes")
+        XCTAssertNil(missing?.window.items[0].mediaAspectRatio, "a text presentation reserves no media slot")
         XCTAssertEqual(missing?.window.items[0].id, initial.window.items[0].id)
     }
 }
