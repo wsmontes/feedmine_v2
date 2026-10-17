@@ -1718,6 +1718,8 @@ final class FeedAssociation {
     let driver: FeedRunwayDriver
     let coordinator: AcquisitionCoordinator
     let media: MediaPrefetcher
+    /// Owner directive 2026-10-17 §2: a save prepares the occurrence's media and records what the link can open.
+    @ObservationIgnored let savedMedia: SavedMediaCoordinator
     @ObservationIgnored private let tidy: MediaTidy
     @ObservationIgnored private let mediaWaitBudget: LiveValue<Double>
     /// The display name preparation attributes a card with, read at the moment it prepares (`LiveValue`): discovery
@@ -1867,7 +1869,22 @@ final class FeedAssociation {
             let publication = PublicationStore(database: database)
             try publication.toggleBookmark(cardID: cardID, in: preferredBookmarkListID(), at: Date())
             store.installBookmarks(try publication.bookmarkedCardIDs())
+            // Owner directive 2026-10-17 §2: the link and its content are one promise. A save starts the
+            // occurrence's media preparation and records what the link can open; an unsave clears the claim.
+            Task { [savedMedia] in _ = await savedMedia.prepareSavedMedia(cardID: cardID) }
         } catch { reportFailure(error) }
+    }
+
+    /// A relaunch may have inherited saved units whose preparation was interrupted: resume a bounded few so the
+    /// availability shown on `Salvos` is the one that was actually reached, not the one a killed attempt assumed.
+    func resumeSavedMedia(limit: Int = 8) {
+        Task { [savedMedia] in await savedMedia.resume(limit: limit) }
+    }
+
+    /// The reader's retry on one saved row: the same preparation path the save used, so a failure that was
+    /// visible becomes an attempt — and only an outcome the store can hold becomes "available offline".
+    func retrySavedMedia(_ cardID: PublicationCardID) {
+        Task { [savedMedia] in _ = await savedMedia.prepareSavedMedia(cardID: cardID) }
     }
 
     /// T8: which of V1's menu entries apply for this session's context. The entries, their order and their
@@ -2009,13 +2026,18 @@ final class FeedAssociation {
         guard let publication = try? PublicationStore(database: database),
             let ids = try? (listID.map { (try? ReaderLibraryStore(database: database).bookmarkedCardIDs(inList: $0)) }
                 ?? publication.bookmarkedCardIDs()) ?? [] else { return [] }
+        // One read for every row's persisted availability; the row states what the owner recorded, never a guess
+        // made while drawing. A card without a row (written before this build reached it) claims nothing as
+        // available: `media_key IS NULL` is a published fact, everything else is pending.
+        let recorded = (try? SavedMediaAvailabilityStore(database: database).availabilities()) ?? [:]
         return ids
             .compactMap { id -> FeedSavedArticle? in
                 guard let card = try? publication.card(id: id) else { return nil }
                 let title = card.title ?? card.primaryText ?? ""
                 guard !title.isEmpty else { return nil }
+                let availability = recorded[id]?.availability ?? (card.mediaKey == nil ? .textOnly : .pending)
                 return FeedSavedArticle(id: card.id, title: title, source: card.sourceDisplayName,
-                    timestamp: card.timestampValue)
+                    timestamp: card.timestampValue, availability: availability)
             }
             .sorted { left, right in
                 let leftDate = left.timestamp ?? .distantPast
@@ -2290,6 +2312,7 @@ final class FeedAssociation {
             conditions: { rate in DeviceMediaConditions.policy(device: device, measuredBytesPerSecond: rate,
                 assetDirectory: assetDirectory, waitBudgetSeconds: mediaWaitBudget.current) })
         self.media = media
+        savedMedia = SavedMediaCoordinator(database: db, assetDirectory: assetDirectory, prefetcher: media)
         tidy = MediaTidy(assetDirectory: assetDirectory, prefetcher: media, freeStorageBytes: {
             try? FileManager.default.temporaryDirectory
                 .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
@@ -3093,6 +3116,9 @@ final class FeedAssociation {
             // PD-5: the screen is not visible now, so the house can be tidied: complete media for
             // the next cards and bring local media under the device-derived budget. Seen and visible
             // cards are never changed.
+            // Saved units first: a save whose preparation was interrupted (or that failed for space) is the
+            // reader's explicit intent, and the background window is when the app may work without showing it.
+            await savedMedia.resume(limit: 8)
             let visible = Set(store.state.presentation?.window.items.compactMap { $0.image?.key } ?? [])
             // The tidy's budget is what the system actually grants while the screen is off, less one media
             // operation's tolerance as the margin — never `timeoutIntervalForRequest / 4`, which was a configured

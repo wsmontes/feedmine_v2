@@ -180,3 +180,41 @@ Phase 3H — complete (design only). Phase 3I1 — canonical MediaCandidate fact
 ### Phase 3R5 product boundary
 
 Late media may update canonical resources and future preparation. It never changes a published card, its key, revision, layout or position, and never creates a second occurrence of that origin in the same Edition. A later Edition may publish the origin with newly available media or enrichment. No new Edition is automatically created to display late media, and the Media pipeline is unchanged.
+
+## 15. Saved occurrences: durable link vs content availability (2026-10-17)
+
+Implements §2 of `docs/product/2026-10-17-filter-consistency-and-offline-saves.md`.
+
+**The two facts are separate.** A save is a `reader_bookmark_memberships` row. What that link can actually open is
+`saved_media_availability` (one row per published card): `textOnly | pending | ready | failed | insufficientSpace`,
+with `updated_at` and an attempt count. It is written by the owner that observed or attempted the preparation, not
+inferred while a list is drawn. `published_cards` is never rewritten by saving, preparing or retrying.
+
+**Durable unit.** The reading unit is the immutable `published_cards` row; its bytes live under the durable
+`Application Support/FeedMine/Media/` root (`sha256:` content addressed). `mediaUsage()` reports `bookmarked` and
+`MediaRetention.evictions` never returns those keys, so a saved blob is out of the disposable cache. Decoded
+`CGImage` is residency only; availability is a claim about the file.
+
+**Save triggers preparation.** `SavedMediaCoordinator` (Composition) checks for the occurrence's bytes; if they are
+absent it records `pending` and calls `MediaPrefetcher.prepareForSave`, which uses the single download owner, the
+same `MediaPreparation` and the same device policy — there is no second downloader. The outcome is recorded:
+`ready` only after the published key's bytes verify, `failed` for an attempt that produced nothing (the save
+stays, the row offers retry), `insufficientSpace` when the volume could not hold the bytes (`AssetStore` maps
+`NSFileWriteOutOfSpaceError`/`ENOSPC` to its own error rather than a generic write failure), and `pending` when
+conditions forbade an attempt (offline/thermal). A background pass and the saved surface's own retry re-run the
+same path; a `ready` claim is re-verified there and demoted to `pending` if the asset is gone.
+
+**Re-preparation without re-publication.** `prepareForSave` bypasses the in-memory `settled`/backoff shortcuts
+(they describe a selection, not the durable asset), re-materializes the bytes for the same origin revision, and
+changes only the availability row. No new edition, segment or occurrence is created; a later admission decodes the
+card because the published media key resolves again.
+
+**Missing bytes exclude, they never convert (INV-17).** While the asset is absent the saved image card is not
+render-ready, so admission leaves it out of the current window; it is never rewritten as a `.textOnly` presentation
+under the same `PublicationCardID`. The availability row (`pending`/`failed`/`insufficientSpace`) is what states the
+situation, and the retry re-runs the same preparation path.
+
+**Text-only is final.** An occurrence published with `media_key IS NULL` can never gain media here: its media is
+the media it was published with, and changing that would rewrite published history or create a new occurrence —
+both forbidden. Its availability is `textOnly`, no fetch is attempted (proven with a revision that *does* declare
+a media candidate), and the reader is told the unit is text, not that an image is coming.
