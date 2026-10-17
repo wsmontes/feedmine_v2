@@ -276,7 +276,7 @@ public struct NodeChildRow: View {
                 // source surface in a test).
                 .accessibilityIdentifier("node-child-toggle-\(child.id)")
                 .accessibilityLabel(Text(verbatim: child.name))
-                .accessibilityValue(isEnabled ? "selected" : "not selected")
+                .accessibilityValue(isEnabled ? String(localized: "selected") : String(localized: "not selected"))
         }
     }
 

@@ -69,7 +69,7 @@ final class ArticleReadingDiagnosisUITests: XCTestCase {
         // a asserção anterior supunha que sim e media a coisa errada. O que importa: existe um valor semântico,
         // ele está no elemento que a linha publica pelo identificador, e é ele que muda ao tocar.
         let announcedBefore = try XCTUnwrap(country.value as? String, "o controle anuncia um valor")
-        XCTAssertTrue(["selected", "not selected"].contains(announcedBefore),
+        XCTAssertTrue(["selected", "not selected", "selecionado", "não selecionado"].contains(announcedBefore),
             "o elemento do identificador tem de anunciar o estado semântico, e anunciou: \(announcedBefore)")
         // O controle interno é o que aceita toque; a linha abre o drill-in (T7).
         let inner = country.switches.firstMatch

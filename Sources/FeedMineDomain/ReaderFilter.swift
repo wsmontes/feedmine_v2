@@ -26,6 +26,19 @@ public enum ReaderContentType: String, CaseIterable, Hashable, Codable, Sendable
     case audio = "Podcasts"
     case forum = "Forums"
 
+    /// What the sheet and the lens show. The raw value is V1's identity and stays the persisted one (`All`,
+    /// `Articles`, …): translating *it* would change what a stored filter means. Only the words the reader reads
+    /// are translated, so the same filter reads `Everything`/`Articles` in English and `Tudo`/`Artigos` in Portuguese.
+    public var displayName: String {
+        switch self {
+        case .all: String(localized: "Tudo")
+        case .text: String(localized: "Artigos")
+        case .video: String(localized: "Vídeos")
+        case .audio: String(localized: "Podcasts")
+        case .forum: String(localized: "Fóruns")
+        }
+    }
+
     public var icon: String {
         switch self {
         case .all: "circle.grid.3x3.fill"
@@ -46,6 +59,18 @@ public enum ReaderMood: String, CaseIterable, Hashable, Codable, Sendable {
     case fun = "Fun"
     case technical = "Technical"
     case inspiring = "Inspiring"
+
+    /// The reader-facing label of the mood, translated; `rawValue` stays the stored `Serious`, `Fun`, … (see
+    /// `ReaderContentType.displayName`).
+    public var displayName: String {
+        switch self {
+        case .all: String(localized: "Tudo")
+        case .serious: String(localized: "Sério")
+        case .fun: String(localized: "Divertido")
+        case .technical: String(localized: "Técnico")
+        case .inspiring: String(localized: "Inspirador")
+        }
+    }
 
     public var icon: String {
         switch self {

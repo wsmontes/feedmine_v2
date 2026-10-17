@@ -307,7 +307,7 @@ final class AppComposition {
         } else {
             do { current = try await association(contextKey: currentContextKey) }
             catch {
-                startupFailure = "Não foi possível abrir o feed local."
+                startupFailure = String(localized: "Não foi possível abrir o feed local.")
                 startupFailureDetail = String(describing: error)
                 Self.log("startup failure opening the association: \(String(describing: error))")
                 return
@@ -346,7 +346,7 @@ final class AppComposition {
         } catch {
             // An old launch may settle after explicit replacement. Its error belongs to that association.
             guard association === current, current.active else { return }
-            startupFailure = "Não foi possível abrir o feed local."
+            startupFailure = String(localized: "Não foi possível abrir o feed local.")
             startupFailureDetail = String(describing: error)
             Self.log("startup failure launching the association: \(String(describing: error))")
             current.reportFailure(error)
@@ -3131,7 +3131,7 @@ final class FeedAssociation {
         // PO/R3: a connection failure is stated as such — and only when the transport proved one.
         let work: FeedPresentationState.Work = Self.isConnectionFailure(error)
             ? .unreachable
-            : .failed(message: "Falha ao atualizar o feed")
+            : .failed(message: String(localized: "Falha ao atualizar o feed"))
         do { try install(store.state.reporting(work)) }
         catch { Self.log("failure reporting rejected \(String(describing: error))") }
     }
