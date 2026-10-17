@@ -244,7 +244,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1","reader-library-v1","reader-preferred-box-v1","media-playback-candidate-v1",
                 "reader-settings-v1","reader-imported-sources-v1","reader-curated-recipe-v1",
                 "reader-curated-recipe-revision-v1","reader-playback-positions-v1",
-                 "content-fingerprint-generation-v2","reader-source-identity-v1"])
+                 "content-fingerprint-generation-v2","reader-source-identity-v1","saved-media-availability-v1"])
         }
     }
 
@@ -448,12 +448,29 @@ extension PublicationRunwayStoreTests {
                 "reader_source_identity_current:CREATE INDEX reader_source_identity_current ON reader_source_identity(current_key)",
                 "sqlite_autoindex_reader_source_identity_1:"
             ]
+            // Owner directive 2026-10-17 §2: the saved link's content availability is its own table. Availability
+            // changes with preparation; `published_cards` never does.
+            let savedAvailabilityObjects: Set<String> = [
+                """
+                saved_media_availability:CREATE TABLE saved_media_availability (
+                    card_id TEXT PRIMARY KEY NOT NULL REFERENCES published_cards(id) ON DELETE CASCADE,
+                    availability TEXT NOT NULL
+                        CHECK (availability IN ('textOnly', 'pending', 'ready', 'failed', 'insufficientSpace')),
+                    updated_at REAL NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    CHECK (attempts >= 0)
+                )
+                """,
+                "sqlite_autoindex_saved_media_availability_1:"
+            ]
             XCTAssertEqual(priorDefinitions.subtracting(normalizedBefore),
                 Set([originIndex, authorityTable, authorityIndex]).union(contextual)
-                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects))
+                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects)
+                    .union(savedAvailabilityObjects))
             XCTAssertEqual(Self.normalizeRebuiltDefinitions(schemaAfter).subtracting(normalizedBefore),
                 Set([originIndex, originDefinition, revisionDefinition, authorityTable, authorityIndex]).union(contextual)
-                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects))
+                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects)
+                    .union(savedAvailabilityObjects))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }

@@ -96,6 +96,31 @@ public final class MediaReadiness: @unchecked Sendable {
     }
 }
 
+/// What one preparation attempt produced, in the terms a durable save has to state honestly.
+///
+/// Supply preparation is allowed to say "text-only" and move on; a saved occurrence has a reader attached to
+/// the link, so the same attempt must also be able to say "nothing was attempted yet" (`deferred`), "it failed"
+/// (`failed`) and "the disk could not hold it" (`insufficientSpace`). None of the three is a decision about the
+/// occurrence, and none of them may delete the save.
+public enum MediaPreparationOutcome: Hashable, Sendable {
+    case ready(MediaReadiness.Ready)
+    /// Definitive and *declared*: the feed declares no card image, so the text presentation is the occurrence as
+    /// designed. This never means "an image failed" — that is `unavailable`.
+    case textOnly
+    /// Definitive: the occurrence declared a card image and no candidate could supply it. Supply excludes such a
+    /// card from the current publication queue (INV-17) instead of publishing it as text under the same identity;
+    /// a saved card states this as a failure and keeps the link.
+    case unavailable
+    /// Conditions forbid remote work right now (offline, thermally critical) or the store is unreadable. Nothing
+    /// was attempted, so nothing is claimed.
+    case deferred
+    /// A fetch or a storage operation failed in a way a later attempt can change.
+    case failed
+    /// The bytes could not be stored durably because the volume had no room. Distinct from `failed`: the reader
+    /// is told the specific state, and nothing is promised as available offline.
+    case insufficientSpace
+}
+
 /// How a media fetch failed. Definitive failures (missing, not an image, too large) settle the
 /// revision as designed text-only; transient ones (timeouts, 5xx, lost connection) retry later.
 public enum MediaFetchFailure: Error, Hashable, Sendable {
@@ -138,7 +163,10 @@ public actor MediaPrefetcher {
     private let transientRetryBaseSeconds: Double
     private let monotonicSeconds: @Sendable () -> Double
     private let onReadinessChanged: (@Sendable (OriginRevisionID) async -> Void)?
-    private var inFlight: Set<OriginRevisionID> = []
+    /// One entry per revision with work in progress: the single-flight owner both supply and saved preparation
+    /// join. It replaces the set of in-flight ids so a save can wait for the same download instead of starting
+    /// a second one.
+    private var running: [OriginRevisionID: Task<MediaPreparationOutcome, Never>] = [:]
     private var measuredBytesPerSecond: Double?
     private var transientFailures: [OriginRevisionID: Int] = [:]
     private var transientRetryAt: [OriginRevisionID: Double] = [:]
@@ -146,11 +174,12 @@ public actor MediaPrefetcher {
     public init(database: RuntimeDatabase, assetDirectory: URL, readiness: MediaReadiness = MediaReadiness(),
         concurrentDownloadLimit: Int, transientRetryBaseSeconds: Double = 30,
         monotonicSeconds: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime },
+        preparation: MediaPreparation? = nil,
         fetch: @escaping Fetch, conditions: @escaping Conditions,
         onReadinessChanged: (@Sendable (OriginRevisionID) async -> Void)? = nil) {
         self.readiness = readiness
         contentStore = ContentStore(database: database)
-        preparation = MediaPreparation(assetDirectory: assetDirectory)
+        self.preparation = preparation ?? MediaPreparation(assetDirectory: assetDirectory)
         self.fetch = fetch
         self.conditions = conditions
         self.onReadinessChanged = onReadinessChanged
@@ -161,7 +190,7 @@ public actor MediaPrefetcher {
 
     /// Prepares media for the newest `limit` supply items not yet settled. Returns when all chosen
     /// items settled, or when `deadline` (monotonic seconds) passes — unfinished downloads keep
-    /// running (owned by this actor, single-flight via `inFlight`) and only help later selections.
+    /// running (owned by this actor, single-flight via `running`) and only help later selections.
     public func prefetchSupplyHead(limit: Int, deadline: Double? = nil) async {
         guard limit > 0, let window = try? contentStore.candidateWindow(sourceID: nil, after: nil, examinedCapacity: limit) else { return }
         await prefetch(window.records.map(\.originRevisionID), deadline: deadline)
@@ -173,12 +202,13 @@ public actor MediaPrefetcher {
         let now = monotonicSeconds()
         var seen = Set<OriginRevisionID>()
         let revisions = ordered.filter { revision in
-            guard seen.insert(revision).inserted, !readiness.isSettled(revision), !inFlight.contains(revision) else { return false }
+            guard seen.insert(revision).inserted, !readiness.isSettled(revision), running[revision] == nil else {
+                return false
+            }
             if let retry = transientRetryAt[revision], now < retry { return false }
             return true
         }
         guard !revisions.isEmpty else { return }
-        inFlight.formUnion(revisions)
         let work = Task { await self.prepareAll(revisions) }
         guard let deadline else { await work.value; return }
         let wait = deadline - ProcessInfo.processInfo.systemUptime
@@ -204,24 +234,68 @@ public actor MediaPrefetcher {
 
     private func prepareAll(_ revisions: [OriginRevisionID]) async {
         await withTaskGroup(of: Void.self) { group in
-            var next = 0, running = 0
-            while next < revisions.count || running > 0 {
-                while running < concurrentDownloadLimit, next < revisions.count {
+            var next = 0, active = 0
+            while next < revisions.count || active > 0 {
+                while active < concurrentDownloadLimit, next < revisions.count {
                     let revision = revisions[next]
                     group.addTask { await self.prepare(revision) }
-                    next += 1; running += 1
+                    next += 1; active += 1
                 }
                 await group.next()
-                running -= 1
+                active -= 1
             }
         }
     }
 
+    /// Supply's own use of the pipeline: run one attempt and turn its outcome into the readiness decision the
+    /// feed's selection reads. Nothing here is about a saved card.
     private func prepare(_ revision: OriginRevisionID) async {
-        defer { inFlight.remove(revision) }
+        switch await acquireSingleFlight(revision) {
+        case .ready(let value): await settle(revision, value, textDeclared: false)
+        case .textOnly: await settle(revision, nil, textDeclared: true)
+        // An image the card declared could not be prepared: it settles without a presentation, which keeps it out
+        // of the current publication queue (INV-17). It is never published as a text card in its place.
+        case .unavailable: await settle(revision, nil, textDeclared: false)
+        case .deferred: return
+        case .failed, .insufficientSpace:
+            // Network or storage trouble is not a statement about the occurrence: offer it again after a
+            // growing delay instead of settling it as designed text-only.
+            let failures = (transientFailures[revision] ?? 0) + 1
+            transientFailures[revision] = failures
+            transientRetryAt[revision] = monotonicSeconds() + transientRetryBaseSeconds * pow(2, Double(min(failures - 1, 16)))
+        }
+    }
+
+    /// The re-preparation entry point for an occurrence a reader saved (its bytes were evicted, or the save
+    /// found none). It joins the same download owner and the same fetch/policy: there is no second pipeline.
+    ///
+    /// It deliberately ignores the two in-memory shortcuts that are correct for *supply* — `isSettled` and the
+    /// transient backoff — because neither is a fact about the durable asset. A settled decision was made for a
+    /// selection; a saved card's link is the reader's request to try again. The outcome is returned instead of
+    /// settling, so the caller records it as availability and never claims readiness it did not get. When the
+    /// bytes are missing the saved occurrence simply is not render-ready: the feed excludes it from the current
+    /// window (INV-17) and the availability row states `pending`/`failed`/`insufficientSpace` with retry — it is
+    /// never converted into a text card under the same identity.
+    public func prepareForSave(_ revision: OriginRevisionID) async -> MediaPreparationOutcome {
+        await acquireSingleFlight(revision)
+    }
+
+    /// One attempt per revision at a time, shared by supply and saved preparation. A caller that arrives while
+    /// work is running waits for that work rather than starting a competing download.
+    private func acquireSingleFlight(_ revision: OriginRevisionID) async -> MediaPreparationOutcome {
+        // Only the owner of the work removes it. A joiner that removed it after resuming could erase a *newer*
+        // task registered in the same revision, and the next caller would start a second download.
+        if let work = running[revision] { return await work.value }
+        let work = Task { await self.acquire(revision) }
+        running[revision] = work
+        defer { running.removeValue(forKey: revision) }
+        return await work.value
+    }
+
+    private func acquire(_ revision: OriginRevisionID) async -> MediaPreparationOutcome {
         guard let policy = conditions(measuredBytesPerSecond),
             let candidates = try? contentStore.mediaCandidates(originRevisionID: revision) else {
-            return // Conditions unknown or storage unreadable: leave unsettled for a later opportunity.
+            return .deferred // Conditions unknown or storage unreadable: leave unsettled for a later opportunity.
         }
         // The card contract is what the feed declared: a visible card image. Without one (an audio-only or
         // text-only item) the text presentation is the card as designed, and settling it as text is not a fallback.
@@ -229,17 +303,17 @@ public actor MediaPrefetcher {
         let first: MediaCandidate, fallbacks: [MediaCandidate]
         switch MediaResolver.resolve(candidates, policy: policy) {
         case .prepare(let chosen, let rest): first = chosen; fallbacks = rest
-        case .textOnly(.conditionsForbidRemoteMedia): return // Offline or overheated: try again later.
+        case .textOnly(.conditionsForbidRemoteMedia): return .deferred // Offline or overheated: try again later.
         case .textOnly:
-            // Nothing viable to prepare. An image the card declared is unpublished work, not a text card.
-            await settle(revision, nil, textDeclared: !declaresImage)
-            return
+            // Nothing viable to prepare. Whether that means "a text card as designed" or "an image the feed
+            // declared could not be prepared" is the feed's declaration, not the resolver's answer.
+            return declaresImage ? .unavailable : .textOnly
         }
         let ceiling = policy.downloadByteBudget
-        guard ceiling > 0 else { return } // Not affordable now; retry when conditions improve.
-        var sawTransient = false
+        guard ceiling > 0 else { return .deferred } // Not affordable now; retry when conditions improve.
+        var sawTransient = false, sawStorageFailure = false, sawSpace = false
         for candidate in [first] + fallbacks {
-            if Task.isCancelled { return }
+            if Task.isCancelled { return .deferred }
             let started = ProcessInfo.processInfo.systemUptime
             let bytes: Data
             do { bytes = try await fetch(candidate.remoteURL, ceiling) }
@@ -249,23 +323,22 @@ public actor MediaPrefetcher {
                 continue
             }
             observeThroughput(bytes: bytes.count, seconds: ProcessInfo.processInfo.systemUptime - started)
-            guard let result = try? preparation.prepare(candidate: candidate, input: .bytes(bytes)),
-                case .usable(let asset) = result.state else { continue }
+            let result: MediaPreparationResult
+            do { result = try preparation.prepare(candidate: candidate, input: .bytes(bytes)) }
+            catch LocalMediaAssetError.insufficientSpace { sawSpace = true; continue }
+            catch { sawStorageFailure = true; continue }
+            guard case .usable(let asset) = result.state else { continue }
             let fit = policy.fit(measuredPixelWidth: asset.pixelWidth, height: asset.pixelHeight)
             guard fit != .unsuitable else { continue }
-            await settle(revision, .init(result: result, fit: fit), textDeclared: false)
-            return
+            return .ready(.init(result: result, fit: fit))
         }
-        if sawTransient {
-            // Network trouble, not a bad image: offer the revision again after a growing delay.
-            let failures = (transientFailures[revision] ?? 0) + 1
-            transientFailures[revision] = failures
-            transientRetryAt[revision] = monotonicSeconds() + transientRetryBaseSeconds * pow(2, Double(min(failures - 1, 16)))
-            return
-        }
-        // Every viable candidate was definitively unusable. The card declared an image and has none: it leaves
-        // the current publication queue (INV-17) and is never published as a text card in its place.
-        await settle(revision, nil, textDeclared: !declaresImage)
+        // A volume that could not hold the chosen image is the most specific fact, and the one the reader can
+        // act on; then a failed attempt; only then "this occurrence's declared media is unusable".
+        if sawSpace { return .insufficientSpace }
+        if sawStorageFailure || sawTransient { return .failed }
+        // Every viable candidate was definitively unusable. A card that declared an image leaves the current
+        // publication queue (INV-17); only an occurrence that declared no image is the text card as designed.
+        return declaresImage ? .unavailable : .textOnly
     }
 
     /// A real transition may reopen the existing supply episode; no polling or retry owner is added.
