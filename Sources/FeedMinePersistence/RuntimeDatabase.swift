@@ -94,14 +94,20 @@ public final class RuntimeDatabase: Sendable {
         location: RuntimeDatabaseLocation,
         fileManager: FileManager = .default
     ) throws {
-        try self.init(location: location, migrator: RuntimeMigrations.current, fileManager: fileManager)
+        // The product path is the only one that opens a file another build can have written, so it is the
+        // only one that refuses applied migrations it does not know.
+        try self.init(location: location, migrator: RuntimeMigrations.current, fileManager: fileManager,
+            refusesUnknownAppliedMigrations: true)
     }
 
-    /// Internal injection supports migration tests without exposing GRDB to consumers.
+    /// Internal injection supports migration tests without exposing GRDB to consumers. Those tests build
+    /// synthetic databases with partial migrators, where identifiers the migrator does not register are
+    /// expected by construction — so the downgrade refusal belongs to the product path and is off here.
     init(
         location: RuntimeDatabaseLocation,
         migrator: DatabaseMigrator,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        refusesUnknownAppliedMigrations: Bool = false
     ) throws {
         do {
             try fileManager.createDirectory(at: location.directory, withIntermediateDirectories: true)
@@ -126,10 +132,12 @@ public final class RuntimeDatabase: Sendable {
             // GRDB ignores applied identifiers this migrator does not know, so a file written by a
             // newer build would open as if it were current (a rollback across a TestFlight build).
             // Refuse instead of presenting newer state as this build's own.
-            let appliedButUnknown = try pool.read { db in
-                try nonErasingMigrator.appliedIdentifiers(db)
-                    .subtracting(Set(nonErasingMigrator.migrations))
-            }
+            let appliedButUnknown: Set<String> = refusesUnknownAppliedMigrations
+                ? try pool.read { db in
+                    try nonErasingMigrator.appliedIdentifiers(db)
+                        .subtracting(Set(nonErasingMigrator.migrations))
+                }
+                : []
             if !appliedButUnknown.isEmpty {
                 throw RuntimeDatabaseError.incompatibleSchema(unknownIdentifiers: appliedButUnknown.sorted())
             }
