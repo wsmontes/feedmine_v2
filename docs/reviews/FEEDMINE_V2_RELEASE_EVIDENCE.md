@@ -48,8 +48,13 @@ No `UserDefaults`.
   current placeholders/build-settings mechanism and its SHA/branch/date archive checks.
 - `scripts/release-testflight.sh`: refuses a dirty tree, a missing catalog or a missing API key;
   archives Release for `generic/platform=iOS`; aborts when the archived SHA differs from `HEAD` or
-  the bundle id is not `com.feedmine.app`; uploads with the App Store Connect key; creates the local
-  annotated tag `ios/<version>-build.<build>-<sha>` (never pushes it).
+  the bundle id is not `com.feedmine.app`; hands `archive` and `-exportArchive` the same signing
+  flags from one definition (`SIGNING_FLAGS`: `-allowProvisioningUpdates` plus the three
+  `-authenticationKey*` values), resolving the App Store Connect key before the archive on a release
+  run — so the export re-signs with the credentials the archive used instead of failing by signing
+  after the ~130 s archive, while `--dry-run` still needs no ASC key; uploads with the App Store
+  Connect key; creates the local annotated tag `ios/<version>-build.<build>-<sha>` (never pushes it);
+  asserted by `scripts/test-export-signing-flags.sh`.
 - `scripts/ExportOptions.plist`: `app-store-connect`, `destination: upload`, team `955573A4YH`.
 
 ### Identity (2026-10-22)

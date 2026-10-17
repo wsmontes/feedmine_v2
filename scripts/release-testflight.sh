@@ -170,6 +170,26 @@ python3 scripts/verify_catalog_release.py preflight --resources "$RESOURCES" \
   --head "$SHA" --staging "$STAGING" --evidence-dir "$EVIDENCE_DIR" || {
   echo "ABORTADO: public catalogue provenance could not be verified before archive" >&2; exit 9;
 }
+# Signing flags for BOTH xcodebuild calls (archive below, -exportArchive further down): defined
+# once, so the export cannot drift from the archive. The archive gets the ASC key too — on a clean
+# machine that is what mints/renews the signing identity, and the export must re-sign with the very
+# same credentials; otherwise export fails by signing only after the ~130 s archive. A dry run
+# never exports and is documented to run without secrets, so it stays on -allowProvisioningUpdates.
+SIGNING_FLAGS=(-allowProvisioningUpdates)
+if [ "$DRY_RUN" != "1" ]; then
+  if [ -z "${ASC_KEY_ID:-}" ]; then missing_env ASC_KEY_ID; fi
+  if [ -z "${ASC_ISSUER_ID:-}" ]; then missing_env ASC_ISSUER_ID; fi
+  KEY_ID="$ASC_KEY_ID"
+  ISSUER_ID="$ASC_ISSUER_ID"
+  KEY_PATH="${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8}"
+  if [ ! -f "$KEY_PATH" ]; then
+    echo "ABORTADO: API key ausente em $KEY_PATH" >&2
+    exit 9
+  fi
+  SIGNING_FLAGS+=(-authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$KEY_ID" \
+    -authenticationKeyIssuerID "$ISSUER_ID")
+fi
+
 echo "== archiving $VERSION ($BUILD) from $SHORT =="
 rm -rf "$ARCHIVE" .build/tf-export
 # Pass available ASC credentials to archive-time provisioning as well as export-time re-signing.
