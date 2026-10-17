@@ -2619,3 +2619,50 @@ final class FeedMineUITests: XCTestCase {
         app.buttons["filter-done"].tap()
     }
 }
+
+/// The cold-start width measurement — an instrument, not a gate. It launches a reader with a stated number of
+/// fixture sources, one item each and a declared per-answer delay, and reads the app's own launch record
+/// (`FeedLaunchWitness`): the milliseconds at which the rendered window first held 1, 5 and 10 cards, on the clock
+/// armed at the top of the app's construction.
+///
+/// What it asserts is only that the measured launch reached ten cards, so a run that never got there fails as a
+/// measurement instead of passing quietly. The numbers themselves are printed as one `COLDSTART` line, which is
+/// what the protocol reads; the ticket that owns the width, and the defaults it chose, are stated in the review
+/// document beside the code.
+final class ColdStartWidthUITests: XCTestCase {
+    @MainActor
+    func testColdLaunchRecordsTimeToFirstFiveAndTenCards() throws {
+        // Xcode forwards `TEST_RUNNER_FEEDMINE_MEASURE_*` to the runner without the prefix.
+        let environment = ProcessInfo.processInfo.environment
+        let fanout = environment["FEEDMINE_MEASURE_FANOUT"] ?? "16"
+        let items = environment["FEEDMINE_MEASURE_ITEMS"] ?? "1"
+        let latency = environment["FEEDMINE_MEASURE_LATENCY_MS"] ?? "250"
+        let capacity = environment["FEEDMINE_MEASURE_WORK_CAPACITY"]
+
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["FEEDMINE_FIXTURE_FANOUT"] = fanout
+        app.launchEnvironment["FEEDMINE_FIXTURE_ITEMS"] = items
+        app.launchEnvironment["FEEDMINE_FIXTURE_LATENCY_MS"] = latency
+        if let capacity { app.launchEnvironment["FEEDMINE_INITIAL_WORK_CAPACITY"] = capacity }
+        app.launch()
+
+        let record = app.descendants(matching: .any)["feed-launch-record"]
+        XCTAssertTrue(record.waitForExistence(timeout: 30), "the app's own launch record is published")
+        // `n/a` is the record's honest "not reached on this clock"; the measurement waits for the crossing itself.
+        let reachedTen = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label MATCHES %@", ".*cards10_ms=[0-9]+.*"), object: record)
+        XCTAssertEqual(XCTWaiter.wait(for: [reachedTen], timeout: 120), .completed,
+            "the measured launch must carry ten cards for the record to state the threshold")
+        let measurement = "COLDSTART fanout=\(fanout) items=\(items) latency_ms=\(latency)"
+            + " capacity=\(capacity ?? "default") \(record.label)"
+        print(measurement)
+        let attachment = XCTAttachment(string: measurement)
+        attachment.name = "cold-start-width"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+}

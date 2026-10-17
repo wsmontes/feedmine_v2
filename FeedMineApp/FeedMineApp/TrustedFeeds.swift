@@ -128,10 +128,31 @@ extension TrustedFeed {
     /// gets `[]`, and a release build cannot reach the flag at all.
     static var developmentSelection: [TrustedFeed] {
         #if DEBUG
-        if ProcessInfo.processInfo.environment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] == "1" { return development }
+        if ProcessInfo.processInfo.environment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] == "1" {
+            return development + developmentFanout
+        }
         #endif
         return []
     }
+
+    #if DEBUG
+    /// Extra sources a run asks for by name (`FEEDMINE_FIXTURE_FANOUT=<n>`): the same local fixture transport answers
+    /// each of them, so a measurement can hold the number of eligible targets fixed and vary only the width of the
+    /// first acquisition pass. Deterministic identities, and zero in every ordinary run.
+    static var developmentFanout: [TrustedFeed] {
+        guard let raw = ProcessInfo.processInfo.environment["FEEDMINE_FIXTURE_FANOUT"],
+            let count = Int(raw), count > 0 else { return [] }
+        return (1...count).map { index in
+            let suffix = String(format: "%012d", index)
+            return .init(targetID: .init(rawValue: UUID(uuidString: "70000000-0000-4000-8000-\(suffix)")!),
+                sourceID: .init(rawValue: UUID(uuidString: "71000000-0000-4000-8000-\(suffix)")!),
+                bindingID: .init(rawValue: UUID(uuidString: "72000000-0000-4000-8000-\(suffix)")!),
+                principal: "fixture-\(index)",
+                endpoint: URL(string: "https://feeds.bbci.co.uk/fixture/\(index).xml")!,
+                displayName: "Fixture \(index)")
+        }
+    }
+    #endif
 }
 
 #if DEBUG
@@ -254,10 +275,27 @@ private final class AddFeedFixtureProtocol: URLProtocol {
 /// feeds' own endpoints from fixtures the app carries, so a test — UI or unit — gets deterministic content with
 /// no network, no server and no clock.
 enum DevelopmentLocalFeeds {
-    static let endpoints: Set<String> = [
-        "https://feeds.bbci.co.uk/news/world/rss.xml",
-        "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
-    ]
+    static var endpoints: Set<String> {
+        var result: Set<String> = [
+            "https://feeds.bbci.co.uk/news/world/rss.xml",
+            "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+        ]
+        let fanout = TrustedFeed.developmentFanout.count
+        if fanout > 0 {
+            for index in 1...fanout { result.insert(fanoutEndpoint(index)) }
+        }
+        return result
+    }
+
+    static func fanoutEndpoint(_ index: Int) -> String { "https://feeds.bbci.co.uk/fixture/\(index).xml" }
+
+    /// The fanout index an endpoint names, or nil for this transport's other documents.
+    static func fanoutIndex(_ url: URL) -> Int? {
+        let prefix = "https://feeds.bbci.co.uk/fixture/"
+        let text = url.absoluteString
+        guard text.hasPrefix(prefix), text.hasSuffix(".xml") else { return nil }
+        return Int(text.dropFirst(prefix.count).dropLast(4))
+    }
 
     static func apply(to configuration: URLSessionConfiguration) {
         var protocols = configuration.protocolClasses ?? []
@@ -414,17 +452,22 @@ enum DevelopmentLocalFeeds {
 
     static func document(for url: URL) -> Data {
         if textShape == .body { return jsonDocument(for: url) }
+        let fanout = fanoutIndex(url)
         let isScience = url.absoluteString.contains("science")
-        let feedTitle = isScience ? "BBC Science" : "BBC World"
+        let feedTitle = fanout.map { "Fixture \($0)" } ?? (isScience ? "BBC Science" : "BBC World")
+        // A fanout feed is a distinct source with its own stories for every purpose the feed's own facts decide:
+        // identity is the guid, and the link below is what a card would open, so neither may collide with another
+        // fanout feed's. The two development documents stay byte-identical to what this transport always served.
+        let slug = fanout.map { "fixture-\($0)" } ?? (isScience ? "science" : "world")
         // R5: with `FEEDMINE_EMPTY_FEEDS=1` the same transport answers with its channel and no stories —
         // the deterministic way to reach the surface a reader sees when the attempt finished without
         // eligible content, without pretending the network failed.
         let items = answersWithNothing ? "" : (0..<itemCount).map { index -> String in
-            let stamp = isScience ? 900 - index * 60 : 950 - index * 60
+            let stamp = (fanout.map { 800 - $0 * 10 } ?? (isScience ? 900 : 950)) - index * 60
             return """
             <item>
               <title>\(feedTitle) story \(index + 1)</title>
-              <link>https://example.test/\(isScience ? "science" : "world")/\(index + 1)</link>
+              <link>https://example.test/\(slug)/\(index + 1)</link>
               <guid>\(url.absoluteString)#\(index + 1)</guid>
               \(summaryElement(index, feedTitle))
               \(DevelopmentLocalFeeds.imageElement)
@@ -461,6 +504,16 @@ enum DevelopmentLocalFeeds {
         return value
     }
 
+    /// A declared per-request answer delay (`FEEDMINE_FIXTURE_LATENCY_MS`), for a measurement whose object is how
+    /// many answers land in one acquisition pass. Zero in every ordinary run, so a fixture that served instantly
+    /// still does; a measurement that states a delay states it in its conditions, and it is what keeps a localhost
+    /// response from making the width irrelevant.
+    static var latencySeconds: Double {
+        guard let raw = ProcessInfo.processInfo.environment["FEEDMINE_FIXTURE_LATENCY_MS"],
+            let milliseconds = Double(raw), milliseconds > 0 else { return 0 }
+        return milliseconds / 1000
+    }
+
     /// A serial the fixture's timestamps do not share: it exists so two runs of the same test cannot look
     /// different to a reader, and it is never used for a decision.
     private static let stampedSerial = 1
@@ -483,7 +536,7 @@ private final class LocalFeedProtocol: URLProtocol {
         // R7/E: the second endpoint can answer *after* the first publication was installed, with no timed read left
         // to catch it, so a publication that completes later is reproducible instead of hoped for (the acceptance
         // question the round asks). What grows the window then is the publication fact itself.
-        let delay = DevelopmentLocalFeeds.slowFeedSeconds(answering: url)
+        let delay = max(DevelopmentLocalFeeds.slowFeedSeconds(answering: url), DevelopmentLocalFeeds.latencySeconds)
         guard delay > 0 else { return deliver(url) }
         DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.deliver(url)

@@ -2083,6 +2083,36 @@ final class FeedAssociation {
         }
     }
 
+    /// The acquisition width of the steady state: one replenishment of the runway, once the reader's feed is on
+    /// screen. It is deliberately not the first pass's width — see `initialWorkCapacity`.
+    static let steadyWorkCapacity = 2
+
+    /// The acquisition width of the **first** pass, the one the cold bootstrap runs before any card exists.
+    ///
+    /// The cold path plans one pass, so this width — not the steady 2 — decides how many sources can contribute the
+    /// cards the first screen shows. Measured on `FeedMine UI ptBR` (2026-10-17): sixteen fixture sources, one card
+    /// each, 250 ms per answer, three fresh launches per set. Ten cards: 2 → 3 480 ms (spread 338), 8 → 2 867 ms
+    /// (spread 41), 16 → 2 928 ms (spread 71). Eight is the selection: it reaches ten cards in under three seconds,
+    /// and sixteen is slower because the coordinator's window is `max(2, activeProcessorCount)` = 8 on this host.
+    /// The full table is in `docs/reviews/2026-10-17-cold-start-width.md`.
+    ///
+    /// A run may name another width (DEBUG only) so that measurement is repeatable without a rebuild:
+    /// `FEEDMINE_INITIAL_WORK_CAPACITY=<n>`.
+    static var initialWorkCapacity: Int {
+        #if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["FEEDMINE_INITIAL_WORK_CAPACITY"],
+            let value = Int(raw), value > 0 { return value }
+        #endif
+        return 8
+    }
+
+    /// The acquisition resources for a stated width. One constructor, so the runways and the two pass widths can
+    /// never drift in any of the other capacities.
+    static func acquisition(targetWorkCapacity: Int) -> AcquisitionPlanningResources {
+        .init(targetWorkCapacity: targetWorkCapacity, batchCapacityPerNewExecution: 1,
+            observationCapacityPerBatch: 32, byteCapacityPerBatch: 1_000_000)!
+    }
+
     static var resources: FeedRunwayDriverResources {
         .init(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 32,
             readyProbeBound: 32, readyProbeCeiling: 256, forwardAdvanceProbeBound: 256,
@@ -2091,8 +2121,7 @@ final class FeedAssociation {
             // consumption/replenishment facts are unknown (Codex's reserve review, 2026-10-10); once they are
             // measured it derives the target from the measured rate and p95, and this number stops applying.
             reserveCards: Self.forwardWindowCards)!,
-            acquisition: .init(targetWorkCapacity: 2, batchCapacityPerNewExecution: 1,
-                observationCapacityPerBatch: 32, byteCapacityPerBatch: 1_000_000)!)
+            acquisition: acquisition(targetWorkCapacity: steadyWorkCapacity))
     }
 
     init(directory: URL, feeds: [TrustedFeed], discovery: [TrustedFeed] = [],
@@ -2770,7 +2799,8 @@ final class FeedAssociation {
             let outcome = try await cold.run(identity: .init(editionID: FeedEditionID(), publicationSchemaVersion: .init(rawValue: 1),
                 selectionSeed: 1, editionCreatedAt: now, segmentID: FeedSegmentID(), segmentSeed: 1,
                 segmentCreatedAt: now, anchorPlacement: .top, checkpointedAt: now)!,
-                resources: .init(localExaminedCapacity: 32, acquisition: Self.resources.acquisition)!,
+                resources: .init(localExaminedCapacity: 32,
+                    acquisition: Self.acquisition(targetWorkCapacity: Self.initialWorkCapacity))!,
                 backwardCapacity: 8, forwardCapacity: 16, keepsAdmittedHead: true)
             try install(FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state))
             Self.log("cold bootstrap settled")
