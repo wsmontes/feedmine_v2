@@ -1,4 +1,10 @@
-"""Release pre-archive failures must never reach xcodebuild or tag creation."""
+"""Release pre-archive failures must never reach xcodebuild or tag creation.
+
+The fixture owns the layout `scripts/release-testflight.sh` demands, including both export-options
+plists (the export-only one with destination=export). Two cases assert that the fixture still is
+that contract and that the script refuses to export when the export-only plist is missing or would
+upload — otherwise a green suite could mean a stale tree rather than working refusals.
+"""
 from __future__ import annotations
 
 import os
@@ -25,6 +31,16 @@ class ReleasePreflightTests(unittest.TestCase):
             plistlib.dump({"CFBundleVersion": "46", "CFBundleShortVersionString": "1.0"}, stream)
         shutil.copy2(ROOT / "scripts/release-testflight.sh", self.root / "scripts/release-testflight.sh")
         shutil.copy2(ROOT / "scripts/verify_product_catalogue.sh", self.root / "scripts/verify_product_catalogue.sh")
+        # release/export-without-upload made the export-options plists mandatory: the script refuses
+        # to run without scripts/ExportOptions.plist, and `--no-upload` additionally requires
+        # scripts/ExportOptions-export-only.plist to say destination=export. This fixture shipped the
+        # older layout (no plists at all), so every case aborted at "plist de export ausente" before
+        # reaching the failure under test. It now builds the layout the script actually demands.
+        with (self.root / "scripts/ExportOptions.plist").open("wb") as stream:
+            plistlib.dump({"method": "app-store-connect", "destination": "upload",
+                           "teamID": "TESTTEAM"}, stream)
+        shutil.copy2(ROOT / "scripts/ExportOptions-export-only.plist",
+                     self.root / "scripts/ExportOptions-export-only.plist")
         (self.root / "scripts/release-testflight.sh").chmod(0o755)
         (self.root / "scripts/verify_product_catalogue.sh").chmod(0o755)
         self.bin = self.root / "bin"
@@ -45,19 +61,56 @@ class ReleasePreflightTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "fixture")
 
-    def release(self):
+    def run_script(self, *flags):
         env = dict(os.environ)
         for key in ("ASC_KEY_ID", "ASC_ISSUER_ID", "ASC_KEY_PATH"):
             env.pop(key, None)
         env["PATH"] = str(self.bin) + os.pathsep + env.get("PATH", "")
         env["P0C_MARKER"] = str(self.marker)
-        result = subprocess.run(["bash", str(self.root / "scripts/release-testflight.sh"), "--dry-run"],
-                                cwd=self.root, capture_output=True, text=True, env=env)
+        return subprocess.run(
+            ["bash", str(self.root / "scripts/release-testflight.sh"), *(flags or ("--dry-run",))],
+            cwd=self.root, capture_output=True, text=True, env=env)
+
+    def release(self, *flags):
+        """Run a release expected to abort before xcodebuild and before any tag."""
+        result = self.run_script(*flags)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.marker.exists(), "xcodebuild archive/upload must not run")
         self.assertEqual(self.git("tag", "--list"), "", "failed release must not create tag")
         self.assertNotIn("ASC_KEY_ID ausente", result.stdout + result.stderr)
         return result.stdout + result.stderr
+
+    def test_fixture_is_the_layout_the_script_mandates(self):
+        """Control: the fixture carries both plists and the export-only one says destination=export."""
+        export_only = self.root / "scripts/ExportOptions-export-only.plist"
+        self.assertTrue((self.root / "scripts/ExportOptions.plist").is_file())
+        self.assertTrue(export_only.is_file())
+        with export_only.open("rb") as stream:
+            self.assertEqual(plistlib.load(stream)["destination"], "export")
+
+    def test_no_upload_resolves_the_export_only_plist(self):
+        result = self.run_script("--print-export-options", "--no-upload")
+        log = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, log)
+        self.assertIn("EXPORT_OPTS=scripts/ExportOptions-export-only.plist", log)
+        self.assertIn("destination=export", log)
+        self.assertIn("upload=no", log)
+        self.assertFalse(self.marker.exists(), "xcodebuild archive/upload must not run")
+
+    def test_no_upload_refuses_missing_export_only_plist(self):
+        (self.root / "scripts/ExportOptions-export-only.plist").unlink()
+        self.commit()
+        log = self.release("--print-export-options", "--no-upload")
+        self.assertIn("scripts/ExportOptions-export-only.plist", log)
+        self.assertIn("não existe", log)
+
+    def test_no_upload_refuses_export_only_plist_that_uploads(self):
+        shutil.copy2(self.root / "scripts/ExportOptions.plist",
+                     self.root / "scripts/ExportOptions-export-only.plist")
+        self.commit()
+        log = self.release("--print-export-options", "--no-upload")
+        self.assertIn("destination=upload", log)
+        self.assertIn("destination precisa ser 'export'", log)
 
     def test_missing_sqlite_stops_before_archive(self):
         log = self.release()
