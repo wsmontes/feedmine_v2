@@ -55,7 +55,17 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
     /// and only a case that set a count gets a different number of items inside it.
     static let feedItemCount = Mutex<Int?>(nil)
 
+    /// F-UX-2's positive control: the same transport answers with its channel and no stories, the way the app's
+    /// own `FEEDMINE_EMPTY_FEEDS` instrument does on the device. A launch that finds nothing must not be
+    /// mistaken for one that could not connect.
+    static let answersWithNothing = Mutex(false)
+
     private static func payload(for url: URL?) -> (contentType: String, body: Data) {
+        if answersWithNothing.withLock({ $0 }), url?.host()?.contains("bbci.co.uk") == true {
+            let body = "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Trusted fixture</title>"
+                + "<link>https://fixture.invalid/</link><description>Integration</description></channel></rss>"
+            return ("application/rss+xml", Data(body.utf8))
+        }
         guard let count = feedItemCount.withLock({ $0 }), url?.host()?.contains("bbci.co.uk") == true else {
             return ReadingFixture.payload()
         }
@@ -365,6 +375,40 @@ final class CompositionTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertNotNil(association.store.state.presentation)
+        await association.close()
+    }
+
+    /// F-UX-2: a **fresh install** whose transport cannot reach a source tells the reader that, not that there
+    /// are no stories. The controlled transport answers every request with `URLError(.notConnectedToInternet)` —
+    /// what URLSession reports on a device with no connection, and the error the connector states as
+    /// `ConnectorOperationalFailure.transport` — so the first acquisition settles without publication and the
+    /// transports that settled are the evidence. Nothing here reads supply absence back as connectivity.
+    func testOfflineFirstLaunchStatesConnectivityNotNoStories() async throws {
+        FixtureTransport.rejecting.withLock { $0 = true }
+        defer { FixtureTransport.rejecting.withLock { $0 = false } }
+        let root = root(requestTimeout: 5)
+        await root.launch()
+        XCTAssertNil(root.startupFailure, "the connection failure is an outcome, not a thrown launch failure")
+        let association = try XCTUnwrap(root.association)
+        XCTAssertNil(association.store.state.presentation)
+        XCTAssertEqual(association.store.state.work, .unreachable)
+        XCTAssertNotEqual(association.store.state.work, .unavailable,
+            "an unreachable source is never the absence of stories")
+        await association.close()
+    }
+
+    /// F-UX-2's positive control, on the same fresh install: a source that answers with no stories is the empty
+    /// state, and it keeps the two actions it owns. A change that reported every absence as unreachable fails here.
+    func testFirstLaunchWithAnEmptySourceStillStatesNoStories() async throws {
+        FixtureTransport.answersWithNothing.withLock { $0 = true }
+        defer { FixtureTransport.answersWithNothing.withLock { $0 = false } }
+        let root = root(requestTimeout: 5)
+        await root.launch()
+        XCTAssertNil(root.startupFailure)
+        let association = try XCTUnwrap(root.association)
+        XCTAssertNil(association.store.state.presentation)
+        XCTAssertEqual(association.store.state.work, .unavailable)
+        XCTAssertNotEqual(association.store.state.work, .unreachable)
         await association.close()
     }
 

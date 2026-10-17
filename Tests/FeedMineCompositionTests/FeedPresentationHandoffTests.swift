@@ -316,11 +316,34 @@ final class FeedPresentationHandoffTests: XCTestCase {
     func testColdNoPublicationWithoutPresentationStatesNoStories() async throws {
         let coldFixture = try fixture(history: 0, remoteItems: 0)
         let outcome = try await cold(coldFixture)
-        guard case .noPublicationAfterAcquisition = outcome else { return XCTFail("Expected checkpoint-only acquisition") }
+        guard case .noPublicationAfterAcquisition(_, let results) = outcome else {
+            return XCTFail("Expected checkpoint-only acquisition")
+        }
+        // F-UX-2 positive control: nothing in this outcome is a connectivity fact, so the empty state stays
+        // the empty state. A change that reported every absence as unreachable would fail here.
+        XCTAssertFalse(results.map(\.stop).contains(.operationalFailure(.transport)))
         let updated = try FeedPresentationHandoff.receive(coldOutcome: outcome,
             into: FeedPresentationHandoff.report(.pending, into: .init(presentation: nil)))
         XCTAssertNil(updated.presentation)
         XCTAssertEqual(updated.work, .unavailable)
+        XCTAssertNotEqual(updated.work, .unreachable)
+    }
+    /// F-UX-2: the same absence, one fact apart. The transports settled without publication, and the reason is
+    /// the one the connector states — the source could not be reached. With nothing presented, that is the
+    /// reader's whole situation, and it is stated as connectivity: "Não foi possível conectar." and only
+    /// "Tentar novamente", never the claim that there are no stories and the interests to adjust.
+    func testOfflineFirstBootWithoutPresentationStatesConnectivity() async throws {
+        let coldFixture = try fixture(history: 0, error: URLError(.cannotConnectToHost))
+        let outcome = try await cold(coldFixture)
+        guard case .noPublicationAfterAcquisition(_, let results) = outcome else {
+            return XCTFail("Expected a settled transport failure without publication")
+        }
+        XCTAssertEqual(results.map(\.stop), [.operationalFailure(.transport)])
+        let updated = try FeedPresentationHandoff.receive(coldOutcome: outcome,
+            into: FeedPresentationHandoff.report(.pending, into: .init(presentation: nil)))
+        XCTAssertNil(updated.presentation)
+        XCTAssertEqual(updated.work, .unreachable)
+        XCTAssertNotEqual(updated.work, .unavailable)
     }
     func testLocalWorkRemainingDoesNotMeanExhaustion() async throws {
         let f = try fixture(), state = try await warm(f)
