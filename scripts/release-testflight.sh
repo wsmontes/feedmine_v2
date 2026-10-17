@@ -6,6 +6,8 @@
 #   * refuses archive unless current public inventory, compiler and bundled SQLite provenance agree;
 #   * archives, then verifies the git SHA stamped inside the archive against HEAD, aborting on mismatch;
 #   * uploads with the App Store Connect API key (the Xcode Apple-ID path fails on this machine);
+#   * snapshots the export-options plist before the archive, validates that private copy and hands
+#     Xcode that same file — so the destination that was checked is the destination Xcode reads;
 #   * creates the local annotated tag `ios/<version>-build.<build>-<sha>` and prints the pairing.
 #
 # It never pushes: `git tag` is local.
@@ -26,6 +28,12 @@ set -euo pipefail
 # K-03 (Kiro): -e makes any unchecked failure stop the release instead of uploading or tagging
 # with empty metadata. Expected non-zero commands are guarded explicitly with `|| true` / `if`.
 trap 'echo "ABORTADO: comando falhou na linha $LINENO (exit $?)" >&2' ERR
+# The export-options snapshot (see below) must not survive the run, not even an interrupted one.
+EXPORT_SNAPSHOT=""
+cleanup_snapshot() { [ -n "$EXPORT_SNAPSHOT" ] && rm -f "$EXPORT_SNAPSHOT"; }
+trap cleanup_snapshot EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
@@ -66,8 +74,11 @@ RESOURCES="FeedMineApp/FeedMineApp/Resources"
 CATALOG="$RESOURCES/catalog.sqlite"
 DESCRIPTOR="$RESOURCES/catalog.manifest.json"
 ARCHIVE=".build/feedmine-v2.xcarchive"
-EXPORT_OPTS_UPLOAD="scripts/ExportOptions.plist"
-EXPORT_OPTS_EXPORT_ONLY="scripts/ExportOptions-export-only.plist"
+# Test seam, defaults unchanged: scripts/test-export-options.sh points these at throwaway copies
+# so it can exercise the plist selection (including an uploading plist on the export-only path)
+# without ever writing a file the repository tracks.
+EXPORT_OPTS_UPLOAD="${FM_EXPORT_OPTS_UPLOAD:-scripts/ExportOptions.plist}"
+EXPORT_OPTS_EXPORT_ONLY="${FM_EXPORT_OPTS_EXPORT_ONLY:-scripts/ExportOptions-export-only.plist}"
 EXPORT_OPTS="$EXPORT_OPTS_UPLOAD"
 if [ "$NO_UPLOAD" = "1" ]; then EXPORT_OPTS="$EXPORT_OPTS_EXPORT_ONLY"; fi
 STAGING="${P0C_STAGING_ROOT:-build/catalog-bootstrap}"
@@ -79,15 +90,28 @@ plist_destination() {
 
 # H-EXPORT (measured 2026-10-17): $EXPORT_OPTS_UPLOAD declares method=app-store-connect and
 # destination=upload, so -exportArchive PUBLISHES the ipa as a side effect of exporting. A
-# rehearsal had to hand-edit a copy to destination=export to avoid the upload. The opt-in is
-# therefore checked against the plist that will actually reach xcodebuild, never against the
-# intent of the flag: a missing or still-uploading plist must refuse here, before any xcodebuild.
-if [ "$NO_UPLOAD" = "1" ]; then
-  if [ ! -f "$EXPORT_OPTS" ]; then
+# rehearsal had to hand-edit a copy to destination=export to avoid the upload.
+#
+# Validate and use must be the SAME bytes. The selection above is a path, and the archive takes
+# minutes: if that file changed between validation here and -exportArchive below, the validated
+# destination would no longer describe what Xcode reads. So the selected plist is snapshotted once,
+# now, into a private 600 temporary file; THAT copy is validated, THAT copy is handed to xcodebuild,
+# and "nothing was sent" below is derived from the destination recorded here, never from the flag.
+if [ ! -f "$EXPORT_OPTS" ]; then
+  if [ "$NO_UPLOAD" = "1" ]; then
     echo "ABORTADO: --no-upload exige $EXPORT_OPTS, que não existe — sem esse plist o export não tem como recusar destination=upload" >&2
-    exit 9
+  else
+    echo "ABORTADO: plist de export ausente: $EXPORT_OPTS" >&2
   fi
-  EXPORT_DEST="$(plist_destination "$EXPORT_OPTS")"
+  exit 9
+fi
+if ! EXPORT_SNAPSHOT="$(mktemp -t fm-export-options)" || ! cp "$EXPORT_OPTS" "$EXPORT_SNAPSHOT"; then
+  echo "ABORTADO: não foi possível copiar $EXPORT_OPTS para um arquivo temporário privado" >&2
+  exit 9
+fi
+chmod 600 "$EXPORT_SNAPSHOT"
+EXPORT_DEST="$(plist_destination "$EXPORT_SNAPSHOT")"
+if [ "$NO_UPLOAD" = "1" ]; then
   if [ "$EXPORT_DEST" != "export" ]; then
     echo "ABORTADO: --no-upload com $EXPORT_OPTS, mas o plist diz destination=$EXPORT_DEST — exportar publicaria a build. A chave destination precisa ser 'export' (nenhuma outra) para esta opção" >&2
     exit 9
@@ -95,10 +119,9 @@ if [ "$NO_UPLOAD" = "1" ]; then
 fi
 
 if [ "$PRINT_EXPORT_OPTS" = "1" ]; then
-  PRINTED_DEST="$(plist_destination "$EXPORT_OPTS")"
   echo "EXPORT_OPTS=$EXPORT_OPTS"
-  echo "destination=$PRINTED_DEST"
-  case "$PRINTED_DEST" in
+  echo "destination=$EXPORT_DEST"
+  case "$EXPORT_DEST" in
     upload) echo "upload=yes" ;;
     *) echo "upload=no" ;;
   esac
@@ -191,17 +214,18 @@ if [ ! -f "$KEY_PATH" ]; then
   exit 9
 fi
 
-if ! xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist "$EXPORT_OPTS" \
+if ! xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist "$EXPORT_SNAPSHOT" \
   -exportPath .build/tf-export -authenticationKeyPath "$KEY_PATH" \
   -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID" > /tmp/fm-v2-tf-upload.log 2>&1; then
   echo "ABORTADO: export/upload falhou"; grep -aE "error:" /tmp/fm-v2-tf-upload.log | head -5 || true; exit 8
 fi
 
-if [ "$NO_UPLOAD" = "1" ]; then
-  # Nothing was published, so neither the upload marker nor the delivery tag applies: the tag
-  # names an uploaded TestFlight build, and creating it here would claim a delivery that never
-  # happened. The ipa stays in .build/tf-export for inspection/hand-off.
-  echo "NO UPLOAD: export em .build/tf-export com $EXPORT_OPTS (destination=export) — nada enviado e nenhuma tag criada"
+if [ "$EXPORT_DEST" != "upload" ]; then
+  # Derived from the validated snapshot's own destination, not from the flag: if that destination
+  # is not `upload` nothing was published, so neither the upload marker nor the delivery tag
+  # applies — the tag names an uploaded TestFlight build, and creating it here would claim a
+  # delivery that never happened. The ipa stays in .build/tf-export for inspection/hand-off.
+  echo "NO UPLOAD: export em .build/tf-export a partir de $EXPORT_OPTS (destination=$EXPORT_DEST, o snapshot validado) — nada enviado e nenhuma tag criada"
   ls -1 .build/tf-export/*.ipa 2>/dev/null || true
   exit 0
 fi
