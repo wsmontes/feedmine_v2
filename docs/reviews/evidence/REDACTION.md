@@ -226,12 +226,35 @@ em prosa (§7): ele entrou às 12:53 −07:00 e a limpeza veio às 16:46 −07:0
 Ou seja, a classe mais recente ficou pública por menos de quatro horas, e as mais antigas,
 por dias.
 
-Medição das pontas que ainda carregam cada classe, feita nesta revisão (2026-10-16) sobre
-todas as refs locais e branches remotas, com `git grep -l -F` pelas agulhas do verificador
-da §6: conta local anterior em 130 refs (71 locais + 59 remotas), endereço no sujeito do
-certificado em 121 (69 + 52), UDID de aparelho físico em 125 (71 + 54), UUID de perfil e
-impressão digital em 6 cada (3 + 3). A limpeza alcançou a ponta de `main`; das 126 branches
-publicadas, todas menos `main` continuam com a árvore anterior à redação na ponteira.
+Medição nas 126 branches publicadas, feita nesta revisão (2026-10-16) com o próprio
+verificador da §6, uma branch por vez (`sh scripts/check_public_redaction.sh origin/<branch>`):
+
+| Classe | Pontas com o valor | Pontas sem o valor | Total |
+|---|---|---|---|
+| Conta local anterior | 59 | 67 | 126 |
+| UDID de aparelho físico | 52 | 74 | 126 |
+| Endereço no sujeito do certificado | 52 | 74 | 126 |
+| UUID de perfil de provisionamento | 1 | 125 | 126 |
+| Impressão digital do certificado de assinatura | 1 | 125 | 126 |
+
+No conjunto, 67 das 126 pontas publicadas saem com 0 ofensores e 59 saem com pelo menos um.
+Uma ponta limpa **não** prova que a limpeza chegou nela: se o ponto de bifurcação é anterior
+ao commit que publicou o valor — `35331510` (2026-10-09 21:16) para a conta local anterior,
+`ba0866da` (2026-10-12 00:31) para o UDID de aparelho físico —, a branch nunca carregou
+aquele valor. É o caso das 66 pontas sem a conta local anterior fora de `main`: nenhuma tem
+`35331510` na ascendência, todas bifurcam até 2026-10-09 (`origin/architecture/foundation-v1`,
+em `c93a305d`, 2026-10-07 13:39; `origin/phase/3r1-poison-observation-isolation`, em
+`56666476`, 2026-10-08 13:13; `origin/codex/omp-plan-execution`, em `9503a5a1`, 2026-10-09
+15:03) e todas saem com 0 ofensores. Do outro lado, as 73 pontas sem o UDID fora de `main`
+não têm `ba0866da` na ascendência e bifurcam até 2026-10-11 — e há o caso misto:
+`origin/kiro/k-01` (bifurcação em `55467544`, 2026-10-11 21:38) carrega a conta local anterior
+em 7 arquivos e não carrega o UDID, cuja estreia (`ba0866da`) é posterior à bifurcação. As
+duas classes de valor longo vivem em uma única ponta publicada,
+`origin/instruments/journey-recut`, que herdou os logs crus de `ef519465`. `main` é a única
+ponta limpa que **contém** os commits de estreia; por isso é a única em que o `0 ofensores`
+é efeito da limpeza. (Esta tabela substitui a contagem preliminar por prefixo de ref, que
+somava a ref simbólica do remoto — apelido de `main` — e, nas classes de valor longo, casava
+os fragmentos com que o próprio verificador monta as agulhas.)
 
 ### 8.2 O que é inevitável por construção
 
