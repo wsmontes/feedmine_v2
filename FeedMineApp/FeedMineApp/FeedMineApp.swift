@@ -595,6 +595,11 @@ struct FeedMineApp: App {
                 #endif
             }
             .onChange(of: phase) { _, next in
+                if next == .inactive {
+                    // `.inactive` is the first half of leaving the screen: the foreground cadence stops here, before
+                    // the app can be suspended. The session's own lifecycle work stays on `.background`.
+                    Task { await composition.inactive() }
+                }
                 if next == .background {
                     #if os(iOS)
                     Self.requestBackgroundRefresh()

@@ -33,6 +33,12 @@ final class AppComposition {
         #endif
     }
     private var replacingSession = false
+    /// The owner's decision of 2026-10-17 (item G): while the app is **active and visible**, the same
+    /// `foreground()` path is offered as a drive opportunity once every ≥ 10 s. `inactive()`/`background()` stop it;
+    /// it never runs in the background and adds no second pipeline.
+    @ObservationIgnored private let foregroundCadence = ForegroundDriveCadence()
+    /// Whether the app is active and visible right now — exactly the pair the cadence is allowed to drive under.
+    @ObservationIgnored private var foregroundActive = false
     /// One verification shared between foreground and a BGAppRefresh grant.
     @ObservationIgnored private var catalogueSyncInFlight = false
     private let directory: URL
@@ -353,10 +359,41 @@ final class AppComposition {
         }
     }
 
+    /// The app is active and visible: the lifecycle transition. It states the pair the foreground cadence drives
+    /// under and arms the cadence, then takes the drive itself. The cadence then repeats **that drive**
+    /// (`association.foreground()`) every ≥ 10 s — never this composition pass, whose catalogue check has its own
+    /// durable clock and is not a runway opportunity. Only this method sets `foregroundActive`; `inactive()` and
+    /// `background()` clear it.
     func foreground() async {
+        foregroundActive = true
+        await startForegroundCadence()
         guard let association else { return }
         await association.foreground()
         await syncCatalogueIfDue()
+    }
+
+    /// `.inactive` is not yet background — the app can still be on screen during an app switch or a system prompt —
+    /// but it is not "active and visible" either, and that pair is exactly what the foreground cadence drives
+    /// under. The screen's own lifecycle work stays on `background()`.
+    func inactive() async {
+        foregroundActive = false
+        await foregroundCadence.stop()
+    }
+
+    private func startForegroundCadence() async {
+        await foregroundCadence.start { [weak self] in
+            await self?.foregroundCadenceOpportunity()
+        }
+    }
+
+    /// The cadence's one opportunity: the same feed drive a foreground takes — `association.foreground()`, the path
+    /// that re-activates the current presentation through `activateCurrentPresentation`. The catalogue sync stays
+    /// out on purpose: it has its own durable clock and is not a runway opportunity. The pair the cadence may run
+    /// under is re-checked here, so a wake delivered after `.inactive`/`.background` is dropped instead of undoing
+    /// that transition.
+    private func foregroundCadenceOpportunity() async {
+        guard foregroundActive, let association else { return }
+        await association.foreground()
     }
 
     /// The network opportunity is separate from the local bootstrap and from the first paint. A bundled
@@ -536,6 +573,10 @@ final class AppComposition {
     }
 
     func background() async {
+        // The screen is gone: the cadence stops before anything else runs, so no opportunity is offered past this
+        // point. (`inactive()` already stopped it on the way here; a direct `.background` still stops it.)
+        foregroundActive = false
+        await foregroundCadence.stop()
         // V1's own moment for this (`FeedScreen` on `.background`): what the reader was listening to is written
         // before the app can be suspended, so a flush that never comes costs nothing.
         if mediaAdapter.state.item != nil { mediaAdapter.savePosition() }
@@ -3021,6 +3062,10 @@ final class FeedAssociation {
         }
     }
 
+    /// The feed drive opportunity. Two callers take it, and they are the same path on purpose: the lifecycle's
+    /// `.active` transition and the foreground cadence (`ForegroundDriveCadence`, owner's decision of 2026-10-17),
+    /// which offers it again every ≥ 10 s while the app is active and visible. Nothing here is a second pipeline, and
+    /// a drive with nothing to do is a no-op.
     func foreground() async {
         visible = true
         // O outro lado do par: `background()` para o medidor com a tela, porque o que interessa é o que o leitor
@@ -3060,7 +3105,9 @@ final class FeedAssociation {
             try await installSettledEligibleOffer()
             // A mesma oportunidade do leitor que o `viewport` oferece, no outro caminho por onde ele volta à tela: é
             // aqui que a reserva publicada enquanto ele não tinha tela — a cauda oculta sucedida no `background()` —
-            // é materializada. Não é relógio: nada dispara isto por tempo decorrido.
+            // é materializada. A chamada não inventa um fato: o que a autoriza é haver publicação concluída
+            // (`admitPresentation(.publishedGrowth)` é um no-op sem espaço), e a cadência de foreground só repete a
+            // **oportunidade** — ela nunca é a razão pela qual uma carta entra.
             await growAdmittedWindowIfPublished()
             await scheduleLocalRetryIfNeeded()
         } catch { reportFailure(error); await scheduleLocalRetryIfNeeded() }
