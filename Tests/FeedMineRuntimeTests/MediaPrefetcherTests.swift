@@ -3,7 +3,7 @@ import XCTest
 import FeedMineDomain
 import FeedMinePersistence
 import FeedMineMedia
-import FeedMineRuntime
+@testable import FeedMineRuntime
 
 /// PD-5/PD-6: definitive decisions permit text-only; pending work never does.
 final class MediaPrefetcherTests: XCTestCase {
@@ -150,6 +150,22 @@ extension MediaPrefetcherTests {
         XCTAssertEqual(calls.all.map(\.lastPathComponent), ["next.png"])
         XCTAssertNotNil(prefetcher.readiness.prepared(next))
         XCTAssertNil(prefetcher.readiness.prepared(unrelated))
+    }
+
+    /// The index decides what a nil record **means** from the caller, never from a default. An image the card
+    /// declared and that could not be prepared is decided without a presentation; only a card that declares no
+    /// image is settled as text. `record` requires the flag, so the old failure mode — a future caller omitting it
+    /// and reading as "declared text", publishing `.textOnly` over a broken image — no longer compiles.
+    func testANilRecordIsTextOnlyOnlyWhenTheCallerDeclaresText() {
+        let index = MediaReadiness(), failed = OriginRevisionID(), designed = OriginRevisionID()
+        XCTAssertTrue(index.record(failed, nil, textDeclared: false))
+        XCTAssertTrue(index.record(designed, nil, textDeclared: true))
+        XCTAssertTrue(index.isSettled(failed)); XCTAssertTrue(index.isSettled(designed))
+        XCTAssertNil(index.presentation(for: failed),
+            "a recorded image failure has no presentation; it must never become a .textOnly card")
+        XCTAssertEqual(index.presentation(for: designed), .textOnly)
+        XCTAssertEqual(index.presentations(for: [failed, designed]), [designed: .textOnly],
+            "the atomic snapshot agrees with the per-revision answer")
     }
 
 }

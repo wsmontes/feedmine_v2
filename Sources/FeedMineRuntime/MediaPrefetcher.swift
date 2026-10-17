@@ -55,9 +55,10 @@ public final class MediaReadiness: @unchecked Sendable {
         return ready.count
     }
     /// `textDeclared` states whether nil is the absence of media work (a card designed as text) or the failure of
-    /// media the card declared. Only the first is a presentation.
+    /// media the card declared. Only the first is a presentation, so the flag is **required**: a caller recording a
+    /// failure cannot inherit "declared text" by omitting it and turn a missing image into `.textOnly`.
     @discardableResult
-    func record(_ revision: OriginRevisionID, _ value: Ready?, textDeclared: Bool = true) -> Bool {
+    func record(_ revision: OriginRevisionID, _ value: Ready?, textDeclared: Bool) -> Bool {
         lock.lock(); defer { lock.unlock() }
         guard !settled.contains(revision) else { return false }
         settled.insert(revision)
