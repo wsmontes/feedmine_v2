@@ -661,7 +661,7 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         }
         bookmark.tap()
         Thread.sleep(forTimeInterval: 1.5)
-        record("b05-saved:\(bookmark.value as? String == "bookmarked")", to: phases)
+        record("b05-saved:\(["bookmarked", "salvo"].contains(bookmark.value as? String ?? ""))", to: phases)
         record("b05-anchor-before:\(anchorBefore)", to: phases)
 
         // A → B → A: another context and back. The reader's own feed must be the same one they left.
@@ -708,7 +708,7 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         let anchorAfterReopen = presentedCard(app)?.identifier
         record("b05-reopen-preserves-anchor:\(anchorAfterReopen != nil && anchorAfterReopen == anchorBefore)",
             to: phases)
-        record("b05-reopen-keeps-saved:\(app.buttons.matching(identifier: "card.bookmark").allElementsBoundByIndex.contains { $0.value as? String == "bookmarked" })",
+        record("b05-reopen-keeps-saved:\(app.buttons.matching(identifier: "card.bookmark").allElementsBoundByIndex.contains { ["bookmarked", "salvo"].contains($0.value as? String ?? "") })",
             to: phases)
 
         // Offline: the network is cut for a real relaunch, and the stories already published must still be

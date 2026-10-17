@@ -354,7 +354,8 @@ public struct FeedItemCardView: View, Equatable {
             // announced by the symbol's own name (`bookmark`), which names neither the article nor the act. The
             // two phrases are the card menu's own (`contextMenu`), so the button and the menu say the same thing.
             .accessibilityLabel(Text(verbatim: bookmarkActionLabel))
-            .accessibilityValue(isBookmarked ? "bookmarked" : "not bookmarked")
+            .accessibilityValue(isBookmarked
+                ? String(localized: "bookmarked") : String(localized: "not bookmarked"))
         }
     }
 
@@ -380,7 +381,8 @@ public struct FeedItemCardView: View, Equatable {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("card.bookmark")
                 .accessibilityLabel(Text(verbatim: bookmarkActionLabel))
-                .accessibilityValue(isBookmarked ? "bookmarked" : "not bookmarked")
+                .accessibilityValue(isBookmarked
+                    ? String(localized: "bookmarked") : String(localized: "not bookmarked"))
         }
     }
 

@@ -170,7 +170,7 @@ public struct FilterSheetView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("preset-option-\(row.id)")
-                        .accessibilityValue(row.preset == store.draft.preset ? "selected" : "not selected")
+                        .accessibilityValue(row.preset == store.draft.preset ? String(localized: "selected") : String(localized: "not selected"))
                     }
                     Button(action: onShowCountries) {
                         HStack {
@@ -189,11 +189,12 @@ public struct FilterSheetView: View {
                     ForEach(ReaderContentType.allCases, id: \.rawValue) { type in
                         Button {
                             store.select(contentType: type)
-                        } label: { checkRow(type.rawValue, icon: type.icon,
+                        } label: { checkRow(type.displayName, icon: type.icon,
                             isSelected: store.draft.contentType == type) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("content-type-\(type.rawValue.lowercased())")
-                            .accessibilityValue(store.draft.contentType == type ? "selected" : "not selected")
+                            .accessibilityValue(store.draft.contentType == type
+                                ? String(localized: "selected") : String(localized: "not selected"))
                     }
                 }
             }
@@ -244,7 +245,7 @@ public struct FilterSheetView: View {
                                     }
                                     .buttonStyle(.plain)
                                     .accessibilityIdentifier("language-\(row.code)")
-                                    .accessibilityValue(row.isSelected ? "selected" : "not selected")
+                                    .accessibilityValue(row.isSelected ? String(localized: "selected") : String(localized: "not selected"))
                                     if row.hasVariants {
                                         Button {
                                             if expandedLanguages.contains(row.code) {
@@ -274,10 +275,11 @@ public struct FilterSheetView: View {
                     ForEach(ReaderMood.allCases, id: \.rawValue) { mood in
                         Button {
                             store.select(mood: mood)
-                        } label: { checkRow(mood.rawValue, icon: mood.icon, isSelected: store.draft.mood == mood) }
+                        } label: { checkRow(mood.displayName, icon: mood.icon, isSelected: store.draft.mood == mood) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("mood-\(mood.rawValue.lowercased())")
-                            .accessibilityValue(store.draft.mood == mood ? "selected" : "not selected")
+                            .accessibilityValue(store.draft.mood == mood
+                                ? String(localized: "selected") : String(localized: "not selected"))
                     }
                 }
             }

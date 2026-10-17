@@ -6,6 +6,17 @@ final class FeedMineUITests: XCTestCase {
     /// Requires Debug (Release ignores FEEDMINE_RUNTIME_NAMESPACE); uses public feeds, no fixtures.
     private static let soakRuntimeNamespace = "B50A0000-0000-4000-8000-000000000030"
 
+    /// The state the card's own save control announces, in either shipped language. The product ships English and
+    /// Portuguese, and the suite's locale is declared by its plan rather than by the device, so the assertion states
+    /// the *state* and not the word: `bookmarked`/`salvo` and `not bookmarked`/`não salvo`.
+    private func bookmarkState(_ value: String?) -> String? {
+        switch value {
+        case "bookmarked", "salvo": "bookmarked"
+        case "not bookmarked", "não salvo": "not bookmarked"
+        default: nil
+        }
+    }
+
     @MainActor
     func testPreparePersistentScaleSoakThroughCountryCascade() throws {
         // Keep the normal isolated UI gate from populating a persistent namespace or contacting RSS.
@@ -1107,9 +1118,9 @@ final class FeedMineUITests: XCTestCase {
         // compared, not merely tapped, so "saved" means saved.
         let bookmark = firstCard.buttons["card.bookmark"]
         XCTAssertTrue(bookmark.waitForExistence(timeout: 15), "the card offers saving")
-        XCTAssertEqual(bookmark.value as? String, "not bookmarked", "the card starts unsaved")
+        XCTAssertEqual(bookmarkState(bookmark.value as? String), "not bookmarked", "the card starts unsaved")
         bookmark.tap()
-        XCTAssertEqual(bookmark.value as? String, "bookmarked", "saving the card records its state")
+        XCTAssertEqual(bookmarkState(bookmark.value as? String), "bookmarked", "saving the card records its state")
         // Offline, and a fresh launch of the same reader's store.
         app.terminate()
         app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
@@ -1207,9 +1218,9 @@ final class FeedMineUITests: XCTestCase {
             .matching(NSPredicate(format: "identifier == %@", anchor)).firstMatch
         let bookmark = card.buttons["card.bookmark"]
         XCTAssertTrue(bookmark.waitForExistence(timeout: 15), "the card the reader is on offers saving")
-        XCTAssertEqual(bookmark.value as? String, "not bookmarked", "the card starts unsaved")
+        XCTAssertEqual(bookmarkState(bookmark.value as? String), "not bookmarked", "the card starts unsaved")
         bookmark.tap()
-        XCTAssertEqual(bookmark.value as? String, "bookmarked", "saving the card records its state")
+        XCTAssertEqual(bookmarkState(bookmark.value as? String), "bookmarked", "saving the card records its state")
         Thread.sleep(forTimeInterval: 2)
         // A forced close. `terminate()` runs no lifecycle milestone at all — measured: it writes no lifecycle
         // checkpoint — so what comes back can only be what the settled observation made durable.
@@ -1224,7 +1235,7 @@ final class FeedMineUITests: XCTestCase {
         let reopened = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == %@", anchor)).firstMatch
         XCTAssertTrue(reopened.waitForExistence(timeout: 15), "the card the reader was on is drawn again")
-        XCTAssertEqual(reopened.buttons["card.bookmark"].value as? String, "bookmarked",
+        XCTAssertEqual(bookmarkState(reopened.buttons["card.bookmark"].value as? String), "bookmarked",
             "and the card they saved is drawn as saved")
     }
 

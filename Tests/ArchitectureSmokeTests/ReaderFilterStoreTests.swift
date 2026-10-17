@@ -150,7 +150,7 @@ final class ReaderFilterStoreTests: XCTestCase {
             searchQuery: "mercado", languageNames: ["en": "English"],
             taxonomyNames: ["tech": "Technology"], regionNames: ["br": "Brazil"])
         XCTAssertEqual(chips.map(\.label),
-            ["Minha coleção", "mercado", "Brazil", "Podcasts", "Technology", "English", "Fun"])
+            ["Minha coleção", "mercado", "Brazil", "Podcasts", "Technology", "English", "Divertido"])
         XCTAssertEqual(chips.map(\.kind), [.preset, .search, .region, .contentType, .topic, .language, .mood],
             "V1's chip order: preset, search, region, content type, topic, language, mood")
         XCTAssertNil(chips.first { $0.kind == .search }?.removal,

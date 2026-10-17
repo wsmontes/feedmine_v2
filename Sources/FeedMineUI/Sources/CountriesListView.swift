@@ -167,7 +167,7 @@ public struct CountryRowView: View {
                 .tint(.green)
                 .accessibilityIdentifier("country-toggle-\(row.slug)")
                 .accessibilityLabel(Text(verbatim: row.name))
-                .accessibilityValue(row.isEnabled ? "selected" : "not selected")
+                .accessibilityValue(row.isEnabled ? String(localized: "selected") : String(localized: "not selected"))
         }
     }
 }
