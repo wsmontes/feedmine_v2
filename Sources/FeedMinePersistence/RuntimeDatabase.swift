@@ -83,6 +83,11 @@ public struct WALCheckpointResult: Sendable, Equatable {
 /// The pool serializes writes and protects reader connections; Database never escapes
 /// the scoped internal access closures. No fallback or automatic rebuild exists.
 public final class RuntimeDatabase: Sendable {
+    /// Upper bound on waiting for a competing writer's lock. Long enough for a WAL checkpoint and a
+    /// normal batch write, short enough to stay below what a person reads as a hang. It is a wait,
+    /// not a retry policy: when it expires, SQLITE_BUSY still propagates factually.
+    static let writerBusyTimeout: TimeInterval = 10
+
     private let pool: DatabasePool
 
     /// Whether the volume holding `url` can tell two spellings apart. True (the safe, isolating answer) when the
@@ -159,7 +164,10 @@ public final class RuntimeDatabase: Sendable {
             }
         }
         // DatabasePool's default persistent journal mode establishes WAL.
-        // Reader count and busy behavior use GRDB defaults, not product tuning.
+        // A competing writer must wait for the lock instead of failing on a transient SQLITE_BUSY:
+        // the default immediate-error mode turns contention into a user-visible failure. WAL readers
+        // do not block, so this bound belongs to the writer; it is not a retry policy.
+        configuration.busyMode = .timeout(RuntimeDatabase.writerBusyTimeout)
         do {
             let pool = try DatabasePool(path: databaseURL.path, configuration: configuration)
             var nonErasingMigrator = migrator
@@ -179,6 +187,8 @@ public final class RuntimeDatabase: Sendable {
                 throw RuntimeDatabaseError.incompatibleSchema(unknownIdentifiers: appliedButUnknown.sorted())
             }
             self.pool = pool
+        } catch let error as RuntimeDatabaseError {
+            throw error
         } catch let error as DatabaseError {
             throw RuntimeDatabaseError.storage(resultCode: error.extendedResultCode.rawValue, message: error.message ?? error.description)
         } catch {
