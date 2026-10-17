@@ -2,6 +2,8 @@
 
 **Revisor externo · 17/out/2026, America/Vancouver · baseline `main@5e4e21425f5e1be22cdf7ed10e4c1728d2a33f15`.** Análise estática das fronteiras UI/Runtime, confronto com relatório físico da build 48 e com correção candidata `fix/deferral-invalidates-list@10bc0bd72cfd`. Não executei código, Instruments, trace ou testes; separo mecanismos observados de causa ainda não isolada. Este é **um estudo de comportamento e arquitetura**, não uma meta de economizar 1–2 ms.
 
+> **Esclarecimento posterior do dono (mesma data; substitui qualquer leitura de “medir primeiro” deste estudo):** a fluidez não é uma meta de micro-otimização. O travamento é tratado como erro de fronteira UI/runtime a remover por construção. **Implementação arquitetural primeiro; medição apenas para comprovar e para investigar defeitos que persistirem.** Ver contratos e ordem revisados no §5.
+
 ## 1. Veredito e definição do problema
 
 **A hipótese do dono é tecnicamente correta em essência:** scroll deve **observar** o leitor e apresentar dados locais prontos. Aquisição, ordenação editorial, admissão/publicação, decodificação de mídia, persistência e reposição de runway não devem formar dependência síncrona do gesto ou do próximo frame. O produto deve tolerar esses trabalhos demorando sem interromper movimento e sem modificar o prefixo já apresentado.
@@ -103,53 +105,45 @@ Não confundir “trabalho em background” com correr tudo em `Task.detached`: 
 
 A UI pode aplicar uma janela nova em fronteira semanticamente segura. Isso não significa atrasar indefinidamente a admissão: alimentar a reserva local proativamente e deixar o gesto revelar o que já está pronto. Evitar trocar janelas dentro de gesto ativo ou perder resposta ao fim do hold. Correções de offset durante gesto não são alternativa aceitável.
 
-## 5. Ordem de diagnóstico e intervenção mínima
+## 5. Direção de correção: separar responsabilidades **antes** de otimizar
 
-### Etapa A — provar a dependência, não ajustar porcentagens
+**Esclarecimento do dono em 17/out/2026:** o defeito percebido não é uma degradação marginal de FPS a ser compensada com tuning. É um **engasgo incompatível com um leitor simples**. A meta é eliminar o acoplamento entre gesto e produção de conteúdo. O iPhone tem capacidade para renderizar a porção visível de texto/imagens já preparados; não aceitar a dificuldade atual como natural nem iniciar outra caça longa a percentuais antes de remover violações evidentes de fronteira.
 
-Instrumentar a **mesma build Release no iPhone** com Instruments (SwiftUI Update Groups/Long View Body, Hitches, Time Profiler, Hangs e, quando útil, Swift Concurrency). Correlacionar no mesmo relógio:
+Isso **não significa** que a thread principal execute zero instruções (o sistema precisa calcular layout e desenhar). Significa que a resposta ao gesto **não aguarda** aquisição, SQLite, decodificação, seleção, publicação, recomposição de janela ou comunicação síncrona com um ator produtor. A UI publica um sinal pequeno, de custo previsível, e segue. O trabalho é dos consumidores da observação, com estado/cursores próprios, sem depender do frame seguinte para concluir. O runway mantém trabalho adiantado **proativamente**, sem depender de o usuário rolar para começar.
 
-1. begin/end do gesto + offset/âncora, mudanças visíveis da lista;
-2. callback de geometria: duração e frequência;
-3. `evidence(for:)` e criação de `Task` no MainActor (fila de tarefas pendentes);
-4. entrada/saída de `FeedAssociation.viewport`;
-5. `FeedSession.submitViewport`/SQLite/decodificação/admissão;
-6. `FeedAssociation.install`/leitura síncrona de bookmarks/SwiftUI update/layout;
-7. publicação/aquisição e seus recibos.
+### Contratos de implementação a impor no owner existente
 
-Reutilizar o trace/signpost já existente, com pontos de começo/fim de baixa sobrecarga. Não ativar trace de milhões de linhas e depois atribuir o custo ao produto. Coletar **stacks dos quadros severos**; presença temporal não é causa. Relatar travamentos perceptíveis, durações contínuas e piores agrupamentos, não só proporção média de atrasos.
+**C1 — UI pura consumidora.** Desenhar `PresentationCard` já preparado e apresentado localmente; o corpo de view e callbacks de geometria/scroll podem apenas ler a geometria nativa necessária, atualizar um fato visual pequeno e encaminhar um evento. São proibidos nesse caminho: I/O, trabalho editorial, construção de arrays/sets de toda a janela por evento, comparações estruturais amplas repetidas, decode e instalação de uma nova apresentação como efeito obrigatório de cada avanço.
 
-### Etapa B — ensaio discriminante em quatro condições
+**C2 — Observação não é execução.** `viewport`, `anchor`, `phase` e `atRest` são entradas **assíncronas e substituíveis quando apropriado**. O produtor não precisa responder para permitir o scroll continuar. O reconhecimento do fato pelo runtime não é uma condição para o próximo frame. Evitar uma `Task` por frame; transferir e coalescer pelo owner já existente se isso for necessário. Não descartar eventos semanticamente importantes (repouso durável, contexto/edição, posição relevante, conclusão de publicação). Manter fences de proveniência.
 
-No mesmo aparelho, corpus de oferta suficiente e mesma sequência reprodutível de gestos:
+**C3 — Runtime com autonomia temporal.** `FeedSession`/`FeedRunwayDriver` observam sinais com suas próprias posições e processam registro de leitura, runway, consulta local, aquisição e seleção **fora do MainActor** naquilo que não é UI. O runtime prepara a apresentação futura e mantém a capacidade adaptativa de avanço independentemente da frequência de observações; o sinal do scroll reprioriza, não comanda síncronamente o trabalho.
 
-- **A:** scroll de edição local já publicada com aquisição/seleção desabilitadas por instrumento de teste, sem alterar UI;
-- **B:** mesma edição, trabalho real de aquisição/seleção/publicação concorrendo, UI idêntica;
-- **C:** manter observador enviando sinais, mas desligar *apenas o consumo do driver* em instrumentação, sem desligar captura/scroll; marcar o que deixa de ser atualizado;
-- **D:** mesmo trabalho de C recolocado através dos owners existentes com processamento fora da UI, sem mudança de produto visível.
+**C4 — Publicação concluída, entrega segura.** O valor novo pode alcançar o host somente após preparação/admissão correta, por recibo de identidade e escopo. O recebimento no `MainActor` deve ser curto, apenas instalar valores materiais coesos; o processamento preparatório, consulta ao disco, seleção e decodificação ficam do outro lado. O gesto mantém sua janela emprestada, e a publicação não rearranja nem modifica o que foi visto/admitido.
 
-Interpretação: se A engasga igual, olhar primariamente render/layout/capture; se B piora com stacks do instalador/consulta, tratar concorrência/retornos ao MainActor; se C remove engasgos, isolar o hop consumidor; se D mantém continuidade sem hitches, validar arquitetura. **Esses são experimentos propostos, não resultados obtidos.**
+**C5 — Preservação de continuidade.** A separação não pode eliminar: avanço sustentado, renda de runway, identidade/posição, reabertura offline, filtros A→B→A, mídia pronta, checkpoints e persistência real. Uma interface que ficou suave por deixar de produzir conteúdo falhou no produto.
 
-### Etapa C — corrigir no owner, incrementalmente
+### Violações/prioridades identificáveis pela leitura atual
 
-1. **No hot path visual** (`FeedScreen`, `NativeFeedViewport`, `FeedScreenStore`): não percorrer `window.items` ou criar arrays inteiros por observação; usar identidade/proveniência/snapshot já disponíveis para atestar pertinência. Mudar somente após provar que mantém proteção contra callbacks obsoletos.
-2. **Separar eventos de posição dos efeitos** no handoff já existente. A apresentação recebe apenas valores prontos e mudanças materiais; movimento não deve implicar instalação ampla. Preservar event ordering/idle/fences; não inventar `loadMore` por scroll.
-3. **Remover a consulta SQLite síncrona do `MainActor` durante `install`**, preparando bookmarks com a janela no owner de persistência/composição fora da UI e instalando um resultado coeso. Não criar um segundo estado proprietário da biblioteca.
-4. **Limitar reinstalações com prova material**, sem supor que ignorar snapshots equivalentes é sempre correto. O ensaio anterior de “supressão de instalação redundante” foi refutado por medição; não repetí-lo como cosmética.
-5. Em `FeedSession`/driver, analisar se o trabalho `markSeen`, decodificação e seleção de janela pode ficar fora do ciclo de observações substituíveis; **não** atrasar confirmação durável necessária nem permitir card sem pixels prontos. Uma resposta mais rápida não pode violar o prefixo imutável.
+1. **I/O síncrono em `MainActor` dentro de instalação:** [`AppComposition.swift:2623–2636`](https://github.com/wsmontes/feedmine_v2/blob/5e4e21425f5e/FeedMineApp/FeedMineApp/AppComposition.swift#L2623-L2636) consulta `PublicationStore.bookmarkedCardIDs()` quando janela/IDs mudam. **Eliminar esse acoplamento por contrato**, mesmo antes de provar que ele foi a pior stack. Preparar o resultado pelo dono da biblioteca/persistência e aplicar com a projeção material, sem segundo cache proprietário.
+2. **Varreduras/arrays no callback visual:** [`FeedScreen.swift:113–140`](https://github.com/wsmontes/feedmine_v2/blob/5e4e21425f5e/Sources/FeedMineUI/FeedScreen.swift#L113-L140), [`FeedNativeViewport.swift:52–57`](https://github.com/wsmontes/feedmine_v2/blob/5e4e21425f5e/Sources/FeedMineUI/FeedNativeViewport.swift#L52-L57), [`FeedPresentationSnapshot.swift:133–139`](https://github.com/wsmontes/feedmine_v2/blob/5e4e21425f5e/Sources/FeedMineRuntime/FeedPresentationSnapshot.swift#L133-L139) fazem `contains`, validações estruturais e `map(\.id)` por observação. Substituir por uma prova leve de identidade/proveniência existente, preservando os casos de callbacks obsoletos e edição errada. **Não criar índice/cache adicional por reflexo.**
+3. **Reentrada em composição principal por cada observação:** [`AppComposition.swift:1788–1794`](https://github.com/wsmontes/feedmine_v2/blob/5e4e21425f5e/FeedMineApp/FeedMineApp/AppComposition.swift#L1788-L1794) cria `Task` no `FeedAssociation @MainActor` e chama [`viewport(...)` em :2880–2930](https://github.com/wsmontes/feedmine_v2/blob/5e4e21425f5e/FeedMineApp/FeedMineApp/AppComposition.swift#L2880-L2930). Tornar o caminho quente do host apenas entrega curta de fatos; deslocar o processamento do lado consumidor, sem depender do `MainActor` para executar. `Task { }` não é, por si, off-main.
+4. **Comparação/republicação estrutural acoplada a progresso do leitor:** [`FeedScreenStore.swift:136–178`](https://github.com/wsmontes/feedmine_v2/blob/5e4e21425f5e/Sources/FeedMineUI/FeedScreenStore.swift#L136-L178), [`FeedInteractionPresentation.swift:20–56`](https://github.com/wsmontes/feedmine_v2/blob/5e4e21425f5e/Sources/FeedMineUI/FeedInteractionPresentation.swift#L20-L56). A branch `fix/deferral-invalidates-list` reduz invalidações de lista observadas; conservar seu benefício sem confundi-lo com desacoplamento completo. Não suprimir recibos necessários só para reduzir contadores.
 
-### Etapa D — validação de produto
+### Plano de execução enxuto
 
-**Obrigatório, após integração numa árvore única:**
-- 14+ arrastadas e gesto prolongado, com/sem supply concorrente; sem travas visíveis e sem dependência do produtor;
-- gesto não gera rede, decode, query ou publicação no caminho crítico do próximo frame; a cadeia assíncrona pode ser disparada por observação, mas não bloquear UI;
-- avanço contínuo com runway e **B03 integral (30 minutos)** em corpus suficiente, sem fim artificial ou pausa ≥1 s por falta de runway;
-- **B04**: trabalho concluído durante gesto não move conteúdo/âncora nem cambia geometria;
-- A→B→A, app em background/foreground, reinício e retomada offline com ponto correto; não perder fatos por coalescência;
-- mídia render-ready e preservação da ocorrência histórica (sem text-only automático por falha temporária de decode);
-- **B06 físico integral** com CPU, memória, energia/térmica, frame hitches e tempo de scroll, sem inventar PASS antes de prova.
+1. Integrar ou reconciliar a correção candidata de invalidação da lista como **melhoria parcial**, protegendo a mesma janela/âncora durante gesto.
+2. Corrigir os **três cruzamentos proibidos verificáveis** acima: I/O em instalação no MainActor, varreduras/arrays no hot path, e uso de `Task @MainActor` como canal para processar cada observação. Não redesenhar arquitetura inteira; reutilizar os donos existentes.
+3. Verificar que o feed é conduzido pelo runtime proativo e entregue por fatos concluídos, não exige que cada gesto execute uma passagem de trabalho de produção. Manter os sinais relevantes, fences, posição durável e cancelamento de trabalho obsoleto.
+4. **Depois das correções**, fazer provas curtas de isolamento e experiência. Se ainda houver engasgos, só então usar instrumentos para localizar o *trabalho residual*; não exigir uma bateria prévia de perfis para decidir o que o código já mostra como fronteira errada.
 
-**Critério de saída:** uma jornada que não engasga perceptivelmente enquanto os produtores estão ocupados **e** um trace demonstrando que callbacks e updates que sustentam o gesto não executam I/O ou trabalho do runtime; o produto continua entregando cards e restauração. Percentuais de frames atrasados são evidência auxiliar, não substitutos desse contrato. Não definir limite arbitrário novo em lugar da régua congelada.
+### Aceitação: sim/não, não torneio de FPS
+
+- **Scroll com produção em andamento**: continua nativo e responsivo sem engasgos perceptíveis; produtor lento não bloqueia o desenho.
+- **Scroll com runtime intencionalmente atrasado** (instrumento controlado): a janela publicada local continua navegável e mantém posição; preparar conteúdo novo pode atrasar, o gesto não.
+- **Separação visível em código**: callbacks de gesto não fazem I/O, não fazem varreduras proporcionais ao tamanho do histórico, não obrigam consulta a outros atores e não instalam por frame; instalação no MainActor não consulta SQLite nem decodifica.
+- **Correção de produto**: runway volta a abastecer quando há oportunidade (inclusive sem gesto), crescimento/admissão são coerentes, não há fim artificial, B03/B04/B05 e B06 físico continuam como gates oficiais, com PASS apenas quando executados e verificados.
+- Métricas de hitches/CPU ajudam a **verificar** e a descobrir trabalho remanescente; jamais substituem esse contrato de separação. Não introduzir novo percentual arbitrário de aprovação.
 
 ## 6. O que não fazer
 
@@ -162,10 +156,8 @@ Interpretação: se A engasga igual, olhar primariamente render/layout/capture; 
 
 ## 7. Próxima ordem sugerida ao OMP
 
-1. Revisar o diagnóstico e a branch `fix/deferral-invalidates-list`, reproduzir o ganho após integrá-la isoladamente num checkout limpo (com logs/provenance de build).
-2. Rodar Etapas A/B para localizar **qual trecho** mantém custo dependente do scroll. Não abrir refactor amplo sem prova.
-3. Eliminar primeiro o I/O sincrônico no `install` do MainActor e os scans/arrays por callback **se o trace demonstrar custo**, mantendo owner/fence.
-4. Demonstrar que a UI consome snapshot local enquanto runtime trabalha independentemente e que B03/B04/B05 seguem válidos; executar B06 no aparelho.
-5. Registrar árvore/SHAs, traces, resultados brutos, erros remanescentes e se o engasgo ainda é perceptível. **Sem PASS inventado, sem mudança em `bench/`.**
+**Mandato:** tratar engasgo como **defeito de acoplamento**. Sem mais rodadas de tuning incremental como estratégia principal; aplicar os contratos C1–C5 em mudanças mínimas nos owners atuais, reconciliar o diff de fluidez já produzido, e validar que o gesto ficou independente dos produtores. Medir depois para confirmar a experiência e localizar eventual trabalho residual; não confundir percentual menor com correção concluída.
+
+Sequência: (1) preservar o hold da janela durante gesto; (2) retirar I/O síncrono e processamento proporcional ao tamanho da janela do MainActor quente; (3) repassar observações mínimas para consumidores com independência temporal; (4) aplicar somente recibos prontos sem interferir no scroll; (5) verificar o aplicativo real e o B03/B04/B05/B06 sem alterar a régua.
 
 **Relação com o inventário:** [Intenções versus entregas](FEEDMINE_INTENTIONS_VS_DELIVERIES_2026-10-17.md). Este estudo é o diagnóstico dedicado da frente **scroll/fluidez**, não um substituto da prioridade do feed contínuo.
