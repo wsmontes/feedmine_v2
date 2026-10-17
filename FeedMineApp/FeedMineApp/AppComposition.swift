@@ -2326,8 +2326,8 @@ final class FeedAssociation {
             return playable.remoteURL
         }
         // The trace is a value: the preparation closure is `@Sendable` and may run off the main actor.
-        let prepare: @Sendable (SelectionResult) -> LocalPreparedPublication = {
-            Self.prepare($0, readiness: readiness, names: names.current, trace: trace, playback: playback)
+        let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication = {
+            try Self.prepare($0, readiness: readiness, names: names.current, trace: trace, playback: playback)
         }
         // The replenishment port. The three points live in the library modules, which must not know the host's
         // trace: one adapter is built here, beside the trace itself, and handed to the owners of the points. With
@@ -2512,11 +2512,15 @@ final class FeedAssociation {
         return min(max(p95 * inputs.safetyFactor + inputs.releaseMarginSeconds, 0), ceiling)
     }
 
+    /// A selected candidate without a presentation is an internal contradiction: it must be loud, never a
+    /// silent text-only fallback for an image the card declared.
+    nonisolated enum PreparationError: Error, Equatable { case candidateWithoutPresentation(OriginRevisionID) }
+
     /// PD-5: each card is drawn with a prepared image or designed text-only — never "missing" one.
     /// Attribution (source id/name) is frozen into the card, which also feeds PD-4 adjacency.
     nonisolated private static func prepare(_ selection: SelectionResult, readiness: MediaReadiness,
         names: [SourceID: String], trace: RunwayTrace? = nil,
-        playback: (OriginRevisionID) -> URL? = { _ in nil }) -> LocalPreparedPublication {
+        playback: (OriginRevisionID) -> URL? = { _ in nil }) throws -> LocalPreparedPublication {
         // F06-A: the selection has **already** been restricted to candidates with a legitimate presentation (the
         // slice takes the readiness facts as selection input, before ordering). What arrives here is publishable —
         // and the inputs must stay aligned one-for-one with the selection, or the runtime refuses the batch
@@ -2534,7 +2538,10 @@ final class FeedAssociation {
                 // A selected candidate that cannot be presented is an internal contradiction: it must be loud.
                 "reason": presented ? "presentable" : "selected-without-presentation"])
         }
-        return .init(inputs: selection.orderedCandidates.map { candidate in
+        return .init(inputs: try selection.orderedCandidates.map { candidate in
+            guard let presentation = snapshot[candidate.originRevisionID] else {
+                throw PreparationError.candidateWithoutPresentation(candidate.originRevisionID)
+            }
             let source = candidate.sourceIDs.sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }.first { names[$0] != nil }
                 ?? candidate.sourceIDs.first
             return .init(origin: .init(originRecordID: candidate.originRecordID, originRevisionID: candidate.originRevisionID,
@@ -2545,7 +2552,7 @@ final class FeedAssociation {
                 // declared, and every other card opens its article.
                 primaryAction: playback(candidate.originRevisionID).map { .mediaPlayback($0) }
                     ?? candidate.primaryLink.map { .externalURL($0) },
-                presentation: snapshot[candidate.originRevisionID] ?? .textOnly)
+                presentation: presentation)
         }, cardIDs: selection.orderedCandidates.map { _ in PublicationCardID() })
     }
 
@@ -2554,7 +2561,10 @@ final class FeedAssociation {
     nonisolated static func readinessLabel(_ readiness: MediaReadiness,
         for revision: OriginRevisionID) -> String {
         if readiness.prepared(revision) != nil { return "prepared" }
-        return readiness.isSettled(revision) ? "textOnly" : "pending"
+        guard readiness.isSettled(revision) else { return "pending" }
+        // Settled with a presentation is a declared text card; settled without one is unavailable media, which
+        // leaves the publication queue (INV-17). Neither is "prepared".
+        return readiness.presentation(for: revision) == .textOnly ? "textOnly" : "unavailable"
     }
 
     /// The window the bookmark set was read for. A bookmark belongs to the reader's own cards, and the reader's own

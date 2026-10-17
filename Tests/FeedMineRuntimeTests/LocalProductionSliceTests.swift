@@ -231,12 +231,12 @@ final class LocalProductionSliceTests: XCTestCase {
         try assertOnlyInitial(f)
         XCTAssertThrowsError(try slice.run(request) { selected in LocalPreparedPublication(inputs: [],cardIDs: LocalSliceFixture.prepared(selected).cardIDs) }) { XCTAssertEqual($0 as? PublicationPreparationError,.inputCountMismatch) }
         try assertOnlyInitial(f)
-        XCTAssertThrowsError(try slice.run(request) { selected in LocalPreparedPublication(inputs: LocalSliceFixture.prepared(selected).inputs,cardIDs: []) }) { XCTAssertEqual($0 as? PublicationCoordinatorError,.inputCountMismatch) }
+        XCTAssertThrowsError(try slice.run(request) { selected in LocalPreparedPublication(inputs: LocalSliceFixture.prepared(selected).inputs,cardIDs: []) }) { XCTAssertEqual($0 as? PublicationPreparationError,.inputCountMismatch) }
         try assertOnlyInitial(f)
         XCTAssertEqual(try published(slice.run(request) { LocalSliceFixture.prepared($0) }).1.cardIDs.count,1)
     }
 
-    func testUnavailableImageRefusesWithoutFallbackThenExplicitTextOnlySucceeds() throws {
+    func testUnavailableImageIsNotPublishedAndExplicitTextOnlySucceeds() throws {
         let f = try fixture(), revision = LocalSliceFixture.revision(1)
         try f.admit(revision)
         let media = try XCTUnwrap(MediaCandidate(id: MediaCandidateID(),originRevisionID: revision.id,role: .cardVisual,mediaClass: .image,
@@ -244,10 +244,53 @@ final class LocalProductionSliceTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let unavailable = try MediaPreparation(assetDirectory: directory).prepare(candidate: media,input: .unavailable)
         let slice = LocalProductionSlice(database: f.database), request = f.request()
-        XCTAssertThrowsError(try slice.run(request) { LocalSliceFixture.prepared($0,presentation: .image(unavailable,layout: .hero)) }) { XCTAssertEqual($0 as? PublicationPreparationError,.mediaNotUsable(index: 0)) }
+        let outcome = try slice.run(request) {
+            LocalSliceFixture.prepared($0,presentation: .image(unavailable,layout: .hero))
+        }
+        guard case .advancedWithoutPublication = outcome else {
+            return XCTFail("an image without prepared media must not publish as text")
+        }
         try assertOnlyInitial(f)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+        XCTAssertNil(try PublicationStore(database: f.database).card(id: LocalSliceFixture.cardID(LocalSliceFixture.candidate(revision))))
         XCTAssertEqual(try published(slice.run(request) { LocalSliceFixture.prepared($0) }).1.cardIDs.count,1)
+    }
+
+    /// INV-17: the unprepared image leaves this opportunity; the ready text candidate next to it publishes.
+    func testUnpreparedImageLeavesThePublishedSetAndTheTextNeighbourPublishes() throws {
+        let f = try fixture()
+        let image = LocalSliceFixture.revision(1), text = LocalSliceFixture.revision(2)
+        try f.admit(image)
+        try f.admit(text)
+        let media = try XCTUnwrap(MediaCandidate(id: MediaCandidateID(), originRevisionID: image.id,
+            role: .cardVisual, mediaClass: .image,
+            remoteURL: URL(string: "https://definitely.invalid/not-fetched")!, declaredMimeType: nil,
+            declaredPixelWidth: nil, declaredPixelHeight: nil))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let unavailable = try MediaPreparation(assetDirectory: directory).prepare(candidate: media, input: .unavailable)
+        let slice = LocalProductionSlice(database: f.database), request = f.request()
+        let outcome = try slice.run(request) { selected in
+            let inputs = selected.orderedCandidates.map { candidate -> PublicationPreparationInput in
+                let presentation: PublicationPresentation = candidate.originRevisionID == image.id
+                    ? .image(unavailable, layout: .hero) : .textOnly
+                return PublicationPreparationInput(
+                    origin: PublishedOrigin(originRecordID: candidate.originRecordID,
+                        originRevisionID: candidate.originRevisionID, sourceID: nil, providerID: candidate.providerID,
+                        sourceDisplayName: nil, providerDisplayName: nil),
+                    contentEntityID: nil, contentClusterID: nil, primaryAction: .localContentDetail,
+                    presentation: presentation)
+            }
+            return LocalPreparedPublication(inputs: inputs,
+                cardIDs: selected.orderedCandidates.map(LocalSliceFixture.cardID))
+        }
+        let (progress, receipt) = try published(outcome)
+        XCTAssertEqual(progress.examinedCount, 2, "both candidates were examined")
+        XCTAssertEqual(receipt.cardIDs,
+            [LocalSliceFixture.cardID(LocalSliceFixture.candidate(text))],
+            "only the ready text candidate is in the published set")
+        let store = PublicationStore(database: f.database)
+        XCTAssertNil(try store.card(id: LocalSliceFixture.cardID(LocalSliceFixture.candidate(image))),
+            "the unprepared image resolves no occurrence in its place")
     }
 
     func testConcurrentAppendDuringPreparationRejectsStaleSliceWithoutRetry() throws {

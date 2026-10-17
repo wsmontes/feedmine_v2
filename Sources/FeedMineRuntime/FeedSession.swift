@@ -153,7 +153,7 @@ public actor FeedSession {
                     backwardCapacity: kept,
                     forwardCapacity: original.bounds.forwardCapacity)
                 let cards = history.cards.filter { allowed.contains($0.id) }
-                    .map { PresentationCard(admitting: $0, decoder: imageDecoder) }
+                    .compactMap { Self.admitted($0, decoder: imageDecoder) }
                 guard let window = FeedWindowSnapshot(items: cards, anchor: observation.anchor) else { return nil }
                 let restored = try projectWindow(contextKey: original.presentation.contextKey,
                     editionID: original.presentation.editionID, window: window)
@@ -208,13 +208,17 @@ public actor FeedSession {
                 around: FeedWindowAnchor(cardID: items[first].id, placement: .center),
                 backwardCapacity: 0, forwardCapacity: last - first)
             let decoded = Dictionary(uniqueKeysWithValues: published.cards.map {
-                ($0.id, PresentationCard(admitting: $0, decoder: imageDecoder))
+                ($0.id, PresentationCard(publishedCard: $0, decoder: imageDecoder))
             })
+            var excluded: Set<PublicationCardID> = []
             for index in returning {
                 guard let fresh = decoded[items[index].id] else { continue }
-                next[index] = fresh
                 releasedImageCards.remove(items[index].id)
+                // Re-admission gate: a card whose pixels cannot be reconstructed does not re-enter the window.
+                // It is not a text card now, and no card with its id is drawn in its place.
+                if fresh.isRenderReady { next[index] = fresh } else { excluded.insert(fresh.id) }
             }
+            guard excluded.isEmpty else { return (next.filter { !excluded.contains($0.id) }, true) }
         }
         return (next, true)
     }
@@ -239,7 +243,7 @@ public actor FeedSession {
         let admitted = Set(items.map(\.id))
         let extensionCards = published.cards.dropFirst().filter { !admitted.contains($0.id) }
             .prefix(current.bounds.forwardCapacity)
-            .map { PresentationCard(admitting: $0, decoder: imageDecoder) }
+            .compactMap { Self.admitted($0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
         // O teto vale para a janela inteira, **nas duas direções** (decisão do arquiteto): crescer para frente sem
         // limite também é defeito. O corte é em volta da âncora, então ordem, identidade, âncora e posição ficam, e
@@ -304,7 +308,7 @@ public actor FeedSession {
         // the suffix keeps the cards closest to the head — the reader's next step back, not the far end of history.
         let extensionCards = published.cards.dropLast().filter { !admitted.contains($0.id) }
             .suffix(allowed)
-            .map { PresentationCard(admitting: $0, decoder: imageDecoder) }
+            .compactMap { Self.admitted($0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
         let (bounded, _) = try boundedResidency(
             items: boundedToTotalWindow(extensionCards + items, around: observation.anchor.cardID,
@@ -342,7 +346,7 @@ public actor FeedSession {
         let admitted = Set(items.map(\.id))
         let extensionCards = published.cards.dropFirst().filter { !admitted.contains($0.id) }
             .prefix(allowed - items.count)
-            .map { PresentationCard(admitting: $0, decoder: imageDecoder) }
+            .compactMap { Self.admitted($0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
         let anchor = current.presentation.window.anchor
         // Mesma regra do arquiteto, e agora num lugar só: o teto vale para a janela inteira nas duas direções.
@@ -357,6 +361,14 @@ public actor FeedSession {
         state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
             bounds: current.bounds)
         return snapshot
+    }
+
+    /// The admission boundary: a published card yields a presentation only when it is render-ready. An image
+    /// card whose media cannot be decoded is excluded from the window — it is never converted to a text card under
+    /// the same identity, and the ready candidates around it are admitted normally (INV-17).
+    private static func admitted(_ card: PublishedCard, decoder: PresentationImageDecoder?) -> PresentationCard? {
+        let projected = PresentationCard(publishedCard: card, decoder: decoder)
+        return projected.isRenderReady ? projected : nil
     }
 
     /// Rejects unusable structural bounds before any state is consulted, so a repeat admission
@@ -425,8 +437,8 @@ public actor FeedSession {
             try publicationHistory.markSeen(editionID: restored.edition.id,
                 cardID: restored.cursor.anchor.cardID)
             var released: Set<PublicationCardID> = []
-            let window = projectedWindow(restored.window, bounds: bounds, imageDecoder: imageDecoder,
-                released: &released)
+            guard let window = projectedWindow(restored.window, bounds: bounds, imageDecoder: imageDecoder,
+                released: &released) else { return nil }
             let next = try FeedProjectionProvenance.nextPosition(after: position)
             let snapshot = FeedPresentationSnapshot(contextKey: restored.edition.contextKey,
                 editionID: restored.edition.id, window: window,
@@ -438,34 +450,48 @@ public actor FeedSession {
         }
 
         private static func projectedWindow(_ published: FeedWindow, bounds: FeedPresentationBounds,
-            imageDecoder: PresentationImageDecoder?, released: inout Set<PublicationCardID>) -> FeedWindowSnapshot {
+            imageDecoder: PresentationImageDecoder?, released: inout Set<PublicationCardID>) -> FeedWindowSnapshot? {
             // FeedWindow guarantees its anchor is one of its cards; a window without a numbered band has no outside
-            // to release, so every card is admitted and the admission gate is the whole answer.
+            // to release, so every card crosses the admission gate and nothing is admitted as a placeholder.
             guard let anchorIndex = published.cards.firstIndex(where: { $0.id == published.anchor.cardID }) else {
-                let items = published.cards.map { PresentationCard(admitting: $0, decoder: imageDecoder) }
+                let items = published.cards.compactMap { FeedSession.admitted($0, decoder: imageDecoder) }
                 return FeedWindowSnapshot(items: items, publishedAnchor: published.anchor)
-                    ?? FeedWindowSnapshot(publishedWindow: published, decoder: imageDecoder, reusable: [:])
             }
             let first = max(0, anchorIndex - bounds.backwardCapacity)
             let last = min(published.cards.count - 1, anchorIndex + bounds.forwardCapacity)
             var items: [PresentationCard] = []
             items.reserveCapacity(published.cards.count)
             for (index, card) in published.cards.enumerated() {
+                let value: PresentationCard?
                 if first...last ~= index {
-                    items.append(PresentationCard(admitting: card, decoder: imageDecoder))
+                    value = FeedSession.admitted(card, decoder: imageDecoder)
                 } else if imageDecoder == nil {
-                    // Nothing can reconstruct pixels in this composition, so an outside-band card would come back
-                    // into the band as a slot with no image. It is a declared text card from the start.
-                    items.append(PresentationCard(admitting: card, decoder: nil))
+                    // Nothing can reconstruct pixels in this composition, so an outside-band image card has no
+                    // presentation now or later: it is not admitted anywhere in the window.
+                    value = FeedSession.admitted(card, decoder: nil)
                 } else {
                     // Fora da faixa: os valores congelados ficam, os pixels voltam.
                     let outside = PresentationCard(publishedCard: card)
                     released.insert(outside.id)
-                    items.append(outside)
+                    value = outside
                 }
+                if let value { items.append(value) }
             }
-            return FeedWindowSnapshot(items: items, publishedAnchor: published.anchor)
-                ?? FeedWindowSnapshot(publishedWindow: published, decoder: imageDecoder, reusable: [:])
+            // The window must name the reader's position among presented values. When the published anchor is one
+            // of the excluded cards, the closest admitted card carries the same placement.
+            var anchorID = published.anchor.cardID
+            if !items.contains(where: { $0.id == anchorID }) {
+                let following = items.first { candidate in
+                    guard let position = published.cards.firstIndex(where: { $0.id == candidate.id }) else {
+                        return false
+                    }
+                    return position > anchorIndex
+                }
+                guard let fallback = following ?? items.last else { return nil }
+                anchorID = fallback.id
+            }
+            return FeedWindowSnapshot(items: items,
+                publishedAnchor: FeedWindowAnchor(cardID: anchorID, placement: published.anchor.placement))
         }
     }
 

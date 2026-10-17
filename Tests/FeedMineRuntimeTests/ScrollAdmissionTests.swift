@@ -41,7 +41,9 @@ final class ScrollAdmissionTests: XCTestCase {
         _ = try await admitted(f.session, .initial(f.bounds))
         _ = try await recorded(f.session, observation(f.cards[4], placement: .top))
         let current = try await admitted(f.session, .forwardScroll(observation(f.cards[4], placement: .top)))
-        let other = FeedSession(publicationHistory: PublicationHistory(database: f.database))
+        let other = FeedSession(publicationHistory: PublicationHistory(database: f.database),
+            imageDecoder: PresentationImageDecoder(assetDirectory: f.directory.appendingPathComponent("Media"),
+                heroMaxPixel: 60, thumbnailMaxPixel: 30))
         let otherProjection = try await admitted(other, .initial(.init(backwardCapacity: 0, forwardCapacity: 10)))
         let observation = observation(f.cards[6], placement: .center)
         let wrong = try XCTUnwrap(otherProjection.evidence(for: observation))

@@ -109,7 +109,9 @@ final class PresentationProjectionTests: XCTestCase {
 
     func testSnapshotProjectionPreservesContextOrderAndBothPlacements() async throws {
         let edition = WarmPresentationFixture.edition()
-        let cards = try (0..<3).map { _ in try WarmPresentationFixture.card() }
+        // Declared text cards: this test is about projection order and placements, not pixels, and this session
+        // has no decoder to produce them.
+        let cards = try (0..<3).map { _ in try WarmPresentationFixture.card(layout: .textOnly) }
         for placement in [AnchorPlacement.top, .center] {
             let anchor = FeedWindowAnchor(cardID: cards[1].id, placement: placement)
             let window = try XCTUnwrap(FeedWindow(editionID: edition.id, cards: cards, anchor: anchor))

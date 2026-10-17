@@ -24,6 +24,10 @@ public final class MediaReadiness: @unchecked Sendable {
     private let lock = NSLock()
     private var ready: [OriginRevisionID: Ready] = [:]
     private var settled: Set<OriginRevisionID> = []
+    /// Revisions whose feed declares **no card image**, so their text presentation is the card as designed. A
+    /// revision that declares an image and whose media could not be prepared is settled too, but it has no
+    /// presentation: it stays out of the current publication queue (INV-17) instead of becoming a text card.
+    private var textDeclared: Set<OriginRevisionID> = []
 
     public init() {}
 
@@ -50,12 +54,14 @@ public final class MediaReadiness: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         return ready.count
     }
+    /// `textDeclared` states whether nil is the absence of media work (a card designed as text) or the failure of
+    /// media the card declared. Only the first is a presentation.
     @discardableResult
-    func record(_ revision: OriginRevisionID, _ value: Ready?) -> Bool {
+    func record(_ revision: OriginRevisionID, _ value: Ready?, textDeclared: Bool = true) -> Bool {
         lock.lock(); defer { lock.unlock() }
         guard !settled.contains(revision) else { return false }
         settled.insert(revision)
-        if let value { ready[revision] = value }
+        if let value { ready[revision] = value } else if textDeclared { self.textDeclared.insert(revision) }
         return true
     }
 
@@ -76,7 +82,11 @@ public final class MediaReadiness: @unchecked Sendable {
 
     private func presentationLocked(for revision: OriginRevisionID) -> PublicationPresentation? {
         guard settled.contains(revision) else { return nil }
-        guard let value = ready[revision] else { return .textOnly }
+        guard let value = ready[revision] else {
+            // A declared text card is a final presentation. An image card whose media never became ready has no
+            // presentation at all: publishing it as text would be the fallback the owner's rule forbids.
+            return textDeclared.contains(revision) ? .textOnly : nil
+        }
         switch value.fit {
         case .hero: return .image(value.result, layout: .hero)
         case .thumbnail: return .image(value.result, layout: .thumbnail)
@@ -212,11 +222,17 @@ public actor MediaPrefetcher {
             let candidates = try? contentStore.mediaCandidates(originRevisionID: revision) else {
             return // Conditions unknown or storage unreadable: leave unsettled for a later opportunity.
         }
+        // The card contract is what the feed declared: a visible card image. Without one (an audio-only or
+        // text-only item) the text presentation is the card as designed, and settling it as text is not a fallback.
+        let declaresImage = candidates.contains { $0.role == .cardVisual && $0.mediaClass == .image }
         let first: MediaCandidate, fallbacks: [MediaCandidate]
         switch MediaResolver.resolve(candidates, policy: policy) {
         case .prepare(let chosen, let rest): first = chosen; fallbacks = rest
         case .textOnly(.conditionsForbidRemoteMedia): return // Offline or overheated: try again later.
-        case .textOnly: await settle(revision, nil); return
+        case .textOnly:
+            // Nothing viable to prepare. An image the card declared is unpublished work, not a text card.
+            await settle(revision, nil, textDeclared: !declaresImage)
+            return
         }
         let ceiling = policy.downloadByteBudget
         guard ceiling > 0 else { return } // Not affordable now; retry when conditions improve.
@@ -236,7 +252,7 @@ public actor MediaPrefetcher {
                 case .usable(let asset) = result.state else { continue }
             let fit = policy.fit(measuredPixelWidth: asset.pixelWidth, height: asset.pixelHeight)
             guard fit != .unsuitable else { continue }
-            await settle(revision, .init(result: result, fit: fit))
+            await settle(revision, .init(result: result, fit: fit), textDeclared: false)
             return
         }
         if sawTransient {
@@ -246,15 +262,17 @@ public actor MediaPrefetcher {
             transientRetryAt[revision] = monotonicSeconds() + transientRetryBaseSeconds * pow(2, Double(min(failures - 1, 16)))
             return
         }
-        // Every viable candidate was definitively unusable: this revision is designed text-only.
-        await settle(revision, nil)
+        // Every viable candidate was definitively unusable. The card declared an image and has none: it leaves
+        // the current publication queue (INV-17) and is never published as a text card in its place.
+        await settle(revision, nil, textDeclared: !declaresImage)
     }
 
     /// A real transition may reopen the existing supply episode; no polling or retry owner is added.
-    private func settle(_ revision: OriginRevisionID, _ value: MediaReadiness.Ready?) async {
+    private func settle(_ revision: OriginRevisionID, _ value: MediaReadiness.Ready?,
+        textDeclared: Bool) async {
         transientFailures.removeValue(forKey: revision)
         transientRetryAt.removeValue(forKey: revision)
-        if readiness.record(revision, value) { await onReadinessChanged?(revision) }
+        if readiness.record(revision, value, textDeclared: textDeclared) { await onReadinessChanged?(revision) }
     }
 
     /// Definitive failures are explicitly marked by the fetcher; anything else (timeouts, lost

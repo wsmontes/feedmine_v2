@@ -128,30 +128,28 @@ final class RenderReadyAdmissionTests: XCTestCase {
     }
 
     /// **The discriminating test.** An image card whose media cannot be decoded does not cross the admission
-    /// boundary as an image slot waiting for pixels (before this rule it entered as `.hero` with `image == nil`,
-    /// which `FeedItemCardView.heroSlot` draws as the placeholder). It is admitted as a declared `.textOnly`
-    /// presentation instead, and the ready cards around it keep their pixels and are not blocked.
-    func testAnImageCardWhoseMediaCannotBeDecodedIsAdmittedAsDeclaredTextOnly() async throws {
+    /// boundary at all — not as an image slot waiting for pixels (the placeholder defect), and not as a text card
+    /// under the same identity (the hidden fallback the owner's rule forbids). The ready cards around it keep
+    /// their pixels and are not blocked (INV-17).
+    func testAnImageCardWhoseMediaCannotBeDecodedIsNotAdmitted() async throws {
         let f = try fixture(cards: 3, anchor: 1, materialized: [0, 2])
         let decodes = Counter()
         let session = try session(f) { decodes.increment() }
         let admitted = try await snapshot(session, .restore(.init(backwardCapacity: 1, forwardCapacity: 1)))
 
-        XCTAssertEqual(admitted.window.items.map(\.id), f.ids, "the failing candidate does not block the ready ones")
-        XCTAssertEqual(decodes.value, 3, "the media of every admitted card went through the decoder")
-        let failed = admitted.window.items[1]
-        XCTAssertEqual(failed.layout, .textOnly,
-            "a card without pixels is presented as a declared text card")
-        XCTAssertFalse(failed.isImageBearing, "the image slot is not admitted as something it cannot present")
-        XCTAssertNil(failed.image)
-        XCTAssertNil(failed.mediaAspectRatio, "a text presentation reserves no media slot")
-        XCTAssertEqual(failed.id, f.cards[1].id, "identity is frozen publication, not residency")
-        for index in [0, 2] {
-            XCTAssertEqual(admitted.window.items[index].layout, .hero)
-            XCTAssertNotNil(admitted.window.items[index].image, "a ready card is admitted with its pixels")
+        XCTAssertEqual(decodes.value, 3, "the media of every candidate went through the decoder")
+        XCTAssertFalse(admitted.window.items.contains { $0.id == f.cards[1].id },
+            "a card without pixels does not cross the admission boundary")
+        XCTAssertFalse(admitted.window.items.contains { $0.id == f.cards[1].id && !$0.isImageBearing },
+            "no card with the failed identity is drawn as text")
+        XCTAssertEqual(admitted.window.items.map(\.id), [f.ids[0], f.ids[2]],
+            "the ready cards around it are admitted and are not blocked")
+        XCTAssertEqual(admitted.window.anchor.cardID, f.ids[2],
+            "the window is anchored on the closest admitted card when the published anchor is excluded")
+        for item in admitted.window.items {
+            XCTAssertEqual(item.layout, .hero)
+            XCTAssertNotNil(item.image, "a ready card is admitted with its pixels")
         }
-        XCTAssertFalse(admitted.window.items.contains { $0.isImageBearing && $0.image == nil },
-            "no admitted image card waits for the image it was published with")
     }
 
     /// While the decode is still in force there is no presentation at all: the card cannot be drawn before the
@@ -184,8 +182,9 @@ final class RenderReadyAdmissionTests: XCTestCase {
     }
 
     /// **Re-admission.** A card that left the pixel band released its bitmap; when the reader comes back, its
-    /// reconstruction is settled before the value is published. If the bytes cannot be decoded now, the card is
-    /// drawn as a declared text card — never as an image slot re-entering with a placeholder.
+    /// reconstruction is settled before the value is published. If the bytes cannot be decoded now, the card does
+    /// not re-enter the window — not as an image slot with a placeholder, and not as a text card wearing the same
+    /// identity.
     func testACardReturningToThePixelBandIsReconstructedBeforeItIsDrawn() async throws {
         let f = try fixture(cards: 5, anchor: 2, materialized: [0, 1, 2, 3, 4])
         let decodes = Counter()
@@ -205,15 +204,15 @@ final class RenderReadyAdmissionTests: XCTestCase {
 
         let returned = try await snapshot(session,
             ViewportObservation(anchor: .init(cardID: f.cards[2].id, placement: .center)))
-        XCTAssertEqual(returned.window.items.map(\.id), f.ids)
-        let returning = returned.window.items[1]
-        XCTAssertEqual(returning.layout, .textOnly,
-            "the reconstruction failed, so the card is re-admitted as a declared text card")
-        XCTAssertFalse(returning.isImageBearing, "a placeholder frame would have drawn it as an image slot")
-        XCTAssertNil(returning.image)
+        XCTAssertEqual(returned.window.items.map(\.id), [f.ids[0], f.ids[2], f.ids[3], f.ids[4]],
+            "the card whose reconstruction failed is excluded from the re-admission")
+        XCTAssertFalse(returned.window.items.contains { $0.id == f.cards[1].id && !$0.isImageBearing },
+            "the failed identity is never redrawn as a text card")
+        XCTAssertTrue(returned.window.items.allSatisfy { $0.image != nil },
+            "every re-admitted image card carries its pixels")
         XCTAssertNotNil(returned.window.items[0].image, "the card whose reconstruction succeeded is ready")
+        XCTAssertNotNil(returned.window.items[2].image)
         XCTAssertNotNil(returned.window.items[3].image)
-        XCTAssertNotNil(returned.window.items[4].image)
     }
 }
 

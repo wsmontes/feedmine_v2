@@ -106,12 +106,15 @@ public struct InitialProductionSlice: Sendable {
             nextCursor: window.nextCursor, exhausted: window.exhausted)
         guard !selection.orderedCandidates.isEmpty else { return .advancedWithoutPublication(progress) }
         let prepared = try prepare(selection)
-        let drafts = try PublicationPreparation.drafts(selection: selection, inputs: prepared.inputs)
-        let publication = PublicationCoordinator.CreateRequest(selection: selection, drafts: drafts,
+        // An image-bearing candidate whose media is not prepared leaves this opportunity; the card is never
+        // published as text in its place (INV-17).
+        let plan = try PublicationPreparation.plan(selection: selection, publication: prepared)
+        guard !plan.drafts.isEmpty else { return .advancedWithoutPublication(progress) }
+        let publication = PublicationCoordinator.CreateRequest(selection: plan.selection, drafts: plan.drafts,
             editionID: request.editionID, publicationSchemaVersion: request.publicationSchemaVersion,
             selectionSeed: request.selectionSeed, editionCreatedAt: request.editionCreatedAt,
             segmentID: request.segmentID, segmentSeed: request.segmentSeed,
-            segmentCreatedAt: request.segmentCreatedAt, cardIDs: prepared.cardIDs)
+            segmentCreatedAt: request.segmentCreatedAt, cardIDs: plan.cardIDs)
         switch try coordinator.createInitialEdition(.init(publication: publication,
             anchorPlacement: request.anchorPlacement, checkpointedAt: request.checkpointedAt)) {
         case .published(let receipt): return .published(progress, receipt)

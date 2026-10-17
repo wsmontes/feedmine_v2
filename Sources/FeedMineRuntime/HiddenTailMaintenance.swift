@@ -33,14 +33,17 @@ public struct HiddenTailMaintenance: Sendable {
         guard Set(future.map(\.originRecordID)).isSubset(of: selected) else { return .ineligible }
         await prefetch(selection.orderedCandidates.map(\.originRevisionID))
         let prepared = try prepare(selection)
-        let drafts = try PublicationPreparation.drafts(selection: selection, inputs: prepared.inputs)
-        let latest = Dictionary(uniqueKeysWithValues: drafts.map { ($0.origin.originRecordID, $0) })
+        let plan = try PublicationPreparation.plan(selection: selection, publication: prepared)
+        // A future card whose declared image is not prepared cannot be succeeded: leaving it out would change
+        // the durable suffix, and publishing it as text would be the forbidden fallback.
+        guard plan.drafts.count == selection.orderedCandidates.count else { return .ineligible }
+        let latest = Dictionary(uniqueKeysWithValues: plan.drafts.map { ($0.origin.originRecordID, $0) })
         if future.allSatisfy({ old in
             guard let new = latest[old.originRecordID] else { return false }
             return old.originRevisionID == new.origin.originRevisionID && old.mediaKey == new.media.primary?.key.rawValue
         }) { return .ineligible }
-        return try PublicationCoordinator(database: database).succeedTail(.init(selection: selection, drafts: drafts,
-            editionID: lease.editionID, segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date(),
-            cardIDs: prepared.cardIDs, originRecurrence: .whenMaterialChanged), lease: lease)
+        return try PublicationCoordinator(database: database).succeedTail(.init(selection: plan.selection,
+            drafts: plan.drafts, editionID: lease.editionID, segmentID: FeedSegmentID(), segmentSeed: 1,
+            segmentCreatedAt: Date(), cardIDs: plan.cardIDs, originRecurrence: .whenMaterialChanged), lease: lease)
     }
 }
