@@ -1940,8 +1940,8 @@ final class FeedAssociation {
     /// Review F10: resolve the frozen action target from published history and open it.
     /// The URL never crosses the UI boundary; only the card identity does.
     private func open(_ cardID: PublicationCardID) {
-        // The sole caller is the store's validated action callback. Its card may remain drawn in
-        // the borrowed gesture window after canonical pruning; do not discard that legitimate tap.
+        // The sole caller is the store's validated action callback. Its card may sit above the reader, held by the
+        // kept head, and still be drawn in the borrowed gesture window; do not discard that legitimate tap.
         guard active, visible else { return }
         read(cardID)
     }
