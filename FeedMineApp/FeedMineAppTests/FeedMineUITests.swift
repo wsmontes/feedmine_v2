@@ -2651,7 +2651,10 @@ final class FeedMineUITests: XCTestCase {
         let open = app.buttons["composer-open-feed"]
         for _ in 0..<6 where !open.isHittable { composer.swipeUp() }
         XCTAssertTrue(open.isHittable, "the first run's own action is what starts the feed")
-        XCTAssertFalse(app.buttons["more-menu"].exists, "no feed opened itself from a pre-ticked draft")
+        // The gate is a full-screen cover, so the feed's own chrome stays mounted behind it and remains in the
+        // accessibility tree; what an opened feed would do is put that chrome within reach. Reachability — not
+        // existence — is the signal that no feed opened itself from a pre-ticked draft.
+        XCTAssertFalse(app.buttons["more-menu"].isHittable, "no feed opened itself from a pre-ticked draft")
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "region-draft-brazil-pre-ticked"
         attachment.lifetime = .keepAlways
