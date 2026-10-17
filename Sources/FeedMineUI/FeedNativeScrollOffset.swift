@@ -193,11 +193,54 @@ struct FeedNativeWindowProof: ViewModifier {
     /// plain counter: the number the scroll-stability work is judged by is "how often does the surface
     /// rebuild per fling", and without it that cost is argued instead of measured.
     nonisolated(unsafe) static var surfaceEvaluations = 0
+    /// The record the diagnosis tests read off `feed-window-proof`, as one line.
+    ///
+    /// Every number is serialised **here**, with `en_US_POSIX`, and the line is drawn verbatim. A
+    /// `Text("…\(value)…")` builds a `LocalizedStringKey`, and SwiftUI renders a numeric interpolation
+    /// with the `\.locale` in effect: on the pt-BR interface the same `CGFloat` printed `0,000000` while
+    /// on en-CA it printed `0.000000`. The readers of this line are `Double(step)`/`Int(value)` in
+    /// `ArticleReadingDiagnosisUITests`, and `Double("0,000000")` is `nil`, so healthy scrolling failed a
+    /// stability gate: the instrument, never the scroll, produced that red (F-UI-1). The notation is
+    /// therefore fixed — six decimals, `.` separator, no grouping — whatever the interface language is.
+    ///
+    /// The field names, their order and the `;` separators are the parsers' contract: keep them.
+    @MainActor
+    static func traceLine(ids: [PublicationCardID], access: FeedNativeScrollOffset,
+                          deferredWindows: Int) -> String {
+        "ids=\(ids.map { $0.rawValue.uuidString }.joined(separator: ","))"
+            + ";corrections=\(access.appliedCount)"
+            + ";residual=\(number(access.maximumResidual))"
+            + ";measured=\(access.measuredCorrections)"
+            + ";visualResidual=\(number(access.maximumVisualResidual))"
+            + ";activeWrites=\(access.activeWrites)"
+            + ";activeWindows=\(access.activeWindowChanges)"
+            + ";activeLayoutSteps=\(access.activeLayoutSteps)"
+            + ";activeLayoutStep=\(number(access.maximumActiveLayoutStep))"
+            + ";deferredWindows=\(deferredWindows)"
+            + ";surfaceEvals=\(FeedNativeWindowProof.surfaceEvaluations)"
+            + ";geom=\(FeedVisualCapture.geometryObservations)"
+            + ";probes=\(FeedVisualCapture.probeEntries)"
+            + ";guards=\(FeedVisualCapture.probeGuards)"
+            + ";cards=\(FeedVisualCapture.cardObservations)"
+            + ";emits=\(FeedVisualCapture.emissions)"
+            + ";submits=\(FeedVisualCapture.submissions)"
+            + ";geomEvents=\(FeedVisualCapture.scrollGeometryEvents)"
+            + ";phaseEvents=\(FeedVisualCapture.scrollPhaseEvents)"
+            + ";scopeReject=\(FeedVisualCapture.scopeRejections)"
+            + ";installs=\(FeedFlowCounters.installAttempts)/\(FeedFlowCounters.installAccepts)/\(FeedFlowCounters.installRejects)"
+    }
+
+    /// One measurement in the notation the parsers understand: six decimals and a `.`, never a comma.
+    static func number(_ value: CGFloat) -> String {
+        String(format: "%.6f", locale: Locale(identifier: "en_US_POSIX"), Double(value))
+    }
+
     func body(content: Content) -> some View {
         FeedNativeWindowProof.surfaceEvaluations += 1
         return content.overlay(alignment: .topLeading) {
             if FeedVisualCapture.tracesCapture {
-                Text("ids=\(ids.map { $0.rawValue.uuidString }.joined(separator: ","));corrections=\(access.appliedCount);residual=\(access.maximumResidual);measured=\(access.measuredCorrections);visualResidual=\(access.maximumVisualResidual);activeWrites=\(access.activeWrites);activeWindows=\(access.activeWindowChanges);activeLayoutSteps=\(access.activeLayoutSteps);activeLayoutStep=\(access.maximumActiveLayoutStep);deferredWindows=\(deferredWindows);surfaceEvals=\(FeedNativeWindowProof.surfaceEvaluations);geom=\(FeedVisualCapture.geometryObservations);probes=\(FeedVisualCapture.probeEntries);guards=\(FeedVisualCapture.probeGuards);cards=\(FeedVisualCapture.cardObservations);emits=\(FeedVisualCapture.emissions);submits=\(FeedVisualCapture.submissions);geomEvents=\(FeedVisualCapture.scrollGeometryEvents);phaseEvents=\(FeedVisualCapture.scrollPhaseEvents);scopeReject=\(FeedVisualCapture.scopeRejections);installs=\(FeedFlowCounters.installAttempts)/\(FeedFlowCounters.installAccepts)/\(FeedFlowCounters.installRejects)")
+                Text(verbatim: FeedNativeWindowProof.traceLine(
+                    ids: ids, access: access, deferredWindows: deferredWindows))
                     .font(.system(size: 1)).frame(width: 1, height: 1).opacity(0)
                     .allowsHitTesting(false).accessibilityIdentifier("feed-window-proof")
             }
