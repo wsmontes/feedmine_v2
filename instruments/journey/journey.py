@@ -28,10 +28,13 @@ por este arquivo, e este instrumento não substitui nem reescreve B01–B06 — 
 ===========  ==========================================================================
 
 `0` e `3` são caminhos distintos de propósito: sem isso, automação que só olha o código leria medição
-incompleta como sucesso. Um veredito `NOT_RUN` **não** basta para `3` — só o `NOT_RUN` de cláusula *aplicável*
-basta. **Aplicável** aqui é uma decisão do modelo de cláusula deste instrumento, não um sinônimo de "todo
-`NOT_RUN`" (a cláusula de superfície, por exemplo, é `NOT_RUN` **por contrato** em todo insumo: nenhum evento a
-mede). Cada sub-fato não medido carrega um **motivo**, de vocabulário fechado:
+incompleta como sucesso. `0` exige **pelo menos uma cláusula aplicável medida**: um insumo em que nada é
+medição (console existente e sem uma linha reconhecida, traço sem evento, diretório só com banco vazio) é
+**erro de entrada** (`2`), nunca `0` — é o que `_discover` já prometia ("insumo ausente ou vazio: erro de
+entrada, não medição vazia (código 2, não 0)"). Um veredito `NOT_RUN` **não** basta para `3` — só o `NOT_RUN`
+de cláusula *aplicável* basta. **Aplicável** aqui é uma decisão do modelo de cláusula deste instrumento, não
+um sinônimo de "todo `NOT_RUN`" (a cláusula de superfície, por exemplo, é `NOT_RUN` **por contrato** em todo
+insumo: nenhum evento a mede). Cada sub-fato não medido carrega um **motivo**, de vocabulário fechado:
 
 ``sem_sujeito``          o insumo não tem o que medir (sem janela atribuída, sem carta, sem avanço, sem
                          série de quadros, sem linha durável). Cláusula **não aplicável**.
@@ -81,11 +84,13 @@ controle positivo de cada cláusula.
 
 `--selftest` monta insumos sintéticos num diretório temporário e roda **o próprio processo** uma vez por caminho
 de saída, conferindo o código observado e a linha que o justifica: `0` (tudo aplicável medido e `PASS`), `0` de
-novo com cláusulas **fora de escopo** (prova que "não aplicável" não vira `3`), `1` (uma cláusula `FAIL`, via
-`--inject m2`), `2` (insumo inexistente, insumo sem artefato, SQLite ilegível, argumentos inválidos) e `3`
-(cláusula aplicável com lacuna). Ele sai `0` se os controles valem, `1` se algum controle quebrou e `2` se não
-soube montar o insumo — contrato próprio do modo, separado do contrato de medição acima. `--fixtures DIR` monta
-os mesmos insumos num diretório que fica, para um revisor rodar cada caminho com o comando da linha de comando.
+novo com cláusulas **fora de escopo** (prova que "não aplicável" não vira `3`, desde que alguma cláusula seja
+aplicável), `1` (uma cláusula `FAIL`, via `--inject m2`, e a violação observada que convive com uma âncora não
+resolvida), `2` (insumo inexistente, insumo sem artefato, console existente e sem medição, SQLite ilegível,
+argumentos inválidos) e `3` (cláusula aplicável com lacuna). Ele sai `0` se os controles valem, `1` se algum
+controle quebrou e `2` se não soube montar o insumo — contrato próprio do modo, separado do contrato de medição
+acima. Cada defeito que este arquivo já teve tem controle próprio, para não voltar. `--fixtures DIR` monta os
+mesmos insumos num diretório que fica, para um revisor rodar cada caminho com o comando da linha de comando.
 
 Leitura do banco: `runtime.sqlite` (com `-wal` e `-shm`) é copiado para um diretório temporário e aberto em
 `mode=ro`. Ler no lugar cria `-shm`/`-wal` na árvore de quem lê (medido: suja o `identity.txt` de uma corrida em
@@ -365,6 +370,18 @@ class Insumo:
             return False
         return True if self.complete() else None
 
+    def absence_with_gap(self, observed: int, subject: bool, unresolved: bool) -> bool | None:
+        """`absence` com a precedência do contrato 2 sobre a contagem global de referências não resolvidas.
+
+        Violação **observada** é `False` mesmo que uma âncora não resolva em outro ponto do insumo: o que se
+        perdeu foi a chance de ver mais, não a legitimidade do que se viu. Sem violação observada, âncora não
+        resolvida é **lacuna** (zero violação não prova nada); sem sujeito, `None` — fora de escopo.
+        """
+        if not subject:
+            return None
+        verdict = self.absence(observed)
+        return None if (unresolved and verdict is not False) else verdict
+
     def installs(self) -> list[dict]:
         """A série de instalações, cada uma com a posição da cabeça, da cauda e da âncora **na sua edição**."""
         series = []
@@ -607,10 +624,10 @@ def measure_m3(ins: Insumo) -> dict:
     for advance in advances:
         activities[advance["activity"]] = activities.get(advance["activity"], 0) + 1
     # Sem janela instalada não há "dentro da janela" para medir; sem dois avanços na mesma geração não há "atrás
-    # do anterior". Em ambos os casos é NOT_RUN, nunca PASS — e o motivo diz se é escopo ou lacuna.
-    window_verdict = (ins.absence(outside) if not unresolved else None) \
-        if (advances and generations) else None
-    behind_verdict = (ins.absence(forward_behind) if not unresolved else None) if comparable else None
+    # do anterior". Em ambos os casos é NOT_RUN, nunca PASS — e o motivo diz se é escopo ou lacuna. Violação
+    # observada manda sobre a lacuna (`absence_with_gap`): a âncora que não resolveu alhures não apaga o que se viu.
+    window_verdict = ins.absence_with_gap(outside, bool(advances and generations), bool(unresolved))
+    behind_verdict = ins.absence_with_gap(forward_behind, bool(comparable), bool(unresolved))
     window_motivo = SEM_SUJEITO if not (advances and generations) \
         else (NAO_RESOLVIDO if unresolved else EVIDENCIA_INCOMPLETA)
     behind_motivo = SEM_SUJEITO if not comparable else (NAO_RESOLVIDO if unresolved else EVIDENCIA_INCOMPLETA)
@@ -664,13 +681,14 @@ def measure_m4(ins: Insumo) -> dict:
             if row["tail"] - row["head"] + 1 != row["cards"]:
                 holes += 1
         reference = row
-    gate = (lambda observed: ins.absence(observed)) if not unresolved else (lambda observed: None)
+    # O mesmo `absence_with_gap` de M3: a instalação que não resolve alhures não apaga uma violação observada
+    # aqui (contrato 2), e sem sujeito a cláusula é escopo, não lacuna.
     series_motivo = SEM_SUJEITO if not series else (NAO_RESOLVIDO if unresolved else EVIDENCIA_INCOMPLETA)
     holes_motivo = SEM_SUJEITO if not measurable else (NAO_RESOLVIDO if unresolved else EVIDENCIA_INCOMPLETA)
-    anchored = gate(contains_anchor) if series else None
-    shrunk_verdict = gate(shrunk) if series else None
-    tail_verdict = gate(tail_back) if series else None
-    holes_verdict = gate(holes) if measurable else None
+    anchored = ins.absence_with_gap(contains_anchor, bool(series), bool(unresolved))
+    shrunk_verdict = ins.absence_with_gap(shrunk, bool(series), bool(unresolved))
+    tail_verdict = ins.absence_with_gap(tail_back, bool(series), bool(unresolved))
+    holes_verdict = ins.absence_with_gap(holes, bool(measurable), bool(unresolved))
     return measurement("M4", "Rolar com trabalho de fundo não move o que está acima da âncora",
         "Rolei e nada acima de mim mudou — o app não retirou, não encolheu e não remendou o feed sob a minha leitura?",
         "`admitted.cards`/`head`/`tail`/`anchor` na ordem do leitor da edição (AppComposition.swift:2346-2350; o "
@@ -1354,11 +1372,39 @@ def _control(argv: list[str]) -> tuple[int, str]:
     return process.returncode, process.stdout + process.stderr
 
 
+def _console_fixture(root: str, name: str, content: str) -> str:
+    """Insumo que **só** tem `console.log` — sem `runtime.sqlite`, sem `trace.jsonl`. O diretório existe, o
+    artefato existe, e o insumo não mede nada: é o caminho do `2` (o que antes saía `0 — todas as cláusulas
+    aplicáveis medidas e PASS`)."""
+    path = os.path.join(root, name)
+    os.makedirs(path)
+    write_file(os.path.join(path, "console.log"), content)
+    return path
+
+
+def _fixture_observed_with_gap(root: str) -> str:
+    """O `completo` com violação **observada** em M3 e em M4 *e*, no mesmo insumo, uma âncora e uma cabeça que
+    não resolvem na edição. A violação tem de continuar `FAIL` (contrato 2): a lacuna ao lado custa a chance de
+    ver mais, não a legitimidade do que se viu — antes da correção as duas cláusulas caíam para `NOT_RUN`/`3`."""
+    path = _fixture(root, "observado-com-lacuna", complete_series=True, durable=True, media=True)
+    cards = [_fixture_card(index) for index in range(1, FIXTURE_CARDS + 1)]
+    unknown = "deadbeef-0000-4000-8000-000000000000"
+    events = _fixture_trace(complete_series=True, truncated=False)
+    advances = [event for event in events if event["event"] == "advance"]
+    advances[0]["fields"]["anchor"] = cards[4]["id"]  # carta 5 fora da 1ª janela (0..3): violação observada em M3
+    advances[1]["fields"]["anchor"] = unknown  # não resolve na edição: lacuna em M3
+    installs = [event for event in events if event["event"] == "admitted"]
+    installs[0]["fields"]["anchor"] = cards[4]["id"]  # janela instalada não contém a âncora: violação em M4
+    installs[1]["fields"]["head"] = unknown  # instalação não resolvida: lacuna em M4
+    write_file(os.path.join(path, "trace.jsonl"), "".join(compact(event) + "\n" for event in events))
+    return path
+
+
 def build_fixtures(root: str) -> dict:
     """Monta os insumos sintéticos dos controles em `root` (que precisa não existir ou estar vazio).
 
-    Os três insumos de medição e os dois de erro saem daqui, e não de `/tmp` de sessão: com `--fixtures DIR` um
-    revisor monta os mesmos insumos e roda **cada caminho de saída** com o comando da linha de comando, sem
+    Os quatro insumos de medição e os quatro de erro saem daqui, e não de `/tmp` de sessão: com `--fixtures DIR`
+    um revisor monta os mesmos insumos e roda **cada caminho de saída** com o comando da linha de comando, sem
     depender da contabilidade deste arquivo.
     """
     if os.path.exists(root) and os.listdir(root):
@@ -1372,7 +1418,11 @@ def build_fixtures(root: str) -> dict:
     return {"completo": _fixture(root, "completo", complete_series=True, durable=True, media=True),
         "fora-de-escopo": _fixture(root, "fora-de-escopo", complete_series=False, durable=False, media=False),
         "lacuna": _fixture(root, "lacuna", complete_series=True, durable=True, media=True, truncated=True),
-        "vazio": vazio, "sqlite-ilegivel": quebrado}
+        "observado-com-lacuna": _fixture_observed_with_gap(root),
+        "vazio": vazio, "sqlite-ilegivel": quebrado,
+        "console-vazio": _console_fixture(root, "console-vazio", ""),
+        "console-sem-medicao": _console_fixture(root, "console-sem-medicao",
+            "2026-10-16 12:00:00 FeedMineApp launched\n2026-10-16 12:00:01 scene did become active\n")}
 
 
 def selftest() -> int:
@@ -1410,6 +1460,18 @@ def selftest() -> int:
         {"nome": "lacuna", "espera": EXIT_INCOMPLETE, "argv": ["--run", built["lacuna"]], "falhas": 0,
          "linha": "código de saída do insumo: 3 — sem FAIL, mas cláusula aplicável não medida: M1 "
              "(evidencia_incompleta)"},
+        # Grupo 2: os três defeitos que este arquivo já teve, um controle cada — para nenhum deles voltar.
+        # (a)/(b) console que existe e não mede nada saía `0 — todas as cláusulas aplicáveis medidas e PASS`;
+        # (c) violação observada com âncora não resolvida ao lado saía `3` (lacuna mascarando `FAIL`).
+        {"nome": "entrada-console-vazio", "espera": EXIT_INPUT, "falhas": None,
+         "argv": ["--journey", built["console-vazio"]], "linha": "insumo sem medição",
+         "ausente": "todas as cláusulas aplicáveis medidas e PASS"},
+        {"nome": "entrada-console-sem-medicao", "espera": EXIT_INPUT, "falhas": None,
+         "argv": ["--journey", built["console-sem-medicao"]], "linha": "insumo sem medição",
+         "ausente": "todas as cláusulas aplicáveis medidas e PASS"},
+        {"nome": "observado-com-lacuna", "espera": EXIT_FAIL, "falhas": 2,
+         "argv": ["--run", built["observado-com-lacuna"]],
+         "linha": "código de saída do insumo: 1 — cláusula FAIL: M3, M4"},
     ]
     for injection, clause, espera in (("m1", "M1", EXIT_FAIL), ("m2", "M2", EXIT_FAIL), ("m3a", "M3", EXIT_FAIL),
         ("m3b", "M3", EXIT_FAIL), ("m4", "M4", EXIT_FAIL), ("m5", "M5", EXIT_FAIL), ("m7", "M7", EXIT_FAIL),
@@ -1424,20 +1486,28 @@ def selftest() -> int:
     for position, control in enumerate(controls):
         if position == 8:
             print("=" * 96)
+            print("os três defeitos que este arquivo já teve (controle de regressão; um por defeito)")
+            print("=" * 96)
+        if position == 11:
+            print("=" * 96)
             print("os dez controles de injeção que já existiam (nenhum pode ter mudado de veredito)")
             print("=" * 96)
         code, output = _control(control["argv"])
         observed[control["nome"]] = code
         line = next((row for row in output.splitlines() if control["linha"] in row), "")
         counted = output.count("=FAIL")
-        good = code == control["espera"] and bool(line) \
+        leaked = control.get("ausente") is not None and control["ausente"] in output
+        good = code == control["espera"] and bool(line) and not leaked \
             and (control["falhas"] is None or counted == control["falhas"])
         if not good:
             failures.append(control["nome"])
+        note = ""
+        if control["falhas"] is not None:
+            note += f" (cláusulas FAIL na saída: {counted}, esperadas: {control['falhas']})"
+        if control.get("ausente") is not None:
+            note += f" (frase proibida `{control['ausente']}`: {'APARECEU' if leaked else 'ausente'})"
         print(f"controle `{control['nome']}`: esperado {control['espera']}, observado {code} — "
-            f"{'OK' if good else 'FALHOU'}"
-            + ("" if control["falhas"] is None else f" (cláusulas FAIL na saída: {counted}, "
-                f"esperadas: {control['falhas']})"))
+            f"{'OK' if good else 'FALHOU'}{note}")
         print(f"  comando: {os.path.abspath(__file__)} {' '.join(control['argv'])}")
         print(f"  linha: {line if line else '(a linha esperada não apareceu)'}")
     for code in (EXIT_OK, EXIT_FAIL, EXIT_INPUT, EXIT_INCOMPLETE):
@@ -1539,8 +1609,9 @@ def main(argv: list[str] | None = None) -> int:
             "(controles; nenhum deles é medição de produto):")
         for name, path in built.items():
             print(f"  {name}: {path}")
-        print("  os quatro caminhos de saída: --run completo (0) · --run completo --inject m2 --out DIR/copia (1) · "
-            "--run nao-existe | --journey vazio | --run sqlite-ilegivel | --run completo --out DIR/x (2) · "
+        print("  os quatro caminhos de saída: --run completo (0) · --run completo --inject m2 --out DIR/copia e "
+            "--run observado-com-lacuna (1) · --run nao-existe | --journey vazio | --journey console-vazio | "
+            "--journey console-sem-medicao | --run sqlite-ilegivel | --run completo --out DIR/x (2) · "
             "--run lacuna (3)")
         return EXIT_OK
     if arguments.selftest:
@@ -1573,6 +1644,14 @@ def main(argv: list[str] | None = None) -> int:
                         print()
                         ins = Insumo(arguments.out, kind)
                     results = [measure(ins) for measure in MEASUREMENTS]
+                    if not any(clause_state(result)["aplicavel"] for result in results):
+                        # `0` significa "toda cláusula aplicável medida e PASS". Insumo em que **nenhuma** cláusula
+                        # tem sujeito não mediu nada: chamar isso de `0` era o falso verde (console existente e sem
+                        # uma linha reconhecida saía `0 — todas as cláusulas aplicáveis medidas e PASS`). Erro de
+                        # entrada, como `_discover` já diz para o insumo vazio: código 2, não 0.
+                        raise InputError(f"{ins.path}: insumo sem medição — nenhuma das {len(results)} cláusulas "
+                            "tem sujeito aqui (todas `sem_sujeito`/`nao_implementado`, nenhum fato medido). "
+                            "Erro de entrada, não medição vazia (código 2, não 0)")
                     payload.append({"insumo": ins.provenance(), "medicoes": results,
                         "sem_evidencia_hoje": NOT_RUN_MEASUREMENTS,
                         "codigo_de_saida": exit_code_of(results),
