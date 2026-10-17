@@ -9,9 +9,18 @@
 // the **rendered pixels** of the real surfaces in a dark environment and to refuse a surface that is not the
 // declared light presentation or whose text does not clear its contrast bar.
 //
-// It samples, in this order: the first feed card's title band, the local reading surface's headline and body, and
-// one sheet reachable from the header (the settings), because those are three different presentations (the window's
-// own content, a presented page, and a sheet) and the appearance has to reach all of them.
+// The gate's enumeration names eight surfaces: feed, reading, cards, settings, sources, saved, collections and
+// filters. The first test samples three presentation roots — the window's own content (a feed card's title band),
+// a presented page (the local reading surface's headline and body), and a sheet (the settings' title) — because
+// the appearance has to reach all three. The second test samples the four remaining surfaces (sources, saved,
+// collections, filters), each reached by the navigation the suite's own journeys already use.
+//
+// What is not sampled is covered by construction, and the construction is one presentation:
+// `FeedMineApp/FeedMineApp/FeedMineApp.swift:633` states `.preferredColorScheme(.light)` on the window's content,
+// which every SwiftUI presentation drawn by that window inherits, and `FeedMineApp.swift:789-798` states the same
+// `overrideUserInterfaceStyle = .light` on the one `UIHostingController` the app presents through UIKit (the
+// reader). There is no `UIWindow(` in `Sources/` or `FeedMineApp/FeedMineApp`: there is no second window whose
+// style could differ.
 //
 // Run it with the simulator in dark appearance — that is the environment the defect was measured in:
 //
@@ -81,6 +90,76 @@ final class AppearanceLegibilityUITests: XCTestCase {
             label: "settings sheet title")
         attach(sheetShot, name: "ui-readability-sheet")
         assertLegible(sheet)
+    }
+
+    /// The four surfaces the gate enumerates besides the feed, the reading page and the settings: **sources**,
+    /// **saved**, **collections** and **filters**. Each is a sheet the app presents over the feed, so whether the
+    /// declared light presentation reaches them is not a matter of opinion — it is what these pixels say.
+    ///
+    /// Each surface is reached by the navigation the suite's own journeys already use, in one launch, so the four
+    /// samples come from one reader's session: `testContextNavigationAndSourcePickerOffline` (header menu →
+    /// "Fontes"), `testBookmarkBoxesManageAndOpenTheirOwnList` (`bookmark-boxes-button` → "Caixas de salvos"),
+    /// `testCollectionsManageAndReachThePresetPicker` (header menu → "Coleções de fontes") and
+    /// `testT6FilterSheetOpensAppliesAndKeepsTheReader` (`filter-button` → "Filtros").
+    ///
+    /// What each surface is measured on is its own title band **in dark appearance**, which is where the defect
+    /// lived: on the pre-fix tree the three large titles resolved `.primary` to white over the page tint and read
+    /// 1.06:1, and after the declaration they read 19.81:1 — the title band is the pair this test can make fail and
+    /// pass on the same navigation. The filter sheet's title is inline and is drawn with the platform's own ink
+    /// (black in both trees, measured), so that surface is measured on a criterion row as well: the row's name is
+    /// the sheet's own `foregroundStyle(.primary)` over the row's material, and on the pre-fix tree that material was
+    /// the dark `#2C2C2E` while the sheet's page stayed light — a second appearance on one surface, which this test
+    /// refuses as it refuses white ink on a light page.
+    ///
+    /// The rest of each sheet — the rows below its title — is not sampled, and is declared by construction: those
+    /// rows are drawn on the surface's `appearance.pageBackground` (painted by `SourceManagementView`,
+    /// `BookmarkBoxesView`, `CollectionsView`, `FilterSheetView`) with `.primary`/`.secondary` and the platform's own
+    /// row material, and nothing in those views declares an appearance or a colour scheme of its own. The only
+    /// declaration is the window's (`FeedMineApp.swift:633`), which is what the sampled pairs above measure.
+    func testTheSourceSavedCollectionAndFilterSurfacesAreLegibleWithTheDeviceInDarkAppearance() throws {
+        let app = launched(shape: "body")
+        defer { app.terminate() }
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60), "the feed presents")
+        let screen = app.windows.firstMatch.frame
+
+        // Sources: the header's overflow menu offers "Fontes"; the sheet's own "Concluir"
+        // (`sources-done`) closes it. The country list the journey descends into is this same surface one
+        // level in, drawn by the same page background.
+        openMenuRow(app, "Fontes")
+        try sampleSurface(app, screen: screen, navigationTitle: "Fontes", name: "sources")
+        app.buttons["sources-done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20), "the source sheet closes")
+
+        // Saved: the header's own control, not the menu.
+        app.buttons["bookmark-boxes-button"].tap()
+        try sampleSurface(app, screen: screen, navigationTitle: "Caixas de salvos", name: "saved")
+        app.buttons["bookmarkBoxes.done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20), "the saved sheet closes")
+
+        // Collections: again the header's menu, its own row.
+        openMenuRow(app, "Coleções de fontes")
+        try sampleSurface(app, screen: screen, navigationTitle: "Coleções de fontes", name: "collections")
+        app.buttons["collections.done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20), "the collections sheet closes")
+
+        // Filters: the header's own control. `filter-done` is the sheet's close, and applying a clean draft is
+        // no edit. Its inline title is drawn with the platform's own ink — measured: on the pre-fix tree, in dark
+        // appearance, this title was already black over the light page while the sheet's rows were not — so the
+        // title alone would not say whether the sheet's `.primary` content follows the declared presentation.
+        // The first criterion row's name does: it is the first row of the list, drawn by the sheet's own
+        // `foregroundStyle(.primary)` over the same page, and the leading half of the row is the name alone (the
+        // trailing count is `.secondary` and deliberately outside the sampled region).
+        app.buttons["filter-button"].tap()
+        XCTAssertTrue(app.buttons["filter-done"].waitForExistence(timeout: 20), "the filter sheet opens")
+        try sampleSurface(app, screen: screen, navigationTitle: "Filtros", name: "filters")
+        let criterion = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'language-'")).firstMatch
+        XCTAssertTrue(criterion.waitForExistence(timeout: 20), "the filter sheet lists its criterion rows")
+        let row = criterion.frame
+        try sampleRegion(app, screen: screen,
+            region: CGRect(x: row.minX + 2, y: row.minY + 2,
+                width: max(1, row.width / 2 - 4), height: max(1, row.height - 4)),
+            label: "filters criterion name", attachment: "ui-readability-filters-rows")
+        app.buttons["filter-done"].tap()
     }
 
     // MARK: - The surfaces' regions
@@ -299,6 +378,52 @@ final class AppearanceLegibilityUITests: XCTestCase {
             if attempt == 2 { print("MENU_TREE_BEGIN\n\(app.debugDescription)\nMENU_TREE_END") }
         }
         XCTFail("the reader's own menu offers the adjustments")
+    }
+
+    /// Opens the header's overflow menu and taps one of its rows. The first tap can reach the layout before the
+    /// header is ready (the adjustments journey retries for the same reason), so the menu-and-row pair is retried
+    /// whole; a row that never appears is a finding, not something to route around.
+    private func openMenuRow(_ app: XCUIApplication, _ label: String) {
+        for _ in 0..<3 {
+            let menu = app.buttons["more-menu"]
+            if menu.waitForExistence(timeout: 20), menu.isHittable { menu.tap() }
+            let row = app.buttons[label]
+            if row.waitForExistence(timeout: 8), row.isHittable {
+                row.tap()
+                return
+            }
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        XCTFail("the reader's own menu offers \(label)")
+    }
+
+    /// One sheet's own title, sampled against that sheet's page with the sampler above, and held to the same two
+    /// halves of the acceptance: the page is the declared light presentation and the text clears 4.5:1.
+    private func sampleSurface(_ app: XCUIApplication, screen: CGRect, navigationTitle: String,
+        name: String) throws {
+        let bar = app.navigationBars[navigationTitle]
+        _ = bar.waitForExistence(timeout: 20)
+        // The title is a static text of the bar the surface names; the app-wide lookup is the fallback for a
+        // title rendered outside the bar's own element (an inline title on this runtime), never a stand-in for
+        // any other text.
+        let title = [bar.staticTexts[navigationTitle], bar.staticTexts.firstMatch,
+            app.staticTexts[navigationTitle]].first { $0.exists && $0.frame.height > 8 }
+        guard let title else {
+            return XCTFail("the \(name) surface draws its title as text")
+        }
+        try sampleRegion(app, screen: screen, region: inset(title.frame, by: 2),
+            label: "\(name) surface title", attachment: "ui-readability-\(name)")
+    }
+
+    /// The same measurement over any region of the surface on screen, so a surface whose title is drawn with the
+    /// platform's own ink can also be measured on the ink the app itself supplies.
+    private func sampleRegion(_ app: XCUIApplication, screen: CGRect, region: CGRect, label: String,
+        attachment: String) throws {
+        let shot = app.screenshot()
+        let pixels = try PixelCapture(shot, screen: screen)
+        let sample = try pixels.sample(region, screen: screen, label: label)
+        attach(shot, name: attachment)
+        assertLegible(sample)
     }
 
     private func attach(_ shot: XCUIScreenshot, name: String) {

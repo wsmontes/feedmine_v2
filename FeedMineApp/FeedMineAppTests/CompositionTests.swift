@@ -2196,10 +2196,11 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(FeedDesignTokens.AssetName.symbolGradient, "Symbol-Gradient")
     }
 
-    /// U1-P1: the token palette is adaptive by construction. The iOS 26.5 simulator does not
-    /// apply `simctl ui appearance` to any app (the system Settings app also stayed light while
-    /// the device reported dark), so appearance adaptation is proven by resolving the tokens
-    /// under both trait collections instead of by a screenshot.
+    /// U1-P1: the token palette is adaptive by construction. `simctl ui appearance` **does** reach apps on this
+    /// host: measured 2026-10-17 on the iOS 26.5 simulator, the system Settings app's own surface reads `#1C1C1E`
+    /// in dark and `#FFFFFF` in light. Adaptation is still proven here by resolving the tokens under both trait
+    /// collections, because that is the token's own contract and it needs no device state; the presentation's
+    /// appearance is measured in pixels by `FeedMineUITests/AppearanceLegibilityUITests`.
     @MainActor
     func testU1TokenPaletteAdaptsToAppearanceWithoutAnOverlay() throws {
         let light = UITraitCollection(userInterfaceStyle: .light)

@@ -102,3 +102,84 @@ No period is illegible after the pin, and no tint was changed.
 `pageTintHex` values, `ReaderAppearance`, every card, every layout, the admission/window/viewport path and the
 navigation model are unchanged. The production diff is `FeedMineApp/FeedMineApp/FeedMineApp.swift` alone — the
 presentation's appearance, declared where the presentation is made. No palette, no second authority, no dark mode.
+
+## 6. The gate's eight surfaces — all eight measured or declared
+
+The acceptance gate enumerates eight surfaces: feed, reading, cards, settings, sources, saved, collections and
+filters. Sections 2–3 measured the first four. This section measures the other four, in the same run's own pixels,
+and states for every one of the eight what is sampled and what, if anything, rests on the construction.
+
+### 6.1 What is sampled, and how the "before" was obtained
+
+`FeedMineUITests/AppearanceLegibilityUITests` gained
+`testTheSourceSavedCollectionAndFilterSurfacesAreLegibleWithTheDeviceInDarkAppearance`: one launch, four sheets
+reached by the navigation the suite's own journeys already use — header menu → "Fontes"
+(`testContextNavigationAndSourcePickerOffline`), `bookmark-boxes-button` → "Caixas de salvos"
+(`testBookmarkBoxesManageAndOpenTheirOwnList`), header menu → "Coleções de fontes"
+(`testCollectionsManageAndReachThePresetPicker`), `filter-button` → "Filtros"
+(`testT6FilterSheetOpensAppliesAndKeepsTheReader`). Each sheet's own title band is sampled with the existing
+sampler (modal colour = background, mean of the extreme 1% on the side farthest from it = ink, WCAG 2.x relative
+luminance); the filter sheet adds the first criterion row's name, because its inline title is drawn with the
+platform's own ink and would not answer for the sheet's `.primary` content.
+
+The "before" column is the **pre-fix tree itself**, not a re-argument: a worktree at `1e638170` whose
+`FeedMineApp/FeedMineApp/FeedMineApp.swift` hashes to `91e2dfe8…` — exactly that commit's blob — with only the new
+test file and its `project.pbxproj` membership copied in, and the two gitignored build inputs copied byte for byte
+(`Resources/catalog.sqlite` sha256 `e6da170e…`, `bench/corpus/profiles.json` sha256 `24109941…`). No production
+file was reverted on the branch.
+
+Device: simulator `FeedMine UI ptBR` (3AEA0B45-0BE6-49F1-8BAB-2591B13BBE7A), iOS 26.5. `xcrun simctl ui …
+appearance` was set and read back (`dark`, then `light`) before each run.
+
+### 6.2 Per-surface ratios — device in dark appearance, then light
+
+| Gate surface | Sampled text | Background / ink, dark, **pre-fix** | dark, after | light, after |
+| --- | --- | --- | --- | --- |
+| feed (and its cards) | first card's title band | `#EEE6DF` / `#FFFFFF` — **1.23:1** | `#EEE6DF` / `#000000` — **17.02:1** | 17.02:1 |
+| reading | local reading headline | `#F0EBE4` / `#FFFFFF` — **1.19:1** | `#F0EBE4` / `#000000` — **17.71:1** | 17.71:1 |
+| reading | local reading body | `#F0EBE4` / `#FFFFFF` — **1.19:1** | `#F0EBE4` / `#000000` — **17.71:1** | 17.71:1 |
+| settings | sheet title | `#F0EBE4` / `#FFFFFF` — **1.19:1** | `#F0EBE4` / `#000000` — **17.71:1** | 17.71:1 |
+| **sources** | "Fontes" title band | `#FAF8F5` / `#FFFFFF` — **1.06:1** | `#FAF8F5` / `#000000` — **19.81:1** | 19.81:1 |
+| **saved** | "Caixas de salvos" title band | `#FAF8F5` / `#FFFFFF` — **1.06:1** | `#FAF8F5` / `#000000` — **19.81:1** | 19.81:1 |
+| **collections** | "Coleções de fontes" title band | `#FAF8F5` / `#FFFFFF` — **1.06:1** | `#FAF8F5` / `#000000` — **19.81:1** | 19.81:1 |
+| **filters** | "Filtros" inline title band | `#FAF8F5` / `#000000` — 19.81:1 (already legible) | `#FAF8F5` / `#000000` — **19.81:1** | 19.81:1 |
+| **filters** | first criterion row's name | row material `#2C2C2E` / `#FFFFFF` — 13.94:1 but L=0.0253 → **fails the light-presentation bar** | row `#FFFFFF` / `#000000` — **21.00:1**, L=0.9999 | 21.00:1 |
+
+Two facts the numbers state on their own:
+
+- The sources, saved and collections titles are the same defect on three more presentations: white `.primary` over
+  the light page tint. The fix reaches all three.
+- The filter sheet's *inline* title was already black in the pre-fix tree (the platform draws it), and its *rows*
+  were a dark material under white text — a second appearance on a surface whose page was light. After the
+  declaration the row is `#FFFFFF` under black text; the same assertion (page luminance ≥ 0.5 **and** ≥ 4.5:1) is
+  what turns that around.
+
+### 6.3 Executed counts, verbatim
+
+```
+pre-fix tree, dark:  Executed 1 test, with 4 failures (0 unexpected) in 36.687 (36.688) seconds
+after, dark:         Executed 2 tests, with 0 failures (0 unexpected) in 55.915 (55.917) seconds
+after, light:        Executed 2 tests, with 0 failures (0 unexpected) in 55.001 (55.003) seconds
+```
+
+The four pre-fix failures are the three 1.06:1 titles and the filter row's dark material; every other assertion in
+that run passed, so the red is the surfaces' and not the harness's. In both after runs all nine sampled pairs
+passed in both appearances, and the light run is surface-for-surface identical to the dark one — the property route
+A declares.
+
+### 6.4 The construction, for what is not sampled
+
+No surface was skipped for being unreachable: all four were reached and measured. What is *not* sampled on them is
+their bodies (the rows below each title), and that rests on one declaration, not on a second authority:
+
+- `FeedMineApp/FeedMineApp/FeedMineApp.swift:633` — `.preferredColorScheme(.light)` on the window's content. Every
+  SwiftUI presentation the window draws (these four sheets among them) inherits it; none of
+  `SourceManagementView`, `BookmarkBoxesView`, `CollectionsView`, `FilterSheetView` declares an appearance or a
+  colour scheme of its own, and each paints `appearance.pageBackground` with `.primary`/`.secondary`.
+- `FeedMineApp.swift:789-798` — the only `UIHostingController` the app presents through UIKit (the reader) sets
+  `overrideUserInterfaceStyle = .light` where that presentation is made.
+- There is no `UIWindow(` anywhere in `Sources/` or `FeedMineApp/FeedMineApp`: there is no second window whose
+  style could differ from the one the declaration is on.
+
+So the eight surfaces are: feed, cards, reading and settings sampled (sections 2–3); sources, saved, collections
+and filters sampled here; and the body content of each sheet covered by the declaration above.
