@@ -20,14 +20,19 @@ import FeedMineUI
 public struct ReaderContentFilterAdapter: ReaderContentFilterBackend {
     private let database: RuntimeDatabase
     private let templates: [ReaderContentFilterTemplate]
+    /// The reader's language and its base language, in the same order and with the same default the policy uses:
+    /// a template's words are resolved for the reader, and stating the language is what lets a test pin the count
+    /// instead of borrowing the host's.
+    private let languages: [String]
     private let bundle: Bundle
     private let onSourceExclusionsChanged: @Sendable () async -> Void
 
     public init(database: RuntimeDatabase, templates: [ReaderContentFilterTemplate]? = nil,
-        bundle: Bundle = .main,
+        languages: [String] = ReaderContentFilterTemplate.preferredLanguages, bundle: Bundle = .main,
         onSourceExclusionsChanged: @escaping @Sendable () async -> Void = {}) {
         self.database = database
         self.templates = templates ?? ReaderContentFilterCatalog.bundled(bundle)
+        self.languages = languages
         self.bundle = bundle
         self.onSourceExclusionsChanged = onSourceExclusionsChanged
     }
@@ -38,8 +43,8 @@ public struct ReaderContentFilterAdapter: ReaderContentFilterBackend {
             rules: settings.contentFilterRules,
             enabledTemplates: settings.contentFilterTemplates,
             templates: templates.map { template in
-                ReaderContentFilterTemplateRow(id: template.key, name: template.name(),
-                    ruleCount: template.rules().count)
+                ReaderContentFilterTemplateRow(id: template.key, name: template.name(languages: languages),
+                    ruleCount: template.rules(languages: languages).count)
             }, sourceExclusions: settings.contentSourceExclusions)
     }
 
