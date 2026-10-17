@@ -1972,9 +1972,9 @@ final class FeedMineUITests: XCTestCase {
             "the store's published cards must be reachable with a scroll; reachable \(reachable.count)")
     }
 
-    /// R7/Codex: a publication that completes **after** the bounded follow-up has finished must still reach the
-    /// window by itself. The second endpoint answers late (`FEEDMINE_SLOW_FEED_SECONDS=10`), so the burst lands
-    /// after the timed chain is over — growth has to be bound to the publication event, not to the clock.
+    /// R7/Codex: a publication that completes **after** the install that followed the first one must still reach the
+    /// window by itself. The second endpoint answers late (`FEEDMINE_SLOW_FEED_SECONDS=10`), so the burst lands after
+    /// that install; growth is bound to the publication event, and no timed chain exists to be over.
     @MainActor
     func testPublicationAfterTheFollowUpWindowStillReachesTheWindow() throws {
         let app = XCUIApplication()
@@ -1990,10 +1990,10 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(proof.waitForExistence(timeout: 10))
         let cards = app.buttons.matching(identifier: "card.bookmark")
         XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 60), "the first card is the first fact")
-        // The timed follow-up (8 × 0,75 s) is long over by the time the late endpoint answers.
+        // The late endpoint answers long after the first publication was installed, and nothing timed remains.
         let expanded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count >= 2"), object: cards)
         XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 90), .completed,
-            "a publication after the follow-up window must still fill the window; observed \(cards.count)")
+            "a publication after the first install must still fill the window; observed \(cards.count)")
         XCTAssertEqual(proof.label, "received=0 completed=0 backward=0", "and still without a gesture")
     }
 

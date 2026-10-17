@@ -451,8 +451,9 @@ enum DevelopmentLocalFeeds {
         ProcessInfo.processInfo.environment["FEEDMINE_EMPTY_FEEDS"] == "1"
     }
 
-    /// R7: `FEEDMINE_SLOW_FEED_SECONDS=<n>` delays only the second endpoint, so the first card appears at once
-    /// and the rest of the burst lands n seconds later — after any bounded follow-up has finished.
+    /// R7/E: `FEEDMINE_SLOW_FEED_SECONDS=<n>` delays only the second endpoint, so the first card appears at once
+    /// and the rest of the burst lands n seconds later — after the install that followed the first publication, when
+    /// no timed read exists any more to catch it and only the publication fact can.
     static func slowFeedSeconds(answering url: URL) -> Double {
         guard url.absoluteString.contains("science"),
             let value = ProcessInfo.processInfo.environment["FEEDMINE_SLOW_FEED_SECONDS"].flatMap(Double.init),
@@ -479,8 +480,9 @@ private final class LocalFeedProtocol: URLProtocol {
         // A imagem do fixture é o único byte que este transporte serve além dos documentos: o mesmo dono,
         // o mesmo `URLSessionConfiguration` da composição, então o caminho de mídia é o de produção.
         guard !DevelopmentLocalFeeds.answersCardImage(url) else { return deliverCardImage(url) }
-        // R7: the second endpoint can answer *after* any timed follow-up has finished, so a publication that
-        // completes later is reproducible instead of hoped for (the acceptance question the round asks).
+        // R7/E: the second endpoint can answer *after* the first publication was installed, with no timed read left
+        // to catch it, so a publication that completes later is reproducible instead of hoped for (the acceptance
+        // question the round asks). What grows the window then is the publication fact itself.
         let delay = DevelopmentLocalFeeds.slowFeedSeconds(answering: url)
         guard delay > 0 else { return deliver(url) }
         DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in

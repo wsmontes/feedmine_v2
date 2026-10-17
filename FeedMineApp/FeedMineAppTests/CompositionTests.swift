@@ -405,21 +405,24 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
-    /// R6-E — o vermelho que a decisão do arquiteto exige **antes** de qualquer implementação: uma publicação
-    /// legitimamente concluída depois da janela antiga tem de fazer a apresentação crescer sozinha.
+    /// R6-E — a publicação legitimamente concluída depois da janela antiga tem de fazer a apresentação crescer
+    /// sozinha. O caso nasceu vermelho e é a regressão do gate: o crescimento tem de seguir o **fato da publicação**,
+    /// não o relógio.
     ///
-    /// A janela antiga é a cadeia de polling que `AppComposition.swift` ainda carrega: as constantes em `:2664-2665`,
-    /// a consulta que `startGrowthFollowUp()` agenda na hora (`:2667-2670`) e o rearmamento de `:2686-2692` — uma
-    /// consulta imediata mais oito de 0,75 s, isto é **6,0 s** contados do último armar. Em `launch()` esse último
-    /// armar é a linha imediatamente anterior ao retorno (`:2777`), e o relé frio que também arma (`:2831`, `:2840`)
-    /// já foi desligado no fim da corrida fria (`:2747`). Daí a espera de **8,0 s**: os 6,0 s da janela mais 2,0 s de
-    /// margem para o retorno do próprio `launch` e para o agendador. Depois disso a cadeia está morta por aritmética,
-    /// e nenhum outro chamador de `admitPresentation(.publishedGrowth)` pode rodar sem gesto: são o `viewport`
-    /// (`:2910`) e o `foreground` (`:3025`), e este caso não chama nenhum dos dois.
+    /// A janela antiga era a cadeia de polling que `AppComposition.swift` carregava (1 consulta imediata + 8 de
+    /// 0,75 s, isto é **6,0 s**, rearmada no fim do `launch()`, no `.settled` de uma fonte que trouxe suprimento e na
+    /// primeira edição publicada). Ela já não existe: o crescimento passou a ser disparado pelo **recibo do segmento**
+    /// que o `FeedRunwayDriver` entrega no `runLocalSlice` que o concluiu (`onPublication`), pela publicação do
+    /// próprio cold bootstrap e pelas duas oportunidades do leitor (`viewport`, `foreground`).
+    ///
+    /// A espera de **8,0 s** continua sendo o que prova a metade negativa deste caso: passado todo o tempo que a
+    /// janela antiga levava para se esgotar, **nada** cresce a janela enquanto nada publica — nenhum caminho cresce a
+    /// janela por tempo decorrido.
     ///
     /// O que ele faz é o caminho do próprio produto: libera a **segunda publicação** na pista do runway por
     /// `driver.activateCurrentPresentation` — a mesma ativação que `launch()` e um foreground fazem, sem o
-    /// `growAdmittedWindowIfPublished()` que os acompanha. O transporte controlado serve dois itens por fonte antes
+    /// `growAdmittedWindowIfPublished()` que os acompanha e sem chamar `viewport` nem `foreground`, os dois outros
+    /// chamadores de `admitPresentation(.publishedGrowth)`. O transporte controlado serve dois itens por fonte antes
     /// da espera e vinte e quatro depois, então a primeira publicação não enche a janela (4 cartas de 17 possíveis,
     /// pelo teto congelado) e a segunda publica cartas novas na reserva da mesma edição.
     ///
@@ -429,7 +432,7 @@ final class CompositionTests: XCTestCase {
     /// chegar à reserva, lida no `PublicationStore` antes e depois, com a falha dizendo que a **premissa** não valeu;
     /// e (b) nenhum prazo derivado de fato pode disparar um `foreground()` no meio da medida — com o transporte
     /// saudável `localRetryEligibleAt()` e `acquisitionResumeAt()` são nulos, e é isso que o caso afirma antes de
-    /// medir, em vez de supor (é o `scheduleLocalRetryIfNeeded` de `:2789`).
+    /// medir, em vez de supor (é o `scheduleLocalRetryIfNeeded`).
     func testAPublicationConcludedAfterTheFollowUpWindowGrowsTheAdmittedWindow() async throws {
         FixtureTransport.feedItemCount.withLock { $0 = 2 }
         defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
@@ -452,12 +455,12 @@ final class CompositionTests: XCTestCase {
         XCTAssertLessThan(before.count, ceiling,
             "premissa: a janela admitida tem de ter espaço dentro do teto congelado — cheia, o crescimento seria impossível por outra razão")
 
-        // A janela antiga inteira, e mais margem.
+        // A janela antiga inteira, e mais margem: aqui ela prova que nenhum tempo cresce a janela.
         try await Task.sleep(for: .seconds(8))
         XCTAssertEqual(admitted(), before,
-            "premissa: nada pode crescer a janela admitida enquanto a janela antiga se esgota; a reserva estava inteiramente admitida")
+            "premissa: nada pode crescer a janela admitida nesta espera — nenhum caminho cresce a janela por tempo decorrido, e a reserva estava inteiramente admitida")
         XCTAssertEqual(try reservedAhead(), reservedBefore,
-            "premissa: a reserva tem de estar quieta durante a janela antiga — nada publicou neste intervalo")
+            "premissa: a reserva tem de estar quieta durante a espera — nada publicou neste intervalo")
         let localRetryDeadline = await association.driver.localRetryEligibleAt()
         let acquisitionResumeDeadline = await association.driver.acquisitionResumeAt()
         XCTAssertNil(localRetryDeadline,
