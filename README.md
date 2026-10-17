@@ -1,5 +1,7 @@
 # FeedMine
 
+**MONITOR EXTERNO DE ARQUITETURA (consultivo, a cada 2 horas):** antes de uma nova rodada de planejamento, consulte o parecer atualizado na branch `monitor/architecture` com `git fetch origin monitor/architecture` e `git show origin/monitor/architecture:docs/reviews/ARCHITECTURE_MONITOR.md`. O relatório pode apontar regressões e prioridades, mas **não** altera a hierarquia de decisões vigente, não autoriza modificações nem substitui provas no Mac. O arquivo do monitor está numa branch separada e não aparece na `main`.
+
 **INSTRUÇÃO ATUAL PARA AGENTES (2026-10-11):** [Diretriz de execução V2 após checkpoint B05](docs/product/V2_AGENT_EXECUTION_DIRECTIVE_2026-10-11.md). Leia antes de iniciar novas correções ou mais documentação; preservar a evidência canônica de B05 e atacar descoberta real, runway e os gates restantes sem alterar a régua.
 
 
