@@ -1,5 +1,6 @@
 // Stateless composition of existing outcomes into the sole screen presentation value.
 // Every execution opportunity remains an explicit caller operation.
+import FeedMineAcquisition
 import FeedMineRuntime
 import FeedMineUI
 
@@ -19,16 +20,28 @@ public enum FeedPresentationHandoff {
             return try state.receiving(snapshot).reporting(.idle)
         case .localWorkRemaining:
             return state.reporting(.idle)
-        case .noPublicationAfterAcquisition:
+        case .noPublicationAfterAcquisition(_, let results):
             // R5/PO: the acquisition attempt finished without eligible stories. That is the reader's whole
             // situation only when there is no presentation to preserve; with cards on screen the same fact
             // stays quiet, so a working feed never acquires a "no stories" chip.
-            return state.reporting(state.presentation == nil ? .unavailable : .idle)
+            // F-UX-2: finishing without eligible stories is not the only way an attempt ends without one, and an
+            // absence caused by a transport that could not connect is not the absence of stories. The transports
+            // that settled are the evidence for the difference; supply absence alone never is. The reader is
+            // told the connection failed and offered only the action that can act on it.
+            guard state.presentation == nil else { return state.reporting(.idle) }
+            return state.reporting(transportFailed(results) ? .unreachable : .unavailable)
         case .unavailable:
             return state.reporting(.unavailable)
         case .deferred:
             return state.reporting(.deferred)
         }
+    }
+
+    /// The one fact that separates "the source could not be reached" from "the source had nothing to give": the
+    /// transport failure the connector itself stated. `remoteResponse` and `remoteContent` are the source answering
+    /// badly or unreadably — not connectivity — so they keep the absence state.
+    private static func transportFailed(_ results: [AcquisitionExecutionResult]) -> Bool {
+        results.contains { $0.stop == .operationalFailure(.transport) }
     }
 
     /// Acquisition settlement changes a work fact only; it supplies no published projection.
