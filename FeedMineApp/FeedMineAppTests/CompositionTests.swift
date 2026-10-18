@@ -808,6 +808,80 @@ final class CompositionTests: XCTestCase {
         await live.close()
     }
 
+    // MARK: - R16: unified local search scopes
+
+    /// Each scope returns only its own real result kinds, computed from the authorities that own them: sources from
+    /// the catalogue, saved occurrences from the reader's bookmarks, articles from canonical local content. A
+    /// scope never presents results it did not query.
+    func testSearchScopesReturnOnlyTheirRealResultKinds() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let card = try XCTUnwrap(association.store.state.presentation?.window.items.first?.id)
+        try PublicationStore(database: association.database).toggleBookmark(cardID: card,
+            in: ReaderBookmarkList.defaultID, at: Date())
+
+        let contents = try XCTUnwrap(root.unifiedSearch("Published", scope: .contents, token: 1))
+        XCTAssertTrue(contents.sources.isEmpty, "conteúdo não devolve fontes")
+        XCTAssertTrue(contents.all.allSatisfy { $0.kind == .saved || $0.kind == .article },
+            "só os tipos reais do escopo de conteúdo")
+        XCTAssertTrue(contents.saved.contains { $0.destination == .savedCard(card) },
+            "o salvo aparece com a ocorrência real")
+        XCTAssertFalse(contents.articles.isEmpty, "o artigo local aparece")
+
+        let sources = try XCTUnwrap(root.unifiedSearch("Published", scope: .sources, token: 2))
+        XCTAssertTrue(sources.saved.isEmpty && sources.articles.isEmpty,
+            "o escopo de fontes não devolve conteúdo")
+        XCTAssertTrue(sources.all.allSatisfy { $0.kind == .source })
+
+        let both = try XCTUnwrap(root.unifiedSearch("Published", scope: .both, token: 3))
+        var expected: Set<ReaderSearchResultKind> = [.saved, .article]
+        if !both.sources.isEmpty { expected.insert(.source) }
+        XCTAssertEqual(Set(both.all.map(\.kind)), expected)
+        await association.close()
+    }
+
+    /// A suspended completion for an older term/scope cannot replace a newer search at the surface.
+    func testStaleSearchCompletionCannotReplaceNewScope() async throws {
+        let store = ReaderSearchResultsStore()
+        let old = store.begin()
+        let current = store.begin()
+        let stale = ReaderSearchResults(query: "old", scope: .sources, token: old,
+            sources: [ReaderSearchResult(id: "s", kind: .source, title: "velho", subtitle: nil,
+                destination: .source(principal: "x", sourceID: nil))], saved: [], articles: [])
+        XCTAssertFalse(store.apply(stale), "uma conclusão antiga não substitui a busca nova")
+        XCTAssertNil(store.results)
+        let fresh = ReaderSearchResults(query: "new", scope: .contents, token: current,
+            sources: [], saved: [], articles: [ReaderSearchResult(id: "a", kind: .article, title: "novo",
+                subtitle: nil, destination: .article(cardID: nil, originRecordID: OriginRecordID()))])
+        XCTAssertTrue(store.apply(fresh))
+        XCTAssertEqual(store.results?.query, "new")
+        XCTAssertEqual(store.results?.scope, .contents)
+    }
+
+    /// A saved search states the expression and the scope in its durable key; reopening it offline runs the same
+    /// search over local authorities (no network is consulted by `unifiedSearch`).
+    func testSavedSearchReopensWithSameExpressionAndScopeOffline() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let search = try XCTUnwrap(SearchContext(query: "fixture -astrologia"))
+        let key = ContextKey(request: .search(search), searchScope: .contents)
+        let json = try XCTUnwrap(key.canonicalJSON())
+        let reopened = try XCTUnwrap(ContextKey.fromCanonicalJSON(json))
+        XCTAssertEqual(reopened, key, "a expressão e o escopo voltam idênticos do registro durável")
+        XCTAssertEqual(reopened.request, .search(search))
+        XCTAssertEqual(reopened.searchScope, .contents)
+
+        // Offline: the local authorities answer; no request is made by the search itself.
+        let before = FixtureTransport.requests.withLock { $0.count }
+        let results = try XCTUnwrap(root.unifiedSearch("fixture", scope: .contents, token: 1))
+        XCTAssertEqual(FixtureTransport.requests.withLock { $0.count }, before,
+            "a busca local não faz aquisição")
+        XCTAssertFalse(results.articles.isEmpty, "o conteúdo local responde offline")
+        await association.close()
+    }
+
     // MARK: - R15: search origin, cancel and recoverable outcomes
 
     /// Cancelling a search returns to the **exact** previous context: the same preset/filter key and the anchor the

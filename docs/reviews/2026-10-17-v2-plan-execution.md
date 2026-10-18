@@ -925,3 +925,33 @@ Mutações revertidas.
 ### Registro R15
 
 SHA inicial: `67763988` | vermelho: tabela | alteração: origem+checkpoint, confirmação explícita, cancelar restaura | verde: tabela | jornada protegida: identidade/posição restauradas; mensagem compatível com o commit | pendências: R16 | SHA final: registrado no commit `fix(search): restore search origins and report durable action outcomes`.
+
+## R16 — escopos e resultados locais unificados (parcial)
+
+Base: `c39cfd13` (R15).
+
+### Entregue e provado
+
+- Tipos de resultado no **Domain** (`ReaderSearchResults`: query, scope, token de conclusão, seções
+  sources/saved/articles; `ReaderSearchResult` com `destination` tipada). Compartilhados pelo host e pela UI, sem
+  cópia de dados canônicos.
+- `AppComposition.unifiedSearch(_:scope:token:)` consulta as autoridades reais e **só locais** (sem rede):
+  fontes pelo catálogo (`LegacyCatalogReader.matchingSources` + a expressão de R14), salvos pelos bookmarks + cartas
+  publicadas, artigos pelo `ContentStore` + resolução em lote de cartas publicadas (`PublicationStore.cardIDs`,
+  uma consulta). Escopo decide o universo: `.sources` só fontes; `.contents` salvos + artigos; `.both` os três.
+- `ReaderSearchResultsStore` (UI): token de início; uma conclusão só é aplicada sob o token mais novo — uma busca
+  suspensa não substitui a nova.
+- Provas: `testSearchScopesReturnOnlyTheirRealResultKinds` (tipos reais por escopo; salvo abre a ocorrência real),
+  `testStaleSearchCompletionCannotReplaceNewScope`, `testSavedSearchReopensWithSameExpressionAndScopeOffline`
+  (chave durável round-trip com expressão+escopo; busca local sem nenhuma requisição). 3 / 0.
+
+### Pendente (bloqueia R16/G3)
+
+A **superfície de resultados** na barra do leitor não foi construída nesta execução: o submit atual continua
+trocando o contexto para a busca do feed, e não há lista tipada com navegação (fonte→contexto, salvo→leitura,
+artigo→leitura) nem testes de troca de termo/escopo durante consultas suspensas em UI. O backbone acima é o que a
+superfície consumiria; sem ela, a busca unificada **não está certificada** por F11/F16.
+
+**Registro parcial:** SHA inicial `c39cfd13` | alteração: tipos + consultas reais + store com token | verde: 3/0 |
+pendências: superfície e jornada F11/F16 | SHA final: registrado no commit `feat(search): connect explicit scopes to
+local result authorities` (parcial, declarado).

@@ -911,6 +911,12 @@ final class AppComposition {
         return CollectionsStore(backend: ReaderCollectionsBackend(database: database))
     }
 
+    /// R16: the authorities a unified search reads, exposed to the search extension without widening the one
+    /// database owner or the resolved catalogue path.
+    func searchAuthorities() -> (database: RuntimeDatabase?, catalogue: URL?, feeds: [TrustedFeed]) {
+        (libraryDatabase(), catalogueURL, feeds)
+    }
+
     /// One handle on the reader's database for every library surface; the file is opened the way the rest of
     /// the composition opens it. One connection for every library read and write the host performs: opening a
     /// fresh pool per action ran the migrations again and contended with the session's own connections, and a

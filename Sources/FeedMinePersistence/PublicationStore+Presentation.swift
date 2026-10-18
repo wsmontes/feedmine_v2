@@ -116,6 +116,27 @@ extension PublicationStore {
         }
     }
 
+    /// R16: the published cards a bounded set of occurrences named, resolved in **one** query. A unified search
+    /// asks this once for its examined window instead of one scan per result.
+    public func cardIDs(originRecordIDs: [OriginRecordID]) throws -> [OriginRecordID: PublicationCardID] {
+        guard !originRecordIDs.isEmpty else { return [:] }
+        let keys = Set(originRecordIDs.map { PersistenceValueCoding.uuid($0.rawValue) }).sorted()
+        return try database.read { db in
+            guard keys.count <= db.maximumStatementArgumentCount - 1 else { throw PublicationStoreError.invalidCapacity }
+            let rows = try Row.fetchAll(db,
+                sql: "SELECT origin_record_id, id FROM published_cards WHERE origin_record_id IN ("
+                    + Array(repeating: "?", count: keys.count).joined(separator: ",") + ")",
+                arguments: StatementArguments(keys))
+            var result: [OriginRecordID: PublicationCardID] = [:]
+            for row in rows {
+                guard let origin = UUID(uuidString: row["origin_record_id"]),
+                    let card = UUID(uuidString: row["id"]) else { continue }
+                result[OriginRecordID(rawValue: origin)] = PublicationCardID(rawValue: card)
+            }
+            return result
+        }
+    }
+
     public func card(id: PublicationCardID) throws -> CardRecord? {
         try database.read { db in
             let key = PersistenceValueCoding.uuid(id.rawValue)
