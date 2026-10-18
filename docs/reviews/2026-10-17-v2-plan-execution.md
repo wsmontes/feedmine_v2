@@ -543,3 +543,48 @@ caminho existente), e `MediaPrefetcherTests.testAllCandidatesFailingHasNoPresent
 ### Registro R07
 
 SHA inicial: `54aa08a0` | vermelho: mutação prepare-before-slice | alteração: prioridade sem barreira no driver e no cold; um caminho de exame | verde: tabela | jornada protegida: prontos publicam com decode alheio pendente; tardio reconsiderado; falha não gira | pendências: R08 | SHA final: registrado no commit `fix(media): publish ready supply without preparation barriers`.
+
+## R08 — descoberta indexada e seções críticas limitadas
+
+Base: `81941d17` (R07).
+
+### Defeito
+
+`ReaderDiscoveryTraversal` varria **todas as páginas** para cada checagem de duplicado (`Set(pages.flatMap...)`),
+reconstruía a lista de entradas a cada leitura e executava a página do catálogo e a materialização (SQL/autoridade)
+**sob o lock**. Não havia reserva: duas oportunidades podiam materializar a mesma página, e uma promoção de catálogo
+durante a materialização podia instalar alvos de um catálogo superado.
+
+### Prova vermelha (mutação)
+
+| Mutação | Teste | Resultado |
+|---|---|---|
+| remover `!advancing` da reserva | `testAReservedMaterializationRefusesAConcurrentAdvance` | **vermelho**: 2 materializações, a concorrente devolveu página |
+| remover a revalidação da identidade **viva** | `testCatalogueRevocationDuringMaterializationCannotReinstallTarget` | **vermelho**: página do catálogo superado instalada |
+
+Mutações revertidas.
+
+### Alteração
+
+- Índices derivados da travessia (`knownTargetIDs`, `entryByTarget`, `flattenedEntries`), atualizados na instalação
+  válida de página (`install(entries:snapshot:)`) e reconstruídos só na promoção (`rebuildIndices`). Toda checagem
+  de duplicado e o lookup de conector que lê `entries` são O(1)/sem varredura; `adopt` e `advance` usam o índice.
+- **Reserva de oportunidade**: um `advancing` por travessia; uma segunda oportunidade durante a materialização
+  devolve `nil` (nada é duplicado). O `builder.page(...)` e a materialização rodam **fora** do lock; a instalação
+  re-locka e exige `cursor` inalterado e a **identidade viva** do catálogo igual à reservada. Identidade mudou →
+  página descartada, cursor intacto, `catalogueFingerprint` adotado para a próxima tentativa; exceção/cancelamento
+  libera a reserva sem avançar. A promoção continua chamando `refreshIfNeeded` (rebind de páginas retidas).
+- Seam mínimo: `catalogueIdentity` (default: `installation.activeFingerprint()`), a identidade que a reserva compara —
+  o teste determina a promoção/revogação sem construir um segundo catálogo.
+
+### Provas verdes
+
+| Prova | Resultado |
+|---|---|
+| `ReaderDiscoveryTraversalTests` (novo: lookup indexado, reserva concorrente, falha preserva cursor, identidade superada) | 4 / 0 |
+| `ReaderDiscoveryPoolTests` (regressões de travessia/eligibility/progressão) | 19 / 0 |
+| `SyndicationAcquisitionSnapshotTests` | 30 / 0 |
+
+### Registro R08
+
+SHA inicial: `81941d17` | vermelho: tabela | alteração: índices + reserva + materialização fora do lock + revalidação de identidade | verde: tabela | jornada protegida: nenhum alvo revogado/superado readmitido; concorrência não duplica; falha não avança | pendências: R09 | SHA final: registrado no commit `perf(discovery): index targets and bound traversal critical sections`.

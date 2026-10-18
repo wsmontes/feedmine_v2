@@ -16,6 +16,9 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
     public let profile: ReaderDiscoveryProfile
     public let contextKey: ContextKey
     private let installation: CatalogInstallation?
+    /// R08: the catalogue identity the reservation is checked against. The product reads the installed authority;
+    /// a test states the identity itself so a promotion/revocation during materialization is deterministic.
+    private let catalogueIdentity: (@Sendable () -> String?)?
     private let lock = NSLock()
     private var builder: ReaderDiscoveryBuilder
     private var catalogueFingerprint: String?
@@ -28,21 +31,36 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
     /// snapshot. A promotion retains stable target/endpoint identities, refreshing their source metadata
     /// and acquisition eligibility. No second traversal/cache or durable target revocation is introduced.
     private var pages: [(entries: [LegacyCatalogEntry], snapshot: SyndicationAcquisitionSnapshot)] = []
+    /// R08: derived indices, rebuilt only when a page is installed (or the catalogue promotes). Every duplicate
+    /// check and every connector lookup is O(1); nothing walks prior pages per opportunity.
+    private var knownTargetIDs: Set<AcquisitionTargetID> = []
+    private var entryByTarget: [AcquisitionTargetID: LegacyCatalogEntry] = [:]
+    /// The flattened entries, rebuilt with the pages instead of on every read.
+    private var flattenedEntries: [LegacyCatalogEntry] = []
+    /// One reservation at a time: materialization (catalogue/SQL) runs **outside** the lock with this held, and the
+    /// page is installed only if the catalogue identity is still the one it was reserved under.
+    private var advancing = false
 
     public init(builder: ReaderDiscoveryBuilder, profile: ReaderDiscoveryProfile, contextKey: ContextKey,
-        installation: CatalogInstallation? = nil) {
+        installation: CatalogInstallation? = nil,
+        catalogueIdentity: (@Sendable () -> String?)? = nil) {
         self.builder = builder
         self.profile = profile
         self.contextKey = contextKey
         self.installation = installation
-        self.catalogueFingerprint = installation?.activeFingerprint()
+        self.catalogueIdentity = catalogueIdentity
+        self.catalogueFingerprint = catalogueIdentity?() ?? installation?.activeFingerprint()
+    }
+
+    private func currentFingerprint() -> String? {
+        catalogueIdentity?() ?? installation?.activeFingerprint()
     }
 
     /// A pointer change is checked only at actual discovery/acquisition opportunities. The installed
     /// snapshot remains the sole authority. Valid prepared pages are retained; a removed source or a
     /// changed endpoint/metadata no longer qualifies as work prepared for the new revision.
     private func refreshIfNeeded() {
-        guard let installation, let fingerprint = installation.activeFingerprint(),
+        guard let installation, let fingerprint = currentFingerprint(),
             fingerprint != catalogueFingerprint,
             let active = installation.activeSnapshot(), active.fingerprint == fingerprint else { return }
         let newReader = try? LegacyCatalogReader(catalogURL: active.catalogueURL)
@@ -64,6 +82,7 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
             return compatible.isEmpty ? nil
                 : (entries: compatible, snapshot: old.snapshot.retaining(compatible))
         }
+        rebuildIndices()
         builder = ReaderDiscoveryBuilder(catalogURL: active.catalogueURL)
         catalogueFingerprint = fingerprint
         promotedCatalogueURL = active.catalogueURL
@@ -83,7 +102,7 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
     public var entries: [LegacyCatalogEntry] {
         lock.withLock {
             refreshIfNeeded()
-            return pages.flatMap { $0.entries }
+            return flattenedEntries
         }
     }
     public var exhausted: Bool {
@@ -94,26 +113,78 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
     }
 
     /// Registration must succeed before committing examination, so failures leave this page retryable.
-    /// No suspension under the lock: connector lookup and discovery cannot race page installation.
+    ///
+    /// R08: the opportunity is **reserved** under the current catalogue identity; the catalogue page and the
+    /// materialization (which touches SQL/authority) run outside the lock. The page is installed only if the
+    /// fingerprint is still the one the reservation named — a catalogue promotion (revocation included) during
+    /// materialization discards the page and leaves the cursor where it was. An exception or cancellation releases
+    /// the reservation without advancing anything.
     func advance(examinedCapacity: Int,
         materialize: ([LegacyCatalogEntry]) throws -> SyndicationAcquisitionSnapshot) throws -> ReaderDiscoveryPage? {
-        try lock.withLock {
-            try Task.checkCancellation()
-            refreshIfNeeded()
-            guard !finished else { return nil }
-            let page = try builder.page(for: profile, after: cursor, examinedCapacity: examinedCapacity)
-            // Pages retained across a promotion are useful supply. Re-examination advances the new
-            // catalogue cursor without re-registering or re-fetching identical prepared targets.
-            let known = Set(pages.flatMap { $0.entries }.map(\.targetID))
-            let additions = page.entries.filter { !known.contains($0.targetID) }
-            if !additions.isEmpty {
-                let snapshot = try materialize(additions)
-                pages.append((entries: additions, snapshot: snapshot))
+        let reservation: (fingerprint: String?, cursor: ReaderDiscoveryCursor?)
+        do {
+            reservation = try lock.withLock {
+                try Task.checkCancellation()
+                refreshIfNeeded()
+                guard !finished, !advancing else { throw AdvanceReservation.refused }
+                advancing = true
+                return (catalogueFingerprint, cursor)
             }
-            cursor = page.nextCursor
-            finished = page.exhausted
-            return page
+        } catch AdvanceReservation.refused {
+            return nil
+        } catch {
+            throw error
         }
+        do {
+            try Task.checkCancellation()
+            let page = try builder.page(for: profile, after: reservation.cursor, examinedCapacity: examinedCapacity)
+            // Pages retained across a promotion are useful supply. Re-examination advances the new catalogue
+            // cursor without re-registering or re-fetching identical prepared targets — checked by index.
+            let additions = page.entries.filter { !knownTargetIDs.contains($0.targetID) }
+            let snapshot = try additions.isEmpty ? nil : materialize(additions)
+            return try lock.withLock {
+                try Task.checkCancellation()
+                advancing = false
+                refreshIfNeeded()
+                // The identity moved while materialization ran: this page belongs to a superseded catalogue. The
+                // live identity is authoritative here — the stored one may not have been promoted yet (a
+                // revocation without a new snapshot still cannot install). The page stays retryable under the new
+                // identity; the cursor did not move.
+                guard currentFingerprint() == reservation.fingerprint,
+                    catalogueFingerprint == reservation.fingerprint, cursor == reservation.cursor else {
+                    catalogueFingerprint = currentFingerprint()
+                    return nil
+                }
+                if let snapshot, !additions.isEmpty { install(entries: additions, snapshot: snapshot) }
+                cursor = page.nextCursor
+                finished = page.exhausted
+                return page
+            }
+        } catch {
+            lock.withLock { advancing = false }
+            throw error
+        }
+    }
+    private enum AdvanceReservation: Error { case refused }
+
+    private func install(entries: [LegacyCatalogEntry], snapshot: SyndicationAcquisitionSnapshot) {
+        pages.append((entries: entries, snapshot: snapshot))
+        for entry in entries {
+            knownTargetIDs.insert(entry.targetID)
+            entryByTarget[entry.targetID] = entry
+            flattenedEntries.append(entry)
+        }
+    }
+
+    private func rebuildIndices() {
+        knownTargetIDs = []
+        entryByTarget = [:]
+        flattenedEntries = []
+        for page in pages { for entry in page.entries {
+            knownTargetIDs.insert(entry.targetID)
+            entryByTarget[entry.targetID] = entry
+            flattenedEntries.append(entry)
+        } }
     }
 
     /// A pool a profile named — read **beside** the walk, which is what a warm launch does with it — materialized
@@ -128,16 +199,43 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
         materialize: ([LegacyCatalogEntry]) throws
             -> (installed: [LegacyCatalogEntry], snapshot: SyndicationAcquisitionSnapshot)) throws
         -> [LegacyCatalogEntry] {
-        try lock.withLock {
-            try Task.checkCancellation()
-            refreshIfNeeded()
-            let known = Set(pages.flatMap { $0.entries }.map(\.targetID))
-            let candidates = entries.filter { !known.contains($0.targetID) }
-            guard !candidates.isEmpty else { return [] }
-            let (installed, snapshot) = try materialize(candidates)
-            guard !installed.isEmpty else { return [] }
-            pages.append((entries: installed, snapshot: snapshot))
-            return installed
+        let reservation: (fingerprint: String?, candidates: [LegacyCatalogEntry])
+        do {
+            reservation = try lock.withLock {
+                try Task.checkCancellation()
+                refreshIfNeeded()
+                guard !advancing else { throw AdvanceReservation.refused }
+                advancing = true
+                return (catalogueFingerprint, entries.filter { !knownTargetIDs.contains($0.targetID) })
+            }
+        } catch AdvanceReservation.refused {
+            return []
+        } catch {
+            throw error
+        }
+        do {
+            guard !reservation.candidates.isEmpty else {
+                lock.withLock { advancing = false }
+                return []
+            }
+            let (installed, snapshot) = try materialize(reservation.candidates)
+            return try lock.withLock {
+                try Task.checkCancellation()
+                advancing = false
+                refreshIfNeeded()
+                guard currentFingerprint() == reservation.fingerprint,
+                    catalogueFingerprint == reservation.fingerprint else {
+                    catalogueFingerprint = currentFingerprint()
+                    return []
+                }
+                let fresh = installed.filter { !knownTargetIDs.contains($0.targetID) }
+                guard !fresh.isEmpty else { return [] }
+                install(entries: fresh, snapshot: snapshot)
+                return fresh
+            }
+        } catch {
+            lock.withLock { advancing = false }
+            throw error
         }
     }
 
