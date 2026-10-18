@@ -392,3 +392,47 @@ benchmark em R23) é o caminho; **NOT_RUN não é PASS**.
 **G1 fechado contratualmente em 2026-10-17** com as suítes acima e a jornada Release explicitamente NOT_RUN. Não é
 certificação de release: a candidata congelada, a jornada Release com pressão de memória e os ensaios físicos
 continuam em R23/G4.
+
+## R05 — slots de rede independentes do consumidor de resultados
+
+Base: `a1e8f9cc`.
+
+### Defeito
+
+`AcquisitionCoordinator.executeConcurrently` fazia `try await onResult(result)` **antes** de `startMore()`. Um
+callback editorial suspenso (o caso real: o consumidor do driver bloqueado enquanto processa A) prendia o bombeiro
+de slots: C e D nunca iniciavam, apesar de a autorização e o plano já os permitirem. A conclusão durável existia,
+mas a oportunidade de rede ficava parada atrás do consumidor.
+
+### Prova vermelha
+
+Restaurando literalmente a implementação anterior (HEAD do arquivo) e rodando só o caso novo:
+`testBlockedResultConsumerDoesNotStopOtherEligibleTargets` → **4 asserções vermelhas** (C não iniciou, contagem 0;
+D não iniciou, contagem 0) em 4,06 s. Com a implementação nova: 1 teste / 0 falhas em 0,106 s.
+
+### Alteração
+
+- `executeConcurrently` passa a rodar **dois filhos estruturados** do mesmo `withThrowingTaskGroup`:
+  1. o **bombeiro de slots** (`settle`): janela deslizante de `concurrentTargetLimit`, registra cada resultado
+     durável e o entrega a um `AsyncStream` **sem aguardar** o consumidor, reabrindo o slot imediatamente;
+  2. o **consumidor serial**: drena o stream e aguarda `onResult` um por vez — nenhuma `Task` por resultado.
+- O backlog do stream é limitado pelo próprio plano (`work.count`: no máximo um resultado por item planejado), não
+  por um número arbitrário; um resultado cancelado para novos starts, erro fatal cancela os irmãos pelo grupo, e os
+  resultados já duráveis permanecem contabilizados no relatório final, que mantém a **ordem do plano**
+  (`SettledResults.ordered`).
+- Single-flight/joins continuam em `execute`; o consumo não muda a contabilidade.
+
+### Provas verdes
+
+| Prova | Resultado |
+|---|---|
+| `swift test --filter AcquisitionCoordinatorTests` (31 casos + novo) | **38 / 0** |
+| caso novo com consumidor suspenso | C e D iniciam antes da liberação; 4 notificações únicas; ordem final == plano |
+
+Casos de erro fatal, cancelamento, joins e single-flight já cobertos pelos testes existentes da classe
+(`test05/06` cancelamento, `test15/16` coalescência e join, `test07` erro de conector, `test28` falha de admissão
+interrompe o próximo pull), executados na mesma corrida.
+
+### Registro R05
+
+SHA inicial: `a1e8f9cc` | vermelho: 4 asserções contra a implementação anterior | alteração: bombeiro e consumidor separados, backlog limitado pelo plano, ordem final preservada | verde: 38/0 | jornada protegida: consumidor suspenso não impede C/D | pendências: R06–R10 | SHA final: registrado no commit `fix(acquisition): decouple network slots from result consumption`.
