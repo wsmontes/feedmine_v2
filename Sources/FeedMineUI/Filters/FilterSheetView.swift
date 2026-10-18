@@ -80,6 +80,9 @@ public struct FilterSheetView: View {
     @State private var store: ReaderFilterStore
     /// Which languages are showing their regional variants. One set, because the sheet is a list, not a menu.
     @State private var expandedLanguages: Set<String> = []
+    /// What the last apply told the reader, when it failed. The two failures say opposite things, so the sheet
+    /// shows the failure's own sentence instead of one generic "could not apply".
+    @State private var applyFailure: String?
     private let languages: [CatalogLanguageGroup]
     private let presets: [FilterPresetRow]
     private let appearance: ReaderAppearance
@@ -152,8 +155,14 @@ public struct FilterSheetView: View {
                             // A saved preset carries its whole identity: choosing it moves the reader there.
                             if let key = row.key {
                                 Task {
-                                    try? await onActivate(key)
-                                    onDone()
+                                    do {
+                                        try await onActivate(key)
+                                        onDone()
+                                    } catch let failure as ReaderFilterFailure {
+                                        applyFailure = failure.readerMessage
+                                    } catch {
+                                        applyFailure = String(localized: "Não foi possível abrir este feed. Tente novamente.")
+                                    }
                                 }
                             } else {
                                 store.select(preset: row.preset)
@@ -296,15 +305,28 @@ public struct FilterSheetView: View {
         .toolbar {
             ToolbarItem(placement: ReaderToolbarPlacement.trailing) {
                 // V1: the sheet going away is the apply. The host's `onApply` persists the identity and
-                // activates its context; the sheet closes only after that succeeded.
+                // activates its context; the sheet closes only after that succeeded, and a failure keeps the
+                // draft (and the sheet) so the reader can retry — with the failure's own sentence on screen.
                 Button(String(localized: "Concluído")) {
                     Task {
-                        _ = try? await store.apply()
-                        onDone()
+                        do {
+                            _ = try await store.apply()
+                            onDone()
+                        } catch let failure as ReaderFilterFailure {
+                            applyFailure = failure.readerMessage
+                        } catch {
+                            applyFailure = String(localized: "Não foi possível salvar o filtro. Tente novamente.")
+                        }
                     }
                 }
                 .accessibilityIdentifier("filter-done")
             }
+        }
+        .alert(String(localized: "Filtro"), isPresented: Binding(
+            get: { applyFailure != nil }, set: { if !$0 { applyFailure = nil } })) {
+            Button("OK") { applyFailure = nil }
+        } message: {
+            Text(applyFailure ?? "")
         }
     }
 

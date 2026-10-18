@@ -17,6 +17,39 @@ public enum ReaderFilterStoreError: Error, Equatable, Sendable {
     case staleDraft
 }
 
+/// The two ways applying a filter can fail, kept apart because the reader must be told which one happened.
+/// A persistence failure leaves the previous coherent state in place; a presentation failure leaves a selection
+/// that **is** saved, stays identified, and can be retried — so it must never be reported as "nothing was saved".
+public enum ReaderFilterFailure: Error, Equatable, Sendable {
+    /// The durable write refused the selection: memory, the persisted record and the live session are unchanged.
+    case persistenceFailed(detail: String)
+    /// The selection is durable; the live session could not be rebuilt around it.
+    case presentationFailed(detail: String)
+
+    /// Whether the reader's selection is durable — the single fact their message must not get wrong.
+    public var selectionIsSaved: Bool {
+        if case .persistenceFailed = self { return false }
+        return true
+    }
+
+    /// What the reader is told. The two sentences state opposite outcomes on purpose.
+    public var readerMessage: String {
+        switch self {
+        case .persistenceFailed:
+            String(localized: "Não foi possível salvar o filtro. O feed anterior continua como estava.")
+        case .presentationFailed:
+            String(localized: "O filtro foi salvo, mas o feed não pôde ser atualizado agora. Tente novamente.")
+        }
+    }
+
+    /// Diagnostics only; never shown as the reader's copy.
+    public var detail: String {
+        switch self {
+        case .persistenceFailed(let detail), .presentationFailed(let detail): detail
+        }
+    }
+}
+
 @MainActor
 @Observable
 public final class ReaderFilterStore {

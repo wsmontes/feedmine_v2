@@ -660,17 +660,31 @@ final class AppComposition {
         }
     }
 
-    /// T6: an explicit filter transition. The selection is persisted first, then the association is rebuilt
-    /// around the new identity, so A→B→A finds A's own checkpoint and no old callback can install into B.
+    /// T6: an explicit filter transition. It is a **confirmation boundary**: the selection (identity and overlay
+    /// window together, one durable write) is confirmed first, and only then does memory change and the session
+    /// get rebuilt. A persistence failure therefore leaves the previous key, the previous expiry and the live
+    /// session exactly as they were; a failure after confirmation is reported as such and can be retried, because
+    /// the selection it names is already durable.
     func applyFilter(_ filter: ReaderFilter, preset: ReaderPresetID) async throws {
         let key = ContextKey(request: currentContextKey.request, preset: preset, filter: filter,
             searchScope: currentContextKey.searchScope)
-        guard key != currentContextKey else { return }
-        currentContextKey = key
-        _ = try preferences?.setContext(key)
+        // A confirmed selection whose presentation failed is retried: the live session is not the applied key.
+        guard key != currentContextKey || association?.contextKey != applied(key) else { return }
         // A new overlay selection starts the window again; a selection without overlay criteria has none.
-        _ = try preferences?.setFilterExpiry(filterExpiry(renewing: filter, at: Date()))
-        try await replaceSession()
+        let expiry = filterExpiry(renewing: filter, at: Date())
+        do {
+            guard let preferences else { throw ReaderPreferencesError.missingPreferences }
+            _ = try preferences.setFilterSelection(key, expiry: expiry)
+        } catch {
+            throw ReaderFilterFailure.persistenceFailed(detail: String(describing: error))
+        }
+        currentContextKey = key
+        do {
+            try await replaceSession()
+        } catch {
+            // The selection is durable and stays identified; the feed was not rebuilt around it.
+            throw ReaderFilterFailure.presentationFailed(detail: String(describing: error))
+        }
     }
 
     /// T6: the expiry record for a selection applied now. V1's four-hour rule covers the overlay criteria
@@ -1697,11 +1711,13 @@ final class AppComposition {
         repeat {
             pendingRebuild = false
             let retired = association
-            association = nil
+            // Retire the old session only once its last position is durable: a checkpoint refusal leaves the
+            // reader's coherent session in place instead of a transition that shows nothing.
             if let retired {
                 _ = try await retired.session.checkpointCurrentPosition(at: Date())
                 await retired.close()
             }
+            association = nil
             let next = try await association(contextKey: currentContextKey)
             association = next
             startupFailure = nil

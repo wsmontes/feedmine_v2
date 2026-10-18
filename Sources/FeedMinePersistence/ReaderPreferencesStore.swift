@@ -129,6 +129,21 @@ public struct ReaderPreferencesStore: Sendable {
         }
     }
 
+    /// Saves a filter selection — the active identity **and** the overlay window it starts — as one durable
+    /// fact. There is deliberately no second write: an interrupted apply can leave neither, so a new key beside
+    /// an old expiry is not a reachable state. `setContext`/`setFilterExpiry` remain for the callers that
+    /// legitimately change one of the two (surface switches, settings).
+    public func setFilterSelection(_ key: ContextKey, expiry: ReaderFilterExpiry) throws -> Record {
+        try database.write { db in
+            guard let current = try Self.read(db) else { throw ReaderPreferencesError.missingPreferences }
+            let updated = Record(sourceKeys: current.sourceKeys, selectionVersion: current.selectionVersion,
+                activeContextKey: key, settings: current.settings,
+                preferredBookmarkListID: current.preferredBookmarkListID, filterExpiry: expiry)
+            try Self.save(updated, in: db)
+            return updated
+        }
+    }
+
     /// Saves the active identity. `setContext(_ request:)` stays as the plain-surface convenience.
     public func setContext(_ key: ContextKey) throws -> Record {
         try database.write { db in
