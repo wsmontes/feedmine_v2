@@ -50,12 +50,14 @@ public struct PresentationAnchor: Hashable, Sendable {
 public struct FeedWindowSnapshot: Hashable, Sendable {
     public let items: [PresentationCard]
     public let anchor: PresentationAnchor
+    /// Built with the immutable window, shared by all viewport evidence through value semantics.
+    let admittedIDs: Set<PublicationCardID>
 
     public init?(items: [PresentationCard], anchor: PresentationAnchor) {
-        guard !items.isEmpty,
-            Set(items.map(\.id)).count == items.count,
-            items.contains(where: { $0.id == anchor.cardID }) else { return nil }
+        let ids = Set(items.map(\.id))
+        guard !items.isEmpty, ids.count == items.count, ids.contains(anchor.cardID) else { return nil }
         self.items = items
+        self.admittedIDs = ids
         self.anchor = anchor
     }
 
@@ -64,6 +66,7 @@ public struct FeedWindowSnapshot: Hashable, Sendable {
     init(publishedWindow: FeedWindow, decoder: PresentationImageDecoder? = nil,
         reusable: [PublicationCardID: PresentationCard] = [:]) {
         items = publishedWindow.cards.map { reusable[$0.id] ?? PresentationCard(publishedCard: $0, decoder: decoder) }
+        admittedIDs = Set(items.map(\.id))
         anchor = Self.anchor(for: publishedWindow.anchor)
     }
 
@@ -72,11 +75,21 @@ public struct FeedWindowSnapshot: Hashable, Sendable {
     /// head wider than the residency band decides per card whether to decode one, which the projection above cannot
     /// express — it is the band, not the window, that owns pixels.
     init?(items: [PresentationCard], publishedAnchor: FeedWindowAnchor) {
-        guard !items.isEmpty,
-            Set(items.map(\.id)).count == items.count,
-            items.contains(where: { $0.id == publishedAnchor.cardID }) else { return nil }
+        let ids = Set(items.map(\.id))
+        guard !items.isEmpty, ids.count == items.count, ids.contains(publishedAnchor.cardID) else { return nil }
         self.items = items
+        self.admittedIDs = ids
         self.anchor = Self.anchor(for: publishedAnchor)
+    }
+
+    // Membership is entirely derived; comparing or hashing it again adds work without changing identity.
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.anchor == rhs.anchor && lhs.items == rhs.items
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(anchor)
+        hasher.combine(items)
     }
 
     private static func anchor(for anchor: FeedWindowAnchor) -> PresentationAnchor {
@@ -120,7 +133,7 @@ public struct RenderedViewportEvidence: Sendable {
     let contextKey: ContextKey
     let editionID: FeedEditionID
     let provenance: FeedProjectionProvenance
-    let admittedIDs: [PublicationCardID]
+    let admittedIDs: Set<PublicationCardID>
 
     public func belongs(to current: FeedPresentationSnapshot) -> Bool {
         contextKey == current.contextKey && editionID == current.editionID &&
@@ -132,9 +145,9 @@ public struct RenderedViewportEvidence: Sendable {
 
 extension FeedPresentationSnapshot {
     public func evidence(for observation: ViewportObservation, ordinal: UInt64 = 1, reconciliation: Bool = false) -> RenderedViewportEvidence? {
-        guard ordinal > 0, window.items.contains(where: { $0.id == observation.anchor.cardID }) else { return nil }
+        guard ordinal > 0, window.admittedIDs.contains(observation.anchor.cardID) else { return nil }
         return RenderedViewportEvidence(observation: observation, isPositionReconciliation: reconciliation,
             ordinal: ordinal, contextKey: contextKey,
-            editionID: editionID, provenance: provenance, admittedIDs: window.items.map(\.id))
+            editionID: editionID, provenance: provenance, admittedIDs: window.admittedIDs)
     }
 }

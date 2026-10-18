@@ -24,12 +24,17 @@
     {
       "file": "feedmine-v2-lifecycle-final.log.gz",
       "uncompressedSHA256": "d8915e219bd722d83f38264b47f1386cc76093a4593263bc70401ced695c0ff8"
+    },
+    {
+      "file": "feedmine-v2-filter-en.log.gz",
+      "uncompressedSHA256": "ce6521dd270c1ab8de17ad0a94c39588df73f61c044fa9b31b466b4f273f74ed"
     }
   ],
   "nativeResultBundles": [
     "/tmp/feedmine-v2-t1-composition.xcresult",
     "/tmp/feedmine-v2-pristine-failures.xcresult",
-    "/tmp/feedmine-v2-lifecycle-final.xcresult"
+    "/tmp/feedmine-v2-lifecycle-final.xcresult",
+    "/tmp/feedmine-v2-filter-en.xcresult"
   ],
   "productGates": "NOT_CERTIFIED"
 }
