@@ -251,22 +251,23 @@ public struct ColdFeedBootstrap: Sendable {
         let after = try authority.currentCursor()
         let request = try makeRequest(identity: identity, resources: resources, after: after)
         let outcome: InitialProductionSliceOutcome
-        if let prepareWindowMedia = mediaOpportunity.map({ opportunity in
-            { @Sendable (revisions: [OriginRevisionID]) async in await opportunity.prepare(revisions) }
-        }) ?? prepareWindowMedia {
-            let revisions = try initialProductionSlice.revisionsToPrepare(for: request)
-            if !revisions.isEmpty {
+        let mediaRevisions = try initialProductionSlice.revisionsToPrepare(for: request)
+        if let mediaOpportunity {
+            // R07: the first screen states its priority and examines what is ready; it never waits for media.
+            if !mediaRevisions.isEmpty {
                 await evidence?(.preparingMedia)
-                await prepareWindowMedia(revisions)
+                mediaOpportunity.request(mediaRevisions)
             }
-            outcome = try authority.examine(after: after, { try initialProductionSlice.run(request, prepare: prepare) })
-        } else {
-            if prepareLegacyMedia, let prepareMedia {
+        } else if let prepareWindowMedia {
+            if !mediaRevisions.isEmpty {
                 await evidence?(.preparingMedia)
-                await prepareMedia()
+                await prepareWindowMedia(mediaRevisions)
             }
-            outcome = try authority.examine(after: after, { try initialProductionSlice.run(request, prepare: prepare) })
+        } else if prepareLegacyMedia, let prepareMedia {
+            await evidence?(.preparingMedia)
+            await prepareMedia()
         }
+        outcome = try authority.examine(after: after, { try initialProductionSlice.run(request, prepare: prepare) })
         switch outcome {
         case .published:
             guard case .published(let snapshot) = try await installedPublication(identity: identity,

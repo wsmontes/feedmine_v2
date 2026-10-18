@@ -461,7 +461,10 @@ nenhum recibo com B suspenso). Com o driver novo: 1 / 0 em 0,08 s.
 - O driver consome o stream e retorna ao **mesmo loop de publicação** no primeiro resultado que mudou suprimento,
   sem esperar o resto da rodada; o slice local publica A. A rodada continua em segundo plano, e sua conclusão é
   observada (`observeBackgroundRound`): erro fatal é relançado na próxima oportunidade, nunca engolido. `deactivate`
-  cancela a rodada corrente e a de segundo plano; o resultado tardio de escopo aposentado não publica.
+  **não cancela** a rodada em voo: a aposentadoria encerra publicação e runway, não o trabalho de rede já autorizado
+  — o supply durável ainda é admitido (contrato de R14/cycle) e a notificação tardia é ignorada pelo escopo limpo; a
+  conclusão deixada para trás não é observada como oportunidade do driver (`noteBackgroundRoundSettled` ignora
+  rodada que não pertence mais a ele).
 - `run` permanece para os testes/contratos existentes. `settledAcquisition` fica nulo quando a publicação ocorreu
   antes do fim da rodada (o “fim da oferta” não é declarado a partir de uma rodada incompleta).
 
@@ -486,3 +489,57 @@ que a edição fica durável com B suspenso.
 ### Registro R06
 
 SHA inicial: `4c05c610` | vermelho: caso do driver contra o driver anterior | alteração: rodada em stream + retorno ao loop no primeiro suprimento + monitor de conclusão + cancelamento na aposentadoria | verde: tabela | jornada protegida: A publica com B suspenso; escopo aposentado não recebe resultado tardio | pendências: R07 | SHA final: registrado no commit `fix(composition): publish durable results before round completion`.
+
+## R07 — prontidão de mídia sem barreira para candidatos prontos
+
+Base: `54aa08a0` (R06).
+
+### Defeito
+
+O driver aguardava `await prepareMedia(...)` (a `MediaPreparationOpportunity.prepare`) **antes** de executar cada
+slice local, e o cold bootstrap aguardava a preparação da janela antes de examinar. Uma preparação lenta de um
+candidato prendia a publicação de todos os candidatos prontos ao redor — exatamente a barreira que a seleção por
+prontidão já tornava desnecessária (`SelectionReadinessSnapshot`).
+
+### Prova vermelha
+
+Mutação: trocar `opportunity.request(revisions)` por `await opportunity.prepare(revisions)` no driver, com a
+preparação suspensa em um portão. `testReadyCandidatePublishesBeforeUnrelatedMediaCompletes` → **vermelho** em
+2,38 s (nenhuma publicação com a preparação pendente). Com `request`: 1 / 0 em 0,08 s. Mutação revertida.
+
+### Alteração
+
+- `MediaPreparationOpportunity.request(_:)` (novo): declara a prioridade da janela que vem e retorna. A operação
+  roda na tarefa do dono single-flight do prefetcher; o orçamento é o deadline fixo da oportunidade, nunca renovado
+  por slice. `prepare(_:)` permanece para chamadores que precisam aguardar (contrato existente).
+- Driver: o slice não depende mais da preparação — `request` quando há oportunidade (produto) e o closure legado
+  (teste) mantém o `await` explícito. `nextEditorialRevisions` ainda alimenta a prioridade; a seleção continua
+  lendo o **mesmo** índice de prontidão (`MediaReadiness`), então só oferta pronta/elegível publica, e uma imagem
+  pendente nunca vira texto.
+- Cold bootstrap: a prioridade é requisitada e o exame roda uma única vez sobre o que está pronto; os dois caminhos
+  de `initialProductionSlice.run` viraram um (a fence estática do arquivo foi atualizada de 2 para 1 chamada — menos
+  caminhos, não mais).
+- A transição individual de prontidão continua acordando `noteMediaReadinessChanged` → `noteLocalSupplyChanged` →
+  reconsideração existente; nenhum polling/varredura de pendentes foi criado.
+
+### Cobertura de reconsideração e falha
+
+Os casos `testLateReadyCandidateIsReconsideredOnce` e `testReadinessFailureDoesNotCreateRetrySpin` já existem como
+contratos verdes nas classes dos donos e foram executados nesta tarefa:
+`LocalProductionSliceTests.testReadinessTransitionSchedulesTheDriveThatPublishesPendingMedia` e
+`testF06PendingHeadAdvancesAcrossWindowsAndRecoversThroughExistingRunway` (candidato tardio reconsiderado pelo
+caminho existente), e `MediaPrefetcherTests.testAllCandidatesFailingHasNoPresentationAndIsNotRetried` /
+`testTransientFailureRetriesLaterDefinitiveSettles` (falha definitiva não vira retry; transitória tem backoff).
+
+### Provas verdes
+
+| Prova | Resultado |
+|---|---|
+| `FeedRunwayDriverTests` (43 + 1 novo) | 44 / 0 |
+| `ColdFeedBootstrapTests` | 40 / 0 (fence estática atualizada e verde) |
+| `LocalProductionSliceTests` | 19 / 0 |
+| `MediaPrefetcherTests` | 7 / 0 |
+
+### Registro R07
+
+SHA inicial: `54aa08a0` | vermelho: mutação prepare-before-slice | alteração: prioridade sem barreira no driver e no cold; um caminho de exame | verde: tabela | jornada protegida: prontos publicam com decode alheio pendente; tardio reconsiderado; falha não gira | pendências: R08 | SHA final: registrado no commit `fix(media): publish ready supply without preparation barriers`.

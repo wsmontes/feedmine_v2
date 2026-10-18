@@ -15,4 +15,14 @@ public struct MediaPreparationOpportunity: Sendable {
     public func prepare(_ revisions: [OriginRevisionID]) async {
         await operation(revisions, deadline)
     }
+
+    /// R07: state the coming slice's priority **without a barrier**. The request runs against the prefetcher's
+    /// single-flight owner in its own task; the producing slice runs immediately with the readiness index it has.
+    /// Individual readiness transitions already wake the existing reconsideration, so nothing polls and nothing
+    /// waits for unrelated media. The budget is the opportunity's own fixed deadline (never renewed per slice).
+    public func request(_ revisions: [OriginRevisionID]) {
+        let operation = self.operation
+        let deadline = self.deadline
+        Task { await operation(revisions, deadline) }
+    }
 }

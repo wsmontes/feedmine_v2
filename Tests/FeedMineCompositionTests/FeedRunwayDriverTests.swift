@@ -231,6 +231,54 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(journal.values.filter { $0 == "begin" }.count, 2, "A new caller owns a new budget")
     }
 
+    /// R07: media preparation is a priority request, not a condition of the slice. With the preparation suspended on
+    /// an unrelated candidate, the ready supply still publishes — the slice selects what the readiness index says is
+    /// ready, and the delay of one decode cannot hold the cards around it.
+    func testReadyCandidatePublishesBeforeUnrelatedMediaCompletes() async throws {
+        final class MediaGate: @unchecked Sendable {
+            private let lock = NSLock()
+            private var waiting: [CheckedContinuation<Void, Never>] = []
+            private var released = false
+            var isReleased: Bool { lock.lock(); defer { lock.unlock() }; return released }
+            func wait() async {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    lock.lock()
+                    if released { lock.unlock(); continuation.resume() }
+                    else { waiting.append(continuation); lock.unlock() }
+                }
+            }
+            func release() {
+                lock.lock(); released = true; let parked = waiting; waiting = []; lock.unlock()
+                parked.forEach { $0.resume() }
+            }
+        }
+        let f = try fixture(), gate = MediaGate()
+        let driver = try FeedRunwayDriver(session: f.session, runway: f.runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            makeSegmentIdentity: { .init(segmentID: .init(), segmentSeed: 1, segmentCreatedAt: Date())! },
+            prepare: Self.prepared, makeMediaOpportunity: {
+                MediaPreparationOpportunity(waitSeconds: 10, startedAt: ProcessInfo.processInfo.systemUptime) { _, _ in
+                    await gate.wait()
+                }
+            }, onPublication: { receipt in f.publications.append(receipt) })
+        let initial = try await driver.restoreAndActivate(backwardCapacity: 1, forwardCapacity: 4,
+            resources: resources())
+        let opportunity = Task {
+            try await driver.submitViewport(.init(anchor: XCTUnwrap(initial).window.anchor),
+                activity: .explicitTailApproach, resources: resources())
+        }
+        let deadline = Date().addingTimeInterval(2)
+        while f.publications.values.isEmpty, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(f.publications.values.isEmpty,
+            "o slice publica com a preparação de mídia ainda suspensa")
+        XCTAssertFalse(gate.isReleased, "premissa: a preparação não concluiu")
+        gate.release()
+        _ = try await opportunity.value
+    }
+
     func test01SemanticTailFullProductionLoop() async throws {
         let f = try fixture(),store = PublicationStore(database:f.database),before = try store.edition(id:f.edition)
         let p = try await restore(f); let installed = await f.session.currentPresentation()

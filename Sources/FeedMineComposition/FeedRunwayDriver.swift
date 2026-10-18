@@ -259,6 +259,9 @@ public actor FeedRunwayDriver {
     }
 
     private func noteBackgroundRoundSettled(_ error: (any Error)?) {
+        // A round that settled after retirement is not this driver's opportunity any more: the work keeps its own
+        // durability, and its failure must not surface on a later scope.
+        guard backgroundRound != nil else { return }
         backgroundRoundSettled = true
         backgroundRoundFailure = error
     }
@@ -390,13 +393,18 @@ public actor FeedRunwayDriver {
                     await runway.snapshot().scope == scope else { return await session.currentPresentation() }
                 do {
                     try Task.checkCancellation()
-                    // Bounded media preparation for the supply head before it is selected (PD-5).
-                    if let prepareMedia = causalExecution!.mediaOpportunity.map({ opportunity in
-                        { @Sendable (revisions: [OriginRevisionID]) async in await opportunity.prepare(revisions) }
-                    }) ?? prepareMedia {
-                        await prepareMedia(try await nextEditorialRevisions(after: intent.after,
-                            capacity: intent.examinedCapacity, editionID: intent.scope.editionID,
-                            operation: intent.operation))
+                    // R07: state the coming slice's media priority without making preparation a condition of the
+                    // slice. The slice selects only ready supply through the same readiness index; a candidate
+                    // whose media is still pending is simply not in this publication (INV-17), and the readiness
+                    // transition wakes the existing reconsideration. The legacy closure (tests only) keeps its
+                    // explicit await; the product always provides the opportunity.
+                    let revisions = try await nextEditorialRevisions(after: intent.after,
+                        capacity: intent.examinedCapacity, editionID: intent.scope.editionID,
+                        operation: intent.operation)
+                    if let opportunity = causalExecution!.mediaOpportunity {
+                        opportunity.request(revisions)
+                    } else if let prepareMedia {
+                        await prepareMedia(revisions)
                     }
                     guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
                         try? await runway.failLocalSlice(intent, failure: .cancelled, at: monotonicNow())
@@ -482,8 +490,10 @@ public actor FeedRunwayDriver {
         return RunwayMonotonicTime(seconds: expiry)
     }
     public func deactivate() async {
-        causalExecution?.round?.cancel()
-        backgroundRound?.cancel()
+        // R06/R14: retirement stops publication and the runway, not the network work already authorized. A pull in
+        // flight still admits its durable supply (the cycle's contract); its late notification is ignored by the
+        // cleared scope and its completion is not observed as this driver's opportunity anymore.
+        causalExecution?.round = nil
         backgroundRound = nil
         backgroundRoundSettled = false
         backgroundRoundFailure = nil

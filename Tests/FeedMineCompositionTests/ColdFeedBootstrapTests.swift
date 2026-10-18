@@ -729,7 +729,9 @@ final class ColdFeedBootstrapTests: XCTestCase {
             XCTAssertFalse(source.contains(forbidden), forbidden)
         }
         XCTAssertNil(source.range(of: #"\b(while|repeat)\b"#, options: .regularExpression))
-        XCTAssertEqual(source.components(separatedBy: "initialProductionSlice.run(").count - 1, 2)
+        // R07: the media branch no longer decides between two publication paths — the priority is requested and the
+        // slice runs once on what is ready. One finite call site is strictly fewer paths than the two it replaces.
+        XCTAssertEqual(source.components(separatedBy: "initialProductionSlice.run(").count - 1, 1)
         XCTAssertEqual(source.components(separatedBy: "AcquisitionPlanner.plan(").count - 1, 1)
         XCTAssertEqual(source.components(separatedBy: "coordinator.selectionOpportunity").count - 1, 1)
         XCTAssertEqual(source.components(separatedBy: "coordinator.executeConcurrently(acquisitionPlan.work)").count - 1, 1)
