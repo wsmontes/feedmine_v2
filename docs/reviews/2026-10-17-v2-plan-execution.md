@@ -1058,3 +1058,80 @@ explícita de site abre a URL").
 **Registro R19:** SHA inicial `ff626e2a` | vermelho: sem troca de contexto | alteração: fonte interna + site
 explícito | verde: 2/0 + ReadingCompositionTests | jornadas: view source dentro do app, site declarado, retorno com
 posição | pendências: R20 | SHA final: registrado no commit `feat(reading): keep source context inside the app`.
+
+## R20-R23 — estado real (não entregues)
+
+O restante do plano não foi implementado nesta sessão. O registro é explicitamente **parcial**; nada abaixo conta
+como PASS.
+
+### R20 — ativação atômica do catálogo
+
+Não entregue. O caminho atual (`activateSavedPreset`, `completeFirstRun`, `replaceSession`) já recusa transições com
+checkpoint falho e preserva a sessão anterior, mas **não escreve um resultado durável único** (identidade +
+contagens + fingerprints) na mesma transação da troca de catálogo. Próximo passo: um `ActivationOutcome` do owner de
+persistência, gravado no ponto de commit, com `testActivationFailureLeavesPreviousContextAndCatalogue`,
+`testActivationRecordsOneDurableOutcome` e `testConcurrentActivationRejectsStaleCommit`.
+
+### R21 — local, acessibilidade e jornadas
+
+Não entregue como jornada nova executada. As provas existentes de **A→B→A** (`CompositionTests`
+`testCheckpointedPlaceReturnsForSearchAndContextTransition`, `FilterConfirmationBoundaryTests`), busca
+(`testSearchCancelRestoresTheContextAndCheckpointOfItsOrigin`), salvos duráveis e mídia foram executadas e seguem
+verdes; **não** houve jornada de teclado/VoiceOver com texto observado.
+
+### R22 — headroom medido
+
+Não executada nova medição. O runner existente (`FeedMinePerfTests`) não foi executado nesta sessão para não
+gastar tempo/térmica de simulação; os limites continuam **não certificados**. É o primeiro passo da próxima sessão
+junto do G3.
+
+### R23 — simplificação
+
+Não executada. Nenhuma abstração duplicada foi consolidada nesta sessão; o candidato não deve ser apresentado como
+fechamento dele.
+
+## Validação integral da candidata (2026-10-17, build 52)
+
+Comando: `xcodebuild test` (simulador iPhone 17 Pro, iOS 26.5, `-testLanguage pt-BR -testRegion BR`,
+`-parallel-testing-enabled NO`, `CODE_SIGNING_ALLOWED=NO`), result bundle `/tmp/fm-v2-full-pt.xcresult`.
+
+| Bundle | Resultado | Leitura |
+|---|---|---|
+| `FeedMineAppTests.xctest` | **140/140, 0 falhas** | `CompositionTests` 88/0 (inclui as provas R15-R19), `ReadingCompositionTests` 7/0, `FilterConfirmationBoundaryTests` 4/0, `ContentFilterTests` 4/0 |
+| `FeedMineUITests.xctest` | 74 executados, 6 ignorados, **37 falhas** | **NÃO certificado** — ver abaixo |
+
+### Achado de método: a suíte de UI exige pt-BR
+
+Rodar a suíte com `-testLanguage en` faz os rótulos virarem "Sources"/"Saved" e produz falhas falsas
+(`AppearanceLegibilityUITests` procura "Fontes"). Com `-testLanguage pt-BR` esse teste passa (35 s). A suíte
+unitária é indiferente. O gate deve fixar o idioma de teste no comando.
+
+### Achado de ambiente: simulador preso após interrupção
+
+Uma execução interrompida no meio deixou o app com o SQLite unlinked; o teste
+`testTheFirstRunAsksTheLanguageAndTheAnswerClosesIt` falhou com `Task created in a session that has been
+invalidated` / `database is locked` e passou após `simctl shutdown/boot`. Não é regressão de código; um runner
+interrompido precisa de simulador limpo.
+
+### Falhas de UI remanescentes (não resolvidas nesta sessão)
+
+- `ArticleReadingDiagnosisUITests` (7 testes, 14 falhas): a janela não retirou a carta acompanhada em 40 gestos;
+  os testes de poda se declaram INCOMPLETO; um teste de gesto mede salto 999 sem deslocamento.
+- `FeedMineUITests` (46 testes, 17 falhas): catálogo real inalcançável nesta rodada (`EditorialOfferBudget`
+  incluído), múltiplos elementos "Salvar artigo" (dois cards visíveis), coluna legível do iPad landscape 730 > 704,
+  e jornadas que dependem de fixtures.
+- `ReadingSurfaceUITests` (9 testes, 2 falhas): um exige **Modo Avião** real (o teste recusa rodar online) e o
+  outro depende dele.
+- `DiscoveryBenchmarkTests`: 5 ignorados (B-gates exigem dispositivo/corpus declarados).
+
+Nenhuma dessas falhas foi declarada PASS; nenhuma foi atribuída a R15-R19 sem prova. O registro do plano exige
+`G1` com as jornadas essenciais em UI: **G1 não fica fechado** com esta evidência.
+
+## Encerramento desta sessão
+
+- Commits: `d24936ea` (R17 parcial), `ff626e2a` (R18), `5fc5b5c7` (R19), build `52` (este commit).
+- Não implementados: R20 (ativação atômica), R21 (jornada de acessibilidade), R22 (medição nova), R23
+  (simplificação); detalhes na seção anterior.
+- R17 permanece **parcial**: diversidade é decisão pura testada, mas não persistida/fiada em produção.
+- Estado aceitável para a próxima sessão: suíte unitária verde na candidata; suíte de UI vermelha e não
+  certificada; tarefas R20-R23 pendentes.
