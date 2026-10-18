@@ -195,3 +195,61 @@ checkpoint do contexto na posição desenhada.
 ### Registro R01
 
 SHA inicial: `062711eb` | vermelho: tabela de mutações acima | alteração: resumo finito + consumidor único + instante de captura + revogação no background | verde: tabela acima | jornada protegida: captura não aguarda produtor; rajada limitada; avanço/repouso/exposição preservados; background não produz fora da tela | pendências: R02 e seguintes | SHA final: registrado no commit `fix(ui): bound viewport ingress without losing semantic facts`.
+
+## R02 — instalação preparada e bookmarks sem I/O no MainActor
+
+Base: `1deb0722` (R01). Destino e idioma os mesmos.
+
+### Defeito
+
+`FeedAssociation.install` lia `PublicationStore.bookmarkedCardIDs()` **sincronamente no MainActor** a cada
+mudança de janela (o `bookmarksReadFor` era o paliativo), e o toggle lia o conjunto inteiro logo depois do
+write. Além disso, nada distinguia uma preparação de bookmarks anterior a um toggle confirmado de uma
+posterior: uma leitura atrasada podia reinstalar o conjunto antigo por cima do que o leitor acabou de
+salvar/remover.
+
+### Prova vermelha (mutação)
+
+| Mutação | Teste | Resultado |
+|---|---|---|
+| instalação ignora o pacote preparado e agenda leitura | `testInstallDoesNotReadDatabase` | **vermelho** (`[]` ≠ `[card]`, duas asserções) |
+| sem fence de revisão na leitura atualizada | `testOldBookmarkPreparationCannotUndoConfirmedToggle` | **vermelho** (a resposta velha limpou o conjunto confirmado; 6 asserções) |
+
+xcresult: `/tmp/fm-v2-r02-mutation.xcresult`. Mutações revertidas antes do commit.
+
+### Alteração
+
+- `PreparedFeedInstallation` (novo arquivo `Sources/FeedMineComposition/PreparedFeedInstallation.swift`) carrega
+  `state` e, opcionalmente, `Bookmarks { ids, base }`. Vive **ao lado** do handoff, não dentro dele: o teste de
+  arquitetura do próprio handoff (`testStaticBridgeHasNoParallelAuthorityOrAutomaticExecution`) proíbe
+  `init`/`var`/`actor` no arquivo do bridge, e um value type com inicializador quebraria essa fence. O intento do
+  plano — um único valor preparado usado pela instalação — é preservado.
+- `FeedAssociation.install(_ prepared:)` só valida e atribui: nenhuma leitura, nenhum `await`, nenhum abridor de
+  banco. O half de bookmarks só instala quando `base == bookmarkMutationRevision`; caso contrário o conjunto
+  confirmado vence e uma única leitura nova é agendada.
+- Leitura durável off-MainActor (`Task.detached`) com single-flight (`bookmarkRefreshTask`); a janela preparada é
+  memorizada, então uma posição sem diferença material não republica a lista nem relê bookmarks — o handoff
+  continua alimentando runway/produção.
+- Toggles e mutações da biblioteca entram no **mesmo** caminho confirmado: `bookmarkMutationConfirmed()` move a
+  revisão e agenda a leitura. A exclusão de caixa é entregue por `ReaderBookmarkBoxesBackend(onConfirmedChange:)`,
+  fiado em `makeBookmarkBoxesStore()`; o `ReaderLibraryCoordinator` que já existia segue autoridade de escrita.
+- Removidos: a leitura síncrona dentro de `install` e o workaround `bookmarksReadFor`. Nenhum cache ou contador de
+  geração de aquisição foi criado; a revisão é a das mutações **confirmadas** de bookmarks.
+
+### Provas verdes
+
+| Prova | Resultado | xcresult |
+|---|---|---|
+| `testInstallDoesNotReadDatabase` + `testOldBookmarkPreparationCannotUndoConfirmedToggle` | 2 / 0 | `/tmp/fm-v2-r02-final.xcresult` |
+| host completo `CompositionTests` + `ContentFilterTests` + `FilterConfirmationBoundaryTests` | **86 / 0** (78+4+4) | `/tmp/fm-v2-r02-suite.xcresult` |
+| `swift test --filter FeedPresentationHandoffTests` | 19 / 0 | — |
+| `swift test --filter FeedScreenStoreTests` | 18 / 0 | — |
+| `git diff --check` | limpo | — |
+
+Os dois regressivos cobrem: instalação com o seam de storage **suspenso** (nenhuma chamada ao preparador),
+pacote antigo não desfaz o toggle, conclusão invertida (salvar→remover→salvar com uma leitura velha), duas caixas
+e exclusão de caixa, com o conjunto mantido na caixa padrão.
+
+### Registro R02
+
+SHA inicial: `1deb0722` | vermelho: tabela de mutações | alteração: pacote preparado + fence de revisão + leitura off-main single-flight + caminho confirmado único | verde: tabela | jornada protegida: instalação sem I/O, toggle confirmado imune a preparação antiga, exclusão de caixa consistente | pendências: R03 e seguintes | SHA final: registrado no commit `fix(ui): install prepared projection metadata without database reads`.

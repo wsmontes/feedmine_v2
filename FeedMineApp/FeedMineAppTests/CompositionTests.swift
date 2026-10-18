@@ -292,12 +292,42 @@ final class IngressClock: @unchecked Sendable {
     func advance(_ delta: Double) { lock.lock(); defer { lock.unlock() }; seconds += delta }
 }
 
+/// R02's controlled storage seam: every durable bookmark read arrives here and the test decides **when** and
+/// **what** it answers, so "installation performs no read" and "an older preparation cannot undo a confirmed
+/// toggle" are staged without sleeps or retries.
+final class BookmarkReadGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending: [CheckedContinuation<Set<PublicationCardID>, Never>] = []
+    private var total = 0
+
+    var read: @Sendable () async throws -> Set<PublicationCardID> {
+        { [self] in
+            await withCheckedContinuation { (continuation: CheckedContinuation<Set<PublicationCardID>, Never>) in
+                lock.lock(); pending.append(continuation); total += 1; lock.unlock()
+            }
+        }
+    }
+
+    /// How many reads the product requested so far.
+    var arrivals: Int { lock.lock(); defer { lock.unlock() }; return total }
+    /// How many are waiting for an answer.
+    var unanswered: Int { lock.lock(); defer { lock.unlock() }; return pending.count }
+
+    func answer(_ ids: Set<PublicationCardID>) {
+        lock.lock()
+        let next = pending.isEmpty ? nil : pending.removeFirst()
+        lock.unlock()
+        next?.resume(returning: ids)
+    }
+}
+
 @MainActor
 final class CompositionTests: XCTestCase {
 
     private func root(requestTimeout: TimeInterval = 60, directory: URL? = nil,
         feeds: [TrustedFeed] = TrustedFeed.development,
-        clock: IngressClock? = nil) -> AppComposition {
+        clock: IngressClock? = nil,
+        bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil) -> AppComposition {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
         configuration.timeoutIntervalForRequest = requestTimeout
@@ -305,7 +335,8 @@ final class CompositionTests: XCTestCase {
         if let clock { now = { clock.next() } }
         else { now = { .init(seconds: ProcessInfo.processInfo.systemUptime)! } }
         return AppComposition(directory: directory ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
-            feeds: feeds, transportConfiguration: configuration, monotonicNow: now)
+            feeds: feeds, transportConfiguration: configuration, monotonicNow: now,
+            bookmarkRead: bookmarkRead)
     }
 
     /// T1: exercise the real lifecycle and context composition around the existing owner.
@@ -942,6 +973,113 @@ final class CompositionTests: XCTestCase {
         let rate = try XCTUnwrap(snapshot.consumption.cardsPerSecond)
         XCTAssertEqual(rate, 0.5, accuracy: 0.01,
             "a taxa é das capturas (1 carta / 2 s), não do tempo que o dreno levou para entregá-las")
+        await association.close()
+    }
+
+    // MARK: - R02: prepared installation and confirmed bookmarks
+
+    /// R02: installation assigns **values**. A work-only report and a prepared package both complete while the
+    /// storage seam is suspended, and neither asks the storage or the preparer for anything.
+    func testInstallDoesNotReadDatabase() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let gate = BookmarkReadGate()
+        let root = root(bookmarkRead: gate.read)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        XCTAssertNotNil(association.store.state.presentation)
+        let prepared = await Self.waitUntil(5) { gate.arrivals == 1 }
+        XCTAssertTrue(prepared,
+            "premissa: o launch agenda a leitura de bookmarks — off-main — e ela está suspensa no seam")
+        let card = try XCTUnwrap(association.store.state.presentation?.window.items.first?.id)
+        let readsBefore = gate.arrivals
+
+        // (1) A work report: the store installs the report and the installation consults no storage.
+        try association.install(PreparedFeedInstallation(state: association.store.state.reporting(.pending)))
+        XCTAssertEqual(association.store.work, .pending)
+        XCTAssertEqual(gate.arrivals, readsBefore, "instalar não pode ler o armazenamento")
+
+        // (2) A prepared package: the bookmark half is assigned from the value it carries — still no read.
+        try association.install(PreparedFeedInstallation(state: association.store.state,
+            bookmarks: .init(ids: [card], base: association.bookmarkMutationRevision)))
+        XCTAssertEqual(association.store.bookmarkedIDs, [card])
+        XCTAssertEqual(gate.arrivals, readsBefore, "instalar um pacote não chama o preparador")
+
+        gate.answer([card])
+        let answered = await Self.waitUntil(5) { gate.unanswered == 0 }
+        XCTAssertTrue(answered)
+        XCTAssertEqual(association.store.bookmarkedIDs, [card])
+        await association.close()
+    }
+
+    /// R02: the confirmed toggle is durable before the UI is told, and the preparation it outran cannot undo it.
+    /// One read is in flight; the reader saves; the stale answer arrives last. The stale answer is discarded
+    /// (its base is older than the confirmed revision), the one refreshed read is scheduled, and the confirmed set
+    /// wins. The same fence is exercised with an inverted completion and with a box deletion, which is delivered
+    /// through the same confirmed path.
+    func testOldBookmarkPreparationCannotUndoConfirmedToggle() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let gate = BookmarkReadGate()
+        let root = root(bookmarkRead: gate.read)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let prepared = await Self.waitUntil(5) { gate.arrivals == 1 }
+        XCTAssertTrue(prepared, "premissa: a leitura do launch está suspensa")
+        let card = try XCTUnwrap(association.store.state.presentation?.window.items.first?.id)
+        XCTAssertEqual(association.bookmarkMutationRevision, 0)
+
+        // The reader saves: the durable write is the confirmation.
+        association.store.perform(ReaderCardActionEvent(action: .save, cardID: card))
+        XCTAssertEqual(association.bookmarkMutationRevision, 1,
+            "o toggle confirmado move a revisão antes de a UI ver o conjunto")
+
+        // The read prepared before the save answers the pre-save truth (nothing bookmarked). It is older than the
+        // confirmation, so it cannot install — and it schedules the refreshed read.
+        gate.answer([])
+        let refreshed = await Self.waitUntil(5) { gate.arrivals == 2 }
+        XCTAssertTrue(refreshed, "a resposta velha é descartada e o conjunto vigente é lido de novo")
+        XCTAssertEqual(association.store.bookmarkedIDs, [],
+            "a preparação antiga não pode desfazer o toggle confirmado")
+        gate.answer([card])
+        let saved = await Self.waitUntil(5) { association.store.bookmarkedIDs == [card] }
+        XCTAssertTrue(saved)
+        XCTAssertEqual(association.store.bookmarkedIDs, [card])
+
+        // Inverted completion: remove, save again; one stale read answers last, with the wrong set on purpose.
+        association.store.perform(ReaderCardActionEvent(action: .save, cardID: card))
+        XCTAssertEqual(association.bookmarkMutationRevision, 2)
+        association.store.perform(ReaderCardActionEvent(action: .save, cardID: card))
+        XCTAssertEqual(association.bookmarkMutationRevision, 3)
+        let oneInFlight = await Self.waitUntil(5) { gate.unanswered == 1 }
+        XCTAssertTrue(oneInFlight, "uma leitura atendida por vez")
+        gate.answer([])   // stale for revision 3
+        let refreshedAgain = await Self.waitUntil(5) { gate.arrivals == 4 }
+        XCTAssertTrue(refreshedAgain)
+        XCTAssertEqual(association.store.bookmarkedIDs, [card],
+            "a leitura velha não pode limpar o conjunto que as confirmações mantiveram salvo")
+        gate.answer([card])
+        let stillSaved = await Self.waitUntil(5) { association.store.bookmarkedIDs == [card] }
+        XCTAssertTrue(stillSaved)
+
+        // Two boxes: a card lives in the default box and in a second one; deleting the second removes only its
+        // membership, and the deletion is delivered through the confirmed path.
+        let library = ReaderLibraryStore(database: association.database)
+        let box = try library.createBookmarkList(named: "Segunda")
+        try library.setBookmarkMembership(cardID: card, listID: ReaderBookmarkList.defaultID,
+            included: true, at: Date())
+        try library.setBookmarkMembership(cardID: card, listID: box.id, included: true, at: Date())
+        XCTAssertEqual(try library.bookmarkedCardIDs(inList: ReaderBookmarkList.defaultID), [card])
+        XCTAssertEqual(try library.bookmarkedCardIDs(inList: box.id), [card])
+        let boxes = try XCTUnwrap(root.makeBookmarkBoxesStore())
+        await boxes.delete(id: box.id)
+        XCTAssertEqual(association.bookmarkMutationRevision, 4,
+            "a exclusão de caixa é uma mutação confirmada da biblioteca")
+        let deletionRead = await Self.waitUntil(5) { gate.unanswered == 1 }
+        XCTAssertTrue(deletionRead, "a exclusão pede a leitura do conjunto vigente")
+        gate.answer(try library.bookmarkedCardIDs(inList: ReaderBookmarkList.defaultID))
+        let kept = await Self.waitUntil(5) { association.store.bookmarkedIDs == [card] }
+        XCTAssertTrue(kept, "apagar a segunda caixa mantém a carta salva na caixa padrão")
         await association.close()
     }
 

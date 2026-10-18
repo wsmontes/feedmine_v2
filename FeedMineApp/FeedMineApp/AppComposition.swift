@@ -176,7 +176,8 @@ final class AppComposition {
     init(directory: URL? = nil, feeds: [TrustedFeed] = TrustedFeed.developmentSelection,
         transportConfiguration: URLSessionConfiguration? = nil,
         discoveryQuery: DiscoveryQuery? = nil,
-        monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! }) {
+        monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+        bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil) {
         let support = RuntimeDatabaseLocation.applicationSupport(
             FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).directory
         #if DEBUG
@@ -192,6 +193,7 @@ final class AppComposition {
         // already is: what the query returns is a value, and this composition owns when it is adopted.
         self.discoveryQuery = discoveryQuery ?? Self.liveDiscoveryQuery
         self.monotonicNow = monotonicNow
+        self.bookmarkRead = bookmarkRead
         let config = transportConfiguration ?? .ephemeral
         if transportConfiguration == nil { config.timeoutIntervalForRequest = 20 }
         #if DEBUG
@@ -821,7 +823,13 @@ final class AppComposition {
     /// database the same way the rest of its surfaces do; there is one file, not a second store.
     func makeBookmarkBoxesStore() -> BookmarkBoxesStore? {
         guard let database = libraryDatabase() else { return nil }
-        return BookmarkBoxesStore(backend: ReaderBookmarkBoxesBackend(database: database))
+        // R02: a box deletion removes memberships, so the durable box mutation is delivered through the **same**
+        // confirmed path a save is: the association moves its revision and the one refresher re-reads the set.
+        return BookmarkBoxesStore(backend: ReaderBookmarkBoxesBackend(database: database,
+            onConfirmedChange: { [weak self] in
+                guard let self else { return }
+                await MainActor.run { self.association?.bookmarkMutationConfirmed() }
+            }))
     }
 
     /// T8: the collections surface's store, over the same library.
@@ -1371,7 +1379,7 @@ final class AppComposition {
             contextKey: key, selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
             catalogueURL: catalogueSnapshot?.catalogueURL, editorialExposure: editorialExposure,
             discoveryProfile: profile, warmLaunch: warmLaunch, launchSettings: launchSettings,
-            monotonicNow: monotonicNow))
+            monotonicNow: monotonicNow, bookmarkRead: bookmarkRead))
     }
 
     /// The association a **warm** launch starts from — the same session `launch()` would build, built
@@ -1678,6 +1686,9 @@ final class AppComposition {
     /// The reader's instant for every runway sample (R01). A test injects a controlled clock, so coalescing
     /// can be proven not to turn the drain's latency into reading velocity; production is the process uptime.
     @ObservationIgnored private let monotonicNow: @Sendable () -> RunwayMonotonicTime
+    /// R02's test seam: the durable bookmark read. Nil means the product's detached read over the one library
+    /// database; a test suspends it to prove installation never calls it.
+    @ObservationIgnored private let bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)?
 
     /// What one profile's query answered, and the two facts the answer is about: the profile it was read for and
     /// the catalogue revision it read. **One value, returned** — it used to arrive as two pieces of composition
@@ -1926,7 +1937,9 @@ final class FeedAssociation {
         do {
             let publication = PublicationStore(database: database)
             try publication.toggleBookmark(cardID: cardID, in: preferredBookmarkListID(), at: Date())
-            store.installBookmarks(try publication.bookmarkedCardIDs())
+            // R02: the write above is the confirmation. The set the reader sees is read **off** the main actor by the
+            // one refresher, and the revision fence makes any older preparation older than this write.
+            bookmarkMutationConfirmed()
             // Owner directive 2026-10-17 §2: the link and its content are one promise. A save starts the
             // occurrence's media preparation and records what the link can open; an unsave clears the claim.
             Task { [savedMedia] in _ = await savedMedia.prepareSavedMedia(cardID: cardID) }
@@ -2208,7 +2221,8 @@ final class FeedAssociation {
         catalogueURL: URL?, editorialExposure: EditorialExposureLedger,
         discoveryProfile: ReaderDiscoveryProfile = .init(), warmLaunch: Bool = false,
         launchSettings: CollectionLaunchSettings = .init(),
-        monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! }) throws {
+        monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+        bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil) throws {
         self.trace = trace
         self.monotonicNow = monotonicNow
         self.catalogueURL = catalogueURL
@@ -2219,6 +2233,11 @@ final class FeedAssociation {
         // contend with a preference write through a second pool for the same file.
         let db = try sharedDatabase ?? RuntimeDatabase(location: .init(directory: directory))
         database = db
+        self.bookmarkRead = bookmarkRead ?? {
+            try await Task.detached(priority: .userInitiated) {
+                try PublicationStore(database: db).bookmarkedCardIDs()
+            }.value
+        }
         // T8: the context this session reads and writes, kept so the menu can state what applies to it.
         self.contextKey = contextKey
         self.feeds = feeds
@@ -2687,14 +2706,6 @@ final class FeedAssociation {
         return readiness.presentation(for: revision) == .textOnly ? "textOnly" : "unavailable"
     }
 
-    /// The window the bookmark set was read for. A bookmark belongs to the reader's own cards, and the reader's own
-    /// toggle installs the set directly; a scroll advance that moved only the anchor has not changed them. Reading
-    /// the database per advance is a synchronous SQLite read on the main actor — exactly what V1's own rule keeps
-    /// off the scroll path (`docs/release/review-feed-responsiveness-build-5.md`: nothing per tick that memory can
-    /// already answer).
-    @ObservationIgnored private var bookmarksReadFor: (edition: FeedEditionID?, context: ContextKey?,
-        ids: [PublicationCardID]) = (nil, nil, [])
-
     /// Mede o que o dono sente e a suíte não vê (decisão de 2026-10-14). O trace da corrida passa a ter, por
     /// segundo, quantos quadros passaram do orçamento e qual foi o pior — o **hitch ratio** que julga cada mudança
     /// de fluidez, em vez de mais uma rodada de testes verdes.
@@ -2750,19 +2761,32 @@ final class FeedAssociation {
     }
     #endif
 
-    func install(_ received: FeedPresentationState) throws {
+    /// R02: installation validates and assigns **values**. It performs no storage read, opens no database and awaits
+    /// no preparation; the bookmark half is a prepared value whose base is checked against the confirmed revision.
+    /// A package prepared before a reader's own save/remove is recognised as older and cannot undo it.
+    ///
+    /// A window that changed without a prepared bookmark half asks the single bounded refresher for one read; the
+    /// position itself is installed immediately, so the reader never waits for the library.
+    func install(_ prepared: PreparedFeedInstallation) throws {
         FeedFlowCounters.installAttempts += 1
         guard active else { throw FeedPresentationStateError.projectionSequenceMismatch }
-        do { try store.install(received); FeedFlowCounters.installAccepts += 1 }
+        do { try store.install(prepared.state); FeedFlowCounters.installAccepts += 1 }
         catch { FeedFlowCounters.installRejects += 1; throw error }
         // O feed está em tela: a partir daqui o intervalo entre quadros é medido e escrito no trace.
         frameMeter.start()
         let installed = store.state.presentation
-        let window = (edition: installed?.editionID, context: installed?.contextKey,
-            ids: installed?.window.items.map(\.id) ?? [])
-        if window != bookmarksReadFor {
-            bookmarksReadFor = window
-            store.installBookmarks(try PublicationStore(database: database).bookmarkedCardIDs())
+        let window = BookmarkWindowKey(store.state)
+        if let bookmarks = prepared.bookmarks {
+            if bookmarks.base == bookmarkMutationRevision {
+                confirmedBookmarks = bookmarks.ids
+                store.installBookmarks(bookmarks.ids)
+                bookmarksPreparedFor = window
+            } else {
+                // The confirmed set is newer than this preparation; it wins, and the window gets one fresh read.
+                scheduleBookmarkRefresh()
+            }
+        } else if window != bookmarksPreparedFor {
+            scheduleBookmarkRefresh()
         }
         if let snapshot = installed {
             // Com o diagnóstico ligado, a instalação também diz **quais** cartas ela admitiu, na ordem — é o que
@@ -2786,6 +2810,12 @@ final class FeedAssociation {
                 "tail": snapshot.window.items.last?.id.rawValue.uuidString ?? "",
                 "anchor": snapshot.window.anchor.cardID.rawValue.uuidString])
         }
+    }
+
+    /// Every caller that carries no bookmark half keeps this spelling: the state is installed exactly as before and
+    /// a changed window schedules the one bounded bookmark read.
+    func install(_ received: FeedPresentationState) throws {
+        try install(PreparedFeedInstallation(state: received))
     }
 
     /// F05/R4 + R6-E: the runtime — never a reader gesture, never the clock — extends the admitted window with
@@ -3040,6 +3070,66 @@ final class FeedAssociation {
 
     /// What a test can read while the consumer is suspended (R01): the bounded pending summary, never the burst.
     var pendingViewportIngressCount: Int { viewportIngress.count }
+
+    // MARK: - Prepared bookmark installation (R02)
+
+    /// The durable set the reader confirmed: the last set installed from a read whose base was current, or the one a
+    /// confirmed save/box deletion produced. `bookmarkMutationRevision` moves exactly when a mutation commits
+    /// durably, which is what lets an older preparation be recognised as older instead of overwriting it.
+    @ObservationIgnored private var confirmedBookmarks: Set<PublicationCardID> = []
+    @ObservationIgnored private(set) var bookmarkMutationRevision: UInt64 = 0
+    /// The single bounded read of the durable set. A projection install never awaits it: installation assigns what
+    /// was prepared and a changed window asks for one refresh.
+    @ObservationIgnored private var bookmarkRefreshTask: Task<Void, Never>?
+    /// The window whose bookmarks are already prepared, so a position without a material difference publishes
+    /// nothing and reads nothing while the handoff keeps feeding runway/production.
+    @ObservationIgnored private var bookmarksPreparedFor: BookmarkWindowKey?
+    /// Reads the durable bookmark set **off the main actor**. A test suspends this to prove installation does not
+    /// call it; the product reads through the one library database, detached.
+    @ObservationIgnored private let bookmarkRead: @Sendable () async throws -> Set<PublicationCardID>
+
+    private struct BookmarkWindowKey: Equatable {
+        let editionID: FeedEditionID?
+        let contextKey: ContextKey?
+        let ids: [PublicationCardID]
+        init(_ state: FeedPresentationState) {
+            editionID = state.presentation?.editionID
+            contextKey = state.presentation?.contextKey
+            ids = state.presentation?.window.items.map(\.id) ?? []
+        }
+    }
+
+    /// A confirmed mutation of the reader's library that can change the bookmark set (a save/remove, a box
+    /// deletion). The durable write precedes it; the refresh is the one bounded read, and the revision is the fence
+    /// every older preparation is checked against.
+    func bookmarkMutationConfirmed() {
+        guard active else { return }
+        bookmarkMutationRevision &+= 1
+        scheduleBookmarkRefresh()
+    }
+
+    private func scheduleBookmarkRefresh() {
+        guard active, bookmarkRefreshTask == nil else { return }
+        let window = BookmarkWindowKey(store.state)
+        let base = bookmarkMutationRevision
+        let read = bookmarkRead
+        bookmarkRefreshTask = Task { [weak self] in
+            let ids: Set<PublicationCardID>?
+            do { ids = try await read() } catch { ids = nil }
+            guard let self else { return }
+            self.bookmarkRefreshTask = nil
+            guard let ids, self.active else { return }
+            if base == self.bookmarkMutationRevision {
+                self.confirmedBookmarks = ids
+                self.store.installBookmarks(ids)
+                self.bookmarksPreparedFor = window
+            } else {
+                // A newer confirmation exists. Its own request may have coalesced into this read; the stale answer
+                // is discarded and the current state is read once more.
+                self.scheduleBookmarkRefresh()
+            }
+        }
+    }
 
     /// Records one viewport fact in the finite summary and lets the **single** consumer do the work. Called from
     /// the store's own callback, so the capture returns immediately and the producer is never awaited here.
