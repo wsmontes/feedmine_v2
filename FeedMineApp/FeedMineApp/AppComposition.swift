@@ -2204,16 +2204,39 @@ final class FeedAssociation {
     /// contract: "All four resource capacities … have no defaults"). The socket ceiling is applied where the
     /// coordinator is built, from the same settings value.
     var resources: FeedRunwayDriverResources {
-        .init(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 32,
+        // R09: the opportunity's budgets come from the one policy, fitted to the pressure facts the platform can
+        // state now. Nothing measured → the documented bootstrap (48/8/32/1 MB); pressure only reduces, never below
+        // one eligible target, and never turns local reading off.
+        let budget = StageBudgetPolicy.budget(pressure: Self.currentStagePressure(), settings: launchSettings)
+        return .init(runway: .init(localWorkAllowed: budget.localWorkAllowed,
+            examinedCandidateCapacity: budget.examinedCandidateCapacity,
             readyProbeBound: 32, readyProbeCeiling: 256, forwardAdvanceProbeBound: 256,
             // F01/§5.3: the reserve exists so the reader can walk into the window the session materialised, so the
             // bootstrap coverage **is** that window — derived here, not restated. `RunwayPolicy` uses it only while
             // consumption/replenishment facts are unknown (Codex's reserve review, 2026-10-10); once they are
             // measured it derives the target from the measured rate and p95, and this number stops applying.
             reserveCards: Self.forwardWindowCards)!,
-            acquisition: .init(targetWorkCapacity: launchSettings.targetWorkCapacity,
-                batchCapacityPerNewExecution: 1,
-                observationCapacityPerBatch: 32, byteCapacityPerBatch: 1_000_000)!)
+            acquisition: budget.acquisition)
+    }
+
+    /// The pressure the platform states now: thermal, low-power, the network path and the volume's free capacity.
+    /// Every value is measured; absence stays absence (the bootstrap applies).
+    private static func currentStagePressure() -> StagePressureFacts? {
+        let thermal: StagePressureFacts.Level
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: thermal = .nominal
+        case .fair: thermal = .fair
+        case .serious: thermal = .serious
+        case .critical: thermal = .critical
+        @unknown default: thermal = .serious
+        }
+        let path = NetworkPathObserver.shared.current
+        let constrained = path == .constrained || path == .expensive || path == .unavailable
+        let free = try? FileManager.default.temporaryDirectory
+            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            .volumeAvailableCapacityForImportantUsage
+        return .init(thermal: thermal, lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            networkConstrained: constrained, freeStorageBytes: free.map { Int64($0) })
     }
 
     init(directory: URL, feeds: [TrustedFeed], discovery: [TrustedFeed] = [],

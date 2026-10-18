@@ -597,3 +597,74 @@ A revisão apontou que `connector(for:using:)` ainda fazia `for page in pages wh
 Corrigido: `snapshotByTarget` é mantido por `install`/`rebuildIndices` e o lookup resolve em O(1)
 (`snapshotByTarget[target.id]?.connector(...)`). Provas: `ReaderDiscoveryTraversalTests` 4/0 e
 `ReaderDiscoveryPoolTests` 19/0 na correção.
+
+## R09 — orçamentos adaptativos por estágio
+
+Base: `5dcba807` (R08).
+
+### Defeito
+
+Os recursos de uma oportunidade eram constantes no host (`examinedCandidateCapacity: 32`, plano de 48), sem relação
+com pressão medida. Termal, modo de baixa energia, rede restrita e volume quase cheio não reduziam trabalho; e não
+havia um lugar único que declarasse como os fatos medidos viram autorização.
+
+### Prova vermelha (mutação)
+
+`StageBudgetPolicy.budget` devolvendo sempre o bootstrap (pressão ignorada) →
+`testPressureReducesWorkWithoutStarvingEligibleTargets` **vermelho** (2 asserções: sério e crítico iguais a 48).
+Mutação revertida.
+
+### Alteração
+
+- `StageBudgetPolicy` (novo, puro): `StagePressureFacts { thermal, lowPowerMode, networkConstrained,
+  freeStorageBytes }` (todos medidos; ausência = bootstrap) → `StageBudget { acquisition, examinedCandidateCapacity,
+  localWorkAllowed }`. Bootstrap documentado preservado: 48 planejados / 8 sockets (no coordenador) / 32 examinados /
+  1 MB. Reduções: termal `fair` → plano/2 e 16 examinados; `serious` → ≤8, 12, 500 KB; `critical` → 1, 8, 250 KB;
+  baixa energia ≤8; rede restrita/expensiva/indisponível → plano/2 e ≤500 KB; volume < 100 MB → ≤500 KB. O plano
+  **nunca** cai abaixo de 1 alvo elegível e `localWorkAllowed` permanece verdadeiro: pressão reduz trabalho
+  deferível, não desliga a leitura local nem zera a autorização.
+- `FeedAssociation.resources` passa a usar a política com os fatos que a plataforma declara agora
+  (`ProcessInfo.thermalState`, `isLowPowerModeEnabled`, `NetworkPathObserver.shared.current`, capacidade livre do
+  volume). Sem fato medido → bootstrap. Nenhuma latência/CPU é inventada: utilização de CPU não é amostrada e, por
+  isso, não participa.
+- 10 s (cadência foreground) e 2000 (guarda de cartas) continuam limites operacionais, agora afirmados por teste.
+
+### Provas verdes
+
+| Prova | Resultado |
+|---|---|
+| `PipelineHeadroomTests` (novo: recursos↑ trabalho útil↑, pressão reduz sem inanição, oferta vazia espera fatos, limites operacionais) | 4 / 0 |
+| host `CompositionTests` (a montagem do host com a política nova) | ver abaixo |
+
+### Registro R09
+
+SHA inicial: `5dcba807` | vermelho: mutação pressão-ignorada | alteração: política pura + fatos medidos no host | verde: tabela | jornada protegida: bootstrap 48/8/32/1 MB; pressão só reduz; um elegível progride | pendências: R10 | SHA final: registrado no commit `perf(runtime): adapt stage budgets to demand and measured resources`.
+
+## R10 — transações curtas sem perder atomicidade (fechamento T6)
+
+Base: `5dcba807` (R08) + R09.
+
+### Medição antes de alterar
+
+Ensaio novo `PipelineHeadroomTests.testConcurrentDurableStagesPreserveWriterConsistency`: admissão
+(`AdmissionPolicy.admit`) e publicação (`PublicationStore.appendSegment`) concorrentes no **mesmo** banco, sob o
+escritor serial. Medido nesta máquina: **0,0027 s** para os dois estágios combinados. Não há trabalho síncrono caro
+dentro das transações que justifique mover código; a decisão registrada é **nenhuma alteração de produção** (o plano
+admite esse desfecho), e as fences existentes permanecem.
+
+### Prova de atomicidade (regressões existentes executadas)
+
+| Contrato | Prova | Resultado |
+|---|---|---|
+| falha de admissão desfaz supply e checkpoint | `AvailabilityPrecedenceTests.testA14A15AvailabilityAndCheckpointRollbackOnStructuralFailure` (+ classe) | 7 / 0 |
+| falha de publicação não deixa segmento parcial | `PublicationStoreTests.testAppendRejectsPersistedMalformedTailAtomically` etc. (+ classe) | 17 / 0 |
+| conflitos de revisão/mídia desfazem a escrita | `ContentStoreTests` (incl. `testIdentityRevisionAndVersionConflictsRollback`) | 12 / 0 |
+| consistência dos dois estágios concorrentes + duração medida | `PipelineHeadroomTests` | 5 / 0 |
+
+O ensaio afirma: segmento concorrente inteiro (2 segmentos, carta presente), admissão sem rejeições e supply
+completo, e uma guarda operacional de 5 s (não um alvo de desempenho).
+
+### Registro R10
+
+SHA inicial: `5dcba807` | vermelho: não aplicável (nenhum defeito reproduzido; medição feita antes de alterar) |
+alteração: nenhuma em produção; ensaio de contenção adicionado | verde: tabela | jornada protegida: atomicidade de admissão/publicação e consistência do escritor | pendências: G2 | SHA final: no commit que reúne R09/R10.
