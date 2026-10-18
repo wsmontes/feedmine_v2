@@ -569,6 +569,8 @@ Mutações revertidas.
 - Índices derivados da travessia (`knownTargetIDs`, `entryByTarget`, `flattenedEntries`), atualizados na instalação
   válida de página (`install(entries:snapshot:)`) e reconstruídos só na promoção (`rebuildIndices`). Toda checagem
   de duplicado e o lookup de conector que lê `entries` são O(1)/sem varredura; `adopt` e `advance` usam o índice.
+  `connector(for:using:)` resolve por `snapshotByTarget` (a página que materializou o alvo), removendo o último
+  `for page in pages` linear do arquivo — ver o commit de correção abaixo.
 - **Reserva de oportunidade**: um `advancing` por travessia; uma segunda oportunidade durante a materialização
   devolve `nil` (nada é duplicado). O `builder.page(...)` e a materialização rodam **fora** do lock; a instalação
   re-locka e exige `cursor` inalterado e a **identidade viva** do catálogo igual à reservada. Identidade mudou →
@@ -588,3 +590,10 @@ Mutações revertidas.
 ### Registro R08
 
 SHA inicial: `81941d17` | vermelho: tabela | alteração: índices + reserva + materialização fora do lock + revalidação de identidade | verde: tabela | jornada protegida: nenhum alvo revogado/superado readmitido; concorrência não duplica; falha não avança | pendências: R09 | SHA final: registrado no commit `perf(discovery): index targets and bound traversal critical sections`.
+
+### Correção pós-revisão (R08)
+
+A revisão apontou que `connector(for:using:)` ainda fazia `for page in pages where page.entries.contains(...)`.
+Corrigido: `snapshotByTarget` é mantido por `install`/`rebuildIndices` e o lookup resolve em O(1)
+(`snapshotByTarget[target.id]?.connector(...)`). Provas: `ReaderDiscoveryTraversalTests` 4/0 e
+`ReaderDiscoveryPoolTests` 19/0 na correção.

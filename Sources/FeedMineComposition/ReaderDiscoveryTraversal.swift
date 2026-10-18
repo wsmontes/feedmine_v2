@@ -35,6 +35,9 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
     /// check and every connector lookup is O(1); nothing walks prior pages per opportunity.
     private var knownTargetIDs: Set<AcquisitionTargetID> = []
     private var entryByTarget: [AcquisitionTargetID: LegacyCatalogEntry] = [:]
+    /// The connector lookup resolves through this index: the snapshot that materialized the target, in O(1). It is
+    /// rebuilt with the other indices; no prior page is scanned per lookup.
+    private var snapshotByTarget: [AcquisitionTargetID: SyndicationAcquisitionSnapshot] = [:]
     /// The flattened entries, rebuilt with the pages instead of on every read.
     private var flattenedEntries: [LegacyCatalogEntry] = []
     /// One reservation at a time: materialization (catalogue/SQL) runs **outside** the lock with this held, and the
@@ -172,6 +175,7 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
         for entry in entries {
             knownTargetIDs.insert(entry.targetID)
             entryByTarget[entry.targetID] = entry
+            snapshotByTarget[entry.targetID] = snapshot
             flattenedEntries.append(entry)
         }
     }
@@ -179,10 +183,12 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
     private func rebuildIndices() {
         knownTargetIDs = []
         entryByTarget = [:]
+        snapshotByTarget = [:]
         flattenedEntries = []
         for page in pages { for entry in page.entries {
             knownTargetIDs.insert(entry.targetID)
             entryByTarget[entry.targetID] = entry
+            snapshotByTarget[entry.targetID] = page.snapshot
             flattenedEntries.append(entry)
         } }
     }
@@ -266,10 +272,8 @@ public final class ReaderDiscoveryTraversal: @unchecked Sendable {
     func connector(for target: AcquisitionTarget, using transport: URLSession) -> (any FeedConnector)? {
         lock.withLock {
             refreshIfNeeded()
-            for page in pages where page.entries.contains(where: { $0.targetID == target.id }) {
-                if let connector = page.snapshot.connector(for: target, using: transport) { return connector }
-            }
-            return nil
+            // R08: the target's own page, by index — never a scan over prior pages.
+            return snapshotByTarget[target.id]?.connector(for: target, using: transport)
         }
     }
 }
