@@ -8,7 +8,9 @@
 //
 // Why this exists (architect's approved design, 2026-10-11): a local reader shows the stored text when the feed
 // published something substantial, and a summary is *never* presented as the article. A card whose stored text is
-// only a teaser keeps the site as its primary action, with no intermediate screen.
+// only a teaser keeps the site as its primary action, with no intermediate screen — but only when the card carries
+// an address the app can open. Without one, the text the app already holds is still the reading it can offer, and
+// the surface shows it honestly instead of leaving the tap with no target (review, 2026-10-17).
 import Foundation
 
 /// What the local reading surface is showing, in the source's own terms.
@@ -37,7 +39,8 @@ public struct FeedReadingContent: Hashable, Sendable {
     /// The site, so the surface can offer the explicit way out the design requires. Nil when the card has none.
     public let siteURL: URL?
     /// Whether the app can claim this text is the whole article. It never can: a feed's body is what the feed
-    /// chose to publish, and a summary is a summary. Both are shown as partial content, never as the article.
+    /// chose to publish, and a summary is a summary, so completeness stays unconfirmed. The surface says exactly
+    /// that — text the source supplied, completeness not confirmed — never that the article is on the site.
     public let isPartial: Bool
 
     public init(origin: FeedReadingOrigin, sourceName: String, headline: String, publishedAt: Date?,
@@ -66,21 +69,43 @@ public enum FeedReadingDecision {
     /// claim that the text is the article: 3.000 characters do not prove completeness.
     public static let substantialSummaryCharacters = 3_000
 
-    /// The decision for one card. `nil` means the card offers nothing to read and no address to open.
+    /// The decision for one card. `nil` means the card supplies no text to read and no address to open: there is
+    /// nothing to show and nothing a tap could promise.
+    ///
+    /// A teaser — a summary below `substantialSummaryCharacters` — keeps the site as its primary action when the
+    /// card carries a usable address, with no intermediate screen. Without one, its own text is still the only
+    /// reading the card has, so the app shows that text locally rather than dropping the tap: a saved article whose
+    /// address no longer resolves must stay readable offline. The surface then states what the app knows and
+    /// promises nothing more.
     public static func target(body: String?, summary: String?, sourceName: String, headline: String,
         publishedAt: Date?, siteURL: URL?) -> FeedReadingTarget? {
+        let site = usableSiteURL(siteURL)
         let bodyText = trimmed(body)
         if !bodyText.isEmpty {
             return .local(FeedReadingContent(origin: .sourceBody, sourceName: sourceName, headline: headline,
-                publishedAt: publishedAt, text: bodyText, siteURL: siteURL))
+                publishedAt: publishedAt, text: bodyText, siteURL: site))
         }
         let summaryText = trimmed(summary)
-        if summaryText.count >= substantialSummaryCharacters {
+        if !summaryText.isEmpty {
+            if summaryText.count >= substantialSummaryCharacters {
+                return .local(FeedReadingContent(origin: .sourceSummary, sourceName: sourceName,
+                    headline: headline, publishedAt: publishedAt, text: summaryText, siteURL: site))
+            }
+            if let site { return .site(site) }
             return .local(FeedReadingContent(origin: .sourceSummary, sourceName: sourceName, headline: headline,
-                publishedAt: publishedAt, text: summaryText, siteURL: siteURL))
+                publishedAt: publishedAt, text: summaryText, siteURL: nil))
         }
-        guard let siteURL else { return nil }
-        return .site(siteURL)
+        guard let site else { return nil }
+        return .site(site)
+    }
+
+    /// An address the app can actually put in front of the reader: the in-app browser opens http(s) and needs a
+    /// host. Anything else — `mailto:`, a reference the browser cannot load, an address with no host — is not a
+    /// door, and offering it would be a control that cannot work.
+    public static func usableSiteURL(_ url: URL?) -> URL? {
+        guard let url, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+            let host = url.host, !host.isEmpty else { return nil }
+        return url
     }
 
     private static func trimmed(_ value: String?) -> String {
