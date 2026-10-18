@@ -43,6 +43,9 @@ public actor FeedRunwayDriver {
         /// Caller opportunities that arrived while this execution already owned the examination. Each one is an
         /// external fact and each one owns exactly one catalogue page; nothing inside the execution adds to it.
         var callerPagesPending = 0
+        /// R06: the acquisition round this execution started. It can outlive the publication loop (the loop returns
+        /// as soon as a durable supply fact arrives); retirement cancels it.
+        var round: Task<[AcquisitionExecutionResult], Error>?
     }
     private var causalExecution: CausalExecution?
     private let session: FeedSession
@@ -75,6 +78,10 @@ public actor FeedRunwayDriver {
     /// It is read once — where the reader's whole situation is drawn — and carries no lifetime of its own:
     /// the next drain clears it, and any newer observation or supply change moves the runway past it.
     private var settledAcquisition: RunwayAcquisitionCycleOutcome?
+    /// R06: a round whose durable supply already reached publication while the rest of the plan was still running.
+    private var backgroundRound: Task<[AcquisitionExecutionResult], Error>?
+    private var backgroundRoundSettled = false
+    private var backgroundRoundFailure: (any Error)?
 
     public init(session: FeedSession, runway: RunwayController, plan: FeedPlan, policy: ResolvedSelectionPolicy,
         acquisition: SyndicationAcquisitionSnapshot, coordinator: AcquisitionCoordinator,
@@ -211,9 +218,59 @@ public actor FeedRunwayDriver {
 
     private func executeAcquisition(_ intent: RunwayAcquisitionIntent, resources: FeedRunwayDriverResources) async throws -> Bool {
         let targets = try acquisition.eligibleTargets(for: plan.context)
-        let outcome = try await acquisitionCycle.run(intent, eligibleTargets: targets, resources: resources.acquisition, preferUnattempted: selectedSourceCoverage != nil)
-        settledAcquisition = outcome
-        return outcome.selectableSupplyChanged
+        let start = try await acquisitionCycle.start(intent, eligibleTargets: targets,
+            resources: resources.acquisition, preferUnattempted: selectedSourceCoverage != nil)
+        switch start {
+        case .acceptedUnavailable(let disposition):
+            settledAcquisition = .acceptedUnavailable(disposition)
+            return false
+        case .deferred(let disposition):
+            settledAcquisition = .deferred(disposition)
+            return false
+        case .round(let round):
+            causalExecution?.round = round.completion
+            // R06: each durable result is a fact the moment it is admitted. The first supply change returns to the
+            // publication loop **without waiting for the rest of the round**, so a fast source publishes while a
+            // slow one is still pending. The round keeps running: its remaining results still notify the runway,
+            // and its completion (including a fatal error) is observed by the next opportunity.
+            for await result in round.results {
+                guard result.selectableSupplyChanged else { continue }
+                settledAcquisition = nil
+                observeBackgroundRound(round.completion)
+                return true
+            }
+            let results = try await round.completion.value
+            causalExecution?.round = nil
+            settledAcquisition = .executed(results)
+            return results.contains { $0.selectableSupplyChanged }
+        }
+    }
+
+    /// The completion of a round the publication loop left running. It is observed so a fatal error is not lost;
+    /// the next `drive` rethrows it once. Nothing in this monitor publishes.
+    private func observeBackgroundRound(_ completion: Task<[AcquisitionExecutionResult], Error>) {
+        backgroundRound = completion
+        backgroundRoundSettled = false
+        backgroundRoundFailure = nil
+        Task { [weak self] in
+            do { _ = try await completion.value; await self?.noteBackgroundRoundSettled(nil) }
+            catch { await self?.noteBackgroundRoundSettled(error) }
+        }
+    }
+
+    private func noteBackgroundRoundSettled(_ error: (any Error)?) {
+        backgroundRoundSettled = true
+        backgroundRoundFailure = error
+    }
+
+    private func collectSettledBackgroundRound() throws {
+        guard backgroundRoundSettled else { return }
+        backgroundRoundSettled = false
+        backgroundRound = nil
+        if let failure = backgroundRoundFailure {
+            backgroundRoundFailure = nil
+            throw failure
+        }
     }
 
     public func drive(resources: FeedRunwayDriverResources) async throws -> FeedPresentationSnapshot? {
@@ -284,6 +341,7 @@ public actor FeedRunwayDriver {
         var resumeOutstanding = resumeOutstanding
         while true {
             try Task.checkCancellation()
+            try collectSettledBackgroundRound()
             let before = await runway.snapshot()
             guard before.scope == scope, await session.currentRunwayScope() == scope else {
                 return await session.currentPresentation()
@@ -423,5 +481,12 @@ public actor FeedRunwayDriver {
             let expiry = await coordinator.nextCoolingExpiry() else { return nil }
         return RunwayMonotonicTime(seconds: expiry)
     }
-    public func deactivate() async { await runway.deactivate() }
+    public func deactivate() async {
+        causalExecution?.round?.cancel()
+        backgroundRound?.cancel()
+        backgroundRound = nil
+        backgroundRoundSettled = false
+        backgroundRoundFailure = nil
+        await runway.deactivate()
+    }
 }

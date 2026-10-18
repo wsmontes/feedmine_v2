@@ -21,6 +21,18 @@ public enum RunwayAcquisitionCycleOutcome: Hashable, Sendable {
     }
 }
 
+public enum RunwayAcquisitionStart: Sendable {
+    case round(RunwayAcquisitionRound)
+    case acceptedUnavailable(AcquisitionPlanningDisposition)
+    case deferred(AcquisitionPlanningDisposition)
+}
+
+/// A started acquisition round: its durable results, in completion order, and the completion of the whole round.
+public struct RunwayAcquisitionRound: Sendable {
+    public let results: AsyncStream<AcquisitionExecutionResult>
+    public let completion: Task<[AcquisitionExecutionResult], Error>
+}
+
 public struct RunwayAcquisitionCycle: Sendable {
     private let runway: RunwayController
     private let coordinator: AcquisitionCoordinator
@@ -72,6 +84,57 @@ public struct RunwayAcquisitionCycle: Sendable {
             return .executed(results)
         }
     }
+    /// R06: the same finite round, observed as it settles. The plan is acknowledged and owned exactly as in `run`,
+    /// but the durable results are streamed to the caller instead of being awaited as one block: a supply change that
+    /// is already durable is a fact for the existing owner **while the round is still running**, so a slow target can
+    /// no longer hold the fast target's cards behind the end of the round. The stream's backlog is bounded by the
+    /// plan (at most one result per planned item); the round keeps running after the caller stops reading.
+    public func start(_ intent: RunwayAcquisitionIntent, eligibleTargets: [AcquisitionTarget],
+        resources: AcquisitionPlanningResources, preferUnattempted: Bool = false) async throws -> RunwayAcquisitionStart {
+        let snapshot = await runway.snapshot()
+        guard snapshot.outstandingAcquisition == intent else { throw RunwayAcquisitionCycleError.staleIntent }
+        let planning = try await coordinator.selectionOpportunity { position, active, cooling, settled in
+            let available = eligibleTargets.filter { !cooling.contains($0.id) }
+            let uncovered = available.filter { settled[$0.id] != $0.generation }
+            return try AcquisitionPlanner.plan(demand: intent.demand,
+                eligibleTargets: preferUnattempted && !uncovered.isEmpty ? uncovered : available,
+                activeExecutions: active, resources: resources, selectionAfter: position)
+        }
+        switch planning {
+        case .disposition(.noEligibleTargets):
+            if !eligibleTargets.isEmpty, await coordinator.nextCoolingExpiry() != nil {
+                return .deferred(.resourceDenied)
+            }
+            try await runway.acknowledgeAcquisition(intent)
+            return .acceptedUnavailable(.noEligibleTargets)
+        case .disposition(.resourceDenied):
+            return .deferred(.resourceDenied)
+        case .disposition(.activeGenerationConflict):
+            return .deferred(.activeGenerationConflict)
+        case .planned(let plan):
+            try await runway.acknowledgeAcquisition(intent)
+            try Task.checkCancellation()
+            let (stream, continuation) = AsyncStream.makeStream(of: AcquisitionExecutionResult.self,
+                bufferingPolicy: .bufferingOldest(plan.work.count))
+            let runway = self.runway, coordinator = self.coordinator, trace = self.trace
+            let scope = intent.scope
+            let completion = Task {
+                defer { continuation.finish() }
+                return try await coordinator.executeConcurrently(plan.work, operation: intent.operation,
+                    trace: trace) { result in
+                    // The durable outcome is stated to the reader of the stream **before** the editorial
+                    // notification, and the notification is the existing local-supply one.
+                    continuation.yield(result)
+                    guard result.selectableSupplyChanged else { return }
+                    do { try await runway.noteLocalSupplyChanged(scope: scope) }
+                    catch RunwayControllerError.noActiveScope {}
+                    catch RunwayControllerError.scopeMismatch {}
+                }
+            }
+            return .round(RunwayAcquisitionRound(results: stream, completion: completion))
+        }
+    }
+
     /// Coverage uses the existing planner/coordinator without claiming local exhaustion or
     /// reserving a depth-shortage intent in Runtime. The driver owns this finite opportunity.
     public func runCoverage(_ demand: AcquisitionDemand, scope: RunwayScope,

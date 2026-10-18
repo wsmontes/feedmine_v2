@@ -436,3 +436,53 @@ interrompe o próximo pull), executados na mesma corrida.
 ### Registro R05
 
 SHA inicial: `a1e8f9cc` | vermelho: 4 asserções contra a implementação anterior | alteração: bombeiro e consumidor separados, backlog limitado pelo plano, ordem final preservada | verde: 38/0 | jornada protegida: consumidor suspenso não impede C/D | pendências: R06–R10 | SHA final: registrado no commit `fix(acquisition): decouple network slots from result consumption`.
+
+## R06 — resultado durável publicado antes do fim da rodada
+
+Base: `4c05c610` (R05).
+
+### Defeito
+
+`FeedRunwayDriver.executeAcquisition` aguardava a rodada inteira (`acquisitionCycle.run` → `executeConcurrently`
+até o fim). Mesmo com a conclusão durável de A já admitida e notificada pelo consumidor, nenhum slice local era
+executado enquanto B não respondesse: a fonte rápida ficava presa atrás do fim da rodada, não atrás da rede.
+
+### Prova vermelha
+
+Voltando o driver à implementação anterior (HEAD) e rodando o caso novo:
+`testFastSourcePublishesWhileSlowSourceIsPending` → **vermelho** em 5,36 s (`XCTAssertFalse(publications.isEmpty)`:
+nenhum recibo com B suspenso). Com o driver novo: 1 / 0 em 0,08 s.
+
+### Alteração
+
+- `RunwayAcquisitionCycle.start(...)` (novo) faz o mesmo planejamento/acknowledgement de `run`, mas entrega a
+  rodada como um **stream de resultados duráveis** (`RunwayAcquisitionRound { results, completion }`), com backlog
+  limitado pelo plano. A notificação `noteLocalSupplyChanged` continua sendo a existente e é dada por resultado.
+- O driver consome o stream e retorna ao **mesmo loop de publicação** no primeiro resultado que mudou suprimento,
+  sem esperar o resto da rodada; o slice local publica A. A rodada continua em segundo plano, e sua conclusão é
+  observada (`observeBackgroundRound`): erro fatal é relançado na próxima oportunidade, nunca engolido. `deactivate`
+  cancela a rodada corrente e a de segundo plano; o resultado tardio de escopo aposentado não publica.
+- `run` permanece para os testes/contratos existentes. `settledAcquisition` fica nulo quando a publicação ocorreu
+  antes do fim da rodada (o “fim da oferta” não é declarado a partir de uma rodada incompleta).
+
+### Reconciliação de testes existentes
+
+`ColdFeedBootstrapTests.testC19/C20` exigiam “a fonte rápida publica antes de o próximo alvo começar” — ordem que
+dependia justamente do acoplamento removido em R05. O contrato preservado agora é: o plano é sequencial entre alvos
+(A start/response antes de B start/response), há exatamente uma publicação inicial, e ela carrega só o que a fonte
+rápida trouxe (snapshot de 1 carta; o suprimento da lenta é admitido depois). O teste do cold bootstrap novo confirma
+que a edição fica durável com B suspenso.
+
+### Provas verdes
+
+| Prova | Resultado |
+|---|---|
+| `FeedRunwayDriverTests` (41 + 2 novos) | **43 / 0** (61,5 s) |
+| `ColdFeedBootstrapTests` (38 + 1 novo) | **40 / 0** |
+| `RunwayAcquisitionCycleTests` | **17 / 0** |
+| novos: fonte rápida publica com lenta suspensa (driver e cold) | 1 / 0 cada |
+| novo: resultado durável tardio não publica no escopo aposentado | 1 / 0 |
+
+### Registro R06
+
+SHA inicial: `4c05c610` | vermelho: caso do driver contra o driver anterior | alteração: rodada em stream + retorno ao loop no primeiro suprimento + monitor de conclusão + cancelamento na aposentadoria | verde: tabela | jornada protegida: A publica com B suspenso; escopo aposentado não recebe resultado tardio | pendências: R07 | SHA final: registrado no commit `fix(composition): publish durable results before round completion`.

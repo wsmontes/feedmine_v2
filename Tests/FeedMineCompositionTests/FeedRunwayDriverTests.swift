@@ -44,6 +44,15 @@ final class FeedRunwayDriverTests: XCTestCase {
         let http: DriverHTTPFixture
         let otherHTTP: DriverHTTPFixture
         let clock: DriverClock
+        let publications: DriverPublicationLog
+    }
+
+    /// R06: the receipts a drain concluded, in the order they were delivered.
+    final class DriverPublicationLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [PublicationReceipt] = []
+        var values: [PublicationReceipt] { lock.lock(); defer { lock.unlock() }; return storage }
+        func append(_ receipt: PublicationReceipt) { lock.lock(); storage.append(receipt); lock.unlock() }
     }
     nonisolated private static func prepared(_ selection:SelectionResult) -> LocalPreparedPublication {
         .init(inputs:selection.orderedCandidates.map {
@@ -69,7 +78,7 @@ final class FeedRunwayDriverTests: XCTestCase {
             acquisition:.init(targetWorkCapacity:targets,batchCapacityPerNewExecution:1,observationCapacityPerBatch:8,byteCapacityPerBatch:100_000)!)
     }
     private func fixture(historyCount:Int = 1,checkpoint:Bool = true,seedLocal:Bool = false,registrations:Bool = true,
-        paused:Bool = false,error:URLError? = nil,context:FeedContext? = nil,driverContext:FeedContext? = nil,
+        paused:Bool = false,otherPaused:Bool = false,error:URLError? = nil,context:FeedContext? = nil,driverContext:FeedContext? = nil,
         differentRevision:Bool = false,prepareFailure:Bool = false,cancelPrepare:Bool = false) throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at:root) }
@@ -99,7 +108,7 @@ final class FeedRunwayDriverTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [DriverURLProtocol.self]
         let transport = URLSession(configuration:config); addTeardownBlock { transport.invalidateAndCancel() }
         let binding = SourceBinding(id:SourceBindingID(),sourceID:source,externalPrincipal:.init(connectorKind:.syndication,namespace:"p",value:"p",role:.principal),aliases:[],generation:1,state:.enabled)!
-        let otherHTTP = DriverHTTPFixture(paused:false,error:nil, readyBeforePull: {
+        let otherHTTP = DriverHTTPFixture(paused:otherPaused,error:nil, readyBeforePull: {
             try PublicationHistory(database: db).readyAhead(editionID: edition, anchorCardID: prepared.cardIDs[0], probeBound: 64).amount
         })
         addTeardownBlock { otherHTTP.remove() }
@@ -113,11 +122,12 @@ final class FeedRunwayDriverTests: XCTestCase {
         let runway = RunwayController(configuration:.init(policyInputs:.init(safetyFactor:1,releaseMarginSeconds:0)!,consumptionSampleLimit:4,replenishmentSampleLimit:4)!)
         let driverPlan = differentRevision ? plan(p.context) : driverContext.map { plan($0) } ?? p
         let coordinator = acquisition.makeCoordinator()
+        let publications = DriverPublicationLog()
         let driver = try FeedRunwayDriver(session:session,runway:runway,plan:driverPlan,policy:policy(driverPlan),acquisition:acquisition,coordinator:coordinator,
             monotonicNow:{ clock.next() },makeSegmentIdentity:{ .init(segmentID:FeedSegmentID(),segmentSeed:2,segmentCreatedAt:Date(timeIntervalSince1970:6))! },prepare:{ selection in
                 if cancelPrepare { throw CancellationError() }; if prepareFailure { throw Failure.preparation }; return Self.prepared(selection)
-            })
-        return .init(database:db,location:.init(directory:root),plan:p,policy:pol,edition:edition,cards:prepared.cardIDs,source:source,target:target,session:session,runway:runway,driver:driver,acquisition:acquisition,coordinator:coordinator,http:http,otherHTTP:otherHTTP,clock:clock)
+            }, onPublication: { receipt in publications.append(receipt) })
+        return .init(database:db,location:.init(directory:root),plan:p,policy:pol,edition:edition,cards:prepared.cardIDs,source:source,target:target,session:session,runway:runway,driver:driver,acquisition:acquisition,coordinator:coordinator,http:http,otherHTTP:otherHTTP,clock:clock,publications:publications)
     }
     private func restore(_ f:Fixture,forward:Int = 4,resources:FeedRunwayDriverResources? = nil) async throws -> FeedPresentationSnapshot {
         let result = try await f.driver.restoreAndActivate(backwardCapacity:1,forwardCapacity:forward,resources:resources ?? self.resources())
@@ -127,6 +137,47 @@ final class FeedRunwayDriverTests: XCTestCase {
         let result = try await f.driver.submitViewport(.init(anchor:p.window.anchor),activity:.explicitTailApproach,resources:resources ?? self.resources())
         return result
     }
+    /// R06: a durable result is a fact for the publication loop **before the round ends**. The fast target's supply
+    /// reaches a receipt and an installation while the slow target is still suspended; the round keeps running and is
+    /// only awaited at the end of the opportunity.
+    func testFastSourcePublishesWhileSlowSourceIsPending() async throws {
+        let f = try fixture(paused: false, otherPaused: true)
+        let plan = resources(targets: 2)
+        let initial = try await restore(f, resources: plan)
+        let opportunity = Task { try await self.tail(f, initial, resources: plan) }
+        let deadline = Date().addingTimeInterval(5)
+        while f.publications.values.isEmpty, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(f.publications.values.isEmpty,
+            "a fonte rápida tem de publicar com a lenta ainda suspensa")
+        XCTAssertEqual(f.otherHTTP.calls, 1, "a fonte lenta foi consultada e está pendente")
+        XCTAssertGreaterThanOrEqual(f.http.calls, 1)
+        f.otherHTTP.release()
+        _ = try await opportunity.value
+    }
+
+    /// R06: a round that is still running when the scope is retired must not publish into the old scope. The
+    /// retirement cancels the round; the late durable results still notify nobody, and no new receipt appears.
+    func testDurableResultAfterEditionSwitchDoesNotPublishIntoOldScope() async throws {
+        let f = try fixture(paused: false, otherPaused: true)
+        let plan = resources(targets: 2)
+        let initial = try await restore(f, resources: plan)
+        let opportunity = Task { try await self.tail(f, initial, resources: plan) }
+        let deadline = Date().addingTimeInterval(5)
+        while f.publications.values.isEmpty, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(f.publications.values.isEmpty)
+        let before = f.publications.values.count
+        // The edition/context is retired while the slow target is still pending.
+        await f.driver.deactivate()
+        f.otherHTTP.release()
+        _ = try? await opportunity.value
+        XCTAssertEqual(f.publications.values.count, before,
+            "um resultado durável tardio não pode publicar no escopo aposentado")
+    }
+
     private func assertLegitimateSecondTarget(_ f: Fixture, seededLocal: Bool,
         file: StaticString = #filePath, line: UInt = #line) async throws {
         let initialReady = seededLocal ? 1 : 0

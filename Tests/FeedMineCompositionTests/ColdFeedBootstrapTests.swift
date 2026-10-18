@@ -483,13 +483,11 @@ final class ColdFeedBootstrapTests: XCTestCase {
     }
     private func finitePlanProof() async throws {
         let f = try fixture(), id = identity(), db = f.database
-        let b = ColdHTTPFixture(journal: f.journal, label: "B", onStart: {
-            do {
-                let records = try ContentStore(database: db).candidateWindow(sourceID: nil, after: nil, examinedCapacity: 8).records
-                let edition = try PublicationStore(database: db).edition(id: id.editionID)
-                XCTAssertEqual(records.count, 1); XCTAssertNotNil(edition, "Fast supply publishes before the next target starts")
-            } catch { XCTFail("Sequential settlement check failed: \(error)") }
-        })
+        // R05 decoupled the publication callback from the network slot pump: with a sequential plan the next target
+        // may start while the consumer is still publishing the previous one. What the cold path guarantees — and what
+        // this proof keeps — is that the fast target's supply is durable before its own result is consumed, and that
+        // the first publication carries only what the fast target brought; the slower target still contributes after.
+        let b = ColdHTTPFixture(journal: f.journal, label: "B")
         addTeardownBlock { b.remove() }
         let authority = AcquisitionTargetAuthority(database: db)
         let targetB = try authority.register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])
@@ -500,13 +498,47 @@ final class ColdFeedBootstrapTests: XCTestCase {
                 journal.append("prepare"); return Self.prepared($0)
             })
         let snapshot = try published(await bootstrap.run(identity: id, resources: resources(targets: 2), backwardCapacity: 0, forwardCapacity: 8))
-        XCTAssertEqual(journal.values, ["A start", "A response", "prepare", "B start", "B response"])
+        let events = journal.values.filter { $0 != "prepare" }
+        XCTAssertEqual(events, ["A start", "A response", "B start", "B response"],
+            "o plano é sequencial: B só executa depois de A")
+        XCTAssertEqual(journal.values.filter { $0 == "prepare" }.count, 1, "uma publicação inicial, e só uma")
+        // The publication used the fast target's supply only, even though B had already started and its response
+        // may have arrived before the consumer ran: the slower target's supply is admitted after the first card.
         XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(b.calls, 1); XCTAssertEqual(snapshot.window.items.count, 1)
         XCTAssertEqual(try ContentStore(database: db).candidateWindow(sourceID: nil, after: nil, examinedCapacity: 8).records.count, 2,
             "The slower target still contributes supply after first publication")
         XCTAssertEqual(try authority.target(id: f.target.id)?.checkpointRevision, 1)
         XCTAssertEqual(try authority.target(id: targetB.id)?.checkpointRevision, 1)
         try await assertPublished(f, identity: id, snapshot: snapshot)
+    }
+    /// R06 (cold path): the first publication follows the fast target's durable supply and does not wait for the
+    /// slower one to answer. The bootstrap is still running when the edition is already durable and installed.
+    func testFastSourcePublishesWhileSlowSourceIsPending() async throws {
+        let f = try fixture(), id = identity(), db = f.database
+        let b = ColdHTTPFixture(items: 2, paused: true, label: "B")
+        addTeardownBlock { b.remove() }
+        let authority = AcquisitionTargetAuthority(database: db)
+        let targetB = try authority.register(id: AcquisitionTargetID(), connectorKind: .syndication,
+            authorizedSources: [f.source])
+        let acquisition = try snapshot(db, [registration(f.target, source: f.source, http: f.http),
+            registration(targetB, source: f.source, http: b)])
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: acquisition, coordinator: acquisition.makeCoordinator(),
+            prepare: { selection in Self.prepared(selection) })
+        let running = Task {
+            try await bootstrap.run(identity: id, resources: resources(targets: 2),
+                backwardCapacity: 0, forwardCapacity: 8)
+        }
+        let deadline = Date().addingTimeInterval(5)
+        while (try? PublicationStore(database: db).edition(id: id.editionID)) == nil, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNotNil(try PublicationStore(database: db).edition(id: id.editionID),
+            "a fonte rápida publica com a lenta suspensa")
+        XCTAssertEqual(b.calls, 1, "a fonte lenta foi consultada e está pendente")
+        b.release()
+        let outcome = try await running.value
+        guard case .published = outcome else { return XCTFail("expected the fast publication") }
     }
     func testC19FinitePlanSequentialOrderAndSettlement() async throws { try await finitePlanProof() }
     func testC20FinitePlanOnlyOnceWithoutReplanning() async throws { try await finitePlanProof() }
