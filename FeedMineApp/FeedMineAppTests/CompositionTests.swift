@@ -286,6 +286,42 @@ final class CompositionTests: XCTestCase {
             feeds: feeds, transportConfiguration: configuration)
     }
 
+    /// T1: exercise the real lifecycle and context composition around the existing owner.
+    func testForegroundPreservesLearnedConsumptionAndContextChangeStartsFresh() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 64 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let root = root()
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let initial = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertGreaterThan(initial.window.items.count, 3)
+        await association.viewport(.init(anchor: .init(cardID: initial.window.items[1].id, placement: .top)),
+            activity: .forward)
+        await association.viewport(.init(anchor: .init(cardID: initial.window.items[3].id, placement: .top)),
+            activity: .forward)
+        let runway = await association.driver.runway
+        let learned = await runway.snapshot()
+        XCTAssertGreaterThan(try XCTUnwrap(learned.consumption.cardsPerSecond), 0)
+
+        await root.inactive()
+        await root.background()
+        await root.foreground()
+        XCTAssertTrue(root.association === association)
+        let resumed = await runway.snapshot()
+        XCTAssertEqual(resumed.scope, learned.scope)
+        XCTAssertEqual(resumed.consumption.cardsPerSecond, learned.consumption.cardsPerSecond)
+
+        try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+        let replacement = try XCTUnwrap(root.association)
+        XCTAssertFalse(replacement === association)
+        let replacementRunway = await replacement.driver.runway
+        let fresh = await replacementRunway.snapshot()
+        XCTAssertNotEqual(fresh.scope, learned.scope)
+        XCTAssertNil(fresh.consumption.cardsPerSecond)
+        await root.inactive()
+        await replacement.close()
+    }
+
     private func launched() async throws -> (AppComposition, FeedAssociation) {
         let root = root()
         await root.launch()

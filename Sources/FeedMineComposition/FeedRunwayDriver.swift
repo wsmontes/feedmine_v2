@@ -46,7 +46,7 @@ public actor FeedRunwayDriver {
     }
     private var causalExecution: CausalExecution?
     private let session: FeedSession
-    private let runway: RunwayController
+    let runway: RunwayController
     private let plan: FeedPlan
     private let policy: ResolvedSelectionPolicy
     private let acquisition: SyndicationAcquisitionSnapshot
