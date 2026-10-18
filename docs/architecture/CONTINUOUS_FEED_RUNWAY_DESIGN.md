@@ -325,8 +325,12 @@ Local-first is mandatory whenever a lane can progress. Successful local progress
 > **Oportunidade de ciclo de vida.** Voltar do background não é mais o gesto do leitor que acorda o pipeline: o
 > foreground reativa a apresentação corrente (`FeedRunwayDriver.activateCurrentPresentation`), o mesmo mecanismo
 > do launch/restore, devolvendo ao runway a observação do leitor na âncora corrente (`.stationary`, sem evento de
-> viewport). A lane/observação que a ativação zera é contrato existente de `RunwayController.activate`
-> compartilhado com launch e restore.
+> viewport). A observação e a leitura pronta que essa ativação renova são da apresentação, não do escopo: a chave
+> de reativação é o `RunwayScope` inteiro (edição + contexto + revisão editorial). Reativar o **mesmo** escopo é
+> reentrada de foreground e preserva `consumptionSamples`/`latencySamples` e o progresso do walk — um tick a cada
+> 10 s que os zerasse devolveria o leitor ao bootstrap em toda ativação e desligaria a adaptação F05-R2/R3. Um
+> escopo diferente (outra edição, outro contexto ou outra revisão) continua sendo troca de escopo e reseta tudo;
+> `deactivate()` idem.
 
 This phase implements no planner, frontier, target, coordinator, connector or network execution. FeedSession wiring and background/UI work remain separate future gates. No next phase is started.
 

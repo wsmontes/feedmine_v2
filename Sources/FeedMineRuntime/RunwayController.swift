@@ -280,7 +280,16 @@ public actor RunwayController {
         self.trace = trace
     }
 
+    /// Activates the scope the runway works for. Re-activating the **same** scope is the foreground cadence
+    /// re-entering the presentation it is already working for, not a scope change: the learned consumption and
+    /// latency samples and the walk progress belong to the scope (the comment on `deactivate` says as much, and
+    /// used to contradict the code one line above it). A cadence tick every 10 s that wiped them would put the
+    /// reader back in bootstrap on every activation and disable F05-R2/R3 adaptation for good.
+    ///
+    /// A different edition, context or editorial revision is a genuine scope change and resets everything, because
+    /// the measured walk describes one edition under one context at one revision.
     public func activate(_ scope: RunwayScope) {
+        guard self.scope != scope else { return }
         deactivate()
         self.scope = scope
     }
