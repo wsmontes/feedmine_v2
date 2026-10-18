@@ -955,3 +955,34 @@ superfície consumiria; sem ela, a busca unificada **não está certificada** po
 **Registro parcial:** SHA inicial `c39cfd13` | alteração: tipos + consultas reais + store com token | verde: 3/0 |
 pendências: superfície e jornada F11/F16 | SHA final: registrado no commit `feat(search): connect explicit scopes to
 local result authorities` (parcial, declarado).
+
+## R17 — diversidade multidimensional nas emendas de segmentos (parcial)
+
+Base: `031c2dea` (R16).
+
+### Entregue e provado
+
+- `EditorialDiversityFact` (Domain): os fatos pequenos congelados de uma publicação — fontes, provedor e os
+  **assuntos declarados pela própria história**. Geografia/formato não existem neste build e permanecem
+  desconhecidos (nada é inventado da categoria da fonte).
+- `SelectionDiversityContext` (Editorial): janela recente; comparação **por dimensão**, apenas quando **ambos** os
+  candidatos conhecem a dimensão. Dimensão ausente é pulada: metadado faltante não inventa novidade nem repetição.
+- `SelectionEngine.select(..., diversity:)`: desempate após peso (relevância) e antes de recência/tie-breakers.
+  **Versão explícita:** só `sequencingPolicyVersion >= 5` aplica diversidade; versões 1–4 restauradas mantêm a ordem
+  exata; versão desconhecida não ganha comportamento novo. Ofertas homogêneas continuam publicáveis (reordena, nunca
+  retém).
+- Provas: `SelectionDiversityTests` (3/0) — dimensões conhecidas na emenda, versão 4 inalterada, homogênea
+  publicável, metadado ausente neutro. Mutação (remover o gate de versão) → **vermelho**. Regressões:
+  `SelectionEngineTests` 22/0, `SourceDiversityContractTests` 14/0, caracterizações 11/0, weighted 3/0.
+
+### Pendente (bloqueia R17/B02)
+
+- Persistir os fatos no **owner de publicação**, na mesma transação do segmento (coluna/JSON versionado), com
+  histórico antigo = desconhecido.
+- A composição criar uma revisão com sequencing **5** e o `LocalProductionSlice` passar o contexto lido do histórico
+  publicado. Enquanto isso, a diversidade está implementada e testada como decisão pura, mas **dormente** em produção
+  (nenhum chamador passa contexto numa revisão v5) — B02 não executado.
+
+**Registro parcial:** SHA inicial `031c2dea` | vermelho: gate de versão removido | verde: 3/0 + regressões | pendências:
+persistência/fiação B02 | SHA final: registrado no commit `feat(editorial): maintain factual diversity across
+publication seams` (parcial, declarado).

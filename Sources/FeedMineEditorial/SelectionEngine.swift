@@ -68,7 +68,8 @@ public struct SelectionEngine: Sendable {
     /// PD-4 alternation also holds across segment boundaries.
     public func select(plan: FeedPlan, policy: ResolvedSelectionPolicy,
         window: CandidateSupplyWindow, exposure: SelectionExposureSnapshot?,
-        after neighbor: SelectionNeighbor?, readiness: SelectionReadinessSnapshot? = nil) throws -> SelectionResult {
+        after neighbor: SelectionNeighbor?, readiness: SelectionReadinessSnapshot? = nil,
+        diversity: SelectionDiversityContext? = nil) throws -> SelectionResult {
         guard policy.matches(plan.revision) else { throw SelectionError.policyMismatch }
         guard Set(window.candidates.map(\.originRecordID)).count == window.candidates.count else {
             throw SelectionError.duplicateCandidateIdentity
@@ -120,6 +121,9 @@ public struct SelectionEngine: Sendable {
             guard !weights.isEmpty else { return 1 }
             return candidate.sourceIDs.compactMap { weights[$0] }.max() ?? 1
         }
+        // R17: the diversity behavior exists from sequencing version 5 only. An unknown version — or an older one
+        // restored from disk — keeps exactly the order it was published under, and the context is ignored.
+        let diversityContext = plan.revision.sequencingPolicyVersion.rawValue >= 5 ? diversity : nil
         let ordered: [Candidate]
         switch policy.sequencing {
         case .recencyDescending, .recencyAlternatingSources, .recencyAlternatingSourcesBySupplyShare,
@@ -127,6 +131,12 @@ public struct SelectionEngine: Sendable {
             ordered = readyEligible.sorted { left, right in
                 let leftWeight = weight(left), rightWeight = weight(right)
                 if leftWeight != rightWeight { return leftWeight > rightWeight }
+                // After eligibility and relevance, prefer the candidate whose known dimensions repeat least in the
+                // recent published window. Missing facts contribute nothing; they neither invent novelty nor
+                // repetition.
+                if let diversityContext, let lessRepeated = diversityContext.isLessRepeated(left, than: right) {
+                    return lessRepeated
+                }
                 if left.timestamp.value != right.timestamp.value {
                     return left.timestamp.value > right.timestamp.value
                 }
