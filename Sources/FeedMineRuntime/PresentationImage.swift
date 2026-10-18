@@ -4,9 +4,9 @@
 // Does not own: downloading, asset storage, eviction or SwiftUI.
 //
 // v1 lessons (03-media.md): decode with ImageIO thumbnailing at the slot size (never full-size
-// rasters), never let a late image change a visible card, and render missing bytes through the
-// frozen RenderContract placeholder. Decoding happens inside FeedSession while it projects a
-// window, so the UI only receives ready values (INV-01) and performs no I/O.
+// rasters) and never let a late image change a visible card. Decoding happens inside FeedSession
+// while it projects a window; a card whose bytes do not decode is not admitted, so the UI only
+// receives ready values (INV-01) and performs no I/O.
 
 import CoreGraphics
 import Foundation
@@ -45,7 +45,8 @@ public struct PresentationImageDecoder: Sendable {
         self.thumbnailMaxPixel = thumbnailMaxPixel
     }
 
-    /// nil when bytes are absent, corrupt or undecodable: the card keeps its frozen placeholder.
+    /// nil when bytes are absent, corrupt or undecodable. Admission excludes the card; it is neither published as
+    /// an image slot that will draw a placeholder nor rewritten as a text card.
     func image(key: PublishedMediaKey, layout: PresentationCardLayout) -> PresentationImage? {
         let maxPixel: Int
         switch layout {

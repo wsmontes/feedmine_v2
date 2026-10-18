@@ -85,7 +85,8 @@ public struct FeedWindowSnapshot: Hashable, Sendable {
 }
 
 /// Existence means retained local cards are ready for baseline presentation.
-/// Hero/thumbnail geometry can render placeholders without materialized media.
+/// An image card is admitted with decoded pixels; outside the pixel band its frozen geometry stays while the bitmap
+/// is released, and re-admission reconstructs it before the card is drawn.
 public struct FeedPresentationSnapshot: Hashable, Sendable {
     public let contextKey: ContextKey
     public let editionID: FeedEditionID

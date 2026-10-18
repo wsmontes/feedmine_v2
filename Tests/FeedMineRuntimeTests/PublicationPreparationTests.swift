@@ -147,17 +147,27 @@ final class PublicationPreparationTests: XCTestCase {
         }
     }
 
-    func testUnavailableAndUnsuitableRequireExplicitTextOnlyChoice() throws {
-        let candidate = candidate(1)
+    /// An image the card declared but that is not usable never becomes a text card: the candidate leaves the
+    /// publication plan and its ready neighbour keeps publishing (INV-17). An explicit text presentation remains
+    /// a legitimate final card.
+    func testUnavailableImageLeavesThePlanAndTheTextNeighbourPublishes() throws {
+        let image = candidate(1), text = candidate(2)
+        let excludedID = PublicationCardID(rawValue: uuid(701)), keptID = PublicationCardID(rawValue: uuid(702))
         for localInput in [MediaPreparationInput.unavailable, .bytes(Data("not an image".utf8))] {
-            let result = try prepared(candidate, input: localInput)
-            assertError(.mediaNotUsable(index: 0)) {
-                _ = try PublicationPreparation.drafts(selection: selection([candidate]), inputs: [input(candidate, presentation: .image(result, layout: .thumbnail))])
-            }
-            let drafts = try PublicationPreparation.drafts(selection: selection([candidate]), inputs: [input(candidate)])
-            XCTAssertEqual(drafts.count, 1)
-            XCTAssertEqual(drafts[0].media, .none)
-            XCTAssertEqual(drafts[0].renderContract.layout, .textOnly)
+            let result = try prepared(image, input: localInput)
+            let plan = try PublicationPreparation.plan(selection: selection([image, text]),
+                publication: .init(inputs: [input(image, presentation: .image(result, layout: .thumbnail)),
+                    input(text)], cardIDs: [excludedID, keptID]))
+            XCTAssertEqual(plan.drafts.count, 1, "the unprepared image is not published as text")
+            XCTAssertEqual(plan.selection.orderedCandidates.map(\.originRecordID), [text.originRecordID],
+                "the candidate leaves the selection that will publish")
+            XCTAssertEqual(plan.cardIDs, [keptID], "the excluded candidate resolves no occurrence identity")
+            XCTAssertEqual(plan.drafts[0].media, .none)
+            XCTAssertEqual(plan.drafts[0].renderContract.layout, .textOnly)
+
+            let explicitText = try PublicationPreparation.drafts(selection: selection([image]),
+                inputs: [input(image)])
+            XCTAssertEqual(explicitText.count, 1, "an explicit text presentation is still a draft")
         }
     }
 

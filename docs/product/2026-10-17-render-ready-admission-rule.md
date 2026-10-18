@@ -42,3 +42,26 @@ Demonstrar, no caminho real de apresentação:
 5. O teste discriminante reprova quando se permite admitir antes de terminar o preparo; um teste que apenas verifica geometria estável ou imagem eventualmente presente é insuficiente.
 
 Não mudar benchmarks congelados nem enfraquecer contratos para obter aprovação. Este documento registra o requisito; não afirma que os caminhos atuais da V2 já o cumpram ou que uma violação visual específica tenha sido reproduzida nesta sessão.
+
+## Implementação na V2 (2026-10-17, branch `fix/render-ready-admission`)
+
+A regra é cumprida por **exclusão, nunca por conversão**. Nenhum card com imagem publicada vira
+`.textOnly` sob a mesma `PublicationCardID`; o contrato publicado permanece o que foi declarado.
+
+- **Preparação (`MediaPrefetcher`/`MediaReadiness`):** uma revisão cujo feed declara imagem de card e cuja
+  mídia não ficou utilizável fica *settled* sem apresentação (`presentation(for:) == nil`). Só ausência de
+  mídia declarada (card de texto por desenho) produz `.textOnly`. A candidata sai da fila de publicação
+  corrente e permanece em supply (INV-17).
+- **Publicação (`PublicationPreparation.plan`):** uma apresentação `.image` cujo `MediaPreparationResult`
+  não é `.usable` não gera rascunho; candidato, rascunho e `cardIDs` são reduzidos juntos, de modo que os
+  demais candidatos prontos publicam na mesma oportunidade. Um card assim nunca recebe ocorrência.
+- **Admissão (`FeedSession.admitted`/`PresentationCard.isRenderReady`):** uma carda com layout de imagem
+  e `image == nil` não atravessa a fronteira. Quando a âncora publicada é uma delas, a janela passa a
+  apontar para a carda admitida mais próxima, com o mesmo placement; as demais seguem normalmente.
+- **Readmissão (`FeedSession.boundedResidency`):** se a reconstrução de uma carda que retorna à banda
+  falha, ela é removida daquela readmissão — não é desenhada como texto nem como slot vazio.
+
+Teste discriminante: `RenderReadyAdmissionTests.testAnImageCardWhoseMediaCannotBeDecodedIsNotAdmitted`;
+readmissão: `testACardReturningToThePixelBandIsReconstructedBeforeItIsDrawn`; restauração:
+`FeedSessionWarmRestoreTests.testWarmRestoreWithoutDecoderAdmitsNoImageCard`; preparação:
+`MediaPrefetcherTests.testAllCandidatesFailingHasNoPresentationAndIsNotRetried`.

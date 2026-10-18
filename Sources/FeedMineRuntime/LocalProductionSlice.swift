@@ -127,10 +127,13 @@ public struct LocalProductionSlice: Sendable {
             nextCursor: window.nextCursor, exhausted: window.exhausted)
         guard !selection.orderedCandidates.isEmpty else { return .advancedWithoutPublication(progress) }
         let prepared = try prepare(selection)
-        let drafts = try PublicationPreparation.drafts(selection: selection, inputs: prepared.inputs)
-        let append = PublicationCoordinator.AppendRequest(selection: selection, drafts: drafts,
+        // A selected candidate whose declared image is not prepared is not published as text; it leaves this
+        // opportunity and the ready candidates around it are published normally (INV-17).
+        let plan = try PublicationPreparation.plan(selection: selection, publication: prepared)
+        guard !plan.drafts.isEmpty else { return .advancedWithoutPublication(progress) }
+        let append = PublicationCoordinator.AppendRequest(selection: plan.selection, drafts: plan.drafts,
             editionID: request.editionID, segmentID: request.segmentID, segmentSeed: request.segmentSeed,
-            segmentCreatedAt: request.segmentCreatedAt, cardIDs: prepared.cardIDs,
+            segmentCreatedAt: request.segmentCreatedAt, cardIDs: plan.cardIDs,
             originRecurrence: request.policy.exposure == .excludePublishedMaterial ? .whenMaterialChanged : .forbidden,
             operation: request.operation)
         switch try coordinator.append(append, expectingTailCardID: facts.observedTailCardID) {

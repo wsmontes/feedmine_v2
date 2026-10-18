@@ -58,7 +58,7 @@ final class MediaPrefetcherTests: XCTestCase {
         XCTAssertEqual(calls.all.count, 2)
     }
 
-    func testAllCandidatesFailingIsDesignedTextOnlyAndNotRetried() async throws {
+    func testAllCandidatesFailingHasNoPresentationAndIsNotRetried() async throws {
         let (db, assets) = try setup(), calls = Calls()
         let revision = try admit(db, urls: ["https://example.test/a.jpg"])
         let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
@@ -67,7 +67,9 @@ final class MediaPrefetcherTests: XCTestCase {
         await prefetcher.prefetchSupplyHead(limit: 10)
         XCTAssertEqual(calls.all.count, 1)
         XCTAssertNil(prefetcher.readiness.prepared(revision))
-        XCTAssertEqual(prefetcher.readiness.presentation(for: revision), .textOnly)
+        XCTAssertTrue(prefetcher.readiness.isSettled(revision), "a definitive failure is decided, not pending")
+        XCTAssertNil(prefetcher.readiness.presentation(for: revision),
+            "the image the card declared is not replaced by a text presentation")
     }
 
     func testOfflineConditionsFetchNothing() async throws {
@@ -108,7 +110,7 @@ extension MediaPrefetcherTests {
         XCTAssertNotNil(prefetcher.readiness.prepared(revision))
     }
 
-    /// Review F04: a timeout is retried after a delay; a definitive failure settles text-only.
+    /// Review F04: a timeout is retried after a delay; a definitive failure decides the image is unavailable.
     func testTransientFailureRetriesLaterDefinitiveSettles() async throws {
         let (db, assets) = try setup(), calls = Calls(), clock = Clock(), png = self.png
         final class Mode: @unchecked Sendable { var failure: (any Error)? = URLError(.timedOut) }
@@ -135,7 +137,8 @@ extension MediaPrefetcherTests {
         clock.now = 10_000
         await prefetcher.prefetch([other])
         XCTAssertEqual(calls.all.filter { $0.lastPathComponent == "gone.png" }.count, 1)
-        XCTAssertEqual(prefetcher.readiness.presentation(for: other), .textOnly)
+        XCTAssertNil(prefetcher.readiness.presentation(for: other),
+            "a definitively unavailable image is not published as a text card")
     }
     func testExplicitEditorialRevisionsIgnoreGlobalHeadAndDeduplicate() async throws {
         let (db, assets) = try setup(), calls = Calls(), png = self.png

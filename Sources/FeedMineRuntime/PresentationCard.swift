@@ -47,7 +47,9 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     public let layout: PresentationCardLayout
     public let mediaAspectRatio: Double?
     public let primaryActionKind: PresentationPrimaryActionKind?
-    /// Slot-sized local image ready to draw; nil renders the layout's frozen placeholder.
+    /// Slot-sized local image ready to draw. An image card crossing admission always carries it; nil means either a
+    /// declared `.textOnly` card or a bitmap released outside the pixel band (already admitted, reconstructed before
+    /// it returns to the band).
     public let image: PresentationImage?
 
     /// Residency-only reconstruction: identical frozen values with different decoded pixels.
@@ -84,6 +86,14 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     /// A layout that was published with an image slot, whatever its residency state is right now.
     public var isImageBearing: Bool { layout != .textOnly }
 
+    /// Whether this value may cross the feed's presentation boundary: a declared text card, or an image card with
+    /// the pixels it was published with. An image card with `image == nil` is either a residency release (already
+    /// admitted, outside the pixel band) or an occurrence whose media never became ready; it is never admitted,
+    /// and it is never rewritten as a text card under the same identity — that would certify a fallback the
+    /// published contract never made (`docs/product/2026-10-17-render-ready-admission-rule.md`).
+    public var isRenderReady: Bool { !isImageBearing || image != nil }
+
+    /// Residency projection (never admission): frozen values, pixels only when a decoder supplies them.
     init(publishedCard: PublishedCard, decoder: PresentationImageDecoder? = nil) {
         id = publishedCard.id
         title = publishedCard.text.title

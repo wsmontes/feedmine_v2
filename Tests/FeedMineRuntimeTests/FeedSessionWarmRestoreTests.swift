@@ -46,7 +46,7 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
     func testFullWarmRestoreAfterClosingAndReopeningPreservesPresentationAndCheckpoint() async throws {
         try await withLocation { location in
             let edition = WarmPresentationFixture.edition()
-            let cards = try (0..<6).map { _ in try WarmPresentationFixture.card() }
+            let cards = try (0..<6).map { _ in try WarmPresentationFixture.card(layout: .textOnly) }
             try persist(edition: edition, cards: cards, location: location)
             let database = try RuntimeDatabase(location: location)
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
@@ -67,9 +67,30 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
             XCTAssertEqual(item.timestamp?.kind, .observed)
             XCTAssertEqual(item.sourceDisplayName, " Frozen source ")
             XCTAssertEqual(item.providerDisplayName, "Provider É")
-            XCTAssertEqual(item.layout, .hero)
-            XCTAssertEqual(item.mediaAspectRatio, 1.5)
+            // The cards are declared text cards: the warm restore keeps every frozen value and the checkpoint
+            // without borrowing a layout the publication never made.
+            XCTAssertEqual(item.layout, .textOnly)
+            XCTAssertNil(item.mediaAspectRatio)
             XCTAssertEqual(item.primaryActionKind, .externalURL)
+            XCTAssertEqual(try SessionStore(database: database).checkpoint(), savedCheckpoint)
+        }
+    }
+
+    /// A composition without a decoder can never produce the pixels an image card was published with. The warm
+    /// restore excludes those cards instead of presenting the occurrence as a text card; with nothing left to
+    /// present there is no snapshot, and the durable checkpoint is left untouched.
+    func testWarmRestoreWithoutDecoderAdmitsNoImageCard() async throws {
+        try await withLocation { location in
+            let edition = WarmPresentationFixture.edition()
+            let cards = try (0..<6).map { _ in try WarmPresentationFixture.card() }
+            try persist(edition: edition, cards: cards, location: location)
+            let database = try RuntimeDatabase(location: location)
+            let savedCheckpoint = try XCTUnwrap(SessionStore(database: database).checkpoint())
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 4, forwardCapacity: 1)))
+            XCTAssertNil(restored, "an image card without pixels is not admitted")
+            let current = await session.currentPresentation()
+            XCTAssertNil(current)
             XCTAssertEqual(try SessionStore(database: database).checkpoint(), savedCheckpoint)
         }
     }
@@ -77,7 +98,7 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
     func testZeroCapacitiesRestoreOnlyAnchorWithoutCheckpointWrite() async throws {
         try await withLocation { location in
             let edition = WarmPresentationFixture.edition()
-            let cards = try (0..<6).map { _ in try WarmPresentationFixture.card() }
+            let cards = try (0..<6).map { _ in try WarmPresentationFixture.card(layout: .textOnly) }
             try persist(edition: edition, cards: cards, location: location)
             let database = try RuntimeDatabase(location: location)
             let store = SessionStore(database: database)
@@ -97,7 +118,7 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
     func testCapacityFailurePropagatesWithoutReplacingCheckpoint() async throws {
         try await withLocation { location in
             let edition = WarmPresentationFixture.edition()
-            let cards = try (0..<6).map { _ in try WarmPresentationFixture.card() }
+            let cards = try (0..<6).map { _ in try WarmPresentationFixture.card(layout: .textOnly) }
             try persist(edition: edition, cards: cards, location: location)
             let database = try RuntimeDatabase(location: location)
             let store = SessionStore(database: database)
