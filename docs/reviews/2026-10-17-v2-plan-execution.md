@@ -876,3 +876,52 @@ A revisão apontou que três caminhos que reconstroem busca a partir de **texto*
 `-astrologia`, decodifica como literal com `search:-astrologia`) e
 `LegacyUserStateImportTests.testImportCarriesBoxesCollectionsAndSmartFeedsOnce` (preset importado como literal).
 `PublicationPersistenceMappingTests` continua verde (a identidade completa viaja no `EditionRecord`).
+
+## R15 — cancelar/retornar busca e erros de ação recuperáveis
+
+Base: `67763988` (R14).
+
+### Defeito
+
+`submitSearch` fazia `Task { try? await selectContext(.search(...)) }`: **todos** os desfechos eram engolidos
+(nada gravado, gravado sem apresentar, ativo) e a UI não distinguia nenhum. Cancelar a busca só limpava o campo do
+store: o host não restaurava a origem, então o leitor ficava no contexto de busca (ou num feed errado).
+
+### Prova vermelha (mutação)
+
+| Mutação | Testes | Resultado |
+|---|---|---|
+| `submitSearch` volta a `try?` e não lança | `testSavedSearchFailureDistinguishesWriteFromActivation` | **vermelho** (não lançou; chave mudou) |
+| `cancelSearch` vira no-op | `testCancelSearchRestoresExactPreviousContextAndAnchor` | **vermelho** (contexto, edição e âncora não voltam) |
+
+Mutações revertidas.
+
+### Alteração
+
+- `AppComposition.searchOrigin`: a origem completa (ContextKey com preset/filtro/scope) do último search. A posição
+  prometida é o **checkpoint da própria origem**, escrito quando o `replaceSession` da busca aposenta a associação
+  anterior; nenhum estado novo de posição.
+- `submitSearch` (agora `async throws`) faz a fronteira de confirmação: persiste a chave; só então troca memória e
+  reconstrói a sessão. `ReaderSearchFailure { unusableQuery, notStored, storedNotActivated }` distingue as metades, e
+  a UI mostra mensagens diferentes (termo ausente / não salvou / salvou mas não abriu).
+- `cancelSearch` restaura a origem inteira por `replaceSession` (a busca é checkpointada antes de sair); falha ao
+  restaurar mantém a busca e informa, sem inventar destino. Duplo cancelar é no-op.
+- O store ganhou `onCancelSearch` (intenção repassada; a fence S11 foi atualizada com o novo label); a associação
+  encaminha, o host executa.
+- Retornar de um artigo não troca o contexto da busca: `testReturningFromArticleRestoresSearch` afirma contexto e
+  âncora inalterados.
+
+### Provas verdes
+
+| Prova | Resultado |
+|---|---|
+| os três casos novos (cancelar restaura; falhas distinguem; artigo preserva a busca) | 3 / 0 |
+| `FeedScreenStoreTests` (fence S11 atualizada) | 18 / 0 |
+| `FilterConfirmationBoundaryTests` (fronteira irmã) | 4 / 0 (R11) |
+
+**Limite:** uma jornada UI busca→artigo→voltar→cancelar em Release fica em R23; aqui a navegação é a de composição
+(abrir leitura não muda contexto nem posição).
+
+### Registro R15
+
+SHA inicial: `67763988` | vermelho: tabela | alteração: origem+checkpoint, confirmação explícita, cancelar restaura | verde: tabela | jornada protegida: identidade/posição restauradas; mensagem compatível com o commit | pendências: R16 | SHA final: registrado no commit `fix(search): restore search origins and report durable action outcomes`.

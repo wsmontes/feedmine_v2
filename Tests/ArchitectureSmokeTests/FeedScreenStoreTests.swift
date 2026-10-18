@@ -283,7 +283,9 @@ final class FeedScreenStoreTests: XCTestCase {
             "_renderedItems", "_renderedEditionID", "_renderedContextKey", "_work",
             // PO 2026-10-14: a posição do **viewport desenhado** é repassada, não guardada — o dono do cursor
             // (a sessão) é quem a lembra e quem decide de quanto em quanto tempo ela vira escrita.
-            "onPresentedPosition"])
+            "onPresentedPosition",
+            // R15: cancelar a busca é uma intenção repassada ao host (que restaura a origem e o checkpoint).
+            "onCancelSearch"])
     }
 
     /// No drift is possible: every accepted install republishes the projection straight from the state the

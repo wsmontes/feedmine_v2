@@ -16,6 +16,16 @@ import FeedMineUI
 import FeedMineComposition
 import FeedMineSyndication
 
+/// R15: a search submission states which half succeeded. A failure before the durable write is not saved; a failure
+/// after it is saved but not presented, and the reader can retry without duplicating anything.
+enum ReaderSearchFailure: Error, Equatable {
+    case unusableQuery
+    case notStored(detail: String)
+    case storedNotActivated(detail: String)
+
+    var selectionIsSaved: Bool { if case .storedNotActivated = self { true } else { false } }
+}
+
 @MainActor
 @Observable
 final class AppComposition {
@@ -62,6 +72,9 @@ final class AppComposition {
     /// T6: the active identity — surface, preset, filter and search scope. The plain surface's key equals the
     /// pre-T6 identity, so nothing changes for a reader who never filters.
     private(set) var currentContextKey: ContextKey = ContextKey(request: .main)
+    /// R15: the context the reader came from when a search started. Its own checkpoint (written when the search
+    /// session retired it) is the promised position a cancel restores.
+    @ObservationIgnored private var searchOrigin: ContextKey?
     var currentContext: FeedContextRequest { currentContextKey.request }
     /// The filter the reader is **editing** — the lens criteria they chose plus whatever words the context
     /// itself carries. It is deliberately *not* the folded one: the sheet and the lens write what they are shown,
@@ -117,6 +130,8 @@ final class AppComposition {
     @ObservationIgnored let mediaAdapter = MediaPlaybackAdapter()
     /// T5: set once by the app host; the reader's chrome reports a destination, the host presents it.
     var onNavigate: ((ReaderDestination) -> Void)?
+    /// R15: the host restores the search origin; the association only forwards the intention.
+    var onCancelSearch: (() -> Void)?
 
     private func connecting(_ association: FeedAssociation) -> FeedAssociation {
         // T8: where this session's saves land. Resolved per save, so changing the preferred box takes effect
@@ -131,7 +146,17 @@ final class AppComposition {
         association.onReading = { [weak self] target in self?.onReading?(target) }
         // T5: the reader shell reports a destination; the host presents it. Nothing is resolved here.
         association.onNavigate = { [weak self] destination in self?.onNavigate?(destination) }
-        association.onSearch = { [weak self] term in self?.submitSearch(term) }
+        association.onCancelSearch = { [weak self] in
+            guard let self else { return }
+            Task { await self.cancelSearch() }
+        }
+        association.onSearch = { [weak self] term in
+            guard let self else { return }
+            Task {
+                do { try await self.submitSearch(term) }
+                catch { self.reportSearchFailure(error) }
+            }
+        }
         association.onShare = { [weak self] link in self?.onShare?(link) }
         // T9: a card's media action is resolved and played through the app-wide player.
         association.onMedia = { [weak self] cardID in
@@ -156,10 +181,53 @@ final class AppComposition {
         (try? preferences?.load())??.preferredBookmarkListID ?? ReaderBookmarkList.defaultID
     }
 
-    /// T5: one search submission is a context change, exactly like the sources menu.
-    private func submitSearch(_ term: String) {
-        guard let context = SearchContext(query: term) else { return }
-        Task { try? await selectContext(.search(context)) }
+    /// T5/R15: one search submission is a context change, exactly like the sources menu — with the confirmation
+    /// boundary made explicit. The key is persisted first; only then is memory changed and the session rebuilt.
+    func submitSearch(_ term: String) async throws {
+        guard let context = SearchContext(query: term) else { throw ReaderSearchFailure.unusableQuery }
+        let origin = currentContextKey
+        let key = ContextKey(request: .search(context), preset: currentContextKey.preset,
+            filter: resolvedFilter(at: Date()), searchScope: currentContextKey.searchScope)
+        guard let preferences else { throw ReaderSearchFailure.notStored(detail: "missing preferences") }
+        do { _ = try preferences.setContext(key) }
+        catch { throw ReaderSearchFailure.notStored(detail: String(describing: error)) }
+        searchOrigin = origin
+        currentContextKey = key
+        do { try await replaceSession() }
+        catch { throw ReaderSearchFailure.storedNotActivated(detail: String(describing: error)) }
+    }
+
+    /// R15: cancelling returns to the exact context the search started from — preset, filter, scope and the
+    /// promised position (its own durable checkpoint). A search that was never entered is a no-op.
+    func cancelSearch() async {
+        guard case .search = currentContextKey.request, let origin = searchOrigin else { return }
+        searchOrigin = nil
+        do {
+            guard let preferences else { throw ReaderPreferencesError.missingPreferences }
+            _ = try preferences.setContext(origin)
+            currentContextKey = origin
+            try await replaceSession()
+        } catch {
+            // The origin could not be restored; the search stays the durable, presented context and the reader is
+            // told so instead of being dropped somewhere invented.
+            association?.store.showToast(text: String(localized: "Não foi possível voltar ao feed anterior"),
+                systemImage: "exclamationmark.triangle")
+        }
+    }
+
+    private func reportSearchFailure(_ error: any Error) {
+        guard let failure = error as? ReaderSearchFailure else { return }
+        switch failure {
+        case .unusableQuery:
+            association?.store.showToast(text: String(localized: "Digite pelo menos um termo para buscar"),
+                systemImage: "magnifyingglass")
+        case .notStored:
+            association?.store.showToast(text: String(localized: "Não foi possível salvar a busca"),
+                systemImage: "exclamationmark.triangle")
+        case .storedNotActivated:
+            association?.store.showToast(text: String(localized: "A busca foi salva, mas não pôde ser aberta"),
+                systemImage: "exclamationmark.triangle")
+        }
     }
 
     /// F02/B01: **no starter selection.** A reader who has chosen nothing has nothing chosen — the bundled
@@ -1876,6 +1944,7 @@ final class FeedAssociation {
         }
     }, availableDestinations: Self.readerDestinations(for: contextKey),
         onSubmitSearch: { [weak self] term in self?.onSearch?(term) },
+        onCancelSearch: { [weak self] in self?.onCancelSearch?() },
         onNavigate: { [weak self] destination in self?.onNavigate?(destination) },
         onPresentedPosition: { [weak self] anchor, atRest in
             // The latest drawn position wins; the same single drain writes it off the callback.
@@ -2029,6 +2098,8 @@ final class FeedAssociation {
     /// T9: the share sheet a card's share action opens. The app presents it; the association never does.
     @ObservationIgnored var onShare: ((SharedLink) -> Void)?
     @ObservationIgnored var onSearch: ((String) -> Void)?
+    /// R15: cancelling a search is the host's intention to restore the origin; the association forwards it.
+    @ObservationIgnored var onCancelSearch: (() -> Void)?
 
     /// Review F10: resolve the frozen action target from published history and open it.
     /// The URL never crosses the UI boundary; only the card identity does.

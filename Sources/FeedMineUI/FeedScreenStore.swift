@@ -36,6 +36,8 @@ public final class FeedScreenStore {
     public private(set) var hasCommittedSearch = false
     public private(set) var bookmarkBoxActive = false
     @ObservationIgnored private let onSubmitSearch: @MainActor (String) -> Void
+    /// R15: cancelling the search is an intention the host must act on (restore the origin); the store only states it.
+    @ObservationIgnored private let onCancelSearch: @MainActor () -> Void
     @ObservationIgnored private let onNavigate: @MainActor (ReaderDestination) -> Void
     @ObservationIgnored private let onAction: @MainActor (ReaderCardActionEvent) -> Void
     /// Onde o viewport desenhado começa, e se o desenho está em **repouso** nele. É o fato que o host usa para
@@ -67,6 +69,7 @@ public final class FeedScreenStore {
         onAction: @escaping @MainActor (ReaderCardActionEvent) -> Void = { _ in },
         availableDestinations: Set<ReaderDestination> = [],
         onSubmitSearch: @escaping @MainActor (String) -> Void = { _ in },
+        onCancelSearch: @escaping @MainActor () -> Void = {},
         onNavigate: @escaping @MainActor (ReaderDestination) -> Void = { _ in },
         onPresentedPosition: (@MainActor (PresentationAnchor, Bool) -> Void)? = nil) {
         state = FeedPresentationState(presentation: nil)
@@ -76,6 +79,7 @@ public final class FeedScreenStore {
         self.onAction = onAction
         self.availableDestinations = availableDestinations
         self.onSubmitSearch = onSubmitSearch
+        self.onCancelSearch = onCancelSearch
         self.onNavigate = onNavigate
         self.onPresentedPosition = onPresentedPosition
     }
@@ -103,6 +107,8 @@ public final class FeedScreenStore {
     public func cancelSearch() {
         isSearching = false
         searchQuery = ""
+        // The host owns the origin and its checkpoint; the store does not.
+        onCancelSearch()
     }
 
     public func navigate(to destination: ReaderDestination) {

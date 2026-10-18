@@ -4,7 +4,7 @@ import UIKit
 import SwiftUI
 import Synchronization
 import CryptoKit
-import FeedMinePersistence
+@testable import FeedMinePersistence
 import FeedMineDomain
 import FeedMineRuntime
 import FeedMineUI
@@ -373,6 +373,17 @@ final class CompositionTests: XCTestCase {
         XCTAssertNil(fresh.consumption.cardsPerSecond)
         await root.inactive()
         await replacement.close()
+    }
+
+    /// A real SQLite refusal installed for one test; no injected seam and no second architecture.
+    private func trigger(_ statements: [String], in directory: URL) throws {
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        try database.write { db in for statement in statements { try db.execute(sql: statement) } }
+    }
+
+    private func dropTriggers(_ names: [String], in directory: URL) throws {
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        try database.write { db in for name in names { try db.execute(sql: "DROP TRIGGER " + name) } }
     }
 
     private func launched() async throws -> (AppComposition, FeedAssociation) {
@@ -795,6 +806,116 @@ final class CompositionTests: XCTestCase {
                 + "\(reservedAfter) cartas além da âncora e a janela admitida ficou em \(admitted().count) cartas "
                 + "(antes: \(before.count), teto: \(ceiling)) — \(root.diagnosticsForTheWiringTest(live))")
         await live.close()
+    }
+
+    // MARK: - R15: search origin, cancel and recoverable outcomes
+
+    /// Cancelling a search returns to the **exact** previous context: the same preset/filter key and the anchor the
+    /// origin's own checkpoint promised (the search session's retirement checkpointed the origin before closing).
+    func testCancelSearchRestoresExactPreviousContextAndAnchor() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 16 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let origin = root.currentContextKey
+        let edition = association.store.state.presentation?.editionID
+        let anchor = association.store.state.presentation?.window.anchor
+
+        try await root.submitSearch("Published")
+        guard case .search = root.currentContextKey.request else {
+            return XCTFail("premissa: a busca é o contexto vigente")
+        }
+        XCTAssertFalse(root.association === association, "a busca tem a própria associação")
+
+        await root.cancelSearch()
+        XCTAssertEqual(root.currentContextKey, origin, "o contexto anterior é restaurado inteiro")
+        let back = try XCTUnwrap(root.association)
+        XCTAssertEqual(back.store.state.presentation?.editionID, edition,
+            "a edição canônica do contexto anterior é a mesma")
+        XCTAssertEqual(back.store.state.presentation?.window.anchor, anchor,
+            "a âncora prometida vem do checkpoint do contexto anterior")
+        await back.close()
+    }
+
+    /// A search that fails **before** the durable write is not saved; a failure **after** it is saved but not
+    /// presented. The two outcomes are different, and the durable key states which one happened.
+    func testSavedSearchFailureDistinguishesWriteFromActivation() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        let before = root.currentContextKey
+        func durableKey() throws -> ContextKey? {
+            try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+                .load()?.activeContextKey
+        }
+
+        // A refused context write: nothing is saved, nothing changes.
+        try trigger(["""
+            CREATE TRIGGER search_boundary_reject_context
+            BEFORE UPDATE ON reader_preferences
+            WHEN NEW.active_context IS NOT OLD.active_context
+            BEGIN SELECT RAISE(ABORT, 'search boundary: context write refused'); END;
+            """], in: directory)
+        do {
+            try await root.submitSearch("Published")
+            XCTFail("a refused write must not be reported as saved")
+        } catch {
+            XCTAssertEqual((error as? ReaderSearchFailure)?.selectionIsSaved, false)
+        }
+        XCTAssertEqual(root.currentContextKey, before)
+        XCTAssertEqual(try durableKey(), before)
+        try dropTriggers(["search_boundary_reject_context"], in: directory)
+
+        // A refused retirement checkpoint: the key is durable, the presentation did not happen.
+        try trigger(["""
+            CREATE TRIGGER search_boundary_reject_checkpoint
+            BEFORE INSERT ON session_checkpoint
+            BEGIN SELECT RAISE(ABORT, 'search boundary: checkpoint write refused'); END;
+            """, """
+            CREATE TRIGGER search_boundary_reject_checkpoint_update
+            BEFORE UPDATE ON session_checkpoint
+            BEGIN SELECT RAISE(ABORT, 'search boundary: checkpoint write refused'); END;
+            """], in: directory)
+        do {
+            try await root.submitSearch("Published")
+            XCTFail("a failed activation after confirmation must be reported, never hidden")
+        } catch {
+            XCTAssertEqual((error as? ReaderSearchFailure)?.selectionIsSaved, true)
+        }
+        guard case .search = root.currentContextKey.request else {
+            return XCTFail("a confirmação durável continua identificada")
+        }
+        XCTAssertEqual(try durableKey(), root.currentContextKey,
+            "a busca confirmada é a chave durável, mesmo sem apresentação")
+        try dropTriggers(["search_boundary_reject_checkpoint", "search_boundary_reject_checkpoint_update"],
+            in: directory)
+
+        // Retrying the same intention presents it; the key is not duplicated.
+        try await root.submitSearch("Published")
+        XCTAssertEqual(try durableKey(), root.currentContextKey)
+        await root.association?.close()
+    }
+
+    /// Returning from an article does not lose the search: the context and the reading position stay exactly where
+    /// the search left them.
+    func testReturningFromArticleRestoresSearch() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, _) = try await launched()
+        try await root.submitSearch("Published")
+        let search = try XCTUnwrap(root.association)
+        let key = root.currentContextKey
+        let anchor = search.store.state.presentation?.window.anchor
+        guard let card = search.store.state.presentation?.window.items.first?.id else {
+            return XCTFail("premissa: a busca publica cartas")
+        }
+        let target = try XCTUnwrap(search.readingTarget(card), "a carta da busca abre a leitura local")
+        search.onReading?(target)
+        XCTAssertEqual(root.currentContextKey, key, "abrir/voltar do artigo não troca o contexto da busca")
+        XCTAssertEqual(search.store.state.presentation?.window.anchor, anchor)
+        await search.close()
     }
 
     // MARK: - R11: context switches under load reuse canonical work
