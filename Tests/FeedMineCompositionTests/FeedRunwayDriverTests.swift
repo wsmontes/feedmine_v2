@@ -4,7 +4,7 @@ import FeedMineDomain
 import FeedMinePersistence
 import FeedMineAcquisition
 import FeedMineEditorial
-import FeedMinePublication
+@testable import FeedMinePublication
 @testable import FeedMineRuntime
 import FeedMineComposition
 
@@ -12,6 +12,9 @@ private final class DriverClock: @unchecked Sendable {
     private let lock = NSLock()
     private var value: Double = 0
     func next() -> RunwayMonotonicTime { lock.withLock { value += 1; return .init(seconds:value)! } }
+    /// Moves the clock forward without recording calls: a test that observes the runway itself needs the driver's
+    /// later opportunities to stay monotonic over those observations.
+    func jump(to seconds: Double) { lock.withLock { value = seconds } }
 }
 private final class DriverMediaJournal: @unchecked Sendable {
     private let lock = NSLock()
@@ -40,6 +43,7 @@ final class FeedRunwayDriverTests: XCTestCase {
         let coordinator: AcquisitionCoordinator
         let http: DriverHTTPFixture
         let otherHTTP: DriverHTTPFixture
+        let clock: DriverClock
     }
     nonisolated private static func prepared(_ selection:SelectionResult) -> LocalPreparedPublication {
         .init(inputs:selection.orderedCandidates.map {
@@ -113,7 +117,7 @@ final class FeedRunwayDriverTests: XCTestCase {
             monotonicNow:{ clock.next() },makeSegmentIdentity:{ .init(segmentID:FeedSegmentID(),segmentSeed:2,segmentCreatedAt:Date(timeIntervalSince1970:6))! },prepare:{ selection in
                 if cancelPrepare { throw CancellationError() }; if prepareFailure { throw Failure.preparation }; return Self.prepared(selection)
             })
-        return .init(database:db,location:.init(directory:root),plan:p,policy:pol,edition:edition,cards:prepared.cardIDs,source:source,target:target,session:session,runway:runway,driver:driver,acquisition:acquisition,coordinator:coordinator,http:http,otherHTTP:otherHTTP)
+        return .init(database:db,location:.init(directory:root),plan:p,policy:pol,edition:edition,cards:prepared.cardIDs,source:source,target:target,session:session,runway:runway,driver:driver,acquisition:acquisition,coordinator:coordinator,http:http,otherHTTP:otherHTTP,clock:clock)
     }
     private func restore(_ f:Fixture,forward:Int = 4,resources:FeedRunwayDriverResources? = nil) async throws -> FeedPresentationSnapshot {
         let result = try await f.driver.restoreAndActivate(backwardCapacity:1,forwardCapacity:forward,resources:resources ?? self.resources())
@@ -317,7 +321,9 @@ final class FeedRunwayDriverTests: XCTestCase {
     func test14LocalSearchSettlesWithoutHTTP() async throws {
         let f = try fixture(context:.init(request:.search(SearchContext(query:"q")!))),p = try await restore(f)
         // Seed the controller's documented exhausted-local fact to exercise the Acquisition boundary only.
+        // Deactivation is the explicit reset; re-activating the same scope no longer wipes the scope's state.
         let scope = await f.session.currentRunwayScope()
+        await f.runway.deactivate()
         await f.runway.activate(try XCTUnwrap(scope))
         let observation = RunwayObservation(editionID:f.edition,anchorCardID:p.window.anchor.cardID,sampledAt:.init(seconds:1)!,activity:.explicitTailApproach)
         try await f.runway.submitObservation(observation)
@@ -429,6 +435,57 @@ final class FeedRunwayDriverTests: XCTestCase {
             "O foreground produziu sem evento de viewport")
         XCTAssertGreaterThan(f.http.calls + f.otherHTTP.calls,callsBefore,
             "A oportunidade do foreground pediu a reposição sem gesto nenhum")
+    }
+    /// O mesmo tick de foreground, agora com consumo já aprendido. Reativar a apresentação corrente dez segundos
+    /// depois não pode apagar a taxa medida — senão a adaptação F05-R2/R3 nunca se aplica em produção — e a medição
+    /// preservada continua decidindo: o alvo é `4 cartas/s × 5 s = 20`, não o piso de bootstrap de 4.
+    func testForegroundTicksPreserveLearnedConsumptionForTheNextDrive() async throws {
+        let f = try fixture(historyCount: 4), p = try await restore(f, resources: reservedResources(targets: 0))
+        let activated = await f.runway.snapshot()
+        let scope = try XCTUnwrap(activated.scope)
+        let sessionScope = await f.session.currentRunwayScope()
+        XCTAssertEqual(scope, sessionScope)
+        let restored = try XCTUnwrap(activated.latestObservation)
+        // The facts a real scroll establishes: a forward advance rates consumption, a publication rates the runway.
+        let start = RunwayObservation(editionID: f.edition, anchorCardID: restored.anchorCardID,
+            sampledAt: .init(seconds: 200)!, activity: .forward)
+        try await f.runway.submitObservation(start)
+        try await f.runway.acceptMeasurement(.init(observation: start,
+            readyAhead: ReadyAheadFacts(editionID: f.edition, anchorCardID: start.anchorCardID,
+                observedTailCardID: start.anchorCardID, amount: .exact(0)),
+            advanceFromHighWater: .init(editionID: f.edition, fromCardID: restored.anchorCardID,
+                toCardID: start.anchorCardID, advance: .same)))
+        let moved = RunwayObservation(editionID: f.edition, anchorCardID: p.window.items[1].id,
+            sampledAt: .init(seconds: 202)!, activity: .forward)
+        try await f.runway.submitObservation(moved)
+        try await f.runway.acceptMeasurement(.init(observation: moved,
+            readyAhead: ReadyAheadFacts(editionID: f.edition, anchorCardID: moved.anchorCardID,
+                observedTailCardID: moved.anchorCardID, amount: .exact(0)),
+            advanceFromHighWater: .init(editionID: f.edition, fromCardID: restored.anchorCardID,
+                toCardID: moved.anchorCardID, advance: .forwardExact(8)))) // 8 cards over 2 s = 4 cards/s
+        // The restore already exhausted the empty local walk; admitted supply reopens it so the slice can rate the runway.
+        try await f.runway.noteLocalSupplyChanged(scope: scope)
+        let decision = try await f.runway.reconsider(resources: reservedResources().runway, at: .init(seconds: 212)!)
+        guard case .runLocalSlice(let slice) = decision else { return XCTFail("Expected a local slice: \(decision)") }
+        try await f.runway.completeLocalSlice(slice, outcome: .published(
+            LocalProductionProgress(examinedCount: 8, nextCursor: nil, exhausted: false),
+            PublicationReceipt(editionID: f.edition, segmentID: FeedSegmentID(), segmentOrdinal: 1,
+                cardIDs: [PublicationCardID()])), at: .init(seconds: 217)!)
+        let learned = await f.runway.snapshot()
+        XCTAssertEqual(learned.consumption.cardsPerSecond, 4)
+        XCTAssertEqual(learned.replenishment.p95Seconds, 5)
+        // Two foreground entries, ten seconds apart, and the next opportunity's drive.
+        f.clock.jump(to: 1000)
+        let first = try await f.driver.activateCurrentPresentation(resources: reservedResources(targets: 0))
+        let second = try await f.driver.activateCurrentPresentation(resources: reservedResources(targets: 0))
+        XCTAssertEqual(first, second)
+        _ = try await f.driver.drive(resources: reservedResources(targets: 0))
+        let driven = await f.runway.snapshot()
+        XCTAssertEqual(driven.scope, scope)
+        XCTAssertEqual(driven.consumption.cardsPerSecond, 4, "A tick is not a scope change")
+        XCTAssertEqual(driven.replenishment.p95Seconds, 5, "A tick is not a scope change")
+        XCTAssertEqual(driven.lastCoverage, .pressured(requiredCards: 20),
+            "The measured target (4 cards/s × 5 s) decided, not the bootstrap reserve of 4")
     }
     func test22DeactivatePreservesPresentation() async throws {
         let f = try fixture(),p = try await restore(f); await f.driver.deactivate()
