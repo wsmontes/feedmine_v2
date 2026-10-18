@@ -274,16 +274,38 @@ final class DiscoveryGate: @unchecked Sendable {
     }
 }
 
+/// R01's controlled clock: the instant the reader produced each fact is a value the test owns, so coalescing can be
+/// proven **not** to turn the drain's own latency into reading velocity. Production passes the process uptime.
+final class IngressClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seconds: Double
+    /// Every read advances the clock a little, like the process uptime it replaces: a controller that measures a
+    /// slice's latency refuses a zero one, so a frozen clock would fail the launch for the wrong reason. The test
+    /// still owns the **large** intervals (`advance`), which is what the consumption arithmetic reads.
+    private let tick: Double
+    init(seconds: Double = 1_000, tick: Double = 0.001) { self.seconds = seconds; self.tick = tick }
+    func next() -> RunwayMonotonicTime {
+        lock.lock(); defer { lock.unlock() }
+        seconds += tick
+        return RunwayMonotonicTime(seconds: seconds)!
+    }
+    func advance(_ delta: Double) { lock.lock(); defer { lock.unlock() }; seconds += delta }
+}
+
 @MainActor
 final class CompositionTests: XCTestCase {
 
     private func root(requestTimeout: TimeInterval = 60, directory: URL? = nil,
-        feeds: [TrustedFeed] = TrustedFeed.development) -> AppComposition {
+        feeds: [TrustedFeed] = TrustedFeed.development,
+        clock: IngressClock? = nil) -> AppComposition {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
         configuration.timeoutIntervalForRequest = requestTimeout
+        let now: @Sendable () -> RunwayMonotonicTime
+        if let clock { now = { clock.next() } }
+        else { now = { .init(seconds: ProcessInfo.processInfo.systemUptime)! } }
         return AppComposition(directory: directory ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
-            feeds: feeds, transportConfiguration: configuration)
+            feeds: feeds, transportConfiguration: configuration, monotonicNow: now)
     }
 
     /// T1: exercise the real lifecycle and context composition around the existing owner.
@@ -742,6 +764,185 @@ final class CompositionTests: XCTestCase {
                 + "\(reservedAfter) cartas além da âncora e a janela admitida ficou em \(admitted().count) cartas "
                 + "(antes: \(before.count), teto: \(ceiling)) — \(root.diagnosticsForTheWiringTest(live))")
         await live.close()
+    }
+
+    // MARK: - R01: bounded viewport ingress
+
+    /// R01: the reader's callback records a fact and returns; it never awaits the producer and never creates one
+    /// task per event. With one feed suspended mid-acquisition, the capture's observation has to return **before**
+    /// the producer is released, and a burst of callbacks may not grow the pending work with the burst's size.
+    ///
+    /// The bounded summary keeps the earliest movement (the measurement anchor), the latest position and the newest
+    /// fact of each semantic kind — six slots in total. A `Task` per callback (the behavior this replaces) grew the
+    /// pending work by one per event; the mutation proof is recorded in the execution register.
+    func testScrollIngressDoesNotAwaitProducer() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 2 }
+        defer {
+            FixtureTransport.releaseScience()
+            FixtureTransport.feedItemCount.withLock { $0 = nil }
+        }
+        let (root, association) = try await launched()
+        let presentation = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertGreaterThan(presentation.window.items.count, 3)
+
+        // The next acquisition is the producer that suspends the consumer: the held feed is part of the supply the
+        // opportunity asks for, and the coordinator does not settle the round until it answers.
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        FixtureTransport.feedItemCount.withLock { $0 = 24 }
+
+        // The capture's own callback, exactly as the view calls it. It returns synchronously; the single consumer
+        // starts and suspends inside the held producer.
+        let tail = try XCTUnwrap(presentation.window.items.last?.id)
+        association.store.submitViewport(.init(anchor: .init(cardID: tail, placement: .top)),
+            activity: .explicitTailApproach, rendered: presentation)
+        XCTAssertGreaterThanOrEqual(association.pendingViewportIngressCount, 1,
+            "o callback tem de registrar o fato mesmo com o produtor suspenso")
+
+        // A burst of observations while the consumer is suspended: the pending work is the finite summary, not the
+        // burst. Every card the reader actually passed is exposed at ingress, before any delivery.
+        let burst = presentation.window.items.map(\.id)
+        for index in 0..<300 {
+            association.store.submitViewport(.init(anchor: .init(cardID: burst[index % burst.count],
+                placement: .top)), activity: index.isMultiple(of: 2) ? .forward : .backward, rendered: presentation)
+        }
+        XCTAssertLessThanOrEqual(association.pendingViewportIngressCount, 6,
+            "a rajada não pode crescer o trabalho pendente: são os slots finitos do resumo, não uma fila")
+        for id in Set(burst) {
+            XCTAssertTrue(association.editorialExposure.wasExposed(id),
+                "a exposição é do instante da captura: coalescer depois não pode perder uma carta vista")
+        }
+
+        FixtureTransport.releaseScience()
+        _ = await Self.waitUntil(10) { association.pendingViewportIngressCount == 0 }
+        XCTAssertEqual(association.pendingViewportIngressCount, 0,
+            "o consumo pendente termina quando os fatos terminam")
+        XCTAssertNotNil(association.store.state.presentation)
+        await association.close()
+    }
+
+    /// R01: a burst with movement, reversal and rest — delivered late — keeps the facts the product acts on: the
+    /// **last** position is the reader's, the advanced cards produce a real consumption measure (high-water moved),
+    /// every seen card is exposed, and the rest is recorded durably at the drawn position.
+    func testMovingObservationsRemainBoundedAndPreserveRest() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 64 }
+        defer {
+            FixtureTransport.releaseScience()
+            FixtureTransport.feedItemCount.withLock { $0 = nil }
+        }
+        let clock = IngressClock()
+        let root = root(clock: clock)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let presentation = try XCTUnwrap(association.store.state.presentation)
+        let items = presentation.window.items
+        XCTAssertGreaterThan(items.count, 8)
+        guard items.count > 8, let lastItem = items.last else {
+            XCTFail("premissa: a janela admitida precisa de mais de oito cartas — veio \(items.count)")
+            await association.close()
+            return
+        }
+
+        // The next acquisition is the producer that holds the consumer. The local slice cannot close the deficit
+        // once the tail opportunity asks for more and the held feed is the supply that would arrive.
+        FixtureTransport.feedItemCount.withLock { $0 = 2 }
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        clock.advance(0.5)
+        association.store.submitViewport(.init(anchor: .init(cardID: lastItem.id, placement: .top)),
+            activity: .explicitTailApproach, rendered: presentation)
+
+        // The burst: movement forward and backward across the admitted window, with the reader's own instants.
+        let burst = 200
+        for index in 0..<burst {
+            clock.advance(0.01)
+            association.store.submitViewport(.init(anchor: .init(cardID: items[index % items.count].id,
+                placement: .top)), activity: index.isMultiple(of: 2) ? .forward : .backward,
+                rendered: presentation)
+        }
+        XCTAssertLessThanOrEqual(association.pendingViewportIngressCount, 6,
+            "rajada de \(burst) avanços: o pendente é o resumo finito")
+
+        // The reader rests at a drawn position. Both streams carry it: the rest settles the session, and the drawn
+        // top is what a durable record may name.
+        let restIndex = items.count / 2
+        let rest = items[restIndex].id
+        clock.advance(0.01)
+        association.store.submitViewport(.init(anchor: .init(cardID: rest, placement: .top)),
+            activity: .stationary, rendered: presentation)
+        association.store.publishPresentedPosition(.init(cardID: rest, placement: .top), atRest: true)
+        XCTAssertLessThanOrEqual(association.pendingViewportIngressCount, 6)
+
+        FixtureTransport.releaseScience()
+        _ = await Self.waitUntil(15) { association.pendingViewportIngressCount == 0 }
+        XCTAssertEqual(association.pendingViewportIngressCount, 0)
+
+        // Last position: the rest fact is the newest, so the reader ends there.
+        let settled = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertEqual(settled.window.anchor.cardID, rest,
+            "a última posição entregue tem de ser a do leitor — a ordem é a dos instantes de captura")
+        // High-water: the delivered movement measured a real advance; a coalesced delivery does not drop it.
+        let rate = await association.driver.runway.snapshot().consumption.cardsPerSecond
+        XCTAssertGreaterThan(try XCTUnwrap(rate), 0, "o avanço medido tem de sobreviver ao coalescing")
+        // Exposure: every card the reader passed is in the ledger.
+        for id in Set((0..<burst).map { items[$0 % items.count].id }) {
+            XCTAssertTrue(association.editorialExposure.wasExposed(id))
+        }
+        // Rest is durable at the drawn position, not at the window's own anchor.
+        let checkpoint = try XCTUnwrap(SessionStore(database: association.database)
+            .checkpoint(for: association.contextKey))
+        XCTAssertEqual(checkpoint.cardID, rest, "o repouso tem de ser gravado onde o desenho parou")
+        await association.close()
+    }
+
+    /// R01: the reader's instant is captured **at ingress**. A coalesced delivery is late by construction; if the
+    /// runway stamped the sample on delivery, the drain's own latency would become reading velocity. The clock is
+    /// controlled, so the expected rate is arithmetic, not a tolerance: two cards advanced over two seconds.
+    func testCoalescingPreservesCapturedConsumptionTiming() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 2 }
+        defer {
+            FixtureTransport.releaseScience()
+            FixtureTransport.feedItemCount.withLock { $0 = nil }
+        }
+        let clock = IngressClock()
+        let root = root(clock: clock)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let presentation = try XCTUnwrap(association.store.state.presentation)
+        let items = presentation.window.items
+        XCTAssertGreaterThanOrEqual(items.count, 2)
+        guard let first = items.first, items.count >= 2 else {
+            XCTFail("premissa: a janela admitida precisa de duas cartas — veio \(items.count)")
+            await association.close()
+            return
+        }
+        let second = items[1]
+
+        // Suspend the producer for the opportunity that asks for more; the two movement facts below queue behind
+        // it and are delivered only after the release.
+        FixtureTransport.feedItemCount.withLock { $0 = 24 }
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        clock.advance(2)
+        association.store.submitViewport(.init(anchor: .init(cardID: first.id, placement: .top)),
+            activity: .explicitTailApproach, rendered: presentation)
+        XCTAssertGreaterThanOrEqual(association.pendingViewportIngressCount, 1)
+
+        clock.advance(2)
+        association.store.submitViewport(.init(anchor: .init(cardID: second.id, placement: .top)),
+            activity: .forward, rendered: presentation)
+        XCTAssertLessThanOrEqual(association.pendingViewportIngressCount, 6,
+            "o segundo fato é coalescido enquanto o consumidor está suspenso")
+
+        FixtureTransport.releaseScience()
+        _ = await Self.waitUntil(10) { association.pendingViewportIngressCount == 0 }
+        XCTAssertEqual(association.pendingViewportIngressCount, 0)
+
+        // The advance from the reader's first position to the second is one card, and the two facts were captured
+        // two seconds apart: 0.5 cards/s. A delivery-time stamp would make both samples share one instant (the
+        // second is rejected as non-monotonic) and the learned rate would not be this number.
+        let snapshot = await association.driver.runway.snapshot()
+        let rate = try XCTUnwrap(snapshot.consumption.cardsPerSecond)
+        XCTAssertEqual(rate, 0.5, accuracy: 0.01,
+            "a taxa é das capturas (1 carta / 2 s), não do tempo que o dreno levou para entregá-las")
+        await association.close()
     }
 
     // MARK: - PD10-P0A: public sync contract, through the production URL and the real composition root

@@ -132,3 +132,66 @@ A fence foi restaurada (`git checkout -- AppComposition.swift`) antes do commit.
 ### Registro R00
 
 SHA inicial: `bc6a38dc2e16072fb82dc17071d100534d070a8a` | vermelho: reprodução acima (3 asserções) | alteração: instrumento de cauda + fatos afirmados + locale explícito | verde: tabela acima | jornada protegida: crescimento por recibo, fence do destinatário (mutação prova a discriminação) | pendências: nenhuma desta tarefa; restante do plano segue pendente | SHA final: registrado no commit `test(composition): make publication and locale regressions discriminating`.
+
+## R01 — ingresso de observações com trabalho pendente limitado
+
+Base da tarefa: `062711eb` (R00). Worktree e destino os mesmos; `-testLanguage en -testRegion US`.
+
+### Defeito e prova vermelha
+
+As três callbacks do host (`onViewport`, `onRenderedViewport`, `onPresentedPosition`) criavam **uma `Task`
+por evento** (`AppComposition.swift:1842-1860`): N callbacks produzem N tarefas não supervisionadas que
+intercalam em cada `await`; nada limita o pendente e `close()` não as alcança. O consumidor já coalesce
+no driver (`causalExecution`), mas só depois de todas as tarefas existirem.
+
+A prova vermelha foi obtida por mutação dos dois fatos medidos, não por suposição:
+
+| Mutação | Teste | Resultado |
+|---|---|---|
+| ingress volta a criar `Task` por callback (contador vivo do pendente) | `testScrollIngressDoesNotAwaitProducer` | **vermelho**: pendente `301 > 6` na rajada de 300 |
+| driver carimba `sampledAt` na entrega (`monotonicNow()`) em vez do instante de captura | `testCoalescingPreservesCapturedConsumptionTiming` | **vermelho**: taxa `0.249` contra `0.5` esperado |
+
+xcresult da mutação: `/tmp/fm-v2-r01-mutation.xcresult`. As duas mutações foram revertidas antes do commit.
+
+### Alteração
+
+- `FeedAssociation` recebe **um** resumo finito do ingresso (`PendingViewportIngress`): primeira
+  movimentação (âncora de medição), última posição, e o mais novo de cada fato semântico — reversão,
+  oportunidade de cauda, repouso e reconciliação local — além da posição desenhada (última vence).
+  São no máximo 6 slots, independentes do tamanho da rajada. Fatos são entregues em ordem de instante de
+  captura (empate pela ordem de ingresso), o que preserva a monotonicidade estrita do runway.
+- Um **único** consumidor (`viewportDrain`) esvazia o resumo; a callback registra e retorna, sem `Task`
+  por evento e sem aguardar produtor. O drain é geracional para não ser sobrescrito por uma tarefa
+  aposentada.
+- O instante e a identidade são capturados **no ingresso**: `IngressViewportFact.sampledAt` desce por
+  `FeedPresentationHandoff.submitViewport` → `FeedRunwayDriver.submitViewport` → `runway.submitObservation`,
+  em vez de ser carimbado na entrega. A identidade continua a `RenderedViewportEvidence`, validada pelo
+  dono (`belongs(to:)`/ordinal da sessão) no momento da entrega.
+- Exposição (`EditorialExposureLedger`) e o contador `viewportReceived` passam a ser fatos da callback;
+  coalescer não perde carta vista.
+- `background()` revoga a autorização de produção do ingresso e **conserva a posição prometida**: entrega
+  a posição desenhada pendente antes do checkpoint, depois limpa o resumo. `foreground()` restaura a
+  autorização; `close()` encerra pelo `active` e limpa o pendente.
+- Relógio injetável: `AppComposition`/`FeedAssociation` aceitam `monotonicNow` (default: uptime do
+  processo); o teste usa `IngressClock` controlado com tick de 1 ms (o controller recusa latência zero).
+- Os nomes de atividade seguem os existentes; nenhuma fila, scheduler, cache ou segundo pipeline foi
+  criado. A `FeedScreenStore` permanece sem `Task`/timer (regressão S12 intacta).
+
+### Provas verdes
+
+| Prova | Resultado | xcresult |
+|---|---|---|
+| os três casos novos (`testScrollIngressDoesNotAwaitProducer`, `testMovingObservationsRemainBoundedAndPreserveRest`, `testCoalescingPreservesCapturedConsumptionTiming`) | 3 / 0 falhas | `/tmp/fm-v2-r01c.xcresult` |
+| host completo: `CompositionTests` + `ContentFilterTests` + `FilterConfirmationBoundaryTests` | **84 testes / 0 falhas** (76 + 4 + 4) | `/tmp/fm-v2-r01-suite.xcresult` |
+| `swift test --filter FeedScreenStoreTests` | 18 / 0 | — |
+| `swift test --filter FeedViewportCaptureTests` | 36 / 0 | — |
+| `swift test --filter FeedPresentationHandoffTests` | 19 / 0 | — |
+| `git diff --check` | limpo | — |
+
+O teste de rajada também afirma: última posição entregue = posição do repouso; taxa de consumo medida > 0
+(high-water real sobrevive); toda carta vista está no ledger de exposição; e o repouso é gravado no
+checkpoint do contexto na posição desenhada.
+
+### Registro R01
+
+SHA inicial: `062711eb` | vermelho: tabela de mutações acima | alteração: resumo finito + consumidor único + instante de captura + revogação no background | verde: tabela acima | jornada protegida: captura não aguarda produtor; rajada limitada; avanço/repouso/exposição preservados; background não produz fora da tela | pendências: R02 e seguintes | SHA final: registrado no commit `fix(ui): bound viewport ingress without losing semantic facts`.

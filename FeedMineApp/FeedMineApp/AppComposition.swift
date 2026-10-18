@@ -175,7 +175,8 @@ final class AppComposition {
     /// forbids — and normal runs and release builds seed nothing.
     init(directory: URL? = nil, feeds: [TrustedFeed] = TrustedFeed.developmentSelection,
         transportConfiguration: URLSessionConfiguration? = nil,
-        discoveryQuery: DiscoveryQuery? = nil) {
+        discoveryQuery: DiscoveryQuery? = nil,
+        monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! }) {
         let support = RuntimeDatabaseLocation.applicationSupport(
             FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).directory
         #if DEBUG
@@ -190,6 +191,7 @@ final class AppComposition {
         // nothing and gets the detached pass over the shipped catalogue. The same kind of seam the transport
         // already is: what the query returns is a value, and this composition owns when it is adopted.
         self.discoveryQuery = discoveryQuery ?? Self.liveDiscoveryQuery
+        self.monotonicNow = monotonicNow
         let config = transportConfiguration ?? .ephemeral
         if transportConfiguration == nil { config.timeoutIntervalForRequest = 20 }
         #if DEBUG
@@ -1368,7 +1370,8 @@ final class AppComposition {
             discoveryTraversal: discoveryTraversal(for: key, profile: profile, snapshot: catalogueSnapshot),
             contextKey: key, selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
             catalogueURL: catalogueSnapshot?.catalogueURL, editorialExposure: editorialExposure,
-            discoveryProfile: profile, warmLaunch: warmLaunch, launchSettings: launchSettings))
+            discoveryProfile: profile, warmLaunch: warmLaunch, launchSettings: launchSettings,
+            monotonicNow: monotonicNow))
     }
 
     /// The association a **warm** launch starts from — the same session `launch()` would build, built
@@ -1672,6 +1675,9 @@ final class AppComposition {
         }.value
     }
     @ObservationIgnored private let discoveryQuery: DiscoveryQuery
+    /// The reader's instant for every runway sample (R01). A test injects a controlled clock, so coalescing
+    /// can be proven not to turn the drain's latency into reading velocity; production is the process uptime.
+    @ObservationIgnored private let monotonicNow: @Sendable () -> RunwayMonotonicTime
 
     /// What one profile's query answered, and the two facts the answer is about: the profile it was read for and
     /// the catalogue revision it read. **One value, returned** — it used to arrive as two pieces of composition
@@ -1840,11 +1846,11 @@ final class FeedAssociation {
 
     @ObservationIgnored
     lazy var store: FeedScreenStore = FeedScreenStore(onViewport: { [weak self] observation, activity in
-        guard let self else { return }
-        Task { await self.viewport(observation, activity: activity) }
+        // R01: the callback records one fact and returns. It creates no task per event and awaits no producer;
+        // the association's single drain consumes the finite pending summary.
+        self?.receiveViewportIngress(observation, activity: activity, evidence: nil)
     }, onRenderedViewport: { [weak self] evidence, activity in
-        guard let self, self.active else { return }
-        Task { await self.viewport(evidence.observation, activity: activity, evidence: evidence) }
+        self?.receiveViewportIngress(evidence.observation, activity: activity, evidence: evidence)
     }, availableActions: Self.readerCardActions, onAction: { [weak self] event in
         guard let self, self.active else { return }
         switch event.action {
@@ -1856,8 +1862,8 @@ final class FeedAssociation {
         onSubmitSearch: { [weak self] term in self?.onSearch?(term) },
         onNavigate: { [weak self] destination in self?.onNavigate?(destination) },
         onPresentedPosition: { [weak self] anchor, atRest in
-            guard let self, self.active else { return }
-            Task { await self.notePresentedPosition(anchor, atRest: atRest) }
+            // The latest drawn position wins; the same single drain writes it off the callback.
+            self?.receivePresentedPositionIngress(anchor, atRest: atRest)
         })
 
     /// T9: the card actions this host executes. Resolution is the action coordinator's (the occurrence's own
@@ -2201,8 +2207,10 @@ final class FeedAssociation {
         scoring: ResolvedSelectionPolicy.ScoringBehavior = .equal, scoringVersion: UInt64 = 1,
         catalogueURL: URL?, editorialExposure: EditorialExposureLedger,
         discoveryProfile: ReaderDiscoveryProfile = .init(), warmLaunch: Bool = false,
-        launchSettings: CollectionLaunchSettings = .init()) throws {
+        launchSettings: CollectionLaunchSettings = .init(),
+        monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! }) throws {
         self.trace = trace
+        self.monotonicNow = monotonicNow
         self.catalogueURL = catalogueURL
         self.editorialExposure = editorialExposure
         self.discoveryProfile = discoveryProfile
@@ -2510,7 +2518,7 @@ final class FeedAssociation {
         self.publicationRelay = publicationRelay
         driver = try FeedRunwayDriver(session: session, runway: runway, plan: plan, policy: policy,
             acquisition: acquisition, coordinator: coordinator,
-            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            monotonicNow: monotonicNow,
             makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date())! },
             prepare: prepare,
             selectedSourceCoverage: .init(selectedSourceCoverageFor: plan.context.key, editorialRevisionID: plan.revision.id),
@@ -2931,6 +2939,176 @@ final class FeedAssociation {
     /// Review M7: a stationary reader produces no new observation, so a failed local slice would
     /// otherwise never be retried. One opportunity is scheduled at the controller's eligibility time.
     @ObservationIgnored private var retryTask: Task<Void, Never>?
+
+    // MARK: - Bounded viewport ingress (R01)
+
+    /// One viewport fact as it arrived at the reader's callback, **before** any suspension. `sampledAt` is the
+    /// reader's own instant: the runway measures consumption over the intervals between samples, so a fact that is
+    /// delivered late by coalescing must still say when the reader produced it. `ordinal` is the ingress order.
+    private struct IngressViewportFact: Sendable {
+        let observation: ViewportObservation
+        let activity: RunwayActivity
+        let evidence: RenderedViewportEvidence?
+        let sampledAt: RunwayMonotonicTime
+        let ordinal: UInt64
+        var isReconciliation: Bool { evidence?.isPositionReconciliation == true }
+    }
+
+    /// The **finite** summary of one drain's pending work. It is not "the last event": the earliest movement is
+    /// kept as the measurement anchor (dropping it would lose the interval the reader's rate is measured over),
+    /// the last event is kept as the final position, and the newest of each semantic kind the runway can act on
+    /// (reversal, explicit tail approach, rest, local reconciliation) survives even when a later event of another
+    /// kind arrives. Every slot holds one fact, so the pending work is bounded by the number of kinds — never by
+    /// the size of the burst.
+    private struct PendingViewportIngress {
+        var firstMovement: IngressViewportFact?
+        var latest: IngressViewportFact?
+        var latestBackward: IngressViewportFact?
+        var latestTailApproach: IngressViewportFact?
+        var latestRest: IngressViewportFact?
+        var latestReconciliation: IngressViewportFact?
+        var presentedPosition: (anchor: PresentationAnchor, atRest: Bool)?
+
+        var isEmpty: Bool {
+            firstMovement == nil && latest == nil && latestBackward == nil && latestTailApproach == nil
+                && latestRest == nil && latestReconciliation == nil && presentedPosition == nil
+        }
+
+        /// What a test can read while the consumer is suspended: the occupied slots, never the burst length.
+        var count: Int {
+            [firstMovement, latest, latestBackward, latestTailApproach, latestRest, latestReconciliation]
+                .compactMap { $0 }.count + (presentedPosition == nil ? 0 : 1)
+        }
+
+        mutating func record(_ fact: IngressViewportFact) {
+            if fact.isReconciliation {
+                latestReconciliation = fact
+                return
+            }
+            if firstMovement == nil { firstMovement = fact }
+            latest = fact
+            switch fact.activity {
+            case .backward: latestBackward = fact
+            case .explicitTailApproach: latestTailApproach = fact
+            case .stationary: latestRest = fact
+            case .forward: break
+            }
+        }
+
+        mutating func takePresentedPosition() -> (anchor: PresentationAnchor, atRest: Bool)? {
+            defer { presentedPosition = nil }
+            return presentedPosition
+        }
+
+        /// The next fact in reader-time order: the semantic slots are delivered by their own capture instant, so
+        /// the runway's strictly increasing `sampledAt` holds even when a burst mixed directions. Ties (the same
+        /// instant from the same callback stream) break on the ingress ordinal.
+        mutating func takeNext() -> IngressViewportFact? {
+            let slots: [IngressViewportFact?] = [firstMovement, latest, latestBackward, latestTailApproach,
+                latestRest, latestReconciliation]
+            guard let next = slots.compactMap({ $0 })
+                .min(by: { ($0.sampledAt.seconds, $0.ordinal) < ($1.sampledAt.seconds, $1.ordinal) }) else {
+                return nil
+            }
+            if firstMovement?.ordinal == next.ordinal { firstMovement = nil }
+            if latest?.ordinal == next.ordinal { latest = nil }
+            if latestBackward?.ordinal == next.ordinal { latestBackward = nil }
+            if latestTailApproach?.ordinal == next.ordinal { latestTailApproach = nil }
+            if latestRest?.ordinal == next.ordinal { latestRest = nil }
+            if latestReconciliation?.ordinal == next.ordinal { latestReconciliation = nil }
+            return next
+        }
+
+        mutating func removeAll() {
+            firstMovement = nil; latest = nil; latestBackward = nil; latestTailApproach = nil
+            latestRest = nil; latestReconciliation = nil; presentedPosition = nil
+        }
+    }
+
+    /// The reader's facts waiting for the single consumer. `@ObservationIgnored`: ingress bookkeeping must never
+    /// re-evaluate a view.
+    @ObservationIgnored private var viewportIngress = PendingViewportIngress()
+    /// The one consumer of `viewportIngress`. A callback records and returns; it never creates a task per event.
+    @ObservationIgnored private var viewportDrain: Task<Void, Never>?
+    @ObservationIgnored private var viewportDrainGeneration: UInt64 = 0
+    @ObservationIgnored private var ingressOrdinal: UInt64 = 0
+    /// Production authorization for the drain. Background ends it (the reader is no longer on screen) and
+    /// foreground restores it; `close()` ends it for good through `active`.
+    @ObservationIgnored private var ingressAuthorized = true
+    /// The reader's instant, as the host defines it. A test injects a controlled clock; production is uptime.
+    @ObservationIgnored private let monotonicNow: @Sendable () -> RunwayMonotonicTime
+
+    /// What a test can read while the consumer is suspended (R01): the bounded pending summary, never the burst.
+    var pendingViewportIngressCount: Int { viewportIngress.count }
+
+    /// Records one viewport fact in the finite summary and lets the **single** consumer do the work. Called from
+    /// the store's own callback, so the capture returns immediately and the producer is never awaited here.
+    func receiveViewportIngress(_ observation: ViewportObservation, activity: RunwayActivity,
+        evidence: RenderedViewportEvidence?) {
+        guard active, ingressAuthorized else { return }
+        if evidence?.isPositionReconciliation != true {
+            // Exposure is a fact of the reader's own callback: coalescing later must not lose the cards the reader
+            // actually saw between two delivered opportunities.
+            editorialExposure.expose(observation.anchor.cardID)
+            #if DEBUG
+            viewportReceived += 1
+            #endif
+        }
+        ingressOrdinal &+= 1
+        viewportIngress.record(.init(observation: observation, activity: activity, evidence: evidence,
+            sampledAt: monotonicNow(), ordinal: ingressOrdinal))
+        startViewportDrain()
+    }
+
+    /// Records the drawn position. It is a position, not a production opportunity: the latest one wins and is
+    /// delivered by the same single consumer.
+    func receivePresentedPositionIngress(_ anchor: PresentationAnchor, atRest: Bool) {
+        guard active, ingressAuthorized else { return }
+        viewportIngress.presentedPosition = (anchor, atRest)
+        startViewportDrain()
+    }
+
+    private func startViewportDrain() {
+        guard viewportDrain == nil, active, ingressAuthorized else { return }
+        viewportDrainGeneration &+= 1
+        let generation = viewportDrainGeneration
+        viewportDrain = Task { [weak self] in
+            await self?.consumeViewportIngress()
+            guard let self, self.viewportDrainGeneration == generation else { return }
+            self.viewportDrain = nil
+            // A fact that arrived between the last take and releasing ownership must not be stranded; with no
+            // suspension between these lines, the check cannot race an ingress on the main actor.
+            if !self.viewportIngress.isEmpty { self.startViewportDrain() }
+        }
+    }
+
+    /// The single consumer: positions first (they are cheap and idempotent), then the semantic facts in reader-time
+    /// order. It stops as soon as the association retires or background revokes production.
+    private func consumeViewportIngress() async {
+        while true {
+            guard active, ingressAuthorized, !Task.isCancelled else { return }
+            if let position = viewportIngress.takePresentedPosition() {
+                await notePresentedPosition(position.anchor, atRest: position.atRest)
+                continue
+            }
+            guard let fact = viewportIngress.takeNext() else { return }
+            await viewport(fact.observation, activity: fact.activity, evidence: fact.evidence,
+                sampledAt: fact.sampledAt)
+        }
+    }
+
+    /// Ends the drain's authorization and its pending work, keeping the **promised drawing position**: the reader's
+    /// last presented anchor is delivered before the checkpoint, because a suspension must not lose where they were.
+    private func revokeViewportIngress() async {
+        ingressAuthorized = false
+        viewportDrain?.cancel()
+        viewportDrain = nil
+        viewportDrainGeneration &+= 1
+        if let position = viewportIngress.takePresentedPosition() {
+            await notePresentedPosition(position.anchor, atRest: position.atRest)
+        }
+        viewportIngress.removeAll()
+    }
     /// Review F09: only a visible association may drive the feed. Background and close revoke it.
     @ObservationIgnored private var visible = true
     /// F16: when the next cold attempt may run if no first Edition exists yet.
@@ -3006,7 +3184,8 @@ final class FeedAssociation {
     }
 
     func viewport(_ observation: ViewportObservation, activity: RunwayActivity,
-        evidence: RenderedViewportEvidence? = nil) async {
+        evidence: RenderedViewportEvidence? = nil,
+        sampledAt: RunwayMonotonicTime? = nil) async {
         do {
             guard active else { throw FeedPresentationStateError.projectionSequenceMismatch }
             if let evidence {
@@ -3016,10 +3195,9 @@ final class FeedAssociation {
             // at. It is recorded before the handoff, because the reader's exposure happened whether or not the
             // publication side accepted the opportunity.
             if evidence?.isPositionReconciliation != true {
+                // Direct callers keep the exposure fact here; the store path already recorded it at ingress.
+                // The ledger is idempotent, so a coalesced fact is never counted twice.
                 editorialExposure.expose(observation.anchor.cardID)
-                #if DEBUG
-                viewportReceived += 1
-                #endif
             }
             if evidence?.isPositionReconciliation != true {
                 Self.log("viewport forwarded activity=\(activity) anchor=\(observation.anchor.cardID)")
@@ -3029,6 +3207,7 @@ final class FeedAssociation {
             }
             let received = try await FeedPresentationHandoff.submitViewport(observation, activity: activity,
                 resources: resources, driver: driver, into: store.state, evidence: evidence,
+                sampledAt: sampledAt,
                 onCommitted: { [weak self] committed in
                     await MainActor.run {
                         guard let self, self.active else { return }
@@ -3155,6 +3334,8 @@ final class FeedAssociation {
     /// a drive with nothing to do is a no-op.
     func foreground() async {
         visible = true
+        // R01: the reader is back on screen; the single ingress may drive again.
+        ingressAuthorized = true
         // O outro lado do par: `background()` para o medidor com a tela, porque o que interessa é o que o leitor
         // sente enquanto rola. Sem esta linha, a medição só voltava por tabela — pelo `install()` que o restore ou
         // a reativação da apresentação corrente alcançam —, e um foreground que não passa por ali (falha no
@@ -3204,6 +3385,10 @@ final class FeedAssociation {
         visible = false
         retryTask?.cancel()
         retryTask = nil
+        // R01: a suspensão encerra a autorização de produção do ingresso. As oportunidades pendentes não devem
+        // rodar fora da tela; a **posição prometida** (o último desenho) é entregue antes do checkpoint, porque
+        // ela é onde o leitor estava e não uma oportunidade de produção.
+        await revokeViewportIngress()
         // O medidor de quadros para com a tela: o que interessa é o que o leitor sente enquanto rola.
         frameMeter.stop()
         guard active else { return }
@@ -3248,6 +3433,10 @@ final class FeedAssociation {
 
     func close() async {
         cold.cancel()
+        viewportDrain?.cancel()
+        viewportDrain = nil
+        viewportDrainGeneration &+= 1
+        viewportIngress.removeAll()
         if let edition = store.state.presentation?.editionID {
             try? PublicationStore(database: database).setVisibility(editionID: edition, visible: true)
         }

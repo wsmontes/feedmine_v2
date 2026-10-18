@@ -156,18 +156,23 @@ public actor FeedRunwayDriver {
     /// Records one real observation and lets the runway produce. The admitted list changes only through
     /// `FeedPresentationAdmission.forwardScroll` when the movement was forward, and only through
     /// `FeedPresentationAdmission.backwardScroll` when it was backward and reached the admitted head.
+    /// `sampledAt` is the instant the reader produced the observation, when the caller captured it **before**
+    /// any suspension (the host's single ingress, `FeedAssociation`). The runway measures consumption as cards
+    /// advanced over elapsed time between samples, so a coalesced opportunity delivered late must still carry the
+    /// moment it happened: stamping it on delivery would turn the drain's own latency into reader velocity. Nil
+    /// mints the instant here — the pre-existing behavior for callers with no earlier fact.
     public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,
-        resources: FeedRunwayDriverResources,
+        resources: FeedRunwayDriverResources, sampledAt: RunwayMonotonicTime? = nil,
         onCommitted: (@Sendable (FeedPresentationSnapshot) async -> Void)? = nil) async throws -> FeedPresentationSnapshot? {
         guard let recorded = try await session.submitViewport(observation) else {
             await runway.deactivate(); return nil
         }
         return try await finishViewport(observation, recorded: recorded, activity: activity,
-            resources: resources, onCommitted: onCommitted)
+            resources: resources, sampledAt: sampledAt, onCommitted: onCommitted)
     }
 
     public func submitViewport(_ evidence: RenderedViewportEvidence, activity: RunwayActivity,
-        resources: FeedRunwayDriverResources,
+        resources: FeedRunwayDriverResources, sampledAt: RunwayMonotonicTime? = nil,
         onCommitted: (@Sendable (FeedPresentationSnapshot) async -> Void)? = nil) async throws -> FeedPresentationSnapshot? {
         guard let recorded = try await session.submitViewport(evidence.observation, from: evidence) else {
             return await session.currentPresentation()
@@ -178,17 +183,18 @@ public actor FeedRunwayDriver {
             return recorded
         }
         return try await finishViewport(evidence.observation, recorded: recorded, activity: activity,
-            resources: resources, onCommitted: onCommitted)
+            resources: resources, sampledAt: sampledAt, onCommitted: onCommitted)
     }
 
     private func finishViewport(_ observation: ViewportObservation, recorded: FeedPresentationSnapshot,
         activity: RunwayActivity, resources: FeedRunwayDriverResources,
+        sampledAt: RunwayMonotonicTime? = nil,
         onCommitted: (@Sendable (FeedPresentationSnapshot) async -> Void)?) async throws -> FeedPresentationSnapshot? {
         // An unknown anchor is inert: the session kept its current anchor and no observation is claimed.
         guard recorded.window.anchor == observation.anchor else { return recorded }
         _ = try await validateCurrentScope()
         try await runway.submitObservation(.init(editionID: recorded.editionID,
-            anchorCardID: recorded.window.anchor.cardID, sampledAt: monotonicNow(), activity: activity))
+            anchorCardID: recorded.window.anchor.cardID, sampledAt: sampledAt ?? monotonicNow(), activity: activity))
         if activity.admitsForwardContent {
             // The gesture reveals the prefix that was already ready; cards produced by this very
             // opportunity wait for the next genuine scroll observation.
