@@ -33,7 +33,6 @@ public struct ReaderOnboardingView: View {
     private let regions: [OnboardingRegion]
     private let languages: [OnboardingLanguage]
     private let isSaving: Bool
-    private let deviceLanguage: String
     /// The reader's own file, imported at first contact. The file picker belongs to the host (`SourceManagementView`
     /// reports the same intent the same way: a `Button` that calls a closure), and so does the preview and the
     /// commit — this scene never reads a file and never writes one.
@@ -45,7 +44,7 @@ public struct ReaderOnboardingView: View {
     /// the Composer, which is the stage that has something to change.
     public init(recipe: FeedRecipeDefinition = .neutral(), isFirstRun: Bool = true,
         previewCards: [PresentationCard] = [], topics: [OnboardingTopic] = [], regions: [OnboardingRegion] = [],
-        languages: [OnboardingLanguage] = [], isSaving: Bool = false, deviceLanguage: String = "en",
+        languages: [OnboardingLanguage] = [], isSaving: Bool = false,
         onImport: @escaping () -> Void = {}, onSave: @escaping (FeedRecipeDefinition) -> Void,
         onClose: @escaping () -> Void) {
         _stage = State(initialValue: isFirstRun ? .welcome : .composer)
@@ -55,7 +54,6 @@ public struct ReaderOnboardingView: View {
         self.regions = regions
         self.languages = languages
         self.isSaving = isSaving
-        self.deviceLanguage = deviceLanguage
         self.onImport = onImport
         self.onSave = onSave
         self.onClose = onClose
@@ -185,7 +183,9 @@ public struct ReaderOnboardingView: View {
             .controlSize(.large)
             .accessibilityIdentifier("welcome-shape")
             Button {
-                onSave(.neutral(languages: [deviceLanguage]))
+                // Entering wide open **is** the skip: the language answer stays unnamed, which acquisition already
+                // reads as every language — never the device's own, which the reader did not choose.
+                onSave(.neutral())
             } label: {
                 Text(verbatim: String(localized: "Começar amplo")).font(.subheadline)
             }
@@ -279,14 +279,11 @@ public struct ReaderOnboardingView: View {
 
     private var composerFooter: some View {
         HStack(spacing: FeedDesignTokens.Spacing.tight) {
-            Button(String(localized: "Reiniciar")) { recipe = .neutral(languages: [deviceLanguage]) }
+            Button(String(localized: "Reiniciar")) { recipe = .neutral() }
                 .accessibilityIdentifier("composer-reset")
             Spacer()
-            Button(String(localized: "Começar amplo")) {
-                let broad = FeedRecipeDefinition.neutral(languages: [deviceLanguage])
-                onSave(broad)
-            }
-            .accessibilityIdentifier("composer-start-broad")
+            Button(String(localized: "Começar amplo")) { onSave(.neutral()) }
+                .accessibilityIdentifier("composer-start-broad")
             Spacer()
             Button {
                 onSave(recipe)
@@ -308,13 +305,23 @@ public struct ReaderOnboardingView: View {
 /// One titled block of the Composer's sheet.
 struct OnboardingSection<Content: View>: View {
     let title: String
+    /// A surface whose heading **is** the question names it, so a test reaches the question instead of the copy in
+    /// whichever language the device is set to. Sections without one keep no identifier (unchanged tree).
+    var identifier: String? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.tight) {
-            Text(verbatim: title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+            if let identifier {
+                Text(verbatim: title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier(identifier)
+            } else {
+                Text(verbatim: title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
             content
         }
     }

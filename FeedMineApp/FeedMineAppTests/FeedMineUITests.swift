@@ -2545,6 +2545,49 @@ final class FeedMineUITests: XCTestCase {
         add(attachment)
     }
 
+    /// Item C, the owner's decision: the first run **asks** the reader's language — no chip is pre-selected from
+    /// the device — and the reader can skip. "Todos os idiomas" is that skip, stated where the question is and
+    /// selected while no language is named, so the state the reader enters with is visible and reversible.
+    @MainActor
+    func testTheFirstRunAsksTheLanguageAndLetsTheReaderSkip() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(pt-BR)", "-AppleLocale", "pt_BR"]
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 90))
+        app.buttons["welcome-shape"].tap()
+
+        let question = app.staticTexts["composer-language-question"]
+        XCTAssertTrue(question.waitForExistence(timeout: 90), "the first run states the language question")
+        XCTAssertEqual(question.label, "Em quais idiomas você quer ler?",
+            "the question is the interface's own words, not a catalog code")
+
+        let skip = app.buttons["composer-languages-unrestricted"]
+        XCTAssertTrue(skip.exists, "the skip is stated where the question is")
+        XCTAssertTrue(skip.isSelected, "and it is the state of a reader who has not answered")
+
+        let chips = app.buttons.matching(NSPredicate(format: "identifier MATCHES %@",
+            "composer-language-[a-z]{2,3}"))
+        XCTAssertTrue(chips.firstMatch.waitForExistence(timeout: 90), "the catalogue's languages are offered")
+        XCTAssertFalse(chips.allElementsBoundByIndex.contains { $0.isSelected },
+            "no language is chosen for the reader before they answer")
+
+        let composer = app.otherElements["onboarding"].scrollViews.firstMatch
+        let portuguese = app.buttons["composer-language-pt"]
+        for _ in 0..<4 where !portuguese.isHittable { composer.swipeUp() }
+        XCTAssertTrue(portuguese.isHittable)
+        portuguese.tap()
+        XCTAssertTrue(portuguese.isSelected, "the reader's answer is stated")
+        XCTAssertFalse(skip.isSelected, "and the skip stops being the answer")
+
+        for _ in 0..<4 where !skip.isHittable { composer.swipeUp() }
+        XCTAssertTrue(skip.isHittable)
+        skip.tap()
+        XCTAssertTrue(skip.isSelected, "taking the last answer back is the skip")
+        XCTAssertFalse(portuguese.isSelected)
+    }
+
     /// The interface follows the device: in English the same screen is English, the languages are named in
     /// English, and the counts are stated in English.
     @MainActor

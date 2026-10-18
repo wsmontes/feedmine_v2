@@ -2408,6 +2408,69 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
+    /// Item C, the owner's decision: the first run **asks** the reader's language instead of inferring it from the
+    /// system. The answer is persisted as the discovery profile — the language scope acquisition reads — and the
+    /// next launch does not ask again. `Locale.current` is not on this path at all: the only language here is the
+    /// one the test (standing for the reader) wrote.
+    func testTheFirstRunAsksTheLanguageAndTheAnswerClosesIt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        XCTAssertTrue(composition.needsOnboarding, "a fresh reader meets the first run — the language question included")
+        await composition.launch()
+        XCTAssertTrue(try XCTUnwrap(composition.association).discoveryProfile.isEmpty,
+            "no language is inferred before the reader answers — not even the device's")
+
+        await composition.completeFirstRun(discovery: .neutral(languages: ["pt"]))
+
+        let stored = try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+            .load()
+        XCTAssertEqual(stored?.settings.discoveryProfile.languages, ["pt"], "the answer is the language scope")
+        XCTAssertEqual(stored?.settings.hasSeenOnboarding, true, "and it is the answer that closes the first run")
+        XCTAssertFalse(stored?.sourceKeys.contains { $0.hasPrefix("http") } ?? true,
+            "the answer never writes into the reader's own selection")
+        let association = try XCTUnwrap(composition.association)
+        XCTAssertEqual(association.discoveryProfile.languages, ["pt"],
+            "acquisition reads the answer as the scope it acquires in")
+        XCTAssertFalse(composition.needsOnboarding)
+        await association.close()
+
+        let secondLaunch = root(directory: directory)
+        XCTAssertFalse(secondLaunch.needsOnboarding, "a second launch does not ask again")
+        await secondLaunch.association?.close()
+    }
+
+    /// The other answer to the same question: the reader skips. Nothing is named, so acquisition stays
+    /// unrestricted, the stored profile names nothing, and the `.main` context keeps the plain identity it always
+    /// had — the skip cannot change what the reader is reading.
+    func testSkippingTheLanguageQuestionLeavesAcquisitionUnrestricted() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        XCTAssertTrue(composition.needsOnboarding)
+        await composition.launch()
+
+        // What the gate's own way out writes: the neutral recipe, no language named.
+        await composition.completeFirstRun(discovery: .neutral())
+
+        let stored = try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+            .load()
+        XCTAssertEqual(stored?.settings.discoveryProfile.languages, [], "the skip names no language")
+        XCTAssertFalse(AppComposition.namesAnything(try XCTUnwrap(stored?.settings.discoveryProfile)),
+            "and it names nothing at all — a neutral profile is 'no answers yet'")
+        XCTAssertEqual(stored?.settings.hasSeenOnboarding, true)
+        let association = try XCTUnwrap(composition.association)
+        XCTAssertTrue(association.discoveryProfile.isEmpty, "so acquisition is unrestricted")
+        XCTAssertEqual(try XCTUnwrap(association.contextKey).filter.languages, [],
+            "the .main key still means the plain surface, exactly as before")
+        XCTAssertFalse(composition.needsOnboarding)
+        await association.close()
+
+        let secondLaunch = root(directory: directory)
+        XCTAssertFalse(secondLaunch.needsOnboarding, "a second launch does not ask again")
+        await secondLaunch.association?.close()
+    }
+
     /// F02, the door back to a feed of the reader's own: the rules are stated once in the discovery preferences and
     /// a feed is created from them — and **creating does not activate it, does not move the reading**, and the
     /// library keeps it. Opening it is the reader's own next step.

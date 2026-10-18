@@ -885,10 +885,11 @@ struct FeedMineApp: App {
     /// T11: V1's own gate — the reader meets the app before the feed, and what they answer becomes a feed.
     @ViewBuilder private var onboardingCover: some View {
         let options = composition.onboardingOptions()
-        ReaderOnboardingView(recipe: .neutral(languages: [Self.deviceLanguage]), isFirstRun: true,
+        // The first run **asks**: no language is pre-selected, and nothing here reads `Locale.current` — the
+        // reader's answer (or the skip) is the only thing that names a language.
+        ReaderOnboardingView(isFirstRun: true,
             previewCards: composition.onboardingPreviewCards(),
             topics: options.topics, regions: options.regions, languages: options.languages,
-            deviceLanguage: Self.deviceLanguage,
             // NN-08: the reader's own sources can be imported at first contact without becoming a requirement.
             // The file flow (picker → preview → commit) is the app's own, presented by the host, so the gate
             // steps aside for it and this host brings it back when it ends. Asking writes nothing at all.
@@ -1081,10 +1082,6 @@ struct FeedMineApp: App {
     private func completeOnboarding() async {
         composition.completeOnboarding()
         showsOnboarding = false
-    }
-
-    private static var deviceLanguage: String {
-        Locale.current.language.languageCode?.identifier ?? "en"
     }
 
     /// T11: V1's "open hood", over the feed the reader is on.
