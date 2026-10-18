@@ -471,6 +471,116 @@ extension LocalProductionSliceTests {
         XCTAssertEqual(try store.segments(editionID: f.editionID).count, 5)
     }
 
+    /// B/H(b), spec "Estabilidade de coleta e UI": a media readiness transition is the local-supply fact that
+    /// reopens the runway's existing drive opportunity, and pending media is never published before it.
+    @MainActor
+    func testReadinessTransitionSchedulesTheDriveThatPublishesPendingMedia() async throws {
+        let f = try fixture(), held = HeldImage(), pending = LocalSliceFixture.revision(6)
+        addTeardownBlock { await held.release() }
+        let image = try XCTUnwrap(MediaCandidate(id: MediaCandidateID(), originRevisionID: pending.id,
+            role: .cardVisual, mediaClass: .image, remoteURL: URL(string: "https://example.test/pending.png")!,
+            declaredMimeType: "image/png", declaredPixelWidth: 2, declaredPixelHeight: 3))
+        try f.admit(pending, media: [image])
+        let assets = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: assets) }
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAEElEQVR4nGP4z8AARAwoFABE0AX7pM/egAAAAABJRU5ErkJggg==")!
+        let pendingCardID = LocalSliceFixture.cardID(LocalSliceFixture.candidate(pending))
+
+        // The reader's position and the runway are the real ones: no fake scheduler stands in for the
+        // notification `RunwayController` already owns.
+        let history = PublicationHistory(database: f.database)
+        try history.saveCursor(.init(editionID: f.editionID,
+            anchor: .init(cardID: f.initialCardIDs[0], placement: .center)), updatedAt: Date())
+        let scope = RunwayScope(editionID: f.editionID, contextKey: f.plan.context.key,
+            editorialRevisionID: f.plan.revision.id)
+        let runway = RunwayController(configuration: .init(
+            policyInputs: .init(safetyFactor: 1, releaseMarginSeconds: 0)!,
+            consumptionSampleLimit: 2, replenishmentSampleLimit: 2)!)
+        _ = try await FeedSession(publicationHistory: history)
+            .admitPresentation(.initial(.init(backwardCapacity: 0, forwardCapacity: 10)))
+        await runway.activate(scope)
+        let observation = RunwayObservation(editionID: f.editionID, anchorCardID: f.initialCardIDs[0],
+            sampledAt: .init(seconds: 0)!, activity: .stationary)
+        try await runway.submitObservation(observation)
+
+        let scheduled = expectation(description: "readiness scheduled the existing drive opportunity")
+        let media = MediaPrefetcher(database: f.database, assetDirectory: assets, concurrentDownloadLimit: 1,
+            fetch: { _, _ in await held.wait(); return png }, conditions: { _ in Self.mediaPolicy() },
+            onReadinessChanged: { revision in
+                guard revision == pending.id else { return }
+                try? await runway.noteLocalSupplyChanged(scope: scope)
+                scheduled.fulfill()
+            })
+        let readiness = media.readiness
+        await media.prefetch([pending.id], deadline: ProcessInfo.processInfo.systemUptime - 1)
+        XCTAssertNil(readiness.presentation(for: pending.id), "pending media has no presentation to publish")
+        XCTAssertNil(try PublicationStore(database: f.database).card(id: pendingCardID),
+            "pending media is never published before its readiness transition")
+
+        let sliceResources = RunwayResourceFacts(localWorkAllowed: true, examinedCandidateCapacity: 4,
+            readyProbeBound: 10, readyProbeCeiling: 10, forwardAdvanceProbeBound: 10, reserveCards: 10)!
+        let slice = LocalProductionSlice(database: f.database, readiness: readiness)
+        func measure() async throws {
+            try await runway.acceptMeasurement(.init(observation: observation,
+                readyAhead: history.readyAhead(editionID: f.editionID,
+                    anchorCardID: f.initialCardIDs[0], probeBound: 10),
+                advanceFromHighWater: nil))
+        }
+
+        // Before any transition: the pending head is suspended, and the bounded page proves exhaustion.
+        try await measure()
+        let firstIntent: RunwayLocalSliceIntent
+        guard case .runLocalSlice(let first) = try await runway.reconsider(resources: sliceResources,
+            at: .init(seconds: 1)!) else { return XCTFail("a fresh runway must offer its first local slice") }
+        firstIntent = first
+        let firstOutcome = try slice.run(f.request(capacity: 10, exposure: .excludePublishedMaterial, segment: 47_000)) { _ in
+            throw PreparationFailure.refused
+        }
+        guard case .advancedWithoutPublication(let progress) = firstOutcome else {
+            return XCTFail("unready media must suspend, never fall back to a text-only card")
+        }
+        XCTAssertTrue(progress.exhausted)
+        try await runway.completeLocalSlice(firstIntent, outcome: firstOutcome, at: .init(seconds: 2)!)
+        let exhaustedRunway = await runway.snapshot()
+        XCTAssertTrue(exhaustedRunway.localSupplyExhausted)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.editionID).flatMap(\.cardIDs),
+            f.initialCardIDs, "only the fixture's own card is published")
+        // Exhaustion alone is not a supply fact: the suspended head must not spin.
+        try await measure()
+        if case .runLocalSlice = try await runway.reconsider(resources: sliceResources, at: .init(seconds: 2.5)!) {
+            return XCTFail("exhaustion without a supply change must not schedule another drive")
+        }
+
+        // The transition: the held download settles, and the callback schedules the drive.
+        await held.release()
+        await fulfillment(of: [scheduled], timeout: 2)
+        XCTAssertNotNil(readiness.presentation(for: pending.id))
+        let reopened = await runway.snapshot()
+        XCTAssertFalse(reopened.localSupplyExhausted,
+            "readiness reopens the existing local-supply opportunity")
+
+        try await measure()
+        let intent: RunwayLocalSliceIntent
+        guard case .runLocalSlice(let next) = try await runway.reconsider(resources: sliceResources,
+            at: .init(seconds: 3)!) else { return XCTFail("the scheduled opportunity must run") }
+        intent = next
+        XCTAssertNil(intent.after)
+        let outcome = try slice.run(f.request(capacity: 10, exposure: .excludePublishedMaterial, segment: 47_001)) { selection in
+            LocalPreparedPublication(inputs: try selection.orderedCandidates.map { candidate in
+                PublicationPreparationInput(origin: .init(originRecordID: candidate.originRecordID,
+                    originRevisionID: candidate.originRevisionID, sourceID: nil, providerID: candidate.providerID,
+                    sourceDisplayName: "Caller Source", providerDisplayName: nil),
+                    contentEntityID: nil, contentClusterID: nil, primaryAction: .localContentDetail,
+                    presentation: try XCTUnwrap(readiness.presentation(for: candidate.originRevisionID)))
+            }, cardIDs: selection.orderedCandidates.map(LocalSliceFixture.cardID))
+        }
+        guard case .published(_, let receipt) = outcome else {
+            return XCTFail("the drive the transition scheduled must publish the pending card")
+        }
+        XCTAssertEqual(receipt.cardIDs, [pendingCardID])
+        XCTAssertNotNil(try PublicationStore(database: f.database).card(id: pendingCardID)?.mediaKey)
+    }
+
     func testF06AllPendingWindowAdvancesWithoutCallingPreparationOrReservingSegment() async throws {
         let f = try fixture(), pending = LocalSliceFixture.revision(2), ready = LocalSliceFixture.revision(1)
         try f.admit(pending); try f.admit(ready)

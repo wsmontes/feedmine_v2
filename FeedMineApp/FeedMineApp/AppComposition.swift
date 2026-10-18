@@ -95,6 +95,10 @@ final class AppComposition {
     @ObservationIgnored private var sourceSearchID = UUID()
     @ObservationIgnored private var sourceChoices: [SourceID: TrustedFeed] = [:]
     private let transportConfiguration: URLSessionConfiguration
+    /// A (spec "Estabilidade de coleta e UI"): the launch's acquisition parallelism, supplied by the host. The
+    /// default is the spec's 48; every association this composition builds receives this value, so a cold launch
+    /// and every replacement session plan with the same budget.
+    @ObservationIgnored var launchSettings: CollectionLaunchSettings = .init()
     /// U2: set once by the app host; every association receives it so the reader stays in-app.
     var onExternalURL: ((URL) -> Void)?
     /// U-reading: the reading the host presents for a card — text the app already holds, or the site. Kept apart
@@ -1323,7 +1327,7 @@ final class AppComposition {
             discoveryTraversal: discoveryTraversal(for: key, profile: profile, snapshot: catalogueSnapshot),
             contextKey: key, selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
             catalogueURL: catalogueSnapshot?.catalogueURL, editorialExposure: editorialExposure,
-            discoveryProfile: profile, warmLaunch: warmLaunch))
+            discoveryProfile: profile, warmLaunch: warmLaunch, launchSettings: launchSettings))
     }
 
     /// The association a **warm** launch starts from — the same session `launch()` would build, built
@@ -1757,6 +1761,8 @@ final class FeedAssociation {
     let editorialExposure: EditorialExposureLedger
     /// Structural bounds of this association's admitted presentation (plan T2/T3).
     let bounds: FeedPresentationBounds
+    /// A: this launch's acquisition parallelism, supplied by the composition that built the association.
+    @ObservationIgnored let launchSettings: CollectionLaunchSettings
     @ObservationIgnored private let maintainTail: @Sendable (PublicationStore.HiddenTailLease) async throws -> PublicationStore.TailSuccessionResult
     private let cold: ColdFeedBootstrap
     @ObservationIgnored private let relay: EvidenceRelay
@@ -2121,7 +2127,29 @@ final class FeedAssociation {
         }
     }
 
-    static var resources: FeedRunwayDriverResources {
+    /// D (spec "Estabilidade de coleta e UI"): the catalogue facts the composition orders acquisition by. Keyed
+    /// by the same `SourceID` its registrations use. A feed the catalogue does not describe contributes nothing,
+    /// and a launch with no readable catalogue contributes nothing at all — the supplied registration order is
+    /// then the order the planner receives.
+    static func targetSignals(catalogueURL: URL?, feeds: [TrustedFeed]) -> [SourceID: AcquisitionTargetSignal] {
+        guard let catalogueURL, let catalogue = try? LegacyCatalogReader(catalogURL: catalogueURL) else { return [:] }
+        var signals: [SourceID: AcquisitionTargetSignal] = [:]
+        for feed in feeds {
+            guard let facts = try? catalogue.rankingFacts(key: feed.principal), facts.hasEvidence else { continue }
+            signals[feed.sourceID] = .init(catalogueQualityScore: facts.qualityScore,
+                catalogueActivity: facts.activity,
+                // No per-target latency is measured yet; the type accepts one, and the score treats absence as
+                // neutral rather than inventing a number.
+                measuredLatencySeconds: nil)
+        }
+        return signals
+    }
+
+    /// A (spec "Estabilidade de coleta e UI"): the one place this association's planning budgets are chosen.
+    /// `initialParallelism` is caller-supplied; `AcquisitionPlanningResources` itself keeps no default (its
+    /// contract: "All four resource capacities … have no defaults"). The socket ceiling is applied where the
+    /// coordinator is built, from the same settings value.
+    var resources: FeedRunwayDriverResources {
         .init(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 32,
             readyProbeBound: 32, readyProbeCeiling: 256, forwardAdvanceProbeBound: 256,
             // F01/§5.3: the reserve exists so the reader can walk into the window the session materialised, so the
@@ -2129,7 +2157,8 @@ final class FeedAssociation {
             // consumption/replenishment facts are unknown (Codex's reserve review, 2026-10-10); once they are
             // measured it derives the target from the measured rate and p95, and this number stops applying.
             reserveCards: Self.forwardWindowCards)!,
-            acquisition: .init(targetWorkCapacity: 2, batchCapacityPerNewExecution: 1,
+            acquisition: .init(targetWorkCapacity: launchSettings.targetWorkCapacity,
+                batchCapacityPerNewExecution: 1,
                 observationCapacityPerBatch: 32, byteCapacityPerBatch: 1_000_000)!)
     }
 
@@ -2141,11 +2170,13 @@ final class FeedAssociation {
         contextKey: ContextKey = ContextKey(request: .main), selectionVersion: UInt64 = 2,
         scoring: ResolvedSelectionPolicy.ScoringBehavior = .equal, scoringVersion: UInt64 = 1,
         catalogueURL: URL?, editorialExposure: EditorialExposureLedger,
-        discoveryProfile: ReaderDiscoveryProfile = .init(), warmLaunch: Bool = false) throws {
+        discoveryProfile: ReaderDiscoveryProfile = .init(), warmLaunch: Bool = false,
+        launchSettings: CollectionLaunchSettings = .init()) throws {
         self.trace = trace
         self.catalogueURL = catalogueURL
         self.editorialExposure = editorialExposure
         self.discoveryProfile = discoveryProfile
+        self.launchSettings = launchSettings
         // The host and its replacement sessions share one writer; retiring async work cannot
         // contend with a preference write through a second pool for the same file.
         let db = try sharedDatabase ?? RuntimeDatabase(location: .init(directory: directory))
@@ -2301,15 +2332,18 @@ final class FeedAssociation {
             session: transport, redirectCapacity: 4, discovery: discoveryTraversal,
             authorizedNonPublicOrigins: authorizedNonPublicOrigins,
             selectedSourceIDs: Set(feeds.map(\.sourceID)),
-            installation: CatalogInstallation(appDirectory: directory))
+            installation: CatalogInstallation(appDirectory: directory),
+            targetSignals: Self.targetSignals(catalogueURL: catalogueURL, feeds: supply))
         self.acquisition = acquisition
         // H2: a feed that keeps failing cools down for a doubling window that starts at what one
         // failed attempt may already cost (the request timeout) and is capped by the resource
-        // timeout. Targets run through a sliding window sized by this device's cores.
+        // timeout. Targets run through a sliding window sized by the launch's own parallelism,
+        // conservatively capped (`CollectionLaunchSettings.maximumConcurrentTargets`) so a bad
+        // configuration cannot open 48 sockets at once.
         let backoff = AcquisitionBackoffPolicy(baseSeconds: configuration.timeoutIntervalForRequest,
             ceilingSeconds: max(configuration.timeoutIntervalForRequest, configuration.timeoutIntervalForResource))
         let coordinator = acquisition.makeCoordinator(backoff: backoff,
-            concurrentTargetLimit: max(2, ProcessInfo.processInfo.activeProcessorCount))
+            concurrentTargetLimit: launchSettings.concurrentTargetLimit)
         self.coordinator = coordinator
         // PD-5/PD-6 media pipeline: one download owner, device-measured policy, slot-sized decoding.
         let assetDirectory = directory.appendingPathComponent("Media", isDirectory: true)
@@ -2322,11 +2356,16 @@ final class FeedAssociation {
         // (which is how `downloadByteBudget` = measured rate × wait is computed) sees it.
         let mediaWaitBudget = LiveValue(Self.mediaWaitBootstrapSeconds)
         self.mediaWaitBudget = mediaWaitBudget
+        // B/§3: the prefetcher is built before the driver exists, so its readiness callback points at this
+        // relay; the association points the relay at its own drive opportunity once every stored property is
+        // set (below). Nothing here decides anything beyond "a readiness transition happened".
+        let readinessRelay = MediaReadinessRelay()
         let media = MediaPrefetcher(database: db, assetDirectory: assetDirectory, readiness: readiness,
             concurrentDownloadLimit: max(2, ProcessInfo.processInfo.activeProcessorCount / 2),
             fetch: { try await fetcher.fetch($0, byteCeiling: $1) },
             conditions: { rate in DeviceMediaConditions.policy(device: device, measuredBytesPerSecond: rate,
-                assetDirectory: assetDirectory, waitBudgetSeconds: mediaWaitBudget.current) })
+                assetDirectory: assetDirectory, waitBudgetSeconds: mediaWaitBudget.current) },
+            onReadinessChanged: { _ in await readinessRelay.deliver() })
         self.media = media
         savedMedia = SavedMediaCoordinator(database: db, assetDirectory: assetDirectory, prefetcher: media)
         tidy = MediaTidy(assetDirectory: assetDirectory, prefetcher: media, freeStorageBytes: {
@@ -2467,6 +2506,10 @@ final class FeedAssociation {
         // being built, so it holds a value that outlives the initializer and is pointed at the association once
         // there is one.
         publicationRelay.receive = { [weak self] receipt in await self?.publicationConcluded(receipt) }
+        // B/§3: every stored property is set, so the media relay can now name this association's own drive
+        // opportunity. The transition notifies the runway exactly as a committed acquisition does; the next
+        // drive is the existing one, and nothing is published from the callback.
+        readinessRelay.install { [weak self] in await self?.noteMediaReadinessChanged() }
         // The reader's window reaches the screen **here**, before this launch has drawn anything: it is the whole
         // point of a warm start. The handoff and the store keep their own validation, and a later `.initial`
         // admission returns this same projection, so installing it again is a no-op by the store's own rule.
@@ -2762,6 +2805,12 @@ final class FeedAssociation {
         await growAdmittedWindowIfPublished()
     }
 
+    /// B/§3: the prefetcher's transition is a local-supply fact. The driver notifies the runway; it does not
+    /// publish, admit or start a second pipeline here.
+    private func noteMediaReadinessChanged() async {
+        await driver.noteMediaReadinessChanged()
+    }
+
     /// PO 2026-10-14: the end of the reader's eligible offer is stated only from the full settled evidence the
     /// driver reports, and only here — this association owns the one screen value. It states nothing else: a
     /// settled drain that is not the end may only take the end back (a later acquisition means content again),
@@ -2819,7 +2868,7 @@ final class FeedAssociation {
             let outcome = try await cold.run(identity: .init(editionID: FeedEditionID(), publicationSchemaVersion: .init(rawValue: 1),
                 selectionSeed: 1, editionCreatedAt: now, segmentID: FeedSegmentID(), segmentSeed: 1,
                 segmentCreatedAt: now, anchorPlacement: .top, checkpointedAt: now)!,
-                resources: .init(localExaminedCapacity: 32, acquisition: Self.resources.acquisition)!,
+                resources: .init(localExaminedCapacity: 32, acquisition: resources.acquisition)!,
                 backwardCapacity: 8, forwardCapacity: 16, keepsAdmittedHead: true)
             try install(FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state))
             Self.log("cold bootstrap settled")
@@ -2839,7 +2888,7 @@ final class FeedAssociation {
             }
             coldRetryAt = nil
         }
-        let snapshot = try await driver.activateCurrentPresentation(resources: Self.resources)
+        let snapshot = try await driver.activateCurrentPresentation(resources: resources)
         try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
         try await installSettledEligibleOffer()
         // R5/S5: nothing is armed here, and nothing needs to be. A reopen shows exactly what the reader left — the
@@ -2949,7 +2998,7 @@ final class FeedAssociation {
                 Self.log("viewport opportunity sent to driver")
             }
             let received = try await FeedPresentationHandoff.submitViewport(observation, activity: activity,
-                resources: Self.resources, driver: driver, into: store.state, evidence: evidence,
+                resources: resources, driver: driver, into: store.state, evidence: evidence,
                 onCommitted: { [weak self] committed in
                     await MainActor.run {
                         guard let self, self.active else { return }
@@ -3102,7 +3151,7 @@ final class FeedAssociation {
             // runway a observação do próprio leitor (`.stationary`, sem gesto, sem mudar a lista admitida) e
             // então o trabalho decide. INV-04: o runway antecipa o consumo; rolar não é o que acorda o pipeline
             // (diretiva de execução V2, linha 86).
-            let snapshot = try await driver.activateCurrentPresentation(resources: Self.resources)
+            let snapshot = try await driver.activateCurrentPresentation(resources: resources)
             try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
             // O fim é decidido antes desta leitura (mesma razão do `viewport`): uma publicação concluída já cresceu a
             // janela pelo fato, e o fim não se reinstala por cima disso.
@@ -3310,4 +3359,18 @@ final class LiveValue<Value: Sendable>: @unchecked Sendable {
     var current: Value { lock.lock(); defer { lock.unlock() }; return value }
     func update(_ transform: (inout Value) -> Void) { lock.lock(); defer { lock.unlock() }; transform(&value) }
     func set(_ new: Value) { update { $0 = new } }
+}
+
+/// B/§3: the media prefetcher is built before its driver, so its readiness callback must not capture the
+/// association. It points here; once every stored property is set, the association installs the one closure this
+/// relay will call — the same local-supply notification a committed acquisition gives the runway. Nothing in it
+/// decides anything, and it holds no state beyond that closure.
+final class MediaReadinessRelay: @unchecked Sendable {
+    private let lock = NSLock()
+    private var receive: (@Sendable () async -> Void)?
+    func install(_ receive: @escaping @Sendable () async -> Void) { lock.withLock { self.receive = receive } }
+    func deliver() async {
+        let receive = lock.withLock { self.receive }
+        await receive?()
+    }
 }

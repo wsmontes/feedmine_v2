@@ -53,6 +53,23 @@ public struct LegacyCatalogSourceRecord: Hashable, Sendable {
     }
 }
 
+/// The catalogue facts an acquisition order reads, and only them. `source(key:)` predates the ranking and stays
+/// exactly as it was, so this narrow lookup cannot change any existing reader's record.
+public struct LegacyCatalogRankingFacts: Hashable, Sendable {
+    public let key: String
+    /// 0…100, the catalogue's technical-quality claim.
+    public let qualityScore: Int?
+    /// `prolific`, `active`, `quiet`, `dormant` — V1's own activity classes.
+    public let activity: String?
+
+    public init(key: String, qualityScore: Int?, activity: String?) {
+        self.key = key; self.qualityScore = qualityScore; self.activity = activity
+    }
+
+    /// Whether the catalogue said anything a ranking can use. Absence is not zero.
+    public var hasEvidence: Bool { qualityScore != nil || activity != nil }
+}
+
 /// One language as the catalogue declares it, with the counts T6's sheet must show. `und`/empty is a real
 /// bucket in this data (27,741 of 77,443 sources) and is never presented as a language a reader can pick.
 public struct LegacyCatalogLanguageRecord: Hashable, Sendable {
@@ -427,6 +444,19 @@ public struct LegacyCatalogReader: Sendable {
             return LegacyCatalogSourceRecord(key: row["key"], title: row["title"], requestURL: row["request_url"],
                 siteURL: row["site_url"], language: row["language"], mediaKind: row["media_kind"],
                 qualityScore: row["quality_score"], defaultEnabled: (row["default_enabled"] as Int64? ?? 0) != 0, nodeKeys: nodes)
+        } }
+    }
+
+    /// The quality/activity facts one source contributes to the composition's acquisition order. Nil means the
+    /// catalogue does not describe the key; no rank is invented for it.
+    public func rankingFacts(key: String) throws -> LegacyCatalogRankingFacts? {
+        try Self.wrap { try queue.read { db in
+            guard let row = try Row.fetchOne(db,
+                sql: "SELECT key, quality_score, activity FROM catalog_source WHERE key = ?", arguments: [key]) else {
+                return nil
+            }
+            return LegacyCatalogRankingFacts(key: row["key"], qualityScore: row["quality_score"],
+                activity: row["activity"])
         } }
     }
 

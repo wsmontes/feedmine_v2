@@ -99,7 +99,7 @@ final class ContentFilterTests: XCTestCase {
         try setSettings(directory) { $0.contentFiltersEnabled = false }
         await root.reapplyReaderFilters()
         let reopened = try XCTUnwrap(root.association)
-        _ = try await reopened.driver.drive(resources: FeedAssociation.resources)
+        _ = try await reopened.driver.drive(resources: reopened.resources)
         XCTAssertFalse(published(reopened).isEmpty,
             "the switch that says nothing is hidden must actually hide nothing")
         await reopened.close()
@@ -120,7 +120,7 @@ final class ContentFilterTests: XCTestCase {
         }
         await root.launch()
         let association = try XCTUnwrap(root.association)
-        _ = try await association.driver.drive(resources: FeedAssociation.resources)
+        _ = try await association.driver.drive(resources: association.resources)
         XCTAssertTrue(published(association).isEmpty,
             "a rule that matches everything must publish nothing; published: \(published(association))")
 
@@ -129,7 +129,7 @@ final class ContentFilterTests: XCTestCase {
         await root.reapplyReaderFilters()
         let reopened = try XCTUnwrap(root.association)
         XCTAssertFalse(reopened === association, "the session is rebuilt when what it hides changes")
-        _ = try await reopened.driver.drive(resources: FeedAssociation.resources)
+        _ = try await reopened.driver.drive(resources: reopened.resources)
         XCTAssertFalse(published(reopened).isEmpty, "with the filters off the same supply is published again")
 
         let stored = try settings(directory)
@@ -158,7 +158,7 @@ final class ContentFilterTests: XCTestCase {
         let root = root(directory: directory)
         await root.launch()
         let association = try XCTUnwrap(root.association)
-        _ = try await association.driver.drive(resources: FeedAssociation.resources)
+        _ = try await association.driver.drive(resources: association.resources)
         XCTAssertTrue(published(association).isEmpty, "the template's words hide the fixture supply")
         XCTAssertEqual(try settings(directory).contentFilterTemplates, ["fixture"])
 

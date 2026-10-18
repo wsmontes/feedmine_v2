@@ -16,6 +16,13 @@ Abra `FeedMineApp/FeedMineApp.xcodeproj`, selecione o scheme compartilhado **Fee
 
 O aplicativo restaura publicação local antes de qualquer aquisição. Sem história publicada, usa ColdFeedBootstrap, preparação com evidências reais e publicação incremental. O Runway mantém reserva local, e a mídia é preparada antecipadamente para cards com imagem local ou layout text-only. Cards com link abrem o artigo. O catálogo derivado da revisão pública 5 (77.443 fontes) é empacotado no app com descritor e integridade verificados; fontes selecionadas, contextos, busca local e bookmarks persistem offline. A manutenção da cauda preserva cards já vistos. Consulte o relatório de validação para resultados e pendências.
 
+Coleta inicial: `CollectionLaunchSettings(initialParallelism:)` fornece o orçamento de alvos (padrão 48);
+o coordenador executa no máximo 8 alvos simultâneos. `AcquisitionPlanningResources` continua sem defaults.
+A composição ordena alvos por qualidade/atividade do catálogo e latência medida quando disponível; sem sinais,
+preserva a ordem fornecida. Transições de prontidão de mídia notificam a oportunidade local existente do runway,
+sem publicar mídia pendente nem criar outro pipeline. Os testes de fixture fixam ≥10 cards em ≤3 s com
+`FeedLaunchWitness`, recuperação após prontidão e ordenação estável; não certificam latência de pixels no aparelho.
+
 Antes de compilar um clone, prepare o catálogo público com `python3 scripts/bootstrap_catalog.py` e instale o par validado `build/catalog-bootstrap/catalog.sqlite` + `catalog.manifest.json` em `FeedMineApp/FeedMineApp/Resources/`, conforme [a procedência do catálogo](FeedMineApp/FeedMineApp/Resources/CATALOG.md). `scripts/fetch-catalog.sh` é legado e baixa um snapshot incompatível com o descritor atual; não o execute para preparar uma release. Sem o par válido, a instalação do catálogo é recusada. Git LFS não é mais usado.
 
 A rodada atual é verificada localmente, sem CI hospedada. Resultados e limitações ficam em [validação OMP/Codex](docs/reviews/OMP_VALIDATION_2026-10-09.md); a transferência do frontend V1 → V2 tem o seu próprio registro, superfície por superfície, em [evidência da transferência](docs/reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md), com o inventário de controles em `docs/v1-study/UI_TRANSFER_MATRIX.md`.
