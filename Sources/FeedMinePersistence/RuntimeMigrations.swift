@@ -559,6 +559,32 @@ public enum RuntimeMigrations {
                 CREATE INDEX reader_source_identity_current ON reader_source_identity(current_key);
                 """)
         }
+        // Durable saves: a membership is the *link*; this table states the availability of the link's content,
+        // so "saved" never implies a preparation that did not happen (owner directive 2026-10-17 §2). It is a
+        // separate row from `published_cards`: re-preparing media changes availability, never the publication.
+        // Derived state: retiring the published row retires its availability, so this table never becomes a second
+        // reason a historical card cannot be archived.
+        migrator.registerMigration("saved-media-availability-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE saved_media_availability (
+                    card_id TEXT PRIMARY KEY NOT NULL REFERENCES published_cards(id) ON DELETE CASCADE,
+                    availability TEXT NOT NULL
+                        CHECK (availability IN ('textOnly', 'pending', 'ready', 'failed', 'insufficientSpace')),
+                    updated_at REAL NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    CHECK (attempts >= 0)
+                );
+                -- Existing bookmarks get their honest state in one statement: a card published without media is
+                -- text-only; a card with a media key has not been prepared by this build yet. Nothing is claimed
+                -- as ready that was not verified.
+                INSERT INTO saved_media_availability (card_id, availability, updated_at, attempts)
+                SELECT DISTINCT b.card_id,
+                    CASE WHEN c.media_key IS NULL THEN 'textOnly' ELSE 'pending' END,
+                    CAST(strftime('%s', 'now') AS REAL), 0
+                FROM reader_bookmark_memberships b
+                JOIN published_cards c ON c.id = b.card_id;
+                """)
+        }
         return migrator
     }
 

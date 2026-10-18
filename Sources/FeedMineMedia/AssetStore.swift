@@ -9,6 +9,9 @@ public enum LocalMediaAssetError: Error, Equatable, Sendable {
     case unsupportedKey(PublishedMediaKey)
     case couldNotCreateDirectory
     case temporaryWriteFailed
+    /// The volume had no room for the bytes. Distinct from a generic write failure on purpose: a full disk is
+    /// a state the reader must be told about and can recover from, never a silent "this card has no image".
+    case insufficientSpace
     case installFailed
     case durabilityFailed
     case readFailed
@@ -20,17 +23,23 @@ struct AssetStore: Sendable {
     private let rootDirectory: URL
     private let syncFile: @Sendable (URL) -> Bool
     private let syncDirectory: @Sendable (URL) -> Bool
+    private let writeBytes: @Sendable (Data, URL) throws -> Void
 
     init(rootDirectory: URL) {
         self.init(rootDirectory: rootDirectory, syncFile: Self.sync, syncDirectory: Self.sync)
     }
 
-    // Mechanical internal seam for deterministic sync-failure tests.
+    // Mechanical internal seam for deterministic sync- and write-failure tests. The write seam is what lets a
+    // full disk be exercised as the real error it is (`NSFileWriteOutOfSpaceError`) instead of as a guess.
     init(rootDirectory: URL, syncFile: @escaping @Sendable (URL) -> Bool,
-        syncDirectory: @escaping @Sendable (URL) -> Bool) {
+        syncDirectory: @escaping @Sendable (URL) -> Bool,
+        writeBytes: @escaping @Sendable (Data, URL) throws -> Void = { data, url in
+            try data.write(to: url, options: .withoutOverwriting)
+        }) {
         self.rootDirectory = rootDirectory
         self.syncFile = syncFile
         self.syncDirectory = syncDirectory
+        self.writeBytes = writeBytes
     }
 
     func publish(_ bytes: Data) throws -> PublishedMediaKey {
@@ -40,7 +49,7 @@ struct AssetStore: Sendable {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
-            throw LocalMediaAssetError.couldNotCreateDirectory
+            throw Self.isOutOfSpace(error) ? LocalMediaAssetError.insufficientSpace : LocalMediaAssetError.couldNotCreateDirectory
         }
         let destination = directory.appendingPathComponent(digest)
         if try self.bytes(for: key) != nil {
@@ -51,9 +60,10 @@ struct AssetStore: Sendable {
         let temporary = directory.appendingPathComponent(".pending-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: temporary) }
         do {
-            try bytes.write(to: temporary, options: .withoutOverwriting)
+            try writeBytes(bytes, temporary)
         } catch {
-            throw LocalMediaAssetError.temporaryWriteFailed
+            // A full volume is a state, not a defect of the image: it must reach the caller as its own outcome.
+            throw Self.isOutOfSpace(error) ? LocalMediaAssetError.insufficientSpace : LocalMediaAssetError.temporaryWriteFailed
         }
         guard syncFile(temporary) else { throw LocalMediaAssetError.durabilityFailed }
 
@@ -107,6 +117,14 @@ struct AssetStore: Sendable {
 
     private static func digest(_ bytes: Data) -> String {
         SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The two shapes a full volume arrives in: Foundation's file-write code and the POSIX error underneath it.
+    static func isOutOfSpace(_ error: any Error) -> Bool {
+        let failure = error as NSError
+        if failure.domain == NSCocoaErrorDomain && failure.code == NSFileWriteOutOfSpaceError { return true }
+        if failure.domain == NSPOSIXErrorDomain && failure.code == Int(ENOSPC) { return true }
+        return false
     }
 
     private static func sync(_ url: URL) -> Bool {

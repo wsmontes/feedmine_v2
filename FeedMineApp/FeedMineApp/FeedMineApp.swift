@@ -383,7 +383,9 @@ struct FeedMineApp: App {
                                     .navigationDestination(for: LibraryRoute.self) { route in
                                         FeedSavedListView(
                                             articles: composition.association?.savedArticles(inBox: Self.boxID(route)) ?? [],
-                                            onOpen: { cardID in composition.association?.openSaved(cardID) })
+                                            onOpen: { cardID in composition.association?.openSaved(cardID) },
+                                            onRetry: { cardID in composition.association?.retrySavedMedia(cardID) })
+                                            .task { composition.association?.resumeSavedMedia() }
                                     }
                             } else {
                                 ProgressView("Abrindo as caixas de salvos")
@@ -433,7 +435,9 @@ struct FeedMineApp: App {
                     switch destination {
                     case .saved:
                         FeedSavedListView(articles: composition.association?.savedArticles() ?? [],
-                            onOpen: { cardID in composition.association?.openSaved(cardID) })
+                            onOpen: { cardID in composition.association?.openSaved(cardID) },
+                            onRetry: { cardID in composition.association?.retrySavedMedia(cardID) })
+                            .task { composition.association?.resumeSavedMedia() }
                     default:
                         // Only destinations the host declares available can be reached (T5 rule).
                         EmptyView()

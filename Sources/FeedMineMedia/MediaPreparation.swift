@@ -30,23 +30,37 @@ public struct MediaPreparationResult: Hashable, Sendable {
 }
 
 public struct MediaPreparation: Sendable {
-    private let materializer: ImageMaterializer
+    private let materializeBytes: @Sendable (Data) throws -> LocalImageAsset
+    private let inspectLocal: @Sendable (PublishedMediaKey) throws -> LocalImageAsset?
 
     public init(assetDirectory: URL) {
-        self.materializer = ImageMaterializer(assetDirectory: assetDirectory)
+        let materializer = ImageMaterializer(assetDirectory: assetDirectory)
+        self.materializeBytes = { try materializer.materialize($0) }
+        self.inspectLocal = { try materializer.localAsset(for: $0) }
     }
 
+    /// Mechanical seam for deterministic storage failures (a full disk, an unwritable asset root) at the media
+    /// boundary. Production constructs the store from the asset directory; tests state the failure instead of
+    /// having to fill a volume.
+    public init(materializeBytes: @escaping @Sendable (Data) throws -> LocalImageAsset,
+        inspectLocal: @escaping @Sendable (PublishedMediaKey) throws -> LocalImageAsset?) {
+        self.materializeBytes = materializeBytes
+        self.inspectLocal = inspectLocal
+    }
+
+    /// Storage failures — `insufficientSpace` included — are thrown, never folded into `unavailable`: "the disk
+    /// could not hold it" is not "this occurrence has no image".
     public func prepare(candidate: MediaCandidate, input: MediaPreparationInput) throws -> MediaPreparationResult {
         let state: MediaPreparationState
         switch input {
         case .bytes(let bytes):
             do {
-                state = .usable(try materializer.materialize(bytes))
+                state = .usable(try materializeBytes(bytes))
             } catch LocalMediaAssetError.invalidImage {
                 state = .unsuitable
             }
         case .localAsset(let key):
-            if let asset = try materializer.localAsset(for: key) {
+            if let asset = try inspectLocal(key) {
                 state = .usable(asset)
             } else {
                 state = .unavailable

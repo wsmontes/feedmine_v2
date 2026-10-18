@@ -128,6 +128,29 @@ final class AssetStoreTests: XCTestCase {
         assertError(.readFailed) { _ = try AssetStore(rootDirectory: other).bytes(for: key) }
     }
 
+    /// Owner directive 2026-10-17 §2: a volume with no room must reach the caller as its own outcome, never as a
+    /// generic write failure and never as "this occurrence has no image".
+    func testAFullVolumeIsReportedAsInsufficientSpace() throws {
+        let root = LocalAssetFixture.directory(self)
+        let full = AssetStore(rootDirectory: root, syncFile: { _ in true }, syncDirectory: { _ in true },
+            writeBytes: { _, _ in
+                throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError)
+            })
+        assertError(.insufficientSpace) { _ = try full.publish(Data("abc".utf8)) }
+        XCTAssertEqual(try LocalAssetFixture.files(root), [], "a failed write leaves no asset behind")
+        // The POSIX shape Foundation wraps is classified the same way.
+        let posix = AssetStore(rootDirectory: root, syncFile: { _ in true }, syncDirectory: { _ in true },
+            writeBytes: { _, _ in throw NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC)) })
+        assertError(.insufficientSpace) { _ = try posix.publish(Data("abc".utf8)) }
+        // Any other write failure keeps its own, non-space, meaning.
+        let other = AssetStore(rootDirectory: root, syncFile: { _ in true }, syncDirectory: { _ in true },
+            writeBytes: { _, _ in throw NSError(domain: NSPOSIXErrorDomain, code: Int(EIO)) })
+        assertError(.temporaryWriteFailed) { _ = try other.publish(Data("abc".utf8)) }
+        // Space exists again: the same bytes publish and verify.
+        XCTAssertEqual(try AssetStore(rootDirectory: root).publish(Data("abc".utf8)).rawValue,
+            LocalAssetFixture.abcKey)
+    }
+
     func testConcurrentSameBytesInstallOneImmutableDestination() throws {
         let root = LocalAssetFixture.directory(self), barrier = InstallBarrier()
         let store = AssetStore(rootDirectory: root, syncFile: { _ in barrier.arrive(); return true }, syncDirectory: { _ in true })
