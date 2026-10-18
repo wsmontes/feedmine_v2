@@ -72,3 +72,63 @@ A reconciliação de T1 não afirma que a candidata está inteiramente verde. Os
 ### Subentrega T2 — membership preparado
 
 SHA inicial: `ba4f0aa7` | alteração: Set de IDs preparado na janela; observações compartilham o valor e conferem membership sem map/varredura | prova: 75 regressões específicas e 1.445 testes de pacote, zero falhas; nova regressão nativa e filtro em inglês passaram | revisão independente: sem achados remanescentes | pendência: restante de T2 e todos os gates. A mudança não foi medida como correção de frames em Release.
+
+## R00 — provas discriminantes (resíduo de T1)
+
+Executado em 2026-10-17 na worktree `~/.codex/worktrees/v2-fluidez-capacidade/feedmine_v2`, base
+`bc6a38dc2e16072fb82dc17071d100534d070a8a`, branch `codex/v2-fluidez-capacidade`. Destino Xcode:
+simulador `FeedMine Gate` (`3314B597-4CBF-4B95-9B7C-AF52BB432FC2`, iOS 26.5). DerivedData:
+`/tmp/feedmine-v2-dd`.
+
+### Reprodução (vermelho, sem alteração)
+
+Os dois testes de publicação executados isoladamente com `-testLanguage en -testRegion US`
+reproduziram as falhas registradas: reserva `3 -> 3` no teste de crescimento e ausência do recibo da
+segunda publicação no teste de recibo superado (1 teste/3 falhas; xcresult
+`/tmp/fm-v2-r00-repro.xcresult`).
+
+### Causa medida (não suposta)
+
+Diagnóstico temporário no host leu `RunwayControllerSnapshot` e chamou `reconsider` diretamente
+(removido antes do commit): após o `launch`, `localSupplyExhausted=true`, `inFlight=false`,
+`readyAhead=exact(3)`, `coverage=pressured(requiredCards: 32)`, `resources.reserveCards=16`,
+`consumption=nil`. A ativação usada pelo teste (`activateCurrentPresentation`) reenvia a posição
+como `stationary`; a medição seguinte registra **0 cartas/s**, e `RunwayPolicy` responde `healthy`
+para um leitor parado — a pista não repõe nada, corretamente. O instrumento do teste, portanto, não
+era um caminho que produz publicação; a premissa é que estava errada, não o produto.
+
+O segundo diagnóstico mostrou ainda que `drive()` sem observação nova é inerte por contrato
+(`lastAcknowledgedAcquisitionIntent` ainda igual ao intento da largada): "Only an explicit caller
+opportunity resumes a deferred intent".
+
+### Alteração
+
+- `CompositionTests.testAPublicationConcludedAfterTheFollowUpWindowGrowsTheAdmittedWindow` passa a
+  liberar a segunda publicação pela **oportunidade de cauda** do leitor
+  (`driver.submitViewport(activity: .explicitTailApproach)`), a mesma chamada que a associação faz e
+  **sem** o `growAdmittedWindowIfPublished()` dela. Antes da asserção visual, o caso agora afirma:
+  (1) as fontes foram consultadas de novo depois da resposta de dois itens; (2) os candidatos novos
+  foram admitidos ao pool canônico (`ContentStore.candidateWindow`); (3) a segunda publicação existe
+  como segmento durável e o recibo chegou ao destinatário; (4) **no instante da chegada do primeiro
+  recibo** a janela ainda era a antiga — o crescimento segue o recibo, não o antecede. O prefixo
+  admitido anterior é preservado na ordem.
+- `CompositionTests.testAReceiptForASupersededEditionDoesNotGrowTheCurrentEditionsWindow` usa a
+  mesma oportunidade de cauda nas duas publicações retidas (edições superada e vigente).
+- `ContentFilterTests.testATemplateTheReaderTurnsOnHidesWhatItsWordsMatch` declara a expectativa pelo
+  idioma do ensaio: o fixture é bilíngue de propósito (`en` + `pt`), então o template resolve **uma**
+  regra em inglês e **duas** em português. Nenhuma palavra válida foi removida.
+
+### Provas verdes
+
+| Prova | Resultado | xcresult |
+|---|---|---|
+| crescimento + recibo superado, `-testLanguage en -testRegion US` | 2 testes / 0 falhas | `/tmp/fm-v2-r00-en2.xcresult` |
+| `ContentFilterTests` (4 casos), inglês | 4 testes / 0 falhas | `/tmp/fm-v2-r00-en.xcresult` |
+| template, `-testLanguage pt-BR -testRegion BR` | 1 teste / 0 falhas | `/tmp/fm-v2-r00-pt.xcresult` |
+| mutação: fence de edição removida de `publicationConcluded` | **vermelho** (a janela cresceu com o recibo obsoleto) | `/tmp/fm-v2-r00-mutation.xcresult` |
+
+A fence foi restaurada (`git checkout -- AppComposition.swift`) antes do commit.
+
+### Registro R00
+
+SHA inicial: `bc6a38dc2e16072fb82dc17071d100534d070a8a` | vermelho: reprodução acima (3 asserções) | alteração: instrumento de cauda + fatos afirmados + locale explícito | verde: tabela acima | jornada protegida: crescimento por recibo, fence do destinatário (mutação prova a discriminação) | pendências: nenhuma desta tarefa; restante do plano segue pendente | SHA final: registrado no commit `test(composition): make publication and locale regressions discriminating`.

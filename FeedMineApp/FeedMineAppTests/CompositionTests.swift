@@ -499,12 +499,20 @@ final class CompositionTests: XCTestCase {
     /// janela antiga levava para se esgotar, **nada** cresce a janela enquanto nada publica — nenhum caminho cresce a
     /// janela por tempo decorrido.
     ///
-    /// O que ele faz é o caminho do próprio produto: libera a **segunda publicação** na pista do runway por
-    /// `driver.activateCurrentPresentation` — a mesma ativação que `launch()` e um foreground fazem, sem o
-    /// `growAdmittedWindowIfPublished()` que os acompanha e sem chamar `viewport` nem `foreground`, os dois outros
-    /// chamadores de `admitPresentation(.publishedGrowth)`. O transporte controlado serve dois itens por fonte antes
-    /// da espera e vinte e quatro depois, então a primeira publicação não enche a janela (4 cartas de 17 possíveis,
-    /// pelo teto congelado) e a segunda publica cartas novas na reserva da mesma edição.
+    /// O que ele faz é o caminho do próprio produto: libera a **segunda publicação** por
+    /// `driver.submitViewport(activity: .explicitTailApproach)` — a oportunidade que o leitor oferece ao chegar à
+    /// cauda admitida e pedir mais — na mesma chamada que a associação faz (`FeedPresentationHandoff.submitViewport`)
+    /// e **sem** o `growAdmittedWindowIfPublished()` que a associação executa depois dela. É essa omissão que separa
+    /// as duas metades: as cartas novas só podem aparecer pelo recibo do segmento que o dreno entrega, e o caso
+    /// afirma que a janela ainda era a antiga **no instante em que o recibo chegou**.
+    ///
+    /// A ativação da pista (`activateCurrentPresentation`) não serve como instrumento, e a medição de 2026-10-17
+    /// explica por quê: ela reenvia a posição como `stationary`, e a medição seguinte registra **0 cartas/s**; com
+    /// taxa medida zero e nenhum sinal de cauda, `RunwayPolicy` responde `healthy` e a pista corretamente **não**
+    /// repõe nada — o leitor está parado e a reserva de 3 cartas diante dele não é um déficit. O transporte
+    /// controlado serve dois itens por fonte antes da espera e vinte e quatro depois, então a primeira publicação
+    /// não enche a janela (4 cartas de 17 possíveis, pelo teto congelado) e a segunda publica cartas novas na
+    /// reserva da mesma edição.
     ///
     /// Estratégia de espera, declarada: `Task.sleep` **só** para atravessar a janela antiga, que é o objeto do caso,
     /// e uma observação limitada a 3,0 s (a `waitUntil` deste arquivo) para o valor admitido mudar — nenhum timer
@@ -547,21 +555,69 @@ final class CompositionTests: XCTestCase {
             "premissa: com o transporte saudável não há prazo de retry local para disparar um foreground() na medida")
         XCTAssertNil(acquisitionResumeDeadline, "premissa: nem uma aquisição adiada para retomar")
 
-        // A segunda publicação: mais itens por fonte e a ativação da pista — sem viewport e sem foreground.
-        FixtureTransport.feedItemCount.withLock { $0 = 24 }
-        _ = try await association.driver.activateCurrentPresentation(resources: association.resources)
+        /// O que o pool canônico já admitiu — a resposta do transporte vira suprimento aqui, antes de publicar.
+        func admittedCandidates() throws -> Int {
+            try ContentStore(database: association.database)
+                .candidateWindow(sourceID: nil, after: nil, examinedCapacity: 500).records.count
+        }
+        func interceptedRequests() -> [String] {
+            FixtureTransport.requests.withLock { $0.filter { $0.contains("bbci.co.uk") } }
+        }
+        let candidatesBefore = try admittedCandidates()
+        XCTAssertEqual(candidatesBefore, 4,
+            "premissa: o transporte serviu dois itens por fonte e os quatro candidatos estão no pool canônico")
 
+        // O recibo, retido no destinatário: é ele o fato medido. O que a janela valia **na chegada** do recibo
+        // separa o crescimento causado por ele de um crescimento anterior.
+        var receipts: [PublicationReceipt] = []
+        var admittedWhenReceiptArrived: [Int] = []
+        let recipient = association.publicationRelay.receive
+        association.publicationRelay.receive = { receipt in
+            receipts.append(receipt)
+            admittedWhenReceiptArrived.append(association.store.state.presentation?.window.items.count ?? -1)
+            await recipient?(receipt)
+        }
+
+        // A segunda publicação: mais itens por fonte e a oportunidade de cauda do leitor, pela mesma chamada do
+        // driver que a associação faz — e sem o `growAdmittedWindowIfPublished()` que a acompanha.
+        let requestsBefore = interceptedRequests()
+        FixtureTransport.feedItemCount.withLock { $0 = 24 }
+        _ = try await association.driver.submitViewport(
+            .init(anchor: .init(cardID: anchor, placement: .top)), activity: .explicitTailApproach,
+            resources: association.resources)
+
+        // (1) A segunda resposta é outra: as fontes foram consultadas de novo, depois da resposta de dois itens.
+        // Quantas vezes é do dreno, não do caso — o que a premissa exige é que a segunda resposta tenha sido
+        // buscada, e o pool abaixo é a prova de que ela trouxe suprimento.
+        XCTAssertGreaterThan(interceptedRequests().count, requestsBefore.count,
+            "premissa: a oportunidade de cauda tem de consultar as fontes depois da resposta de dois itens")
+        // (2) Os candidatos novos foram admitidos ao pool canônico antes de qualquer carta publicada.
+        XCTAssertGreaterThan(try admittedCandidates(), candidatesBefore,
+            "premissa: a segunda resposta tinha de trazer candidatos novos, e eles foram admitidos")
+        // (3) A publicação concluiu: o segmento existe e o recibo chegou ao destinatário.
         let reservedAfter = try reservedAhead()
         XCTAssertGreaterThan(reservedAfter, reservedBefore,
             "premissa: a segunda publicação tem de chegar à reserva da edição \(editionID.rawValue.uuidString): "
                 + "cartas além da âncora \(reservedBefore) -> \(reservedAfter). Esta falha é a premissa, não o defeito do R6-E")
-
+        XCTAssertGreaterThan(try publication.segments(editionID: editionID).count, 1,
+            "premissa: a segunda publicação tem de existir como segmento durável antes da asserção visual")
+        XCTAssertFalse(receipts.isEmpty,
+            "premissa: o recibo da segunda publicação tem de chegar ao destinatário da edição vigente")
+        XCTAssertEqual(Set(receipts.map(\.editionID)), [editionID],
+            "premissa: todos os recibos da medida identificam a edição vigente")
+        // (4) O crescimento segue o recibo: o **primeiro** recibo encontrou a janela ainda antiga, e foi a entrega
+        // dele que a fez crescer. Um crescimento anterior à publicação tornaria esta lista diferente de `before`.
+        XCTAssertEqual(admittedWhenReceiptArrived.first, before.count,
+            "o crescimento não pode anteceder o recibo — o primeiro recibo tinha de encontrar a janela antiga, "
+                + "e encontrou \(String(describing: admittedWhenReceiptArrived.first)) cartas")
         _ = await Self.waitUntil(3) { admitted().count > before.count }
         XCTAssertGreaterThan(admitted().count, before.count,
             "uma publicação concluída depois da janela antiga (6,0 s) tem de crescer a janela admitida sem gesto: "
                 + "a reserva foi de \(reservedBefore) para \(reservedAfter) cartas além da âncora e a janela admitida "
                 + "ficou em \(admitted().count) cartas (antes: \(before.count), teto: \(ceiling)) — "
                 + root.diagnosticsForTheWiringTest(association))
+        XCTAssertEqual(Array(admitted().prefix(before.count)), before,
+            "o crescimento só anexa cartas já publicadas — a lista admitida anterior é preservada, na ordem")
         await association.close()
     }
 
@@ -579,7 +635,7 @@ final class CompositionTests: XCTestCase {
     /// em ordem:
     ///
     /// 1. **Retém** o recibo real de uma segunda publicação da edição que o leitor vai deixar (o mecanismo da
-    ///    R6-E: mais itens por fonte e a ativação da pista, que é o que conclui a fatia no dreno). É a suspensão
+    ///    R6-E: mais itens por fonte e a oportunidade de cauda do leitor, que é o que conclui a fatia no dreno). É a suspensão
     ///    nomeada, instanciada: a fatia concluiu, o recibo existe, e ainda não chegou ao host.
     /// 2. **Move o leitor** por um caminho do produto — `selectContext` — de modo que a edição acima fica superada
     ///    (a associação que a carregava está retirada) e a vigente é outra.
@@ -611,7 +667,10 @@ final class CompositionTests: XCTestCase {
         var leftBehind: [PublicationReceipt] = []
         superseded.publicationRelay.receive = { leftBehind.append($0) }
         FixtureTransport.feedItemCount.withLock { $0 = 8 }
-        _ = try await superseded.driver.activateCurrentPresentation(resources: superseded.resources)
+        let supersededAnchor = try XCTUnwrap(superseded.store.state.presentation).window.anchor.cardID
+        _ = try await superseded.driver.submitViewport(
+            .init(anchor: .init(cardID: supersededAnchor, placement: .top)), activity: .explicitTailApproach,
+            resources: superseded.resources)
         let stale = try XCTUnwrap(leftBehind.first,
             "premissa: a segunda publicação da edição que o leitor vai deixar tem de entregar um recibo")
         XCTAssertTrue(leftBehind.allSatisfy { $0.editionID == supersededEdition },
@@ -650,7 +709,9 @@ final class CompositionTests: XCTestCase {
         var currentEditionReceipts: [PublicationReceipt] = []
         live.publicationRelay.receive = { currentEditionReceipts.append($0) }
         FixtureTransport.feedItemCount.withLock { $0 = 24 }
-        _ = try await live.driver.activateCurrentPresentation(resources: live.resources)
+        _ = try await live.driver.submitViewport(
+            .init(anchor: .init(cardID: anchor, placement: .top)), activity: .explicitTailApproach,
+            resources: live.resources)
         XCTAssertFalse(currentEditionReceipts.isEmpty,
             "premissa: a segunda publicação da edição vigente tem de concluir e entregar um recibo")
         XCTAssertTrue(currentEditionReceipts.allSatisfy { $0.editionID == liveEdition },

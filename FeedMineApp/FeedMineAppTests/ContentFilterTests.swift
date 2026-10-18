@@ -152,7 +152,14 @@ final class ContentFilterTests: XCTestCase {
         let store = ReaderContentFilterStore(backend: adapter)
         await store.load()
         XCTAssertEqual(store.templates.map(\.id), ["fixture", "unused"])
-        XCTAssertEqual(store.templates.first?.ruleCount, 1, "the template states how many rules it adds")
+        // V1's `resolvedKeywords`: English **always**, plus the reader's own language when the catalogue carries it.
+        // This fixture is deliberately bilingual — `en` and `pt` — so the count is a fact about the declared run,
+        // not a constant: one rule in an English run, two in a Portuguese one. Shrinking the fixture to one
+        // language would make both runs green by deleting the rule the reader's language contributes.
+        let readerLanguage = Locale.current.language.languageCode?.identifier
+        XCTAssertEqual(store.templates.first?.ruleCount, readerLanguage == "pt" ? 2 : 1,
+            "the template states every rule it adds in \(readerLanguage ?? "the declared language"): "
+                + "English plus the reader's own")
 
         await store.toggleTemplate("fixture")
         let root = root(directory: directory)
