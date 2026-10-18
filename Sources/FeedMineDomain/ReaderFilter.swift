@@ -179,20 +179,33 @@ public struct ReaderFilter: Hashable, Codable, Sendable {
     public let taxonomyNodeIDs: Set<String>
     public let languages: Set<String>
     public let contentType: ReaderContentType
+    /// R13: the exact media kinds the reader kept, when the answer is more precise than one `contentType` (a pair
+    /// cannot be expressed by a single lens). Empty is **no criterion**, which is also the legacy representation:
+    /// a filter persisted before this field decodes to empty and keeps its meaning and identity.
+    public let mediaTypes: Set<ReaderRecipeMediaType>
     public let mood: ReaderMood
     public let exclusions: ReaderContentExclusions
 
     public static let unrestricted = ReaderFilter()
 
     public init(regionIDs: Set<String> = [], taxonomyNodeIDs: Set<String> = [], languages: Set<String> = [],
-        contentType: ReaderContentType = .all, mood: ReaderMood = .all,
+        contentType: ReaderContentType = .all, mediaTypes: Set<ReaderRecipeMediaType> = [],
+        mood: ReaderMood = .all,
         exclusions: ReaderContentExclusions = .disabled) {
         self.regionIDs = Self.normalizeSet(regionIDs)
         self.taxonomyNodeIDs = Self.normalizeSet(taxonomyNodeIDs)
         // The choice is the language, not the catalogue's code: `pt-BR` and `pt` are one choice, and a filter
         // that held both would be two identities for one answer.
         self.languages = ReaderLanguageCode.choices(languages)
-        self.contentType = contentType
+        // R13: only a **pair** needs the extra set. One kind is exactly the single-type lens, and all three is
+        // "no criterion"; both keep the legacy representation and therefore the legacy context identity (a filter
+        // persisted before this field must keep finding its checkpoint).
+        if mediaTypes.count == 1, contentType == .all {
+            self.contentType = mediaTypes.first!.contentType
+        } else {
+            self.contentType = contentType
+        }
+        self.mediaTypes = mediaTypes.count == 2 ? mediaTypes : []
         self.mood = mood
         self.exclusions = exclusions
     }
@@ -203,6 +216,7 @@ public struct ReaderFilter: Hashable, Codable, Sendable {
             taxonomyNodeIDs: Set(try container.decode([String].self, forKey: .taxonomyNodeIDs)),
             languages: Set(try container.decode([String].self, forKey: .languages)),
             contentType: try container.decode(ReaderContentType.self, forKey: .contentType),
+            mediaTypes: Set(try container.decodeIfPresent([ReaderRecipeMediaType].self, forKey: .mediaTypes) ?? []),
             mood: try container.decode(ReaderMood.self, forKey: .mood),
             exclusions: try container.decode(ReaderContentExclusions.self, forKey: .exclusions))
     }
@@ -213,6 +227,10 @@ public struct ReaderFilter: Hashable, Codable, Sendable {
         try container.encode(taxonomyNodeIDs.sorted(), forKey: .taxonomyNodeIDs)
         try container.encode(languages.sorted(), forKey: .languages)
         try container.encode(contentType, forKey: .contentType)
+        // The legacy representation is preserved when there is no media criterion.
+        if !mediaTypes.isEmpty {
+            try container.encode(mediaTypes.map(\.rawValue).sorted(), forKey: .mediaTypes)
+        }
         try container.encode(mood, forKey: .mood)
         try container.encode(exclusions, forKey: .exclusions)
     }
@@ -227,7 +245,7 @@ public struct ReaderFilter: Hashable, Codable, Sendable {
     /// True when nothing is filtered: the default key must equal the unfiltered surface's key.
     public var isUnrestricted: Bool {
         regionIDs.isEmpty && taxonomyNodeIDs.isEmpty && languages.isEmpty
-            && contentType == .all && mood == .all && effectiveExclusionRules == nil
+            && contentType == .all && mediaTypes.isEmpty && mood == .all && effectiveExclusionRules == nil
     }
 
     /// The same criteria with the content exclusions stated exactly. The content filters are not a lens
@@ -247,7 +265,12 @@ public struct ReaderFilter: Hashable, Codable, Sendable {
         let type: String = "type=" + contentType.rawValue
         let moodValue: String = "mood=" + mood.rawValue
         let exclusionsValue: String = "exclusions=" + (effectiveExclusionRules?.joined(separator: "|") ?? "-")
-        return [regions, taxonomy, languageList, type, moodValue, exclusionsValue].joined(separator: ";")
+        var parts = [regions, taxonomy, languageList, type, moodValue, exclusionsValue]
+        // Absent from the legacy identity when there is no media criterion, so old keys keep the same text.
+        if !mediaTypes.isEmpty {
+            parts.append("media=" + mediaTypes.map(\.rawValue).sorted().joined(separator: ","))
+        }
+        return parts.joined(separator: ";")
     }
 
     /// One active criterion, as the lens shows and removes it (V1's `FilterLensChip`).
@@ -267,7 +290,7 @@ public struct ReaderFilter: Hashable, Codable, Sendable {
         var active: [Active] = []
         for region in regionIDs.sorted() { active.append(.region(region)) }
         for node in taxonomyNodeIDs.sorted() { active.append(.taxonomyNode(node)) }
-        if contentType != .all { active.append(.contentType) }
+        if contentType != .all || !mediaTypes.isEmpty { active.append(.contentType) }
         for language in languages.sorted() { active.append(.language(language)) }
         if mood != .all { active.append(.mood) }
         if effectiveExclusionRules != nil { active.append(.exclusions) }
@@ -285,7 +308,7 @@ public struct ReaderFilter: Hashable, Codable, Sendable {
         case .taxonomyNode(let id):
             return with(taxonomyNodeIDs: taxonomyNodeIDs.subtracting([id]))
         case .contentType:
-            return with(contentType: .all)
+            return with(contentType: .all, mediaTypes: [])
         case .language(let code):
             return with(languages: languages.subtracting([code]))
         case .mood:
@@ -296,12 +319,14 @@ public struct ReaderFilter: Hashable, Codable, Sendable {
     }
 
     private func with(regionIDs: Set<String>? = nil, taxonomyNodeIDs: Set<String>? = nil,
-        languages: Set<String>? = nil, contentType: ReaderContentType? = nil, mood: ReaderMood? = nil,
+        languages: Set<String>? = nil, contentType: ReaderContentType? = nil,
+        mediaTypes: Set<ReaderRecipeMediaType>? = nil, mood: ReaderMood? = nil,
         exclusions: ReaderContentExclusions? = nil) -> ReaderFilter {
         ReaderFilter(regionIDs: regionIDs ?? self.regionIDs,
             taxonomyNodeIDs: taxonomyNodeIDs ?? self.taxonomyNodeIDs,
             languages: languages ?? self.languages,
             contentType: contentType ?? self.contentType,
+            mediaTypes: mediaTypes ?? self.mediaTypes,
             mood: mood ?? self.mood,
             exclusions: exclusions ?? self.exclusions)
     }
@@ -311,6 +336,6 @@ public struct ReaderFilter: Hashable, Codable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case regionIDs, taxonomyNodeIDs, languages, contentType, mood, exclusions
+        case regionIDs, taxonomyNodeIDs, languages, contentType, mediaTypes, mood, exclusions
     }
 }

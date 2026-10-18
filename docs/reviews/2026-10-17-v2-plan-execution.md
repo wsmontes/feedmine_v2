@@ -767,3 +767,55 @@ SHA inicial: `f0a9257b` | vermelho: nenhum defeito de salvos reproduzido (cobert
 teste herdada reconciliada | alteração: teste de relaunch/purge; premissa de pruning corrigida | verde: tabela |
 jornada protegida: salvos sobrevivem a relaunch/purge e leem offline; retenção protege visível/salvo | pendências:
 R13 | SHA final: registrado no commit `fix(library): complete saved-content durability and offline recovery`.
+
+## R13 — neutralidade, namespaces e combinações de mídia
+
+Base: `9ee4480b` (R12).
+
+### Defeitos
+
+1. `ReaderDiscoveryProfile.init(recipe:)` tratava toda resposta de assunto que não era `.more` como **exclusão**
+   (`if level == .more ... else excluded`): voltar um assunto para **Normal** continuava escondendo-o.
+2. As respostas editoriais (`media:`, `nature:`) eram dobradas em `excludedTopicNodeKeys` — namespaces diferentes
+   colidiam: uma resposta editorial podia excluir um "nó de assunto" que nunca foi assunto.
+3. Uma receita com **duas** mídias resolvia `contentTypeCriterion` para `.all` e o `ReaderFilter` não carregava o
+   conjunto: par == todos, contra a semântica declarada.
+
+### Prova vermelha (mutação)
+
+| Mutação | Teste | Resultado |
+|---|---|---|
+| `.neutral` volta a entrar em `excluded` | `testNeutralPreferenceDoesNotExcludePersistedTopic` | **vermelho** (2 asserções) |
+| chave editorial volta a virar nó de assunto | `testEditorialAndTopicKeysDoNotCollide` | **vermelho** |
+| resolução descarta o conjunto de mídia | `testEveryMediaSelectionCombinationReachesTheFilterUnchanged` | **vermelho** (6 seleções) |
+
+Mutações revertidas.
+
+### Alteração
+
+- `.neutral` não interessa nem exclui; o ciclo `more → less → neutral` deixa de carregar exclusão velha.
+- Só uma resposta editorial **com chave de assunto** (`topic:`) exclui um assunto; `media:`/`nature:` continuam
+  pesos na ordenação.
+- `ReaderFilter` ganha `mediaTypes` (o par exato). **Identidade legada preservada:** um tipo único é exatamente a
+  lente `contentType` e todos os três é "sem critério"; ambos não acrescentam componente de mídia ao
+  `identityText` (a resolução só passa o conjunto para **pares**). Um filtro decodificado da forma antiga mantém o
+  mesmo `identityText` — o checkpoint persiste (correção da revisão desta tarefa). O par, que antes virava `.all`,
+  agora tem identidade própria; `activeCriteria`/`removing(.contentType)` limpam os dois.
+- `FeedRecipeResolution.filter` e o draft do sheet carregam o conjunto; encode omite a chave quando não há par.
+
+### Provas verdes
+
+| Prova | Resultado |
+|---|---|
+| `ReaderDiscoveryPoolTests` (incl. neutral/namespace) | 21 / 0 |
+| `FeedRecipeDefinitionTests` (todas as 7 seleções não vazias + legado/round-trip) | 10 / 0 |
+| `FeedRecipeResolutionTests` | 8 / 0 |
+| `ReaderFilterTests` | 11 / 0 |
+| `ReaderFilterEligibilityTests` | 7 / 0 |
+
+### Registro R13
+
+SHA inicial: `9ee4480b` | vermelho: tabela | alteração: neutral não exclui; namespaces separados; par de mídia
+carregado com identidade legada intacta | verde: tabela | jornada protegida: round-trip de persistência e
+elegibilidade correspondem exatamente às escolhas | pendências: R14 | SHA final: registrado no commit
+`fix(preferences): preserve neutrality and exact media selections`.

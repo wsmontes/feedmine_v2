@@ -101,4 +101,59 @@ final class FeedRecipeDefinitionTests: XCTestCase {
         let decoded = try JSONDecoder().decode(FeedRecipeDefinition.self, from: JSONEncoder().encode(recipe))
         XCTAssertEqual(decoded, recipe)
     }
+
+    /// R13: every media selection the reader can make keeps its own meaning in the recipe. Empty is the declared
+    /// "all kinds" (V1's default); a single kind is its content type; a pair is a real criterion — its own value,
+    /// never "all". Weights keep V1's asymmetry (kept = 0, removed = −3).
+    func testEveryMediaSelectionCombinationKeepsItsMeaning() throws {
+        let kinds = ReaderRecipeMediaType.allCases
+        XCTAssertEqual(kinds.count, 3)
+        XCTAssertEqual(FeedRecipeDefinition().mediaTypes, Set(kinds), "vazio é o padrão declarado de todos os tipos")
+        for mask in 1..<(1 << kinds.count) {
+            let selection = Set(kinds.enumerated().compactMap { mask & (1 << $0.offset) != 0 ? $0.element : nil })
+            let recipe = FeedRecipeDefinition(mediaTypes: selection)
+            XCTAssertEqual(recipe.mediaTypes, selection, "a seleção é preservada em \\(selection)")
+            if selection.count == 1 {
+                XCTAssertEqual(recipe.contentTypeCriterion, selection.first?.contentType)
+            } else {
+                XCTAssertEqual(recipe.contentTypeCriterion, .all,
+                    "a lente de tipo único não representa um par; o conjunto é a resposta")
+            }
+            for kind in kinds {
+                let weight = recipe.weight(forKey: kind.featureKey)
+                XCTAssertEqual(weight, selection.contains(kind) ? 0 : -3)
+            }
+        }
+        let pair = ReaderFilter(mediaTypes: [.article, .video])
+        let all = ReaderFilter()
+        XCTAssertNotEqual(pair, all, "um par não é todos os tipos")
+        XCTAssertNotEqual(pair.identityText, all.identityText)
+        XCTAssertEqual(pair, ReaderFilter(mediaTypes: [.video, .article]), "ordem não é identidade")
+        XCTAssertEqual(ReaderFilter(mediaTypes: Set(kinds)), all, "todos os tipos volta a não-critério")
+        // Legacy identity preservation: one kind is the single lens, all three is no criterion — neither adds a
+        // media component, so a persisted context keeps the same key (and checkpoint).
+        XCTAssertEqual(ReaderFilter(mediaTypes: [.article]), ReaderFilter(contentType: .text))
+        XCTAssertEqual(ReaderFilter(mediaTypes: [.article]).identityText,
+            ReaderFilter(contentType: .text).identityText)
+        XCTAssertEqual(ReaderFilter(mediaTypes: Set(kinds)).identityText, all.identityText)
+    }
+
+    /// R13: a filter persisted before the media-set field decodes as "no criterion" and keeps its old identity;
+    /// a pair round-trips.
+    func testLegacyFilterDecodesAsNoMediaCriterionAndPairsRoundTrip() throws {
+        let legacy = #"{"regionIDs":[],"taxonomyNodeIDs":[],"languages":[],"contentType":"All","mood":"All","exclusions":{"isEnabled":false,"rules":[]}}"#
+        let decoded = try JSONDecoder().decode(ReaderFilter.self, from: Data(legacy.utf8))
+        XCTAssertTrue(decoded.mediaTypes.isEmpty)
+        XCTAssertEqual(decoded, ReaderFilter())
+        XCTAssertEqual(decoded.identityText, ReaderFilter().identityText,
+            "a representação antiga mantém a identidade antiga")
+        // A single-kind filter persisted by the legacy shape (contentType=Articles, no media key) also keeps it.
+        let legacySingle = #"{"regionIDs":[],"taxonomyNodeIDs":[],"languages":[],"contentType":"Articles","mood":"All","exclusions":{"isEnabled":false,"rules":[]}}"#
+        let single = try JSONDecoder().decode(ReaderFilter.self, from: Data(legacySingle.utf8))
+        XCTAssertEqual(single.identityText, ReaderFilter(contentType: .text).identityText)
+        let pair = ReaderFilter(mediaTypes: [.article, .video])
+        let round = try JSONDecoder().decode(ReaderFilter.self, from: JSONEncoder().encode(pair))
+        XCTAssertEqual(round, pair)
+        XCTAssertEqual(round.mediaTypes, [.article, .video])
+    }
 }

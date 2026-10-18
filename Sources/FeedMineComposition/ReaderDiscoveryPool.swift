@@ -54,10 +54,20 @@ public extension ReaderDiscoveryProfile {
         for (key, level) in recipe.topicPreferences {
             let node = key.hasPrefix("topic:") ? String(key.dropFirst("topic:".count)) : key
             guard !node.isEmpty else { continue }
-            if level == .more { interested.insert(node) } else { excluded.insert(node) }
+            // R13: `.neutral` is the absence of an answer — it must neither interest nor exclude. The previous
+            // `else` branch folded it into the exclusion set, so a reader who returned a subject to Normal kept
+            // hiding it.
+            switch level {
+            case .more: interested.insert(node)
+            case .less: excluded.insert(node)
+            case .neutral: break
+            }
         }
         for (key, level) in recipe.editorialPreferences where level == .less {
-            let node = key.hasPrefix("topic:") ? String(key.dropFirst("topic:".count)) : key
+            // R13: subject and editorial namespaces stay distinct. An editorial answer (`media:`, `nature:`) is a
+            // weight, not a catalogue node; only an explicitly topic-keyed editorial answer excludes a topic.
+            guard key.hasPrefix("topic:") else { continue }
+            let node = String(key.dropFirst("topic:".count))
             guard !node.isEmpty else { continue }
             excluded.insert(node)
         }

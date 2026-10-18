@@ -18,6 +18,8 @@ public struct ReaderFilterDraft: Hashable, Sendable {
 
     public private(set) var languages: Set<String>
     public private(set) var contentType: ReaderContentType
+    /// R13: the exact media selection the draft carries through (a pair cannot be a single `contentType`).
+    public private(set) var mediaTypes: Set<ReaderRecipeMediaType>
     public private(set) var mood: ReaderMood
     public private(set) var preset: ReaderPresetID
 
@@ -36,6 +38,7 @@ public struct ReaderFilterDraft: Hashable, Sendable {
         basePreset = preset
         languages = filter.languages
         contentType = filter.contentType
+        mediaTypes = filter.mediaTypes
         mood = filter.mood
         exclusions = filter.exclusions
         regionIDs = filter.regionIDs
@@ -57,6 +60,7 @@ public struct ReaderFilterDraft: Hashable, Sendable {
     public var applied: ReaderFilter {
         ReaderFilter(regionIDs: regionIDs, taxonomyNodeIDs: taxonomyNodeIDs, languages: languages,
             contentType: availableCriteria.contains(.contentType) ? contentType : base.contentType,
+            mediaTypes: availableCriteria.contains(.contentType) ? mediaTypes : base.mediaTypes,
             mood: availableCriteria.contains(.mood) ? mood : base.mood,
             exclusions: exclusions)
     }

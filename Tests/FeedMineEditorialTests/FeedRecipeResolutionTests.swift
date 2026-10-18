@@ -124,4 +124,25 @@ final class FeedRecipeResolutionTests: XCTestCase {
         XCTAssertEqual(FeedRecipeResolution.suggestedName(
             for: FeedRecipeDefinition(topicPreferences: ["topic:topics/science": .more])), "topics/science")
     }
+
+    /// R13: the resolution carries the recipe's exact media selection into the filter — a pair is not collapsed into
+    /// `.all`, and all three kinds is no criterion. This is what a persisted context (and its identity) reads.
+    func testEveryMediaSelectionCombinationReachesTheFilterUnchanged() {
+        let kinds = ReaderRecipeMediaType.allCases
+        for mask in 1..<(1 << kinds.count) {
+            let selection = Set(kinds.enumerated().compactMap { mask & (1 << $0.offset) != 0 ? $0.element : nil })
+            let filter = FeedRecipeResolution.filter(for: FeedRecipeDefinition(mediaTypes: selection))
+            if selection.count == 2 {
+                XCTAssertEqual(filter.mediaTypes, selection, "o par é carregado exatamente")
+                XCTAssertEqual(filter.contentType, .all)
+            } else if selection.count == 1 {
+                XCTAssertTrue(filter.mediaTypes.isEmpty,
+                    "um tipo é a lente de tipo único; o conjunto extra mudaria a identidade antiga")
+                XCTAssertEqual(filter.contentType, selection.first?.contentType)
+            } else {
+                XCTAssertTrue(filter.mediaTypes.isEmpty)
+                XCTAssertEqual(filter.contentType, .all)
+            }
+        }
+    }
 }

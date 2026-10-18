@@ -70,6 +70,46 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
 
     /// A target discovered from a catalogue entry must carry its declared language into the
     /// materialized registration, not rely on an outer snapshot to filter it a second time.
+    /// R13: a subject returned to "Normal" is not an exclusion. The pool includes the persisted topic again, and
+    /// the reader's own cycle (more → less → neutral) cannot leave a stale exclusion behind.
+    func testNeutralPreferenceDoesNotExcludePersistedTopic() throws {
+        let catalogURL = try catalog()
+        let builder = ReaderDiscoveryBuilder(catalogURL: catalogURL)
+        func pool(_ level: ReaderPreferenceLevel) throws -> [String] {
+            let recipe = FeedRecipeDefinition(languages: ["pt"],
+                topicPreferences: ["topic:topics/science": level])
+            return try builder.pool(for: ReaderDiscoveryProfile(recipe: recipe), limit: 50)
+                .entries.map(\.principal)
+        }
+        XCTAssertTrue(try pool(.neutral).contains("https://science.pt/feed"),
+            "neutral não exclui o assunto persistido")
+        XCTAssertTrue(try pool(.more).contains("https://science.pt/feed"))
+        XCTAssertFalse(try pool(.less).contains("https://science.pt/feed"),
+            "menos exclui uma fonte que só está nesse assunto")
+        XCTAssertEqual(ReaderPreferenceLevel.more.next(), .less)
+        XCTAssertEqual(ReaderPreferenceLevel.less.next(), .neutral)
+        XCTAssertTrue(try pool(.less.next()).contains("https://science.pt/feed"),
+            "voltar de menos para normal devolve a fonte")
+    }
+
+    /// R13: editorial keys (`media:`, `nature:`) are weights in their own namespace; they are not catalogue topic
+    /// nodes and must not become topic exclusions. A topic-keyed editorial answer still excludes its topic.
+    func testEditorialAndTopicKeysDoNotCollide() {
+        let recipe = FeedRecipeDefinition(languages: ["pt"],
+            topicPreferences: ["topic:topics/science": .more],
+            editorialPreferences: ["media:video": .less, "nature:paywall": .less])
+        let profile = ReaderDiscoveryProfile(recipe: recipe)
+        XCTAssertEqual(profile.topicNodeKeys, ["topics/science"])
+        XCTAssertTrue(profile.excludedTopicNodeKeys.isEmpty,
+            "chaves editoriais não viram nós de assunto")
+        XCTAssertEqual(recipe.weight(forKey: "media:video"), -1.5,
+            "o peso editorial continua valendo na ordenação")
+        XCTAssertEqual(recipe.weight(forKey: "nature:paywall"), -1.5)
+        let explicit = FeedRecipeDefinition(editorialPreferences: ["topic:topics/science": .less])
+        XCTAssertEqual(ReaderDiscoveryProfile(recipe: explicit).excludedTopicNodeKeys, ["topics/science"],
+            "uma resposta editorial com chave de assunto ainda exclui aquele assunto")
+    }
+
     func testD2TraversalCarriesEntryLanguageIntoAcquisitionEligibility() throws {
         let catalogURL = try catalog()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
