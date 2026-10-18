@@ -136,17 +136,78 @@ public actor AcquisitionCoordinator {
         }
     }
 
-    /// Runs a finite plan through a sliding window of at most `concurrentTargetLimit` executions
-    /// (v1 lesson, commit 814b0a5e: refill per completion, never per chunk). Results are returned
-    /// in plan order; `onResult` sees each as it settles. A cancelled result stops starting new
-    /// work; fatal errors propagate. A limit of 1 is exactly sequential.
+    /// One settled execution, carried from the slot pump to the editorial consumer in completion order.
+    private struct IndexedResult: Sendable {
+        let index: Int
+        let result: AcquisitionExecutionResult
+    }
+
+    /// The settled results of one call, written by the pump and read by the caller. The order is the plan's: a result
+    /// that completed out of order still lands in its own slot.
+    private final class SettledResults: @unchecked Sendable {
+        private let lock = NSLock()
+        private var results: [Int: AcquisitionExecutionResult] = [:]
+        func record(index: Int, result: AcquisitionExecutionResult) {
+            lock.lock(); results[index] = result; lock.unlock()
+        }
+        func ordered(_ count: Int) -> [AcquisitionExecutionResult] {
+            lock.lock(); defer { lock.unlock() }
+            return (0..<count).compactMap { results[$0] }
+        }
+    }
+
+    /// Runs a finite plan through a sliding window of at most `concurrentTargetLimit` executions and reports each
+    /// result **as it settles**, in completion order. A cancelled result stops starting new work; a fatal error
+    /// propagates and cancels the siblings. A limit of 1 is exactly sequential.
+    ///
+    /// R05: the network slot pump and the result consumer are two structured children of one group. The pump yields
+    /// a settled, durable result to a stream whose backlog is bounded by the plan itself (one result per planned
+    /// work item can exist), then refills the freed slot immediately. It never awaits the consumer: a suspended
+    /// editorial callback cannot stop targets C and D from starting. The consumer drains the stream serially and
+    /// awaits the caller's callback, so no unbounded task per result is created. Results already settled stay
+    /// accounted for even when the callback fails or the round is cancelled.
     public nonisolated func executeConcurrently(_ work: [AcquisitionPlannedWork],
         operation: FeedReplenishmentOperationID? = nil, trace: ReplenishmentTrace? = nil,
         onResult: @escaping @Sendable (AcquisitionExecutionResult) async throws -> Void) async throws -> [AcquisitionExecutionResult] {
+        guard !work.isEmpty else { return [] }
         let limit = concurrentTargetLimit
-        return try await withThrowingTaskGroup(of: (Int, AcquisitionExecutionResult).self) { group in
+        let (stream, continuation) = AsyncStream.makeStream(of: IndexedResult.self,
+            bufferingPolicy: .bufferingOldest(work.count))
+        let settled = SettledResults()
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    // The durable outcome of each target is stated to the consumer here, before any editorial work;
+                    // the pump is free to keep the slot window full while the consumer is suspended.
+                    defer { continuation.finish() }
+                    try await self.settle(work, limit: limit, operation: operation, trace: trace,
+                        settled: settled, yield: { continuation.yield($0) })
+                }
+                group.addTask {
+                    for await item in stream { try await onResult(item.result) }
+                }
+                do {
+                    while let _ = try await group.next() {}
+                } catch {
+                    group.cancelAll()
+                    continuation.finish()
+                    throw error
+                }
+            }
+        } catch {
+            continuation.finish()
+            throw error
+        }
+        return settled.ordered(work.count)
+    }
+
+    /// The slot pump: at most `limit` executions, refilled on every settlement. Reporting is a yield, never an
+    /// `await` of the consumer.
+    private func settle(_ work: [AcquisitionPlannedWork], limit: Int,
+        operation: FeedReplenishmentOperationID?, trace: ReplenishmentTrace?,
+        settled: SettledResults, yield: @escaping @Sendable (IndexedResult) -> Void) async throws {
+        try await withThrowingTaskGroup(of: (Int, AcquisitionExecutionResult).self) { group in
             var next = 0, running = 0, stopped = false
-            var settled: [Int: AcquisitionExecutionResult] = [:]
             func startMore() {
                 while !stopped, running < limit, next < work.count {
                     let index = next, item = work[index]
@@ -158,13 +219,12 @@ public actor AcquisitionCoordinator {
             while let pair = try await group.next() {
                 let (index, result) = pair
                 running -= 1
-                settled[index] = result
-                try await onResult(result)
+                settled.record(index: index, result: result)
+                yield(IndexedResult(index: index, result: result))
                 if result.stop == .cancelled { stopped = true }
                 if !stopped { try Task.checkCancellation() }
                 startMore()
             }
-            return work.indices.compactMap { settled[$0] }
         }
     }
 

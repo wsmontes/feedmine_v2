@@ -289,6 +289,71 @@ final class AcquisitionCoordinatorTests: XCTestCase {
         XCTAssertEqual(valid.checkpointRevision,.max); XCTAssertEqual(valid.checkpoint,cp)
         XCTAssertEqual(valid.targetID,f.target.id); XCTAssertEqual(valid.targetGeneration,1)
     }
+    /// R05: a suspended editorial consumer must not stop the network slot pump. A finishes and its callback blocks;
+    /// with a two-slot window, C still starts (and, once another slot frees, D too) inside the same authorization.
+    /// The final results keep the plan's order even though completion order differs.
+    func testBlockedResultConsumerDoesNotStopOtherEligibleTargets() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let db = try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))
+        let authority = AcquisitionTargetAuthority(database: db)
+        func register() throws -> AcquisitionTarget {
+            let source = SourceID()
+            return try authority.register(id: AcquisitionTargetID(), connectorKind: .syndication,
+                authorizedSources: [source])
+        }
+        let targets = try (0..<4).map { _ in try register() }
+        let connectors = (0..<4).map { _ in FakeContinuousConnector() }
+        let mapping = Dictionary(uniqueKeysWithValues: zip(targets.map(\.id), connectors.map { $0 as any FeedConnector }))
+        let coordinator = AcquisitionCoordinator(database: db, connectorForTarget: { mapping[$0.id] },
+            concurrentTargetLimit: 2)
+        let work = targets.map { AcquisitionPlannedWork.start(target: $0, bounds: bounds()) }
+        let gate = BlockingConsumerGate()
+        let seen = SeenTargets()
+
+        let run = Task {
+            try await coordinator.executeConcurrently(work) { result in
+                if result.targetID == targets[0].id { await gate.wait() }
+                seen.append(result.targetID)
+            }
+        }
+        // A and B own the two slots. A finishes; its consumer suspends.
+        func waitForPull(_ connector: FakeContinuousConnector, timeout: Double = 2) async -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline {
+                if await connector.receivedPulls.count > 0 { return true }
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+            return false
+        }
+        let aStarted = await waitForPull(connectors[0])
+        let bStarted = await waitForPull(connectors[1])
+        XCTAssertTrue(aStarted)
+        XCTAssertTrue(bStarted)
+        _ = await connectors[0].offer(.finished)
+        // C must start **while A's result callback is still suspended** — the freed network slot is refilled.
+        let cDidStart = await waitForPull(connectors[2])
+        XCTAssertTrue(cDidStart, "C tinha de iniciar com o consumidor de A suspenso")
+        XCTAssertFalse(gate.isReleased, "premissa: o consumidor de A ainda está suspenso")
+        let cStarted = await connectors[2].receivedPulls.count
+        let dWaits = await connectors[3].receivedPulls.count
+        XCTAssertEqual(cStarted, 1, "C iniciou com o consumidor bloqueado")
+        XCTAssertEqual(dWaits, 0, "D espera um slot livre")
+        // Another slot frees (B finishes): D starts, still before the consumer is released.
+        _ = await connectors[1].offer(.finished)
+        let dDidStart = await waitForPull(connectors[3])
+        XCTAssertTrue(dDidStart, "D tinha de iniciar com o consumidor de A suspenso")
+        let dStarted = await connectors[3].receivedPulls.count
+        XCTAssertEqual(dStarted, 1, "D iniciou com o consumidor bloqueado")
+
+        // Release the consumer and settle the remaining targets in a completion order different from the plan's.
+        await gate.release()
+        _ = await connectors[2].offer(.finished)
+        _ = await connectors[3].offer(.finished)
+        let results = try await run.value
+        XCTAssertEqual(results.map(\.targetID), targets.map(\.id), "o resultado final segue a ordem do plano")
+        XCTAssertEqual(Set(seen.values), Set(targets.map(\.id)), "cada resultado é notificado exatamente uma vez")
+    }
     func testCancellationErrorPreservesPreviouslyCommittedReceipts() async throws {
         let f = try fixture(), fake = FakeFiniteConnector([.batch(observations: [observation(f)],checkpoint: checkpoint(1),bytes: 1),
             .cancellationError,.failure])
@@ -299,6 +364,32 @@ final class AcquisitionCoordinatorTests: XCTestCase {
         let pulls = await fake.receivedPulls; XCTAssertEqual(pulls.count,2)
         XCTAssertEqual(pulls[1].checkpointRevision,1)
     }
+}
+
+/// R05 test control: suspends the consumer until released, without blocking a cooperative thread.
+final class BlockingConsumerGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var released = false
+    var isReleased: Bool { lock.lock(); defer { lock.unlock() }; return released }
+    func wait() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if released { lock.unlock(); continuation.resume() }
+            else { waiting.append(continuation); lock.unlock() }
+        }
+    }
+    func release() {
+        lock.lock(); released = true; let parked = waiting; waiting = []; lock.unlock()
+        parked.forEach { $0.resume() }
+    }
+}
+
+final class SeenTargets: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [AcquisitionTargetID] = []
+    var values: [AcquisitionTargetID] { lock.lock(); defer { lock.unlock() }; return storage }
+    func append(_ id: AcquisitionTargetID) { lock.lock(); storage.append(id); lock.unlock() }
 }
 
 private actor SettlementConnector: FeedConnector {

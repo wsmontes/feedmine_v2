@@ -301,8 +301,9 @@ Mutações revertidas antes do commit.
 | host `CompositionTests` + filtros + fronteira | 86 / 0 | `/tmp/fm-v2-r03-suite.xcresult` |
 
 **Limite declarado:** a união de duas bandas aumenta a residência de bitmaps (até ~2× a banda) — a memória
-residente é medida em R04/R22, não neste registro. A jornada de imagem rodou em Debug; a variante Release fica
-para o fechamento de G1.
+residente é medida em R04/R22, não neste registro. A jornada de imagem rodou em Debug; a variante Release foi
+tentada no fechamento de G1 e ficou **NOT_RUN** com o bloqueio registrado lá (o test action do scheme compila
+`FeedMineAppTests` em Release, e os fixtures de teste do app são `#if DEBUG`).
 
 ### Registro R03
 
@@ -373,6 +374,21 @@ Condições e onde foram provadas:
 | Prontidão anterior à exposição | R03: pixels do destino da reversão presentes no valor **antes** do callback (mutação: ausentes) |
 | Nenhuma perda de âncora em reversão/salto/acessibilidade | R03 asset ausente preserva id/âncora/geometria; R04 salto espera o preparo; gate de VoiceOver |
 
-**G1 fechado contratualmente em 2026-10-17** com as suítes acima (host 86/0 em R02, 86/0 em R03, 86/0 + jornada de
-imagem 2/0 em R04). Não é certificação de release: a candidata congelada, a jornada Release com pressão de memória e
-os ensaios físicos continuam em R23/G4.
+### Suíte ampla e jornada Release (exigidas no fechamento do gate)
+
+| Prova | Resultado | Evidência |
+|---|---|---|
+| `swift test` completo pós-R03/R04 | **1.450 testes, 3 ignorados, 0 falhas** (54,4 s) | saída do `swift test` |
+| `ScrollAdmissionTests` (afirmava a liberação de pixels) | reconciliado ao contrato R03/R04 e verde (6/0) | `swift test --filter ScrollAdmissionTests` |
+| jornada de imagem em Debug (`CardImageJourneyUITests`) | 2/0 | `/tmp/fm-v2-r04-suite2.xcresult` |
+| jornada de imagem em **Release** (`-configuration Release`) | **NOT_RUN** | ver bloqueio abaixo |
+
+Bloqueio medido da jornada Release: com `-configuration Release` o test action do scheme compila também
+`FeedMineAppTests`, cujos fixtures dependem de símbolos `#if DEBUG` do app (`AddFeedFixtureSite`), e o build falha
+antes de qualquer ensaio (`unable to resolve Swift module dependency` sem `ENABLE_TESTABILITY`, e
+`cannot find 'AddFeedFixtureSite' in scope` com ele). Um scheme de UI-only em Release (ou a jornada pelo harness do
+benchmark em R23) é o caminho; **NOT_RUN não é PASS**.
+
+**G1 fechado contratualmente em 2026-10-17** com as suítes acima e a jornada Release explicitamente NOT_RUN. Não é
+certificação de release: a candidata congelada, a jornada Release com pressão de memória e os ensaios físicos
+continuam em R23/G4.

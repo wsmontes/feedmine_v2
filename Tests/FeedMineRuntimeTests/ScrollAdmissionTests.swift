@@ -240,29 +240,46 @@ final class ScrollAdmissionTests: XCTestCase {
         while cursor < f.cards.count - 1 {
             let anchor = f.cards[min(cursor, f.cards.count - 1)]
             reader = try await recorded(f.session, observation(anchor, placement: .top))
-            current = try await admitted(f.session, .forwardScroll(observation(anchor, placement: .top)))
+            // The last observation stays installed (no admission yet) so the residency decision can be read on the
+            // un-cut list, which is where the previous band is observable.
+            if cursor + 4 < f.cards.count - 1 {
+                current = try await admitted(f.session, .forwardScroll(observation(anchor, placement: .top)))
+            }
             cursor += 4
         }
-        // The admitted list is now the window around the reader's anchor — two cards before it, four after
-        // it — not the published prefix. The cards the reader left behind are cut and stay in the store.
+        // The observation precedes the final admission: the list is still the wider one, which is where the
+        // residency decision is observable.
+        XCTAssertEqual(reader.window.items.map(\.id), Array(f.ids[22...28]))
+        XCTAssertEqual(reader.window.anchor.cardID, f.cards[28].id)
+        let farBehind = try XCTUnwrap(reader.window.items.first)
+        // R03: the protected region is the union of the current band and the band the reader was at before the
+        // observation. A reverse can reveal the previous band before the runtime receives it, so those pixels stay.
+        XCTAssertNotNil(farBehind.image, "The previous band still holds its pixels for the immediate reverse")
+        XCTAssertEqual(farBehind.layout, frozenLayout, "Residency never changes the published layout")
+        XCTAssertEqual(farBehind.mediaAspectRatio, frozenRatio, "The slot keeps its frozen geometry")
+        XCTAssertTrue(farBehind.isImageBearing, "A card published with an image slot is never redefined as text-only")
+        XCTAssertNotNil(reader.window.items[2].image, "The card re-read below belongs to the previous band")
+        let nearTheReader = try XCTUnwrap(reader.window.items.last)
+        XCTAssertNotNil(nearTheReader.image, "The reader's own window keeps its images")
+        XCTAssertEqual(nearTheReader.id, f.cards[28].id)
+        // R04: residency is still bounded — under memory pressure only the reader's own band keeps its pixels, and
+        // the previous band releases. Identity, order, anchor and geometry do not change.
+        let trimmedOnce = try await f.session.trimResidencyForMemoryPressure()
+        XCTAssertTrue(trimmedOnce, "the pressure signal releases the previous band")
+        let trimmedValue = await f.session.currentPresentation()
+        let trimmed = try XCTUnwrap(trimmedValue)
+        XCTAssertNil(trimmed.window.items.first?.image, "Under pressure the previous band releases its pixels")
+        XCTAssertNotNil(trimmed.window.items.last?.image, "The reader's own band keeps its pixels")
+        XCTAssertEqual(trimmed.window.items.map(\.id), reader.window.items.map(\.id))
+        XCTAssertEqual(trimmed.window.anchor, reader.window.anchor)
+        // The final admission cuts the list back to the window around the reader's anchor — two cards before it,
+        // four after it — not the published prefix. The cards the reader left behind are cut and stay in the store.
+        current = try await admitted(f.session, .forwardScroll(observation(f.cards[28], placement: .top)))
         XCTAssertEqual(current.window.items.map(\.id), Array(f.ids[26...29]),
             "The admitted list is the window around the reader's anchor")
         XCTAssertEqual(current.window.anchor.cardID, f.cards[28].id)
         XCTAssertLessThanOrEqual(current.window.items.count,
             f.bounds.backwardCapacity + 1 + f.bounds.forwardCapacity)
-        // The observation that preceded the last admission left the list wider than the residency zone (the
-        // list only moves on admission), so that snapshot is where released pixels are observable.
-        XCTAssertEqual(reader.window.items.map(\.id), Array(f.ids[22...28]))
-        XCTAssertEqual(reader.window.anchor.cardID, f.cards[28].id)
-        let farBehind = try XCTUnwrap(reader.window.items.first)
-        XCTAssertNil(farBehind.image, "A card far behind the reader releases its decoded pixels")
-        XCTAssertEqual(farBehind.layout, frozenLayout, "Residency never changes the published layout")
-        XCTAssertEqual(farBehind.mediaAspectRatio, frozenRatio, "The slot keeps its frozen geometry")
-        XCTAssertTrue(farBehind.isImageBearing, "A card published with an image slot is never redefined as text-only")
-        XCTAssertNil(reader.window.items[2].image, "The card re-read below is one of the released ones")
-        let nearTheReader = try XCTUnwrap(reader.window.items.last)
-        XCTAssertNotNil(nearTheReader.image, "The reader's own window keeps its images")
-        XCTAssertEqual(nearTheReader.id, f.cards[28].id)
         // Cards the window cut are reachable, not lost: an admission near the head reads them from the local
         // store again, and the ones that had released their pixels come back decoded from the same asset.
         let head = observation(f.cards[26], placement: .center)
