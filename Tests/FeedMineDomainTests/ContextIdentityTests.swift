@@ -51,7 +51,13 @@ final class ContextIdentityTests: XCTestCase {
         let search = try XCTUnwrap(SearchContext(query: "  mercado livre  "))
         let both = ContextKey(request: .search(search))
         XCTAssertEqual(both.searchScope, .both, "a search without an explicit scope looks through both")
-        XCTAssertEqual(both.surfaceIdentity, "search:  mercado livre  ", "the stored query is not normalized")
+        XCTAssertEqual(both.surfaceIdentity, "search:terms-v1:  mercado livre  ",
+            "a nova busca declara a gramática; o texto não é normalizado")
+        // R14: a value persisted before the grammar keeps the historical identity (and its checkpoint).
+        let legacy = try JSONDecoder().decode(SearchContext.self,
+            from: Data(#"{"query":"  mercado livre  "}"#.utf8))
+        XCTAssertEqual(legacy.semantics, .legacyLiteral)
+        XCTAssertEqual(ContextKey(request: .search(legacy)).surfaceIdentity, "search:  mercado livre  ")
         let contents = ContextKey(request: .search(search), searchScope: .contents)
         XCTAssertNotEqual(contents, both)
         XCTAssertNotEqual(contents.canonicalIdentity, both.canonicalIdentity)

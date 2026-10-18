@@ -819,3 +819,50 @@ SHA inicial: `9ee4480b` | vermelho: tabela | alteração: neutral não exclui; n
 carregado com identidade legada intacta | verde: tabela | jornada protegida: round-trip de persistência e
 elegibilidade correspondem exatamente às escolhas | pendências: R14 | SHA final: registrado no commit
 `fix(preferences): preserve neutrality and exact media selections`.
+
+## R14 — expressão de busca única e compatibilidade persistida
+
+Base: `70ca6e89` (R13).
+
+### Defeito
+
+A busca era uma **substring literal única** sobre título ou resumo (`CandidateProvider`), e `SearchContext` não
+distinguia a gramática de uma consulta antiga. Não havia expressão compartilhada entre domínio/provider/UI; termos
+positivos separados, exclusão com `-` e hífen interno não tinham contrato.
+
+### Prova vermelha (mutação)
+
+| Mutação | Testes | Resultado |
+|---|---|---|
+| `matches` volta a usar a consulta inteira como literal | `testPositivesMayLiveInDifferentFieldsAndAnExclusionAnywhereFails` (+ literal) | **vermelho** |
+| decodificação sem marcador assume `.termsV1` | `testLegacyLiteralKeepsItsMeaningBytesAndIdentity` | **vermelho** (7 asserções: semântica, expressão, identidade, bytes, igualdade) |
+
+Mutações revertidas.
+
+### Alteração
+
+- `SearchExpression` (novo, Domain): a gramática aprovada e só ela — termos separados por espaço, `-` inicial
+  exclui, hífen interno é parte do termo, `-` isolado não é termo, caixa/diacríticos não distinguem, positivos podem
+  casar em campos diferentes (título + resumo), excluído em qualquer campo derruba, só negativos não inicia busca.
+  Nenhum operador novo.
+- `SearchSemantics` (`legacyLiteral`/`termsV1`) em `SearchContext`: ausência do marcador decodifica como legado; nova
+  consulta grava `termsV1`; a codificação do legado **omite** o marcador, preservando representação/identidade
+  anterior; semântica participa de igualdade/hash e da identidade do contexto (`search:` × `search:terms-v1:`).
+  Consulta legada nunca é reinterpretada pela gramática; só negativos legados continuam decodificando.
+- `CandidateProvider` e a resolução/UI consomem a mesma expressão; o literal antigo continua sendo uma substring
+  única (mesmo `en_US_POSIX` case/diacritic-insensitive).
+- `ContextIdentityTests` reconciliado: a consulta corrente declara a gramática; a forma legada mantém
+  `search:<texto>` e a identidade antiga.
+
+### Provas verdes
+
+| Prova | Resultado |
+|---|---|
+| `SearchExpressionTests` (novo; todos os casos do plano + exemplo discriminante + legado/round-trip) | 4 / 0 |
+| `CandidateProviderTests` (incl. exemplo título/resumo/exclusão e literal legado) | 21 / 0 |
+| `ContextIdentityTests` (legado preservado) | 7 / 0 |
+| `ContextTests` / `ReaderPreferencesStoreTests` / `ReaderLibraryStoreTests` / `LegacyUserStateImportTests` / `PublicationPersistenceMappingTests` | 8 / 8 / 12 / 3 / 3, zero falhas |
+
+### Registro R14
+
+SHA inicial: `70ca6e89` | vermelho: tabela | alteração: expressão compartilhada + semântica versionada + legado intacto | verde: tabela | jornada protegida: fixtures legados preservam significado; UI/provider usam a mesma expressão | pendências: R15 | SHA final: registrado no commit `feat(search): share query expressions with explicit legacy compatibility`.

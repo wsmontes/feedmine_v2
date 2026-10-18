@@ -104,7 +104,12 @@ public struct ContextKey: Hashable, Codable, Sendable {
         switch request {
         case .main: "main"
         case .source(let source): "source:" + source.rawValue.uuidString
-        case .search(let search): "search:" + search.query
+        case .search(let search):
+            // R14: a legacy literal keeps its historical identity; the expression grammar states its version.
+            switch search.semantics {
+            case .legacyLiteral: "search:" + search.query
+            case .termsV1: "search:terms-v1:" + search.query
+            }
         }
     }
 
@@ -162,22 +167,49 @@ public enum FeedContextRequest: Hashable, Codable, Sendable {
 }
 
 /// Original search query; trimming determines validity without normalizing stored meaning.
+///
+/// R14: the query carries the semantics it was written under. A value persisted before the expression grammar has
+/// no marker and decodes as `.legacyLiteral`, keeping its literal meaning and its bytes (the encoder omits the
+/// marker for legacy values); a new search states `.termsV1` and the marker participates in equality, hashing and
+/// the context identity.
 public struct SearchContext: Hashable, Codable, Sendable {
     public let query: String
+    public let semantics: SearchSemantics
 
-    public init?(query: String) {
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
+    /// A new search: the expression grammar must be able to start it (at least one positive term).
+    public init?(query: String, semantics: SearchSemantics = .termsV1) {
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        if semantics == .termsV1, SearchExpression(query: query)?.canSearch != true { return nil }
         self.query = query
+        self.semantics = semantics
+    }
+
+    /// The expression for this query under its own semantics. Nil for a legacy literal or an unsearchable value.
+    public var expression: SearchExpression? {
+        guard semantics == .termsV1 else { return nil }
+        return SearchExpression(query: query)
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let query = try container.decode(String.self, forKey: .query)
-        guard let search = Self(query: query) else {
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw DecodingError.dataCorruptedError(forKey: .query, in: container, debugDescription: "SearchContext requires a non-whitespace query.")
         }
-        self = search
+        self.query = query
+        self.semantics = try container.decodeIfPresent(SearchSemantics.self, forKey: .semantics) ?? .legacyLiteral
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(query, forKey: .query)
+        // The legacy representation is preserved when the value is a legacy literal.
+        if semantics != .legacyLiteral {
+            try container.encode(semantics, forKey: .semantics)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case query, semantics
     }
 }
