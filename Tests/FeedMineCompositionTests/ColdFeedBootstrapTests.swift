@@ -580,7 +580,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
             acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) }, readiness: readiness,
             prepareWindowMedia: { revisions in
                 // Head media remains pending; only this older revision is legitimately settled.
-                if revisions.contains(ready) { _ = readiness.record(ready, nil) }
+                if revisions.contains(ready) { _ = readiness.record(ready, nil, textDeclared: true) }
             })
         let bounds = ColdFeedBootstrapResources(localExaminedCapacity: 1, acquisition: planningResources(), localWindowCapacity: 3)!
         var previous: CandidateSupplyCursor?
@@ -636,7 +636,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
                 if journal.values.count == 1 { throw Failure.preparation }
                 return Self.prepared(selection)
             }, readiness: readiness, prepareWindowMedia: { revisions in
-                if revisions.contains(ready) { _ = readiness.record(ready, nil) }
+                if revisions.contains(ready) { _ = readiness.record(ready, nil, textDeclared: true) }
             })
         let bounds = ColdFeedBootstrapResources(localExaminedCapacity: 1,
             acquisition: planningResources(), localWindowCapacity: 1)!
@@ -670,7 +670,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
             }, readiness: readiness, prepareWindowMedia: { revisions in
                 preparing.fulfill()
                 for await _ in release { break }
-                for revision in revisions { _ = readiness.record(revision, nil) }
+                for revision in revisions { _ = readiness.record(revision, nil, textDeclared: true) }
             })
         let bounds = resources()
         let task = Task { try await bootstrap.run(identity: id, resources: bounds,
