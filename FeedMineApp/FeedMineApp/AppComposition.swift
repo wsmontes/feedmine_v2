@@ -873,6 +873,10 @@ final class AppComposition {
 
     /// T8: activating a preset the reader saved. The stored key is the identity — including the search scope it
     /// was born from — so this is T6's transition with that key, and the library is never a second engine.
+    /// R20: a hook between persisting the new identity and opening its session. The failure path is the one this
+    /// transition must survive; nothing else may observe it, and it never changes a successful activation.
+    @ObservationIgnored var beforeBuildingSession: ((ContextKey) throws -> Void)?
+
     func activateSavedPreset(_ key: ContextKey) async throws {
         guard !replacingSession, let preferences else { return }
         // An explicit transition happens when the identity changes *or* when the behaviour does: editing a recipe
@@ -883,17 +887,38 @@ final class AppComposition {
             current.policy.scoringPolicyVersion.rawValue == version { return }
         replacingSession = true
         defer { replacingSession = false }
+        let previous = currentContextKey
         if let retired = association {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
             await retired.close()
         }
         association = nil
         currentContextKey = key
-        _ = try preferences.setContext(key)
-        let next = try await association(contextKey: key)
-        association = next
-        startupFailure = nil
-        try await next.launch()
+        do {
+            _ = try preferences.setContext(key)
+            try beforeBuildingSession?(key)
+            let next = try await association(contextKey: key)
+            association = next
+            startupFailure = nil
+            try await next.launch()
+        } catch let failure {
+            // R20: the durable identity and the opened session are one outcome. A rebuild that threw after the key
+            // was written must not leave the reader on an identity with no session: restore the previous context in
+            // memory and in the preferences, then reopen it. The caller still receives the original failure.
+            await association?.close()
+            association = nil
+            currentContextKey = previous
+            do {
+                _ = try preferences.setContext(previous)
+                let restored = try await association(contextKey: previous)
+                association = restored
+                startupFailure = nil
+                try await restored.launch()
+            } catch {
+                startupFailure = "Não foi possível abrir o feed local."
+            }
+            throw failure
+        }
         // Answers received during this constructor belong to the finished transition too.
         if pendingRebuild {
             replacingSession = false
@@ -3684,6 +3709,10 @@ final class FeedAssociation {
         visible = false
         retryTask?.cancel()
         await driver.deactivate()
+        // R20: `deactivate` deliberately leaves authorized pulls running (their durable supply still counts).
+        // Invalidating the transport before they settle lets a pull create a URL session task on an invalidated
+        // session — a hard NSException, not a thrown error. Order retirement: cancel, drain, then invalidate.
+        _ = await coordinator.settleInFlight()
         transport.invalidateAndCancel()
     }
 

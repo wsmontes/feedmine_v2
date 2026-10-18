@@ -107,7 +107,7 @@ public final class FeedScreenStore {
     public func cancelSearch() {
         isSearching = false
         searchQuery = ""
-        // The host owns the origin and its checkpoint; the store does not.
+        // The host owns the origin and its durable reading position; the store does not.
         onCancelSearch()
     }
 

@@ -13,6 +13,37 @@ private extension AcquisitionCoordinator {
     }
 }
 
+
+/// R20: retirement must not invalidate a session's transport while an authorized pull can still create a task.
+private actor PullGate {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var isOpen = false
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    func release() {
+        isOpen = true
+        for waiter in waiters { waiter.resume() }
+        waiters = []
+    }
+}
+
+private struct IgnoringCancellationConnector: FeedConnector {
+    let gate: PullGate
+    func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
+        await gate.wait()
+        return .finished
+    }
+}
+
+private struct SleepingConnector: FeedConnector {
+    func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
+        try await Task.sleep(for: .seconds(30))
+        return .finished
+    }
+}
+
 final class AcquisitionCoordinatorTests: XCTestCase {
     private struct Fixture: Sendable {
         let database: RuntimeDatabase
@@ -518,4 +549,44 @@ extension AcquisitionCoordinatorTests {
         XCTAssertEqual(Set(changedActual.suffix(4)), Set([f.target.id, d.id]))
         XCTAssertNotEqual(changedActual[6], changedActual[7]); XCTAssertEqual(changedActual[6], changedActual[8])
     }
+    /// Retirement cancels the authorized pulls first; a pull that ignores cancellation is reported as **not
+    /// settled** inside the budget instead of blocking retirement forever.
+    func testSettleInFlightBoundsTheWaitForAPullThatIgnoresCancellation() async throws {
+        let f = try fixture(), gate = PullGate()
+        let coordinator = f.coordinator(IgnoringCancellationConnector(gate: gate))
+        let execution = await enter(coordinator, start(f))
+        var began = false
+        for _ in 0..<400 {
+            if !(await coordinator.activeExecutions()).isEmpty { began = true; break }
+            await Task.yield()
+        }
+        XCTAssertTrue(began, "premissa: o pull autorizado está em voo")
+        let settled = await coordinator.settleInFlight(budget: .milliseconds(80))
+        XCTAssertFalse(settled, "um pull que ignora cancelamento não pode ser declarado assentado")
+        await gate.release()
+        _ = try? await execution.value
+        var emptied = false
+        for _ in 0..<400 {
+            if await coordinator.activeExecutions().isEmpty { emptied = true; break }
+            await Task.yield()
+        }
+        XCTAssertTrue(emptied)
+    }
+
+    /// A pull that respects cancellation settles inside the budget: the transport can be invalidated after it.
+    func testSettleInFlightCancelsARespectingPull() async throws {
+        let f = try fixture()
+        let coordinator = f.coordinator(SleepingConnector())
+        let execution = await enter(coordinator, start(f))
+        var began = false
+        for _ in 0..<400 {
+            if !(await coordinator.activeExecutions()).isEmpty { began = true; break }
+            await Task.yield()
+        }
+        XCTAssertTrue(began, "premissa: o pull autorizado está em voo")
+        let settled = await coordinator.settleInFlight(budget: .seconds(2))
+        XCTAssertTrue(settled, "o cancelamento entrega o pull dentro do orçamento")
+        _ = try? await execution.value
+    }
+
 }

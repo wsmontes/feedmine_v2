@@ -1135,3 +1135,75 @@ Nenhuma dessas falhas foi declarada PASS; nenhuma foi atribuída a R15-R19 sem p
 - R17 permanece **parcial**: diversidade é decisão pura testada, mas não persistida/fiada em produção.
 - Estado aceitável para a próxima sessão: suíte unitária verde na candidata; suíte de UI vermelha e não
   certificada; tarefas R20-R23 pendentes.
+
+## R20 — ativação atômica: identidade e sessão como UM resultado
+
+Base: `5ef0a876` (build 52).
+
+### Defeito
+
+`activateSavedPreset` fechava a sessão, gravava a nova `ContextKey` nas preferências e **só então** construía a
+sessão (`association(contextKey:)` + `launch()`). Se a construção falhasse, a chave durável apontava para um
+contexto cuja sessão nunca abriu — e `association` ficava `nil` sem `startupFailure`.
+
+### Alteração
+
+- A transição agora tem rollback: se a construção/abertura lançar depois do write da chave, a identidade
+  **anterior** volta em memória e nas preferências e a sessão anterior é reaberta (`launch()`). O chamador
+  continua recebendo a falha original.
+- Só um caminho observa a falha entre o write e a sessão: o hook `beforeBuildingSession` (injetor de teste,
+  `@ObservationIgnored`), nunca usado para decidir comportamento de sucesso.
+- Regra preservada: checkpoint do contexto anterior antes de fechá-lo; a troca continua uma decisão única do
+  host, não uma escrita parcial.
+
+### Provas
+
+- `testFailedActivationLeavesThePreviousContextAndKeyIntact`: recusa injetada → lança; `currentContextKey` e a
+  chave durável permanecem os anteriores; a associação anterior é reaberta; com o injetor removido, a mesma
+  transição completa.
+- Regressões de transição: `testT8ASavedPresetIsOfferedAndActivatesItsOwnContext`,
+  `testAnswerDuringPresetTransitionIsApplied`, `testAnswerDuringContextTransitionIsApplied`,
+  `testK06RoundTripBetweenContextsKeepsTheEditionAnchorAndPosition` — 5/0 em conjunto.
+- Vermelho medido: remover o rollback → três asserções falham (chave em memória, chave durável, ausência de
+  sessão). Mutação revertida.
+
+**Limite honesto:** as demais cláusulas de R20 (ativo de catálogo + identidade na MESMA transação, contagens e
+fingerprints num único registro durável, concorrência rejeitando commit velho) **não** foram implementadas; o
+rollback fecha o defeito de consistência entre chave e sessão, não substitui o resultado durável único do plano.
+
+**Registro R20:** SHA inicial `5ef0a876` | vermelho: rollback removido | alteração: transição com rollback |
+verde: teste novo + 5/0 de regressões | pendências: registro durável único (contagens/fingerprints) e concorrência |
+SHA final: registrado no commit `fix(context): keep identity and session one activation outcome`.
+
+### R20, segundo defeito: transporte invalidado com pull autorizado em voo
+
+`FeedAssociation.close()` chamava `driver.deactivate()` — que por contrato (R06/R14) **deixa** pulls autorizados
+correndo para admitir seu suprimento durável — e imediatamente `transport.invalidateAndCancel()`. Um pull que
+criasse seu `URLSessionTask` depois dessa linha dispara `NSGenericException` ("Task created in a session that has
+been invalidated"), que não é erro lançado: derruba o processo. Foi a causa do teste
+`testTheFirstRunAsksTheLanguageAndTheAnswerClosesIt` falhar de forma intermitente quando a primeira execução
+reconstrói a sessão com trabalho de launch em voo.
+
+Correção de ordem em `close()`: cancelar os pulls autorizados (`AcquisitionCoordinator.settleInFlight`) **antes** de
+invalidar o transporte. O método:
+
+- pede cancelamento a cada pull em voo;
+- espera com orçamento de 2 s, **sem espera estrutural** (dois observadores não estruturados correm; o primeiro
+  vence), então um connector que ignora cancelamento não pendura a aposentadoria — devolve `false` e o chamador
+  segue para a invalidação;
+- devolve `true` quando todos assentaram dentro do orçamento.
+
+Provas (`AcquisitionCoordinatorTests`): `testSettleInFlightCancelsARespectingPull` (pull que respeita cancelamento
+assenta; mutação que remove `task.cancel()` → **vermelho** no orçamento) e
+`testSettleInFlightBoundsTheWaitForAPullThatIgnoresCancellation` (devolve `false` após 80 ms e o pull liberado
+depois assenta). `CompositionTests` completo voltou a rodar **89/89** na mesma configuração em que antes do fix o
+primeiro teste morria com a exceção — evidência de que a ordem nova não reproduz o crash nessa passagem (não é
+prova de ausência de corrida em produção).
+
+### Estado final da suíte de pacote
+
+`swift test`: **1481 executados, 3 ignorados, 0 falhas**. Inclui `AcquisitionCoordinatorTests` 40/0 e
+`PipelineHeadroomTests` 5/0. O único vermelho encontrado nesta rodada foi o comentário de R15 em
+`FeedScreenStore.swift` que continha o token proibido `checkpoint` para o teste de fronteira de módulo
+(`testS12ModuleBoundaryAndNoExecutionMechanisms`); reescrito para "durable reading position" — o teste é um fence
+deliberado, o código não mudou de comportamento.

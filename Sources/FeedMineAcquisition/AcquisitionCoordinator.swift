@@ -46,6 +46,24 @@ public enum AcquisitionCoordinatorError: Error, Equatable, Sendable {
     case byteCapacityExceeded(limit: Int, actual: Int)
 }
 
+/// First-result-wins latch used by `settleInFlight` so the budget is a real bound, not a structural wait.
+private actor Settlement {
+    private var result: Bool?
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    func finish(_ value: Bool) {
+        guard result == nil else { return }
+        result = value
+        continuation?.resume(returning: value)
+        continuation = nil
+    }
+
+    func wait() async -> Bool {
+        if let result { return result }
+        return await withCheckedContinuation { continuation = $0 }
+    }
+}
+
 public actor AcquisitionCoordinator {
     private struct InFlight {
         let generation: UInt64
@@ -74,6 +92,28 @@ public actor AcquisitionCoordinator {
         self.backoff = backoff
         self.concurrentTargetLimit = max(1, concurrentTargetLimit)
         self.monotonicSeconds = monotonicSeconds
+    }
+
+    /// Retirement order, R20/close: a session's transport may only be invalidated after no authorized pull can
+    /// create another URL session task. Cancellation is requested first; the wait is bounded so a connector that
+    /// ignores it cannot hang retirement. Returns whether every authorized pull settled inside the budget.
+    @discardableResult
+    public func settleInFlight(budget: Duration = .seconds(2)) async -> Bool {
+        guard !inFlight.isEmpty else { return true }
+        let tasks = Array(inFlight.values.map(\.task))
+        for task in tasks { task.cancel() }
+        // The wait must not be structural: a pull that ignores cancellation would otherwise keep the task group
+        // (and therefore retirement) alive past the budget. Two unstructured observers race; the first wins.
+        let settlement = Settlement()
+        Task {
+            for task in tasks { _ = try? await task.value }
+            await settlement.finish(true)
+        }
+        Task {
+            try? await Task.sleep(for: budget)
+            await settlement.finish(false)
+        }
+        return await settlement.wait()
     }
 
     /// Targets whose recent consecutive operational failures put them in a cooling window.

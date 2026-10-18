@@ -808,6 +808,48 @@ final class CompositionTests: XCTestCase {
         await live.close()
     }
 
+    // MARK: - R20: atomic catalogue activation
+
+    /// The durable identity and the opened session are one outcome. A rebuild that throws after the key was
+    /// written must not leave the reader on a context whose session never opened: the previous identity returns in
+    /// memory and in the preferences, and the caller still receives the failure.
+    func testFailedActivationLeavesThePreviousContextAndKeyIntact() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 6 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        let before = root.currentContextKey
+        func durableKey() throws -> ContextKey? {
+            try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+                .load()?.activeContextKey
+        }
+        XCTAssertEqual(try durableKey(), before, "premissa: a chave da base está durável")
+
+        let search = try XCTUnwrap(SearchContext(query: "clima"))
+        let victim = ContextKey(request: .search(search))
+        struct ActivationRefused: Error {}
+        root.beforeBuildingSession = { key in if key == victim { throw ActivationRefused() } }
+        do {
+            try await root.activateSavedPreset(victim)
+            XCTFail("uma transição que não abriu a sessão não pode se declarar concluída")
+        } catch is ActivationRefused {}
+
+        XCTAssertEqual(root.currentContextKey, before, "a identidade anterior volta em memória")
+        XCTAssertEqual(try durableKey(), before, "e a chave durável volta com ela")
+        let restored = try XCTUnwrap(root.association)
+        XCTAssertEqual(restored.contextKey, before, "a sessão anterior foi reaberta, não deixada em nil")
+        XCTAssertNil(root.startupFailure)
+
+        // The seam is a failure injector only: with it clear, the same transition succeeds.
+        root.beforeBuildingSession = nil
+        try await root.activateSavedPreset(victim)
+        XCTAssertEqual(root.currentContextKey, victim)
+        XCTAssertEqual(try XCTUnwrap(root.association).contextKey, victim)
+        await root.association?.close()
+    }
+
     // MARK: - R19: honest source and site actions
 
     /// "Ver fonte" opens the source's **internal context**; it never presents the source's website, and the
