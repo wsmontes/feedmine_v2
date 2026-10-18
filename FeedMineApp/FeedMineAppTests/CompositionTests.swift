@@ -808,6 +808,35 @@ final class CompositionTests: XCTestCase {
         await live.close()
     }
 
+    // MARK: - R18: first experience
+
+    /// A refused welcome write must not claim the reader has met the app: the flag is the only durable fact that
+    /// closes the first-run gate, and a later launch reads it.
+    func testWelcomePersistenceFailureDoesNotClaimCompletedOnboarding() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 4 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        XCTAssertTrue(root.needsOnboarding, "premissa: uma instalação nova ainda não viu o app")
+
+        try trigger(["""
+            CREATE TRIGGER welcome_boundary_reject_settings
+            BEFORE UPDATE ON reader_preferences
+            WHEN NEW.settings IS NOT OLD.settings
+            BEGIN SELECT RAISE(ABORT, 'welcome boundary: settings write refused'); END;
+            """], in: directory)
+        XCTAssertFalse(root.completeOnboarding(), "a recusa tem de ser devolvida ao chamador")
+        XCTAssertTrue(root.needsOnboarding, "a primeira execução não pode ser declarada concluída sem o registro")
+
+        try dropTriggers(["welcome_boundary_reject_settings"], in: directory)
+        XCTAssertTrue(root.completeOnboarding())
+        XCTAssertFalse(root.needsOnboarding)
+        // A later launch reads the durable flag, not this process's memory.
+        let relaunched = self.root(directory: directory)
+        XCTAssertFalse(relaunched.needsOnboarding)
+    }
+
     // MARK: - R16: unified local search scopes
 
     /// Each scope returns only its own real result kinds, computed from the authorities that own them: sources from

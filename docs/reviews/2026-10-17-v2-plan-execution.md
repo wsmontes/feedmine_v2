@@ -986,3 +986,42 @@ Base: `031c2dea` (R16).
 **Registro parcial:** SHA inicial `031c2dea` | vermelho: gate de versão removido | verde: 3/0 + regressões | pendências:
 persistência/fiação B02 | SHA final: registrado no commit `feat(editorial): maintain factual diversity across
 publication seams` (parcial, declarado).
+
+## R18 — primeira experiência e abastecimento após o primeiro card
+
+Base: `d24936ea` (R17).
+
+### Defeito
+
+`completeOnboarding()` engolia o resultado do write de preferências (`try?`) e o app fechava a primeira execução
+incondicionalmente: uma gravação recusada declarava onboarding concluído, e o relançamento voltava a mostrar o
+welcome. `completeFirstRun` tinha o mesmo `try?` e reconstruía a sessão mesmo sem as respostas duráveis.
+
+### Prova vermelha (mutação)
+
+`completeOnboarding` passou a devolver `true` ignorando o resultado do write →
+`testWelcomePersistenceFailureDoesNotClaimCompletedOnboarding` **vermelho**. Mutação revertida.
+
+### Alteração
+
+- `completeOnboarding() -> Bool` e `completeFirstRun(...) -> Bool` só devolvem `true` quando a preferência foi
+  **durável**; a UI fecha a superfície apenas nesse caso e, recusada, mantém a primeira execução e mostra uma
+  mensagem recuperável. `completeFirstRun` não reconstrói a sessão quando as respostas não foram gravadas.
+- O teste usa um trigger real de SQLite na tabela de preferências (nenhum seam novo): recusa → `false` e
+  `needsOnboarding` continua verdadeiro; sem o trigger → `true` e um relançamento lê a flag durável.
+
+### Cobertura do restante (existente, executada)
+
+| Contrato R18 | Prova existente |
+|---|---|
+| primeira publicação encerra a espera, não o abastecimento | `testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates` (fonte rápida publica com a lenta suspensa; a reserva continua enchendo) |
+| saída recuperável / ausência de histórias ≠ falha de transporte | `testOfflineFirstLaunchStatesConnectivityNotNoStories`, `testFirstLaunchWithAnEmptySourceStillStatesNoStories`, `testEmptyLaunchRecoversAtForegroundAfterCooldownWithoutReplacingAssociation` |
+| escolhas de idioma efetivas | testes de onboarding/idioma da suíte (R13) |
+
+**Limite:** a jornada de instalação limpa com texto observado em UI fica para R21/R23.
+
+### Registro R18
+
+SHA inicial: `d24936ea` | vermelho: mutação do write ignorado | alteração: confirmação durável do welcome/primeira
+execução | verde: teste novo + classes existentes | jornada protegida: onboarding recusado não se declara concluído |
+pendências: R19 | SHA final: registrado no commit `fix(onboarding): preserve factual startup and continuing supply`.

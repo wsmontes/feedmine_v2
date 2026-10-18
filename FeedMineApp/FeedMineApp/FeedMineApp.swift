@@ -909,7 +909,14 @@ struct FeedMineApp: App {
                 // The reader leaves the first run at once: the answers rebuild the session from the catalogue
                 // (a query measured in seconds), and nobody should be held on a cover while that happens.
                 showsOnboarding = false
-                Task { await composition.completeFirstRun(discovery: recipe) }
+                Task {
+                    // R18: the gate closes in the composition only when the answers are durable.
+                    if await composition.completeFirstRun(discovery: recipe) {
+                        showsOnboarding = false
+                    } else {
+                        readerError = String(localized: "Não foi possível salvar suas respostas. Tente novamente.")
+                    }
+                }
             },
             onClose: {
                 composition.completeOnboarding()
@@ -1086,8 +1093,12 @@ struct FeedMineApp: App {
 
     /// The reader has met the app without answering anything: the shortcut out of the first run.
     private func completeOnboarding() async {
-        composition.completeOnboarding()
-        showsOnboarding = false
+        // R18: the surface closes only when the flag is durable; a refused write is reported, not claimed.
+        if composition.completeOnboarding() {
+            showsOnboarding = false
+        } else {
+            readerError = String(localized: "Não foi possível concluir o primeiro passo. Tente novamente.")
+        }
     }
 
     /// T11: V1's "open hood", over the feed the reader is on.

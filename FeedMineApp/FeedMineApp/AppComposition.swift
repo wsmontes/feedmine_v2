@@ -1092,12 +1092,16 @@ final class AppComposition {
     }
 
     /// The reader has met the app: the flag is a preference, and setting it is what a later launch reads.
-    func completeOnboarding() {
-        guard let preferences, let current = try? preferences.load() else { return }
+    /// R18: the caller may only dismiss the first-run surface when this **returns true** — a refused write must not
+    /// be presented as a completed onboarding.
+    @discardableResult
+    func completeOnboarding() -> Bool {
+        guard let preferences, let current = try? preferences.load() else { return false }
         var settings = current.settings
         settings.hasSeenOnboarding = true
-        guard (try? preferences.setSettings(settings)) != nil else { return }
+        guard (try? preferences.setSettings(settings)) != nil else { return false }
         noteReaderSettingsWritten(settings)
+        return true
     }
 
     /// F02's first run: the answers it collects (languages and places) become the reader's **discovery profile** —
@@ -1105,14 +1109,20 @@ final class AppComposition {
     /// be activated and nothing has to be named: the reader enters the feed, and the subjects are answered inside
     /// it. The session is rebuilt so the answers take effect now, not on the next launch; because the identity is
     /// unchanged, that rebuild **restores** the reader's position rather than resetting it.
-    func completeFirstRun(discovery recipe: FeedRecipeDefinition) async {
+    @discardableResult
+    func completeFirstRun(discovery recipe: FeedRecipeDefinition) async -> Bool {
+        var stored = false
         if let preferences, let current = try? preferences.load() {
             var settings = current.settings
             settings.discoveryProfile = recipe
             settings.hasSeenOnboarding = true
-            if (try? preferences.setSettings(settings)) != nil { noteReaderSettingsWritten(settings) }
+            if (try? preferences.setSettings(settings)) != nil { noteReaderSettingsWritten(settings); stored = true }
         }
+        // R18: a refused write keeps the reader in the first run; rebuilding the session would present answers that
+        // are not durable.
+        guard stored else { return false }
         try? await replaceSession()
+        return true
     }
 
     /// What the Composer can offer, from the catalogue the app already reads: its languages, and its own
