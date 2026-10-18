@@ -18,7 +18,7 @@ de teste.
 | B callback de mídia | idem | idem | `onReadinessChanged` ligado ao `noteLocalSupplyChanged`: transição de prontidão agenda o drive | teste de transição publicando mídia pendente |
 | C idioma | `feat/onboarding-language` `c4fbb215` | `5e4e2142` | pergunta explícita no primeiro run ("Em quais idiomas você quer ler?"), nada pré-selecionado, "Todos" é o pular; `Locale.current` removido do caminho | `14/0` (11 SPM + 2 app + 1 UI) |
 | D scores | `feat/spec-collection-ui` | idem | ordenação do lado da composição (qualidade/atividade), planejador intacto ("supplied order remains priority") | `131/0` |
-| E estabilidade de UI | `fix/deferral-invalidates-list` `10bc0bd7` | — | conserto de frames; A/B atribuiu as falhas de UI | 3,02% → **1,51%** em Release/aparelho (janela do A/B; não é certificação contínua) |
+| E estabilidade de UI | `fix/deferral-invalidates-list` `10bc0bd7` | — | conserto de frames; A/B atribuiu as falhas de UI | 3,02% → **1,51%** em Release/aparelho (janela do A/B; não é certificação contínua). **Esta branch NÃO está em `integration/51` nem em `main`** — `git merge-base --is-ancestor 10bc0bd7 8fcfe37c` sai 1 |
 | F teto | `feat/foreground-cadence` `54680fa4` | `5e4e2142` | `maxAdmittedItems = 2000`, FIFO, nunca remove a carta do leitor | `3/0` + `2/0`; 2100 cartas → `[94…2093]` |
 | G produção contínua | idem | idem | cadência de primeiro plano ≥10 s enquanto visível; para em `.inactive`/`.background`; desenho emendado | 30 drives em 5 min, zero em segundo plano; `3/0` |
 | H provas | — | — | critérios A/B/C/D/F/G pinados | pacotes citados nas linhas acima |
@@ -73,6 +73,9 @@ testador **externo** e o build só instala após Beta App Review.
   `bench/run/20261017T162333Z/` mediu **`d8d2f26e…`**, não `8fcfe37c` — **não** é evidência para a 51.
 - **B01–B03: NÃO EXECUTADOS nesta pausa.** Foram disparados no SHA de aceitação e interrompidos pelo pedido de pausa;
   nenhum veredito deve ser citado.
+- **Omissão conhecida no candidato**: `fix/deferral-invalidates-list` (`10bc0bd7`, item E) **não** está em
+  `integration/51` (`git merge-base --is-ancestor` sai 1). O 1,51% pertence a essa branch, não ao candidato.
+  Ao retomar: integrá-la e refazer suíte, bump e SHA (novo candidato), ou registrar a omissão no veredito.
 - Regra a manter, verbatim do proxy do dono: **nenhum build cujo B06 nomeie outro SHA, e nenhum bump de número
   substituindo um gate.**
 - Provas em aparelho ainda pendentes por item: salvos (limpeza, reinício offline, retenção de mídia, troca de versão,
