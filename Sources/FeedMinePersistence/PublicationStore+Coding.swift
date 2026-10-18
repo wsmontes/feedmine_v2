@@ -18,7 +18,8 @@ extension PublicationStore {
         case "main" where source == nil && query == nil: request = .main
         case "source" where source != nil && query == nil: request = .source(SourceID(rawValue: source!))
         case "search" where source == nil && query != nil:
-            guard let search = SearchContext(query: query!) else { throw PublicationStoreError.corruption("search context") }
+            // R14: a row that only carried text is a legacy literal; the grammar must not reinterpret it.
+            guard let search = SearchContext(query: query!, semantics: .legacyLiteral) else { throw PublicationStoreError.corruption("search context") }
             request = .search(search)
         default: throw PublicationStoreError.corruption("context")
         }

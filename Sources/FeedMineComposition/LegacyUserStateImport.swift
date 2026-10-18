@@ -147,7 +147,8 @@ public struct LegacyUserStateImport: Sendable {
             contentType: ReaderContentType(rawValue: definition.contentType ?? "") ?? .all,
             mood: ReaderMood(rawValue: definition.mood ?? "") ?? .all,
             exclusions: exclusions)
-        guard let search = SearchContext(query: query) else {
+        // R14: a V1 query is a legacy literal, exactly as V1 read it.
+        guard let search = SearchContext(query: query, semantics: .legacyLiteral) else {
             // No search text: the preset is its filters, and only if it has any.
             guard filter != .unrestricted else { return nil }
             return ContextKey(request: .main, preset: presetID, filter: filter)

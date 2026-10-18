@@ -88,7 +88,11 @@ final class LegacyUserStateImportTests: XCTestCase {
         XCTAssertEqual(preset.name, "Clima")
         XCTAssertEqual(preset.kind, .smartBookmark)
         // The definition's own facts, mapped onto the T6 identity.
-        XCTAssertEqual(preset.key.request, .search(try XCTUnwrap(SearchContext(query: "clima oceano"))))
+        // R14: a V1 query is imported as a legacy literal — the grammar does not reinterpret old text.
+        let importedSearch = try XCTUnwrap(SearchContext(query: "clima oceano", semantics: .legacyLiteral))
+        XCTAssertEqual(preset.key.request, .search(importedSearch))
+        XCTAssertEqual(importedSearch.semantics, .legacyLiteral)
+        XCTAssertEqual(preset.key.surfaceIdentity, "search:clima oceano")
         XCTAssertEqual(preset.key.searchScope, .sources)
         XCTAssertEqual(preset.key.filter.languages, ["pt"])
         XCTAssertEqual(preset.key.filter.contentType, .text)

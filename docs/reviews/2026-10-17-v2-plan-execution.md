@@ -866,3 +866,13 @@ Mutações revertidas.
 ### Registro R14
 
 SHA inicial: `70ca6e89` | vermelho: tabela | alteração: expressão compartilhada + semântica versionada + legado intacto | verde: tabela | jornada protegida: fixtures legados preservam significado; UI/provider usam a mesma expressão | pendências: R15 | SHA final: registrado no commit `feat(search): share query expressions with explicit legacy compatibility`.
+
+### Correção pós-revisão (R14)
+
+A revisão apontou que três caminhos que reconstroem busca a partir de **texto** ainda criavam `.termsV1`:
+`PublicationStore+Coding.decodeEdition` (linha achatada), `RuntimeMigrations` (linhas antigas) e
+`LegacyUserStateImport` (query V1). Todos passaram a construir `.legacyLiteral`. Provas: novo
+`PublicationStoreTests.testAFlattenedSearchEditionDecodesAsLegacyLiteral` (linha sem `context_key_json`, query
+`-astrologia`, decodifica como literal com `search:-astrologia`) e
+`LegacyUserStateImportTests.testImportCarriesBoxesCollectionsAndSmartFeedsOnce` (preset importado como literal).
+`PublicationPersistenceMappingTests` continua verde (a identidade completa viaja no `EditionRecord`).

@@ -325,6 +325,32 @@ extension PublicationStoreTests {
             mediaMimeType: nil,renderLayout: "textOnly",renderMediaAspectRatio: nil,primaryActionKind: nil,primaryActionReference: nil)
     }
 
+    /// R14: a pre-identity edition row carries only the search text. Decoding it rebuilds a **legacy literal**
+    /// (a negative-only old query still reconstructs) with the historical surface identity — never a grammar parse.
+    func testAFlattenedSearchEditionDecodesAsLegacyLiteral() throws {
+        let db = try StorageFixture.database(self), store = PublicationStore(database: db)
+        let search = try XCTUnwrap(SearchContext(query: "-astrologia", semantics: .legacyLiteral))
+        let v = PolicyVersion(rawValue: 1)
+        let key = ContextKey(request: .search(search))
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: key,
+            catalogGeneration: CatalogGeneration(rawValue: 1), userSelectionVersion: v,
+            eligibilityPolicyVersion: v, scoringPolicyVersion: v, sequencingPolicyVersion: v,
+            exposurePolicyVersion: v, selectionSchemaVersion: SelectionSchemaVersion(rawValue: 1))
+        let edition = PublicationStore.EditionRecord(id: FeedEditionID(), editorialRevision: revision,
+            publicationSchemaVersion: 1, selectionSeed: 1, createdAt: Date(timeIntervalSince1970: 10))
+        let card = StorageFixture.card()
+        try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [card]), cards: [card])
+        // Simulate the row format before `context_key_json`/`context_identity` existed.
+        try db.write { try $0.execute(sql: "UPDATE feed_editions SET context_key_json = '', context_identity = ''") }
+        let read = try XCTUnwrap(store.edition(id: edition.id))
+        guard case .search(let decoded) = read.editorialRevision.contextKey.request else {
+            return XCTFail("expected a search context")
+        }
+        XCTAssertEqual(decoded.semantics, .legacyLiteral)
+        XCTAssertEqual(decoded.query, "-astrologia")
+        XCTAssertEqual(read.editorialRevision.contextKey.surfaceIdentity, "search:-astrologia")
+    }
+
     func test3R5InitialAndAtomicInitialRejectDuplicateOriginsWithoutAnyWrites() throws {
         let db = try StorageFixture.database(self), store = PublicationStore(database: db)
         let edition = StorageFixture.edition(), first = StorageFixture.card(), duplicate = revisedCard(first)

@@ -620,7 +620,8 @@ public enum RuntimeMigrations {
                 guard let source, let uuid = UUID(uuidString: source) else { continue }
                 request = .source(SourceID(rawValue: uuid))
             case "search":
-                guard let query, let search = SearchContext(query: query) else { continue }
+                // R14: an old row's text is a legacy literal (a stored negative-only query still reconstructs).
+                guard let query, let search = SearchContext(query: query, semantics: .legacyLiteral) else { continue }
                 request = .search(search)
             default: continue
             }
