@@ -262,12 +262,23 @@ public actor FeedSession {
         return snapshot
     }
 
+    /// The absolute bound on the admitted list — a **memory guard**, not a window shape (owner's item F,
+    /// 2026-10-17). It is deliberately high: no reading session reaches it, so it never acts as a page, a runway
+    /// target or a health number; what it bounds is the one quantity `keepsAdmittedHead` leaves unbounded — a reader
+    /// who reads a very long Edition in a single session grows the list monotonically, one admitted card at a time.
+    /// Below it the kept head behaves exactly as the 2026-10-13 decision states.
+    public static let maxAdmittedItems = 2000
+
     /// Keeps the admitted list bounded **around the anchor**: at most `backwardCapacity` cards before it and
     /// `forwardCapacity` after it, which is what the presentation was installed with. The architect separated the
     /// two claims and he is right: every admission obeying the bound *locally* does not bound the list — prepending
     /// pushes the anchor right, appending grows the tail, and over a long navigation either end accumulates. Cards
     /// cut here stay **reachable**: the next admission near that end reads them from the store again, so leaving the
     /// window is not losing the content. The anchor itself is never cut — it is inside `first...last` by construction.
+    ///
+    /// The anchor-relative trim is followed by the **absolute** cap: a kept head has no other ceiling, so a list
+    /// that would exceed `maxAdmittedItems` drops its oldest cards — never the reader's own card, never the reserve
+    /// ahead of it, and never anything at all below the cap.
     private func boundedToTotalWindow(_ items: [PresentationCard], around anchorCardID: PublicationCardID,
         bounds: FeedPresentationBounds) -> [PresentationCard] {
         guard let anchorIndex = items.firstIndex(where: { $0.id == anchorCardID }) else { return items }
@@ -276,8 +287,18 @@ public actor FeedSession {
         // content above them and the offset corrector has nothing to hide. The forward reserve is bounded either way.
         let first = bounds.keepsAdmittedHead ? 0 : max(0, anchorIndex - bounds.backwardCapacity)
         let last = min(items.count - 1, anchorIndex + bounds.forwardCapacity)
-        guard first > 0 || last < items.count - 1 else { return items }
-        return Array(items[first...last])
+        let windowCount = last - first + 1
+        guard windowCount > Self.maxAdmittedItems else {
+            guard first > 0 || last < items.count - 1 else { return items }
+            return Array(items[first...last])
+        }
+        // The cap runs **after** that trim and drops the oldest: with the head kept, `first` is the Edition's own
+        // first admitted card, so the cards beyond the cap are the ones furthest above the reader. `min` keeps the
+        // reader's own card when a caller declares a forward reserve that by itself passes the cap — the anchor is
+        // never one of the cards that leave.
+        let dropped = windowCount - Self.maxAdmittedItems
+        let keepFrom = first + min(dropped, anchorIndex - first)
+        return Array(items[keepFrom...last])
     }
 
     /// Prepends already-published cards that precede the admitted head, after a real backward movement of the
