@@ -150,6 +150,15 @@ final class AppComposition {
             guard let self else { return }
             Task { await self.cancelSearch() }
         }
+        association.onOpenSource = { [weak self] sourceID in
+            guard let self else { return }
+            Task {
+                do { try await self.selectContext(.source(sourceID)) }
+                catch { self.association?.store.showToast(
+                    text: String(localized: "Não foi possível abrir a fonte"),
+                    systemImage: "exclamationmark.triangle") }
+            }
+        }
         association.onSearch = { [weak self] term in
             guard let self else { return }
             Task {
@@ -1972,15 +1981,28 @@ final class FeedAssociation {
     /// renderer.
     func perform(_ action: ReaderCardAction, cardID: PublicationCardID) {
         Task {
-            // "View Source" is the source's own page, resolved here through the catalog: the coordinator refuses
-            // it because it needs the mapping this host holds (the card's source id names one of these feeds).
+            // R19: "Ver fonte" is the **internal** source context, not the source's website. The explicit website
+            // action is the card's own `.open`/link; the two never substitute for each other.
             if action == .viewSource {
-                guard let url = sourcePage(for: cardID) else {
-                    store.showToast(text: String(localized: "Não foi possível abrir a fonte"),
-                        systemImage: "exclamationmark.triangle")
+                let card: PublicationStore.CardRecord?
+                do { card = try PublicationStore(database: database).card(id: cardID) }
+                catch { reportFailure(error); return }
+                guard let sourceID = card?.sourceID else {
+                    store.showToast(text: String(localized: "Esta carta não declara uma fonte"),
+                        systemImage: "info.circle")
                     return
                 }
-                present(url, cardID)
+                guard feeds.contains(where: { $0.sourceID == sourceID }) else {
+                    store.showToast(text: String(localized: "Esta fonte não está no seu feed"),
+                        systemImage: "info.circle")
+                    return
+                }
+                guard let onOpenSource else {
+                    store.showToast(text: String(localized: "Esta fonte não está no seu feed"),
+                        systemImage: "info.circle")
+                    return
+                }
+                onOpenSource(sourceID)
                 return
             }
             do {
@@ -2116,6 +2138,8 @@ final class FeedAssociation {
     @ObservationIgnored var onSearch: ((String) -> Void)?
     /// R15: cancelling a search is the host's intention to restore the origin; the association forwards it.
     @ObservationIgnored var onCancelSearch: (() -> Void)?
+    /// R19: "Ver fonte" asks the host for the source's internal context; the association resolves no context.
+    @ObservationIgnored var onOpenSource: ((SourceID) -> Void)?
 
     /// Review F10: resolve the frozen action target from published history and open it.
     /// The URL never crosses the UI boundary; only the card identity does.

@@ -1025,3 +1025,36 @@ welcome. `completeFirstRun` tinha o mesmo `try?` e reconstruía a sessão mesmo 
 SHA inicial: `d24936ea` | vermelho: mutação do write ignorado | alteração: confirmação durável do welcome/primeira
 execução | verde: teste novo + classes existentes | jornada protegida: onboarding recusado não se declara concluído |
 pendências: R19 | SHA final: registrado no commit `fix(onboarding): preserve factual startup and continuing supply`.
+
+## R19 — fonte interna, ação de site explícita e retorno com posição
+
+Base: `ff626e2a` (R18).
+
+### Defeito
+
+`perform(.viewSource)` abria o **site** da fonte (`sourcePage` → URL externa). A ação "Ver fonte" e a ação de
+site eram a mesma chamada, contra PRODUCT/INDEX ("View Source abre o conteúdo da fonte dentro do Feedmine; ação
+explícita de site abre a URL").
+
+### Alteração
+
+- `perform(.viewSource)` resolve a fonte da carta no store e pede ao host o **contexto interno** dela
+  (`onOpenSource` → `selectContext(.source(id))`). Nenhuma URL é apresentada nesse caminho — a estrutura garante:
+  não há chamada de `present` no ramo.
+- A ação de site continua sendo a carta `.open`, resolvida pelo `ReaderActionCoordinator` a partir do alvo
+  congelado da ocorrência; a URL entregue é exatamente o `primaryActionReference` publicado.
+- Fonte fora do feed do leitor: mensagem honesta, sem página externa e sem contexto inventado.
+- O retorno ao contexto anterior restaura o checkpoint dele (posição e edição), provado pelo teste.
+
+### Provas
+
+- `testViewSourceOpensInternalSourceContext` e `testExplicitWebsiteActionOpensDeclaredURL` (2/0).
+- Vermelho medido por mutação: remover a troca de contexto → `Ver fonte abre o contexto interno da fonte`
+  **vermelho** (timeout de 5 s). Mutação revertida. O fixture não declara página de site, então o "não abre site"
+  é garantido pela ausência da chamada (assimetria documentada, não por URL observada).
+- Disponibilidade parcial/retorno: `ReadingCompositionTests` (parcial/completo, sem URL, URL inválida, mídia
+  indisponível) executados em R12.
+
+**Registro R19:** SHA inicial `ff626e2a` | vermelho: sem troca de contexto | alteração: fonte interna + site
+explícito | verde: 2/0 + ReadingCompositionTests | jornadas: view source dentro do app, site declarado, retorno com
+posição | pendências: R20 | SHA final: registrado no commit `feat(reading): keep source context inside the app`.

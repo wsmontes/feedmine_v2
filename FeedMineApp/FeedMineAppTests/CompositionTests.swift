@@ -808,6 +808,56 @@ final class CompositionTests: XCTestCase {
         await live.close()
     }
 
+    // MARK: - R19: honest source and site actions
+
+    /// "Ver fonte" opens the source's **internal context**; it never presents the source's website, and the
+    /// reader's position in the previous context is restored by its own checkpoint on the way back.
+    func testViewSourceOpensInternalSourceContext() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let presentation = try XCTUnwrap(association.store.state.presentation)
+        let card = try XCTUnwrap(presentation.window.items.first?.id)
+        let record = try XCTUnwrap(PublicationStore(database: association.database).card(id: card))
+        let sourceID = try XCTUnwrap(record.sourceID, "premissa: a carta declara a fonte")
+        let origin = root.currentContextKey
+        let anchor = presentation.window.anchor
+        var opened: [URL] = []
+        root.onExternalURL = { opened.append($0) }
+
+        association.perform(.viewSource, cardID: card)
+        let switched = await Self.waitUntil(5) {
+            if case .source(sourceID) = root.currentContextKey.request { return true }
+            return false
+        }
+        XCTAssertTrue(switched, "Ver fonte abre o contexto interno da fonte")
+        XCTAssertTrue(opened.isEmpty, "Ver fonte não abre o site da fonte")
+
+        // Back to the previous context: its own checkpoint restores the promised position.
+        try await root.selectContext(origin.request)
+        let back = try XCTUnwrap(root.association)
+        XCTAssertEqual(back.store.state.presentation?.window.anchor, anchor)
+        XCTAssertEqual(back.store.state.presentation?.editionID, presentation.editionID)
+        await back.close()
+    }
+
+    /// The explicit website action is the card's declared link — a different action from "Ver fonte".
+    func testExplicitWebsiteActionOpensDeclaredURL() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let card = try XCTUnwrap(association.store.state.presentation?.window.items.first?.id)
+        let record = try XCTUnwrap(PublicationStore(database: association.database).card(id: card))
+        let declared = try XCTUnwrap(record.primaryActionReference.flatMap(URL.init(string:)))
+        var opened: [URL] = []
+        root.onExternalURL = { opened.append($0) }
+        association.perform(.open, cardID: card)
+        let delivered = await Self.waitUntil(5) { !opened.isEmpty }
+        XCTAssertTrue(delivered)
+        XCTAssertEqual(opened, [declared], "a ação de site abre exatamente o link declarado")
+        await association.close()
+    }
+
     // MARK: - R18: first experience
 
     /// A refused welcome write must not claim the reader has met the app: the flag is the only durable fact that
