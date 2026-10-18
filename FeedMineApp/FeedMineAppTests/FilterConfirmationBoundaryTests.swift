@@ -166,6 +166,18 @@ final class FilterConfirmationBoundaryTests: XCTestCase {
         XCTAssertEqual(presented.contextKey.filter.mood, .fun)
         XCTAssertEqual(try persisted(directory).activeContextKey, confirmed)
         await presented.close()
+
+        // R11: the confirmed selection survives a relaunch — it was durable before the failed activation, so a new
+        // composition on the same directory presents the same context and the same filter.
+        let relaunched = self.root(directory: directory)
+        await relaunched.launch()
+        XCTAssertEqual(relaunched.currentContextKey, confirmed,
+            "o contexto confirmado antes da falha é o que a nova execução apresenta")
+        let reopened = try XCTUnwrap(relaunched.association)
+        XCTAssertEqual(reopened.contextKey.filter.languages, ["pt"])
+        XCTAssertEqual(reopened.contextKey.filter.mood, .fun)
+        XCTAssertTrue(reopened.active, "a nova execução aplica a seleção confirmada")
+        await reopened.close()
     }
 
     // MARK: - (d) All succeed

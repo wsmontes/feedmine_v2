@@ -797,6 +797,42 @@ final class CompositionTests: XCTestCase {
         await live.close()
     }
 
+    // MARK: - R11: context switches under load reuse canonical work
+
+    /// A→B→A with the science feed suspended and new supply arriving on the other: coming back must reuse the
+    /// canonical Edition and the promised position (the durable checkpoint), not repeat bytes through a fresh
+    /// publication. The bytes a valid edition already carries are used again; no anchor is invented.
+    func testContextSwitchUnderLoadReusesCanonicalWork() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 64 }
+        defer {
+            FixtureTransport.releaseScience()
+            FixtureTransport.feedItemCount.withLock { $0 = nil }
+        }
+        let (root, association) = try await launched()
+        let first = try XCTUnwrap(association.store.state.presentation)
+        let aEdition = first.editionID
+        let aAnchor = first.window.anchor
+
+        // The next opportunity is under load: the science feed suspends and the other brings a different response.
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        FixtureTransport.feedItemCount.withLock { $0 = 24 }
+
+        try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+        let b = try XCTUnwrap(root.association)
+        XCTAssertNotEqual(b.store.state.presentation?.editionID, aEdition,
+            "premissa: o contexto B tem a própria edição")
+
+        try await root.selectContext(.main)
+        let back = try XCTUnwrap(root.association)
+        XCTAssertFalse(back === b)
+        XCTAssertEqual(back.store.state.presentation?.editionID, aEdition,
+            "a volta a A reaproveita a edição canônica, sem republicar")
+        XCTAssertEqual(back.store.state.presentation?.window.anchor, aAnchor,
+            "e a posição prometida do checkpoint, não uma inventada")
+        XCTAssertFalse(back.store.state.presentation?.window.items.isEmpty ?? true)
+        await back.close()
+    }
+
     // MARK: - R01: bounded viewport ingress
 
     /// R01: the reader's callback records a fact and returns; it never awaits the producer and never creates one

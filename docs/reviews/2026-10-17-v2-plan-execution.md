@@ -668,3 +668,58 @@ completo, e uma guarda operacional de 5 s (não um alvo de desempenho).
 
 SHA inicial: `5dcba807` | vermelho: não aplicável (nenhum defeito reproduzido; medição feita antes de alterar) |
 alteração: nenhuma em produção; ensaio de contenção adicionado | verde: tabela | jornada protegida: atomicidade de admissão/publicação e consistência do escritor | pendências: G2 | SHA final: no commit que reúne R09/R10.
+
+## R11 — A→B→A, prioridades e confirmação durável
+
+Base: `f4224ebf` (R09/R10).
+
+### Alteração (provas de contrato, sem mecanismo novo)
+
+- **A→B→A sob carga** (`CompositionTests.testContextSwitchUnderLoadReusesCanonicalWork`): com a fonte de ciência
+  suspensa e uma resposta diferente chegando, a ida A→B→A volta à **mesma edição canônica** e à **mesma posição
+  prometida** (checkpoint), sem uma publicação nova para repetir bytes já válidos. Não há aquisição geração nova
+  nem âncora inventada.
+- **Confirmação durável + relaunch** (`FilterConfirmationBoundaryTests.testFilterPresentationFailureKeepsTheSelection
+  ConfirmedAndRecoverable`, estendido): os quatro testes de confirmação continuam verdes; depois de a apresentação
+  falhar (trigger real de SQLite no checkpoint), a seleção confirmada é durável, e uma **nova composição** no mesmo
+  diretório apresenta o mesmo contexto e o mesmo filtro (`pt` + `fun`), com a associação ativa.
+- **Recibo tardio na fronteira de instalação**: a fence do destinatário provada em R00
+  (`testAReceiptForASupersededEditionDoesNotGrowTheCurrentEditionsWindow` + mutação que a remove) é a prova de que um
+  recibo de edição superada não admite na vigente — instalado ou entregue depois.
+- **Leitor parado sem esperar cadência**: o crescimento por recibo (R00) e a espera por fatos (R09,
+  `testExhaustedSupplyWaitsForNewFacts`) cobrem os dois lados: publicação concluída cresce a janela na hora; sem
+  fato novo, nada gira e a cadência de 10 s não é necessária para progresso causal.
+- Nenhuma prioridade nova/cancelamento novo foi criado: os owners atuais (contexto/edição/revisão/proveniência e o
+  runway) continuam autorizando; trabalho sem utilidade já é cancelado pela aposentadoria (R06).
+
+### Provas verdes
+
+| Prova | Resultado | xcresult |
+|---|---|---|
+| `testContextSwitchUnderLoadReusesCanonicalWork` | 1 / 0 (61,5 s, fonte retida) | `/tmp/fm-v2-r11b.xcresult` |
+| `FilterConfirmationBoundaryTests` (4, incl. relaunch) | 4 / 0 | `/tmp/fm-v2-r11c.xcresult` |
+| `testFilterPresentationFailureKeepsTheSelectionConfirmedAndRecoverable` isolado | 1 / 0 | `/tmp/fm-v2-r11d.xcresult` |
+| pacote completo (antes de R11) | 1464 / 3 ignorados / 0 falhas | — |
+
+**Limite:** background/offline foram exercitados no pacote e no host em R01/R04; uma jornada física A→B→A em
+Release fica para a candidata de R23.
+
+### Registro R11
+
+SHA inicial: `f4224ebf` | vermelho: não aplicável (contratos já verdes; prova de reuso nova) | alteração: testes de
+reuso A→B→A e de relaunch pós-falha | verde: tabela | jornada protegida: edição/posição canônicas reusadas; filtro
+confirmado durável | pendências: R12 | SHA final: registrado no commit `fix(context): preserve reusable work and
+durable scope transitions`.
+
+## G2 — fechamento
+
+| Condição G2 | Prova |
+|---|---|
+| Conclusões individuais alimentam publicação | R06: drvier publica A com B suspenso (também no cold bootstrap) |
+| HTTP/mídia pendentes não barram prontos | R05 (slots independentes do consumidor), R07 (prioridade de mídia sem barreira) |
+| Descoberta com custo limitado | R08: índices O(1), materialização fora do lock, reserva e revalidação de identidade |
+| Recursos com custo limitado e adaptativo | R09: bootstrap 48/8/32/1 MB; pressão só reduz, nunca a zero; limites operacionais afirmados |
+| Transações duráveis atômicas e curtas | R10: medição 0,0027 s; rollbacks existentes verdes; nenhuma alteração necessária |
+
+Suítes no fechamento: pacote completo **1464 / 0** e host `CompositionTests` 78 – 0 (R09), com os conjuntos de R05–R10
+acima. **G2 fechado contratualmente em 2026-10-17**; certificação de release continua em R23/G4.
