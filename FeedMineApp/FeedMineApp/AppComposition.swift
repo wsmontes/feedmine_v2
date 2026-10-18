@@ -580,6 +580,11 @@ final class AppComposition {
         #endif
     }
 
+    /// R04: memory pressure is forwarded to the one association; no second residency model is created.
+    func trimResidencyForMemoryPressure() async {
+        await association?.trimResidencyForMemoryPressure()
+    }
+
     func background() async {
         // The screen is gone: the cadence stops before anything else runs, so no opportunity is offered past this
         // point. (`inactive()` already stopped it on the way here; a direct `.background` still stops it.)
@@ -3129,6 +3134,17 @@ final class FeedAssociation {
                 self.scheduleBookmarkRefresh()
             }
         }
+    }
+
+    /// R04: the system asks for bytes. Keep the reader's own band and release the rest — identity, order, anchor,
+    /// geometry and the durable payload do not change. The trimmed value is installed so the pixels are really let
+    /// go (the store holds its own copy of the cards).
+    func trimResidencyForMemoryPressure() async {
+        do {
+            guard try await session.trimResidencyForMemoryPressure() else { return }
+            guard let trimmed = await session.currentPresentation() else { return }
+            try install(FeedPresentationHandoff.receive(snapshot: trimmed, into: store.state))
+        } catch { reportFailure(error) }
     }
 
     /// Records one viewport fact in the finite summary and lets the **single** consumer do the work. Called from

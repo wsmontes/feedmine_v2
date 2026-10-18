@@ -248,6 +248,42 @@ public actor FeedSession {
         return (next, true)
     }
 
+    /// R04: memory pressure keeps the reader's own reading and releases everything else. The current band around
+    /// the anchor **keeps its pixels** — the card the reader is on and the cards beside it must draw at once — and
+    /// the previous band's protection (R03) is dropped, because the system is asking for bytes. Identity, order,
+    /// anchor, geometry and the durable payload do not change; only residency does. Releasing pixels outside the
+    /// reader's own band is exactly what the running session already did before R03 added the second band.
+    ///
+    /// Returns whether anything was released, so a pressure signal with nothing to release allocates nothing.
+    @discardableResult
+    public func trimResidencyForMemoryPressure() throws -> Bool {
+        guard let current = state else { return false }
+        let items = current.presentation.window.items
+        guard let anchorIndex = items.firstIndex(where: { $0.id == current.presentation.window.anchor.cardID })
+        else { return false }
+        let first = max(0, anchorIndex - current.bounds.backwardCapacity)
+        let last = min(items.count - 1, anchorIndex + current.bounds.forwardCapacity)
+        var next = items
+        var changed = false
+        for index in items.indices where !(first...last).contains(index) {
+            guard next[index].image != nil else { continue }
+            next[index] = next[index].releasingDecodedImage()
+            releasedImageCards.insert(next[index].id)
+            changed = true
+        }
+        guard changed else { return false }
+        guard let window = FeedWindowSnapshot(items: next, anchor: current.presentation.window.anchor) else {
+            return false
+        }
+        let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
+            editionID: current.presentation.editionID, window: window)
+        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID,
+            presentation: snapshot, bounds: current.bounds)
+        // The pressure decision is the last residency decision: the next observation protects this band only.
+        previousResidencyAnchor = snapshot.window.anchor.cardID
+        return true
+    }
+
     /// Extends the admitted prefix with already-published cards that follow the admitted tail.
     /// Earlier cards keep their identity, order and projection: nothing is inserted above the
     /// reader, so no existing content moves. When the ready prefix is exhausted the screen is

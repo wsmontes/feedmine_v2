@@ -290,6 +290,92 @@ final class RenderReadyAdmissionTests: XCTestCase {
                 "as cartas ao redor são reconstruídas normalmente (carta \(index))")
         }
     }
+
+    /// R04: a programmatic jump (or a VoiceOver/accessibility move, which also sets the position) may reach only a
+    /// destination whose pixels are ready. An admitted card outside the protected region answers `needsPreparation`;
+    /// the surface keeps the current reading, asks for the destination band (a local reconciliation), and applies the
+    /// position only when the prepared value is `ready`.
+    func testProgrammaticJumpWaitsForReadyDestination() async throws {
+        let f = try fixture(cards: 9, anchor: 3, materialized: Set(0..<9))
+        let session = try session(f)
+        let bounds = FeedPresentationBounds(backwardCapacity: 1, forwardCapacity: 1, keepsAdmittedHead: true)
+        let initial = try await snapshot(session, .restore(bounds))
+        XCTAssertEqual(initial.window.items.map(\.id), Array(f.ids.prefix(5)))
+
+        let forwarded = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[4], placement: .center)))
+        XCTAssertEqual(FeedDestinationGate.readiness(of: f.ids[1], in: forwarded), .needsPreparation,
+            "uma carta admitida fora da região protegida não pode ser aplicada imediatamente")
+        XCTAssertEqual(FeedDestinationGate.readiness(of: f.ids[3], in: forwarded), .ready,
+            "um destino pronto é aplicado na hora")
+
+        // The surface's preparation: the destination band is decoded before the position is applied.
+        let prepared = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[1], placement: .center)))
+        XCTAssertEqual(prepared.window.anchor.cardID, f.ids[1])
+        XCTAssertEqual(FeedDestinationGate.readinessAfterPreparation(of: f.ids[1], in: prepared), .ready,
+            "depois do preparo, o destino está pronto para o salto")
+        XCTAssertNotNil(prepared.window.items.first { $0.id == f.ids[1] }?.image)
+    }
+
+    /// R04: the VoiceOver rule is the same rule, checked over **every** card of the window: the gate may say `ready`
+    /// only for a card that has pixels or is declared text. A released bitmap is never a navigable destination before
+    /// preparation, so an assistive move cannot expose an empty slot.
+    func testVoiceOverNavigationNeverExposesReleasedPixels() async throws {
+        let f = try fixture(cards: 9, anchor: 3, materialized: Set(0..<9))
+        let session = try session(f)
+        let bounds = FeedPresentationBounds(backwardCapacity: 1, forwardCapacity: 1, keepsAdmittedHead: true)
+        _ = try await snapshot(session, .restore(bounds))
+        let forwarded = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[4], placement: .center)))
+
+        var flagged = 0
+        for card in forwarded.window.items {
+            switch FeedDestinationGate.readiness(of: card.id, in: forwarded) {
+            case .ready:
+                XCTAssertTrue(!card.isImageBearing || card.image != nil,
+                    "pronto implica pixels: a carta \(card.id) não pode ser destino acessível sem eles")
+            case .needsPreparation:
+                flagged += 1
+                XCTAssertTrue(card.isImageBearing && card.image == nil)
+            case .notAdmitted, .unavailableAfterPreparation:
+                XCTFail("uma carta da janela não deveria ser inalcançável na própria janela")
+            }
+        }
+        XCTAssertGreaterThan(flagged, 0, "o arranjo precisa conter ao menos um bitmap liberado")
+    }
+
+    /// R04: under memory pressure the reader's own band keeps its pixels — the reading is preserved — and the rest
+    /// is released. Identity, order, anchor and geometry do not change; a second signal with nothing to release
+    /// allocates nothing.
+    func testMemoryPressurePreservesCurrentReading() async throws {
+        let f = try fixture(cards: 12, anchor: 4, materialized: Set(0..<12))
+        let session = try session(f)
+        let bounds = FeedPresentationBounds(backwardCapacity: 1, forwardCapacity: 1, keepsAdmittedHead: true)
+        let initial = try await snapshot(session, .restore(bounds))
+        XCTAssertEqual(initial.window.items.map(\.id), Array(f.ids.prefix(6)))
+
+        // The move keeps the previous band (R03), so a card just behind the reader still has pixels.
+        let moved = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[5], placement: .center)))
+        XCTAssertNotNil(moved.window.items[3].image, "a banda anterior ainda está protegida antes da pressão")
+
+        let trimmedOnce = try await session.trimResidencyForMemoryPressure()
+        XCTAssertTrue(trimmedOnce)
+        let current = await session.currentPresentation()
+        let trimmed = try XCTUnwrap(current)
+        XCTAssertEqual(trimmed.window.items.map(\.id), moved.window.items.map(\.id),
+            "a pressão de memória não altera identidade, ordem nem geometria")
+        XCTAssertEqual(trimmed.window.anchor, moved.window.anchor)
+        XCTAssertNil(trimmed.window.items[3].image, "a banda anterior deixa de ser protegida sob pressão")
+        for index in 4...5 {
+            XCTAssertNotNil(trimmed.window.items[index].image,
+                "a banda do leitor mantém os pixels (carta \(index))")
+        }
+        let trimmedAgain = try await session.trimResidencyForMemoryPressure()
+        XCTAssertFalse(trimmedAgain,
+            "sem nada para soltar, a pressão não aloca nem republica")
+    }
 }
 
 private extension RenderReadyAdmissionTests {

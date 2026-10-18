@@ -598,6 +598,12 @@ struct FeedMineApp: App {
                 }
                 #endif
             }
+            // R04: the system's memory-pressure signal keeps the reader's own band and releases the rest. It is a
+            // residency fact, not a presentation change: identity, order, anchor and geometry stay.
+            .onReceive(NotificationCenter.default.publisher(
+                for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                Task { await composition.trimResidencyForMemoryPressure() }
+            }
             .onChange(of: phase) { _, next in
                 if next == .inactive {
                     // `.inactive` is the first half of leaving the screen: the foreground cadence stops here, before

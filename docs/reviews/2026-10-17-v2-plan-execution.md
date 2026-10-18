@@ -307,3 +307,72 @@ para o fechamento de G1.
 ### Registro R03
 
 SHA inicial: `a4a1b3af` | vermelho: tabela de mutações | alteração: banda anterior protegida + falha de asset preserva a carta | verde: tabela | jornada protegida: reversão antes do callback com pixels reais; âncora/geometria preservadas sem asset | pendências: R04 (saltos, VoiceOver, pressão de memória) | SHA final: registrado no commit `fix(runtime): preserve ready pixels across reverse exposure`.
+
+## R04 — histórico, saltos e pressão de memória com transição segura
+
+Base: `503c9ed1` (R03).
+
+### Defeito
+
+Um salto programático ou um movimento de VoiceOver aplicavam a posição direto no `scrollPosition`, mesmo quando o
+destino estava admitido mas com o bitmap liberado: a superfície desenhava o slot vazio até o callback chegar. E não
+havia caminho para a pressão de memória soltar a banda anterior protegida por R03, porque a residência só mudava por
+observação.
+
+### Prova vermelha (mutação)
+
+| Mutação | Teste | Resultado |
+|---|---|---|
+| `FeedDestinationGate.readiness` responde `ready` sempre | `testProgrammaticJumpWaitsForReadyDestination` | **vermelho** (`ready` ≠ `needsPreparation`) |
+| idem | `testVoiceOverNavigationNeverExposesReleasedPixels` | **vermelho** (`ready` sem pixels) |
+| `trimResidencyForMemoryPressure` não libera nada | `testMemoryPressurePreservesCurrentReading` | **vermelho** (nada foi liberado) |
+
+Mutações revertidas antes do commit.
+
+### Alteração
+
+- `FeedDestinationGate` (Runtime, decisão pura): `ready` só para carta admitida com pixels (ou texto);
+  `needsPreparation` para bitmap liberado; `notAdmitted` para fora da janela; e
+  `readinessAfterPreparation` devolve `unavailableAfterPreparation` quando o destino sumiu do valor preparado.
+- Superfície nativa (`FeedNativeViewport`): o setter de `scrollPosition` (o caminho de salto programático **e** de
+  VoiceOver) passa pelo gate. Destino pronto aplica; bitmap liberado mantém a leitura atual, registra
+  `capture.pendingJump` e pede a banda do destino por `store.submitViewport(..., reconciliation: true)` — uma
+  reconciliação local, sem runway/aquisição; o `onChange` da janela aplica a posição quando o valor preparado está
+  pronto, ou comunica indisponibilidade por toast sem reescrever publicação. O estado pendente mora em
+  `FeedVisualCapture` (o `@State` existente), não em um segundo `@State` — a fence U14 do viewport segue intacta.
+- `FeedSession.trimResidencyForMemoryPressure()`: sob pressão, mantém a banda do leitor e libera o resto (a banda
+  anterior de R03 deixa de ser protegida). Identidade, ordem, âncora, geometria e payload durável não mudam; a
+  segunda chamada sem nada a liberar devolve `false` e não republica.
+- Host: `UIApplication.didReceiveMemoryWarningNotification` → `AppComposition.trimResidencyForMemoryPressure()` →
+  associação instala o valor aparado (o store tem a própria cópia das cartas; sem instalar, os pixels não sairiam).
+
+### Provas verdes
+
+| Prova | Resultado | xcresult |
+|---|---|---|
+| `RenderReadyAdmissionTests` (8 casos, incl. salto, VoiceOver, pressão) | 8 / 0 | `swift test` |
+| `FeedViewportCaptureTests` / `FeedScreenRenderingTests` (fences de UI) | 36 / 0, 18 / 0 | `swift test` |
+| host `CompositionTests` + filtros + fronteira + jornada de imagem | 86 / 0 e 2 / 0 | `/tmp/fm-v2-r04-suite2.xcresult` |
+
+**Limites declarados:** VoiceOver não é ligável por XCUITest; a regra foi provada no gate que a superfície consulta —
+nenhum destino com bitmap liberado responde `ready` antes do preparo. A jornada Release com pressão de memória e
+trace correlacionado fica para a candidata congelada (R23); bytes residentes são medidos em R22/R23.
+
+### Registro R04
+
+SHA inicial: `503c9ed1` | vermelho: tabela de mutações | alteração: gate de destino + preparo antes da posição + trim por pressão | verde: tabela | jornada protegida: salto/acessibilidade não expõem bitmap liberado; pressão preserva a leitura | pendências: jornada Release de pressão em R23 | SHA final: registrado no commit `fix(ui): gate historical navigation on ready presentation`.
+
+## G1 — fechamento
+
+Condições e onde foram provadas:
+
+| Condição G1 | Prova |
+|---|---|
+| Ingresso limitado | R01: rajada de 300 com pendente limitado a 6 (mutação: 301); teste verde e host 84/0 |
+| Instalação sem I/O | R02: pacote preparado instala com o seam de storage suspenso; mutações vermelhas |
+| Prontidão anterior à exposição | R03: pixels do destino da reversão presentes no valor **antes** do callback (mutação: ausentes) |
+| Nenhuma perda de âncora em reversão/salto/acessibilidade | R03 asset ausente preserva id/âncora/geometria; R04 salto espera o preparo; gate de VoiceOver |
+
+**G1 fechado contratualmente em 2026-10-17** com as suítes acima (host 86/0 em R02, 86/0 em R03, 86/0 + jornada de
+imagem 2/0 em R04). Não é certificação de release: a candidata congelada, a jornada Release com pressão de memória e
+os ensaios físicos continuam em R23/G4.
