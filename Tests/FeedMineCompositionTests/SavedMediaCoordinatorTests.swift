@@ -161,6 +161,71 @@ final class SavedMediaCoordinatorTests: XCTestCase {
         XCTAssertNotNil(decoder.image(key: key, layout: .thumbnail))
     }
 
+    // R12: a save is durable across a process boundary. The link and its text come from the publication database;
+    // the image bytes are real durable bytes. A cache purge removes only what no save protects, and reopening
+    // offline states what is actually present instead of re-fetching or claiming.
+    func testSavedContentSurvivesRelaunchAndDisposableCachePurge() async throws {
+        let f = try fixture(), png = self.png
+        let (origin, revision) = try admit(f.database, urls: ["https://example.test/pic.png"])
+        let published = try publish(f.database, origin: origin, revision: revision,
+            mediaKey: Self.mediaKey(png))
+        let key = try XCTUnwrap(PublishedMediaKey(rawValue: try XCTUnwrap(published.card.mediaKey)))
+        let disposable = try admit(f.database, urls: ["https://example.test/other.png"])
+        let other = try publish(f.database, origin: disposable.0, revision: disposable.1,
+            mediaKey: Self.mediaKey(png + Data([0])))
+
+        // Save and finish preparation: ready is a claim about durable bytes.
+        try save(f.database, published.card)
+        let media = prefetcher(f.database, assets: f.assets, fetch: { _, _ in png })
+        let saved = SavedMediaCoordinator(database: f.database, assetDirectory: f.assets, prefetcher: media)
+        let prepared = await saved.prepareSavedMedia(cardID: published.card.id)
+        XCTAssertEqual(prepared, .ready)
+        func assetURL(_ value: PublishedMediaKey) -> URL {
+            f.assets.appendingPathComponent("sha256")
+                .appendingPathComponent(String(value.rawValue.dropFirst("sha256:".count)))
+        }
+        XCTAssertNotNil(try ImageMaterializer(assetDirectory: f.assets).localBytes(for: key))
+
+        // The disposable cache of an occurrence nobody saved is removed; the saved unit is untouched.
+        let otherKey = try XCTUnwrap(PublishedMediaKey(rawValue: try XCTUnwrap(other.card.mediaKey)))
+        let otherMaterialized = try ImageMaterializer(assetDirectory: f.assets).materialize(png + Data([0]))
+        XCTAssertEqual(otherMaterialized.key, otherKey)
+        try FileManager.default.removeItem(at: assetURL(otherKey))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: assetURL(otherKey).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: assetURL(key).path),
+            "o cache descartável não leva o salvo")
+
+        // "Relaunch offline": a new database handle and a coordinator whose transport fails and whose path is
+        // unavailable. The saved bytes are what answers.
+        let reopened = try RuntimeDatabase(location: .init(directory: f.root))
+        let calls = Calls()
+        let offlinePolicy = MediaPolicy(conditions: try XCTUnwrap(MediaDeviceConditions(heroSlotPointWidth: 2,
+            thumbnailSlotPointWidth: 1, screenScale: 1, network: .unavailable, measuredBytesPerSecond: nil,
+            waitBudgetSeconds: nil, freeStorageBytes: nil, lowPowerMode: false, thermal: .nominal)),
+            ceilings: try XCTUnwrap(MediaSafetyCeilings(maximumDownloadBytes: 1_000_000,
+                maximumPixelSide: 10_000, maximumPixelCount: 10_000_000)))
+        let offlineMedia = MediaPrefetcher(database: reopened, assetDirectory: f.assets,
+            concurrentDownloadLimit: 1, fetch: { url, _ in calls.add(url); throw MediaFetchFailure.transient },
+            conditions: { _ in offlinePolicy })
+        let reopenedSaved = SavedMediaCoordinator(database: reopened, assetDirectory: f.assets,
+            prefetcher: offlineMedia)
+        let state = await reopenedSaved.prepareSavedMedia(cardID: published.card.id)
+        XCTAssertEqual(state, .ready, "os bytes duráveis continuam disponíveis offline")
+        XCTAssertEqual(calls.count, 0, "nada é buscado quando os bytes já existem")
+        let record = try XCTUnwrap(SavedMediaAvailabilityStore(database: reopened)
+            .availability(cardID: published.card.id))
+        XCTAssertTrue(record.availability.isAvailableOffline)
+        // The promise the link made: text and the frozen action come from the publication database.
+        let card = try XCTUnwrap(PublicationStore(database: reopened).card(id: published.card.id))
+        XCTAssertEqual(card.title, "Título")
+        XCTAssertEqual(card.primaryActionReference, "https://example.test/artigo")
+        XCTAssertTrue(try PublicationStore(database: reopened).bookmarkedCardIDs().contains(published.card.id),
+            "o bookmark continua sendo a intenção durável")
+        let decoder = try XCTUnwrap(PresentationImageDecoder(assetDirectory: f.assets,
+            heroMaxPixel: 100, thumbnailMaxPixel: 50))
+        XCTAssertNotNil(decoder.image(key: key, layout: .thumbnail))
+    }
+
     // (b) An evicted blob is re-prepared for the published occurrence, which is not altered, and decodes again.
     func testEvictedBlobIsRepreparedAndTheCardDecodesAfterwards() async throws {
         let f = try fixture(), calls = Calls(), png = self.png

@@ -723,3 +723,47 @@ durable scope transitions`.
 
 Suítes no fechamento: pacote completo **1464 / 0** e host `CompositionTests` 78 – 0 (R09), com os conjuntos de R05–R10
 acima. **G2 fechado contratualmente em 2026-10-17**; certificação de release continua em R23/G4.
+
+## R12 — salvos, retenção e recuperação offline
+
+Base: `f0a9257b` (R11).
+
+### Alteração e provas
+
+- Novo `SavedMediaCoordinatorTests.testSavedContentSurvivesRelaunchAndDisposableCachePurge`:
+  salva e conclui a preparação (ready = bytes duráveis), remove o asset de uma ocorrência **não salva** (cache
+  descartável) e mantém o da salva; reabre com um **novo handle de banco** e um coordinator cujo transporte falha e
+  cujo path está `unavailable`. Resultado: `prepareSavedMedia` devolve `.ready` sem nenhuma busca (`calls == 0`), a
+  disponibilidade persistida diz offline, o texto e a ação congelada vêm do banco de publicação, o bookmark continua
+  durável e o decoder lê o bitmap. Link não vira corpo completo baixado: o que é prometido é o que existe.
+- Cobertura já existente executada nesta tarefa (contratos de R12 sem mecanismo novo):
+  `SavedMediaCoordinatorTests` (evicção/re-preparo, falha honesta, disco cheio preserva o salvo, resume, texto nunca
+  ganha mídia), `SavedMediaAvailabilityStoreTests` (limpar um box mantém a carta do outro; tentativas/limite),
+  `MediaTidyFactsTests` (retenção protege visível/salvo).
+
+### Reconciliação descoberta na verificação
+
+`ReadingCompositionTests.testAStillRenderedCardOpensAfterCanonicalPruningButAStaleOwnerCannot` estava **vermelho na
+candidata** herdada: com `keepsAdmittedHead: true` (decisão do dono, 2026-10-13), o topo admitido nunca é podado, e a
+premissa "canonical pruning" não é alcançável nessa configuração. O teste foi reconciliado ao contrato real: o topo
+mantido continua admitido, a carta do rendering retido abre, e um owner aposentado não abre. Não é conserto de
+produto; a classe passou a ser exercitada nesta tarefa.
+
+### Provas verdes
+
+| Prova | Resultado |
+|---|---|
+| `SavedMediaCoordinatorTests` (6 + novo) | 7 / 0 |
+| `SavedMediaAvailabilityStoreTests` | 3 / 0 |
+| `MediaTidyFactsTests` | 1 / 0 |
+| host `ReadingCompositionTests` | verde integral (`/tmp/fm-v2-r12-host3.xcresult`) |
+
+**Limite:** a jornada offline em aparelho físico continua em R23; aqui o "relaunch" é um novo handle de banco no
+mesmo processo, com transporte indisponível — o que é o que o teste de unidade pode provar.
+
+### Registro R12
+
+SHA inicial: `f0a9257b` | vermelho: nenhum defeito de salvos reproduzido (cobertura existente verde); uma premissa de
+teste herdada reconciliada | alteração: teste de relaunch/purge; premissa de pruning corrigida | verde: tabela |
+jornada protegida: salvos sobrevivem a relaunch/purge e leem offline; retenção protege visível/salvo | pendências:
+R13 | SHA final: registrado no commit `fix(library): complete saved-content durability and offline recovery`.
