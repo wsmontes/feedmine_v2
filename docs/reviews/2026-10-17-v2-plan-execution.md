@@ -253,3 +253,57 @@ e exclusão de caixa, com o conjunto mantido na caixa padrão.
 ### Registro R02
 
 SHA inicial: `1deb0722` | vermelho: tabela de mutações | alteração: pacote preparado + fence de revisão + leitura off-main single-flight + caminho confirmado único | verde: tabela | jornada protegida: instalação sem I/O, toggle confirmado imune a preparação antiga, exclusão de caixa consistente | pendências: R03 e seguintes | SHA final: registrado no commit `fix(ui): install prepared projection metadata without database reads`.
+
+## R03 — pixels e âncora preservados na reversão
+
+Base: `a4a1b3af` (R02). Suíte de runtime e host no mesmo destino.
+
+### Defeito
+
+`FeedSession.boundedResidency` liberava os bitmaps de tudo o que estava **fora da banda atual** e, ao voltar,
+**excluía** a carta cuja reconstrução falhasse. Dois efeitos: (a) a superfície pode revelar a região que o leitor
+acabou de deixar **antes** de o runtime receber a observação de reversão — ali o slot desenha vazio; (b) um asset
+removido depois da publicação tirava a carta da janela, mudando ordem/geometria e podendo levar a âncora do leitor
+junto.
+
+### Prova vermelha (mutação)
+
+| Mutação | Teste | Resultado |
+|---|---|---|
+| manter só a banda atual (sem a banda anterior) | `testReverseExposurePrecedesViewportCallback` | **vermelho**: o destino da reversão perdeu os pixels antes do callback |
+| excluir a carta cuja reconstrução falhou (gate antigo) | `testMissingAssetDoesNotRemoveVisibleAnchor` | **vermelho**: identidade removida da janela e `XCTUnwrap` da carta falhou |
+
+Mutações revertidas antes do commit.
+
+### Alteração
+
+- `FeedSession` mantém, além da banda atual, a banda do **anchor de residência anterior** (`previousResidencyAnchor`,
+  inicializado também no warm start e no restore do checkpoint). O conjunto protegido é a união das duas bandas —
+  no máximo duas janelas —, exatamente a região que a superfície pode revelar imediatamente. A decisão registra o
+  anchor corrente para a próxima observação.
+- Reconstrução que falha **não remove** a carta: ela mantém id, ordem, âncora e geometria congelada (layout, razão
+  de aspecto, título/texto) com o placeholder publicado; não é reclassificada como texto. O id entra em
+  `unrecoverableImageCards` para não repetir o decode a cada observação (sem varredura/retry infinito). As cartas
+  ao redor são reconstruídas normalmente.
+- O teste antigo `testACardReturningToThePixelBandIsReconstructedBeforeItIsDrawn` foi reconciliado: agora prova a
+  reconstrução (sucesso) antes da publicação, com a geometria real do fixture; o caso de asset ausente virou o
+  teste novo acima.
+- O fixture de teste cresceu para 12 cartas; o sombreamento `UInt8(20 + index * 30)` estourava em 9+ cartas e foi
+  corrigido para uma função que não transborda (defeito de fixture, não de produto).
+
+### Provas verdes
+
+| Prova | Resultado | xcresult |
+|---|---|---|
+| `RenderReadyAdmissionTests` (5 casos: admissão, decode em curso, readmissão, reversão, asset ausente) | 5 / 0 | `swift test` |
+| `FeedSessionViewportTests` / `FeedPresentationAdmissionTests` / `FeedSessionCheckpointTests` | 6 / 0, 12 / 0, 21 / 0 | `swift test` |
+| jornada de imagem `CardImageJourneyUITests` (desenho, burst e ida/volta) | 2 / 0 | `/tmp/fm-v2-r03-journey2.xcresult` |
+| host `CompositionTests` + filtros + fronteira | 86 / 0 | `/tmp/fm-v2-r03-suite.xcresult` |
+
+**Limite declarado:** a união de duas bandas aumenta a residência de bitmaps (até ~2× a banda) — a memória
+residente é medida em R04/R22, não neste registro. A jornada de imagem rodou em Debug; a variante Release fica
+para o fechamento de G1.
+
+### Registro R03
+
+SHA inicial: `a4a1b3af` | vermelho: tabela de mutações | alteração: banda anterior protegida + falha de asset preserva a carta | verde: tabela | jornada protegida: reversão antes do callback com pixels reais; âncora/geometria preservadas sem asset | pendências: R04 (saltos, VoiceOver, pressão de memória) | SHA final: registrado no commit `fix(runtime): preserve ready pixels across reverse exposure`.

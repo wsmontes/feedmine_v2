@@ -33,6 +33,14 @@ public actor FeedSession {
     /// Cards whose decoded pixels were released to bound residency. They are re-decoded from the same
     /// local asset when the reader comes back to them; their frozen descriptor never changed.
     private var releasedImageCards: Set<PublicationCardID> = []
+    /// R03: cards whose bitmap was released and whose reconstruction failed because the local asset is gone. They
+    /// keep their admitted identity, order, anchor and frozen geometry (the published placeholder), and they are not
+    /// retried on every observation: the unavailable destination is stated once, not spun on.
+    private var unrecoverableImageCards: Set<PublicationCardID> = []
+    /// R03: the anchor of the last residency decision. Its band is kept alive with the current one, because the
+    /// surface reveals the region the reader was **just** looking at before the runtime receives the next
+    /// observation — releasing it there is an empty slot at the instant of exposure. Bounded: at most two bands.
+    private var previousResidencyAnchor: PublicationCardID?
     /// The projection sequence this actor publishes under. It is fixed for the life of a session — a screen
     /// refuses a projection from another sequence — so a warm start that projected the reader's own window
     /// **before** this actor existed hands its sequence here rather than letting a second one begin.
@@ -66,6 +74,7 @@ public actor FeedSession {
         guard let warmStart else { return }
         state = warmStart.projection.state
         releasedImageCards = warmStart.projection.releasedImageCards
+        previousResidencyAnchor = warmStart.projection.snapshot.window.anchor.cardID
         projectionSequenceID = warmStart.projection.sequenceID
         projectionPosition = warmStart.projection.position
         // The window is admitted: `.initial` is the admission that installs a session's first presentation once,
@@ -191,11 +200,26 @@ public actor FeedSession {
         guard let anchorIndex = items.firstIndex(where: { $0.id == anchorCardID }) else { return (items, false) }
         let first = max(0, anchorIndex - bounds.backwardCapacity)
         let last = min(items.count - 1, anchorIndex + bounds.forwardCapacity)
-        let inside = first...last
-        // Cards that must hand their pixels back: outside the band, still holding an image.
-        let leaving = items.indices.filter { !inside.contains($0) && items[$0].image != nil }
-        // Cards that come back into the band having released theirs.
-        let returning = inside.filter { releasedImageCards.contains(items[$0].id) }
+        // R03: the region to protect is the union of the current band and the band the reader was at before this
+        // decision. A reverse gesture (or an accessibility move, or a bounce) can reveal the previous region
+        // **before** this observation reaches the runtime; releasing those bitmaps there is a slot that draws
+        // empty at the instant of exposure. The union is at most two bands, so residency stays bounded.
+        let previousBand: ClosedRange<Int>? = previousResidencyAnchor.flatMap { id in
+            guard let index = items.firstIndex(where: { $0.id == id }) else { return nil }
+            return max(0, index - bounds.backwardCapacity)...min(items.count - 1, index + bounds.forwardCapacity)
+        }
+        let keepFirst = min(first, previousBand?.lowerBound ?? first)
+        let keepLast = max(last, previousBand?.upperBound ?? last)
+        // The decision has run for this anchor, whatever it concluded: the next observation's "previous" is this one.
+        previousResidencyAnchor = anchorCardID
+        let protected = keepFirst...keepLast
+        // Cards that must hand their pixels back: outside every revealable region, still holding an image.
+        let leaving = items.indices.filter { !protected.contains($0) && items[$0].image != nil }
+        // Cards that come back into a revealable region having released theirs. An asset already known to be gone is
+        // not decoded again: it keeps its placeholder and the session does not spin on it.
+        let returning = protected.filter {
+            releasedImageCards.contains(items[$0].id) && !unrecoverableImageCards.contains(items[$0].id)
+        }
         guard !leaving.isEmpty || !returning.isEmpty else { return (items, false) }
         var next = items
         for index in leaving {
@@ -203,22 +227,23 @@ public actor FeedSession {
             releasedImageCards.insert(next[index].id)
         }
         if !returning.isEmpty, let imageDecoder {
-            // One read for the band, and only the returning cards are rebuilt from it.
+            // One read for the protected region, and only the returning cards are rebuilt from it.
             let published = try publicationHistory.window(editionID: editionID,
-                around: FeedWindowAnchor(cardID: items[first].id, placement: .center),
-                backwardCapacity: 0, forwardCapacity: last - first)
+                around: FeedWindowAnchor(cardID: items[keepFirst].id, placement: .center),
+                backwardCapacity: 0, forwardCapacity: keepLast - keepFirst)
             let decoded = Dictionary(uniqueKeysWithValues: published.cards.map {
                 ($0.id, PresentationCard(publishedCard: $0, decoder: imageDecoder))
             })
-            var excluded: Set<PublicationCardID> = []
             for index in returning {
                 guard let fresh = decoded[items[index].id] else { continue }
                 releasedImageCards.remove(items[index].id)
-                // Re-admission gate: a card whose pixels cannot be reconstructed does not re-enter the window.
-                // It is not a text card now, and no card with its id is drawn in its place.
-                if fresh.isRenderReady { next[index] = fresh } else { excluded.insert(fresh.id) }
+                if fresh.isRenderReady {
+                    next[index] = fresh
+                } else {
+                    // MUTATION (red proof): the old exclusion of a failed reconstruction.
+                    unrecoverableImageCards.insert(items[index].id)
+                }
             }
-            guard excluded.isEmpty else { return (next.filter { !excluded.contains($0.id) }, true) }
         }
         return (next, true)
     }
@@ -420,6 +445,8 @@ public actor FeedSession {
         releasedImageCards.formUnion(projected.releasedImageCards)
         projectionPosition = projected.position
         state = projected.state
+        // R03: the restored band is the band the surface will reveal first; the next observation protects it too.
+        previousResidencyAnchor = projected.snapshot.window.anchor.cardID
         return projected.snapshot
     }
 

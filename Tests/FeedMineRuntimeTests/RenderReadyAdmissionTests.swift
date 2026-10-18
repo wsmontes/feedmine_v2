@@ -91,7 +91,8 @@ final class RenderReadyAdmissionTests: XCTestCase {
         let edition = PublicationStore.EditionRecord(id: FeedEditionID(), editorialRevision: revision,
             publicationSchemaVersion: 1, selectionSeed: 1, createdAt: Date())
         let rows = try (0..<count).map { index -> PublicationStore.CardRecord in
-            let bytes = try pngBytes(shade: UInt8(20 + index * 30))
+            // A distinct shade per card that cannot overflow UInt8 as the fixture grows.
+            let bytes = try pngBytes(shade: UInt8(20 + (index * 17) % 200))
             let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
             if materialized.contains(index) {
                 try bytes.write(to: assets.appendingPathComponent(digest))
@@ -182,37 +183,112 @@ final class RenderReadyAdmissionTests: XCTestCase {
     }
 
     /// **Re-admission.** A card that left the pixel band released its bitmap; when the reader comes back, its
-    /// reconstruction is settled before the value is published. If the bytes cannot be decoded now, the card does
-    /// not re-enter the window — not as an image slot with a placeholder, and not as a text card wearing the same
-    /// identity.
+    /// reconstruction is settled before the value is published, and the card returns with its pixels.
     func testACardReturningToThePixelBandIsReconstructedBeforeItIsDrawn() async throws {
-        let f = try fixture(cards: 5, anchor: 2, materialized: [0, 1, 2, 3, 4])
+        let f = try fixture(cards: 9, anchor: 3, materialized: Set(0..<9))
         let decodes = Counter()
         let session = try session(f) { decodes.increment() }
-        let bounds = FeedPresentationBounds(backwardCapacity: 2, forwardCapacity: 2)
+        // The head is kept so the whole read is reachable by a forward move; the one-card bound is what decides
+        // residency around the reader.
+        let bounds = FeedPresentationBounds(backwardCapacity: 1, forwardCapacity: 1, keepsAdmittedHead: true)
         let initial = try await snapshot(session, .restore(bounds))
-        XCTAssertEqual(initial.window.items.map(\.id), f.ids)
-        XCTAssertTrue(initial.window.items.allSatisfy { $0.image != nil })
-        let keys = try f.cards.map { try XCTUnwrap(PublishedMediaKey(rawValue: $0.mediaKey!)) }
+        XCTAssertEqual(initial.window.items.map(\.id), Array(f.ids.prefix(5)))
 
-        // The bytes of card 1 disappear while it is outside the band.
-        let digest = String(keys[1].rawValue.dropFirst("sha256:".count))
-        try FileManager.default.removeItem(at: f.assets.appendingPathComponent("sha256").appendingPathComponent(digest))
+        // Forward: the band leaves the first cards, which release their pixels.
         let forwarded = try await snapshot(session,
-            ViewportObservation(anchor: .init(cardID: f.cards[4].id, placement: .center)))
-        XCTAssertNil(forwarded.window.items[1].image, "outside the band the bitmap is released")
+            ViewportObservation(anchor: .init(cardID: f.ids[4], placement: .center)))
+        XCTAssertNil(forwarded.window.items[1].image, "outside the protected region the bitmap is released")
 
+        let before = decodes.value
         let returned = try await snapshot(session,
-            ViewportObservation(anchor: .init(cardID: f.cards[2].id, placement: .center)))
-        XCTAssertEqual(returned.window.items.map(\.id), [f.ids[0], f.ids[2], f.ids[3], f.ids[4]],
-            "the card whose reconstruction failed is excluded from the re-admission")
-        XCTAssertFalse(returned.window.items.contains { $0.id == f.cards[1].id && !$0.isImageBearing },
-            "the failed identity is never redrawn as a text card")
-        XCTAssertTrue(returned.window.items.allSatisfy { $0.image != nil },
-            "every re-admitted image card carries its pixels")
-        XCTAssertNotNil(returned.window.items[0].image, "the card whose reconstruction succeeded is ready")
-        XCTAssertNotNil(returned.window.items[2].image)
-        XCTAssertNotNil(returned.window.items[3].image)
+            ViewportObservation(anchor: .init(cardID: f.ids[2], placement: .center)))
+        XCTAssertGreaterThan(decodes.value, before,
+            "a reconstrução acontece antes de o valor ser publicado")
+        XCTAssertEqual(returned.window.items.map(\.id), Array(f.ids.prefix(5)),
+            "nenhuma identidade muda na reversão")
+        XCTAssertNotNil(returned.window.items[1].image,
+            "a carta reconstruída volta com os pixels antes de ser desenhada")
+        for index in 1...3 {
+            XCTAssertNotNil(returned.window.items[index].image, "a banda visível está pronta (carta \(index))")
+        }
+    }
+
+    /// R03: a reverse can reach the surface **before** this observation reaches the runtime. The pixels of the
+    /// region the reader was just looking at therefore survive the forward move — releasing them there is an empty
+    /// slot at the very instant of exposure. The assertion is made on the value the surface holds *before* the
+    /// reverse is delivered, not only after the callback.
+    func testReverseExposurePrecedesViewportCallback() async throws {
+        let f = try fixture(cards: 12, anchor: 9, materialized: Set(0..<12))
+        let session = try session(f)
+        let bounds = FeedPresentationBounds(backwardCapacity: 1, forwardCapacity: 1, keepsAdmittedHead: true)
+        let initial = try await snapshot(session, .restore(bounds))
+        XCTAssertEqual(initial.window.items.map(\.id), Array(f.ids.prefix(11)))
+
+        // The reader moves one card forward; the band becomes 9...10 and the previous band 8...10.
+        let forwarded = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[10], placement: .center)))
+        XCTAssertEqual(forwarded.window.anchor.cardID, f.ids[10])
+
+        // The reverse gesture happens before the runtime receives it: what the surface draws still holds the
+        // destination, with its real image, identity and frozen geometry.
+        let held = await session.currentPresentation()
+        let beforeReverse = try XCTUnwrap(held)
+        let destination = try XCTUnwrap(beforeReverse.window.items.first { $0.id == f.ids[8] })
+        XCTAssertNotNil(destination.image,
+            "a região que o gesto de reversão revela mantém os pixels antes do callback")
+        XCTAssertEqual(destination.layout, .hero)
+        XCTAssertEqual(destination.mediaAspectRatio, f.cards[8].renderMediaAspectRatio)
+
+        // And only after the callback does the anchor (and residency) move — nothing disappears in the transition.
+        let reversed = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[8], placement: .center)))
+        XCTAssertEqual(reversed.window.anchor.cardID, f.ids[8])
+        XCTAssertEqual(reversed.window.items.map(\.id), beforeReverse.window.items.map(\.id),
+            "a reversão não remove nem reordena cartas")
+        for index in 7...9 {
+            XCTAssertNotNil(reversed.window.items[index].image,
+                "a banda revelada está pronta (carta \(index))")
+        }
+    }
+
+    /// R03: the asset of an already-admitted card may be gone when the reader returns. The card must not be
+    /// removed — that moves every card below it and can take the reader's own anchor away — and it must not become
+    /// a text card under the same identity. It keeps its identity, order, anchor and frozen geometry with the
+    /// published placeholder, and the other returning cards are reconstructed normally.
+    func testMissingAssetDoesNotRemoveVisibleAnchor() async throws {
+        let f = try fixture(cards: 9, anchor: 6, materialized: Set(0..<9))
+        let session = try session(f)
+        let bounds = FeedPresentationBounds(backwardCapacity: 1, forwardCapacity: 1, keepsAdmittedHead: true)
+        let initial = try await snapshot(session, .restore(bounds))
+        XCTAssertEqual(initial.window.items.map(\.id), Array(f.ids.prefix(8)))
+        XCTAssertNil(initial.window.items[1].image, "the restore released the cards outside its band")
+        let frozen = try XCTUnwrap(initial.window.items.first { $0.id == f.ids[1] })
+
+        // The bytes of card 1 disappear after publication, while it is outside the protected region.
+        let key = try XCTUnwrap(f.cards[1].mediaKey)
+        let digest = String(key.dropFirst("sha256:".count))
+        try FileManager.default.removeItem(at: f.assets.appendingPathComponent("sha256").appendingPathComponent(digest))
+
+        // Forward, then back into the region that contains card 1.
+        _ = try await snapshot(session, ViewportObservation(anchor: .init(cardID: f.ids[7], placement: .center)))
+        let returned = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[2], placement: .center)))
+
+        XCTAssertEqual(returned.window.anchor.cardID, f.ids[2],
+            "a âncora do leitor não muda por causa de um asset ausente")
+        XCTAssertEqual(returned.window.items.map(\.id), Array(f.ids.prefix(8)),
+            "nenhuma carta é removida da janela")
+        let unavailable = try XCTUnwrap(returned.window.items.first { $0.id == f.ids[1] })
+        XCTAssertNil(unavailable.image, "sem pixels")
+        XCTAssertEqual(unavailable.layout, frozen.layout, "a geometria congelada não muda")
+        XCTAssertEqual(unavailable.mediaAspectRatio, frozen.mediaAspectRatio)
+        XCTAssertEqual(unavailable.title, frozen.title)
+        XCTAssertEqual(unavailable.primaryText, frozen.primaryText)
+        XCTAssertTrue(unavailable.isImageBearing, "não é reclassificada como texto")
+        for index in [2, 3] {
+            XCTAssertNotNil(returned.window.items[index].image,
+                "as cartas ao redor são reconstruídas normalmente (carta \(index))")
+        }
     }
 }
 
