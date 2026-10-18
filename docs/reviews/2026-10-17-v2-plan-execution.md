@@ -1207,3 +1207,9 @@ prova de ausência de corrida em produção).
 `FeedScreenStore.swift` que continha o token proibido `checkpoint` para o teste de fronteira de módulo
 (`testS12ModuleBoundaryAndNoExecutionMechanisms`); reescrito para "durable reading position" — o teste é um fence
 deliberado, o código não mudou de comportamento.
+
+## Candidata final desta sessão — build 53
+
+`CFBundleVersion` 53 em `FeedMineApp/Info.plist`; `CFBundleShortVersionString` 1.0. O build 53 é o SHA exato da
+candidata desta sessão — não é aceitação: R17 parcial, R20 parcial (rollback entregue; registro durável único
+pendente) e R21-R23 pendentes; a suíte de UI não foi certificada (ver seção de validação integral).
