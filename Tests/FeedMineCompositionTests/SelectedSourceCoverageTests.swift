@@ -307,6 +307,10 @@ final class SelectedSourceCoverageTests: XCTestCase {
             (try? PublicationStore(database: f.database).segments(editionID: first.editionID).count) ?? before > before
         }
         XCTAssertTrue(published, "A publishes while the target coverage itself started is still suspended")
+        let publishedCards = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+            .flatMap { segment in try segment.cardIDs.compactMap { try PublicationStore(database: f.database).card(id: $0) } }
+        XCTAssertTrue(publishedCards.contains { $0.originRevisionID == revision },
+            "the published segment carries A's late revision before B is released")
     }
 
     /// Codex P1.2: background during an executor already in flight. The executor was started by a caller, is

@@ -203,6 +203,10 @@ public actor RunwayController {
     private var episode = Progress()
     private var head: Progress?
     private var pendingReset = false
+    /// One bounded local opportunity armed by an effective local supply/readiness change, consumed even when the
+    /// policy would hold. It is separate from `pendingReset`: the latter belongs to the lane walk and is asserted
+    /// by the acquisition cadence; this flag exists only to authorize one fresh local slice.
+    private var freshSupplyOpportunity = false
     private var preferredLane: RunwayProductionLane = .episode
     private var bootstrapObservation: RunwayObservation?
     private var lastFailure: RunwayLocalFailure?
@@ -305,6 +309,7 @@ public actor RunwayController {
         episode = Progress()
         head = nil
         pendingReset = false
+        freshSupplyOpportunity = false
         preferredLane = .episode
         lastFailure = nil
         lastFailureAt = nil
@@ -351,7 +356,8 @@ public actor RunwayController {
             readyProbeBound: bound, advance: advance))
     }
 
-    public func reconsider(resources: RunwayResourceFacts, at now: RunwayMonotonicTime) throws -> RunwayControllerAction {
+    public func reconsider(resources: RunwayResourceFacts, at now: RunwayMonotonicTime,
+        allowFreshSupply: Bool = true) throws -> RunwayControllerAction {
         guard let scope, let observation = latestObservation else { return .none }
         if lastFailure != nil, let eligible = retryEligibleAt, now >= eligible { lastFailure = nil }
         guard inFlight == nil, lastFailure == nil else { return .none }
@@ -370,6 +376,11 @@ public actor RunwayController {
         case .pressured, .logicalPressure: previouslyPressured = true
         case .unknown: break
         }
+        if allowFreshSupply, freshSupplyOpportunity, evaluation.action == .hold, resources.localWorkAllowed,
+            let intent = takeLocalSlice(scope: scope, resources: resources, now: now,
+                coverage: evaluation.coverage, observation: observation) {
+            return .runLocalSlice(intent)
+        }
         if let intent = acquisitionIntentIfEligible(coverage: evaluation.coverage) {
             guard intent != outstandingAcquisitionIntent, intent != lastAcknowledgedAcquisitionIntent else { return .none }
             outstandingAcquisitionIntent = intent
@@ -384,19 +395,27 @@ public actor RunwayController {
         case .requestReadyProbe(let bound):
             return measurementRequest(observation, scope: scope, bound: bound, advanceBound: nil)
         case .requestLocalSlice:
-            guard let lane = selectLane() else { return .none }
-            let progress = lane == .episode ? episode : head!
-            let intent = RunwayLocalSliceIntent(scope: scope, lane: lane, after: progress.cursor,
-                examinedCapacity: resources.examinedCandidateCapacity, startedAt: now)
-            inFlight = intent
-            if attemptStartedAt == nil { attemptStartedAt = now }
-            if evaluation.coverage == .unknown { bootstrapObservation = observation }
-            if let trace {
-                trace.record(ReplenishmentEvent.requested, Self.requestFields(intent, coverage: evaluation.coverage,
-                    ready: readyAhead.amount))
-            }
+            guard let intent = takeLocalSlice(scope: scope, resources: resources, now: now,
+                coverage: evaluation.coverage, observation: observation) else { return .none }
             return .runLocalSlice(intent)
         }
+    }
+
+    private func takeLocalSlice(scope: RunwayScope, resources: RunwayResourceFacts, now: RunwayMonotonicTime,
+        coverage: RunwayCoverage, observation: RunwayObservation) -> RunwayLocalSliceIntent? {
+        guard let readyAhead, let lane = selectLane() else { return nil }
+        freshSupplyOpportunity = false
+        let progress = lane == .episode ? episode : head!
+        let intent = RunwayLocalSliceIntent(scope: scope, lane: lane, after: progress.cursor,
+            examinedCapacity: resources.examinedCandidateCapacity, startedAt: now)
+        inFlight = intent
+        if attemptStartedAt == nil { attemptStartedAt = now }
+        if coverage == .unknown { bootstrapObservation = observation }
+        if let trace {
+            trace.record(ReplenishmentEvent.requested, Self.requestFields(intent, coverage: coverage,
+                ready: readyAhead.amount))
+        }
+        return intent
     }
 
     /// The facts the decision used, spelled once for both kinds of replenishment. Every value here was read to
@@ -545,11 +564,14 @@ public actor RunwayController {
             episode = Progress()
             pendingReset = false
             preferredLane = .episode
+            freshSupplyOpportunity = true
         } else if inFlight == nil, head == nil, episode.cursor == nil {
-            // The primary lane is already at the fresh head.
+            // The primary lane is already at the fresh head; the change still gets its one bounded opportunity.
+            freshSupplyOpportunity = true
         } else {
             if head == nil, !pendingReset { preferredLane = .headReconsideration }
             pendingReset = true
+            freshSupplyOpportunity = true
         }
     }
 

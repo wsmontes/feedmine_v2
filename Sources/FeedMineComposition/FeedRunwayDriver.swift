@@ -428,7 +428,8 @@ public actor FeedRunwayDriver {
                 }
             }
             causalExecution?.reconsiderRequested = false
-            let presentation = try await driveCausalEffects(resumeOutstanding: resumeOutstanding)
+            let presentation = try await driveCausalEffects(resumeOutstanding: resumeOutstanding,
+                isCallerOpportunity: isCallerOpportunity)
             resumeOutstanding = false
             // No await between this decision and releasing ownership. A caller arriving
             // during the last presentation read therefore cannot lose its opportunity.
@@ -448,7 +449,7 @@ public actor FeedRunwayDriver {
         }
     }
 
-    private func driveCausalEffects(resumeOutstanding: Bool) async throws -> FeedPresentationSnapshot? {
+    private func driveCausalEffects(resumeOutstanding: Bool, isCallerOpportunity: Bool) async throws -> FeedPresentationSnapshot? {
         guard let scope = try await validateCurrentScope() else { return nil }
         var resumeOutstanding = resumeOutstanding
         while true {
@@ -470,7 +471,8 @@ public actor FeedRunwayDriver {
                 // Only an explicit caller opportunity resumes a deferred intent.
                 action = .requestAcquisition(outstanding)
             } else {
-                action = try await runway.reconsider(resources: currentResources.runway, at: monotonicNow())
+                action = try await runway.reconsider(resources: currentResources.runway,
+                    at: monotonicNow(), allowFreshSupply: !isCallerOpportunity)
             }
             resumeOutstanding = false
             switch action {
