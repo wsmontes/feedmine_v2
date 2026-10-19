@@ -147,7 +147,7 @@ final class SelectedSourceCoverageTests: XCTestCase {
         let observation = AcquisitionObservation(
             objectIdentity: .init(connectorKind: .syndication, namespace: "late", value: UUID().uuidString, role: .object),
             versionIdentity: nil, precedence: .makeCurrent, availability: .available, headline: "late", summary: nil,
-            bodyText: nil, authoredAt: nil, modifiedAt: nil, observedAt: Date(timeIntervalSince1970: 4),
+            bodyText: nil, authoredAt: nil, modifiedAt: nil, observedAt: Date(timeIntervalSince1970: 200),
             language: nil, primaryLink: nil, searchProjection: nil, providerID: nil,
             memberships: [.init(sourceID: source, kind: .direct)], mediaCandidates: [])!
         let record = try XCTUnwrap(AcquisitionTargetAuthority(database: database).target(id: target))
