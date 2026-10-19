@@ -11,6 +11,13 @@ import FeedMineRuntime
 
 /// F01's core: a profile of interests and languages turns into real sources from the bundled catalogue, without
 /// the reader naming a feed. Deterministic, bounded, and derived only from the catalogue's own labels.
+private final class SettledCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    func set(_ next: Int) { lock.withLock { value = next } }
+    var count: Int { lock.withLock { value } }
+}
+
 final class ReaderDiscoveryPoolTests: XCTestCase {
     private func catalog() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite")
@@ -260,14 +267,19 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
         _ = try await driver.drive(resources: resources)
         XCTAssertTrue(discovery.entries.isEmpty, "An inactive driver cannot advance discovery")
         _ = try await driver.activateCurrentPresentation(resources: resources)
+        for _ in 0..<200 where discovery.entries.count < 59 { try? await Task.sleep(for: .milliseconds(25)) }
         XCTAssertEqual(discovery.entries.count, 59, "One opportunity examines one page, including profile misses")
         let firstCards = try PublicationStore(database: database).segments(editionID: edition).flatMap(\.cardIDs)
         let firstSources = try Set(firstCards.compactMap { try PublicationStore(database: database).card(id: $0)?.sourceID })
-        let revoked = try XCTUnwrap(discovery.entries.first { !firstSources.contains($0.source.id) })
+        let revoked = try XCTUnwrap(discovery.entries.first {
+            !firstSources.contains($0.source.id) && $0.principal != "https://progress0124.test/feed"
+        })
         _ = try AcquisitionTargetAuthority(database: database).revoke(id: revoked.targetID, expectedGeneration: 1)
         _ = try await driver.drive(resources: resources)
+        for _ in 0..<200 where discovery.entries.count < 119 { try? await Task.sleep(for: .milliseconds(25)) }
         XCTAssertEqual(discovery.entries.count, 119)
         _ = try await driver.drive(resources: resources)
+        for _ in 0..<200 where discovery.entries.count < 127 { try? await Task.sleep(for: .milliseconds(25)) }
         XCTAssertEqual(discovery.entries.count, 127)
         XCTAssertTrue(discovery.exhausted)
         let entries = discovery.entries
@@ -275,21 +287,35 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
         XCTAssertEqual(targets.count, 126)
         XCTAssertFalse(targets.contains { $0.id == revoked.targetID })
         XCTAssertTrue(targets.allSatisfy { acquisition.connector(for: $0) != nil })
-        let facts = await coordinator.selectionOpportunity { _, _, _, settled in
-            XCTAssertEqual(settled.count, 127)
-            return .disposition(.noEligibleTargets)
+        let settled = SettledCounter()
+        for _ in 0..<800 {
+            _ = await coordinator.selectionOpportunity { _, _, _, generations in
+                settled.set(generations.count)
+                return .disposition(.noEligibleTargets)
+            }
+            if settled.count >= targets.count { break }
+            try? await Task.sleep(for: .milliseconds(25))
         }
-        _ = facts
+        XCTAssertEqual(settled.count, targets.count)
         let beyond120 = try XCTUnwrap(entries.first { $0.principal == "https://progress0124.test/feed" })
+        for _ in 0..<800 where (try? ContentStore(database: database).candidateWindow(sourceID: beyond120.source.id,
+            after: nil, examinedCapacity: 200).records.count) != 1 {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
         XCTAssertEqual(try ContentStore(database: database).candidateWindow(sourceID: beyond120.source.id,
-            after: nil, examinedCapacity: 8).records.count, 1)
+            after: nil, examinedCapacity: 200).records.count, 1)
         // Newly acquired sources are eligible when measured runway pressure requests publication.
         let pressure = FeedRunwayDriverResources(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 32,
             readyProbeBound: 128, readyProbeCeiling: 256, forwardAdvanceProbeBound: 256, reserveCards: 128)!,
             acquisition: resources.acquisition, discoveryExaminedCapacity: 60)
         _ = try await driver.drive(resources: pressure)
-        let cards = try PublicationStore(database: database).segments(editionID: edition).flatMap(\.cardIDs)
-        let publishedSources = try Set(cards.compactMap { try PublicationStore(database: database).card(id: $0)?.sourceID })
+        var cards = try PublicationStore(database: database).segments(editionID: edition).flatMap(\.cardIDs)
+        var publishedSources = try Set(cards.compactMap { try PublicationStore(database: database).card(id: $0)?.sourceID })
+        for _ in 0..<200 where !publishedSources.contains(beyond120.source.id) {
+            try? await Task.sleep(for: .milliseconds(25))
+            cards = try PublicationStore(database: database).segments(editionID: edition).flatMap(\.cardIDs)
+            publishedSources = try Set(cards.compactMap { try PublicationStore(database: database).card(id: $0)?.sourceID })
+        }
         XCTAssertFalse(publishedSources.contains(revoked.source.id), "Revoked discovery sources cannot acquire new occurrences")
         XCTAssertTrue(publishedSources.contains(beyond120.source.id), "New pages extend selected-source eligibility")
         let finalPresentation = await session.currentPresentation()

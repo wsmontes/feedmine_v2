@@ -35,6 +35,8 @@ public enum RunwayAcquisitionStart: Sendable {
 public struct RunwayAcquisitionRound: Sendable {
     public let results: AsyncStream<AcquisitionExecutionResult>
     public let completion: Task<[AcquisitionExecutionResult], Error>
+    /// The targets this round actually owns (`.start` work), in plan order.
+    public let targetIDs: [AcquisitionTargetID]
 }
 
 public struct RunwayAcquisitionCycle: Sendable {
@@ -113,7 +115,11 @@ public struct RunwayAcquisitionCycle: Sendable {
                     await onDurableResult?(result)
                 }
             }
-            return .round(RunwayAcquisitionRound(results: stream, completion: completion))
+            return .round(RunwayAcquisitionRound(results: stream, completion: completion,
+                targetIDs: owned.compactMap { work in
+                    if case .start(let target, _) = work { return target.id }
+                    return nil
+                }))
         }
     }
 
@@ -151,6 +157,54 @@ public struct RunwayAcquisitionCycle: Sendable {
                 catch RunwayControllerError.scopeMismatch {}
             }
             return .executed(results)
+        }
+    }
+
+    /// Starts one coverage round and returns its streamed round without waiting for a slow target. The caller owns
+    /// the round (exactly one at a time), so the next planner pass cannot duplicate its starts. Durable results are
+    /// yielded and notified as they settle; completion is observed by the caller.
+    public func startCoverage(_ demand: AcquisitionDemand, scope: RunwayScope,
+        eligibleTargets: [AcquisitionTarget], resources: AcquisitionPlanningResources,
+        onDurableResult: (@Sendable (AcquisitionExecutionResult) async -> Void)? = nil) async throws
+        -> RunwayAcquisitionStart {
+        guard demand.pressure == .selectedSourceCoverage,
+            demand.contextKey == scope.contextKey, demand.editorialRevisionID == scope.editorialRevisionID,
+            await runway.snapshot().scope == scope else { throw RunwayAcquisitionCycleError.staleIntent }
+        let planning = try await coordinator.selectionOpportunity { position, active, cooling, settled in
+            try AcquisitionPlanner.plan(demand: demand,
+                eligibleTargets: eligibleTargets.filter {
+                    settled[$0.id] != $0.generation && !cooling.contains($0.id)
+                }, activeExecutions: active, resources: resources, selectionAfter: position,
+                includeActiveJoins: false)
+        }
+        switch planning {
+        case .disposition(let reason): return .acceptedUnavailable(reason)
+        case .planned(let plan):
+            guard await runway.snapshot().scope == scope else { throw RunwayAcquisitionCycleError.staleIntent }
+            let owned = plan.work.filter { work in
+                if case .start = work { return true }
+                return false
+            }
+            guard !owned.isEmpty else { return .joining }
+            let (stream, continuation) = AsyncStream.makeStream(of: AcquisitionExecutionResult.self,
+                bufferingPolicy: .bufferingOldest(owned.count))
+            let runway = self.runway, coordinator = self.coordinator, trace = self.trace
+            let completion = Task {
+                defer { continuation.finish() }
+                return try await coordinator.executeConcurrently(owned, trace: trace) { result in
+                    continuation.yield(result)
+                    guard result.selectableSupplyChanged else { return }
+                    do { try await runway.noteLocalSupplyChanged(scope: scope) }
+                    catch RunwayControllerError.noActiveScope {}
+                    catch RunwayControllerError.scopeMismatch {}
+                    await onDurableResult?(result)
+                }
+            }
+            return .round(RunwayAcquisitionRound(results: stream, completion: completion,
+                targetIDs: owned.compactMap { work in
+                    if case .start(let target, _) = work { return target.id }
+                    return nil
+                }))
         }
     }
 

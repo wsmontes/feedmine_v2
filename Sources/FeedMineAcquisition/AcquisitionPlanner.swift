@@ -77,7 +77,8 @@ public enum AcquisitionPlannerError: Error, Equatable, Sendable {
 
 public enum AcquisitionPlanner {
     public static func plan(demand: AcquisitionDemand, eligibleTargets: [AcquisitionTarget],
-        activeExecutions: [AcquisitionActiveExecution], resources: AcquisitionPlanningResources, selectionAfter: AcquisitionTargetID? = nil) throws -> AcquisitionPlanningResult {
+        activeExecutions: [AcquisitionActiveExecution], resources: AcquisitionPlanningResources,
+        selectionAfter: AcquisitionTargetID? = nil, includeActiveJoins: Bool = true) throws -> AcquisitionPlanningResult {
         // Normalize all caller facts before filtering or applying capacity limits.
         var byID: [AcquisitionTargetID: AcquisitionTarget] = [:]
         var orderedTargets: [AcquisitionTarget] = []
@@ -111,14 +112,18 @@ public enum AcquisitionPlanner {
 
         let bounds = AcquisitionWorkBounds(batchCapacity: resources.batchCapacityPerNewExecution,
             observationCapacityPerBatch: resources.observationCapacityPerBatch, byteCapacityPerBatch: resources.byteCapacityPerBatch)
+        // A caller that will not join active executions still pays for them: the free slots are what remains.
+        // Without this, filtering joins after the plan would start more work than the target capacity allows.
+        let capacity = includeActiveJoins ? resources.targetWorkCapacity
+            : max(0, resources.targetWorkCapacity - activeExecutions.count)
         var work: [AcquisitionPlannedWork] = []
         var generationConflict = false
         var startDeniedByResources = false
         for target in enabled {
-            guard work.count < resources.targetWorkCapacity else { break }
+            guard work.count < capacity else { break }
             if let generation = activeGenerations[target.id] {
                 if generation == target.generation {
-                    work.append(.joinActive(target: target))
+                    if includeActiveJoins { work.append(.joinActive(target: target)) }
                 } else {
                     generationConflict = true
                 }
@@ -130,6 +135,7 @@ public enum AcquisitionPlanner {
             }
         }
         if !work.isEmpty { return .planned(AcquisitionPlan(demand: demand, work: work)) }
+        if capacity == 0 { return .disposition(.resourceDenied) }
         if startDeniedByResources { return .disposition(.resourceDenied) }
         if generationConflict { return .disposition(.activeGenerationConflict) }
         return .disposition(.noEligibleTargets)

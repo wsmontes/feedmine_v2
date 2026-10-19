@@ -1,24 +1,21 @@
-# Candidata identificada — 2026-10-19 (final; correções P1/P2 pós-relatório Codex)
+# Candidata identificada — 2026-10-19 (commit `473dee75`; P1/P2 pós-relatório Codex)
 
-Árvore de produto desta rodada. Não é um commit nem uma aprovação de publicação: é a fotografia que permite
-reproduzir os mesmos bytes e conferir cada veredito.
+Árvore de produto desta rodada. Não é uma aprovação de publicação: é o commit que permite reproduzir os mesmos
+bytes e conferir cada veredito.
 
 ## Identidade
 
-- `identity.txt`: branch `codex/v2-fluidez-capacidade`, `HEAD b0b961a0`, **63** arquivos rastreados modificados,
-  11 não rastreados. **Diff completo `a2abcb72…`; produto `367d08e3…`.**
+- Commit local **`473dee75`** na branch `codex/v2-fluidez-capacidade`, sobre `b0b961a0`. Nenhum push.
+- `identity.txt`: **diff `d7730153…`; produto `b9824c31…`.**
 - `assets.sha256`: hashes dos assets ignorados pelo git — catálogo embutido (117.993.472 B), corpus congelado,
-  manifestos do benchmark. Sem eles, o mesmo `HEAD` pode ser outro produto.
-- `candidate.patch`: `git diff --binary HEAD` — aplicado a um worktree limpo em `b0b961a0`, reproduz
-  **exatamente** o diff `a2abcb72…` (e o produto `367d08e3…`).
+  manifestos do benchmark. Sem eles, o mesmo commit pode ser outro produto.
+- `candidate.patch`: `git diff b0b961a0 473dee75 --binary` — aplicado a um worktree limpo em `b0b961a0`, reproduz
+  **exatamente** o commit candidato.
 - `candidate-assets.tgz`: catálogo embutido + `catalog.manifest.json` + `bench/corpus/` inteiro; a extração confere
   com `assets.sha256` (`catalog.sqlite e6da170e…`, `items.json 4bb683a7…`, `corpus/catalog.sqlite 1f642eaa…`).
-- `archive.sha256`: hashes do patch (`a2abcb72…`) e do tarball.
-- **Os gates B01–B05 NÃO descrevem este produto.** Eles rodaram no produto `dc63a761…`; esta rodada mudou
-  `FeedScreen`, `FeedScreenStore`, `AppComposition` e `FeedSavedListView` (busca, escopo e apresentação de mídia).
-  O diff atual é `a2abcb72…`; a suíte de pacote foi reexecutada nele (**1.513 testes, 1 skip, 0 falhas**), assim
-  como os bundles afetados (`FeedMineAppTests` e os testes de UI focais). B01–B05 precisam ser reexecutados antes de
-  qualquer alegação de gate sobre estes bytes.
+- `archive.sha256`: hashes do patch (`d7730153…`) e do tarball.
+- **Os gates B01–B05 estão sendo reexecutados nestes bytes.** Os vereditos anteriores (`dc63a761…`) não são
+  transferidos; B06 permanece bloqueado pelo iPhone offline.
 
 ## Correções desta rodada (pós-relatório Codex)
 
@@ -36,16 +33,32 @@ reproduzir os mesmos bytes e conferir cada veredito.
    (0,12%), pior 33,6 ms; trace completo 32/1.912, 4 misses (0,21%), pior 107,4 ms (primeira janela de aquecimento,
    agora explícita).
 
-### Suítes reexecutadas nesta árvore (`a2abcb72…`)
+### Suítes reexecutadas no commit `473dee75`
 
-- **Pacote Swift:** **1.513 testes, 1 skip, 0 falhas** (127,3 s).
-- **Bundle `FeedMineAppTests`:** **158 testes, 0 falhas** (303,0 s), incluindo `testRefusedScopeWrite…`,
+- **Pacote Swift:** **1.516 testes, 1 skip, 0 falhas** (123,7 s).
+- **Bundle `FeedMineAppTests`:** **158 testes, 0 falhas** (300,7 s), incluindo `testRefusedScopeWrite…`,
   `testRefusedSavedMediaWrite…`, `testReaderSearchShowsRealTypedSections` e
   `testOfflinePurgeDemotesReady…` no pacote.
 - **UI focal:** `testT12SearchSubmitsAndReopensOfflineAsTheSameSurface` **PASS** (18,7 s);
   `testTenMinuteRestKeepsTheCardThroughLateSupplyAndADistantReturn` **PASS** (631,9 s, offset 16,0 pt).
 - **Não reexecutados nesta árvore:** suíte UI completa (75 testes), B01–B05 e B06. Os vereditos B01–B05 acima são
   do produto anterior `dc63a761…` e não são transferidos.
+
+### Gates no commit `473dee75`
+
+| Gate | Run | Veredito | Números |
+|---|---|---|---|
+| B01 A+B | `bench/run/20261019T164752Z` | **PASS** | 475/499 fontes nos dois perfis, 103 contribuintes nos primeiros 300 cards, 0 fontes padrão, fases neutral+thematic |
+| B02 | `bench/run/20261019T165620Z` | **PASS** | relatório em `report.md` da corrida |
+| B04 | `bench/run/20261019T170227Z` | **PASS** | protocolo completo; nenhuma medida instável |
+| B05 | `bench/run/20261019T170605Z` | **PASS** | sete medidas verdadeiras |
+| B03 `--full-trace` | `bench/run/20261019T171026Z` | **PASS** | 2.587 avanços (≥1.800), 1.889 cartas, 0 paradas ≥1 s, 0 duplicatas, 0 adjacências; 1.806 candidatos medidos, 0 pendentes |
+| B06 | — | **NOT_RUN / BLOCKED** | iPhone listado Offline no `xctrace` |
+
+A corrida `bench/run/20261019T163727Z` foi **FAIL de harness, não de produto**: `bench/run.sh` invocado
+diretamente não entrega `FEEDMINE_BENCH_TRANSPORT_ORIGIN` ao app, a política recusa o loopback e nenhuma requisição
+chega ao servidor (`server.log` vazio). O entrypoint correto é `scripts/run-discovery-benchmark.sh`; a mesma
+tentativa por ele passou. O FAIL fica registrado, não é reutilizado como veredito.
 
 ## Correções anteriores da candidata (contexto)
 

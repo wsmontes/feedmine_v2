@@ -78,10 +78,23 @@ public actor FeedRunwayDriver {
     private var backgroundRound: Task<[AcquisitionExecutionResult], Error>?
     private var backgroundRoundSettled = false
     private var backgroundRoundFailure: (any Error)?
+    /// The coverage round this driver owns. One at a time: while it runs, no pass starts another, so a slow
+    /// target cannot be duplicated and the next opportunity is scheduled by its completion.
+    private var coverageRound: Task<[AcquisitionExecutionResult], Error>?
+    /// Identity of the coverage round this driver owns. A completion from a retired/replaced round cannot clear
+    /// the new owner or schedule work in a scope it never belonged to.
+    private var coverageRoundID: UInt64 = 0
+    private var coverageRoundFailure: (any Error)?
+    /// Evidence for the coverage-ownership tests: targets this driver's selected-source coverage rounds owned.
+    private(set) var coverageStartedTargetIDs: [AcquisitionTargetID] = []
     /// P02: the last resource facts an explicit caller registered. A durable fact that arrives after the drain
     /// returned re-enters the **same** causal executor with these facts; it never invents a second loop or a
     /// new authorization. Nil after retirement/close.
     private var latestResources: FeedRunwayDriverResources?
+    /// True between `suspendForBackground()` and the next foreground activation. An executor already in flight
+    /// checks it before starting another action, so background revokes the door to new work even with captured
+    /// resources.
+    private var backgroundSuspended = false
     /// The one late-fact publisher. At most one task exists; facts that arrive while it runs set
     /// `lateFactsPending`, so a burst coalesces into the next pass of the same executor.
     private var lateOpportunity: Task<Void, Never>?
@@ -186,6 +199,7 @@ public actor FeedRunwayDriver {
 
     public func activateCurrentPresentation(resources: FeedRunwayDriverResources) async throws -> FeedPresentationSnapshot? {
         // P01: a new activation of this association reopens the start gate its retirement closed.
+        backgroundSuspended = false
         await coordinator.setNewStartsAllowed(true)
         guard let presentation = await session.currentPresentation(), let scope = try await validateCurrentScope() else {
             await runway.deactivate(); return nil
@@ -287,6 +301,41 @@ public actor FeedRunwayDriver {
 
     /// The completion of a round the publication loop left running. It is observed so a fatal error is not lost;
     /// the next `drive` rethrows it once. Nothing in this monitor publishes.
+    private func observeCoverageRound(_ round: RunwayAcquisitionRound) {
+        coverageStartedTargetIDs.append(contentsOf: round.targetIDs)
+        coverageRoundID &+= 1
+        let identity = coverageRoundID
+        coverageRound = round.completion
+        coverageRoundFailure = nil
+        Task { [weak self] in
+            // The stream is bounded; draining it keeps the pump free. The durable facts are already delivered by
+            // the round's callback, so this observer only owns completion.
+            for await _ in round.results {}
+            do {
+                _ = try await round.completion
+                await self?.coverageSettled(identity, error: nil)
+            } catch {
+                await self?.coverageSettled(identity, error: error)
+            }
+        }
+    }
+
+    private func coverageSettled(_ identity: UInt64, error: (any Error)?) {
+        guard identity == coverageRoundID else { return }
+        coverageRound = nil
+        if let error {
+            coverageRoundFailure = error
+            return
+        }
+        scheduleLateOpportunity()
+    }
+
+    private func collectSettledCoverageRound() throws {
+        guard let failure = coverageRoundFailure else { return }
+        coverageRoundFailure = nil
+        throw failure
+    }
+
     private func observeBackgroundRound(_ completion: Task<[AcquisitionExecutionResult], Error>) {
         backgroundRound = completion
         backgroundRoundSettled = false
@@ -340,6 +389,7 @@ public actor FeedRunwayDriver {
         }
         // Claim before the first suspension, including scope validation. A caller owns one page; a late fact does
         // not.
+        guard !backgroundSuspended else { return await session.currentPresentation() }
         causalExecution = CausalExecution(resources: resources,
             callerPagesPending: isCallerOpportunity ? 1 : 0)
         settledAcquisition = nil
@@ -358,6 +408,9 @@ public actor FeedRunwayDriver {
         // executor to publish what already settled, not to spend targets.
         var resumeOutstanding = isCallerOpportunity
         while true {
+            // Codex P1.2: background revokes the door even for the executor already in flight. The action it was
+            // already awaiting may conclude, but it starts no new work with the captured resources.
+            if backgroundSuspended { return await session.currentPresentation() }
             // One catalogue page per caller opportunity, outside the causal drain. Coverage may settle a page
             // through the existing planner, and the drain may conclude plenty about the catalogue, but neither
             // can authorise a page here: only a caller opportunity adds to `callerPagesPending`. A caller that
@@ -400,6 +453,11 @@ public actor FeedRunwayDriver {
         var resumeOutstanding = resumeOutstanding
         while true {
             try Task.checkCancellation()
+            // Codex P1.2: this loop is the in-flight executor. Background revokes the door before every action,
+            // not only when the method returns; the operation already awaited may finish, but no new coverage,
+            // slice or measurement starts with the resources captured before the transition.
+            if backgroundSuspended { return await session.currentPresentation() }
+            try collectSettledCoverageRound()
             try collectSettledBackgroundRound()
             let before = await runway.snapshot()
             guard before.scope == scope, await session.currentRunwayScope() == scope else {
@@ -419,13 +477,13 @@ public actor FeedRunwayDriver {
             case .none:
                 let after = await runway.snapshot()
                 if after.scope == scope, after.latestObservation != before.latestObservation { continue }
-                if let demand = selectedSourceCoverage {
+                if let demand = selectedSourceCoverage, coverageRound == nil {
                     let targets = try acquisition.eligibleTargets(for: plan.context)
                     do {
-                        let outcome = try await acquisitionCycle.runCoverage(demand, scope: scope,
-                            eligibleTargets: targets, resources: currentResources.acquisition)
-                        if case .executed(let results) = outcome,
-                            !results.isEmpty, !results.contains(where: { $0.stop == .cancelled }) { continue }
+                        let started = try await acquisitionCycle.startCoverage(demand, scope: scope,
+                            eligibleTargets: targets, resources: currentResources.acquisition,
+                            onDurableResult: { [weak self] _ in await self?.noteLateDurableFact() })
+                        if case .round(let round) = started { observeCoverageRound(round) }
                     } catch RunwayAcquisitionCycleError.staleIntent { continue }
                 }
                 let presentation = await session.currentPresentation()
@@ -545,6 +603,7 @@ public actor FeedRunwayDriver {
     /// opportunity. Authorized pulls keep running and still state durable supply; only the door to a new coverage
     /// pass is closed until a foreground activation registers resources again.
     public func suspendForBackground() async {
+        backgroundSuspended = true
         latestResources = nil
         lateOpportunity?.cancel()
         lateOpportunity = nil
@@ -562,6 +621,9 @@ public actor FeedRunwayDriver {
         backgroundRound = nil
         backgroundRoundSettled = false
         backgroundRoundFailure = nil
+        coverageRound = nil
+        coverageRoundID &+= 1
+        coverageRoundFailure = nil
         await coordinator.setNewStartsAllowed(false)
         // P02: no late fact may re-enter a retired context.
         lateOpportunity?.cancel()

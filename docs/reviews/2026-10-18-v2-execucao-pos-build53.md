@@ -227,9 +227,9 @@ UDID em vez de `booted`. Com o runner no default, B01 passou.
 | Gate | Estado | O que está provado | O que falta |
 |---|---|---|---|
 | G1 | **Aberto** | P03/P04 regressões; P13 com as três provas visuais verdes em desenho real (86,0 s / 74,1 s / 20,7 s); P15 medido em Release (5,44% → 0,12% de frames perdidos, `first_frame` no trace); exposição de acessibilidade com 12 cartas e Dynamic Type AX XXXL | bitmap exposto por pixel, VoiceOver falado, salto ao início (painel de fim não apareceu neste fixture) |
-| G2 | **Aberto** | P01 aposentadoria coberta por regressões; P02 fatos tardios; P05 zero explícito e capacidade fora do MainActor; P14 1.000 fontes/10.000 candidatos com 5.467 publicados/s | aposentadoria em jornada física; B03 (30 min, 1 carta/s) segue vermelho (1.716/1.800) |
+| G2 | **Aberto** | P01 aposentadoria coberta por regressões; P02 fatos tardios; P05 zero explícito e capacidade fora do MainActor; P14 1.000 fontes/10.000 candidatos com 5.467 publicados/s; **B03 PASS** (`20261019T171026Z`: 2.587 avanços, 0 paradas ≥1 s) | aposentadoria em jornada física |
 | G3 | **Aberto** | P07/P08 busca ligada com paginação e erro explícito; P09/P10 diversidade durável na publicação; P11 ativação recuperável; suíte de UI 62 PASS/4 FAIL infra/8 SKIP justificado | P10 fim-a-fim medido; 4 testes de catálogo/rede reais |
-| G4 | **Aberto** | uma candidata ainda não existe: as mudanças desta rodada estão na árvore suja (base `b0b961a0`) | commit único da candidata, B01–B06 na candidata (B03/B04/B05 vermelhos), B06 exige iPhone físico |
+| G4 | **Aberto** | commit local candidato **`473dee75`** (sem push), com patch/assets hasheados; **B01 PASS** (`20261019T164752Z`: 475/499 fontes, 103 contribuintes), **B02 PASS** (`20261019T165620Z`), **B03 PASS** (`20261019T171026Z`: 2.587 avanços, 0 paradas), **B04 PASS** (`20261019T170227Z`: 266 instalações, 0 violações), **B05 PASS** (`20261019T170605Z`: 7/7) | suíte UI completa em execução; B06 exige iPhone físico (Offline no `xctrace`) |
 
 ## Rodada pós-relatório do Codex (2026-10-19)
 
@@ -243,8 +243,8 @@ Correções desta rodada, todas com regressão discriminante:
 | P2 mídia salva na interface | `FeedAssociation` guarda a falha de preparação da sessão, republica a lista (`savedMediaRevision`) e mapeia a linha para `.failed` quando não há linha durável; o retry anuncia a falha. | `CompositionTests.testRefusedSavedMediaWriteIsShownOnTheRowAndRetryRecordsTheOutcome` + `FeedScreenStoreTests.testSavedRowStatesSessionFailureInsteadOfStalePending`. |
 | E07 destinos | `.savedCard` e `.article(cardID:nil)` executados pelo host. | `CompositionTests.testReaderSearchShowsRealTypedSections` (resultado real salvo + ocorrência sem carta publicada → link da revisão). |
 | E08 purge offline | Asset apagado atrás do app; `resume` offline demove `ready` para `pending` e mantém o bookmark. | `SavedMediaCoordinatorTests.testOfflinePurgeDemotesReadyInsteadOfClaimingAvailable`. |
-| P1 fonte lenta (Codex) | `RunwayAcquisitionCycle.runCoverage` filtra `.joinActive`: cobertura só executa o que pode iniciar, nunca espera a pull de outro dono. `FeedRunwayDriver` deixa de segurar o drain atrás de B suspensa. | `SelectedSourceCoverageTests.testP10CoverageDoesNotJoinAnActiveSuspendedExecution` (vermelho: sem o filtro o teste pendura 300 s; verde: 0,10 s) e `testP8LatePublicationConcludesWhileSelectedTargetIsSuspended` (A publica antes de liberar B). |
-| P1 autorização após background (Codex) | `FeedRunwayDriver.suspendForBackground()` limpa os recursos registrados e o executor tardio; `FeedAssociation.background()` o chama antes de qualquer trabalho de background. Um callback tardio não inicia nova cobertura; a pull autorizada continua. | `SelectedSourceCoverageTests.testP9LateCallbackAfterBackgroundDoesNotStartNewCoverage` (callback não puxa nem publica; o foreground retoma e publica). |
+| P1 fonte lenta (Codex) | **PARCIAL.** `startCoverage` é um round retido pelo driver (um por vez); a conclusão limpa o ownership, agenda a próxima oportunidade e não duplica starts. `runCoverage` não junta `.joinActive`. | `testP10CoverageDoesNotJoinAnActiveSuspendedExecution` (vermelho sem o filtro: pendurou 300 s; verde 0,10 s). **P11 permanece VERMELHO**: com reserva fria pronta (39 cartas), B iniciada pela cobertura, A ainda não publica antes da liberação de B em 10 s. O teste fica no suite como vermelho, sem skip. |
+| P1 autorização após background (Codex) | `suspendForBackground()` marca `backgroundSuspended`; o executor em voo verifica a marca antes de cada ação e o entry de `drive` também. | `testP12BackgroundDuringInFlightExecutorStartsNoNewWork` com barreira independente de mídia: **vermelho com as duas fences removidas** (4 pulls vs 2) e **verde com as fences** (0,64 s). `testP9` verde. |
 | Medição | Janela declarada: eventos de `frames` entre o primeiro `advance` e o último `runway_completed`; `misses = late + bad + severe`. Números do trace completo também publicados. | `evidence/2026-10-18-release-hitch/summary.json` (`window_definition`). |
 
 O resumo de frames foi **corrigido**: a janela do gesto do braço "depois" tem 28 janelas/1.678 frames, com
@@ -253,4 +253,20 @@ O resumo de frames foi **corrigido**: a janela do gesto do braço "depois" tem 2
 declarar a janela. O braço "antes" na janela do gesto é 27/1.416, 17 late + 9 bad + 51 severe = 77 (5,44%),
 pior 199,6 ms; no trace completo, 41/2.236, 82 misses (3,67%), pior 221,0 ms. A comparação A/B válida é a janela do
 gesto; o trace completo tem aquecimento de duração diferente (14 janelas antes / 4 depois).
+
+### Suíte UI completa no commit `473dee75` (`/tmp/ui-suite-final.log`)
+
+**76 executados, 9 skips, 12 falhas em 5 testes.** Nenhum é regressão demonstrada desta rodada:
+
+| Teste | Falhas | Causa / evidência |
+|---|---|---|
+| `ArticleReadingDiagnosisUITests.testWhatHappensWhenAReaderOpensARealArticle` | 1 | Coluna `15,75` vs `-0,25 ±1` após voltar do leitor. **Não reproduz isolado**: PASS em 20,8 s com o mesmo binário. Contaminação de estado entre testes (o `containers` pega um contêiner com inset diferente); registrar como flake, não como defeito de produto. |
+| `EditorialOfferBudgetUITests.testTheOfferBudgetHoldsOnTheRealCatalogue` | 4 | Catálogo/rede reais: o perfil Brasil não entrega oferta no orçamento; `0` cards e convite ausente. Infraestrutura desta máquina, já registrada. |
+| `FeedMineUITests.testRealCatalogueCardsStayReachableByScrolling` | 3 | Mesma infraestrutura: sem ScrollView/cartas do catálogo real. |
+| `ReadingSurfaceUITests.testACardWithoutTextOpensTheSite` | 1 | Chrome do `SFSafariViewController` não exposto à automação (plataforma). |
+| `ReadingSurfaceUITests.testATeaserOpensTheSiteWithNoIntermediateScreen` | 1 | Idem. |
+| `ReadingSurfaceUITests.testOpeningTheSiteFromTheLocalReaderIsAnExplicitRequestAndComesBackToTheFeed` | 2 | Idem; o `Close` do chrome não é alcançável. |
+
+A falha do artigo foi reexecutada isoladamente e passou; as demais são as classes já conhecidas (4 asserções de
+catálogo/rede real + 4 de `SafariViewService`), sem relação com busca/cobertura/background.
 

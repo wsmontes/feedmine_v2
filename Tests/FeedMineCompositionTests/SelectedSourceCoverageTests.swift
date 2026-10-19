@@ -5,8 +5,8 @@ import FeedMinePersistence
 import FeedMineAcquisition
 import FeedMineEditorial
 import FeedMinePublication
-import FeedMineRuntime
-import FeedMineComposition
+@testable import FeedMineRuntime
+@testable import FeedMineComposition
 
 private final class CoverageJournal: @unchecked Sendable {
     private let lock = NSLock()
@@ -118,6 +118,19 @@ final class SelectedSourceCoverageTests: XCTestCase {
             acquisition: .init(targetWorkCapacity: targetCapacity, batchCapacityPerNewExecution: 1,
                 observationCapacityPerBatch: 100, byteCapacityPerBatch: 100_000)!)
     }
+    /// The fixture alternates sources, so a late occurrence from the same source as the Edition's tail is held
+    /// by the selection rule and never publishes. Pick a cold source that differs from the last admitted card.
+    private func lateTargetAndSource(_ f: Fixture, editionID: FeedEditionID) throws
+        -> (AcquisitionTargetID, SourceID) {
+        let store = PublicationStore(database: f.database)
+        let tailID = try store.segments(editionID: editionID).last?.cardIDs.last
+        let tailSource = try tailID.flatMap { try store.card(id: $0)?.sourceID }
+        for (target, source) in zip(f.targets.prefix(2), f.sources.prefix(2)) where source != tailSource {
+            return (target.id, source)
+        }
+        return (f.targets[0].id, f.sources[0])
+    }
+
     private func cold(_ f: Fixture) async throws -> FeedPresentationSnapshot {
         let cold = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy, acquisition: f.snapshot,
             coordinator: f.coordinator, prepare: Self.prepare)
@@ -145,14 +158,17 @@ final class SelectedSourceCoverageTests: XCTestCase {
         return try XCTUnwrap(records.first { $0.headline == "late" }?.originRevisionID)
     }
 
-    private func driver(_ f: Fixture) throws -> (FeedRunwayDriver, RunwayController) {
+    private func driver(_ f: Fixture, readiness: MediaReadiness? = nil,
+        makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil)
+        throws -> (FeedRunwayDriver, RunwayController) {
         let runway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1, releaseMarginSeconds: 0)!,
             consumptionSampleLimit: 4, replenishmentSampleLimit: 4)!)
         return (try FeedRunwayDriver(session: f.session, runway: runway, plan: f.plan, policy: f.policy,
             acquisition: f.snapshot, coordinator: f.coordinator, monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
             makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 2, segmentCreatedAt: Date(timeIntervalSince1970: 203))! },
             prepare: Self.prepare,
-            selectedSourceCoverage: .init(selectedSourceCoverageFor: f.plan.context.key, editorialRevisionID: f.plan.revision.id)), runway)
+            selectedSourceCoverage: .init(selectedSourceCoverageFor: f.plan.context.key, editorialRevisionID: f.plan.revision.id),
+            readiness: readiness, makeMediaOpportunity: makeMediaOpportunity), runway)
     }
 
     private func waitUntil(_ seconds: Double, _ condition: @escaping () async -> Bool) async -> Bool {
@@ -184,10 +200,11 @@ final class SelectedSourceCoverageTests: XCTestCase {
         _ = try await driver.activateCurrentPresentation(resources: resources())
 
         let before = try PublicationStore(database: f.database).segments(editionID: first.editionID).count
+        let late = try lateTargetAndSource(f, editionID: first.editionID)
         // A reader intent that asks the existing local slice for content; the late fact arrives afterwards.
         _ = try await driver.submitViewport(.init(anchor: first.window.anchor), activity: .explicitTailApproach,
             resources: resources())
-        _ = try Self.admitLateLocal(f.database, target: f.targets[0].id, source: f.sources[0])
+        _ = try Self.admitLateLocal(f.database, target: late.0, source: late.1)
         await driver.noteLateDurableFact()
         let published = await waitUntil(5) {
             (try? PublicationStore(database: f.database).segments(editionID: first.editionID).count) ?? before > before
@@ -205,7 +222,7 @@ final class SelectedSourceCoverageTests: XCTestCase {
         let suspended = startSuspendedTarget(f)
         defer { _ = try? suspended }
         await XCTWaiter.fulfillment(of: [entered], timeout: 5)
-        _ = try await driver.activateCurrentPresentation(resources: resources())
+        _ = try await driver.activateCurrentPresentation(resources: resources(targetCapacity: 0))
         await driver.suspendForBackground()
         let pulls = f.journal.pulls.count
         let segments = try PublicationStore(database: f.database).segments(editionID: first.editionID).count
@@ -249,6 +266,73 @@ final class SelectedSourceCoverageTests: XCTestCase {
             returned.fulfill()
         }
         await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+    }
+
+    /// Codex P1.1: the coverage opportunity itself starts the slow target. B is suspended by coverage's own
+    /// `executeConcurrently`; A's late supply must still publish before B is released.
+    func testP11CoverageStartedSuspendedTargetDoesNotHoldLatePublication() async throws {
+        let gate = CoverageGate {}
+        defer { gate.release() }
+        let readiness = MediaReadiness()
+        let f = try fixture(gate: gate), first = try await cold(f)
+        // The cold slice can only publish a reserve if its readiness decisions exist; the benchmark's local
+        // supply is text, so every existing revision is declared text before the runway decides.
+        for record in try ContentStore(database: f.database).candidateWindow(sourceID: nil, after: nil,
+            examinedCapacity: 100).records {
+            readiness.record(record.originRevisionID, nil, textDeclared: true)
+        }
+        let (driver, runway) = try driver(f, readiness: readiness)
+        _ = try await driver.activateCurrentPresentation(resources: resources(reserve: 1))
+        let startedIDs = await driver.coverageStartedTargetIDs
+        XCTAssertTrue(startedIDs.contains(f.targets[2].id),
+            "selected-source coverage owns the start of the suspended target")
+        let started = await waitUntil(5) { f.journal.pulls.contains(f.targets[2].id) }
+        XCTAssertTrue(started, "coverage starts the selected target")
+        let current = await f.session.currentPresentation()
+        let before = try PublicationStore(database: f.database).segments(editionID: first.editionID).count
+        let late = try lateTargetAndSource(f, editionID: first.editionID)
+        let revision = try Self.admitLateLocal(f.database, target: late.0, source: late.1)
+        readiness.record(revision, nil, textDeclared: true)
+        await driver.noteMediaReadinessChanged()
+        let forwardID = current?.window.items.dropFirst().first?.id ?? first.window.anchor.cardID
+        _ = try await driver.submitViewport(.init(anchor: .init(cardID: forwardID, placement: .top)),
+            activity: .forward, resources: resources(reserve: 1))
+        let noticed = await waitUntil(5) {
+            let snapshot = await runway.snapshot()
+            if case .exact(0)? = snapshot.readyAhead?.amount { return snapshot.localSupplyExhausted == false }
+            return true
+        }
+        XCTAssertTrue(noticed, "the runway observes the readiness transition")
+        let published = await waitUntil(10) {
+            (try? PublicationStore(database: f.database).segments(editionID: first.editionID).count) ?? before > before
+        }
+        XCTAssertTrue(published, "A publishes while the target coverage itself started is still suspended")
+    }
+
+    /// Codex P1.2: background during an executor already in flight. The executor was started by a caller, is
+    /// suspended at its barrier, and must not start new coverage with the resources it captured after background.
+    func testP12BackgroundDuringInFlightExecutorStartsNoNewWork() async throws {
+        let entered = expectation(description: "in-flight executor reached its media barrier")
+        let gate = CoverageGate { entered.fulfill() }
+        defer { gate.release() }
+        let f = try fixture(), first = try await cold(f)
+        let (driver, _) = try driver(f, makeMediaOpportunity: {
+            await gate.wait()
+            return MediaPreparationOpportunity(waitSeconds: 0, startedAt: 0, prepare: { _, _ in })
+        })
+        let activation = Task { try await driver.activateCurrentPresentation(resources: resources()) }
+        await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+        let pulls = f.journal.pulls.count
+
+        // A durable fact asks the in-flight executor for another pass; background revokes the door.
+        _ = try Self.admitLateLocal(f.database, target: f.targets[0].id, source: f.sources[0])
+        await driver.noteLateDurableFact()
+        await driver.suspendForBackground()
+        gate.release()
+        _ = try? await activation.value
+        try? await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual(f.journal.pulls.count, pulls,
+            "an executor already in flight does not start new coverage after background")
     }
 
     func testP1StationaryHealthyRunwayStillExecutesRemainingSelectedTargets() async throws {
@@ -336,6 +420,7 @@ final class SelectedSourceCoverageTests: XCTestCase {
     func testP4SharedTargetRunsOnceAndRetainsDistinctSourceMemberships() async throws {
         let f = try fixture(shared: true), first = try await cold(f), (driver, _) = try driver(f)
         _ = try await driver.activateCurrentPresentation(resources: resources())
+        _ = await waitUntil(5) { f.journal.pulls.count >= 3 }
         XCTAssertEqual(f.journal.pulls.count, 3); XCTAssertEqual(Set(f.journal.pulls).count, 3)
         let candidates = try CandidateProvider(contentStore: .init(database: f.database)).candidates(for: f.plan, after: nil, examinedCapacity: 100).candidates
         XCTAssertTrue(candidates.contains { $0.sourceIDs == Set(f.sources.prefix(2)) })
@@ -351,6 +436,7 @@ final class SelectedSourceCoverageTests: XCTestCase {
         _ = try await driver.drive(resources: resources(targetCapacity: 0))
         XCTAssertEqual(f.journal.pulls.count, 2)
         _ = try await driver.drive(resources: resources(targetCapacity: 1))
+        _ = await waitUntil(5) { f.journal.pulls.count >= 4 }
         XCTAssertEqual(f.journal.pulls.count, 4); XCTAssertEqual(f.journal.outcomes.count, 4)
     }
     func testP6ScopeChangeAndCompetingDriveWhileConnectorSuspended() async throws {
@@ -395,6 +481,10 @@ final class SelectedSourceCoverageTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(f.journal.pulls.count, 3)
         XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
         XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: otherEdition).count, 1)
+        _ = await waitUntil(5) {
+            (try? ContentStore(database: f.database).candidateWindow(sourceID: f.sources[2], after: nil,
+                examinedCapacity: 100).records.count) ?? 0 >= 20
+        }
         let acquired = try ContentStore(database: f.database).candidateWindow(sourceID: f.sources[2], after: nil, examinedCapacity: 100).records
         XCTAssertEqual(acquired.count, 20)
         XCTAssertEqual(try AcquisitionTargetAuthority(database: f.database).target(id: f.targets[2].id)?.checkpointRevision, 0)
@@ -419,6 +509,7 @@ final class SelectedSourceCoverageTests: XCTestCase {
     func testUnattemptedTargetsPrecedeReplayDuringDepthPressure() async throws {
         let f = try fixture(shuffledIDs: true), _ = try await cold(f), (driver, _) = try driver(f)
         _ = try await driver.activateCurrentPresentation(resources: resources(reserve: 64))
+        _ = await waitUntil(5) { f.journal.pulls.count >= 4 }
         XCTAssertEqual(f.journal.pulls.count, 4)
         XCTAssertEqual(Set(f.journal.pulls), Set(f.targets.map(\.id)))
     }
@@ -433,9 +524,14 @@ final class SelectedSourceCoverageTests: XCTestCase {
         let checkpoint = try SessionStore(database: f.database).checkpoint()
         await driver.deactivate(); gate.release(); _ = try await task.value
         let snapshot = await runway.snapshot(); XCTAssertNil(snapshot.scope)
+        _ = await waitUntil(5) { f.journal.pulls.count >= 3 }
         XCTAssertEqual(f.journal.pulls.count, 3)
         XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: first.editionID), history)
         XCTAssertEqual(try SessionStore(database: f.database).checkpoint(), checkpoint)
+        _ = await waitUntil(5) {
+            (try? ContentStore(database: f.database).candidateWindow(sourceID: f.sources[2], after: nil,
+                examinedCapacity: 100).records.count) ?? 0 >= 20
+        }
         XCTAssertEqual(try ContentStore(database: f.database).candidateWindow(sourceID: f.sources[2], after: nil, examinedCapacity: 100).records.count, 20)
         let active = await f.coordinator.activeExecutions(); XCTAssertTrue(active.isEmpty)
     }
