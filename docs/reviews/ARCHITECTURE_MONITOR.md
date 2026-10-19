@@ -1,53 +1,69 @@
-# FeedMine V2 — Monitor externo de código, arquitetura e produto
+# FeedMine V2 — Monitor externo de arquitetura, código, produto e release
 
-> **Canal consultivo:** este documento é atualizado apenas na branch `monitor/architecture`. Não revoga o Norte/PDs/invariantes, não autoriza merges e não é resultado de testes executados pelo revisor.
+> **Canal consultivo, somente `monitor/architecture`.** Este parecer não altera normas, autoriza merges nem comprova execução de testes. OMP precisa fazer `git fetch origin monitor/architecture` e ler explicitamente este arquivo; não há notificação automática.
 
-## Índice de handoff — documentos de trabalho de 17/out/2026
+## Revisão 008 — 2026-10-19 11:36 PDT (America/Vancouver)
 
-- [**Intenções, entregas, lacunas e decisões de integração**](FEEDMINE_INTENTIONS_VS_DELIVERIES_2026-10-17.md): inventário e fila de decisão; `main@5e4e2142`.
-- [**Auditoria do backend: folga, concorrência e acoplamentos**](FEEDMINE_BACKEND_HEADROOM_KERNEL_AUDIT_2026-10-17.md): K-01–K-10, barreiras sequenciais entre aquisição/mídia/seleção/publicação, objetivo de 10× por estágio, mudança de filtros com reuso e roteiro sem outro scheduler.
-- [**Estudo arquitetural do engasgo na rolagem**](FEEDMINE_SCROLL_ARCHITECTURAL_STUDY_2026-10-17.md): caminho visual→MainActor→atores→instalação, distinção entre correlação e causa, medição discriminante e critérios de correção.
-- Ambos são **consultivos e somente na branch `monitor/architecture`**; não equivalem a nova regra do produto, aprovação de merge ou prova no Mac. OMP deve lê-los expressamente antes de considerar a próxima candidata.
+**Intervalo:** desde a revisão 007 (18/out 01:42 PDT), confrontado também com o último relatório remoto, revisão 003 (17/out). **Método:** leitura GitHub de refs, diff `main...integration/51`, PRs, código da candidata, documentos normativos e registro de pausa. **Sem execução de Swift, XCTest, simulador, iPhone ou benchmark nesta revisão.**
 
-## Revisão 003 — 2026-10-17, tarde (America/Vancouver)
+**SHAs verificados:** `main@5e4e21425f5e1be22cdf7ed10e4c1728d2a33f15`; `integration/51@8fcfe37c6ff46b68b6754b25852bc1b47d825766` (23 commits à frente, zero atrás da main); `fix/deferral-invalidates-list@10bc0bd72cfdfcdb2cfe89e2eed7b4a520183f27` (fora da 51); `docs/status-pause-2026-10-17@711cfac3c38c`; `monitor/architecture@a0bba1a0864c` antes desta tentativa de publicação. **PRs abertos: zero.** Não foram identificados commits ou provas novas após a revisão 007 nas referências ativas examinadas. Branches históricas `integration/candidate@1b990306` e `integration/chatgpt@8203d439` não são a candidata atual.
 
-**Escopo e baseline:** GitHub `wsmontes/feedmine_v2`, leitura de `main@5e4e21425f5e1be22cdf7ed10e4c1728d2a33f15`, comparação com a base do monitor `37633bb3e4b6342ae89a9f58d78b90f3182ab14a`, inspeção das branches ativas `fix/deferral-invalidates-list@10bc0bd72cfd`, `fix/render-ready-admission@3c741ce53d4a`, `fix/filter-confirmation-boundary@2c642abcd514`, `feat/durable-saves@ab5c6067fa61`, `fix/reader-availability-language@faf8256af2b2`, além das branches de UI/testes e docs normativos. Nenhuma compilação/teste foi realizada **nesta** revisão.
+### Resumo executivo
 
-### Veredito
+A candidata 51 integra mudanças reais de admissão render-ready, salvos, filtros, aquisição inicial, idioma e runway, mas **não** integra a correção de fluidez do gesto medida isoladamente. O P0 antigo de mutação silenciosa de imagem em texto foi resolvido **na candidata**, não na main. Permanecem quatro riscos P1 de experiência/durabilidade em código e um bloqueio de aceitação: não há B01–B06 completos para o SHA 51. A revisão 007 identificou ainda uma divergência documental sobre TestFlight interno versus exigência específica de B06 antes de enviar a 51.
 
-**A direção melhorou, mas a implementação ainda não está integrada nem certificada.** Entre `37633bb3` e `5e4e2142` há dez commits na `main`, todos documentais (incluído README do monitor). Em paralelo surgiram mudanças funcionais relevantes e uma medição física reportada em branches. Não inferir que o monitor produziu essas mudanças: seu documento remoto estava somente no baseline de configuração, sem revisões publicadas, portanto o consumo pelo OMP **não foi comprovado**. O avanço corresponde de forma demonstrável às novas diretivas do PO, independentemente da causa.
+### Mudanças verificadas e efeito de produto (desde a revisão remota 003)
 
-### Achados e recomendações
+- [`da94d5c7`](https://github.com/wsmontes/feedmine_v2/commit/da94d5c762496dddc76304eb3866acbb5218b4de) + [`d942b75e`](https://github.com/wsmontes/feedmine_v2/commit/d942b75e1397): não rebaixam hero/thumbnail automaticamente para texto na mesma ocorrência; texto declarado exige evidência. **P0 anterior resolvido na árvore 51.**
+- [`1487c750`](https://github.com/wsmontes/feedmine_v2/commit/1487c750bd4b): persistência de disponibilidade e preparação de mídia para salvos; mantém risco de erros de escrita descartados.
+- [`2c642abc`](https://github.com/wsmontes/feedmine_v2/commit/2c642abcd514): filtros confirmados no armazenamento antes da memória; falta prova A→B→A no aparelho/árvore final.
+- [`058a629d`](https://github.com/wsmontes/feedmine_v2/commit/058a629dc7f1) + [`c4fbb215`](https://github.com/wsmontes/feedmine_v2/commit/c4fbb215512b): aquisição inicial/ordenação e escolha explícita de idioma; relato de 5,5 s em rede real para primeiro conteúdo contra objetivo de 3 s.
+- [`54680fa4`](https://github.com/wsmontes/feedmine_v2/commit/54680fa4a7aa9bee756630898047002c70191fae) + [`dd5b2a87`](https://github.com/wsmontes/feedmine_v2/commit/dd5b2a877c765141dc394e4fa99b3f3b4b5c19be): cadência de foreground com preservação de amostras do runway no mesmo escopo; integrar juntos.
+- [`10bc0bd7`](https://github.com/wsmontes/feedmine_v2/commit/10bc0bd72cfdfcdb2cfe89e2eed7b4a520183f27): reduz invalidação de lista sob gesto; **fora da 51**. Mediana de frames lentos 3,02%→1,51% é relato de medição física da branch, não da candidata.
 
-**P0 — Mutação de layout na admissão, contrária à imutabilidade. FATO ESTÁTICO; não integrar sem correção.** Em `fix/render-ready-admission`, [`PresentationCard.swift:88–102`](https://github.com/wsmontes/feedmine_v2/blob/3c741ce53d4a/Sources/FeedMineRuntime/PresentationCard.swift#L88-L102) transforma um `PublishedCard` com contrato `.hero`/`.thumbnail` em `.textOnly` quando a decodificação falha, conservando o mesmo `PublicationCardID`. [`RenderReadyAdmissionTests.swift`](https://github.com/wsmontes/feedmine_v2/blob/3c741ce53d4a/Tests/FeedMineRuntimeTests/RenderReadyAdmissionTests.swift) **exige** essa conversão. Conflita com [PD-5](https://github.com/wsmontes/feedmine_v2/blob/main/docs/product/PRODUCT_DECISIONS_2026-10-09.md) e com a [diretriz de prontidão 17/out](https://github.com/wsmontes/feedmine_v2/blob/main/docs/product/2026-10-17-render-ready-admission-rule.md): falha transitória/ausência local não autoriza reescrever apresentação publicada. Se não há pixels para um contrato com imagem, conservar publicação e adiar a admissão daquela apresentação ou implementar política explícita anterior à publicação, nunca mutação silenciosa de layout. **A branch `feat/durable-saves` descende desse commit**, portanto integrações de salvos carregam essa mesma decisão a menos que ela seja corrigida.
+### Achados, risco, owner e prova discriminante
 
-**P1 — Melhoria de fluidez com medição real reportada, AINDA FORA DA MAIN.** [`fix/deferral-invalidates-list@10bc0bd72cfd`](https://github.com/wsmontes/feedmine_v2/commit/10bc0bd72cfdfcdb2cfe89e2eed7b4a520183f27) desloca leitura da janela segurada e contagem de adiamentos para evitar invalidação da lista sob gesto (`FeedInteractionPresentation.swift`, `FeedScreen.swift`, `FeedNativeViewport.swift`). Mensagem do commit relata três corridas antes (2,89/3,90/3,02%) e depois (1,75/1,51/1,27%) de frames acima de 1,5× o orçamento numa jornada física de 14 arrastadas, mediana 3,02% → 1,51%. **Evidência reportada pelo autor, não logs auditados aqui;** não chamar fluidez geral certificada. Revalidar na integração real, mantendo mesmas condições, além de gesto/âncora, viewport, concorrência e relaunch.
+**P0 release — ausência de aceitação da candidata (FATO DOCUMENTAL).** [Registro de pausa §4–6](https://github.com/wsmontes/feedmine_v2/blob/docs/status-pause-2026-10-17/docs/reviews/2026-10-17-estado-em-pausa.md) relata pacote 1445/0 no SHA 51, porém B06 `NOT_RUN`, B01–B03 interrompidos, archive de desenvolvimento sem export/upload, UI T2/T4 falhando também na base. Nenhum relato isolado é PASS B01–B06. **Owner release:** executar gates congelados e preservar SHA, hashes, logs, `.xcresult` e evidência física antes de certificar release.
 
-**P1 — Salvos duráveis: boa implementação inicial, provas completas pendentes.** [`feat/durable-saves@ab5c6067`](https://github.com/wsmontes/feedmine_v2/commit/ab5c6067fa61af41a3e517f388a072591d51513a) introduz `SavedMediaCoordinator`, estado persistido separado para disponibilidade, erros explícitos, recuperação/tentativa de mídia salva e testes de falhas. [`SavedMediaCoordinator.swift:60–127`](https://github.com/wsmontes/feedmine_v2/blob/ab5c6067fa61/Sources/FeedMineComposition/SavedMediaCoordinator.swift#L60-L127). **Fato:** esses caminhos e testes existem; **não comprovado:** prova no Mac/aparelho com limpeza/restart offline e todas as promessas de texto/mídia duráveis. Verificar retentores de mídia, troca de versão, falta de espaço, bookmarks em múltiplas caixas e falha de gravação. A dependência da branch com P0 acima é obstáculo concreto antes do merge.
+**P1 — fim artificial apesar de supply pronto (FATO ESTÁTICO, reprodução pendente).** [`FeedSession.swift:236–247`](https://github.com/wsmontes/feedmine_v2/blob/8fcfe37c/Sources/FeedMineRuntime/FeedSession.swift#L236-L247) obtém janela finita de publicação e filtra não-admissíveis depois; duas imagens indisponíveis podem consumir a janela e ocultar um texto pronto logo adiante. **Risco:** feed aparenta acabar contra PD-9/INV-17. **Owner FeedSession:** percorrer história local progressivamente até preencher a capacidade com cartas prontas ou provar fim real, mantendo ordem/identidade. **Prova:** fixture [hero sem pixels, hero sem pixels, texto pronto], capacidade 2, sem rede.
 
-**P1 — Filtros: correção candidata com confirmação durável.** [`fix/filter-confirmation-boundary@2c642abcd514`](https://github.com/wsmontes/feedmine_v2/commit/2c642abcd514145da92f15a7090f45e42b1d029b) muda `AppComposition.applyFilter` para gravar contexto/expiração antes de alterar memória, diferenciando falha de persistência e de apresentação. [`AppComposition.swift:661–695`](https://github.com/wsmontes/feedmine_v2/blob/2c642abcd514/FeedMineApp/FeedMineApp/AppComposition.swift#L661-L695). Testar interrupção entre fases, disco falhando, retorno A→B→A, posição/edição e restart offline; não inferir PASS da presença de testes.
+**P1 — checkpoint restaurado pode mudar de âncora (FATO ESTÁTICO; salto real não medido).** [`FeedSession.swift:480–512`](https://github.com/wsmontes/feedmine_v2/blob/8fcfe37c/Sources/FeedMineRuntime/FeedSession.swift#L480-L512) substitui a âncora publicada por outra carta pronta quando a original não pode ser projetada. **Risco:** reabertura offline não retorna ao mesmo ponto. **Owner FeedSession/checkpoint:** preservar identidade durável da posição, sem placeholder que viole render-ready; testar relaunch offline com imagem local ausente e comparar `PublicationCardID` + offset.
 
-**P1 — Aprendizagem do runway ainda descartada no foreground da main.** [`RunwayController.swift:283–305`](https://github.com/wsmontes/feedmine_v2/blob/5e4e21425f5e/Sources/FeedMineRuntime/RunwayController.swift#L283-L305) executa `deactivate()` em `activate(scope)`, apagando `consumptionSamples` e `latencySamples`; [`AppComposition.swift:3049–3057`](https://github.com/wsmontes/feedmine_v2/blob/5e4e21425f5e/FeedMineApp/FeedMineApp/AppComposition.swift#L3049-L3057) reativa a apresentação em foreground. **Fato do caminho; impacto quantitativo não medido aqui.** Teste reproduzindo consumo aprendido → background → retorno à MESMA edição e compare política de reserva, não resetar aprendizado sem mudança de escopo.
+**P1 — carta admitida desaparece na reentrada (FATO ESTÁTICO; deslocamento visual é HIPÓTESE).** [`FeedSession.swift:197–222`](https://github.com/wsmontes/feedmine_v2/blob/8fcfe37c/Sources/FeedMineRuntime/FeedSession.swift#L197-L222) remove da lista um item já admitido se a redecodificação falha. **Risco:** geometria acima do leitor muda. **Owner FeedSession/apresentação:** separar residência de pixels da identidade admitida sem reescrever contrato; medir `PublicationCardID` e offset relativo durante ida/volta com asset ausente.
 
-**P1 — Busca/personalização continuam divergentes na main.** [`CandidateProvider.swift:84–93`](https://github.com/wsmontes/feedmine_v2/blob/5e4e21425f5e/Sources/FeedMineEditorial/CandidateProvider.swift#L84-L93) trata expressão com `-termo` como substring literal; [análise de personalização](https://github.com/wsmontes/feedmine_v2/blob/main/docs/reviews/2026-10-17-personalization-conversion-and-v1-reading.md) registra `.neutral` explícito convertido em exclusão. Esses problemas estão documentados mas não corrigidos na `main`; priorizar depois dos invariantes de admissão/fluidez/durabilidade.
+**P1 — escrita de disponibilidade pode falhar silenciosamente (FATO ESTÁTICO; falha de disco não reproduzida).** [`SavedMediaCoordinator.swift:65–94`](https://github.com/wsmontes/feedmine_v2/blob/8fcfe37c/Sources/FeedMineComposition/SavedMediaCoordinator.swift#L65-L94) usa `try? availability.record(...)` e retorna `.ready` ou outro estado sem confirmar a escrita. **Risco:** UI promete durabilidade que o disco não registrou. **Owner SavedMediaCoordinator:** tornar a confirmação dependente de persistência efetiva; injetar erro SQLite, relaunch offline e preservar bookmark mesmo em falha.
 
-**P1 — Gate de release:** a evidência mais recente encontrada na `main` ainda diferencia testes no simulador de B06 físico, não certifica fluidez nem uma release externa ([build 48](https://github.com/wsmontes/feedmine_v2/blob/main/docs/reviews/2026-10-16-build-48-validacao.md)). O bump da build 49 não prova execução B06. Não alegar alteração do status sem nova evidência.
+**P1 — fix físico de scroll ausente (FATO DE GENEALOGIA).** [`10bc0bd7`](https://github.com/wsmontes/feedmine_v2/commit/10bc0bd72cfdfcdb2cfe89e2eed7b4a520183f27) não é ancestral de `integration/51`, conforme [registro de pausa §1/6](https://github.com/wsmontes/feedmine_v2/blob/docs/status-pause-2026-10-17/docs/reviews/2026-10-17-estado-em-pausa.md). **Owner integração:** reconciliar fix e medir de novo no SHA final; não atribuir resultado da branch à 51.
 
-### Próxima decisão recomendada ao OMP
+**P2 — limite absoluto de itens tem exceção (FATO ARITMÉTICO).** [`FeedSession.swift:263–297`](https://github.com/wsmontes/feedmine_v2/blob/8fcfe37c/Sources/FeedMineRuntime/FeedSession.swift#L263-L297): com âncora inicial e `forwardCapacity=3000`, o teto de 2000 pode conservar 3001 itens. **Owner FeedSession:** validar limites de instalação ou tornar o cap consistente preservando âncora; teste de capacidade extrema.
 
-1. **Bloquear merge da cadeia `render-ready-admission` → `durable-saves`** enquanto texto automático não respeitar o contrato congelado; ajustar no owner existente.
-2. Integrar isoladamente a melhoria de rolagem com revalidação física e checagem de âncora/gesto.
-3. Validar filtros e salvos como jornadas end-to-end, após reconciliar a árvore de integração.
-4. Corrigir regressões semânticas ainda na main (runway de foreground, neutral e busca).
-5. Executar o B06 sem alterar benchmark e atualizar status de release com provas.
+**P2 — instrução de TestFlight ambígua (FATO DOCUMENTAL).** [Diretriz 11/out](https://github.com/wsmontes/feedmine_v2/blob/main/docs/product/V2_AGENT_EXECUTION_DIRECTIVE_2026-10-11.md) autoriza builds internas para feedback antes de B06; [pausa §5–9](https://github.com/wsmontes/feedmine_v2/blob/docs/status-pause-2026-10-17/docs/reviews/2026-10-17-estado-em-pausa.md) exige B06 para envio da 51. **Owner release/PO:** distinguir regra específica da 51 de regra geral; pausa atual não é autorização para envio.
 
-### Estado de handoff
+### Pendências preservadas e pontos resolvidos
 
-Esta edição é consultiva. OMP deve executar `git fetch origin monitor/architecture` e `git show origin/monitor/architecture:docs/reviews/ARCHITECTURE_MONITOR.md` e confirmar a leitura em sua própria coordenação; uma publicação no GitHub, sozinha, **não notifica** o processo local.
+**Resolvidos somente na 51:** conversão automática hero→texto, reset de amostras ao reativar mesmo escopo, confirmação durável dos filtros; salvos implementados com ressalva. **Abertos:** quatro P1 acima, fix de scroll fora da candidata, busca `-termo` literal, `.neutral` convertido em exclusão na main, SQLite síncrono no MainActor, portabilidade completa V1→V2 e evidência de PD-10/catalog sync e B01–B06 na árvore final. Não tratar blueprints históricos como autoridade atual. Nenhuma prova de execução foi produzida por este monitor.
 
----
+### Comandos e provas mínimas no Mac
 
-## Baseline anterior — 2026-10-17
+```bash
+git fetch origin main integration/51 fix/deferral-invalidates-list monitor/architecture
+git rev-parse origin/main origin/integration/51
+git merge-base --is-ancestor 10bc0bd72cfdfcdb2cfe89e2eed7b4a520183f27 origin/integration/51; echo "scroll_fix_ancestry=$?"
+swift build && swift test && git diff --check
+swift test --filter 'FeedPresentationAdmissionTests|FeedSessionWarmRestoreTests|SavedMediaCoordinatorTests|RunwayControllerTests|ForegroundDriveCadenceTests'
+# Na árvore candidata final, executar scripts/run-discovery-benchmark.sh para B01–B05,
+# B06 em iPhone físico com o mesmo SHA, sem tocar em bench/ nem em hashes congelados.
+```
 
-- Branch de monitor criada a partir de `main@37633bb3e4b6342ae89a9f58d78b90f3182ab14a`.
-- Revisões 001 e 002 foram apresentadas no ChatGPT, **não publicadas** no GitHub; não tratar o estado inicial deste documento como memória desses achados. A revisão 003 acima reconfirmou os pontos centrais que permanecem.
+Provas de experiência adicionais: consumo prolongado sem fim falso; offset por identidade sob gesto e mídia ausente; filtros A→B→A; relaunch offline no mesmo checkpoint; salvos após falha de SQLite/disco cheio; aquisição inicial com rede real e atribuição de latências por estágio. A publicação deste documento não certifica nenhuma dessas provas.
+
+### Memória compacta de revisões
+
+- **003 (17/out):** main `5e4e2142`; P0 hero→texto identificado em branch antiga; auditorias de backend/scroll anexadas no canal consultivo.
+- **004 (17/out):** `da94d5c7` e `d942b75e` corrigem P0; riscos de starvation/âncora/reentrada encontrados.
+- **005 (17/out):** candidata `integration/51@8fcfe37c`, 23 commits sobre main; fix de scroll fora; B06 não executado.
+- **006 (17/out):** refs e pendências inalteradas; sem novos gates.
+- **007 (18/out):** divergência documental de TestFlight; refs e P1 inalterados.
+- **008 (19/out):** refs/PRs/normas reconferidos; sem commits ou evidências novos após 007; consolidação do handoff remoto anteriormente bloqueado.
+
+**Para o OMP:** `git fetch origin monitor/architecture && git show origin/monitor/architecture:docs/reviews/ARCHITECTURE_MONITOR.md`. Confirmar leitura na coordenação própria; o monitor não altera `main`, código, testes, scripts, benchmarks, issues nem PRs.
