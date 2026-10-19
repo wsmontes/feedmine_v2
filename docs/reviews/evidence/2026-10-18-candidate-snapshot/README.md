@@ -1,21 +1,21 @@
-# Candidata identificada — 2026-10-19 (commit `473dee75`; P1/P2 pós-relatório Codex)
+# Candidata identificada — 2026-10-19 (commit `46191649`, publicado na origin)
 
 Árvore de produto desta rodada. Não é uma aprovação de publicação: é o commit que permite reproduzir os mesmos
 bytes e conferir cada veredito.
 
 ## Identidade
 
-- Commit local **`473dee75`** na branch `codex/v2-fluidez-capacidade`, sobre `b0b961a0`. Nenhum push.
-- `identity.txt`: **diff `d7730153…`; produto `b9824c31…`.**
+- Commit **`46191649`** na branch `codex/v2-fluidez-capacidade`, sobre `b0b961a0`, **publicado** em
+  `origin/codex/v2-fluidez-capacidade`.
+- `identity.txt`: **diff `68794cc0…`; produto `8b147578…`.**
 - `assets.sha256`: hashes dos assets ignorados pelo git — catálogo embutido (117.993.472 B), corpus congelado,
   manifestos do benchmark. Sem eles, o mesmo commit pode ser outro produto.
-- `candidate.patch`: `git diff b0b961a0 473dee75 --binary` — aplicado a um worktree limpo em `b0b961a0`, reproduz
+- `candidate.patch`: `git diff b0b961a0 46191649 --binary` — aplicado a um worktree limpo em `b0b961a0`, reproduz
   **exatamente** o commit candidato.
 - `candidate-assets.tgz`: catálogo embutido + `catalog.manifest.json` + `bench/corpus/` inteiro; a extração confere
   com `assets.sha256` (`catalog.sqlite e6da170e…`, `items.json 4bb683a7…`, `corpus/catalog.sqlite 1f642eaa…`).
-- `archive.sha256`: hashes do patch (`d7730153…`) e do tarball.
-- **Os gates B01–B05 estão sendo reexecutados nestes bytes.** Os vereditos anteriores (`dc63a761…`) não são
-  transferidos; B06 permanece bloqueado pelo iPhone offline.
+- `archive.sha256`: hashes do patch (`68794cc0…`) e do tarball.
+- **Os gates B01–B05 foram reexecutados nestes bytes; B06 permanece bloqueado pelo iPhone offline.**
 
 ## Correções desta rodada (pós-relatório Codex)
 
@@ -28,31 +28,37 @@ bytes e conferir cada veredito.
    cada preparação.
 5. **E07 destinos**: `.savedCard` e `.article(cardID:nil)` executados com resultados reais.
 6. **E08 purge offline**: `ready` é demovido para `pending` quando o asset desaparece e o app reabre offline.
-7. **E03 offset fechado**: retorno distante medido em **16,0 pt** com critério 16±1 (PASS, 631,9 s).
+7. **E03 offset**: retorno distante medido em **16,0 pt** com critério 16±1 (PASS, 631,9 s); posição ±1 segue
+   **parcial**, como instruído pelo Codex.
 8. **Medição**: janela de gesto declarada; o resumo do braço "depois" foi corrigido para 28/1.678, 2 misses
    (0,12%), pior 33,6 ms; trace completo 32/1.912, 4 misses (0,21%), pior 107,4 ms (primeira janela de aquecimento,
    agora explícita).
+9. **P1.1 cobertura**: `startCoverage` retém um round por vez; `noteLocalSupplyChanged` arma uma oportunidade local
+   limitada, consumida por `reconsider` mesmo em `.hold`, no lane de cabeça (cursor nil), sem reiniciar o episode.
+   P11 publica a revisão tardia de A antes de liberar B.
+10. **P1.2 background**: `suspendForBackground` + fences no entry e no loop interno; P12 discriminante (vermelho sem
+    as fences, verde com elas).
 
-### Suítes reexecutadas no commit `473dee75`
+### Suítes reexecutadas no commit `46191649`
 
-- **Pacote Swift:** **1.516 testes, 1 skip, 0 falhas** (123,7 s).
-- **Bundle `FeedMineAppTests`:** **158 testes, 0 falhas** (300,7 s), incluindo `testRefusedScopeWrite…`,
-  `testRefusedSavedMediaWrite…`, `testReaderSearchShowsRealTypedSections` e
-  `testOfflinePurgeDemotesReady…` no pacote.
-- **UI focal:** `testT12SearchSubmitsAndReopensOfflineAsTheSameSurface` **PASS** (18,7 s);
-  `testTenMinuteRestKeepsTheCardThroughLateSupplyAndADistantReturn` **PASS** (631,9 s, offset 16,0 pt).
-- **Não reexecutados nesta árvore:** suíte UI completa (75 testes), B01–B05 e B06. Os vereditos B01–B05 acima são
-  do produto anterior `dc63a761…` e não são transferidos.
+- **Pacote Swift:** **1.518 testes, 1 skip, 0 falhas** (137,6 s).
+- **Bundle `FeedMineAppTests`:** **158 testes, 0 falhas** (267,2 s).
+- **UI focal:** `testT12SearchSubmitsAndReopensOfflineAsTheSameSurface` PASS; `testTenMinuteRest…` PASS (631,9 s,
+  offset 16,0 pt).
+- **UI suite completa:** **76 testes, 9 skips, 5 testes falhando (11 asserções)**; todas as falhas são as classes
+  ambientais já registradas e reproduzidas no HEAD `b0b961a0` — 2 de catálogo/rede reais (`feed-empty-state`
+  “Nenhuma fonte habilitada”) e 3 do chrome do `SFSafariViewController` (`Close`/`Fechar` não exposto). Nenhuma
+  falha nova; o flake de `ArticleReadingDiagnosis` da corrida anterior passou nesta.
 
-### Gates no commit `473dee75`
+### Gates no commit `46191649`
 
 | Gate | Run | Veredito | Números |
 |---|---|---|---|
-| B01 A+B | `bench/run/20261019T164752Z` | **PASS** | 475/499 fontes nos dois perfis, 103 contribuintes nos primeiros 300 cards, 0 fontes padrão, fases neutral+thematic |
-| B02 | `bench/run/20261019T165620Z` | **PASS** | relatório em `report.md` da corrida |
-| B04 | `bench/run/20261019T170227Z` | **PASS** | protocolo completo; nenhuma medida instável |
-| B05 | `bench/run/20261019T170605Z` | **PASS** | sete medidas verdadeiras |
-| B03 `--full-trace` | `bench/run/20261019T171026Z` | **PASS** | 2.587 avanços (≥1.800), 1.889 cartas, 0 paradas ≥1 s, 0 duplicatas, 0 adjacências; 1.806 candidatos medidos, 0 pendentes |
+| B01 A+B | `bench/run/20261019T212156Z` | **PASS** | 475 registradas, 974 contatadas, 87 fontes publicadas, 222 cartas |
+| B02 | `bench/run/20261019T213036Z` | **PASS** | 200 cartas |
+| B03 `--full-trace` | `bench/run/20261019T214314Z` | **PASS** | 2.786 avanços (≥1.800), 2.363 cartas, 0 paradas ≥1 s, 0 duplicatas, 0 adjacências; 2.234 candidatos medidos, 0 pendentes |
+| B04 | `bench/run/20261019T213644Z` | **PASS** | 301 instalações, 0 violações, 0 instáveis, 1 `not-measurable` |
+| B05 | `bench/run/20261019T214025Z` | **PASS** | 7/7 medidas |
 | B06 | — | **NOT_RUN / BLOCKED** | iPhone listado Offline no `xctrace` |
 
 A corrida `bench/run/20261019T163727Z` foi **FAIL de harness, não de produto**: `bench/run.sh` invocado

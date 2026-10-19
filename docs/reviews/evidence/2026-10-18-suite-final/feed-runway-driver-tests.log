@@ -1,0 +1,114 @@
+Building for debugging...
+[0/2] Write swift-version-3CD7052B146186F2.txt
+Build complete! (0.19s)
+Test Suite 'Selected tests' started at 2026-10-18 09:13:17.709.
+Test Suite 'FeedMinePackageTests.xctest' started at 2026-10-18 09:13:17.712.
+Test Suite 'FeedRunwayDriverTests' started at 2026-10-18 09:13:17.712.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test01SemanticTailFullProductionLoop]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test01SemanticTailFullProductionLoop]' passed (0.106 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test02LocalPresentationSurvivesSuspendedTailHTTP]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test02LocalPresentationSurvivesSuspendedTailHTTP]' passed (0.050 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test03NoCheckpointNoColdEdition]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test03NoCheckpointNoColdEdition]' passed (0.021 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test04LocalSupplyPrecedesNetwork]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test04LocalSupplyPrecedesNetwork]' passed (0.059 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test05HistoryMeasurementIgnoresTinyWindowTail]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test05HistoryMeasurementIgnoresTinyWindowTail]' passed (0.037 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test06LocalPublicationExtendsReserveWithoutChangingTheAdmittedList]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test06LocalPublicationExtendsReserveWithoutChangingTheAdmittedList]' passed (0.029 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test07AdvanceWithoutPublicationPreservesPresentation]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test07AdvanceWithoutPublicationPreservesPresentation]' passed (0.026 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test08DeferredExactIntentExplicitlyResumes]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test08DeferredExactIntentExplicitlyResumes]' passed (0.048 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test09NoEligibleQuiesces]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test09NoEligibleQuiesces]' passed (0.027 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test10OperationalFailureSettlesOnceAndPreservesPresentation]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test10OperationalFailureSettlesOnceAndPreservesPresentation]' passed (0.049 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test11PreparationFailureRecordsFailed]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test11PreparationFailureRecordsFailed]' passed (0.031 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test12CancellationRecordsCancelled]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test12CancellationRecordsCancelled]' passed (0.028 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test13SourceContextEligibility]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test13SourceContextEligibility]' passed (0.035 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test14LocalSearchSettlesWithoutHTTP]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test14LocalSearchSettlesWithoutHTTP]' passed (0.025 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test15SessionContextMismatch]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test15SessionContextMismatch]' passed (0.022 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test16EditorialRevisionMismatch]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test16EditorialRevisionMismatch]' passed (0.021 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test17PolicyContextMismatchInit]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test17PolicyContextMismatchInit]' passed (0.019 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test18UnknownViewportDoesNotEnterRunway]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test18UnknownViewportDoesNotEnterRunway]' passed (0.023 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test19SameAnchorIsSemanticTailInput]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test19SameAnchorIsSemanticTailInput]' passed (0.027 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test20ViewportShiftUsesCommittedAdvance]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test20ViewportShiftUsesCommittedAdvance]' passed (0.024 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test21MarkInactivePreservesPresentation]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test21MarkInactivePreservesPresentation]' passed (0.027 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test22DeactivatePreservesPresentation]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test22DeactivatePreservesPresentation]' passed (0.021 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test23SameEditionOnly]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test23SameEditionOnly]' passed (0.045 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test24SingleTailOpportunityReachesQuiescence]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test24SingleTailOpportunityReachesQuiescence]' passed (0.046 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test25BackwardAndStationaryActivitiesDoNotAdmit]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test25BackwardAndStationaryActivitiesDoNotAdmit]' passed (0.053 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test25SegmentIdentityRequiresFiniteCallerTime]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests test25SegmentIdentityRequiresFiniteCallerTime]' passed (0.001 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testCausalDrainSharesOneMediaDeadlineAcrossLocalSlices]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testCausalDrainSharesOneMediaDeadlineAcrossLocalSlices]' passed (0.049 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testConcurrentLateFactsUseOneCausalPublisher]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testConcurrentLateFactsUseOneCausalPublisher]' passed (0.154 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testContextReturnCompletesWhileUnrelatedSourceIsStillSuspended]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testContextReturnCompletesWhileUnrelatedSourceIsStillSuspended]' passed (0.063 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testDurableResultAfterEditionSwitchDoesNotPublishIntoOldScope]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testDurableResultAfterEditionSwitchDoesNotPublishIntoOldScope]' passed (0.036 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testFastSourcePublishesWhileSlowSourceIsPending]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testFastSourcePublishesWhileSlowSourceIsPending]' passed (0.036 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testForegroundReactivationIsAnOpportunityWithoutViewportEvent]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testForegroundReactivationIsAnOpportunityWithoutViewportEvent]' passed (0.046 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testForegroundTicksPreserveLearnedConsumptionForTheNextDrive]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testForegroundTicksPreserveLearnedConsumptionForTheNextDrive]' passed (0.031 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testGrantExpiryStopsNewStartsAndForegroundResumes]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testGrantExpiryStopsNewStartsAndForegroundResumes]' passed (0.045 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testLateMediaReadinessPublishesAfterDrainWithoutCadence]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testLateMediaReadinessPublishesAfterDrainWithoutCadence]' passed (0.044 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testQ1ColdAndRunwayShareCompositionCoordinatorAndDatabase]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testQ1ColdAndRunwayShareCompositionCoordinatorAndDatabase]' passed (0.039 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testQ2DriverObservesSharedActiveGenerationConflictWithoutReplacement]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testQ2DriverObservesSharedActiveGenerationConflictWithoutReplacement]' passed (0.033 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testQ4ConsumersNeverConstructTheirOwnCoordinator]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testQ4ConsumersNeverConstructTheirOwnCoordinator]' passed (0.030 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR12StructuralFailureReleasesOwnerAndPreservesPresentation]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR12StructuralFailureReleasesOwnerAndPreservesPresentation]' passed (0.031 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR13CancellationDuringHTTPReleasesOwnerAndCoordinator]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR13CancellationDuringHTTPReleasesOwnerAndCoordinator]' passed (60.093 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR14DeactivateDuringHTTPKeepsSupplyWithoutReactivatingOrPublishing]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR14DeactivateDuringHTTPKeepsSupplyWithoutReactivatingOrPublishing]' passed (0.045 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR15ContextAndEditionChangeDuringHTTPPreservesNewPresentation]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR15ContextAndEditionChangeDuringHTTPPreservesNewPresentation]' passed (0.050 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR16NewEditionActivationDuringHTTPGetsReconsideredByOwner]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR16NewEditionActivationDuringHTTPGetsReconsideredByOwner]' passed (0.040 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR18IndependentDriversBothEnterHTTPBeforeEitherIsReleased]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR18IndependentDriversBothEnterHTTPBeforeEitherIsReleased]' passed (0.076 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR1ConcurrentDriveWhileHTTPSuspendedReturnsPresentationWithoutEffects]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR1ConcurrentDriveWhileHTTPSuspendedReturnsPresentationWithoutEffects]' passed (0.048 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR3NewestViewportDuringHTTPDoesNotStartAnotherCausalExecutor]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testR3NewestViewportDuringHTTPDoesNotStartAnotherCausalExecutor]' passed (0.043 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testReadyCandidatePublishesBeforeUnrelatedMediaCompletes]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testReadyCandidatePublishesBeforeUnrelatedMediaCompletes]' passed (0.045 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testRenderedPositionReconciliationDoesNotEnterRunwayOrAcquire]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testRenderedPositionReconciliationDoesNotEnterRunwayOrAcquire]' passed (0.025 seconds).
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testSecondSourcePublishesAfterFirstDrainReturnedWithoutNewInput]' started.
+Test Case '-[FeedMineCompositionTests.FeedRunwayDriverTests testSecondSourcePublishesAfterFirstDrainReturnedWithoutNewInput]' passed (0.065 seconds).
+Test Suite 'FeedRunwayDriverTests' passed at 2026-10-18 09:14:19.780.
+	 Executed 49 tests, with 0 failures (0 unexpected) in 62.063 (62.068) seconds
+Test Suite 'FeedMinePackageTests.xctest' passed at 2026-10-18 09:14:19.780.
+	 Executed 49 tests, with 0 failures (0 unexpected) in 62.063 (62.068) seconds
+Test Suite 'Selected tests' passed at 2026-10-18 09:14:19.780.
+	 Executed 49 tests, with 0 failures (0 unexpected) in 62.063 (62.070) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

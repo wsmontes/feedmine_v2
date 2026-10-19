@@ -1,0 +1,48 @@
+swipe --start-x 200 --start-y 700 --end-x 200 --end-y 250 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 700 --end-x 200 --end-y 250 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 700 --end-x 200 --end-y 250 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 700 --end-x 200 --end-y 250 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 700 --end-x 200 --end-y 250 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 700 --end-x 200 --end-y 250 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 700 --end-x 200 --end-y 250 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 700 --end-x 200 --end-y 250 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 700 --end-x 200 --end-y 250 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 700 --end-x 200 --end-y 250 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 700 --end-x 200 --end-y 250 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 700 --end-x 200 --end-y 250 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 250 --end-x 200 --end-y 700 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 250 --end-x 200 --end-y 700 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 250 --end-x 200 --end-y 700 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 250 --end-x 200 --end-y 700 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 250 --end-x 200 --end-y 700 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 250 --end-x 200 --end-y 700 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 250 --end-x 200 --end-y 700 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 250 --end-x 200 --end-y 700 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 250 --end-x 200 --end-y 700 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 250 --end-x 200 --end-y 700 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 250 --end-x 200 --end-y 700 --duration 0.3
+sleep 0.4
+swipe --start-x 200 --start-y 250 --end-x 200 --end-y 700 --duration 0.3
+sleep 0.4
