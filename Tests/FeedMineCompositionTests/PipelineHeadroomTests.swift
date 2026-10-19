@@ -22,8 +22,9 @@ final class PipelineHeadroomTests: XCTestCase {
             generation: 1, state: .enabled, checkpointRevision: 0, checkpoint: nil)!
     }
     private func facts(thermal: StagePressureFacts.Level = .nominal, lowPower: Bool = false,
-        constrained: Bool = false, free: Int64? = nil) -> StagePressureFacts {
-        .init(thermal: thermal, lowPowerMode: lowPower, networkConstrained: constrained, freeStorageBytes: free)
+        constrained: Bool = false, free: Int64? = nil, useful: Double? = nil) -> StagePressureFacts {
+        .init(thermal: thermal, lowPowerMode: lowPower, networkConstrained: constrained, freeStorageBytes: free,
+            usefulCardsPerSecond: useful)
     }
     private func plannedTargets(_ budget: StageBudget) throws -> Int {
         let result = try AcquisitionPlanner.plan(demand: demand(),
@@ -40,6 +41,69 @@ final class PipelineHeadroomTests: XCTestCase {
         XCTAssertEqual(try plannedTargets(small), 1)
         XCTAssertEqual(try plannedTargets(large), 8)
         XCTAssertGreaterThan(try plannedTargets(large), try plannedTargets(small))
+    }
+
+    /// P05/A6: zero is a denial, not "disabled twice". No pressure combination may invent one target out of it.
+    func testExplicitZeroAuthorizationRemainsZeroUnderEveryPressure() throws {
+        let levels: [StagePressureFacts.Level] = [.nominal, .fair, .serious, .critical]
+        for thermal in levels {
+            for lowPower in [false, true] {
+                for constrained in [false, true] {
+                    for free in [nil, 10_000_000] as [Int64?] {
+                        let pressure = facts(thermal: thermal, lowPower: lowPower, constrained: constrained,
+                            free: free, useful: 0.2)
+                        let budget = StageBudgetPolicy.budget(pressure: pressure,
+                            settings: CollectionLaunchSettings(initialParallelism: 0))
+                        XCTAssertEqual(budget.acquisition.targetWorkCapacity, 0,
+                            "thermal=\(thermal) lowPower=\(lowPower) constrained=\(constrained) free=\(String(describing: free))")
+                        XCTAssertEqual(try plannedTargets(budget), 0)
+                    }
+                }
+            }
+        }
+        let nominal = StageBudgetPolicy.budget(pressure: facts(), settings: CollectionLaunchSettings(initialParallelism: 0))
+        XCTAssertEqual(nominal.acquisition.targetWorkCapacity, 0)
+    }
+
+    /// P05: under the **same** settings, measured useful yield changes the examination budget. This is the
+    /// adaptation the old test (1 vs 8 configured targets) never proved.
+    func testMeasuredUsefulCapacityChangesBudgetUnderSameSettings() {
+        let settings = CollectionLaunchSettings()
+        let starved = StageBudgetPolicy.budget(pressure: facts(useful: 0.4), settings: settings)
+        let everyday = StageBudgetPolicy.budget(pressure: facts(useful: 1.5), settings: settings)
+        let burst = StageBudgetPolicy.budget(pressure: facts(useful: 3.5), settings: settings)
+        XCTAssertEqual(starved.examinedCandidateCapacity, 8)
+        XCTAssertEqual(everyday.examinedCandidateCapacity, 16)
+        XCTAssertEqual(burst.examinedCandidateCapacity, 32)
+        XCTAssertEqual(starved.acquisition.targetWorkCapacity, burst.acquisition.targetWorkCapacity,
+            "a mesma configuração autoriza o mesmo plano; só o trabalho medido se ajusta")
+        let unknown = StageBudgetPolicy.budget(pressure: facts(), settings: settings)
+        XCTAssertEqual(unknown.examinedCandidateCapacity, 32, "ausência de medida não é rendimento zero")
+    }
+
+    /// P05: computing a budget is a snapshot read. The volume is sampled off the MainActor at a lifecycle moment,
+    /// so the getter cannot block the UI on filesystem I/O.
+    @MainActor
+    func testResourceReadNeverPerformsFilesystemIOOnMainActor() async {
+        final class Probe: @unchecked Sendable {
+            private let lock = NSLock()
+            private var reads = 0
+            private var onMainThread: [Bool] = []
+            func record() { lock.lock(); reads += 1; onMainThread.append(Thread.isMainThread); lock.unlock() }
+            var count: Int { lock.lock(); defer { lock.unlock() }; return reads }
+            var mainThreadReads: Int { lock.lock(); defer { lock.unlock() }; return onMainThread.filter { $0 }.count }
+        }
+        let probe = Probe()
+        let capacity = StageStorageCapacity { probe.record(); return 512_000_000 }
+        XCTAssertTrue(Thread.isMainThread)
+        _ = StageBudgetPolicy.budget(pressure: facts(free: capacity.current), settings: .init())
+        XCTAssertEqual(probe.count, 0, "ler o snapshot não lê o disco")
+        await capacity.refresh()
+        XCTAssertEqual(probe.count, 1)
+        XCTAssertEqual(probe.mainThreadReads, 0, "a amostra do volume corre fora do MainActor")
+        XCTAssertEqual(capacity.current, 512_000_000)
+        _ = StageBudgetPolicy.budget(pressure: facts(free: capacity.current), settings: .init())
+        XCTAssertEqual(probe.count, 1, "o orçamento reutiliza o snapshot; não amostra por leitura")
     }
 
     /// Measured pressure reduces the plan and the examined window but an eligible target still progresses.
@@ -136,6 +200,110 @@ final class PipelineHeadroomTests: XCTestCase {
             "a admissão concorrente deixa o supply inteiro")
         XCTAssertLessThan(elapsed, 5,
             "guarda operacional: nenhum estágio durável pode segurar o escritor indefinidamente")
+    }
+
+    /// R22/P14: sustained **useful** headroom at the plan's declared demand. 1.000 sources (100 independent
+    /// targets × 10), 10.000 candidates, one serial writer. Each stage is measured where it runs: admission,
+    /// examination and publication; the reference consumption is 1 card/s and the plan's 10× target is asserted on
+    /// published/sec. Failing the target here is a finding, not a reason to lower it.
+    func testUsefulStageHeadroomAtDeclaredDemand() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let context = FeedContext(request: .main), version = PolicyVersion(rawValue: 1)
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key,
+            catalogGeneration: .init(rawValue: 1), userSelectionVersion: version,
+            eligibilityPolicyVersion: version, scoringPolicyVersion: version,
+            sequencingPolicyVersion: version, exposurePolicyVersion: version,
+            selectionSchemaVersion: .init(rawValue: 1))
+        let plan = try XCTUnwrap(FeedPlan(context: context, revision: revision))
+        let authority = AcquisitionTargetAuthority(database: database)
+        let admission = AdmissionPolicy(database: database)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+
+        // 100 independent targets, 10 sources each, 10 observations per source.
+        var batches: [(AcquisitionTargetID, AcquisitionBatch)] = []
+        for targetIndex in 0..<100 {
+            let sources = (0..<10).map { _ in SourceID() }
+            let target = try authority.register(id: AcquisitionTargetID(), connectorKind: .syndication,
+                authorizedSources: Set(sources))
+            let observations = sources.flatMap { source in
+                (0..<10).map { item in
+                    AcquisitionObservation(objectIdentity: .init(connectorKind: .syndication, namespace: "load",
+                            value: "\(targetIndex)-\(source.rawValue)-\(item)", role: .object),
+                        versionIdentity: nil, precedence: .makeCurrent, availability: .available,
+                        headline: "Story \(targetIndex)/\(item)", summary: "summary", bodyText: nil,
+                        authoredAt: date, modifiedAt: nil, observedAt: date.addingTimeInterval(Double(item)),
+                        language: nil, primaryLink: nil, searchProjection: nil, providerID: nil,
+                        memberships: [.init(sourceID: source, kind: .direct)], mediaCandidates: [])!
+                }
+            }
+            let batch = try XCTUnwrap(AcquisitionBatch(targetID: target.id, targetGeneration: 1,
+                expectedCheckpointRevision: 0, observations: observations, nextCheckpoint: nil))
+            batches.append((target.id, batch))
+        }
+
+        let admissionStart = ProcessInfo.processInfo.systemUptime
+        var admitted = 0
+        for (_, batch) in batches {
+            let receipt = try admission.admit(batch)
+            admitted += batch.observations.count - receipt.rejectedObservations.count
+        }
+        let admissionSeconds = ProcessInfo.processInfo.systemUptime - admissionStart
+
+        let examineStart = ProcessInfo.processInfo.systemUptime
+        let window = try CandidateProvider(contentStore: ContentStore(database: database))
+            .candidates(for: plan, after: nil, examinedCapacity: 10_000)
+        let examineSeconds = ProcessInfo.processInfo.systemUptime - examineStart
+
+        let publicationStart = ProcessInfo.processInfo.systemUptime
+        let candidates = window.candidates
+        XCTAssertEqual(admitted, 10_000)
+        XCTAssertEqual(candidates.count, 10_000)
+        var segmentSeconds: [Double] = []
+        let editionID = FeedEditionID(), coordinator = PublicationCoordinator(database: database)
+        for segment in 0..<10 {
+            let slice = Array(candidates[(segment * 1_000)..<((segment + 1) * 1_000)])
+            let selection = SelectionResult(editorialRevision: revision, orderedCandidates: slice,
+                supplyReport: .init(examinedCount: slice.count, nextCursor: nil, exhausted: true))
+            let prepared = LocalPreparedPublication(
+                inputs: slice.map { candidate in
+                    PublicationPreparationInput(origin: PublishedOrigin(originRecordID: candidate.originRecordID,
+                        originRevisionID: candidate.originRevisionID, sourceID: nil, providerID: nil,
+                        sourceDisplayName: "Load", providerDisplayName: nil),
+                        contentEntityID: nil, contentClusterID: nil, primaryAction: .localContentDetail,
+                        presentation: .textOnly)
+                }, cardIDs: slice.map { _ in PublicationCardID() })
+            let drafts = try PublicationPreparation.drafts(selection: selection, inputs: prepared.inputs)
+            let started = ProcessInfo.processInfo.systemUptime
+            if segment == 0 {
+                _ = try coordinator.createEdition(.init(selection: selection, drafts: drafts, editionID: editionID,
+                    publicationSchemaVersion: .init(rawValue: 1), selectionSeed: 1, editionCreatedAt: date,
+                    segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: date,
+                    cardIDs: prepared.cardIDs))
+            } else {
+                _ = try coordinator.append(.init(selection: selection, drafts: drafts, editionID: editionID,
+                    segmentID: FeedSegmentID(), segmentSeed: UInt64(segment + 1), segmentCreatedAt: date,
+                    cardIDs: prepared.cardIDs))
+            }
+            segmentSeconds.append(ProcessInfo.processInfo.systemUptime - started)
+        }
+        let publicationSeconds = ProcessInfo.processInfo.systemUptime - publicationStart
+        let sortedSegments = segmentSeconds.sorted()
+        let p95 = sortedSegments[max(0, Int(ceil(0.95 * Double(sortedSegments.count))) - 1)]
+        let admittedPerSecond = Double(admitted) / admissionSeconds
+        let examinedPerSecond = Double(window.examinedCount) / examineSeconds
+        let publishedPerSecond = 10_000 / publicationSeconds
+        print("R22 headroom sources=1000 targets=100 candidates=10000 admitted/s=\(admittedPerSecond) "
+            + "examined/s=\(examinedPerSecond) published/s=\(publishedPerSecond) p95_segment=\(p95)")
+
+        // The plan's target is useful cards, not raw examined rows: 10× the 1 card/s everyday demand, measured as
+        // published cards per second. Admission and examination rates are recorded as measured, not redefined.
+        XCTAssertEqual(admitted, 10_000)
+        XCTAssertEqual(window.examinedCount, 10_000)
+        XCTAssertGreaterThanOrEqual(publishedPerSecond, 10,
+            "10× a demanda cotidiana de 1 carta/s, medida em cartas publicadas por segundo "
+                + "(admitted/s \(admittedPerSecond), examined/s \(examinedPerSecond), p95 \(p95) s)")
     }
 
     /// The two operational bounds the plan keeps are still the documented ones, and the bootstrap still states 48.

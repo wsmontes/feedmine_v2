@@ -116,10 +116,15 @@ public struct LocalProductionSlice: Sendable {
         } else {
             readinessFacts = nil
         }
+        // P10/R17: diversity reads the facts the **publication** froze, newest first, in the same Edition. A legacy
+        // row has no fact and contributes nothing; the engine enables the tie-break only for the supported version.
+        let recentDiversity = try publicationHistory.recentDiversity(editionID: request.editionID, limit: 16)
+        let diversity = SelectionDiversityContext(recent: recentDiversity)
         // PD-4: the Edition tail precedes this segment, so alternation holds across segments.
         let selection = try selectionEngine.select(plan: request.plan, policy: request.policy,
             window: window, exposure: exposure,
-            after: try neighbor(editionID: request.editionID, tail: facts.observedTailCardID), readiness: readinessFacts)
+            after: try neighbor(editionID: request.editionID, tail: facts.observedTailCardID),
+            readiness: readinessFacts, diversity: diversity)
         // Examination advances through structural supply, independently of editorial holds.
         // A held candidate owns no occurrence or rank; a later supply reconsideration may
         // revisit it under fresh exposure and readiness facts without rewinding this walk.

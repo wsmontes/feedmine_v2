@@ -792,4 +792,53 @@ final class FeedViewportCaptureTests: XCTestCase {
     }
 #endif
 
+    /// P03/A3: "Voltar ao início" is a position intention like the scroll binding. When the head's bitmap was
+    /// released, the action must keep the reader in place and prepare the destination — never assign the position
+    /// directly and expose an empty slot. A preparation that concludes unavailable ends the pending jump and tells
+    /// the reader; a text destination is applied immediately.
+    func testReturnToStartPreparesReleasedHeadBeforeApplyingPosition() throws {
+        let ids = (0..<4).map { _ in PublicationCardID() }
+        let head = PresentationCard(id: ids[0], title: "Head", primaryText: "Image", timestamp: nil,
+            sourceID: nil, sourceDisplayName: nil, providerDisplayName: nil, layout: .hero,
+            mediaAspectRatio: 1.5, primaryActionKind: nil, image: nil)
+        let text = ids.dropFirst().map { id in
+            PresentationCard(id: id, title: "Text", primaryText: "Body", timestamp: nil, sourceID: nil,
+                sourceDisplayName: nil, providerDisplayName: nil, layout: .textOnly,
+                mediaAspectRatio: nil, primaryActionKind: nil, image: nil)
+        }
+        let edition = FeedEditionID(), sequence = UUID()
+        func snapshot(position: UInt64, unavailable: Set<PublicationCardID> = []) throws -> FeedPresentationSnapshot {
+            .init(contextKey: FeedContext(request: .main).key, editionID: edition,
+                window: try XCTUnwrap(FeedWindowSnapshot(items: [head] + text,
+                    anchor: .init(cardID: ids[1], placement: .top))),
+                provenance: .init(sequenceID: sequence, position: position),
+                unavailableImageCardIDs: unavailable)
+        }
+        let presented = try snapshot(position: 1)
+        var observations: [(ViewportObservation, RunwayActivity)] = []
+        let store = FeedScreenStore(onViewport: { observation, activity in
+            observations.append((observation, activity))
+        })
+        try store.install(.init(presentation: presented))
+        var capture = FeedVisualCapture()
+
+        FeedPositionRequest.apply(ids[0], presented: presented, capture: &capture, store: store)
+        XCTAssertNil(capture.positionID, "o topo com bitmap liberado não pode ser aplicado antes do preparo")
+        XCTAssertEqual(capture.pendingJump, ids[0])
+        XCTAssertEqual(observations.count, 1, "o preparo é um pedido explícito à sessão")
+        XCTAssertEqual(observations.first?.0.anchor.cardID, ids[0])
+        XCTAssertEqual(observations.first?.1, .stationary)
+
+        let failed = try snapshot(position: 2, unavailable: [ids[0]])
+        try store.install(.init(presentation: failed))
+        FeedPositionRequest.settle(&capture, store: store)
+        XCTAssertNil(capture.pendingJump, "um preparo concluído indisponível encerra o salto")
+        XCTAssertNil(capture.positionID, "a falha nunca vira posição aplicada")
+        XCTAssertNotNil(store.toast)
+
+        FeedPositionRequest.apply(ids[1], presented: failed, capture: &capture, store: store)
+        XCTAssertEqual(capture.positionID, ids[1], "um destino de texto está pronto e é aplicado na hora")
+        XCTAssertNil(capture.pendingJump)
+    }
+
 }

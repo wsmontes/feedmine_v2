@@ -37,6 +37,9 @@ public enum FeedDestinationGate {
         guard let presentation, presentation.window.items.contains(where: { $0.id == cardID }) else {
             return .unavailableAfterPreparation
         }
+        // Preserving the card's identity is the right answer for the reader, but it must not hide the failure:
+        // a release that could not be reconstructed is decided, not pending for another preparation.
+        if presentation.unavailableImageCardIDs.contains(cardID) { return .unavailableAfterPreparation }
         return readiness(of: cardID, in: presentation)
     }
 }

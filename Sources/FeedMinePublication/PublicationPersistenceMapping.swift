@@ -66,7 +66,8 @@ enum PublicationPersistenceMapping {
             timestampValue: card.timestamp?.value, timestampKind: card.timestamp?.kind.rawValue,
             mediaKey: media?.key.rawValue, mediaPixelWidth: media?.pixelWidth, mediaPixelHeight: media?.pixelHeight, mediaMimeType: media?.mimeType,
             renderLayout: card.renderContract.layout.rawValue, renderMediaAspectRatio: card.renderContract.mediaAspectRatio,
-            primaryActionKind: actionKind, primaryActionReference: actionReference)
+            primaryActionKind: actionKind, primaryActionReference: actionReference,
+            diversity: card.diversity)
     }
 
     static func card(_ record: PublicationStore.CardRecord) throws -> PublishedCard {
@@ -113,7 +114,7 @@ enum PublicationPersistenceMapping {
                 sourceDisplayName: record.sourceDisplayName, providerDisplayName: record.providerDisplayName),
             contentEntityID: record.contentEntityID, contentClusterID: record.contentClusterID,
             text: PublishedText(title: record.title, primaryText: record.primaryText), timestamp: timestamp,
-            media: media, renderContract: contract, primaryAction: action) else {
+            media: media, renderContract: contract, primaryAction: action, diversity: record.diversity) else {
             throw PublicationPersistenceMappingError.invalidPersistedCard
         }
         return card

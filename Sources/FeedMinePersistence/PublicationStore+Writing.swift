@@ -287,7 +287,7 @@ extension PublicationStore {
              PublicationValueCoding.date(s.createdAt, field: "created_at").databaseValue]
     }
 
-    private static let cardColumns = ["id", "origin_record_id", "origin_revision_id", "source_id", "provider_id", "source_display_name", "provider_display_name", "content_entity_id", "content_cluster_id", "title", "primary_text", "timestamp_value", "timestamp_kind", "media_key", "media_pixel_width", "media_pixel_height", "media_mime_type", "render_layout", "render_media_aspect_ratio", "primary_action_kind", "primary_action_reference"]
+    private static let cardColumns = ["id", "origin_record_id", "origin_revision_id", "source_id", "provider_id", "source_display_name", "provider_display_name", "content_entity_id", "content_cluster_id", "title", "primary_text", "timestamp_value", "timestamp_kind", "media_key", "media_pixel_width", "media_pixel_height", "media_mime_type", "render_layout", "render_media_aspect_ratio", "primary_action_kind", "primary_action_reference", "diversity_facts"]
     private static func cardValues(_ c: CardRecord) throws -> [DatabaseValue] {
         try [
             (PersistenceValueCoding.uuid(c.id.rawValue)).databaseValue,
@@ -310,7 +310,8 @@ extension PublicationStore {
             (c.renderLayout).databaseValue,
             (c.renderMediaAspectRatio).databaseValue,
             (c.primaryActionKind).databaseValue,
-            (c.primaryActionReference).databaseValue
+            (c.primaryActionReference).databaseValue,
+            (try PublicationStore.encodeDiversity(c.diversity)).databaseValue
         ]
     }
 

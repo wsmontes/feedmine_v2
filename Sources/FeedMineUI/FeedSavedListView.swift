@@ -23,6 +23,17 @@ public struct FeedSavedArticle: Identifiable, Hashable, Sendable {
         self.timestamp = timestamp
         self.availability = availability
     }
+
+    /// The row's availability: the persisted record when there is one, otherwise the published fact
+    /// (`media_key IS NULL` is the only final text-only settlement). A preparation that returned `.failed`
+    /// without a durable row is stated as failed **for this session**, because the write that would have
+    /// recorded it was refused; it is recoverable and the retry path re-attempts it.
+    public static func availability(recorded: SavedMediaAvailability?, hasPublishedMedia: Bool,
+        failedInThisSession: Bool) -> SavedMediaAvailability {
+        if failedInThisSession { return .failed }
+        if let recorded { return recorded }
+        return hasPublishedMedia ? .pending : .textOnly
+    }
 }
 
 @MainActor

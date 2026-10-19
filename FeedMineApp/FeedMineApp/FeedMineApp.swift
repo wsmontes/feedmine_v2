@@ -381,6 +381,7 @@ struct FeedMineApp: App {
                                     onOpenBox: { libraryPath.append(.box($0)) },
                                     onClose: { popSurface() })
                                     .navigationDestination(for: LibraryRoute.self) { route in
+                                        let _ = composition.association?.savedMediaRevision
                                         FeedSavedListView(
                                             articles: composition.association?.savedArticles(inBox: Self.boxID(route)) ?? [],
                                             onOpen: { cardID in composition.association?.openSaved(cardID) },
@@ -434,6 +435,7 @@ struct FeedMineApp: App {
                 .navigationDestination(for: ReaderDestination.self) { destination in
                     switch destination {
                     case .saved:
+                        let _ = composition.association?.savedMediaRevision
                         FeedSavedListView(articles: composition.association?.savedArticles() ?? [],
                             onOpen: { cardID in composition.association?.openSaved(cardID) },
                             onRetry: { cardID in composition.association?.retrySavedMedia(cardID) })
@@ -1382,7 +1384,15 @@ struct FeedMineApp: App {
                     .font(.caption2)
                     .foregroundStyle(.orange)
                     .accessibilityHidden(true)
+                // The wordmark is chrome, not reading text: it names the app and the reader never reads content
+                // through it. Left to scale to the accessibility categories it wrapped into three lines and took
+                // the header over — measured on the Release build at `accessibility-extra-extra-extra-large`
+                // (screenshot in `docs/reviews/evidence/2026-10-18-release-hitch/`), where "Feedmine" covered the
+                // whole chrome row. Capped at the default body size and kept on one line; every content text on the
+                // screen keeps scaling.
                 Text(verbatim: "Feedmine").font(.subheadline).fontWeight(.semibold)
+                    .lineLimit(1)
+                    .dynamicTypeSize(.xSmall ... .large)
                 if let label = activeContextLabel {
                     Text(verbatim: "·").font(.caption2).foregroundStyle(.secondary)
                     Text(verbatim: label)

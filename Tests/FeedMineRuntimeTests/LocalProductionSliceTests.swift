@@ -21,9 +21,10 @@ private struct LocalSliceFixture: Sendable {
             headline: n == 1 ? nil : n == 2 ? "" : " exact e\u{301} ",summary: "Summary \(n)",bodyText: nil,
             authoredAt: Date(timeIntervalSince1970: Double(version ?? n)),modifiedAt: nil,observedAt: Date(timeIntervalSince1970: 999),language: nil,primaryLink: nil,searchProjection: nil,providerID: nil)
     }
-    static func candidate(_ r: OriginRevision) -> Candidate {
+    static func candidate(_ r: OriginRevision, sources: [SourceID] = []) -> Candidate {
         Candidate(originRecordID: r.originRecordID,originRevisionID: r.id,headline: r.headline,summary: r.summary,
-            timestamp: CandidateTimestamp(value: r.authoredAt ?? r.observedAt,kind: r.authoredAt == nil ? .observed : .authored),language: r.language,providerID: r.providerID)
+            timestamp: CandidateTimestamp(value: r.authoredAt ?? r.observedAt,kind: r.authoredAt == nil ? .observed : .authored),language: r.language,providerID: r.providerID,
+            sourceIDs: Set(sources))
     }
     static func cardID(_ candidate: Candidate) -> PublicationCardID {
         let n = Int(candidate.originRevisionID.rawValue.uuidString.suffix(12),radix: 16)!
@@ -44,7 +45,9 @@ private struct LocalSliceFixture: Sendable {
             catalogGeneration: CatalogGeneration(rawValue: 1),userSelectionVersion: version,eligibilityPolicyVersion: version,scoringPolicyVersion: version,
             sequencingPolicyVersion: version,exposurePolicyVersion: version,selectionSchemaVersion: SelectionSchemaVersion(rawValue: 1))))
         editionID = FeedEditionID(rawValue: Self.uuid(41000))
-        let selected = SelectionResult(editorialRevision: plan.revision,orderedCandidates: initial.map(Self.candidate),supplyReport: SelectionSupplyReport(examinedCount: 0,nextCursor: nil,exhausted: true))
+        let selected = SelectionResult(editorialRevision: plan.revision,orderedCandidates: initial.map {
+            Self.candidate($0, sources: initialSource.map { [$0] } ?? [])
+        },supplyReport: SelectionSupplyReport(examinedCount: 0,nextCursor: nil,exhausted: true))
         let prepared = Self.prepared(selected, sourceID: initialSource)
         initialCardIDs = prepared.cardIDs
         _ = try PublicationCoordinator(database: database).createEdition(.init(selection: selected,
@@ -737,5 +740,110 @@ extension LocalProductionSliceTests {
             exposure: exposure, after: nil, readiness: stale)) {
             XCTAssertEqual($0 as? SelectionError, .readinessCoverageMismatch)
         }
+    }
+
+    /// P10/R17 (E07): the diversity facts the publication froze are read back from a **restored** database and the
+    /// engine's order follows them. The engine tests build the context by hand, and the store tests prove only the
+    /// row; this is the seam between the two — the gap the plan named as "falta comparação fim a fim entre
+    /// bancos/restaurações".
+    func testPersistedDiversityFactsSurviveRestorationAndDriveTheEngineOrder() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let sourceA = SourceID(), sourceB = SourceID()
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let f = try LocalSliceFixture(database: database, initial: [LocalSliceFixture.revision(900)],
+            initialSource: sourceA)
+        let live = try PublicationStore(database: database).recentDiversity(editionID: f.editionID, limit: 16)
+        XCTAssertFalse(live.isEmpty, "the publication froze the source fact")
+        XCTAssertTrue(live.contains { $0.sourceIDs.contains(sourceA) }, "the fact names the published source")
+        let restoredDatabase = try RuntimeDatabase(location: .init(directory: directory))
+        let restored = try PublicationStore(database: restoredDatabase).recentDiversity(editionID: f.editionID,
+            limit: 16)
+        XCTAssertEqual(restored, live, "uma restauração lê exatamente os fatos congelados")
+
+        let repeated = LocalSliceFixture.revision(7)
+        let fresh = LocalSliceFixture.revision(6)
+        try f.admit(repeated, source: sourceA)
+        try f.admit(fresh, source: sourceB)
+        let window = try CandidateProvider(contentStore: ContentStore(database: database)).candidates(for: f.plan,
+            after: nil, examinedCapacity: 10)
+        XCTAssertEqual(window.candidates.map(\.originRecordID),
+            [repeated.originRecordID, fresh.originRecordID], "the window is the newest first, before diversity")
+        let context = FeedContext(request: .main), v = PolicyVersion(rawValue: 1)
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key,
+            catalogGeneration: CatalogGeneration(rawValue: 1), userSelectionVersion: v,
+            eligibilityPolicyVersion: v, scoringPolicyVersion: v,
+            sequencingPolicyVersion: PolicyVersion(rawValue: 5), exposurePolicyVersion: v,
+            selectionSchemaVersion: SelectionSchemaVersion(rawValue: 1))
+        let plan = try XCTUnwrap(FeedPlan(context: context, revision: revision))
+        let policy = ResolvedSelectionPolicy(contextKey: revision.contextKey,
+            userSelectionVersion: revision.userSelectionVersion,
+            eligibilityPolicyVersion: revision.eligibilityPolicyVersion,
+            scoringPolicyVersion: revision.scoringPolicyVersion,
+            sequencingPolicyVersion: revision.sequencingPolicyVersion,
+            exposurePolicyVersion: revision.exposurePolicyVersion,
+            selectionSchemaVersion: revision.selectionSchemaVersion, eligibility: .structuralOnly, scoring: .equal,
+            sequencing: .recencyDescending, exposure: .none)
+        let varied = try SelectionEngine().select(plan: plan, policy: policy, window: window, exposure: nil,
+            after: nil, diversity: try XCTUnwrap(SelectionDiversityContext(recent: restored)))
+            .orderedCandidates.map(\.originRecordID)
+        XCTAssertEqual(varied, [fresh.originRecordID, repeated.originRecordID],
+            "o fato restaurado da fonte recente cede lugar à fonte nova")
+        let plain = try SelectionEngine().select(plan: plan, policy: policy, window: window, exposure: nil,
+            after: nil, diversity: nil).orderedCandidates.map(\.originRecordID)
+        XCTAssertEqual(plain, [repeated.originRecordID, fresh.originRecordID],
+            "sem os fatos, a ordem é a recência — o contexto restaurado é o que muda a ordem")
+    }
+
+    /// P09/R17 (E07): the same restored facts that reorder under version 5 leave an older Edition (version 4) exactly
+    /// in recency order. The comparison is the plan's "v5 e versões antigas" clause end to end: the facts come from
+    /// a restored database, not from a hand-built context.
+    func testRestoredDiversityFactsLeaveAnOlderSequencingEditionInRecencyOrder() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let sourceA = SourceID(), sourceB = SourceID()
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let f = try LocalSliceFixture(database: database, initial: [LocalSliceFixture.revision(900)],
+            initialSource: sourceA)
+        let restoredDatabase = try RuntimeDatabase(location: .init(directory: directory))
+        let restored = try PublicationStore(database: restoredDatabase).recentDiversity(editionID: f.editionID,
+            limit: 16)
+        XCTAssertTrue(restored.contains { $0.sourceIDs.contains(sourceA) },
+            "the restored fact names the published source")
+
+        let repeated = LocalSliceFixture.revision(9)
+        let fresh = LocalSliceFixture.revision(8)
+        try f.admit(repeated, source: sourceA)
+        try f.admit(fresh, source: sourceB)
+        let window = try CandidateProvider(contentStore: ContentStore(database: database)).candidates(for: f.plan,
+            after: nil, examinedCapacity: 10)
+        XCTAssertEqual(window.candidates.map(\.originRecordID),
+            [repeated.originRecordID, fresh.originRecordID], "the window is the newest first, before diversity")
+        let diversity = try XCTUnwrap(SelectionDiversityContext(recent: restored))
+
+        func order(sequenceVersion: UInt64) throws -> [OriginRecordID] {
+            let context = FeedContext(request: .main), v = PolicyVersion(rawValue: 1)
+            let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key,
+                catalogGeneration: CatalogGeneration(rawValue: 1), userSelectionVersion: v,
+                eligibilityPolicyVersion: v, scoringPolicyVersion: v,
+                sequencingPolicyVersion: PolicyVersion(rawValue: sequenceVersion), exposurePolicyVersion: v,
+                selectionSchemaVersion: SelectionSchemaVersion(rawValue: 1))
+            let plan = try XCTUnwrap(FeedPlan(context: context, revision: revision))
+            let policy = ResolvedSelectionPolicy(contextKey: revision.contextKey,
+                userSelectionVersion: revision.userSelectionVersion,
+                eligibilityPolicyVersion: revision.eligibilityPolicyVersion,
+                scoringPolicyVersion: revision.scoringPolicyVersion,
+                sequencingPolicyVersion: revision.sequencingPolicyVersion,
+                exposurePolicyVersion: revision.exposurePolicyVersion,
+                selectionSchemaVersion: revision.selectionSchemaVersion, eligibility: .structuralOnly,
+                scoring: .equal, sequencing: .recencyDescending, exposure: .none)
+            return try SelectionEngine().select(plan: plan, policy: policy, window: window, exposure: nil,
+                after: nil, diversity: diversity).orderedCandidates.map(\.originRecordID)
+        }
+
+        XCTAssertEqual(try order(sequenceVersion: 4), [repeated.originRecordID, fresh.originRecordID],
+            "a versão 4 ignora os fatos congelados e mantém a recência")
+        XCTAssertEqual(try order(sequenceVersion: 5), [fresh.originRecordID, repeated.originRecordID],
+            "a versão 5 usa o fato restaurado e cede lugar à fonte nova")
     }
 }

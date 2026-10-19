@@ -77,6 +77,10 @@ public actor AcquisitionCoordinator {
     public nonisolated let concurrentTargetLimit: Int
     private var selectionAfter: AcquisitionTargetID?
     private var inFlight: [AcquisitionTargetID: InFlight] = [:]
+    /// P01 retirement fence for the shared transport: while false, the coordinator starts no new execution (and a
+    /// pump adds no new work). A pull already authorized keeps running — its durable supply still counts — and a
+    /// joiner still reads that execution's result.
+    private var newStartsAllowed = true
     // One transient coverage fact per actually settled target, including empty/304/failure.
     // The coordinator is shared by cold and active-session work and lives for their association.
     // Checkpoints cannot represent an attempt that admitted nothing.
@@ -92,6 +96,12 @@ public actor AcquisitionCoordinator {
         self.backoff = backoff
         self.concurrentTargetLimit = max(1, concurrentTargetLimit)
         self.monotonicSeconds = monotonicSeconds
+    }
+
+    /// P01: closes or reopens the start fence for this association's shared transport owner. Suspending does not
+    /// stop work already authorized (R14's durable supply) and does not disturb a joiner reading it.
+    public func setNewStartsAllowed(_ allowed: Bool) {
+        newStartsAllowed = allowed
     }
 
     /// Retirement order, R20/close: a session's transport may only be invalidated after no authorized pull can
@@ -249,7 +259,7 @@ public actor AcquisitionCoordinator {
         try await withThrowingTaskGroup(of: (Int, AcquisitionExecutionResult).self) { group in
             var next = 0, running = 0, stopped = false
             func startMore() {
-                while !stopped, running < limit, next < work.count {
+                while newStartsAllowed, !stopped, running < limit, next < work.count {
                     let index = next, item = work[index]
                     group.addTask { (index, try await self.execute(item, operation: operation, trace: trace)) }
                     next += 1; running += 1
@@ -310,6 +320,12 @@ public actor AcquisitionCoordinator {
             }
             // Joiners share the original bounds/result and never remove execution ownership.
             return try await existing.task.value
+        }
+        // P01: a closed fence refuses to create the transport work, and says so as a cancelled execution rather
+        // than pretending a target was attempted.
+        guard newStartsAllowed else {
+            return AcquisitionExecutionResult(targetID: target.id, generation: target.generation,
+                stop: .cancelled, receipts: [])
         }
         guard case .start(_, let bounds) = work else {
             throw AcquisitionCoordinatorError.missingActiveExecution(target.id)

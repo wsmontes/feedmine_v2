@@ -57,8 +57,9 @@ public struct SearchExpression: Hashable, Sendable {
         return true
     }
 
-    /// Case- and diacritic-insensitive matching key; locale-independent (POSIX).
-    static func normalize(_ value: String) -> String {
+    /// Case- and diacritic-insensitive matching key; locale-independent (POSIX). Persistence and the host use
+    /// this same fold, so a query is interpreted once by the domain and never by a second, divergent parser.
+    public static func normalize(_ value: String) -> String {
         value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }

@@ -110,6 +110,70 @@ extension MediaPrefetcherTests {
         XCTAssertNotNil(prefetcher.readiness.prepared(revision))
     }
 
+    private final class TransportGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        private var afterInvalidation = 0
+        private var invalidated = false
+        func record() {
+            lock.lock(); defer { lock.unlock() }
+            count += 1
+            if invalidated { afterInvalidation += 1 }
+        }
+        func invalidate() { lock.lock(); invalidated = true; lock.unlock() }
+        var started: Int { lock.lock(); defer { lock.unlock() }; return count }
+        var startsAfterInvalidation: Int { lock.lock(); defer { lock.unlock() }; return afterInvalidation }
+    }
+
+    /// P01/A2: close happens with more revisions queued than slots. The owner's fence must refuse every queued
+    /// start **before** the shared transport is invalidated; a fetch already authorized may still finish.
+    func testClosePreventsQueuedMediaFromStartingOnInvalidatedSession() async throws {
+        let (db, assets) = try setup(), hold = Hold(), gate = TransportGate(), png = self.png
+        let first = try admit(db, urls: ["https://example.test/a.png"])
+        let second = try admit(db, urls: ["https://example.test/b.png"])
+        let third = try admit(db, urls: ["https://example.test/c.png"])
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            fetch: { url, _ in
+                gate.record()
+                if url.lastPathComponent == "a.png" { await hold.wait() }
+                return png
+            }, conditions: { _ in Self.policy() })
+        let work = Task { await prefetcher.prefetch([first, second, third]) }
+        for _ in 0..<400 where gate.started == 0 { try await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertEqual(gate.started, 1, "premissa: a primeira revisão está em voo")
+        // Real close order: the owner refuses new starts before the transport dies.
+        let retired = await prefetcher.retire(budget: .milliseconds(100))
+        XCTAssertFalse(retired, "o fetch suspenso não drena dentro do orçamento")
+        gate.invalidate()
+        await hold.release()
+        _ = await work.value
+        XCTAssertEqual(gate.startsAfterInvalidation, 0,
+            "nenhuma revisão enfileirada pode criar tarefa na sessão invalidada")
+        XCTAssertEqual(gate.started, 1)
+    }
+
+    /// P01: the budget expiring is a statement of the drain, not permission. After a failed retirement the owner
+    /// still denies saved preparation and fresh prefetch calls.
+    func testRetirementTimeoutDoesNotAuthorizeLateTransportStarts() async throws {
+        let (db, assets) = try setup(), hold = Hold(), gate = TransportGate(), png = self.png
+        let first = try admit(db, urls: ["https://example.test/a.png"])
+        let queued = try admit(db, urls: ["https://example.test/b.png"])
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            fetch: { _, _ in gate.record(); await hold.wait(); return png },
+            conditions: { _ in Self.policy() })
+        let work = Task { await prefetcher.prefetch([first]) }
+        for _ in 0..<400 where gate.started == 0 { try await Task.sleep(nanoseconds: 5_000_000) }
+        let retired = await prefetcher.retire(budget: .milliseconds(50))
+        XCTAssertFalse(retired)
+        let saved = await prefetcher.prepareForSave(queued)
+        XCTAssertEqual(saved, .deferred, "a aposentadoria não autoriza preparo novo")
+        await prefetcher.prefetch([queued])
+        XCTAssertEqual(gate.started, 1, "o timeout da drenagem não reabre o fence")
+        await hold.release()
+        _ = await work.value
+        XCTAssertEqual(gate.started, 1)
+    }
+
     /// Review F04: a timeout is retried after a delay; a definitive failure decides the image is unavailable.
     func testTransientFailureRetriesLaterDefinitiveSettles() async throws {
         let (db, assets) = try setup(), calls = Calls(), clock = Clock(), png = self.png

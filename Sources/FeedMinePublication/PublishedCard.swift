@@ -69,6 +69,9 @@ public struct PublishedCard: Hashable, Sendable {
     public let media: PublishedMediaSet
     public let renderContract: RenderContract
     public let primaryAction: PublishedPrimaryAction?
+    /// P10: the editorial facts this occurrence was published with. Frozen with identity and text; nil for history
+    /// written before the facts existed.
+    public let diversity: EditorialDiversityFact?
 
     public init?(
         id: PublicationCardID,
@@ -79,7 +82,8 @@ public struct PublishedCard: Hashable, Sendable {
         timestamp: PublishedTimestamp?,
         media: PublishedMediaSet,
         renderContract: RenderContract,
-        primaryAction: PublishedPrimaryAction?
+        primaryAction: PublishedPrimaryAction?,
+        diversity: EditorialDiversityFact? = nil
     ) {
         guard renderContract.layout != .textOnly || media.primary == nil else { return nil }
         self.id = id
@@ -91,5 +95,6 @@ public struct PublishedCard: Hashable, Sendable {
         self.media = media
         self.renderContract = renderContract
         self.primaryAction = primaryAction
+        self.diversity = diversity
     }
 }

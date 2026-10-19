@@ -33,35 +33,12 @@ struct NativeFeedViewport: ViewModifier {
     /// bitmap keeps the reader where they are and asks the session for the destination band; the prepared value
     /// applies the position (see `settlePendingJump`). VoiceOver, `scrollTo` and a programmatic jump all arrive here.
     private func requestPosition(_ id: PublicationCardID, presented: FeedPresentationSnapshot) {
-        switch FeedDestinationGate.readiness(of: id, in: presented) {
-        case .ready, .notAdmitted:
-            capture.pendingJump = nil
-            capture.positionID = id
-            capture.motion.readerCardID = id
-        case .needsPreparation:
-            capture.pendingJump = id
-            store.submitViewport(.init(anchor: .init(cardID: id, placement: .top)),
-                activity: .stationary, rendered: presented, reconciliation: true)
-        case .unavailableAfterPreparation:
-            capture.pendingJump = nil
-        }
+        FeedPositionRequest.apply(id, presented: presented, capture: &capture, store: store)
     }
 
     /// Applies a position that was waiting for its pixels, or states that the destination is unavailable.
     private func settlePendingJump() {
-        guard let destination = capture.pendingJump else { return }
-        switch FeedDestinationGate.readinessAfterPreparation(of: destination, in: store.state.presentation) {
-        case .ready:
-            capture.positionID = destination
-            capture.motion.readerCardID = destination
-            capture.pendingJump = nil
-        case .unavailableAfterPreparation:
-            capture.pendingJump = nil
-            store.showToast(text: String(localized: "Este conteúdo não está disponível"),
-                systemImage: "exclamationmark.triangle")
-        case .needsPreparation, .notAdmitted:
-            break
-        }
+        FeedPositionRequest.settle(&capture, store: store)
     }
 
     // Card bounds use the container viewport; visibleRect may also include safe-area insets.
@@ -193,6 +170,11 @@ struct NativeFeedViewport: ViewModifier {
                 capture.interaction.noteIncoming(store)
                 settlePendingJump()
             }
+            // A failed reconstruction preserves the card and the window; only the unavailable fact changes. Without
+            // observing it, the pending jump would keep waiting for a preparation the session already concluded.
+            .onChange(of: store.state.presentation?.unavailableImageCardIDs) { _, _ in
+                settlePendingJump()
+            }
             .onChange(of: ObjectIdentifier(store), initial: true) { _, _ in
                 capture.renderOwner = ObjectIdentifier(store)
             }
@@ -220,6 +202,44 @@ struct NativeFeedViewport: ViewModifier {
                 capture.renderOwner = ObjectIdentifier(store)
                 store.setReadingInteractionActive(false)
             }
+    }
+}
+
+/// One place where a requested position is accepted, deferred or refused (R04/P03). The scroll binding, VoiceOver,
+/// `scrollTo`, a programmatic jump and "Voltar ao início" all pass through here — none of them may assign the
+/// position directly, because a released head would be exposed without its pixels.
+@MainActor
+enum FeedPositionRequest {
+    static func apply(_ id: PublicationCardID, presented: FeedPresentationSnapshot,
+        capture: inout FeedVisualCapture, store: FeedScreenStore) {
+        switch FeedDestinationGate.readiness(of: id, in: presented) {
+        case .ready, .notAdmitted:
+            capture.pendingJump = nil
+            capture.positionID = id
+            capture.motion.readerCardID = id
+        case .needsPreparation:
+            capture.pendingJump = id
+            store.submitViewport(.init(anchor: .init(cardID: id, placement: .top)),
+                activity: .stationary, rendered: presented, reconciliation: true)
+        case .unavailableAfterPreparation:
+            capture.pendingJump = nil
+        }
+    }
+
+    static func settle(_ capture: inout FeedVisualCapture, store: FeedScreenStore) {
+        guard let destination = capture.pendingJump else { return }
+        switch FeedDestinationGate.readinessAfterPreparation(of: destination, in: store.state.presentation) {
+        case .ready:
+            capture.positionID = destination
+            capture.motion.readerCardID = destination
+            capture.pendingJump = nil
+        case .unavailableAfterPreparation:
+            capture.pendingJump = nil
+            store.showToast(text: String(localized: "Este conteúdo não está disponível"),
+                systemImage: "exclamationmark.triangle")
+        case .needsPreparation, .notAdmitted:
+            break
+        }
     }
 }
 

@@ -1,0 +1,56 @@
+{
+  "gate": "B01",
+  "clauses": [
+    {
+      "clause": "a jornada vigente foi caminhada nas duas fases observáveis, nos dois perfis",
+      "observed": {
+        "A": [
+          "neutral"
+        ],
+        "B": null,
+        "subjects_declared_in_the_feed": []
+      },
+      "expected": "neutral e thematic (o feed neutro, e o feed após as duas respostas dentro dele)",
+      "pass": null
+    },
+    {
+      "clause": "não depende das quatro fontes padrão",
+      "observed": [],
+      "expected": "as fontes padrão não são a única origem do feed",
+      "pass": false
+    },
+    {
+      "clause": "≥50 fontes distintas entram automaticamente no conjunto de aquisição",
+      "observed": 475,
+      "expected": ">=50 registradas no conjunto de aquisição",
+      "pass": true
+    },
+    {
+      "clause": "≥20 fontes distintas contribuem com os primeiros 300 cards",
+      "observed": 0,
+      "expected": ">=20",
+      "pass": false
+    },
+    {
+      "clause": "outro perfil muda as fontes consultadas",
+      "observed": null,
+      "expected": "segunda passagem com o perfil B",
+      "pass": null
+    }
+  ],
+  "states": {
+    "registered_in_the_acquisition_set": 475,
+    "contacted_over_the_wire": 0,
+    "published_sources": 0,
+    "published_cards": 0
+  },
+  "contacted_sources": [],
+  "contributing_sources": {},
+  "cards": 0,
+  "verdict": "FAIL",
+  "identity": {
+    "database": "/Users/wagnersilvamontes/.codex/worktrees/v2-fluidez-capacidade/feedmine_v2/bench/run/20261018T094425Z/container/Library/Application Support/FeedMine/6EC8F0C7-7762-4C77-B7BE-5860355E6DBA/runtime.sqlite",
+    "corpus_items": 15917,
+    "catalog_keys": 2305
+  }
+}

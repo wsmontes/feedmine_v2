@@ -98,7 +98,7 @@ final class RuntimeMigrationRebuildTests: XCTestCase {
             }
             mediaBefore = try queue.read { try rows($0, mediaSelect) }
             checkpointsBefore = try queue.read { try rows($0, checkpointSelect) }
-            cardsBefore = try queue.read { try rows($0, "SELECT * FROM published_cards ORDER BY id") }
+            cardsBefore = try queue.read { try rows($0, "SELECT id, segment_id, ordinal, origin_record_id, origin_revision_id, source_id, provider_id, source_display_name, provider_display_name, content_entity_id, content_cluster_id, title, primary_text, timestamp_value, timestamp_kind, media_key, media_pixel_width, media_pixel_height, media_mime_type, render_layout, render_media_aspect_ratio, primary_action_kind, primary_action_reference FROM published_cards ORDER BY id") }
             XCTAssertEqual(mediaBefore.count, 3)
             XCTAssertEqual(checkpointsBefore.count, 2)
         }
@@ -111,7 +111,7 @@ final class RuntimeMigrationRebuildTests: XCTestCase {
             return [
                 "media": try rows(mediaSelect),
                 "checkpoints": try rows(checkpointSelect),
-                "cards": try rows("SELECT * FROM published_cards ORDER BY id"),
+                "cards": try rows("SELECT id, segment_id, ordinal, origin_record_id, origin_revision_id, source_id, provider_id, source_display_name, provider_display_name, content_entity_id, content_cluster_id, title, primary_text, timestamp_value, timestamp_kind, media_key, media_pixel_width, media_pixel_height, media_mime_type, render_layout, render_media_aspect_ratio, primary_action_kind, primary_action_reference FROM published_cards ORDER BY id"),
                 "bookmarks": try rows("SELECT card_id, added_at FROM reader_bookmark_memberships WHERE list_id = '\(defaultBox)'"),
                 "fk": try rows("PRAGMA foreign_key_check"),
             ]

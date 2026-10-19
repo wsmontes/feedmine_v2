@@ -150,6 +150,25 @@ final class ResumeOnce: @unchecked Sendable {
     }
 }
 
+/// First answer wins: the drain finished, or its budget expired. The budget only bounds the wait; the retirement
+/// fence in `MediaPrefetcher` is what forbids later starts.
+private actor MediaRetirementSettlement {
+    private var result: Bool?
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    func finish(_ value: Bool) {
+        guard result == nil else { return }
+        result = value
+        continuation?.resume(returning: value)
+        continuation = nil
+    }
+
+    func wait() async -> Bool {
+        if let result { return result }
+        return await withCheckedContinuation { continuation = $0 }
+    }
+}
+
 public actor MediaPrefetcher {
     public typealias Fetch = @Sendable (_ url: URL, _ byteCeiling: Int) async throws -> Data
     public typealias Conditions = @Sendable (_ measuredBytesPerSecond: Double?) -> MediaPolicy?
@@ -170,6 +189,9 @@ public actor MediaPrefetcher {
     private var measuredBytesPerSecond: Double?
     private var transientFailures: [OriginRevisionID: Int] = [:]
     private var transientRetryAt: [OriginRevisionID: Double] = [:]
+    /// R20/P01 retirement fence. Once set, no new download may start on the shared transport; the owner refuses
+    /// new work and lets the current attempts settle (or its bounded drain expire) before the transport dies.
+    private var retired = false
 
     public init(database: RuntimeDatabase, assetDirectory: URL, readiness: MediaReadiness = MediaReadiness(),
         concurrentDownloadLimit: Int, transientRetryBaseSeconds: Double = 30,
@@ -188,17 +210,40 @@ public actor MediaPrefetcher {
         self.monotonicSeconds = monotonicSeconds
     }
 
+    /// Retirement order for the shared transport owner (P01/R20): deny every new start first, cancel the attempts
+    /// this owner already authorized, then wait **boundedly** for them. `false` states that the drain did not
+    /// settle inside the budget; it is never an authorization for a late start — the fence stays closed.
+    @discardableResult
+    public func retire(budget: Duration = .seconds(2)) async -> Bool {
+        retired = true
+        let work = Array(running.values)
+        for task in work { task.cancel() }
+        guard !work.isEmpty else { return true }
+        let settlement = MediaRetirementSettlement()
+        Task {
+            for task in work { _ = await task.value }
+            await settlement.finish(true)
+        }
+        Task {
+            try? await Task.sleep(for: budget)
+            await settlement.finish(false)
+        }
+        return await settlement.wait()
+    }
+
     /// Prepares media for the newest `limit` supply items not yet settled. Returns when all chosen
     /// items settled, or when `deadline` (monotonic seconds) passes — unfinished downloads keep
     /// running (owned by this actor, single-flight via `running`) and only help later selections.
     public func prefetchSupplyHead(limit: Int, deadline: Double? = nil) async {
-        guard limit > 0, let window = try? contentStore.candidateWindow(sourceID: nil, after: nil, examinedCapacity: limit) else { return }
+        guard !retired, limit > 0,
+            let window = try? contentStore.candidateWindow(sourceID: nil, after: nil, examinedCapacity: limit) else { return }
         await prefetch(window.records.map(\.originRevisionID), deadline: deadline)
     }
 
     /// Prepares media for an explicit, priority-ordered list of revisions (review F05: the next
     /// editorial candidates). Same deadline contract as `prefetchSupplyHead`.
     public func prefetch(_ ordered: [OriginRevisionID], deadline: Double? = nil) async {
+        guard !retired else { return }
         let now = monotonicSeconds()
         var seen = Set<OriginRevisionID>()
         let revisions = ordered.filter { revision in
@@ -235,8 +280,8 @@ public actor MediaPrefetcher {
     private func prepareAll(_ revisions: [OriginRevisionID]) async {
         await withTaskGroup(of: Void.self) { group in
             var next = 0, active = 0
-            while next < revisions.count || active > 0 {
-                while active < concurrentDownloadLimit, next < revisions.count {
+            while !retired, next < revisions.count || active > 0 {
+                while !retired, active < concurrentDownloadLimit, next < revisions.count {
                     let revision = revisions[next]
                     group.addTask { await self.prepare(revision) }
                     next += 1; active += 1
@@ -277,12 +322,14 @@ public actor MediaPrefetcher {
     /// window (INV-17) and the availability row states `pending`/`failed`/`insufficientSpace` with retry — it is
     /// never converted into a text card under the same identity.
     public func prepareForSave(_ revision: OriginRevisionID) async -> MediaPreparationOutcome {
-        await acquireSingleFlight(revision)
+        guard !retired else { return .deferred }
+        return await acquireSingleFlight(revision)
     }
 
     /// One attempt per revision at a time, shared by supply and saved preparation. A caller that arrives while
     /// work is running waits for that work rather than starting a competing download.
     private func acquireSingleFlight(_ revision: OriginRevisionID) async -> MediaPreparationOutcome {
+        guard !retired else { return .deferred }
         // Only the owner of the work removes it. A joiner that removed it after resuming could erase a *newer*
         // task registered in the same revision, and the next caller would start a second download.
         if let work = running[revision] { return await work.value }

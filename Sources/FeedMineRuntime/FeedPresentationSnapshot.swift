@@ -105,6 +105,10 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
     public let editionID: FeedEditionID
     public let window: FeedWindowSnapshot
     public let provenance: FeedProjectionProvenance
+    /// R03/R04: admitted cards whose local asset could not be reconstructed when their band was prepared. They keep
+    /// their identity, order, anchor and frozen geometry; the fact lets the destination gate state `unavailable`
+    /// instead of asking for preparation forever.
+    public let unavailableImageCardIDs: Set<PublicationCardID>
 
     init(restoredPublication: RestoredPublication, provenance: FeedProjectionProvenance) {
         self.init(contextKey: restoredPublication.edition.contextKey,
@@ -116,11 +120,13 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
             provenance: provenance)
     }
 
-    init(contextKey: ContextKey, editionID: FeedEditionID, window: FeedWindowSnapshot, provenance: FeedProjectionProvenance) {
+    init(contextKey: ContextKey, editionID: FeedEditionID, window: FeedWindowSnapshot,
+        provenance: FeedProjectionProvenance, unavailableImageCardIDs: Set<PublicationCardID> = []) {
         self.contextKey = contextKey
         self.editionID = editionID
         self.window = window
         self.provenance = provenance
+        self.unavailableImageCardIDs = unavailableImageCardIDs
     }
 }
 

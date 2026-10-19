@@ -129,6 +129,22 @@ final class SelectedSourceCoverageTests: XCTestCase {
         else { throw NSError(domain: "Expected publication", code: 1) }
         return snapshot
     }
+    nonisolated private static func admitLateLocal(_ database: RuntimeDatabase, target: AcquisitionTargetID,
+        source: SourceID) throws -> OriginRevisionID {
+        let observation = AcquisitionObservation(
+            objectIdentity: .init(connectorKind: .syndication, namespace: "late", value: UUID().uuidString, role: .object),
+            versionIdentity: nil, precedence: .makeCurrent, availability: .available, headline: "late", summary: nil,
+            bodyText: nil, authoredAt: nil, modifiedAt: nil, observedAt: Date(timeIntervalSince1970: 4),
+            language: nil, primaryLink: nil, searchProjection: nil, providerID: nil,
+            memberships: [.init(sourceID: source, kind: .direct)], mediaCandidates: [])!
+        let record = try XCTUnwrap(AcquisitionTargetAuthority(database: database).target(id: target))
+        _ = try AdmissionPolicy(database: database).admit(.init(targetID: target, targetGeneration: record.generation,
+            expectedCheckpointRevision: record.checkpointRevision, observations: [observation], nextCheckpoint: nil)!)
+        let records = try ContentStore(database: database).candidateWindow(sourceID: nil, after: nil,
+            examinedCapacity: 100).records
+        return try XCTUnwrap(records.first { $0.headline == "late" }?.originRevisionID)
+    }
+
     private func driver(_ f: Fixture) throws -> (FeedRunwayDriver, RunwayController) {
         let runway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1, releaseMarginSeconds: 0)!,
             consumptionSampleLimit: 4, replenishmentSampleLimit: 4)!)
@@ -138,6 +154,103 @@ final class SelectedSourceCoverageTests: XCTestCase {
             prepare: Self.prepare,
             selectedSourceCoverage: .init(selectedSourceCoverageFor: f.plan.context.key, editorialRevisionID: f.plan.revision.id)), runway)
     }
+
+    private func waitUntil(_ seconds: Double, _ condition: @escaping () async -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if await condition() { return true }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        return await condition()
+    }
+
+    /// Starts the gated target through the coordinator, leaving it active and suspended while the driver runs.
+    private func startSuspendedTarget(_ f: Fixture) -> Task<AcquisitionExecutionResult, Error> {
+        let bounds = AcquisitionWorkBounds(batchCapacity: 1, observationCapacityPerBatch: 100,
+            byteCapacityPerBatch: 100_000)!
+        return Task { try await f.coordinator.execute(.start(target: f.targets[2], bounds: bounds)) }
+    }
+
+    /// Codex P1: with B suspended and A's late supply ready, the publication must conclude before B is released.
+    /// Coverage starts B and returns; it never joins the active pull and never holds the driver's drain.
+    func testP8LatePublicationConcludesWhileSelectedTargetIsSuspended() async throws {
+        let entered = expectation(description: "suspended target entered")
+        let gate = CoverageGate { entered.fulfill() }
+        defer { gate.release() }
+        let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+        let suspended = startSuspendedTarget(f)
+        defer { _ = try? suspended }
+        await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+        _ = try await driver.activateCurrentPresentation(resources: resources())
+
+        let before = try PublicationStore(database: f.database).segments(editionID: first.editionID).count
+        // A reader intent that asks the existing local slice for content; the late fact arrives afterwards.
+        _ = try await driver.submitViewport(.init(anchor: first.window.anchor), activity: .explicitTailApproach,
+            resources: resources())
+        _ = try Self.admitLateLocal(f.database, target: f.targets[0].id, source: f.sources[0])
+        await driver.noteLateDurableFact()
+        let published = await waitUntil(5) {
+            (try? PublicationStore(database: f.database).segments(editionID: first.editionID).count) ?? before > before
+        }
+        XCTAssertTrue(published, "late A publishes while B is still suspended")
+    }
+
+    /// Codex P1: a late callback after background cannot use the foreground resources to start new coverage.
+    /// The authorized pull keeps running; the door to a new opportunity is closed until a foreground activation.
+    func testP9LateCallbackAfterBackgroundDoesNotStartNewCoverage() async throws {
+        let entered = expectation(description: "suspended target entered")
+        let gate = CoverageGate { entered.fulfill() }
+        defer { gate.release() }
+        let f = try fixture(gate: gate), first = try await cold(f), (driver, _) = try driver(f)
+        let suspended = startSuspendedTarget(f)
+        defer { _ = try? suspended }
+        await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+        _ = try await driver.activateCurrentPresentation(resources: resources())
+        await driver.suspendForBackground()
+        let pulls = f.journal.pulls.count
+        let segments = try PublicationStore(database: f.database).segments(editionID: first.editionID).count
+
+        _ = try Self.admitLateLocal(f.database, target: f.targets[0].id, source: f.sources[0])
+        await driver.noteLateDurableFact()
+        try? await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual(f.journal.pulls.count, pulls, "a late callback starts no new coverage")
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: first.editionID).count,
+            segments, "a late callback publishes nothing while the screen is gone")
+
+        // Foreground registers resources again and the same durable fact publishes through the one executor.
+        _ = try await driver.activateCurrentPresentation(resources: resources())
+        _ = try await driver.submitViewport(.init(anchor: first.window.anchor), activity: .explicitTailApproach,
+            resources: resources())
+        let published = await waitUntil(5) {
+            (try? PublicationStore(database: f.database).segments(editionID: first.editionID).count) ?? segments > segments
+        }
+        XCTAssertTrue(published, "the resumed foreground opportunity publishes the pending local fact")
+    }
+    /// P1: coverage never joins an execution another owner already has in flight. A direct coverage call while
+    /// the target is suspended must return; joining it would block the caller for the target's transport.
+    func testP10CoverageDoesNotJoinAnActiveSuspendedExecution() async throws {
+        let entered = expectation(description: "suspended target entered")
+        let gate = CoverageGate { entered.fulfill() }
+        defer { gate.release() }
+        let f = try fixture(gate: gate), _ = try await cold(f), (driver, runway) = try driver(f)
+        let suspended = startSuspendedTarget(f)
+        defer { _ = try? suspended }
+        await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+        _ = try await driver.activateCurrentPresentation(resources: resources())
+        let scopeValue = await f.session.currentRunwayScope(), scope = try XCTUnwrap(scopeValue)
+        let cycle = RunwayAcquisitionCycle(runway: runway, coordinator: f.coordinator)
+        let demand = AcquisitionDemand(selectedSourceCoverageFor: f.plan.context.key,
+            editorialRevisionID: f.plan.revision.id)
+        let returned = expectation(description: "coverage returns without the suspended target")
+        Task {
+            _ = try? await cycle.runCoverage(demand, scope: scope,
+                eligibleTargets: f.snapshot.eligibleTargets(for: f.plan.context),
+                resources: resources().acquisition)
+            returned.fulfill()
+        }
+        await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+    }
+
     func testP1StationaryHealthyRunwayStillExecutesRemainingSelectedTargets() async throws {
         let f = try fixture(), first = try await cold(f)
         XCTAssertEqual(Set(f.journal.pulls), Set(f.targets.prefix(2).map(\.id)))

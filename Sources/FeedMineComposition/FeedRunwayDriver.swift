@@ -43,9 +43,6 @@ public actor FeedRunwayDriver {
         /// Caller opportunities that arrived while this execution already owned the examination. Each one is an
         /// external fact and each one owns exactly one catalogue page; nothing inside the execution adds to it.
         var callerPagesPending = 0
-        /// R06: the acquisition round this execution started. It can outlive the publication loop (the loop returns
-        /// as soon as a durable supply fact arrives); retirement cancels it.
-        var round: Task<[AcquisitionExecutionResult], Error>?
     }
     private var causalExecution: CausalExecution?
     private let session: FeedSession
@@ -63,7 +60,6 @@ public actor FeedRunwayDriver {
     /// Receives the next editorial candidates (priority order) so media is prepared for exactly
     /// what the coming slice can publish (review F05).
     private let makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)?
-    private let prepareMedia: (@Sendable ([OriginRevisionID]) async -> Void)?
     private let onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)?
     private let selectedSourceCoverage: AcquisitionDemand?
     private let candidateProvider: CandidateProvider
@@ -82,13 +78,20 @@ public actor FeedRunwayDriver {
     private var backgroundRound: Task<[AcquisitionExecutionResult], Error>?
     private var backgroundRoundSettled = false
     private var backgroundRoundFailure: (any Error)?
+    /// P02: the last resource facts an explicit caller registered. A durable fact that arrives after the drain
+    /// returned re-enters the **same** causal executor with these facts; it never invents a second loop or a
+    /// new authorization. Nil after retirement/close.
+    private var latestResources: FeedRunwayDriverResources?
+    /// The one late-fact publisher. At most one task exists; facts that arrive while it runs set
+    /// `lateFactsPending`, so a burst coalesces into the next pass of the same executor.
+    private var lateOpportunity: Task<Void, Never>?
+    private var lateFactsPending = false
 
     public init(session: FeedSession, runway: RunwayController, plan: FeedPlan, policy: ResolvedSelectionPolicy,
         acquisition: SyndicationAcquisitionSnapshot, coordinator: AcquisitionCoordinator,
         monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime,
         makeSegmentIdentity: @escaping @Sendable () throws -> FeedRunwaySegmentIdentity,
         prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication,
-        prepareMedia: (@Sendable ([OriginRevisionID]) async -> Void)? = nil,
         selectedSourceCoverage: AcquisitionDemand? = nil,
         // F06-A (Codex's review): the slice must judge readiness with the **same** index the preparation closure
         // uses. Two different views of what is ready is how a suspended candidate becomes a text-only card.
@@ -105,7 +108,6 @@ public actor FeedRunwayDriver {
         self.makeMediaOpportunity = makeMediaOpportunity
         self.onDiscoveryPage = onDiscoveryPage
         self.selectedSourceCoverage = selectedSourceCoverage
-        self.prepareMedia = prepareMedia
         candidateProvider = CandidateProvider(contentStore: ContentStore(database: acquisition.runtimeDatabase))
         self.session = session; self.runway = runway; self.plan = plan; self.policy = policy; self.acquisition = acquisition
         publicationHistory = PublicationHistory(database: acquisition.runtimeDatabase)
@@ -124,9 +126,41 @@ public actor FeedRunwayDriver {
     public func noteMediaReadinessChanged() async {
         guard let scope = try? await validateCurrentScope() else { return }
         do { try await runway.noteLocalSupplyChanged(scope: scope) }
-        catch RunwayControllerError.noActiveScope {}
-        catch RunwayControllerError.scopeMismatch {}
-        catch {}
+        catch RunwayControllerError.noActiveScope { return }
+        catch RunwayControllerError.scopeMismatch { return }
+        catch { return }
+        // P02: the fact is durable now; a reader with no gesture must still receive what it unlocked.
+        scheduleLateOpportunity()
+    }
+
+    /// P02: a per-result supply notification from a still-running acquisition round. The round notifies the runway
+    /// for every durable result; this re-enters the executor immediately instead of waiting for the whole round —
+    /// and does not claim a caller page.
+    public func noteLateDurableFact() async { scheduleLateOpportunity() }
+
+    /// Coalesces a late durable fact into the existing causal executor. When an execution is already in flight the
+    /// fact requests its reconsideration; otherwise exactly one publisher task re-enters `drive` with the resource
+    /// facts the last caller registered. Retirement clears the facts and cancels this task, so a late notification
+    /// can only state canonical supply — it never reauthorizes a retired context.
+    private func scheduleLateOpportunity() {
+        guard latestResources != nil else { return }
+        if causalExecution != nil {
+            causalExecution?.reconsiderRequested = true
+            return
+        }
+        lateFactsPending = true
+        guard lateOpportunity == nil else { return }
+        lateOpportunity = Task { await self.drainLateOpportunities() }
+    }
+
+    private func drainLateOpportunities() async {
+        while lateFactsPending {
+            lateFactsPending = false
+            guard let resources = latestResources else { break }
+            guard await runway.snapshot().scope != nil else { break }
+            _ = try? await drive(resources: resources, isCallerOpportunity: false)
+        }
+        lateOpportunity = nil
     }
 
     private func validateCurrentScope() async throws -> RunwayScope? {
@@ -151,6 +185,8 @@ public actor FeedRunwayDriver {
     }
 
     public func activateCurrentPresentation(resources: FeedRunwayDriverResources) async throws -> FeedPresentationSnapshot? {
+        // P01: a new activation of this association reopens the start gate its retirement closed.
+        await coordinator.setNewStartsAllowed(true)
         guard let presentation = await session.currentPresentation(), let scope = try await validateCurrentScope() else {
             await runway.deactivate(); return nil
         }
@@ -219,7 +255,8 @@ public actor FeedRunwayDriver {
     private func executeAcquisition(_ intent: RunwayAcquisitionIntent, resources: FeedRunwayDriverResources) async throws -> Bool {
         let targets = try acquisition.eligibleTargets(for: plan.context)
         let start = try await acquisitionCycle.start(intent, eligibleTargets: targets,
-            resources: resources.acquisition, preferUnattempted: selectedSourceCoverage != nil)
+            resources: resources.acquisition, preferUnattempted: selectedSourceCoverage != nil,
+            onDurableResult: { [weak self] _ in await self?.noteLateDurableFact() })
         switch start {
         case .acceptedUnavailable(let disposition):
             settledAcquisition = .acceptedUnavailable(disposition)
@@ -227,8 +264,11 @@ public actor FeedRunwayDriver {
         case .deferred(let disposition):
             settledAcquisition = .deferred(disposition)
             return false
+        case .joining:
+            // Nothing new was authorized: the execution already running owns its result and its own late
+            // notification. This drain states no execution of its own.
+            return false
         case .round(let round):
-            causalExecution?.round = round.completion
             // R06: each durable result is a fact the moment it is admitted. The first supply change returns to the
             // publication loop **without waiting for the rest of the round**, so a fast source publishes while a
             // slow one is still pending. The round keeps running: its remaining results still notify the runway,
@@ -240,7 +280,6 @@ public actor FeedRunwayDriver {
                 return true
             }
             let results = try await round.completion.value
-            causalExecution?.round = nil
             settledAcquisition = .executed(results)
             return results.contains { $0.selectableSupplyChanged }
         }
@@ -253,17 +292,23 @@ public actor FeedRunwayDriver {
         backgroundRoundSettled = false
         backgroundRoundFailure = nil
         Task { [weak self] in
-            do { _ = try await completion.value; await self?.noteBackgroundRoundSettled(nil) }
-            catch { await self?.noteBackgroundRoundSettled(error) }
+            do {
+                let results = try await completion.value
+                await self?.noteBackgroundRoundSettled(nil,
+                    changed: results.contains { $0.selectableSupplyChanged })
+            } catch {
+                await self?.noteBackgroundRoundSettled(error, changed: false)
+            }
         }
     }
 
-    private func noteBackgroundRoundSettled(_ error: (any Error)?) {
+    private func noteBackgroundRoundSettled(_ error: (any Error)?, changed: Bool) {
         // A round that settled after retirement is not this driver's opportunity any more: the work keeps its own
         // durability, and its failure must not surface on a later scope.
         guard backgroundRound != nil else { return }
         backgroundRoundSettled = true
         backgroundRoundFailure = error
+        if error == nil, changed { scheduleLateOpportunity() }
     }
 
     private func collectSettledBackgroundRound() throws {
@@ -277,17 +322,26 @@ public actor FeedRunwayDriver {
     }
 
     public func drive(resources: FeedRunwayDriverResources) async throws -> FeedPresentationSnapshot? {
+        try await drive(resources: resources, isCallerOpportunity: true)
+    }
+
+    /// P02: a durable fact re-enters the same executor without claiming a caller opportunity (and therefore
+    /// without consuming a catalogue page). Only an explicit caller adds to `callerPagesPending`.
+    private func drive(resources: FeedRunwayDriverResources, isCallerOpportunity: Bool) async throws
+        -> FeedPresentationSnapshot? {
+        latestResources = resources
         if causalExecution != nil {
             causalExecution?.resources = resources
             causalExecution?.reconsiderRequested = true
             // A caller that coalesces into an execution already in flight is still a caller (PD8-R1): its own
             // opportunity waits for the examination that execution holds, and it owns its own page below.
-            causalExecution?.callerPagesPending += 1
+            if isCallerOpportunity { causalExecution?.callerPagesPending += 1 }
             return await session.currentPresentation()
         }
-        // Claim before the first suspension, including scope validation. The claiming call is itself a caller
-        // opportunity, so it is the first page this execution owes.
-        causalExecution = CausalExecution(resources: resources, callerPagesPending: 1)
+        // Claim before the first suspension, including scope validation. A caller owns one page; a late fact does
+        // not.
+        causalExecution = CausalExecution(resources: resources,
+            callerPagesPending: isCallerOpportunity ? 1 : 0)
         settledAcquisition = nil
         defer { causalExecution = nil }
         guard let scope = try await validateCurrentScope(), await runway.snapshot().scope == scope else {
@@ -300,7 +354,9 @@ public actor FeedRunwayDriver {
         guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
             return await session.currentPresentation()
         }
-        var resumeOutstanding = true
+        // Only an explicit caller may resume a deferred acquisition intent; a late durable fact re-enters the
+        // executor to publish what already settled, not to spend targets.
+        var resumeOutstanding = isCallerOpportunity
         while true {
             // One catalogue page per caller opportunity, outside the causal drain. Coverage may settle a page
             // through the existing planner, and the drain may conclude plenty about the catalogue, but neither
@@ -396,16 +452,12 @@ public actor FeedRunwayDriver {
                     // R07: state the coming slice's media priority without making preparation a condition of the
                     // slice. The slice selects only ready supply through the same readiness index; a candidate
                     // whose media is still pending is simply not in this publication (INV-17), and the readiness
-                    // transition wakes the existing reconsideration. The legacy closure (tests only) keeps its
-                    // explicit await; the product always provides the opportunity.
+                    // transition wakes the existing reconsideration. The opportunity is the only channel — the
+                    // product always provides it, and an execution without one has nothing to request.
                     let revisions = try await nextEditorialRevisions(after: intent.after,
                         capacity: intent.examinedCapacity, editionID: intent.scope.editionID,
                         operation: intent.operation)
-                    if let opportunity = causalExecution!.mediaOpportunity {
-                        opportunity.request(revisions)
-                    } else if let prepareMedia {
-                        await prepareMedia(revisions)
-                    }
+                    causalExecution?.mediaOpportunity?.request(revisions)
                     guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
                         try? await runway.failLocalSlice(intent, failure: .cancelled, at: monotonicNow())
                         return await session.currentPresentation()
@@ -489,14 +541,33 @@ public actor FeedRunwayDriver {
             let expiry = await coordinator.nextCoolingExpiry() else { return nil }
         return RunwayMonotonicTime(seconds: expiry)
     }
+    /// The screen is gone: no late fact may use the resources a foreground caller registered to start a new
+    /// opportunity. Authorized pulls keep running and still state durable supply; only the door to a new coverage
+    /// pass is closed until a foreground activation registers resources again.
+    public func suspendForBackground() async {
+        latestResources = nil
+        lateOpportunity?.cancel()
+        lateOpportunity = nil
+        lateFactsPending = false
+    }
+
     public func deactivate() async {
         // R06/R14: retirement stops publication and the runway, not the network work already authorized. A pull in
         // flight still admits its durable supply (the cycle's contract); its late notification is ignored by the
         // cleared scope and its completion is not observed as this driver's opportunity anymore.
-        causalExecution?.round = nil
+        // P01: the round itself must stop scheduling new targets — nil-ing a reference left a partially started
+        // plan free to create fresh URL session tasks after the transport was invalidated. The fence is the
+        // coordinator's start gate, not cancellation: an authorized pull must still state its durable supply
+        // (R14), and only `close()`'s bounded settlement cancels it before the transport dies.
         backgroundRound = nil
         backgroundRoundSettled = false
         backgroundRoundFailure = nil
+        await coordinator.setNewStartsAllowed(false)
+        // P02: no late fact may re-enter a retired context.
+        lateOpportunity?.cancel()
+        lateOpportunity = nil
+        lateFactsPending = false
+        latestResources = nil
         await runway.deactivate()
     }
 }

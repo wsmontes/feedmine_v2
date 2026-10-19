@@ -285,7 +285,135 @@ final class FeedScreenStoreTests: XCTestCase {
             // (a sessão) é quem a lembra e quem decide de quanto em quanto tempo ela vira escrita.
             "onPresentedPosition",
             // R15: cancelar a busca é uma intenção repassada ao host (que restaura a origem e o checkpoint).
-            "onCancelSearch"])
+            "onCancelSearch",
+            // P08: the unified search owns only presentation and its completion token here; the host computes the
+            // pages and executes destinations. These are values/closures, never execution mechanisms.
+            "searchPresentation", "searchSourcePage", "_isSearchingResults", "_searchResultsFailed", "_searchScope",
+            "onSelectSearchResult", "onRequestSearchPage", "onRequestSourcePage", "onSearchScopeChanged",
+            "onRequestSearchAgain"])
+    }
+
+    /// P08: a truncated source page is actionable. The surface requests the next page through the same token and
+    /// replaces only the source section; the article page already shown stays where it is.
+    @MainActor
+    func testSourceContinuationAdvancesAndPreservesArticlePage() {
+        var request: (ReaderSearchResults, Int)?
+        let store = FeedScreenStore(onViewport: { _, _ in },
+            onRequestSourcePage: { page, index in request = (page, index) })
+        let token = store.beginUnifiedSearch(term: "x", scope: .sources)
+        let source = ReaderSearchResult(id: "source:one", kind: .source, title: "One", subtitle: nil,
+            destination: .source(principal: "one", sourceID: nil))
+        let article = ReaderSearchResult(id: "article:one", kind: .article, title: "A", subtitle: nil,
+            destination: .article(cardID: nil, originRecordID: OriginRecordID()))
+        let first = ReaderSearchResults(query: "x", scope: .sources, token: token, sources: [source],
+            saved: [], articles: [article], sourceTruncated: true)
+        XCTAssertTrue(store.applyUnifiedSearch(first))
+
+        store.loadMoreSources()
+        XCTAssertEqual(request?.1, 1)
+        XCTAssertTrue(store.isSearchingResults)
+
+        let second = ReaderSearchResults(query: "x", scope: .sources, token: token, sources: [],
+            saved: [], articles: [], sourceTruncated: false)
+        XCTAssertTrue(store.appendSourcePage(second, index: 1))
+        XCTAssertEqual(store.searchResults?.sources, [])
+        XCTAssertEqual(store.searchResults?.articles, [article], "a página de artigos não é descartada")
+        XCTAssertEqual(store.searchResults?.sourceTruncated, false)
+        XCTAssertFalse(store.isSearchingResults)
+
+        // An article continuation preserves the source page and unions the authority failures.
+        let nextArticle = ReaderSearchResult(id: "article:two", kind: .article, title: "B", subtitle: nil,
+            destination: .article(cardID: nil, originRecordID: OriginRecordID()))
+        let articlePage = ReaderSearchResults(query: "x", scope: .sources, token: token, sources: [],
+            saved: [], articles: [nextArticle], sourceTruncated: false,
+            failedAuthorities: [.catalogue])
+        XCTAssertTrue(store.appendSearchPage(articlePage))
+        XCTAssertEqual(store.searchResults?.articles.map(\.id), ["article:one", "article:two"])
+        XCTAssertEqual(store.searchResults?.sources, [], "a página de artigos não apaga a seção de fontes")
+        XCTAssertEqual(store.searchResults?.failedAuthorities, [.catalogue])
+
+        // A page from an older token cannot replace the current presentation.
+        let stale = ReaderSearchResults(query: "x", scope: .sources, token: token,
+            sources: [source], saved: [], articles: [], sourceTruncated: true)
+        _ = store.beginUnifiedSearch(term: "y", scope: .sources)
+        XCTAssertFalse(store.appendSourcePage(stale, index: 2))
+    }
+
+    /// R16/P2: a restarted search with the **same** term and scope must still reject pages from the older run.
+    /// Comparing only query and scope let a late continuation from the first run enter the second one.
+    @MainActor
+    func testRestartedSearchWithSameTermRejectsStaleArticleAndSourcePages() {
+        let store = FeedScreenStore(onViewport: { _, _ in })
+        let firstToken = store.beginUnifiedSearch(term: "astro", scope: .both)
+        let article = ReaderSearchResult(id: "article:first", kind: .article, title: "First", subtitle: nil,
+            destination: .article(cardID: nil, originRecordID: OriginRecordID()))
+        let first = ReaderSearchResults(query: "astro", scope: .both, token: firstToken,
+            sources: [], saved: [], articles: [article])
+        XCTAssertTrue(store.applyUnifiedSearch(first))
+
+        // The reader restarts exactly the same query; the surface owns a new completion identity.
+        let secondToken = store.beginUnifiedSearch(term: "astro", scope: .both)
+        XCTAssertNotEqual(secondToken, firstToken)
+        let freshArticle = ReaderSearchResult(id: "article:fresh", kind: .article, title: "Fresh", subtitle: nil,
+            destination: .article(cardID: nil, originRecordID: OriginRecordID()))
+        let fresh = ReaderSearchResults(query: "astro", scope: .both, token: secondToken,
+            sources: [], saved: [], articles: [freshArticle])
+        XCTAssertTrue(store.applyUnifiedSearch(fresh))
+
+        let staleArticlePage = ReaderSearchResults(query: "astro", scope: .both, token: firstToken,
+            sources: [], saved: [], articles: [article])
+        XCTAssertFalse(store.appendSearchPage(staleArticlePage),
+            "a page from the previous run cannot be appended to the restarted search")
+        let staleSourcePage = ReaderSearchResults(query: "astro", scope: .both, token: firstToken,
+            sources: [ReaderSearchResult(id: "source:stale", kind: .source, title: "Stale", subtitle: nil,
+                destination: .source(principal: "stale", sourceID: nil))], saved: [], articles: [],
+            sourceTruncated: false)
+        XCTAssertFalse(store.appendSourcePage(staleSourcePage, index: 1),
+            "a source page from the previous run cannot replace the restarted search's sources")
+        XCTAssertEqual(store.searchResults?.articles.map(\.id), ["article:fresh"],
+            "the rejected pages changed nothing")
+        XCTAssertEqual(store.searchResults?.sources, [])
+    }
+
+    /// P08: cancelling while a search is in flight invalidates its completion, and a failed page's retry asks the
+    /// host for a new page through the existing intention.
+    @MainActor
+    func testCancelInvalidatesInFlightCompletionAndRetryRestartsTheSearch() {
+        var retries = 0
+        let store = FeedScreenStore(onViewport: { _, _ in }, onRequestSearchAgain: { retries += 1 })
+        let token = store.beginUnifiedSearch(term: "astro", scope: .both)
+        store.cancelSearch()
+        let inFlight = ReaderSearchResults(query: "astro", scope: .both, token: token,
+            sources: [], saved: [], articles: [])
+        XCTAssertFalse(store.applyUnifiedSearch(inFlight), "a conclusão em voo não reabre uma busca cancelada")
+        XCTAssertNil(store.searchResults)
+        XCTAssertFalse(store.isSearchingResults)
+
+        let restarted = store.beginUnifiedSearch(term: "astro", scope: .both)
+        XCTAssertTrue(store.isSearching, "a submissão reabre a superfície no store reconstruído")
+        XCTAssertEqual(store.searchQuery, "astro")
+        store.failUnifiedSearch(token: restarted)
+        XCTAssertTrue(store.searchResultsFailed)
+        XCTAssertFalse(store.isSearchingResults)
+        store.requestSearchAgain()
+        XCTAssertTrue(store.isSearchingResults)
+        XCTAssertFalse(store.searchResultsFailed)
+        XCTAssertEqual(retries, 1, "o retry é uma intenção do host, não um estado inventado pela superfície")
+    }
+
+    /// P2: a preparation that returned `.failed` without a durable row is shown as failed for this session,
+    /// not as the stale pending state the missing row would otherwise imply.
+    func testSavedRowStatesSessionFailureInsteadOfStalePending() {
+        XCTAssertEqual(FeedSavedArticle.availability(recorded: nil, hasPublishedMedia: true,
+            failedInThisSession: true), .failed)
+        XCTAssertEqual(FeedSavedArticle.availability(recorded: .pending, hasPublishedMedia: true,
+            failedInThisSession: true), .failed)
+        XCTAssertEqual(FeedSavedArticle.availability(recorded: nil, hasPublishedMedia: true,
+            failedInThisSession: false), .pending)
+        XCTAssertEqual(FeedSavedArticle.availability(recorded: nil, hasPublishedMedia: false,
+            failedInThisSession: false), .textOnly)
+        XCTAssertEqual(FeedSavedArticle.availability(recorded: .ready, hasPublishedMedia: true,
+            failedInThisSession: false), .ready)
     }
 
     /// No drift is possible: every accepted install republishes the projection straight from the state the

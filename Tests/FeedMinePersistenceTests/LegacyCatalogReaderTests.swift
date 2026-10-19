@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import GRDB
+import FeedMineDomain
 @testable import FeedMinePersistence
 
 /// PD-2: the v1 catalog is read-only input, paged in stable key order with v1 filters.
@@ -62,6 +63,53 @@ final class LegacyCatalogReaderTests: XCTestCase {
         XCTAssertEqual(found.requestURL, "https://b.example/feed?sig=1")
         XCTAssertEqual(found.nodeKeys, ["news/world", "science"])
         XCTAssertNil(try reader.source(key: "missing' OR 1=1 --"))
+    }
+
+    /// P07/R14: the expression is applied **before** any literal truncation. Positives may land in different
+    /// fields (title, taxonomy, tags, key), negatives exclude, diacritics fold, and the page states its truncation.
+    func testExpressionMatchesAcrossFieldsNegativesDiacriticsAndPages() throws {
+        let url = try catalog()
+        try DatabaseQueue(path: url.path).write { db in
+            try db.execute(sql: """
+                INSERT INTO catalog_source (id, key, title, declared_url, request_url, media_kind, tags, default_enabled)
+                VALUES (15, 'https://ocean.example/feed', 'Deep Ocean', 'https://ocean.example/feed',
+                        'https://ocean.example/feed', 'text', 'nature', 1),
+                       (16, 'https://astro.example/feed', 'Ocean Astrology', 'https://astro.example/feed',
+                        'https://astro.example/feed', 'text', NULL, 1),
+                       (17, 'https://es.example/feed', 'Astronomía', 'https://es.example/feed',
+                        'https://es.example/feed', 'text', NULL, 1);
+                INSERT INTO catalog_placement (source_id, node_id, node_name, opml_file, sort_order)
+                VALUES (15, 2, 'Science', 'x.opml', 0);
+                """)
+        }
+        let reader = try LegacyCatalogReader(catalogURL: url)
+
+        // "deep" is in the title and "science" only in the taxonomy: the whole-string LIKE could never see it.
+        let split = try reader.matchingSources(expression: try XCTUnwrap(SearchExpression(query: "deep science")),
+            limit: 10)
+        XCTAssertEqual(split.records.map(\.key), ["https://ocean.example/feed"])
+
+        let negative = try reader.matchingSources(
+            expression: try XCTUnwrap(SearchExpression(query: "ocean -astrology")), limit: 10)
+        XCTAssertEqual(negative.records.map(\.key), ["https://ocean.example/feed"])
+
+        let folded = try reader.matchingSources(
+            expression: try XCTUnwrap(SearchExpression(query: "astronomia")), limit: 10)
+        XCTAssertEqual(folded.records.map(\.key), ["https://es.example/feed"])
+
+        let byTag = try reader.matchingSources(
+            expression: try XCTUnwrap(SearchExpression(query: "nature")), limit: 10)
+        XCTAssertEqual(byTag.records.map(\.key), ["https://ocean.example/feed"])
+
+        // A bounded page says it is not the whole universe; the next page starts after it without duplicates.
+        let firstPage = try reader.matchingSources(
+            expression: try XCTUnwrap(SearchExpression(query: "example")), limit: 2)
+        XCTAssertTrue(firstPage.truncated)
+        XCTAssertEqual(firstPage.records.count, 2)
+        let secondPage = try reader.matchingSources(
+            expression: try XCTUnwrap(SearchExpression(query: "example")), limit: 10, offset: 2)
+        XCTAssertFalse(secondPage.truncated)
+        XCTAssertTrue(Set(firstPage.records.map(\.key)).isDisjoint(with: secondPage.records.map(\.key)))
     }
 
     /// Search order: title prefix, then v1 sort key (default_enabled, quality descending, title).

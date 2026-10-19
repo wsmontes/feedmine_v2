@@ -56,6 +56,19 @@ extension PublicationStore {
             ordinal: try f.counter("ordinal"), segmentSeed: PersistenceValueCoding.seed(try f.integer("segment_seed")),
             publicationSchemaVersion: try f.counter("publication_schema_version"), createdAt: try f.date("created_at"), cardIDs: ids)
     }
+    static func decodeDiversity(_ raw: String?) throws -> EditorialDiversityFact? {
+        guard let raw, !raw.isEmpty else { return nil }
+        guard let data = raw.data(using: .utf8) else { throw PublicationStoreError.corruption("diversity facts") }
+        do { return try JSONDecoder().decode(EditorialDiversityFact.self, from: data) }
+        catch { throw PublicationStoreError.corruption("diversity facts: \(error)") }
+    }
+
+    static func encodeDiversity(_ facts: EditorialDiversityFact?) throws -> String? {
+        guard let facts else { return nil }
+        do { return String(decoding: try JSONEncoder().encode(facts), as: UTF8.self) }
+        catch { throw PublicationStoreError.corruption("diversity facts: \(error)") }
+    }
+
     static func decodeCard(_ row: Row) throws -> CardRecord {
         let f = PublicationRecordFields(row)
         let card = CardRecord(
@@ -79,7 +92,9 @@ extension PublicationStore {
             renderLayout: try f.string("render_layout"),
             renderMediaAspectRatio: try f.optionalReal("render_media_aspect_ratio"),
             primaryActionKind: try f.optionalString("primary_action_kind"),
-            primaryActionReference: try f.optionalString("primary_action_reference")
+            primaryActionReference: try f.optionalString("primary_action_reference"),
+            // A historical schema opened by a migration test has no such column: absence is unknown, not an error.
+            diversity: try Self.decodeDiversity(f.optionalStringIfPresent("diversity_facts"))
         )
         do { try validateCard(card) } catch { throw PublicationStoreError.corruption("card payload: \(error)") }
         return card
@@ -91,6 +106,11 @@ struct PublicationRecordFields {
     let row: Row
     init(_ row: Row) { self.row = row }
     func value(_ field: String) -> DatabaseValue { row[field] }
+    /// Reads a column that may not exist in a historical schema; absent means nil, never a runtime failure.
+    func optionalStringIfPresent(_ field: String) -> String? {
+        guard row.columnNames.contains(field) else { return nil }
+        return try? optionalString(field)
+    }
     func optionalString(_ field: String) throws -> String? {
         switch value(field).storage {
         case .null: return nil

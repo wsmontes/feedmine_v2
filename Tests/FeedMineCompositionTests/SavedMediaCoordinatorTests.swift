@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import XCTest
 import FeedMineDomain
-import FeedMinePersistence
+@testable import FeedMinePersistence
 import FeedMineMedia
 import FeedMinePublication
 @testable import FeedMineRuntime
@@ -347,6 +347,30 @@ final class SavedMediaCoordinatorTests: XCTestCase {
             .availability(cardID: published.card.id)?.attempts, 2)
     }
 
+    /// A refused availability write is an explicit failure, never a promise without a durable row. The spec
+    /// (`2026-10-17-filter-consistency-and-offline-saves.md` §2) forbids a write failure producing a false success;
+    /// this trigger refuses every insert, and the coordinator must stop before preparing anything.
+    func testRefusedAvailabilityWriteReturnsFailureAndPromisesNothing() async throws {
+        let f = try fixture(), png = self.png, calls = Calls()
+        let (origin, revision) = try admit(f.database, urls: ["https://example.test/pic.png"])
+        let published = try publish(f.database, origin: origin, revision: revision,
+            mediaKey: Self.mediaKey(png))
+        try save(f.database, published.card)
+        try f.database.write { db in
+            try db.execute(sql: """
+                CREATE TRIGGER refuse_availability BEFORE INSERT ON saved_media_availability
+                BEGIN SELECT RAISE(ABORT, 'availability write refused'); END
+                """)
+        }
+        let media = prefetcher(f.database, assets: f.assets, fetch: { url, _ in calls.add(url); return png })
+        let saved = SavedMediaCoordinator(database: f.database, assetDirectory: f.assets, prefetcher: media)
+        let state = await saved.prepareSavedMedia(cardID: published.card.id)
+        XCTAssertEqual(state, .failed, "a refused write is reported as failure, not as pending or ready")
+        XCTAssertEqual(calls.count, 0, "no preparation starts without a durable pending row")
+        XCTAssertNil(try SavedMediaAvailabilityStore(database: f.database)
+            .availability(cardID: published.card.id), "no row exists, so no availability is claimed")
+    }
+
     /// The resume pass re-verifies a `ready` claim instead of trusting it forever, and never resurrects a row
     /// whose link is gone.
     func testResumeRestoresLostBytesAndForgetsUnsavedCards() async throws {
@@ -377,5 +401,49 @@ final class SavedMediaCoordinatorTests: XCTestCase {
         await saved.resume(limit: 8)
         XCTAssertNil(try SavedMediaAvailabilityStore(database: f.database)
             .availability(cardID: published.card.id))
+    }
+
+    /// E08: the system can purge an asset behind the app's back. Reopening offline must demote the `ready` claim
+    /// instead of reporting bytes that are gone; the link stays saved and the retry remains.
+    func testOfflinePurgeDemotesReadyInsteadOfClaimingAvailable() async throws {
+        let f = try fixture(), png = self.png
+        let (origin, revision) = try admit(f.database, urls: ["https://example.test/pic.png"])
+        let materialized = try ImageMaterializer(assetDirectory: f.assets).materialize(png)
+        let published = try publish(f.database, origin: origin, revision: revision,
+            mediaKey: materialized.key.rawValue)
+        try save(f.database, published.card)
+        let media = prefetcher(f.database, assets: f.assets, fetch: { _, _ in png })
+        let saved = SavedMediaCoordinator(database: f.database, assetDirectory: f.assets, prefetcher: media)
+        let preparedState = await saved.prepareSavedMedia(cardID: published.card.id)
+        XCTAssertEqual(preparedState, .ready)
+
+        // The purge: the durable file disappears while the row still says ready.
+        let digest = String(materialized.key.rawValue.dropFirst(7))
+        try FileManager.default.removeItem(at: f.assets.appendingPathComponent("sha256/\(digest)"))
+        XCTAssertNil(try ImageMaterializer(assetDirectory: f.assets).localBytes(for: materialized.key))
+
+        let reopened = try RuntimeDatabase(location: .init(directory: f.root))
+        let offlinePolicy = MediaPolicy(conditions: try XCTUnwrap(MediaDeviceConditions(heroSlotPointWidth: 2,
+            thumbnailSlotPointWidth: 1, screenScale: 1, network: .unavailable, measuredBytesPerSecond: nil,
+            waitBudgetSeconds: nil, freeStorageBytes: nil, lowPowerMode: false, thermal: .nominal)),
+            ceilings: try XCTUnwrap(MediaSafetyCeilings(maximumDownloadBytes: 1_000_000,
+                maximumPixelSide: 10_000, maximumPixelCount: 10_000_000)))
+        let offline = MediaPrefetcher(database: reopened, assetDirectory: f.assets,
+            concurrentDownloadLimit: 1,
+            fetch: { _, _ in throw MediaFetchFailure.transient },
+            conditions: { _ in offlinePolicy })
+        let reopenedSaved = SavedMediaCoordinator(database: reopened, assetDirectory: f.assets,
+            prefetcher: offline)
+        await reopenedSaved.resume(limit: 8)
+
+        let record = try XCTUnwrap(SavedMediaAvailabilityStore(database: reopened)
+            .availability(cardID: published.card.id))
+        XCTAssertFalse(record.availability.isAvailableOffline,
+            "sem os bytes, a linha não pode continuar prometendo offline")
+        XCTAssertEqual(record.availability, .pending,
+            "offline e com o asset purgado, o estado é recuperável e pendente, não ready")
+        XCTAssertTrue(try PublicationStore(database: reopened).bookmarkedCardIDs().contains(published.card.id),
+            "o purge não apaga a intenção durável do leitor")
+        XCTAssertNil(try ImageMaterializer(assetDirectory: f.assets).localBytes(for: materialized.key))
     }
 }

@@ -1,0 +1,91 @@
+# Candidate snapshot — 2026-10-19 (final; P1/P2 search+scope+saved-media fixes)
+
+recorded_at_utc: 2026-10-19T16:04:53Z
+branch: codex/v2-fluidez-capacidade
+head: b0b961a049f82fece037363a6cb0e986d556330c
+tracked_modified: 63
+untracked_not_ignored: 11
+diff_sha256: a2abcb7258cd5c7d8eb99886ce7a14c12ae98a0bc38697c22cbc6474cad63e3c
+product_diff_sha256: 367d08e3db1c574022cd5096fc1e52c754342eeb929fecd9dfc84fc35b47a5eb
+
+## Tracked modifications (path status)
+ M FeedMineApp/FeedMineApp/AppComposition.swift
+ M FeedMineApp/FeedMineApp/FeedFrameMeter.swift
+ M FeedMineApp/FeedMineApp/FeedMineApp.swift
+ M FeedMineApp/FeedMineApp/ReaderSearchResults.swift
+ M FeedMineApp/FeedMineAppTests/AddFeedTests.swift
+ M FeedMineApp/FeedMineAppTests/ArticleReadingDiagnosisUITests.swift
+ M FeedMineApp/FeedMineAppTests/CompositionTests.swift
+ M FeedMineApp/FeedMineAppTests/FeedMineUITests.swift
+ M FeedMineApp/FeedMineAppTests/ReadingSurfaceUITests.swift
+ M Sources/FeedMineAcquisition/AcquisitionCoordinator.swift
+ M Sources/FeedMineComposition/CatalogInstallation.swift
+ M Sources/FeedMineComposition/ColdFeedBootstrap.swift
+ M Sources/FeedMineComposition/FeedRunwayDriver.swift
+ M Sources/FeedMineComposition/ReaderDiscoveryTraversal.swift
+ M Sources/FeedMineComposition/RunwayAcquisitionCycle.swift
+ M Sources/FeedMineComposition/SavedMediaCoordinator.swift
+ M Sources/FeedMineComposition/StageBudgetPolicy.swift
+ M Sources/FeedMineComposition/SyndicationAcquisitionSnapshot.swift
+ M Sources/FeedMineDomain/ReaderSearchResults.swift
+ M Sources/FeedMineDomain/SearchExpression.swift
+ M Sources/FeedMineEditorial/SelectionDiversity.swift
+ M Sources/FeedMineEditorial/SelectionEngine.swift
+ M Sources/FeedMinePersistence/LegacyCatalogReader.swift
+ M Sources/FeedMinePersistence/PublicationStore+Coding.swift
+ M Sources/FeedMinePersistence/PublicationStore+Presentation.swift
+ M Sources/FeedMinePersistence/PublicationStore+Writing.swift
+ M Sources/FeedMinePersistence/PublicationStore.swift
+ M Sources/FeedMinePersistence/RuntimeMigrations.swift
+ M Sources/FeedMinePublication/PublicationCardDraft.swift
+ M Sources/FeedMinePublication/PublicationCoordinator.swift
+ M Sources/FeedMinePublication/PublicationHistory.swift
+ M Sources/FeedMinePublication/PublicationPersistenceMapping.swift
+ M Sources/FeedMinePublication/PublishedCard.swift
+ M Sources/FeedMineRuntime/FeedDestinationGate.swift
+ M Sources/FeedMineRuntime/FeedPresentationSnapshot.swift
+ M Sources/FeedMineRuntime/FeedSession.swift
+ M Sources/FeedMineRuntime/LocalProductionSlice.swift
+ M Sources/FeedMineRuntime/MediaPrefetcher.swift
+ M Sources/FeedMineRuntime/PublicationPreparation.swift
+ M Sources/FeedMineUI/FeedNativeViewport.swift
+ M Sources/FeedMineUI/FeedSavedListView.swift
+ M Sources/FeedMineUI/FeedScreen.swift
+ M Sources/FeedMineUI/FeedScreenStore.swift
+ M Sources/FeedMineUI/Reader/ReaderSearchResultsStore.swift
+ M Sources/FeedMineUI/Reader/ReaderShell.swift
+ M Tests/ArchitectureSmokeTests/FeedScreenStoreTests.swift
+ M Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.swift
+ M Tests/FeedMineCompositionTests/CatalogInstallationTests.swift
+ M Tests/FeedMineCompositionTests/ColdFeedBootstrapTests.swift
+ M Tests/FeedMineCompositionTests/FeedRunwayDriverTests.swift
+ M Tests/FeedMineCompositionTests/PipelineHeadroomTests.swift
+ M Tests/FeedMineCompositionTests/RunwayAcquisitionCycleTests.swift
+ M Tests/FeedMineCompositionTests/SavedMediaCoordinatorTests.swift
+ M Tests/FeedMineCompositionTests/SyndicationAcquisitionSnapshotTests.swift
+ M Tests/FeedMineEditorialTests/SelectionDiversityTests.swift
+ M Tests/FeedMinePersistenceTests/LegacyCatalogReaderTests.swift
+ M Tests/FeedMinePersistenceTests/MediaCandidateSchemaTests.swift
+ M Tests/FeedMinePersistenceTests/PublicationRunwayStoreTests.swift
+ M Tests/FeedMinePersistenceTests/PublicationStoreTests.swift
+ M Tests/FeedMinePersistenceTests/RuntimeMigrationRebuildTests.swift
+ M Tests/FeedMineRuntimeTests/LocalProductionSliceTests.swift
+ M Tests/FeedMineRuntimeTests/MediaPrefetcherTests.swift
+ M Tests/FeedMineRuntimeTests/RenderReadyAdmissionTests.swift
+
+## Untracked, not ignored
+?? docs/reviews/2026-10-18-v2-execucao-pos-build53.md
+?? docs/reviews/evidence/2026-10-18-b01-base53/
+?? docs/reviews/evidence/2026-10-18-b01-candidate53/
+?? docs/reviews/evidence/2026-10-18-candidate-snapshot/
+?? docs/reviews/evidence/2026-10-18-e03-rest/
+?? docs/reviews/evidence/2026-10-18-e07-e08/
+?? docs/reviews/evidence/2026-10-18-release-hitch/
+?? docs/reviews/evidence/2026-10-18-release-scroll/
+?? docs/reviews/evidence/2026-10-18-release-warm/
+?? docs/reviews/evidence/2026-10-18-suite-final/
+?? docs/reviews/evidence/2026-10-18-ui-suite/
+
+Notes:
+- Product bytes changed after the B01–B05 run (`dc63a761…`). The gates are NOT re-certified on this diff; rerun them before claiming they describe this candidate.
+- This record describes an identified working tree, not a committed candidate. Nothing here approves publication.

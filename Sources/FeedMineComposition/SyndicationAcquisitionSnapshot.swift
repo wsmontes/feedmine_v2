@@ -284,10 +284,27 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
             bindings: registration.bindings, language: updated.language)
     }
 
-    // Page snapshots carry no traversal, so connector lookup cannot recurse into its owner.
-    func discoverySnapshot(registrations: [SyndicationTargetRegistration]) throws -> SyndicationAcquisitionSnapshot {
-        try SyndicationAcquisitionSnapshot(database: database, registrations: registrations,
-            session: session, redirectCapacity: redirectCapacity, now: now)
+    // Page snapshots carry no traversal, so connector lookup cannot recurse into its owner. They do carry every
+    // fact that decides *how* a target is fetched: the session, the redirect budget, the clock and the non-public
+    // origins the composition authorized. Dropping the last one made a benchmark/discovery run fetch only the
+    // association's first page: every target discovered later was refused as a non-public host before any request.
+    func discoverySnapshot(registrations: [SyndicationTargetRegistration]) -> SyndicationAcquisitionSnapshot {
+        SyndicationAcquisitionSnapshot(pageOf: self, registrations: registrations)
+    }
+
+    private init(pageOf original: SyndicationAcquisitionSnapshot,
+        registrations: [SyndicationTargetRegistration]) {
+        discovery = nil
+        database = original.database
+        self.registrations = registrations
+        selectedSourceIDs = original.selectedSourceIDs
+        targetSignals = original.targetSignals
+        installation = original.installation
+        installedFingerprint = original.installedFingerprint
+        session = original.session
+        redirectCapacity = original.redirectCapacity
+        authorizedNonPublicOrigins = original.authorizedNonPublicOrigins
+        now = original.now
     }
 
     internal var runtimeDatabase: RuntimeDatabase { database }

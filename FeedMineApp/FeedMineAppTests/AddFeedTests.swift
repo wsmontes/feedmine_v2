@@ -14,6 +14,7 @@ import FeedMineSyndication
 /// The site and its feed are served by the app's own debug fixture, so no test touches the network. What is
 /// under test is the real path: `ReaderAddFeedStore` → `ReaderAddFeedAdapter` → `FeedLinkResolver` →
 /// `reader_imported_sources` → `TrustedFeed.resolveAvailable` → the runtime.
+#if DEBUG
 @MainActor
 final class AddFeedTests: XCTestCase {
     private func directory() -> URL {
@@ -306,3 +307,4 @@ final class AddFeedTests: XCTestCase {
             ReaderSourceIdentity.entry(mineOnly)?.source.id, "the same identity after a relaunch")
     }
 }
+#endif

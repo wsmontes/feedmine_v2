@@ -1,0 +1,134 @@
+{
+  "what": "Release A/B for the per-body SQLite read in AppComposition.filterLanguages(), plus the Dynamic Type wordmark defect found while checking exposure.",
+  "candidate": {
+    "base_commit": "b0b961a049f82fece037363a6cb0e986d556330c",
+    "built_tree": "uncommitted worktree of branch codex/v2-fluidez-capacidade (59 modified files at measurement time); b0b961a0 contains neither the catalogLanguages cache nor first_frame",
+    "branch": "codex/v2-fluidez-capacidade"
+  },
+  "device": {
+    "simulator": "0C20960F-4E63-4E9E-B8A8-5CF55C884F42",
+    "os": "iOS 26.5",
+    "display_budget_ms": 16.67
+  },
+  "harness": {
+    "driver": "/opt/homebrew/bin/axe 1.8.0 (simulator HID, no GUI window)",
+    "gesture_script": "gesture-script.txt (12 forward + 12 reverse swipes, 0.3 s each, 0.4 s apart)",
+    "fixture": "12 text-only cards, SQLite snapshot seeded by the dedicated Debug container",
+    "sampler": "macOS `sample <pid> 24 10`"
+  },
+  "frames": {
+    "before": {
+      "windows": 27,
+      "frames": 1416,
+      "late": 17,
+      "bad": 9,
+      "severe": 51,
+      "misses": 77,
+      "miss_ratio_pct": 5.44,
+      "worst_ms": 199.6
+    },
+    "after": {
+      "windows": 28,
+      "frames": 1678,
+      "late": 1,
+      "bad": 1,
+      "severe": 0,
+      "misses": 2,
+      "miss_ratio_pct": 0.12,
+      "worst_ms": 33.6
+    },
+    "window_definition": {
+      "gesture_window": "Uma janela entra na comparação quando seu timestamp `at` está entre o primeiro evento `advance` e o último `runway_completed` do trace preservado (o período em que o leitor realmente rola). As janelas de aquecimento anteriores ao primeiro gesto são excluídas.",
+      "miss_definition": "misses = late + bad + severe, exatamente como o harness os conta; a taxa é misses/frames da mesma janela.",
+      "why": "A janela do gesto é o cenário comparável entre os dois braços; o trace completo inclui aquecimento de duração diferente (14 janelas antes / 4 depois) e não é A/B.",
+      "full_trace": {
+        "before": {
+          "windows": 41,
+          "frames": 2236,
+          "late": 17,
+          "bad": 12,
+          "severe": 53,
+          "misses": 82,
+          "miss_ratio_pct": 3.67,
+          "worst_ms": 221.0
+        },
+        "after": {
+          "windows": 32,
+          "frames": 1912,
+          "late": 1,
+          "bad": 2,
+          "severe": 1,
+          "misses": 4,
+          "miss_ratio_pct": 0.21,
+          "worst_ms": 107.4
+        },
+        "note": "O pior quadro de 107,4 ms do braço \"depois\" está na primeira janela, antes de qualquer gesto; o resumo anterior o omitia sem declarar a janela. Ele é reportado aqui e excluído apenas pela regra declarada acima."
+      },
+      "recomputed_from": "frames-before.jsonl e frames-after.jsonl (eventos `frames`); reproduzível por soma direta."
+    }
+  },
+  "main_thread": {
+    "before": {
+      "on_cpu_samples": 2124,
+      "in_filterLanguages_leaf": 254,
+      "sqlite_vdbeexec_lines": 18
+    },
+    "after": {
+      "on_cpu_samples": 1899,
+      "in_filterLanguages_leaf": 0,
+      "sqlite_vdbeexec_lines": 2,
+      "dominant_instrument_cost": "mshMIGPerform (AXRuntime) 35.8% — the axe driver, not the product"
+    }
+  },
+  "first_frame": {
+    "events": {
+      "host_started": {
+        "uptime_s": "167087.208",
+        "meaning": "the host's launch pass began (AppComposition.launch), flushed at once"
+      },
+      "first_frame": {
+        "since_attach_ms": "576.4",
+        "uptime_s": "167087.281",
+        "meaning": "first presented frame, measured from the meter's attach"
+      }
+    },
+    "derived": {
+      "launch_pass_to_first_presented_frame_ms": 73,
+      "attach_to_first_presented_frame_ms": 576.4
+    },
+    "definition": "Two anchors, both on the app's own clock and both flushed immediately. `since_attach_ms` is attach → first presented frame (link.targetTimestamp). `host_started` is the launch pass. Neither is process-exec → frame: that gap is outside the sandbox and is not claimed. This run was warm — `admitted` precedes `host_started` because the window was installed during init — so the 73 ms measures the launch pass, not content acquisition.",
+    "cold_launch": "NOT_MEASURED. A video recording of the launch exists (/tmp/cold3.mp4, 62 frames) but the recording start instant is not exposed by simctl, so matching frames to wall time is not trustworthy; the clocks cannot be anchored across the simulator and the host."
+  },
+  "exposure": {
+    "ax_tree_medium": "96 nodes, 12 cards with label/role/frame (after a simulator reboot cleared a stale AX session left by the UI test run)",
+    "ax_tree_xxxl": "75 nodes, 6 cards exposed at accessibility-extra-extra-extra-large",
+    "footprint_mb": 166
+  },
+  "defect_found_and_fixed": {
+    "id": "dynamic-type-wordmark",
+    "observed": "At accessibility-extra-extra-extra-large the brand wordmark wrapped into three lines and covered the whole chrome row (dynamic-type-xxxl-before.png).",
+    "fix": "FeedMineApp.contextChip caps the wordmark at .large and keeps it on one line; content text keeps scaling.",
+    "after": "dynamic-type-xxxl-after.png"
+  },
+  "not_measured": [
+    "bitmap exposure per pixel",
+    "spoken VoiceOver output",
+    "jump-to-start control (the end panel did not appear in this fixture state)",
+    "the header with an active context label at AX XXXL (the seeded fixture selects no source, so the context menu offers only Main)",
+    "B03 (30 min) and B06 (physical iPhone)"
+  ],
+  "ui_suite": {
+    "command": "xcodebuild ... -only-testing:FeedMineUITests test",
+    "executed": 74,
+    "passed": 62,
+    "failed": 4,
+    "skipped": 8,
+    "failed_tests": [
+      "EditorialOfferBudgetUITests/testTheOfferBudgetHoldsOnTheRealCatalogue",
+      "FeedMineUITests/testRealCatalogueCardsStayReachableByScrolling",
+      "FeedMineUITests/testReopenMeasurementColdAndWarmWithTheOnboardingAlreadyConcluded",
+      "FeedMineUITests/testU2SavedListAndInAppReaderPreserveTheSession"
+    ],
+    "failure_causes": "the three catalogue/network tests require the real catalogue (unavailable on this machine); U2 is the known Safari-chrome automation gap"
+  }
+}

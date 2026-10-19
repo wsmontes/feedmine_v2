@@ -146,6 +146,44 @@ extension PublicationStore {
         }
     }
 
+    /// P10/R17: the newest frozen editorial facts of an Edition, newest first. Rows written before the facts existed
+    /// contribute nothing (unknown), and nothing here consults the latest canonical revision.
+    public func recentDiversity(editionID: FeedEditionID, limit: Int) throws -> [EditorialDiversityFact] {
+        guard limit > 0 else { return [] }
+        return try database.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT c.diversity_facts FROM published_cards c
+                JOIN feed_segments s ON s.id = c.segment_id
+                WHERE s.edition_id = ? AND c.diversity_facts IS NOT NULL
+                ORDER BY s.ordinal DESC, c.ordinal DESC LIMIT ?
+                """, arguments: [PersistenceValueCoding.uuid(editionID.rawValue), limit])
+            return try rows.compactMap { row in
+                try PublicationStore.decodeDiversity(row["diversity_facts"] as String?)
+            }
+        }
+    }
+
+    /// P07: the published rows for a bounded set of ids in **one** read. Unified search resolves its saved
+    /// occurrences here instead of one query per bookmark as the list grows. Active rows win over retired ones.
+    public func cards(ids: [PublicationCardID]) throws -> [PublicationCardID: CardRecord] {
+        guard !ids.isEmpty else { return [:] }
+        let keys = Set(ids.map { PersistenceValueCoding.uuid($0.rawValue) }).sorted()
+        return try database.read { db in
+            guard keys.count <= db.maximumStatementArgumentCount - 1 else { throw PublicationStoreError.invalidCapacity }
+            let placeholders = Array(repeating: "?", count: keys.count).joined(separator: ",")
+            var result: [PublicationCardID: CardRecord] = [:]
+            for table in ["retired_published_cards", "published_cards"] {
+                let rows = try Row.fetchAll(db, sql: "SELECT * FROM \(table) WHERE id IN (\(placeholders))",
+                    arguments: StatementArguments(keys))
+                for row in rows {
+                    let card = try Self.decodeCard(row)
+                    result[card.id] = card
+                }
+            }
+            return result
+        }
+    }
+
     public func segments(editionID: FeedEditionID) throws -> [SegmentRecord] {
         try database.read { db in
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM feed_editions WHERE id = ?", arguments: [PersistenceValueCoding.uuid(editionID.rawValue)]) else {

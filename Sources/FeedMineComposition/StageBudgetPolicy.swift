@@ -21,12 +21,43 @@ public struct StagePressureFacts: Hashable, Sendable {
     public let networkConstrained: Bool
     /// Free capacity for important usage; nil when the volume could not be asked.
     public let freeStorageBytes: Int64?
+    /// P05: the useful production actually measured for this configuration — cards the reader can use per second.
+    /// nil means "not measured", never zero. The reference rates are the plan's 1 card/s everyday consumption and
+    /// its 3 cards/s bursts; more examination than those rates justify is not authorized.
+    public let usefulCardsPerSecond: Double?
 
-    public init(thermal: Level, lowPowerMode: Bool, networkConstrained: Bool, freeStorageBytes: Int64?) {
+    public init(thermal: Level, lowPowerMode: Bool, networkConstrained: Bool, freeStorageBytes: Int64?,
+        usefulCardsPerSecond: Double? = nil) {
         self.thermal = thermal
         self.lowPowerMode = lowPowerMode
         self.networkConstrained = networkConstrained
         self.freeStorageBytes = freeStorageBytes
+        self.usefulCardsPerSecond = usefulCardsPerSecond
+    }
+}
+
+/// P05: the one volume read a stage budget needs. It is sampled **off the caller** at causal lifecycle moments and
+/// read afterwards as a snapshot, so computing a budget never performs filesystem I/O on the MainActor.
+public final class StageStorageCapacity: @unchecked Sendable {
+    public typealias Read = @Sendable () -> Int64?
+    private let lock = NSLock()
+    private var value: Int64?
+    private var samples = 0
+    private let read: Read
+
+    public init(read: @escaping Read) { self.read = read }
+
+    public var current: Int64? { lock.lock(); defer { lock.unlock() }; return value }
+    public var sampleCount: Int { lock.lock(); defer { lock.unlock() }; return samples }
+
+    /// Runs the read on a cooperative background executor. Absence stays absence (`nil`), never a guess.
+    public func refresh() async {
+        let sampled = await Task.detached(priority: .utility) { self.read() }.value
+        store(sampled)
+    }
+
+    private func store(_ sampled: Int64?) {
+        lock.lock(); value = sampled; samples += 1; lock.unlock()
     }
 }
 
@@ -62,7 +93,8 @@ public enum StageBudgetPolicy {
     public static func budget(pressure: StagePressureFacts?, settings: CollectionLaunchSettings = .init()) -> StageBudget {
         let bootstrap = bootstrap(settings)
         guard let pressure else { return bootstrap }
-        var capacity = settings.targetWorkCapacity
+        let authorized = settings.targetWorkCapacity
+        var capacity = authorized
         var examined = 32
         var bytes = 1_000_000
         switch pressure.thermal {
@@ -82,7 +114,20 @@ public enum StageBudgetPolicy {
         if pressure.lowPowerMode { capacity = max(1, min(capacity, 8)); examined = min(examined, 12) }
         if pressure.networkConstrained { capacity = max(1, capacity / 2); bytes = min(bytes, 500_000) }
         if let free = pressure.freeStorageBytes, free < 100_000_000 { bytes = min(bytes, 500_000) }
-        return .init(acquisition: .init(targetWorkCapacity: max(1, capacity),
+        // P05: measured useful yield sizes the examination window. The thresholds are the plan's own reference
+        // rates: below 1 card/s the stage is not even sustaining everyday consumption, between 1 and 3 it may
+        // sustain it, and at 3 (the burst) the bootstrap window is justified. Absent stays unknown.
+        if let yield = pressure.usefulCardsPerSecond, yield.isFinite, yield >= 0 {
+            let justified: Int
+            if yield >= 3 { justified = 32 }
+            else if yield >= 1 { justified = 16 }
+            else { justified = 8 }
+            examined = min(examined, justified)
+        }
+        // Fairness applies **between authorized targets**: an explicit zero is a denial of the resource and stays
+        // zero under every pressure combination. Pressure may only lower a positive authorization.
+        let finalCapacity = authorized == 0 ? 0 : max(1, min(capacity, authorized))
+        return .init(acquisition: .init(targetWorkCapacity: finalCapacity,
             batchCapacityPerNewExecution: 1, observationCapacityPerBatch: 32,
             byteCapacityPerBatch: max(1, bytes))!, examinedCandidateCapacity: max(8, examined))
     }

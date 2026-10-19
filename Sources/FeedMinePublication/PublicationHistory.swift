@@ -136,6 +136,12 @@ public struct PublicationHistory: Sendable {
         return restored
     }
 
+    /// P10/R17: the facts the publication froze for this Edition, newest first. The editorial context reads history,
+    /// never canonical supply.
+    public func recentDiversity(editionID: FeedEditionID, limit: Int) throws -> [EditorialDiversityFact] {
+        try publicationStore.recentDiversity(editionID: editionID, limit: limit)
+    }
+
     /// Persists a logical cursor for an explicit session checkpoint milestone.
     public func saveCursor(_ cursor: SessionCursor, updatedAt: Date) throws {
         try sessionStore.saveCheckpoint(PublicationPersistenceMapping.checkpoint(cursor, updatedAt: updatedAt))

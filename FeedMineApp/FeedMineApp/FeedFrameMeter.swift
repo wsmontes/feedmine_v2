@@ -70,6 +70,11 @@ final class FeedFrameMeter: NSObject {
     #endif
     /// The budget the frames of the window in progress were judged against — the same number the record states.
     private var budgetMilliseconds: Double = 1000.0 / 60.0
+    /// When this meter was attached, on the same clock `CADisplayLink.timestamp` uses (Core Animation's media
+    /// time). It is the anchor for `first_frame`, and it is **not** the process launch.
+    private var hostStartedAt: CFTimeInterval = 0
+    /// Stated once per process: the first frame the display actually delivered.
+    private var statedFirstFrame = false
 
     init(record: @escaping (String, [String: String]) -> Void,
         journey: (@MainActor (Double) -> String?)? = nil) {
@@ -108,6 +113,7 @@ final class FeedFrameMeter: NSObject {
         link.add(to: .main, forMode: .common)
         self.link = link
         windowStarted = link.timestamp
+        hostStartedAt = CACurrentMediaTime()
         previous = 0
     }
 
@@ -123,6 +129,20 @@ final class FeedFrameMeter: NSObject {
         // said `t=101933s`, the phone's uptime, because the clock had been read at zero). The run's own clock starts
         // with the first frame that was actually displayed.
         if startedAt == 0 { startedAt = now }
+        // The **first display-link callback after the meter was attached**, stated once in the same trace the rest of
+        // the run writes. Read it for exactly that: a display link is delivered per vsync whether or not this app
+        // composed something new, so the event proves the display is running, not that content is on screen —
+        // `admitted`/`window` are the content milestones. `targetTimestamp` is when the frame composed in this
+        // callback is presented (the same quantity the budget is built from), and the anchor is `hostStartedAt`,
+        // taken when the meter was attached in `start()`, not at process launch. So `since_attach_ms` is
+        // attach → first presented vsync. The trace is flushed immediately, so a run killed before the 64-line batch
+        // still carries the fact.
+        if !statedFirstFrame {
+            statedFirstFrame = true
+            record("first_frame", ["since_attach_ms": String(format: "%.1f",
+                (link.targetTimestamp - hostStartedAt) * 1000),
+                "uptime_s": String(format: "%.3f", ProcessInfo.processInfo.systemUptime)])
+        }
         defer { previous = now }
         guard previous > 0 else {
             windowStarted = now

@@ -262,10 +262,17 @@ public struct CatalogInstallation: Sendable {
             replacingUnusableActive: false)
     }
 
+    /// P11: one activation owner per process. Two handles naming the same directory (the app and a background
+    /// update, or two tests) must not interleave compare → copy → commit: the revision is re-checked **inside** the
+    /// serialized section, so an older offer that started earlier cannot commit last.
+    private static let activationLock = NSLock()
+
     /// Shared pointer transition for an ordinary offer and a verified recovery. A recovery is permitted to
     /// supersede an *unusable* higher revision, but never promotes an unverified catalogue.
     private func activate(manifest: CatalogManifest, catalogue: URL,
         outcome: CatalogRevisionRecord.Outcome, replacingUnusableActive: Bool) -> CatalogInstallOutcome {
+        Self.activationLock.lock()
+        defer { Self.activationLock.unlock() }
         guard let fingerprint = manifest.catalogueEntry?.sha256, !fingerprint.isEmpty else {
             return reject(.catalogueEntryMissing(manifest.revision), revision: manifest.revision, fingerprint: nil)
         }
@@ -385,6 +392,8 @@ public struct CatalogInstallation: Sendable {
     /// deletes the one it replaces.
     @discardableResult
     public func rollback() -> CatalogSnapshot? {
+        Self.activationLock.lock()
+        defer { Self.activationLock.unlock() }
         guard let previous = previousPointer(), let snapshot = verifiedSnapshot(for: previous) else { return nil }
         do {
             // Rollback has ONE commit pointer: writing previous.json first would introduce a second

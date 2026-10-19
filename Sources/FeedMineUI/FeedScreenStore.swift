@@ -44,6 +44,19 @@ public final class FeedScreenStore {
     /// tornar a posição durável na hora; ver `publishPresentedPosition`. Este store não guarda a posição: ele
     /// repassa uma entrada explícita, como todas as outras, e quem é dono do cursor (a sessão) é quem lembra dela.
     @ObservationIgnored private let onPresentedPosition: (@MainActor (PresentationAnchor, Bool) -> Void)?
+    /// P08: the unified search presentation has one owner of the completion token: `ReaderSearchResultsStore`.
+    /// This store states the loading/failure surface and the chosen scope; it never keeps a second token.
+    @ObservationIgnored private let searchPresentation = ReaderSearchResultsStore()
+    public var searchResults: ReaderSearchResults? { searchPresentation.results }
+    public private(set) var isSearchingResults = false
+    public private(set) var searchResultsFailed = false
+    public private(set) var searchScope: ReaderSearchScope = .both
+    @ObservationIgnored private var searchSourcePage = 0
+    @ObservationIgnored var onSelectSearchResult: (@MainActor (ReaderSearchResult) -> Void)?
+    @ObservationIgnored var onRequestSearchPage: (@MainActor (ReaderSearchResults, ReaderSearchCursor?) -> Void)?
+    @ObservationIgnored var onRequestSourcePage: (@MainActor (ReaderSearchResults, Int) -> Void)?
+    @ObservationIgnored var onSearchScopeChanged: (@MainActor (ReaderSearchScope) -> Void)?
+    @ObservationIgnored var onRequestSearchAgain: (@MainActor () -> Void)?
 
     /// Publica onde o viewport desenhado começa: o primeiro card cuja borda superior está dentro do viewport, preso
     /// à borda de cima. É uma posição que o leitor realmente teve na tela — inclusive quando a tela se moveu sem
@@ -71,7 +84,12 @@ public final class FeedScreenStore {
         onSubmitSearch: @escaping @MainActor (String) -> Void = { _ in },
         onCancelSearch: @escaping @MainActor () -> Void = {},
         onNavigate: @escaping @MainActor (ReaderDestination) -> Void = { _ in },
-        onPresentedPosition: (@MainActor (PresentationAnchor, Bool) -> Void)? = nil) {
+        onPresentedPosition: (@MainActor (PresentationAnchor, Bool) -> Void)? = nil,
+        onSelectSearchResult: (@MainActor (ReaderSearchResult) -> Void)? = nil,
+        onRequestSearchPage: (@MainActor (ReaderSearchResults, ReaderSearchCursor?) -> Void)? = nil,
+        onRequestSourcePage: (@MainActor (ReaderSearchResults, Int) -> Void)? = nil,
+        onSearchScopeChanged: (@MainActor (ReaderSearchScope) -> Void)? = nil,
+        onRequestSearchAgain: (@MainActor () -> Void)? = nil) {
         state = FeedPresentationState(presentation: nil)
         self.onViewport = onViewport
         self.onRenderedViewport = onRenderedViewport
@@ -82,6 +100,11 @@ public final class FeedScreenStore {
         self.onCancelSearch = onCancelSearch
         self.onNavigate = onNavigate
         self.onPresentedPosition = onPresentedPosition
+        self.onSelectSearchResult = onSelectSearchResult
+        self.onRequestSearchPage = onRequestSearchPage
+        self.onRequestSourcePage = onRequestSourcePage
+        self.onSearchScopeChanged = onSearchScopeChanged
+        self.onRequestSearchAgain = onRequestSearchAgain
     }
 
     /// V1's menu order, limited to what this host can present.
@@ -107,8 +130,121 @@ public final class FeedScreenStore {
     public func cancelSearch() {
         isSearching = false
         searchQuery = ""
+        searchPresentation.clear()
+        isSearchingResults = false
+        searchResultsFailed = false
+        searchSourcePage = 0
         // The host owns the origin and its durable reading position; the store does not.
         onCancelSearch()
+    }
+
+    // MARK: - P08: unified local search presentation
+
+    /// Starts a page and returns the completion identity the host must carry. The page owner increments the token,
+    /// so a newer term or scope invalidates every older completion in exactly one place.
+    public func beginUnifiedSearch(term: String, scope: ReaderSearchScope) -> UInt64 {
+        searchScope = scope
+        searchSourcePage = 0
+        // P1: a submission rebuilds the association and its store. The new store starts from the durable search
+        // context, so the surface is open and carries the term; without this the results existed but the reader
+        // saw the ordinary feed.
+        isSearching = true
+        searchQuery = term
+        searchPresentation.clear()
+        let token = searchPresentation.begin()
+        isSearchingResults = true
+        searchResultsFailed = false
+        return token
+    }
+
+    @discardableResult
+    public func applyUnifiedSearch(_ completion: ReaderSearchResults) -> Bool {
+        guard searchPresentation.apply(completion) else { return false }
+        searchResultsFailed = false
+        isSearchingResults = false
+        return true
+    }
+
+    /// Appends an article continuation to the page being shown.
+    @discardableResult
+    public func appendSearchPage(_ page: ReaderSearchResults) -> Bool {
+        // R16: the page must belong to the completion the surface is showing. Comparing only query and scope
+        // would accept a late page from a search that was restarted with the same term.
+        guard page.token == searchPresentation.currentToken,
+            let current = searchPresentation.results, current.query == page.query,
+            current.scope == page.scope else { return false }
+        let merged = ReaderSearchResults(query: current.query, scope: current.scope,
+            token: searchPresentation.currentToken,
+            sources: current.sources, saved: current.saved, articles: current.articles + page.articles,
+            sourceTruncated: current.sourceTruncated, articleContinuation: page.articleContinuation,
+            failedAuthorities: current.failedAuthorities.union(page.failedAuthorities))
+        guard searchPresentation.applyAppended(merged) else { return false }
+        searchResultsFailed = false
+        isSearchingResults = false
+        return true
+    }
+
+    /// Replaces the source section with the next bounded page; the article page being shown is untouched.
+    @discardableResult
+    public func appendSourcePage(_ page: ReaderSearchResults, index: Int) -> Bool {
+        // Same identity rule as article pages: a restarted search with the same term must reject the old page.
+        guard page.token == searchPresentation.currentToken,
+            let current = searchPresentation.results, current.query == page.query,
+            current.scope == page.scope else { return false }
+        let merged = ReaderSearchResults(query: current.query, scope: current.scope,
+            token: searchPresentation.currentToken,
+            sources: page.sources, saved: current.saved, articles: current.articles,
+            sourceTruncated: page.sourceTruncated, articleContinuation: current.articleContinuation,
+            failedAuthorities: current.failedAuthorities.union(page.failedAuthorities))
+        guard searchPresentation.applyAppended(merged) else { return false }
+        searchSourcePage = index
+        searchResultsFailed = false
+        isSearchingResults = false
+        return true
+    }
+
+    public func failUnifiedSearch(token: UInt64) {
+        guard token == searchPresentation.currentToken else { return }
+        isSearchingResults = false
+        searchResultsFailed = true
+    }
+
+    public func setSearchScope(_ scope: ReaderSearchScope) {
+        guard scope != searchScope else { return }
+        searchScope = scope
+        onSearchScopeChanged?(scope)
+    }
+
+    /// The host refused the durable scope change: the surface returns to the scope the context actually has,
+    /// without starting another intention.
+    public func restoreSearchScope(_ scope: ReaderSearchScope) {
+        searchScope = scope
+    }
+
+    public func selectSearchResult(_ result: ReaderSearchResult) {
+        onSelectSearchResult?(result)
+    }
+
+    /// The identity the current page belongs to; a continuation appends only within it.
+    public func currentSearchToken() -> UInt64 { searchPresentation.currentToken }
+
+    public func loadMoreSearchResults() {
+        guard let results = searchPresentation.results, let cursor = results.articleContinuation else { return }
+        isSearchingResults = true
+        onRequestSearchPage?(results, cursor)
+    }
+
+    /// P08: a truncated source page is not a dead end; the next page is requested through the same query.
+    public func loadMoreSources() {
+        guard let results = searchPresentation.results, results.sourceTruncated else { return }
+        isSearchingResults = true
+        onRequestSourcePage?(results, searchSourcePage + 1)
+    }
+
+    public func requestSearchAgain() {
+        isSearchingResults = true
+        searchResultsFailed = false
+        onRequestSearchAgain?()
     }
 
     public func navigate(to destination: ReaderDestination) {

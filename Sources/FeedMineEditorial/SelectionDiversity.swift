@@ -11,6 +11,12 @@
 import Foundation
 import FeedMineDomain
 
+public enum SelectionDiversityDimension: CaseIterable, Hashable, Sendable {
+    case source
+    case provider
+    case subjects
+}
+
 public struct SelectionDiversityContext: Hashable, Sendable {
     /// Newest first, bounded by the caller. Empty is not a context (nil is).
     public let recent: [EditorialDiversityFact]
@@ -20,21 +26,29 @@ public struct SelectionDiversityContext: Hashable, Sendable {
         self.recent = recent
     }
 
-    /// Whether `left` repeats the recent window less than `right`. Each dimension is compared only when **both**
-    /// candidates know it: an unknown dimension is skipped, so missing metadata can neither invent novelty nor
-    /// invent repetition. Newer facts weigh more (linear over the window's position).
-    func isLessRepeated(_ left: Candidate, than right: Candidate) -> Bool? {
-        for dimension in Dimension.allCases {
-            guard let leftValue = repetition(of: left, dimension),
-                let rightValue = repetition(of: right, dimension) else { continue }
-            if leftValue != rightValue { return leftValue < rightValue }
+    /// The dimensions this **set** of candidates all know. A dimension known by only some of them is excluded for
+    /// the whole comparison: absence can neither invent novelty nor invent repetition, and the order stays a total,
+    /// transitive preorder instead of changing its rules from pair to pair.
+    public func comparableDimensions(for candidates: [Candidate]) -> [SelectionDiversityDimension] {
+        SelectionDiversityDimension.allCases.filter { dimension in
+            !candidates.isEmpty && candidates.allSatisfy { repetition(of: $0, dimension) != nil }
         }
-        return nil
     }
 
-    private enum Dimension: CaseIterable { case source, provider, subjects }
+    /// A fixed-width key over the comparable dimensions. Lower is less repeated. It is computed identically for
+    /// every candidate in the group, so comparing keys lexicographically is consistent under permutation.
+    public func repetitionKey(for candidate: Candidate,
+        dimensions: [SelectionDiversityDimension]) -> [Int]? {
+        var values: [Int] = []
+        values.reserveCapacity(dimensions.count)
+        for dimension in dimensions {
+            guard let value = repetition(of: candidate, dimension) else { return nil }
+            values.append(value)
+        }
+        return values.isEmpty ? nil : values
+    }
 
-    private func repetition(of candidate: Candidate, _ dimension: Dimension) -> Int? {
+    private func repetition(of candidate: Candidate, _ dimension: SelectionDiversityDimension) -> Int? {
         switch dimension {
         case .source:
             guard !candidate.sourceIDs.isEmpty else { return nil }

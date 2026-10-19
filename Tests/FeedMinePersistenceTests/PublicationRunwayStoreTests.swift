@@ -22,6 +22,11 @@ final class PublicationRunwayStoreTests: XCTestCase {
             if entry.hasPrefix("sqlite_autoindex_media_candidates") { return "media_candidates_constraints" }
             if entry.hasPrefix("media_candidates:") { return "media_candidates" }
             if entry.hasPrefix("media_candidates_one_playback") { return "media_candidates_one_playback" }
+            // P10 added one nullable column to the card tables; its type/absence is asserted in
+            // `schemaBeforeAvailability`, and the rest of each definition stays byte-compared.
+            if entry.hasPrefix("published_cards:") || entry.hasPrefix("retired_published_cards:") {
+                return entry.replacingOccurrences(of: ", diversity_facts TEXT", with: "")
+            }
             return entry
         })
     }
@@ -59,6 +64,13 @@ final class PublicationRunwayStoreTests: XCTestCase {
             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement", "updated_at"])
         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('feed_editions') ORDER BY cid").suffix(2),
             ["context_identity", "context_key_json"])
+        for table in ["published_cards", "retired_published_cards"] {
+            let diversity = try XCTUnwrap(Row.fetchOne(db, sql: "SELECT type, \"notnull\", dflt_value, pk FROM pragma_table_info('\(table)') WHERE name = 'diversity_facts'"))
+            XCTAssertEqual(diversity["type"] as String, "TEXT")
+            XCTAssertEqual(diversity["notnull"] as Int, 0)
+            XCTAssertNil(diversity["dflt_value"] as String?)
+            XCTAssertEqual(diversity["pk"] as Int, 0)
+        }
         return Set(Self.normalizeRebuiltDefinitions(schema).map { entry in
             if entry == origin { return entry.replacingOccurrences(of: addition, with: "") }
             if entry == revision { return entry.replacingOccurrences(of: fingerprintSuffix, with: "") }
@@ -244,7 +256,8 @@ final class PublicationRunwayStoreTests: XCTestCase {
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1","reader-library-v1","reader-preferred-box-v1","media-playback-candidate-v1",
                 "reader-settings-v1","reader-imported-sources-v1","reader-curated-recipe-v1",
                 "reader-curated-recipe-revision-v1","reader-playback-positions-v1",
-                 "content-fingerprint-generation-v2","reader-source-identity-v1","saved-media-availability-v1"])
+                 "content-fingerprint-generation-v2","reader-source-identity-v1","saved-media-availability-v1",
+                 "publication-editorial-diversity-v1"])
         }
     }
 

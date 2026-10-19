@@ -585,6 +585,12 @@ public enum RuntimeMigrations {
                 JOIN published_cards c ON c.id = b.card_id;
                 """)
         }
+        // P10/R17: the editorial facts frozen with an occurrence. Nullable on purpose: history written before this
+        // schema keeps its exact past, and the editorial context treats the absence as unknown.
+        migrator.registerMigration("publication-editorial-diversity-v1") { db in
+            try db.execute(sql: "ALTER TABLE published_cards ADD COLUMN diversity_facts TEXT")
+            try db.execute(sql: "ALTER TABLE retired_published_cards ADD COLUMN diversity_facts TEXT")
+        }
         return migrator
     }
 

@@ -318,7 +318,7 @@ extension SyndicationAcquisitionSnapshot {
             installed.append(entry)
             return registration
         }
-        return (installed, try discoverySnapshot(registrations: registrations))
+        return (installed, discoverySnapshot(registrations: registrations))
     }
 
     /// Eligibility grows with the examined profile, while all nominal policy identity stays fixed.

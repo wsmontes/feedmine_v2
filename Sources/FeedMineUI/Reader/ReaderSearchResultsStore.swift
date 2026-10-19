@@ -26,9 +26,22 @@ public final class ReaderSearchResultsStore {
         return token
     }
 
+    /// The identity the current page belongs to; the host carries it into continuations.
+    public var currentToken: UInt64 { token }
+
     /// Applies a completion only if it belongs to the newest search.
     @discardableResult
     public func apply(_ completion: ReaderSearchResults) -> Bool {
+        guard completion.token == token else { return false }
+        results = completion
+        isSearching = false
+        return true
+    }
+
+    /// Installs a page that extends the current one. The same token and query/scope are required; the caller has
+    /// already merged the sections (a source page replaces sources, an article page appends articles).
+    @discardableResult
+    public func applyAppended(_ completion: ReaderSearchResults) -> Bool {
         guard completion.token == token else { return false }
         results = completion
         isSearching = false

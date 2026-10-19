@@ -208,17 +208,21 @@ public actor FeedSession {
             guard let index = items.firstIndex(where: { $0.id == id }) else { return nil }
             return max(0, index - bounds.backwardCapacity)...min(items.count - 1, index + bounds.forwardCapacity)
         }
-        let keepFirst = min(first, previousBand?.lowerBound ?? first)
-        let keepLast = max(last, previousBand?.upperBound ?? last)
+        // R03/P04: the region to protect is the **union** of the current band and the band the reader was at
+        // before. Taking the convex hull of two distant bands protected the gap between them: its ids were released
+        // from the restore, so every one of them was decoded again on a long jump, and memory/decode grew with the
+        // distance the comment promises is irrelevant.
+        let bands = Self.mergedBands([first...last, previousBand].compactMap { $0 })
         // The decision has run for this anchor, whatever it concluded: the next observation's "previous" is this one.
         previousResidencyAnchor = anchorCardID
-        let protected = keepFirst...keepLast
+        func isProtected(_ index: Int) -> Bool { bands.contains { $0.contains(index) } }
         // Cards that must hand their pixels back: outside every revealable region, still holding an image.
-        let leaving = items.indices.filter { !protected.contains($0) && items[$0].image != nil }
+        let leaving = items.indices.filter { !isProtected($0) && items[$0].image != nil }
         // Cards that come back into a revealable region having released theirs. An asset already known to be gone is
         // not decoded again: it keeps its placeholder and the session does not spin on it.
-        let returning = protected.filter {
-            releasedImageCards.contains(items[$0].id) && !unrecoverableImageCards.contains(items[$0].id)
+        let returning = items.indices.filter {
+            isProtected($0) && releasedImageCards.contains(items[$0].id)
+                && !unrecoverableImageCards.contains(items[$0].id)
         }
         guard !leaving.isEmpty || !returning.isEmpty else { return (items, false) }
         var next = items
@@ -227,25 +231,42 @@ public actor FeedSession {
             releasedImageCards.insert(next[index].id)
         }
         if !returning.isEmpty, let imageDecoder {
-            // One read for the protected region, and only the returning cards are rebuilt from it.
-            let published = try publicationHistory.window(editionID: editionID,
-                around: FeedWindowAnchor(cardID: items[keepFirst].id, placement: .center),
-                backwardCapacity: 0, forwardCapacity: keepLast - keepFirst)
-            let decoded = Dictionary(uniqueKeysWithValues: published.cards.map {
-                ($0.id, PresentationCard(publishedCard: $0, decoder: imageDecoder))
-            })
-            for index in returning {
-                guard let fresh = decoded[items[index].id] else { continue }
-                releasedImageCards.remove(items[index].id)
-                if fresh.isRenderReady {
-                    next[index] = fresh
-                } else {
-                    // MUTATION (red proof): the old exclusion of a failed reconstruction.
-                    unrecoverableImageCards.insert(items[index].id)
+            // Read each band alone, never the interval between them, and decode **only** the ids that are actually
+            // returning: a card that never left the band already holds the pixels it was published with.
+            let returningIDs = Set(returning.map { items[$0].id })
+            let indexByID = Dictionary(uniqueKeysWithValues: items.indices.map { (items[$0].id, $0) })
+            for band in bands {
+                let published = try publicationHistory.window(editionID: editionID,
+                    around: FeedWindowAnchor(cardID: items[band.lowerBound].id, placement: .center),
+                    backwardCapacity: 0, forwardCapacity: band.count - 1)
+                for card in published.cards where returningIDs.contains(card.id) {
+                    guard let index = indexByID[card.id] else { continue }
+                    let fresh = PresentationCard(publishedCard: card, decoder: imageDecoder)
+                    releasedImageCards.remove(card.id)
+                    if fresh.isRenderReady {
+                        next[index] = fresh
+                    } else {
+                        // MUTATION (red proof): the old exclusion of a failed reconstruction.
+                        unrecoverableImageCards.insert(card.id)
+                    }
                 }
             }
         }
         return (next, true)
+    }
+
+    /// Sorted, coalesced index ranges. Adjacent bands are one region; distant ones stay apart so the gap is never
+    /// read or decoded.
+    private static func mergedBands(_ ranges: [ClosedRange<Int>]) -> [ClosedRange<Int>] {
+        var merged: [ClosedRange<Int>] = []
+        for range in ranges.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            if let last = merged.last, range.lowerBound <= last.upperBound + 1 {
+                merged[merged.count - 1] = last.lowerBound...max(last.upperBound, range.upperBound)
+            } else {
+                merged.append(range)
+            }
+        }
+        return merged
     }
 
     /// R04: memory pressure keeps the reader's own reading and releases everything else. The current band around
@@ -583,11 +604,14 @@ public actor FeedSession {
     /// An unchanged effective projection retains its exact provenance, even after another read.
     private func projectWindow(contextKey: ContextKey, editionID: FeedEditionID,
         window: FeedWindowSnapshot) throws -> FeedPresentationSnapshot {
+        let unavailable = unrecoverableImageCards.intersection(window.admittedIDs)
         if let current = state?.presentation, current.contextKey == contextKey,
-            current.editionID == editionID, current.window == window { return current }
+            current.editionID == editionID, current.window == window,
+            current.unavailableImageCardIDs == unavailable { return current }
         let next = try FeedProjectionProvenance.nextPosition(after: projectionPosition)
         let snapshot = FeedPresentationSnapshot(contextKey: contextKey, editionID: editionID, window: window,
-            provenance: .init(sequenceID: projectionSequenceID, position: next))
+            provenance: .init(sequenceID: projectionSequenceID, position: next),
+            unavailableImageCardIDs: unavailable)
         projectionPosition = next
         return snapshot
     }

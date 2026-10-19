@@ -92,7 +92,10 @@ public enum PublicationPreparation {
             contentClusterID: input.contentClusterID,
             text: PublishedText(title: candidate.headline, primaryText: candidate.summary),
             timestamp: PublishedTimestamp(value: candidate.timestamp.value, kind: timestampKind),
-            media: media, renderContract: contract, primaryAction: input.primaryAction) else {
+            media: media, renderContract: contract, primaryAction: input.primaryAction,
+            // P10: frozen at publication from the candidate's own facts — never from the latest canonical revision.
+            diversity: EditorialDiversityFact(sourceIDs: Array(candidate.sourceIDs), providerID: candidate.providerID,
+                subjects: candidate.topics.identities.map(\.key))) else {
             throw PublicationPreparationError.invalidDraft(index: index)
         }
         return draft

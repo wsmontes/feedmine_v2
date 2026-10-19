@@ -60,7 +60,10 @@ public struct FeedScreen: View {
                 lens: { if let lens { lens } }) {
                 FeedSourcesEmptyStateView(appearance: appearance, onChooseSources: onChooseSources)
             }
-        } else if !store.renderedItems.isEmpty {
+        // A search context is a surface of its own: the feed window is intentionally empty while the reader is
+        // searching, but the shell — and its results page — must still be mounted. Without this the app kept the
+        // loading surface over a search that had already completed.
+        } else if store.isSearching || !store.renderedItems.isEmpty {
             ReaderShell(store: store, appearance: appearance, status: { statusChip },
                 lens: { if let lens { lens } }) {
                 feedBody
@@ -152,9 +155,11 @@ public struct FeedScreen: View {
                     #endif
                     .modifier(NativeFeedTargets())
                     // U1-F: one FeedScreen for every device; wide displays keep a readable column
-                    // instead of stretching editorial text across the window.
-                    .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
+                    // instead of stretching editorial text across the window. The cap is the **last** frame:
+                    // expanding first and capping second keeps the drawn content inside the column (the reverse
+                    // order re-expanded it to the scroll content width: 730.25 pt against 700 on iPad landscape).
                     .frame(maxWidth: .infinity)
+                    .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
                 }
                 .modifier(NativeFeedViewport(capture: $capture, store: store))
                 #if DEBUG && canImport(UIKit)
@@ -179,8 +184,8 @@ public struct FeedScreen: View {
                         endOfContentBlock(items: items)
                     }
                     .padding(FeedDesignTokens.Spacing.page)
-                    .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
                     .frame(maxWidth: .infinity)
+                    .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
                 }
                 // T3: work feedback is an overlay of constant height that never takes touches, so the
                 // scroll viewport keeps exactly the geometry the reader was admitted into.
@@ -201,7 +206,13 @@ public struct FeedScreen: View {
             FeedEndOfContentView(appearance: appearance,
                 onExploreSubjects: { onAdjustInterests() },
                 onWidenSources: { onChooseSources() },
-                onReturnToStart: { capture.positionID = items.first?.id })
+                onReturnToStart: {
+                    // P03/A3: this is a position intention like any other. Assigning `capture.positionID` here
+                    // bypassed the binding's setter and exposed a released head without preparing its pixels.
+                    guard let first = items.first?.id,
+                        let presented = capture.interaction.presentation(for: store) else { return }
+                    FeedPositionRequest.apply(first, presented: presented, capture: &capture, store: store)
+                })
         }
     }
 }

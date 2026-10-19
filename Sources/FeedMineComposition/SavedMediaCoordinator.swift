@@ -68,15 +68,16 @@ public actor SavedMediaCoordinator {
         }
         // A publication without media is text-only for good: no bytes exist to fetch, and none may be invented.
         guard let key = card.mediaKey.flatMap(PublishedMediaKey.init(rawValue:)) else {
-            try? availability.record(cardID: cardID, availability: .textOnly, at: now())
-            return .textOnly
+            return recordState(.textOnly, cardID: cardID) ? .textOnly : .failed
         }
         // Bytes already in the durable store: this is a durable unit right now.
         if localAsset(for: key) != nil {
-            try? availability.record(cardID: cardID, availability: .ready, at: now())
-            return .ready
+            return recordState(.ready, cardID: cardID) ? .ready : .failed
         }
-        try? availability.record(cardID: cardID, availability: .pending, at: now())
+        // The write precedes the work, and a failed write stops it: the reader is told the save failed instead of
+        // receiving a `pending`/`ready` no durable row backs (spec 2026-10-17 §2: a write failure cannot produce a
+        // false success). The row stays absent, so the next attempt is the retry path.
+        guard recordState(.pending, cardID: cardID) else { return .failed }
         let outcome = await prefetcher.prepareForSave(card.originRevisionID)
         // The link can disappear while the download runs. Availability belongs to a link; without one it is not
         // written back.
@@ -85,8 +86,20 @@ public actor SavedMediaCoordinator {
             return nil
         }
         let state = resolved(outcome, publishedKey: key)
-        try? availability.record(cardID: cardID, availability: state, at: now(), attempted: outcome.wasAttempted)
-        return state
+        return recordState(state, cardID: cardID, attempted: outcome.wasAttempted) ? state : .failed
+    }
+
+    /// Records one availability and states whether it became durable. A refused write is not swallowed: the caller
+    /// turns it into `.failed` instead of reporting a state the store does not hold.
+    @discardableResult
+    private func recordState(_ state: SavedMediaAvailability, cardID: PublicationCardID,
+        attempted: Bool = false) -> Bool {
+        do {
+            try availability.record(cardID: cardID, availability: state, at: now(), attempted: attempted)
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Resumes saved units whose content is not settled, bounded and sequential so a background pass never

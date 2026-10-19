@@ -36,6 +36,9 @@ final class FeedRunwayDriverTests: XCTestCase {
         let cards: [PublicationCardID]
         let source: SourceID
         let target: AcquisitionTarget
+        /// The second registered target/source: the one a two-target opportunity keeps unrelated to the first.
+        let otherTarget: AcquisitionTarget
+        let otherSource: SourceID
         let session: FeedSession
         let runway: RunwayController
         let driver: FeedRunwayDriver
@@ -127,7 +130,7 @@ final class FeedRunwayDriverTests: XCTestCase {
             monotonicNow:{ clock.next() },makeSegmentIdentity:{ .init(segmentID:FeedSegmentID(),segmentSeed:2,segmentCreatedAt:Date(timeIntervalSince1970:6))! },prepare:{ selection in
                 if cancelPrepare { throw CancellationError() }; if prepareFailure { throw Failure.preparation }; return Self.prepared(selection)
             }, onPublication: { receipt in publications.append(receipt) })
-        return .init(database:db,location:.init(directory:root),plan:p,policy:pol,edition:edition,cards:prepared.cardIDs,source:source,target:target,session:session,runway:runway,driver:driver,acquisition:acquisition,coordinator:coordinator,http:http,otherHTTP:otherHTTP,clock:clock,publications:publications)
+        return .init(database:db,location:.init(directory:root),plan:p,policy:pol,edition:edition,cards:prepared.cardIDs,source:source,target:target,otherTarget:otherTarget,otherSource:otherSource,session:session,runway:runway,driver:driver,acquisition:acquisition,coordinator:coordinator,http:http,otherHTTP:otherHTTP,clock:clock,publications:publications)
     }
     private func restore(_ f:Fixture,forward:Int = 4,resources:FeedRunwayDriverResources? = nil) async throws -> FeedPresentationSnapshot {
         let result = try await f.driver.restoreAndActivate(backwardCapacity:1,forwardCapacity:forward,resources:resources ?? self.resources())
@@ -136,6 +139,17 @@ final class FeedRunwayDriverTests: XCTestCase {
     private func tail(_ f:Fixture,_ p:FeedPresentationSnapshot,resources:FeedRunwayDriverResources? = nil) async throws -> FeedPresentationSnapshot? {
         let result = try await f.driver.submitViewport(.init(anchor:p.window.anchor),activity:.explicitTailApproach,resources:resources ?? self.resources())
         return result
+    }
+    /// Deterministic settlement wait: the coordinator removes an execution from this set only after its durable
+    /// result (admission) settled, so an empty set is a state signal — no wall-clock deadline and no sleep. The
+    /// yield loop lets the coordinator's task run; the bound only turns a hang into a visible failure.
+    private func settleAcquisitions(_ f: Fixture,
+        file: StaticString = #filePath, line: UInt = #line) async {
+        for _ in 0..<200_000 {
+            if await f.coordinator.activeExecutions().isEmpty { return }
+            await Task.yield()
+        }
+        XCTFail("acquisition executions did not settle", file: file, line: line)
     }
     /// R06: a durable result is a fact for the publication loop **before the round ends**. The fast target's supply
     /// reaches a receipt and an installation while the slow target is still suspended; the round keeps running and is
@@ -155,6 +169,118 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(f.http.calls, 1)
         f.otherHTTP.release()
         _ = try await opportunity.value
+    }
+
+    private final class TestFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage = false
+        var value: Bool { lock.lock(); defer { lock.unlock() }; return storage }
+        func set() { lock.lock(); storage = true; lock.unlock() }
+    }
+
+    /// P02/A1: the second durable source arrives **after** the first opportunity returned. The reader makes no
+    /// gesture and no cadence runs; the late fact still has to publish through the same causal executor.
+    func testSecondSourcePublishesAfterFirstDrainReturnedWithoutNewInput() async throws {
+        let f = try fixture(paused: false, otherPaused: true)
+        let plan = resources(targets: 2)
+        let initial = try await restore(f, resources: plan)
+        let returned = TestFlag()
+        let opportunity = Task { () -> FeedPresentationSnapshot? in
+            defer { returned.set() }
+            return try await self.tail(f, initial, resources: plan)
+        }
+        let firstDeadline = Date().addingTimeInterval(5)
+        while f.publications.values.isEmpty, Date() < firstDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(f.publications.values.count, 1, "a primeira fonte publica durante o drain")
+        while !returned.value, Date() < firstDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(returned.value, "a oportunidade tem de retornar com a segunda fonte ainda pendente")
+        XCTAssertEqual(f.otherHTTP.calls, 1, "premissa: a segunda fonte foi consultada e está suspensa")
+        f.otherHTTP.release()
+        let secondDeadline = Date().addingTimeInterval(5)
+        while f.publications.values.count < 2, Date() < secondDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(f.publications.values.count, 2,
+            "um resultado durável tardio publica sem gesto nem cadência")
+        _ = try await opportunity.value
+    }
+
+    /// P02/A1: a media-readiness transition is a durable fact too. A card that the first drain left pending must
+    /// publish when its readiness decision arrives, while the reader stays still.
+    func testLateMediaReadinessPublishesAfterDrainWithoutCadence() async throws {
+        let f = try fixture(registrations: false), readiness = MediaReadiness()
+        let driver = try FeedRunwayDriver(session: f.session, runway: f.runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            makeSegmentIdentity: { .init(segmentID: .init(), segmentSeed: 1, segmentCreatedAt: Date())! },
+            prepare: Self.prepared, readiness: readiness,
+            onPublication: { receipt in f.publications.append(receipt) })
+        let initial = try await driver.restoreAndActivate(backwardCapacity: 1, forwardCapacity: 4,
+            resources: resources())
+        let start = try XCTUnwrap(initial)
+        // A real reader intent: the drain walks the (empty) local walk and returns with nothing ready.
+        _ = try await driver.submitViewport(.init(anchor: start.window.anchor),
+            activity: .explicitTailApproach, resources: resources())
+        XCTAssertTrue(f.publications.values.isEmpty, "premissa: nada estava pronto no primeiro drain")
+        let revision = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source)
+        XCTAssertNil(readiness.presentation(for: revision), "premissa: a decisão de mídia ainda não chegou")
+        readiness.record(revision, nil, textDeclared: true)
+        await driver.noteMediaReadinessChanged()
+        let deadline = Date().addingTimeInterval(5)
+        while f.publications.values.isEmpty, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(f.publications.values.count, 1,
+            "a transição de prontidão publica sem uma nova oportunidade do leitor")
+        let current = await f.session.currentPresentation()
+        XCTAssertEqual(current?.window.anchor, start.window.anchor)
+    }
+
+    /// P02: two late facts that arrive together are one publisher pass: no duplicate card, no second loop.
+    func testConcurrentLateFactsUseOneCausalPublisher() async throws {
+        let f = try fixture(registrations: false), readiness = MediaReadiness()
+        let driver = try FeedRunwayDriver(session: f.session, runway: f.runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            makeSegmentIdentity: { .init(segmentID: .init(), segmentSeed: 1, segmentCreatedAt: Date())! },
+            prepare: Self.prepared, readiness: readiness,
+            onPublication: { receipt in f.publications.append(receipt) })
+        let restoredValue = try await driver.restoreAndActivate(backwardCapacity: 1,
+            forwardCapacity: 4, resources: resources())
+        let restored = try XCTUnwrap(restoredValue)
+        _ = try await driver.submitViewport(.init(anchor: restored.window.anchor),
+            activity: .explicitTailApproach, resources: resources())
+        let revision = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source)
+        readiness.record(revision, nil, textDeclared: true)
+        async let a: Void = driver.noteMediaReadinessChanged()
+        async let b: Void = driver.noteMediaReadinessChanged()
+        _ = await (a, b)
+        let deadline = Date().addingTimeInterval(5)
+        while f.publications.values.isEmpty, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(f.publications.values.count, 1, "fatos simultâneos não duplicam a publicação")
+    }
+
+    /// P02 setup: a local occurrence admitted after the first drain, with no media candidate of its own.
+    nonisolated private static func admitLateLocal(_ database: RuntimeDatabase, target: AcquisitionTargetID,
+        source: SourceID) throws -> OriginRevisionID {
+        let observation = AcquisitionObservation(
+            objectIdentity: .init(connectorKind: .syndication, namespace: "late", value: UUID().uuidString, role: .object),
+            versionIdentity: nil, precedence: .makeCurrent, availability: .available, headline: "late", summary: nil,
+            bodyText: nil, authoredAt: nil, modifiedAt: nil, observedAt: Date(timeIntervalSince1970: 4),
+            language: nil, primaryLink: nil, searchProjection: nil, providerID: nil,
+            memberships: [.init(sourceID: source, kind: .direct)], mediaCandidates: [])!
+        _ = try AdmissionPolicy(database: database).admit(.init(targetID: target, targetGeneration: 1,
+            expectedCheckpointRevision: 0, observations: [observation], nextCheckpoint: nil)!)
+        let records = try ContentStore(database: database).candidateWindow(sourceID: nil, after: nil,
+            examinedCapacity: 8).records
+        return try XCTUnwrap(records.first?.originRevisionID)
     }
 
     /// R06: a round that is still running when the scope is retired must not publish into the old scope. The
@@ -686,6 +812,149 @@ final class FeedRunwayDriverTests: XCTestCase {
         try await assertLegitimateSecondTarget(f, seededLocal: false)
     }
 
+    /// P12: while a partially started plan still holds an unattempted target, the end of the opportunity's lease
+    /// closes the coordinator's start fence. The pull already authorized keeps running and states its durable
+    /// supply (R14), but the next target's transport work must not start after the fence closes — no later
+    /// foreground opportunity can be what proves it, because the fence is only reopened there. The foreground
+    /// activation (`activateCurrentPresentation`) is the same path launch/restore uses; it reopens the fence and
+    /// resumes the work the expired lease withheld.
+    ///
+    /// The fixture's coordinator runs one target at a time, so the two-target plan is partially started by
+    /// construction: the first target is held at the transport boundary and the second has not been authorized.
+    /// Release is explicit — nothing here waits for a network timeout to stand in for the fence.
+    func testGrantExpiryStopsNewStartsAndForegroundResumes() async throws {
+        let f = try fixture(paused: true, otherPaused: false), plan = reservedResources(targets: 2)
+        defer { f.http.release() }
+        let initial = Task { try await self.restore(f, resources: plan) }
+        var started = f.http.started.makeAsyncIterator(); _ = await started.next()
+        XCTAssertEqual(f.http.calls, 1, "premissa: o primeiro alvo foi autorizado e está suspenso")
+        let active = await f.coordinator.activeExecutions()
+        XCTAssertEqual(active.map(\.targetID), [f.target.id],
+            "premissa: o plano tem dois alvos; só o primeiro começou")
+        XCTAssertEqual(f.otherHTTP.calls, 0, "premissa: o segundo alvo ainda não foi iniciado")
+        let beforeExpiryValue = await f.session.currentPresentation()
+        let beforeExpiry = try XCTUnwrap(beforeExpiryValue)
+
+        // The lease ends: the driver retires the opportunity — the owner closes the start fence before a transport
+        // can be invalidated — while the authorized pull is still in flight.
+        await f.driver.deactivate()
+        f.http.release()
+        _ = try await initial.value
+        XCTAssertEqual(f.otherHTTP.calls, 0,
+            "o fim da concessão não pode autorizar um novo start depois do fence")
+        XCTAssertEqual(f.http.calls, 1, "nenhuma nova aquisição nasceu para repetir bytes já em voo")
+        XCTAssertEqual(try ContentStore(database: f.database)
+            .candidateWindow(sourceID: f.source, after: nil, examinedCapacity: 8).records.count, 1,
+            "a pull já autorizada ainda declara o supply durável que o fence não interrompe")
+        let keptValue = await f.session.currentPresentation()
+        let kept = try XCTUnwrap(keptValue)
+        XCTAssertEqual(kept.editionID, beforeExpiry.editionID, "a edição corrente não muda na expiração")
+        XCTAssertEqual(kept.contextKey, beforeExpiry.contextKey, "o contexto corrente não muda na expiração")
+        XCTAssertEqual(kept.window.anchor, beforeExpiry.window.anchor,
+            "a âncora do leitor não pode ser substituída pela expiração")
+
+        // Attribution window: read the owner's execution state immediately before arming the foreground
+        // observation, so a start between that read and the watcher cannot be credited to the foreground.
+        let activeBeforeForeground = await f.coordinator.activeExecutions()
+        XCTAssertTrue(activeBeforeForeground.isEmpty,
+            "a rodada parcialmente iniciada termina sem ter iniciado o segundo alvo")
+
+        // Foreground is a new opportunity through the real activation path: it reopens the fence the expiry closed
+        // and the unattempted target finally starts. The start is observed by the transport, not inferred from the
+        // driver returning.
+        let resumedStart = expectation(description: "foreground starts the target the expired lease withheld")
+        let watcher = Task {
+            var iterator = f.otherHTTP.started.makeAsyncIterator()
+            if await iterator.next() != nil { resumedStart.fulfill() }
+        }
+        defer { watcher.cancel() }
+        let resumed = try await f.driver.activateCurrentPresentation(resources: plan)
+        let returned = try XCTUnwrap(resumed, "a ativação de foreground devolve a apresentação corrente")
+        XCTAssertEqual(returned.editionID, beforeExpiry.editionID)
+        XCTAssertEqual(returned.contextKey, beforeExpiry.contextKey)
+        XCTAssertEqual(returned.window.anchor, beforeExpiry.window.anchor,
+            "o foreground retoma a mesma apresentação, sem inventar âncora")
+        let waited = await XCTWaiter.fulfillment(of: [resumedStart], timeout: 2)
+        XCTAssertEqual(waited, .completed, "o foreground retoma o alvo retido pela concessão expirada")
+
+        // The resumed target must have produced durable supply, not merely a transport start: the deadline above
+        // proves the start; this waits on coordinator state (inFlight is cleared only after admission) and reads
+        // the admitted window of the source the expired lease had withheld.
+        await settleAcquisitions(f)
+        XCTAssertGreaterThanOrEqual(try ContentStore(database: f.database)
+            .candidateWindow(sourceID: f.otherSource, after: nil, examinedCapacity: 8).records.count, 1,
+            "o alvo retomado pelo foreground entrega supply durável ao owner")
+    }
+
+    /// P12: a context return activates the local presentation while an unrelated source's pull — started by the
+    /// previous opportunity — is still suspended at the transport boundary. Completion must come from the local
+    /// navigation and from the existing join rule (an execution another owner already runs is not this
+    /// opportunity's work), never from the network timing out: the return has to complete with the fixture still
+    /// held, and the pending source must be joined rather than fetched again for bytes that are already valid.
+    ///
+    /// The fixture's first activation publishes the fast target's supply and leaves the second target's pull in
+    /// flight. Retirement closes the opportunity without cancelling that authorized pull; the return then opens
+    /// the same context again. If the activation awaited the unrelated pull (or re-started it), the bounded wait
+    /// below fails while the source is still suspended, and the release afterwards is only cleanup.
+    func testContextReturnCompletesWhileUnrelatedSourceIsStillSuspended() async throws {
+        let f = try fixture(paused: false, otherPaused: true), plan = reservedResources(targets: 2)
+        defer { f.otherHTTP.release() }
+        let p = try await restore(f, resources: plan)
+        var started = f.otherHTTP.started.makeAsyncIterator(); _ = await started.next()
+        XCTAssertEqual(f.otherHTTP.calls, 1, "premissa: a fonte alheia está suspensa")
+        let activeBeforeRetirement = await f.coordinator.activeExecutions()
+        XCTAssertTrue(activeBeforeRetirement.map(\.targetID).contains(f.otherTarget.id),
+            "premissa: a pull alheia está ativa antes da aposentadoria")
+
+        // The reader leaves the context: retirement does not invalidate the authorized pull (R14/R20).
+        await f.driver.deactivate()
+        let activeAfterRetirement = await f.coordinator.activeExecutions()
+        XCTAssertTrue(activeAfterRetirement.map(\.targetID).contains(f.otherTarget.id),
+            "a aposentadoria não cancela a pull autorizada")
+
+        let returned = expectation(description: "context return completes while the unrelated source is suspended")
+        let httpCallsBeforeReturn = f.http.calls
+        let task = Task { () -> FeedPresentationSnapshot? in
+            let snapshot = try await f.driver.activateCurrentPresentation(resources: plan)
+            returned.fulfill()
+            return snapshot
+        }
+        let waited = await XCTWaiter.fulfillment(of: [returned], timeout: 2)
+        XCTAssertEqual(waited, .completed,
+            "o retorno tem de concluir antes de liberar a fonte alheia, não pelo timeout da rede")
+        XCTAssertEqual(f.otherHTTP.calls, 1, "uma pull pendente válida é unida, não repetida")
+        XCTAssertGreaterThan(f.http.calls, httpCallsBeforeReturn,
+            "o retorno passou pela oportunidade real de aquisição, não só pela restauração local")
+        let activeAfterReturn = await f.coordinator.activeExecutions()
+        XCTAssertTrue(activeAfterReturn.map(\.targetID).contains(f.otherTarget.id),
+            "o retorno não cancela nem substitui a execução alheia")
+
+        // If the return timed out it is still waiting on the unrelated pull; release only to finish the test. In the
+        // contract this assertion passes before the line is reached.
+        if waited != .completed { f.otherHTTP.release() }
+        let back = try await task.value
+        XCTAssertEqual(back?.editionID, p.editionID, "a edição canônica do contexto é reaproveitada")
+        XCTAssertEqual(back?.contextKey, p.contextKey, "o contexto do retorno é o mesmo do leitor")
+        XCTAssertEqual(back?.window.anchor, p.window.anchor, "a âncora prometida não é inventada")
+        let returnedPresentation = await f.session.currentPresentation()
+        XCTAssertEqual(returnedPresentation, back)
+
+        // The unrelated source is released only now, after the return has already completed. Its authorized pull
+        // must still settle into durable supply through the existing owner, and that cannot install an older
+        // projection over the reader's anchor.
+        f.otherHTTP.release()
+        await settleAcquisitions(f)
+        XCTAssertGreaterThanOrEqual(try ContentStore(database: f.database)
+            .candidateWindow(sourceID: f.otherSource, after: nil, examinedCapacity: 8).records.count, 1,
+            "o supply durável da pull unida chega ao owner")
+        let settledValue = await f.session.currentPresentation()
+        let settled = try XCTUnwrap(settledValue)
+        XCTAssertEqual(settled.editionID, p.editionID)
+        XCTAssertEqual(settled.contextKey, p.contextKey)
+        XCTAssertEqual(settled.window.anchor, p.window.anchor,
+            "a fonte alheia não instala projeção antiga sobre a âncora do leitor")
+    }
+
     func testR14DeactivateDuringHTTPKeepsSupplyWithoutReactivatingOrPublishing() async throws {
         let f = try fixture(paused: true), p = try await restore(f)
         let first = Task { try await self.tail(f, p) }
@@ -911,9 +1180,11 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(intent.demand.purpose, .readerContinuation)
         XCTAssertTrue(pending.localSupplyExhausted)
         // The existing cycle exposes the precise disposition for the same still-pending intent.
-        let disposition = try await RunwayAcquisitionCycle(runway: f.runway, coordinator: shared).run(intent,
+        let start = try await RunwayAcquisitionCycle(runway: f.runway, coordinator: shared).start(intent,
             eligibleTargets: eligible, resources: resources().acquisition)
-        XCTAssertEqual(disposition, .deferred(.activeGenerationConflict))
+        guard case .deferred(.activeGenerationConflict) = start else {
+            return XCTFail("The still-pending intent must be deferred for the shared active generation")
+        }
         let unchanged = await f.runway.snapshot(); XCTAssertEqual(unchanged, pending)
         let stillActive = await shared.activeExecutions(); XCTAssertEqual(stillActive, oldActive)
         XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.otherHTTP.calls, 0)

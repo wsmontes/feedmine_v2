@@ -291,6 +291,77 @@ final class RenderReadyAdmissionTests: XCTestCase {
         }
     }
 
+    /// P03/A5: when the destination's asset is gone, the identity preservation that keeps the list stable must not
+    /// make the gate answer `needsPreparation` forever. The preparation completed **unavailable**, the card stays,
+    /// and the surface can state the failure instead of spinning on it.
+    func testMissingDestinationAssetCompletesAsUnavailableWithoutRemovingCard() async throws {
+        let f = try fixture(cards: 9, anchor: 6, materialized: Set(0..<9))
+        let session = try session(f)
+        let bounds = FeedPresentationBounds(backwardCapacity: 1, forwardCapacity: 1, keepsAdmittedHead: true)
+        _ = try await snapshot(session, .restore(bounds))
+        let key = try XCTUnwrap(f.cards[1].mediaKey)
+        let digest = String(key.dropFirst("sha256:".count))
+        try FileManager.default.removeItem(at: f.assets.appendingPathComponent("sha256").appendingPathComponent(digest))
+        _ = try await snapshot(session, ViewportObservation(anchor: .init(cardID: f.ids[7], placement: .center)))
+        let prepared = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[0], placement: .center)))
+
+        XCTAssertNotNil(prepared.window.items.first { $0.id == f.ids[1] },
+            "a falha de asset não remove a carta nem move o leitor")
+        XCTAssertEqual(FeedDestinationGate.readiness(of: f.ids[1], in: prepared), .needsPreparation)
+        XCTAssertEqual(FeedDestinationGate.readinessAfterPreparation(of: f.ids[1], in: prepared),
+            .unavailableAfterPreparation,
+            "o preparo concluiu indisponível; não é um novo pedido de preparo")
+        XCTAssertEqual(FeedDestinationGate.readinessAfterPreparation(of: f.ids[0], in: prepared), .ready)
+    }
+
+    /// P04/A4: a jump between the extremes of admitted history protects its two bands, not the interval between
+    /// them. The restore released every index outside its band; the convex hull therefore re-decoded the whole gap,
+    /// and residency/decode grew with the jump distance.
+    func testDistantJumpRetainsOnlyTwoDisjointBands() async throws {
+        let f = try fixture(cards: 48, anchor: 45, materialized: Set(0..<48))
+        let decodes = Counter()
+        let session = try session(f) { decodes.increment() }
+        let bounds = FeedPresentationBounds(backwardCapacity: 1, forwardCapacity: 1, keepsAdmittedHead: true)
+        let initial = try await snapshot(session, .restore(bounds))
+        XCTAssertEqual(initial.window.items.map(\.id), Array(f.ids.prefix(47)))
+        XCTAssertNil(initial.window.items[25].image, "premissa: o restore liberou o interior da janela")
+
+        let before = decodes.value
+        let jumped = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[5], placement: .center)))
+        XCTAssertEqual(jumped.window.anchor.cardID, f.ids[5])
+        XCTAssertEqual(jumped.window.items.map(\.id), Array(f.ids.prefix(47)), "identidade e ordem não mudam")
+        let resident = jumped.window.items.filter { $0.image != nil }.count
+        XCTAssertLessThanOrEqual(resident, 3 + 3,
+            "a residência é a união das duas bandas, não o intervalo entre elas")
+        XCTAssertLessThanOrEqual(decodes.value - before, 3,
+            "só a banda de destino volta a ser decodificada")
+        for index in 4...6 {
+            XCTAssertNotNil(jumped.window.items[index].image, "a banda de destino está pronta (carta \(index))")
+        }
+        XCTAssertNil(jumped.window.items[25].image, "o intervalo entre as bandas não foi reconstruído")
+    }
+
+    /// P04: the decode cost of a jump does not depend on how far it goes, once the bands are what is protected.
+    func testDistantJumpDecodeDoesNotGrowWithDistance() async throws {
+        func decodesForJump(to index: Int) async throws -> Int {
+            let f = try fixture(cards: 48, anchor: 45, materialized: Set(0..<48))
+            let counter = Counter()
+            let session = try session(f) { counter.increment() }
+            let bounds = FeedPresentationBounds(backwardCapacity: 1, forwardCapacity: 1, keepsAdmittedHead: true)
+            _ = try await snapshot(session, .restore(bounds))
+            let before = counter.value
+            _ = try await snapshot(session,
+                ViewportObservation(anchor: .init(cardID: f.ids[index], placement: .center)))
+            return counter.value - before
+        }
+        let near = try await decodesForJump(to: 35)
+        let far = try await decodesForJump(to: 5)
+        XCTAssertEqual(near, 3)
+        XCTAssertEqual(far, near, "a distância entre as bandas não muda o número de decodes")
+    }
+
     /// R04: a programmatic jump (or a VoiceOver/accessibility move, which also sets the position) may reach only a
     /// destination whose pixels are ready. An admitted card outside the protected region answers `needsPreparation`;
     /// the surface keeps the current reading, asks for the destination band (a local reconciliation), and applies the
