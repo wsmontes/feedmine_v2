@@ -3739,6 +3739,36 @@ final class CompositionTests: XCTestCase {
         await secondLaunch.association?.close()
     }
 
+    /// The settings surface writes through a backend of its own, and the feed reads a cached snapshot of the same
+    /// values on every candidate card of every render. A write through the surface has to reach that snapshot:
+    /// measured 2026-10-20, the reader re-enabled the suggestions in the preferences page and the feed kept
+    /// refusing every offer with `.hidden` for the rest of the session, because the composition never learned what
+    /// the database now held.
+    func testASettingsWriteThroughTheSurfaceReachesWhatTheFeedReads() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        let association = try XCTUnwrap(composition.association)
+        XCTAssertFalse(composition.editorialTipsHidden, "the reader has not hidden anything yet")
+        XCTAssertNil(composition.declaredLevel(forNode: "90_countries/brazil"),
+            "and has not answered about Brazil")
+
+        let store = try XCTUnwrap(composition.makeReaderSettingsStore())
+        await store.load()
+        await store.update { settings in
+            settings.editorialTipsHidden = true
+            settings.discoveryProfile.topicPreferences["topic:90_countries/brazil"] = .more
+        }
+
+        XCTAssertTrue(store.settings.editorialTipsHidden, "the surface shows what the backend accepted")
+        XCTAssertTrue(composition.editorialTipsHidden,
+            "the feed reads the value the settings surface wrote, without a relaunch")
+        XCTAssertEqual(composition.declaredLevel(forNode: "90_countries/brazil"), .more,
+            "and the per-subject answers cached beside it are the stored ones too")
+        await association.close()
+    }
+
     /// The other answer to the same question: the reader skips. Nothing is named, so acquisition stays
     /// unrestricted, the stored profile names nothing, and the `.main` context keeps the plain identity it always
     /// had — the skip cannot change what the reader is reading.

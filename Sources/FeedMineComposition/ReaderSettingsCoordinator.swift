@@ -48,14 +48,27 @@ public struct ReaderSettingsCoordinator: Sendable {
 /// The settings surface's backend, over the same store.
 public struct ReaderSettingsBackendAdapter: ReaderSettingsBackend {
     private let database: RuntimeDatabase
+    /// What the database now holds, stated to whoever caches this value. The feed reads the reader's settings on
+    /// every candidate card of every render, so the composition keeps a snapshot; a write through this surface is
+    /// not the composition's own, and without this the snapshot kept serving the value from before the write — the
+    /// reader re-enabled the suggestions in the preferences page and the feed refused every offer with `.hidden`
+    /// until the next launch (measured 2026-10-20).
+    private let onWrite: @MainActor @Sendable (ReaderSettings) -> Void
 
-    public init(database: RuntimeDatabase) { self.database = database }
+    public init(database: RuntimeDatabase,
+        onWrite: @MainActor @Sendable @escaping (ReaderSettings) -> Void = { _ in }) {
+        self.database = database
+        self.onWrite = onWrite
+    }
 
     public func settings() async throws -> ReaderSettings {
         try ReaderSettingsCoordinator(database: database).settings()
     }
 
     public func update(_ settings: ReaderSettings) async throws {
-        _ = try ReaderSettingsCoordinator(database: database).update(settings)
+        // The coordinator's own value, not the caller's: a write it normalizes is stored normalized.
+        let stored = try ReaderSettingsCoordinator(database: database).update(settings)
+        // Stated before the write returns, so no render observes the new stored value beside the old snapshot.
+        await MainActor.run { onWrite(stored) }
     }
 }

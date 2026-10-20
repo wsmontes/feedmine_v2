@@ -1441,7 +1441,13 @@ final class AppComposition {
 
     /// T10: the settings surface's store, and the appearance the reader's own preferences imply right now.
     func makeReaderSettingsStore() -> ReaderSettingsStore? {
-        libraryDatabase().map { ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: $0)) }
+        libraryDatabase().map { database in
+            ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: database) { [weak self] stored in
+                // The one place a settings write refreshes what the feed reads: the snapshot this composition
+                // caches for its per-card render path and the per-subject answers cached beside it.
+                self?.noteReaderSettingsWritten(stored)
+            })
+        }
     }
 
     /// The content filters' own surface: the gate, the templates and the reader's words, over the same
