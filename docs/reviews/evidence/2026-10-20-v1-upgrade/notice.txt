@@ -1,46 +1,40 @@
-NOTICE SURFACE — what the reader actually saw
+NOTICE — what was on screen, captured 2026-10-20 11:58 (build 3a1f72a7)
 
-Measured on 2026-10-20, simulator "FeedMine V1V2 Upgrade" (B89B80FE-6B5D-423E-B1F4-519F1AB0737F),
-three launches at 11:28, 11:31 and 11:33.
+ACCESSIBILITY TREE, read from the Simulator window while the alert was up:
 
-WHAT HAPPENED
-- The first V2 launch wrote the receipt with status=completed and notice_presented=0.
-- The alert titled "Da versão anterior" was never visible: the accessibility tree of the running
-  Simulator window was polled every 0.2 s for 15 s on two launches (and once for 12 s) and never
-  contained the alert, and simctl screenshots at t≈4 s / t≈7 s show the reader's empty state, not an
-  alert.
-- The alert was nevertheless dismissed without the reader seeing it: notice_presented was reset to 0
-  three times in reader_legacy_upgrade and flipped back to 1 on every launch before the first screen
-  was readable. The only writer is AppComposition.acknowledgeLegacyUpgradeNotice()
-  (AppComposition.swift:1169-1174), reached from the SwiftUI alert binding's set(false)
-  (FeedMineApp.swift:324-332): the alert is presented and torn down in the same launch, so the reader
-  never gets to read it.
+  - window "FeedMine V1V2 Upgrade – iOS 26.5"
+    - group
+      - statictext "Da versão anterior"
+      - statictext "Importados da versão anterior: caixas 1, fontes 3, coleções 1. Ainda inacessívei…"
+      - button "Entendi"
 
-=> In this build, on this simulator, the D7-A notice is consumed without being presented.
-   The receipt keeps the counts; the copy never reaches the screen.
+EXACT COPY, read off the screen in screenshot.png (the AX body is truncated at 80 characters; the
+screenshot shows it whole):
 
-TEXT THE APP RENDERS FOR THIS RECEIPT
-Source: AppComposition.legacyUpgradeNoticeText (AppComposition.swift:1178-1191), fed by the receipt
-above (imported_boxes 1, imported_sources 3, imported_collections 1, savedArticles skip 2,
-smartFeeds 0, curatedFeeds 0):
+  Da versão anterior
 
-    Alert title:  Da versão anterior
-    Alert body:   Importados da versão anterior: caixas 1, fontes 3, coleções 1.
-                  Ainda inacessíveis nesta versão: artigos salvos 2, marcadores inteligentes 0, feeds curados 0.
-                  Eles permanecem no arquivo original da versão anterior.
-    Alert button: Entendi
+  Importados da versão anterior: caixas 1, fontes 3, coleções 1.
+  Ainda inacessíveis nesta versão: artigos salvos 2, marcadores inteligentes 0, feeds curados 0.
+  Eles permanecem no arquivo original da versão anterior.
 
-Those three strings are absent from the built app's en.lproj and pt-BR.lproj Localizable.strings
-(checked with `plutil -p` against FeedMine.app/*.lproj/Localizable.strings), so String(localized:)
-returns each key verbatim: the copy is identical in every locale, which is also why the Portuguese
-copy appeared inside an otherwise English UI.
+  [Entendi]
 
-WHAT WAS ON SCREEN AT THE SAMPLED MOMENTS (screenshot.png)
-    "Looking for more news…"
-    "We haven't found enough content yet. We'll try again in a moment."
-The reader's empty state: the three seeded sources are exemplo.test addresses, which do not resolve,
-so no article can arrive. Nothing in that state mentions the upgrade.
+That matches AppComposition.legacyUpgradeNoticeText (AppComposition.swift:1178-1191) fed by the receipt
+(boxes 1, sources 3, collections 1, savedArticles 2, smartFeeds 0, curatedFeeds 0).
 
-NOT CLAIMED
-This file does not claim the alert was rendered correctly for a reader — it states the opposite, with
-the measurement that establishes it.
+WHAT THE READER CAN DO WITH IT — measured, and it is the remaining defect:
+
+- The alert is drawn (screenshot.png is a real frame of the simulator screen with the alert on it).
+- It lives for about one second and is then torn down by SwiftUI, not by the reader: the reader surface
+  swaps from "Looking for more news…" to "Couldn't connect." (the feeds are offline), and the alert is
+  attached to that swapping view. Burst capture right after launch: alert present at ~1.2-1.5 s, gone by
+  ~1.8 s, with no input in between.
+- The acknowledgement is therefore never recorded: `notice_presented` stayed 0 across eight launches,
+  and four attempts to hit "Entendi" (AX press twice, window clicks at the button's frame position twice,
+  each fired within ~0.3 s of the alert appearing) left it 0.
+- The old silent-consumption bug is gone: the receipt is no longer marked presented without the reader.
+  What is still missing is a notice that survives long enough to be read and dismissed.
+
+=> Acceptance "the reader sees the notice and dismisses it, notice_presented flipping only on that tap"
+   is NOT met. Seeing is proven (screenshot + AX); dismissing is not reachable in this environment because
+   the host view disappears under the alert.

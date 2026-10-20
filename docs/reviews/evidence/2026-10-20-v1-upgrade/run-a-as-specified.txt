@@ -1,0 +1,49 @@
+RUN A — THE AS-SPECIFIED LAYOUT, ATTEMPTED AND BLOCKED (build 3a1f72a7)
+
+What was done, exactly as specified:
+  clean simulator (erased) -> V1 built from source and launched (container
+  FA41F31E-0FA8-4777-9C8D-7FD07058131F, directory recorded as
+  "Library/Application Support/Feedmine") -> seeded (imported_source 3 with one enabled=0,
+  bookmark_list 2, bookmark_item 2, bookmark_snapshot 2, source_collection 1,
+  source_collection_member 2) -> V2 Release installed over the same bundle id -> launched.
+
+Container UUID before the install: FA41F31E-0FA8-4777-9C8D-7FD07058131F
+Container UUID after  the install: 0C601A5B-880F-4E81-9856-A0BE2726DC38
+The UUID changes on install, but the data moves with it: all six files of V1's directory hash
+identically before and after the install (see before.sha256 and the comparison below), so the new
+container UUID is not what breaks this run.
+
+Result: V2 starts and shows "Não foi possível carregar suas fontes." (AppComposition.swift:527, the
+catch around RuntimeDatabase construction). It writes nothing: no runtime.sqlite, no catalogue,
+no trace.jsonl, no receipt. The upgrade is never reached.
+
+Measured inside the running app with lldb (`expr -l swift`, values reproduced verbatim):
+
+  contentsOfDirectory("…/Application Support")                 -> ["Feedmine"]
+  fileExists("…/Application Support/Feedmine/user.sqlite")      -> true
+  fileExists("…/Application Support/FeedMine")                  -> false
+  createDirectory("…/Application Support/FeedMine",
+                  withIntermediateDirectories: true)            -> FAILS
+
+  NSCocoaErrorDomain Code=512
+  "The file “FeedMine” couldn’t be saved in the folder “Application Support”."
+  NSUnderlyingError NSPOSIXErrorDomain Code=5 "Input/output error"
+
+  open("…/Application Support/FeedMine/probe.txt")              -> ENOENT (Code=4)
+  read  "…/Application Support/FeedMine/user.sqlite"            -> OK
+
+So inside the app's sandbox the lookup is case-exact and creating the case-variant of an existing
+directory fails with EIO. V1's directory is `Feedmine`; V2's own store path is `FeedMine`; the app
+cannot create its own store beside it, and it cannot see the case variant either.
+
+V1's files after this run: unchanged (diff of before.sha256 and the after-hash list is empty).
+
+Consequence: on this host, the shipped same-directory layout cannot reach the upgrade, whatever the
+candidate list says, because the failure happens in `RuntimeDatabase`, before `LegacyV1Upgrade` runs.
+This is a simulator-sandbox property of this volume, not the product's directory design: on a
+case-sensitive device filesystem `Feedmine` and `FeedMine` are distinct directories.
+
+The candidate-list fix (3a1f72a7) is exercised in the run that did reach the upgrade, documented in
+README.md and receipt.json: the case-collapsed shape, where V1's `user.sqlite` sits inside V2's own
+`Application Support/FeedMine` directory and is found by the new `applicationSupport/user.sqlite`
+candidate (the receipt's `source_path` proves which candidate matched).

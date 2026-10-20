@@ -1,0 +1,9 @@
+The first rehearsal's artifacts (before/after hashes, receipt, notice, screenshot) were overwritten by
+the second run at the top level of this directory. They remain in git at commit e98e47dc:
+
+    git show e98e47dc:docs/reviews/evidence/2026-10-20-v1-upgrade/before.sha256
+    git show e98e47dc:docs/reviews/evidence/2026-10-20-v1-upgrade/receipt.json
+    git show e98e47dc:docs/reviews/evidence/2026-10-20-v1-upgrade/notice.txt
+    git show e98e47dc:docs/reviews/evidence/2026-10-20-v1-upgrade/README.md
+
+That run used Documents/user.sqlite; the cause it stated was corrected in the README of the second run.

@@ -1,8 +1,7 @@
-# diff -u before.sha256 after.sha256
+# diff before.sha256 after.sha256  (Run B, build 3a1f72a7)
 # exit status: 0
-# output: (empty) — every V1 file has the same SHA-256 before and after the V2 upgrade.
+# output: (empty) — V1's three files are byte-identical after the upgrade.
 #
-# before.sha256 and after.sha256 both list the same seven files under
-# <container>/Documents: user.sqlite, user.sqlite-wal, user.sqlite-shm,
-# feedmine.sqlite (V1's content cache), feedmine.sqlite-wal, feedmine.sqlite-shm,
-# content_filters.json.
+#   e6dd5d93…  user.sqlite
+#   e3b0c442…  user.sqlite-wal   (empty)
+#   fd4c9fda…  user.sqlite-shm

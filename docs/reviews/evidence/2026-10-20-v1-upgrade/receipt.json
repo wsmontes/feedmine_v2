@@ -1,19 +1,21 @@
 {
-  "queried_database": "Application Support/FeedMine/runtime.sqlite",
-  "container": "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/7E4FDE6F-6D5D-489C-AFF8-72A047BE96AE",
+  "build_commit": "3a1f72a7c854666590b8f4d6e9bacbacf1076b61",
+  "layout": "case-collapsed: V1 user.sqlite and the V2 store in the same Application Support/FeedMine directory",
+  "container": "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/BB8BE5F1-8406-4C9F-A931-0FFF6353F15D",
+  "store": "Library/Application Support/FeedMine/runtime.sqlite",
   "receipt": [
     {
       "singleton_id": 1,
-      "source_path": "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/7E4FDE6F-6D5D-489C-AFF8-72A047BE96AE/Documents/user.sqlite",
+      "source_path": "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/BB8BE5F1-8406-4C9F-A931-0FFF6353F15D/Library/Application Support/FeedMine/user.sqlite",
       "status": "completed",
-      "ran_at": 1792520884.351605,
+      "ran_at": 1792522460.08012,
       "failure_reason": null,
       "imported_boxes": 1,
       "imported_sources": 3,
       "selected_sources": 2,
       "imported_collections": 1,
       "imported_collection_members": 2,
-      "notice_presented": 1
+      "notice_presented": 0
     }
   ],
   "skips": [
@@ -96,5 +98,6 @@
       "source_keys": "[\"https:\\/\\/exemplo.test\\/ciencia\\/feed.xml\",\"https:\\/\\/exemplo.test\\/tecnologia\\/feed\"]",
       "selection_version": 3
     }
-  ]
+  ],
+  "second_launch": "receipt and every count identical after a relaunch (diff of the same queries: empty)"
 }
