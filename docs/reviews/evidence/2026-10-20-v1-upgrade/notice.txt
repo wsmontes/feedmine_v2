@@ -1,0 +1,46 @@
+NOTICE SURFACE — what the reader actually saw
+
+Measured on 2026-10-20, simulator "FeedMine V1V2 Upgrade" (B89B80FE-6B5D-423E-B1F4-519F1AB0737F),
+three launches at 11:28, 11:31 and 11:33.
+
+WHAT HAPPENED
+- The first V2 launch wrote the receipt with status=completed and notice_presented=0.
+- The alert titled "Da versão anterior" was never visible: the accessibility tree of the running
+  Simulator window was polled every 0.2 s for 15 s on two launches (and once for 12 s) and never
+  contained the alert, and simctl screenshots at t≈4 s / t≈7 s show the reader's empty state, not an
+  alert.
+- The alert was nevertheless dismissed without the reader seeing it: notice_presented was reset to 0
+  three times in reader_legacy_upgrade and flipped back to 1 on every launch before the first screen
+  was readable. The only writer is AppComposition.acknowledgeLegacyUpgradeNotice()
+  (AppComposition.swift:1169-1174), reached from the SwiftUI alert binding's set(false)
+  (FeedMineApp.swift:324-332): the alert is presented and torn down in the same launch, so the reader
+  never gets to read it.
+
+=> In this build, on this simulator, the D7-A notice is consumed without being presented.
+   The receipt keeps the counts; the copy never reaches the screen.
+
+TEXT THE APP RENDERS FOR THIS RECEIPT
+Source: AppComposition.legacyUpgradeNoticeText (AppComposition.swift:1178-1191), fed by the receipt
+above (imported_boxes 1, imported_sources 3, imported_collections 1, savedArticles skip 2,
+smartFeeds 0, curatedFeeds 0):
+
+    Alert title:  Da versão anterior
+    Alert body:   Importados da versão anterior: caixas 1, fontes 3, coleções 1.
+                  Ainda inacessíveis nesta versão: artigos salvos 2, marcadores inteligentes 0, feeds curados 0.
+                  Eles permanecem no arquivo original da versão anterior.
+    Alert button: Entendi
+
+Those three strings are absent from the built app's en.lproj and pt-BR.lproj Localizable.strings
+(checked with `plutil -p` against FeedMine.app/*.lproj/Localizable.strings), so String(localized:)
+returns each key verbatim: the copy is identical in every locale, which is also why the Portuguese
+copy appeared inside an otherwise English UI.
+
+WHAT WAS ON SCREEN AT THE SAMPLED MOMENTS (screenshot.png)
+    "Looking for more news…"
+    "We haven't found enough content yet. We'll try again in a moment."
+The reader's empty state: the three seeded sources are exemplo.test addresses, which do not resolve,
+so no article can arrive. Nothing in that state mentions the upgrade.
+
+NOT CLAIMED
+This file does not claim the alert was rendered correctly for a reader — it states the opposite, with
+the measurement that establishes it.

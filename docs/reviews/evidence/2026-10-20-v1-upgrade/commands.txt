@@ -1,0 +1,101 @@
+V1 -> V2 upgrade rehearsal — exact commands (2026-10-20, machine host = macOS 25.5 / arm64)
+
+# 0. Disk gate
+df -h /                                  # 5.0 GB free at start: below the >= 6 GB gate
+# freed: 3-day-old scratch worktrees under /private/tmp (all clean, `git -C <dir> status --porcelain`
+# empty): wt-b06 wt-wordmark wt-measure wt-frames wt-green wt-final wt-cadence wt-activate-preserves
+# wt-durable-saves wt-reader-availability wt-readiness wt-rradmission wt-filter-boundary
+# wt-onboarding-language wt-spec-collection base-46191649, plus /private/tmp/fm-d1-derived and
+# /private/tmp/wt-integration51/bench.  Kept: wt-integration51 (18 dirty files).
+df -h /                                  # 8.0 GB free
+
+# 1. Clean simulator
+xcrun simctl create "FeedMine V1V2 Upgrade" com.apple.CoreSimulator.SimDeviceType.iPhone-17 \
+    com.apple.CoreSimulator.SimRuntime.iOS-26-5        # -> B89B80FE-6B5D-423E-B1F4-519F1AB0737F
+xcrun simctl boot B89B80FE-6B5D-423E-B1F4-519F1AB0737F
+open -a Simulator --args -CurrentDeviceUDID B89B80FE-6B5D-423E-B1F4-519F1AB0737F
+
+# 2. Build V1 from source (BUILD SUCCEEDED, 150 s)
+cd /Users/wagnersilvamontes/Documents/GitHub/_legacy_feedmine_v1
+xcodebuild -project feedmine.xcodeproj -scheme feedmine -configuration Debug -sdk iphonesimulator \
+    -destination 'id=B89B80FE-6B5D-423E-B1F4-519F1AB0737F' \
+    -derivedDataPath /private/tmp/v1-rehearsal/v1 build
+# product: /private/tmp/v1-rehearsal/v1/Build/Products/Debug-iphonesimulator/feedmine.app
+# CFBundleIdentifier com.feedmine.app
+
+# 3. Install + launch V1; it creates its own container; confirm V1's file
+xcrun simctl install  B89B80FE-... /private/tmp/v1-rehearsal/v1/Build/Products/Debug-iphonesimulator/feedmine.app
+xcrun simctl launch   B89B80FE-... com.feedmine.app
+xcrun simctl terminate B89B80FE-... com.feedmine.app
+C=$(xcrun simctl get_app_container B89B80FE-... com.feedmine.app data)
+ls "$C/Library/Application Support/Feedmine/"    # user.sqlite, -wal, -shm + RuntimeV2/
+sqlite3 "$C/Library/Application Support/Feedmine/user.sqlite" .schema   # V1 v1..v11 migrations
+
+# 4. Seed with sqlite3 (V1's own DDL, columns the V2 reader selects)
+sqlite3 "$C/Library/Application Support/Feedmine/user.sqlite" <<'SQL'
+PRAGMA journal_mode=WAL;
+BEGIN;
+INSERT INTO imported_source (source_identity, request_url, title, category, media_kind, language, added_at, enabled) VALUES
+ ('https://exemplo.test/ciencia/feed.xml','https://exemplo.test/ciencia/feed.xml','Ciência Hoje','Imported','text','pt',1750000001,1),
+ ('https://exemplo.test/tecnologia/feed','https://exemplo.test/tecnologia/feed?ref=v1','Tecnologia','Imported','text','pt',1750000002,1),
+ ('https://exemplo.test/arquivo/feed','https://exemplo.test/arquivo/feed','Arquivo Desligado','Imported','text','pt',1750000003,0);
+INSERT INTO bookmark_list (id, name, sort_order, created_at, is_default, search_query, search_region, search_category, search_active)
+ VALUES (2,'Leituras longas',1,1750000100,0,NULL,NULL,NULL,0);
+INSERT INTO bookmark_item (list_id, item_id, added_at, sort_order) VALUES
+ (2,'artigo-alfa',1750000200,0),(2,'artigo-beta',1750000201,1);
+INSERT INTO bookmark_snapshot (list_id, item_id, title, url, source_title, source_url, excerpt, media_url, authored_at, captured_at) VALUES
+ (2,'artigo-alfa','O futuro da computação quântica','https://exemplo.test/artigos/quanticos','Ciência Hoje','https://exemplo.test/ciencia/feed.xml','Um resumo do artigo alfa',NULL,1750000100,1750000200),
+ (2,'artigo-beta','Redes neurais em produção','https://exemplo.test/artigos/neurais','Tecnologia','https://exemplo.test/tecnologia/feed','Um resumo do artigo beta',NULL,1750000101,1750000201);
+INSERT INTO source_collection (id, name, sort_order, created_at) VALUES (1,'Ciência e Tecnologia',0,1750000300);
+INSERT INTO source_collection_member (collection_id, source_identity, source_url, title_snapshot, media_kind, added_at, sort_order) VALUES
+ (1,'https://exemplo.test/ciencia/feed.xml','https://exemplo.test/ciencia/feed.xml','Ciência Hoje','text',1750000301,0),
+ (1,'https://exemplo.test/tecnologia/feed','https://exemplo.test/tecnologia/feed?ref=v1','Tecnologia','text',1750000302,1);
+COMMIT;
+PRAGMA wal_checkpoint(TRUNCATE);
+SQL
+# inserted: imported_source 3 (one enabled=0), bookmark_list 2 (V1's default "Favorites" + the new box),
+# bookmark_item 2, bookmark_snapshot 2, source_collection 1, source_collection_member 2
+
+# 5. BEFORE snapshot (see before.sha256); copy of the directory kept at /private/tmp/v1-rehearsal/before
+cd "$C" && find Documents -type f -print0 | sort -z | xargs -0 shasum -a 256 | tee before.sha256
+
+# 6. Build V2 Release for the simulator (BUILD SUCCEEDED, 206 s)
+cd /Users/wagnersilvamontes/.codex/worktrees/v2-fluidez-capacidade/feedmine_v2
+xcodebuild -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine -configuration Release \
+    -sdk iphonesimulator -destination 'id=B89B80FE-...' \
+    -derivedDataPath /private/tmp/v1-rehearsal/v2 build
+# product: /private/tmp/v1-rehearsal/v2/Build/Products/Release-iphonesimulator/FeedMine.app
+# CFBundleIdentifier com.feedmine.app, 1.0 (53)  -> installs into V1's container
+
+xcrun simctl install  B89B80FE-... .../Release-iphonesimulator/FeedMine.app
+xcrun simctl launch   B89B80FE-... com.feedmine.app
+xcrun simctl io B89B80FE-... screenshot screenshot.png
+# accessibility tree read from the host through the Simulator window (computer-use), not from simctl
+
+# 7. AFTER snapshot + queries (see after.sha256, diff.txt, receipt.json)
+cd "$C" && find Documents -type f -print0 | sort -z | xargs -0 shasum -a 256 > after.sha256
+diff before.sha256 after.sha256                      # exit 0, no output
+sqlite3 -json "$C/Library/Application Support/FeedMine/runtime.sqlite" "SELECT * FROM reader_legacy_upgrade;"
+
+# 8. Second launch: receipt must not change, nothing may duplicate
+xcrun simctl terminate B89B80FE-... com.feedmine.app
+xcrun simctl launch    B89B80FE-... com.feedmine.app
+# ran_at identical (1792520884.351605), counts identical, no new rows
+
+# ---------------------------------------------------------------------------------------------
+# The same-container path, attempted first and BLOCKED by a case collision (see README.md):
+#   V1 writes "Library/Application Support/Feedmine"; V2 opens "Library/Application Support/FeedMine".
+#   The host volume is case-insensitive (one inode for both spellings) but the app's own process is
+#   not: measured inside the running app with lldb —
+#     expr -l swift -- FileManager.default.fileExists(atPath: ".../Application Support/Feedmine/user.sqlite")  => false
+#     expr -l swift -- FileManager.default.fileExists(atPath: ".../Application Support/FeedMine/user.sqlite")    => true
+#     expr -l swift -- try? FileManager.default.contentsOfDirectory(atPath: ".../Application Support")            => ["FeedMine"]
+#   With the directory spelled "Feedmine", V2 Release starts, writes nothing and shows
+#   "Não foi possível carregar suas fontes." (AppComposition.swift:527 — the catch around
+#   RuntimeDatabase construction). Renaming the directory to "FeedMine" makes V2 start, but then
+#   LegacyV1Upgrade's first candidate ("…/Feedmine/user.sqlite") is the case-variant that no longer
+#   resolves, so the run reports no legacy container and writes no receipt.
+#   Both directions measured; the rehearsal therefore used V2's SECOND documented candidate,
+#   Documents/user.sqlite (V1's pre-1.0 location, LegacyV1Upgrade.candidateUserStateURLs), by moving
+#   the seeded user.sqlite* there and removing the colliding directory. Same app container, same
+#   bundle id, V1 file byte-identical before and after (before.sha256 / after.sha256).

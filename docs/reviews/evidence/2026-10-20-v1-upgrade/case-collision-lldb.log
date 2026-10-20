@@ -1,0 +1,28 @@
+(lldb) process attach --pid 19994
+Process 19994 stopped
+* thread #1, queue = 'com.apple.main-thread', stop reason = signal SIGSTOP
+    frame #0: 0x0000000104118b70 libsystem_kernel.dylib`mach_msg2_trap + 8
+libsystem_kernel.dylib`mach_msg2_trap:
+->  0x104118b70 <+8>: ret    
+
+libsystem_kernel.dylib`macx_swapon:
+    0x104118b74 <+0>: mov    x16, #-0x30               ; =-48 
+    0x104118b78 <+4>: svc    #0x80
+    0x104118b7c <+8>: ret    
+Target 0: (FeedMine) stopped.
+Executable binary set to "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Bundle/Application/222396DB-3554-4FF7-A3F2-15A7A65EE0ED/FeedMine.app/FeedMine".
+Architecture set to: arm64-apple-ios-simulator.
+(lldb) expr -l swift -- import Foundation
+(lldb) expr -l swift -- FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].path
+(String) $R0 = "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/D208BC60-109B-42B1-AB74-24A6F2D1A69D/Library/Application Support"
+(lldb) expr -l swift -- FileManager.default.fileExists(atPath: "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/D208BC60-109B-42B1-AB74-24A6F2D1A69D/Library/Application Support/Feedmine/user.sqlite")
+(Bool) $R1 = false
+(lldb) expr -l swift -- FileManager.default.fileExists(atPath: "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/D208BC60-109B-42B1-AB74-24A6F2D1A69D/Library/Application Support/FeedMine/user.sqlite")
+(Bool) $R2 = true
+(lldb) expr -l swift -- try? FileManager.default.contentsOfDirectory(atPath: "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/D208BC60-109B-42B1-AB74-24A6F2D1A69D/Library/Application Support")
+([String]?) $R3 = 1 value {
+  [0] = "FeedMine"
+}
+(lldb) detach
+Process 19994 detached
+(lldb) quit
