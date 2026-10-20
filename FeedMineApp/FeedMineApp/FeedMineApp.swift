@@ -691,23 +691,63 @@ struct FeedMineApp: App {
     /// refuses raises no error and calls no completion, so a host that inferred the reader's state from
     /// `presentingViewController`, or that marked a page shown before it was, left the reader on screen with its
     /// close and its site controls wired to nothing.
-    /// Presents the one-time V1-upgrade notice above whatever the window is showing. UIKit, not SwiftUI: the
-/// reader is a presented `UIViewController`, and a SwiftUI alert in the reader's hierarchy is painted behind it
-/// (measured 2026-10-20 — the reader saw the alert for under a second and its taps hit the reader's own button).
+    /// Presents the one-time V1-upgrade notice above whatever the app is showing — including presentations that
+/// happen *after* the notice (the reader takes the topmost controller within a second of launch, and an alert
+/// presented before it is covered by it: measured 2026-10-20, the alert was drawn at 0.3 s and gone under the
+/// reader's surface by 0.9 s, with every tap landing on the reader's own button). A dedicated window at alert
+/// level is above every controller presentation and survives the content swaps that happen during launch.
 @MainActor
 enum LegacyUpgradeNoticePresenter {
+    private static var current: NoticeWindow?
+
     static func present(title: String, message: String, onAcknowledge: @escaping () -> Void) {
+        guard current == nil else { return }
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
-                .first(where: { $0.activationState == .foregroundActive }) ?? UIApplication.shared
-                .connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
-            var top = (scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first)?.rootViewController
+                .first(where: { $0.activationState == .foregroundActive })
+                ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first
         else { return }
-        while let presented = top.presentedViewController { top = presented }
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: String(localized: "Entendi"), style: .cancel) { _ in
+        let window = NoticeWindow(windowScene: scene)
+        window.windowLevel = .alert + 1
+        window.rootViewController = NoticeHost { [weak window] in
+            window?.isHidden = true
+            current = nil
             onAcknowledge()
-        })
-        top.present(alert, animated: true)
+        }
+        window.frame = scene.coordinateSpace.bounds
+        window.isHidden = false
+        current = window
+        (window.rootViewController as? NoticeHost)?.showNotice(title: title, message: message)
+    }
+
+    final class NoticeWindow: UIWindow {}
+
+    /// The window's content: a transparent host that raises one alert and reports the reader's own
+    /// acknowledgement. Nothing here decides *when* the notice is owed; the app's receipt state does.
+    final class NoticeHost: UIViewController {
+        private let onAcknowledge: () -> Void
+        private var presented = false
+
+        init(onAcknowledge: @escaping () -> Void) {
+            self.onAcknowledge = onAcknowledge
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+            view.backgroundColor = .clear
+        }
+
+        func showNotice(title: String, message: String) {
+            guard !presented else { return }
+            presented = true
+            let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: String(localized: "Entendi"), style: .cancel) { [weak self] _ in
+                self?.onAcknowledge()
+            })
+            present(alert, animated: true)
+        }
     }
 }
 
