@@ -2898,6 +2898,10 @@ final class FeedAssociation {
         let assetDirectory = directory.appendingPathComponent("Media", isDirectory: true)
         let device = DeviceMediaConditions.currentOnMain()
         let readiness = MediaReadiness()
+        // One bounded memory of the stories a one-way walk skipped for pending media, shared by the first screen
+        // and the live feed: a skip recorded before the reader's first store is ready must still be reachable by the
+        // opportunity that runs after it, because that opportunity examines a different window.
+        let reoffer = PendingMediaReconsideration()
         let fetcher = MediaHTTPFetcher(session: transport)
         // F06-G/PD-6: one derived tolerance feeds both the preparation window and the byte budget below. The media
         // layer used to be handed a fixed 5 s here while the window was computed elsewhere — two numbers for one
@@ -3033,7 +3037,8 @@ final class FeedAssociation {
             makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date())! },
             prepare: prepare,
             selectedSourceCoverage: .init(selectedSourceCoverageFor: plan.context.key, editorialRevisionID: plan.revision.id),
-            readiness: readiness, onDiscoveryPage: onDiscoveryPage, makeMediaOpportunity: makeMediaOpportunity,
+            readiness: readiness, reoffer: reoffer, onDiscoveryPage: onDiscoveryPage,
+            makeMediaOpportunity: makeMediaOpportunity,
             trace: replenishment, onPublication: { receipt in await publicationRelay.deliver(receipt) })
         let relay = EvidenceRelay()
         self.relay = relay
@@ -3046,7 +3051,7 @@ final class FeedAssociation {
             // **same** factory the runway driver uses (one owner for the derived budget, `mediaWaitSeconds`), which
             // is what makes the first screen and the live feed agree on "prepared" — the quality Codex's page review
             // named: two different views of what is ready is how a suspended candidate becomes a text-only card.
-            readiness: readiness, trace: replenishment, onDiscoveryPage: onDiscoveryPage,
+            readiness: readiness, reoffer: reoffer, trace: replenishment, onDiscoveryPage: onDiscoveryPage,
             makeMediaOpportunity: makeMediaOpportunity)
         targetNames = Dictionary(uniqueKeysWithValues: feeds.map { ($0.targetID, $0.displayName) })
         let provider = CandidateProvider(contentStore: ContentStore(database: db))

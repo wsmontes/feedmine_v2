@@ -141,6 +141,9 @@ public actor FeedRunwayDriver {
         // F06-A (Codex's review): the slice must judge readiness with the **same** index the preparation closure
         // uses. Two different views of what is ready is how a suspended candidate becomes a text-only card.
         readiness: MediaReadiness? = nil,
+        // The bounded memory of stories this Edition's one-way walk skipped for pending media. Readiness reopens a
+        // publication opportunity; this is what makes the skipped story reachable by that opportunity again.
+        reoffer: PendingMediaReconsideration? = nil,
         onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)? = nil,
         makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil,
         trace: ReplenishmentTrace? = nil,
@@ -157,7 +160,7 @@ public actor FeedRunwayDriver {
         self.session = session; self.runway = runway; self.plan = plan; self.policy = policy; self.acquisition = acquisition
         publicationHistory = PublicationHistory(database: acquisition.runtimeDatabase)
         localProductionSlice = LocalProductionSlice(database: acquisition.runtimeDatabase, readiness: readiness,
-            trace: trace)
+            reoffer: reoffer, trace: trace)
         acquisitionCycle = RunwayAcquisitionCycle(runway: runway, coordinator: coordinator, trace: trace)
         self.coordinator = coordinator
         self.trace = trace
@@ -168,6 +171,11 @@ public actor FeedRunwayDriver {
     /// B (spec "Estabilidade de coleta e UI"): a media readiness transition is a **local-supply fact**. This is
     /// the same notification a committed acquisition receipt gives the runway (`noteLocalSupplyChanged`), so the
     /// next drive opportunity is the existing one — no second pipeline and no publication from the callback.
+    ///
+    /// The story the transition made ready is not named here on purpose. The slice this drive executes reads the
+    /// bounded skip queue (`PendingMediaReconsideration`) that the walk itself filled, so every ready skip is
+    /// offered to that opportunity regardless of which transition arrived — and a transition that finds the queue
+    /// empty (a story the walk had not passed yet) simply lets the normal window select it.
     public func noteMediaReadinessChanged() async {
         guard let scope = try? await validateCurrentScope() else { return }
         do { try await runway.noteLocalSupplyChanged(scope: scope) }

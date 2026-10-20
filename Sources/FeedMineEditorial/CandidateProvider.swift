@@ -20,6 +20,17 @@ public struct CandidateSupplyWindow: Hashable, Sendable {
     public let examinedCount: Int
     public let nextCursor: CandidateSupplyCursor?
     public let exhausted: Bool
+
+    /// A caller that composes one window out of several sources of candidates (the Runtime re-offers stories a
+    /// one-way walk passed) states the examined count and cursor of the walk that produced them, so progress stays
+    /// that walk's own fact and the composed candidates claim no position in it.
+    public init(candidates: [Candidate], examinedCount: Int, nextCursor: CandidateSupplyCursor?,
+        exhausted: Bool) {
+        self.candidates = candidates
+        self.examinedCount = examinedCount
+        self.nextCursor = nextCursor
+        self.exhausted = exhausted
+    }
 }
 
 public enum CandidateProviderError: Error, Equatable, Sendable {

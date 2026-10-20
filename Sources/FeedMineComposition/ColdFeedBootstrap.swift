@@ -139,6 +139,7 @@ public struct ColdFeedBootstrap: Sendable {
         prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication,
         evidence: (@Sendable (ColdFeedEvidence) async -> Void)? = nil,
         readiness: MediaReadiness? = nil,
+        reoffer: PendingMediaReconsideration? = nil,
         trace: ReplenishmentTrace? = nil,
         onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)? = nil,
         makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil) throws {
@@ -152,7 +153,7 @@ public struct ColdFeedBootstrap: Sendable {
         self.acquisition = acquisition
         self.coordinator = coordinator
         initialProductionSlice = InitialProductionSlice(database: acquisition.runtimeDatabase, readiness: readiness,
-            trace: trace)
+            reoffer: reoffer, trace: trace)
         self.prepare = prepare
     }
 
