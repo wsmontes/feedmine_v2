@@ -24,6 +24,32 @@ private final class CompletionCount: @unchecked Sendable {
     @discardableResult func increment() -> Int { lock.withLock { stored = (stored ?? 0) + 1; return stored! } }
     var value: Int? { lock.withLock { stored } }
 }
+/// Fails exactly the first call that consumes it, so a test can make one execution fail and let the next succeed.
+private final class FailOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var consumed = false
+    private var attempts = 0
+    @discardableResult func consume() -> Bool {
+        lock.withLock {
+            attempts += 1
+            if consumed { return false }
+            consumed = true
+            return true
+        }
+    }
+    var calls: Int { lock.withLock { attempts } }
+}
+private enum CoverageFixtureFailure: Error { case identity }
+/// Fails while enabled and counts attempts, so a test can inject a persistent failure and then remove it.
+private final class FailSwitch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var failing: Bool
+    private var attempts = 0
+    init(failing: Bool) { self.failing = failing }
+    func stop() { lock.withLock { failing = false } }
+    @discardableResult func consume() -> Bool { lock.withLock { attempts += 1; return failing } }
+    var calls: Int { lock.withLock { attempts } }
+}
 private enum CoverageResponse: Equatable, Sendable { case items, empty, upToDate, failure }
 private final class CoverageGate: Sendable {
     let stream: AsyncStream<Void>
@@ -170,13 +196,14 @@ final class SelectedSourceCoverageTests: XCTestCase {
     private func driver(_ f: Fixture, readiness: MediaReadiness? = nil,
         selectedSourceCoverage: Bool = true,
         onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)? = nil,
-        makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil)
+        makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil,
+        makeSegmentIdentity: (@Sendable () throws -> FeedRunwaySegmentIdentity)? = nil)
         throws -> (FeedRunwayDriver, RunwayController) {
         let runway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1, releaseMarginSeconds: 0)!,
             consumptionSampleLimit: 4, replenishmentSampleLimit: 4)!)
         return (try FeedRunwayDriver(session: f.session, runway: runway, plan: f.plan, policy: f.policy,
             acquisition: f.snapshot, coordinator: f.coordinator, monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
-            makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 2, segmentCreatedAt: Date(timeIntervalSince1970: 203))! },
+            makeSegmentIdentity: makeSegmentIdentity ?? { .init(segmentID: FeedSegmentID(), segmentSeed: 2, segmentCreatedAt: Date(timeIntervalSince1970: 203))! },
             prepare: Self.prepare,
             selectedSourceCoverage: selectedSourceCoverage
                 ? .init(selectedSourceCoverageFor: f.plan.context.key, editorialRevisionID: f.plan.revision.id) : nil,
@@ -443,6 +470,151 @@ final class SelectedSourceCoverageTests: XCTestCase {
         XCTAssertTrue(cards.contains { $0.originRevisionID == revision })
     }
 
+    /// Review 2026-10-20 (P0): a coalesced fact must survive the execution that carries it **failing**. The first
+    /// slice attempt throws at its segment identity; releasing ownership re-arms the fact, the driver states that
+    /// one durable fact again to clear the runway's failure fence, and the fact publishes with the selected target
+    /// still suspended and no new gesture.
+    func testP11FailedExecutionStillPublishesTheCoalescedFact() async throws {
+        let gate = CoverageGate {}
+        defer { gate.release() }
+        let mediaEntered = CompletionCount()
+        let mediaGate = CoverageGate { if mediaEntered.value == nil { mediaEntered.set(1) } }
+        defer { mediaGate.release() }
+        let readiness = MediaReadiness()
+        let f = try fixture(gate: gate), first = try await cold(f)
+        for record in try ContentStore(database: f.database).candidateWindow(sourceID: nil, after: nil,
+            examinedCapacity: 100).records {
+            readiness.record(record.originRevisionID, nil, textDeclared: true)
+        }
+        let failures = FailOnce()
+        let (driver, runway) = try driver(f, readiness: readiness, selectedSourceCoverage: false,
+            makeMediaOpportunity: {
+                await mediaGate.wait()
+                return MediaPreparationOpportunity(waitSeconds: 0, startedAt: 0, prepare: { _, _ in })
+            },
+            makeSegmentIdentity: {
+                if failures.consume() { throw CoverageFixtureFailure.identity }
+                return FeedRunwaySegmentIdentity(segmentID: FeedSegmentID(), segmentSeed: 2,
+                    segmentCreatedAt: Date(timeIntervalSince1970: 203))!
+            })
+        let suspended = startSuspendedTarget(f)
+        defer { _ = try? suspended }
+        let scopeValue = await f.session.currentRunwayScope()
+        let scope = try XCTUnwrap(scopeValue)
+        await runway.activate(scope)
+        let prime = RunwayObservation(editionID: first.editionID,
+            anchorCardID: first.window.anchor.cardID,
+            sampledAt: .init(seconds: ProcessInfo.processInfo.systemUptime)!, activity: .stationary)
+        try await runway.submitObservation(prime)
+        try await runway.acceptMeasurement(RunwayMeasurement(observation: prime,
+            readyAhead: ReadyAheadFacts(editionID: first.editionID, anchorCardID: prime.anchorCardID,
+                observedTailCardID: prime.anchorCardID, amount: .exact(64)),
+            advanceFromHighWater: nil))
+        let before = try PublicationStore(database: f.database).segments(editionID: first.editionID).count
+        let activation = Task {
+            try await driver.activateCurrentPresentation(resources: resources(reserve: 1))
+        }
+        let reachedMedia = await waitUntil(5) { mediaEntered.value != nil }
+        XCTAssertTrue(reachedMedia, "the caller execution reached its media barrier")
+
+        let late = try lateTargetAndSource(f, editionID: first.editionID)
+        let revision = try Self.admitLateLocal(f.database, target: late.0, source: late.1)
+        readiness.record(revision, nil, textDeclared: true)
+        await driver.noteMediaReadinessChanged()
+        mediaGate.release()
+        _ = try await activation.value
+
+        let published = await waitUntil(10) {
+            (try? PublicationStore(database: f.database).segments(editionID: first.editionID).count) ?? before > before
+        }
+        XCTAssertTrue(published, "the coalesced fact publishes even though the execution carrying it failed")
+        XCTAssertEqual(failures.calls, 2, "exactly one attempt failed and the next one carried the fact")
+        let cards = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+            .flatMap { try $0.cardIDs.compactMap { try PublicationStore(database: f.database).card(id: $0) } }
+        XCTAssertTrue(cards.contains { $0.originRevisionID == revision },
+            "the segment carries A's late revision while the selected target is still suspended")
+    }
+
+    /// Review 2026-10-20 (persistent failure): a fact carried by an execution that keeps failing is attempted a
+    /// bounded number of times and then left durable for the next authorized opportunity — never re-armed in a
+    /// loop. Removing the failure and offering the opportunity publishes it, and background stops the re-arming.
+    func testP11PersistentFailureStopsRearmingAndRecoversOnNextOpportunity() async throws {
+        let gate = CoverageGate {}
+        defer { gate.release() }
+        let mediaEntered = CompletionCount()
+        let mediaGate = CoverageGate { if mediaEntered.value == nil { mediaEntered.set(1) } }
+        defer { mediaGate.release() }
+        let readiness = MediaReadiness()
+        let f = try fixture(gate: gate), first = try await cold(f)
+        for record in try ContentStore(database: f.database).candidateWindow(sourceID: nil, after: nil,
+            examinedCapacity: 100).records {
+            readiness.record(record.originRevisionID, nil, textDeclared: true)
+        }
+        let failures = FailSwitch(failing: true)
+        let (driver, runway) = try driver(f, readiness: readiness, selectedSourceCoverage: false,
+            makeMediaOpportunity: {
+                await mediaGate.wait()
+                return MediaPreparationOpportunity(waitSeconds: 0, startedAt: 0, prepare: { _, _ in })
+            },
+            makeSegmentIdentity: {
+                if failures.consume() { throw CoverageFixtureFailure.identity }
+                return FeedRunwaySegmentIdentity(segmentID: FeedSegmentID(), segmentSeed: 2,
+                    segmentCreatedAt: Date(timeIntervalSince1970: 203))!
+            })
+        let suspended = startSuspendedTarget(f)
+        defer { _ = try? suspended }
+        let scopeValue = await f.session.currentRunwayScope()
+        let scope = try XCTUnwrap(scopeValue)
+        await runway.activate(scope)
+        let prime = RunwayObservation(editionID: first.editionID,
+            anchorCardID: first.window.anchor.cardID,
+            sampledAt: .init(seconds: ProcessInfo.processInfo.systemUptime)!, activity: .stationary)
+        try await runway.submitObservation(prime)
+        try await runway.acceptMeasurement(RunwayMeasurement(observation: prime,
+            readyAhead: ReadyAheadFacts(editionID: first.editionID, anchorCardID: prime.anchorCardID,
+                observedTailCardID: prime.anchorCardID, amount: .exact(64)),
+            advanceFromHighWater: nil))
+        let before = try PublicationStore(database: f.database).segments(editionID: first.editionID).count
+        let activation = Task {
+            try await driver.activateCurrentPresentation(resources: resources(reserve: 1))
+        }
+        let reachedMedia = await waitUntil(5) { mediaEntered.value != nil }
+        XCTAssertTrue(reachedMedia, "the caller execution reached its media barrier")
+
+        let late = try lateTargetAndSource(f, editionID: first.editionID)
+        let revision = try Self.admitLateLocal(f.database, target: late.0, source: late.1)
+        readiness.record(revision, nil, textDeclared: true)
+        await driver.noteMediaReadinessChanged()
+        mediaGate.release()
+        _ = try await activation.value
+
+        // Let any unbounded chain show itself: a loop would keep incrementing this counter.
+        try? await Task.sleep(for: .milliseconds(600))
+        let whileFailing = failures.calls
+        XCTAssertGreaterThanOrEqual(whileFailing, 1, "the fact was attempted")
+        XCTAssertLessThanOrEqual(whileFailing, 2, "a persistent failure is attempted at most twice")
+        let afterFailures = try PublicationStore(database: f.database).segments(editionID: first.editionID).count
+        XCTAssertEqual(afterFailures, before, "nothing was published while every attempt failed")
+
+        // Removing the failure and offering the authorized opportunity publishes the same durable fact.
+        failures.stop()
+        try await runway.noteLocalSupplyChanged(scope: scope)
+        await driver.noteMediaReadinessChanged()
+        let published = await waitUntil(10) {
+            (try? PublicationStore(database: f.database).segments(editionID: first.editionID).count) ?? before > before
+        }
+        XCTAssertTrue(published, "the durable fact publishes on the next authorized opportunity")
+        let cards = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+            .flatMap { try $0.cardIDs.compactMap { try PublicationStore(database: f.database).card(id: $0) } }
+        XCTAssertTrue(cards.contains { $0.originRevisionID == revision })
+
+        // Background closes the door to new work: a fact arriving now must not be attempted.
+        let beforeSuspend = failures.calls
+        await driver.suspendForBackground()
+        await driver.noteMediaReadinessChanged()
+        try? await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(failures.calls, beforeSuspend, "background does not re-arm the fact")
+    }
     /// Codex review: a coalesced caller whose media budget is still being created must not lose its page when the
     /// owner finishes first, and the late budget must not be installed into the next execution.
     func testCoalescedCallerBudgetReturningAfterOwnerDoesNotContaminateTheNextExecution() async throws {

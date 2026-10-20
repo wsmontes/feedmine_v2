@@ -59,6 +59,23 @@ public actor FeedRunwayDriver {
     /// The caller's media budget while a deferred late drive has to finish the fact that caller coalesced.
     private var deferredMediaOpportunity: MediaPreparationOpportunity?
     private var lateFactScope: RunwayScope?
+    /// Identity of the drain that owns `lateOpportunity`, and revision of the fact it was armed for. A drain may
+    /// only clear the reference it installed, and a fact that fails to publish is restored for the next one.
+    private var lateDrainID: UInt64 = 0
+    private var lateFactRevision: UInt64 = 0
+    /// The revision that already used its one re-statement after a failed execution. A fact is durable and still
+    /// owed a publication when the slice that carried it failed; the runway fences local work until new supply is
+    /// stated, so the driver states that same fact again — once per revision, never in a loop.
+    private var lateFactRestampedRevision: UInt64 = 0
+    /// One armed fact is attempted at most twice: the attempt that discovered the failure and one retry after the
+    /// supply was stated again. A persistent failure must not build an unbounded chain of drives; the fact stays
+    /// durable and the next authorized opportunity arms it again.
+    private static let lateFactAttemptLimit = 2
+    private var lateFactAttempts = 0
+    private var lateFactAttemptRevision: UInt64 = 0
+    /// At most one caller-budget preparation exists. It is cancelled before another starts, so an execution that
+    /// already ended cannot leave an unbounded set of suspended preparations behind.
+    private var callerMediaRefreshTask: Task<Void, Never>?
     private var backgroundRoundScope: RunwayScope?
     private let session: FeedSession
     let runway: RunwayController
@@ -174,6 +191,9 @@ public actor FeedRunwayDriver {
     }
 
     private func isCurrentPresentation(_ scope: RunwayScope) async -> Bool {
+        // A fact for an edition whose editorial revision this driver no longer serves is retired, even if the
+        // presentation still carries the same edition and context key.
+        guard scope.editorialRevisionID == plan.revision.id else { return false }
         guard let presentation = await session.currentPresentation() else { return false }
         return presentation.editionID == scope.editionID && presentation.contextKey == scope.contextKey
     }
@@ -184,6 +204,7 @@ public actor FeedRunwayDriver {
     /// can only state canonical supply — it never reauthorizes a retired context.
     private func scheduleLateOpportunity() {
         guard latestResources != nil else { return }
+        lateFactRevision &+= 1
         if causalExecution != nil {
             causalExecution?.reconsiderRequested = true
             // The fact is durable now, but the caller execution owns the examination. Preserve the opportunity and
@@ -197,37 +218,86 @@ public actor FeedRunwayDriver {
             return
         }
         lateFactsPending = true
-        guard lateOpportunity == nil else { return }
-        lateOpportunity = Task { await self.drainLateOpportunities() }
+        armLateOpportunity()
     }
 
-    private func drainLateOpportunities() async {
-        if let required = lateFactScope, await !isCurrentPresentation(required) {
-            lateFactsPending = false
-            lateFactScope = nil
-            deferredMediaOpportunity = nil
-            lateOpportunity = nil
-            return
-        }
-        guard lateFactsPending, causalExecution == nil else {
-            // An owner is still running: it will observe `lateFactsPending` in its defer and reschedule this
-            // drain. Releasing our own reference is what lets that defer start it; polling would be both wasteful
-            // and cancellation-blind.
-            lateOpportunity = nil
-            return
-        }
+    /// Arms the single drain that owes the pending fact a publication. Called on the fact's arrival, when an
+    /// execution releases ownership, and after a failed drain. It is a no-op while an execution owns the
+    /// examination: that owner's own release re-arms, so no task waits on another task.
+    private func armLateOpportunity() {
+        guard lateFactsPending, lateOpportunity == nil, causalExecution == nil, !backgroundSuspended else { return }
+        lateDrainID &+= 1
+        let id = lateDrainID
+        lateOpportunity = Task { await self.drainLateOpportunities(id: id) }
+    }
+
+    /// True when the fact's own scope is still the one this driver serves. A fact carrying no scope is judged by
+    /// the runway when the drain starts.
+    private func lateFactIsStillCurrent(fallback: RunwayScope?) async -> Bool {
+        guard let scope = lateFactScope ?? fallback else { return true }
+        return await isCurrentPresentation(scope)
+    }
+
+    private func clearLateFact() {
         lateFactsPending = false
         lateFactScope = nil
-        guard let resources = latestResources else { lateOpportunity = nil; return }
-        guard await runway.snapshot().scope != nil else { lateOpportunity = nil; return }
+        deferredMediaOpportunity = nil
+    }
+
+    private func drainLateOpportunities(id: UInt64) async {
+        guard lateDrainID == id else { return }
+        _ = await drainLateFacts()
+        if lateDrainID == id { lateOpportunity = nil }
+        armLateOpportunity()
+    }
+
+    /// Publishes the pending fact, if this context may. The fact is only consumed once the drive that carries it
+    /// is attempted; a throwing drive restores it so a transient failure cannot silence a durable fact.
+    @discardableResult
+    private func drainLateFacts() async -> Bool {
+        guard lateFactsPending else { return false }
+        guard await lateFactIsStillCurrent(fallback: nil) else {
+            clearLateFact()
+            return false
+        }
+        guard causalExecution == nil else { return false }
+        let revision = lateFactRevision
+        lateFactsPending = false
+        lateFactScope = nil
+        if lateFactAttemptRevision != revision {
+            lateFactAttemptRevision = revision
+            lateFactAttempts = 0
+        }
+        lateFactAttempts += 1
+        let attemptsLeft = lateFactAttempts < Self.lateFactAttemptLimit
+        guard let resources = latestResources, await runway.snapshot().scope != nil else {
+            clearLateFact()
+            return false
+        }
         let media = deferredMediaOpportunity
         deferredMediaOpportunity = nil
-        _ = try? await drive(resources: resources, isCallerOpportunity: false,
-            mediaOpportunityOverride: media)
-        lateOpportunity = nil
-        if lateFactsPending, causalExecution == nil {
-            lateOpportunity = Task { await self.drainLateOpportunities() }
+        do {
+            _ = try await drive(resources: resources, isCallerOpportunity: false,
+                mediaOpportunityOverride: media)
+        } catch {
+            // Only a bounded retry: a persistent failure must not build a chain of drives. The fact stays durable,
+            // so the next authorized opportunity arms it again.
+            if lateFactRevision == revision, attemptsLeft { lateFactsPending = true }
         }
+        // The fact is durable and still owed a publication. When the execution that carried it failed, the runway
+        // keeps the local work fenced until fresh supply is stated — so state this same fact again, once per
+        // revision and only while the attempt budget lasts.
+        if lateFactRevision == revision, attemptsLeft,
+            await runway.snapshot().lastLocalFailure != nil,
+            lateFactRestampedRevision != revision {
+            lateFactRestampedRevision = revision
+            if let restated = try? await validateCurrentScope() {
+                if (try? await runway.noteLocalSupplyChanged(scope: restated)) != nil {
+                    lateFactsPending = true
+                }
+            }
+        }
+        return true
     }
 
     private func validateCurrentScope() async throws -> RunwayScope? {
@@ -439,18 +509,23 @@ public actor FeedRunwayDriver {
         mediaOpportunityOverride: MediaPreparationOpportunity? = nil) async throws
         -> FeedPresentationSnapshot? {
         let startingScope = await session.currentRunwayScope()
+        defer {
+            // Ownership is released by `driveBody`'s defer, before this one. Arming here is what keeps a
+            // coalesced fact owned when the execution fails: an error must not strand it until some unrelated
+            // event. On the normal path the drain below already consumed it, so this is a no-op.
+            armLateOpportunity()
+        }
         let presentation = try await driveBody(resources: resources, isCallerOpportunity: isCallerOpportunity,
             mediaOpportunityOverride: mediaOpportunityOverride)
         // A coalesced late fact is finished by the same opportunity before it returns. Leaving it to a background
         // task would outlive the caller and compete with the reader's own durable writes (GRDB's default busy mode
-        // is immediate error, not a wait). If the caller moved to another scope/edition, the fact belongs to the
-        // retired one and is dropped instead of publishing against it (R16).
+        // is immediate error, not a wait). A fact whose own scope is retired is dropped instead of publishing
+        // against it (R16) — judged by the fact's scope, not by where this execution started.
         if lateFactsPending, !backgroundSuspended {
-            if startingScope != nil, await session.currentRunwayScope() == startingScope {
-                await drainLateOpportunities()
+            if await lateFactIsStillCurrent(fallback: startingScope) {
+                _ = await drainLateFacts()
             } else {
-                lateFactsPending = false
-                deferredMediaOpportunity = nil
+                clearLateFact()
             }
         }
         return presentation
@@ -557,8 +632,12 @@ public actor FeedRunwayDriver {
         causalExecution?.callerMediaRefreshesPending = 0
         causalExecution?.callerMediaRefreshInFlight = true
         let executionID = execution.id
-        Task { [weak self] in
+        // One preparation exists at a time: a preparation belonging to an execution that already ended must not
+        // accumulate behind the next one (review, 2026-10-20).
+        callerMediaRefreshTask?.cancel()
+        callerMediaRefreshTask = Task { [weak self] in
             let media = await makeMediaOpportunity()
+            if Task.isCancelled { return }
             await self?.finishCallerMediaRefresh(media, executionID: executionID, scope: scope)
         }
     }
@@ -568,11 +647,14 @@ public actor FeedRunwayDriver {
         guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
             if causalExecution?.id == executionID { causalExecution?.callerMediaRefreshInFlight = false }
             noteCallerMediaRefreshCompleted()
+            rescheduleCallerMediaRefreshesIfOwed(executionID: executionID, scope: scope)
             return
         }
         // No suspension between this validation and the write: another executor must not inherit this budget.
         guard causalExecution?.id == executionID, !backgroundSuspended else {
+            if causalExecution?.id == executionID { causalExecution?.callerMediaRefreshInFlight = false }
             noteCallerMediaRefreshCompleted()
+            rescheduleCallerMediaRefreshesIfOwed(executionID: executionID, scope: scope)
             return
         }
         causalExecution?.mediaOpportunity = media
@@ -581,6 +663,15 @@ public actor FeedRunwayDriver {
         if causalExecution?.callerMediaRefreshesPending ?? 0 > 0 {
             scheduleCallerMediaRefreshes(scope: scope)
         }
+    }
+
+    /// A rejected preparation must not leave the caller's owed budget waiting for the owner's loop to come back:
+    /// while that same execution still owns the examination, the next preparation starts now.
+    private func rescheduleCallerMediaRefreshesIfOwed(executionID: UInt64, scope: RunwayScope) {
+        guard causalExecution?.id == executionID,
+            (causalExecution?.callerMediaRefreshesPending ?? 0) > 0,
+            !(causalExecution?.callerMediaRefreshInFlight ?? true) else { return }
+        scheduleCallerMediaRefreshes(scope: scope)
     }
 
     private func noteCallerMediaRefreshCompleted() {
@@ -752,6 +843,8 @@ public actor FeedRunwayDriver {
         lateOpportunity?.cancel()
         lateOpportunity = nil
         lateFactsPending = false
+        callerMediaRefreshTask?.cancel()
+        callerMediaRefreshTask = nil
     }
 
     public func deactivate() async {
@@ -772,6 +865,8 @@ public actor FeedRunwayDriver {
         // P02: no late fact may re-enter a retired context.
         lateOpportunity?.cancel()
         lateOpportunity = nil
+        callerMediaRefreshTask?.cancel()
+        callerMediaRefreshTask = nil
         lateFactsPending = false
         latestResources = nil
         await runway.deactivate()
