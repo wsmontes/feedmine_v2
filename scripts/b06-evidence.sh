@@ -299,7 +299,10 @@ with tempfile.TemporaryDirectory(prefix='feedmine-b06-control-') as d:
         if tmpl.returncode: raise RuntimeError('xctrace list templates failed')
         # Human-readable names from installed Xcode; not static schema names.
         available={line.strip().strip('"') for line in tmpl.stdout.splitlines()}
-        requested={'hitches':'Animation Hitches','resources':'Activity Monitor','energy':'Energy Log'}
+        # Energy is recorded with the installed `Power Profiler` template: `Energy Log` does not exist in
+        # Xcode 26.6 (`xcrun xctrace list templates`, 2026-10-20), and the 2026-10-20T050511Z run reported
+        # energy NOT_MEASURED for exactly that reason. A template that does not exist cannot measure anything.
+        requested={'hitches':'Animation Hitches','resources':'Activity Monitor','energy':'Power Profiler'}
         if requested['hitches'] not in available:
             raise RuntimeError('Animation Hitches template unavailable; cannot record required B06 frames')
         for key,name in requested.items():
