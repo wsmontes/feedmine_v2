@@ -3785,6 +3785,26 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
+    /// **D5**: "Falha ao atualizar o feed" may only speak for a feed update. A save, a copy, a share or opening a
+    /// card is a local action: it states itself, never the feed's failure, and never replaces what the reader had.
+    func testALocalActionFailureNeverSpeaksForTheFeed() {
+        XCTAssertNil(FeedAssociation.FailureOperation.feedRefresh.statement,
+            "the feed's own message belongs to the feed state, not to a toast")
+        let locals: [FeedAssociation.FailureOperation] = [.openCard, .save, .copy, .share]
+        let statements = locals.compactMap(\.statement)
+        XCTAssertEqual(statements.count, locals.count, "every local operation states itself")
+        XCTAssertEqual(Set(statements).count, statements.count, "and they are distinct, not one generic sentence")
+        for statement in statements {
+            XCTAssertNotEqual(statement, "Falha ao atualizar o feed",
+                "a local action may never present the feed's failure")
+        }
+        XCTAssertEqual(FeedAssociation.operation(for: .copyLink), .copy)
+        XCTAssertEqual(FeedAssociation.operation(for: .share), .share)
+        XCTAssertEqual(FeedAssociation.operation(for: .save), .save)
+        XCTAssertEqual(FeedAssociation.operation(for: .open), .openCard)
+        XCTAssertEqual(FeedAssociation.operation(for: .openMedia), .openCard)
+    }
+
     /// The signal a write sends states **that** a write happened, not the value: the composition drops its cache,
     /// so two writers reaching the main actor in either order cannot install an older value. A write the store
     /// refuses sends nothing.

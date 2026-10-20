@@ -2296,7 +2296,7 @@ final class FeedAssociation {
             if action == .viewSource {
                 let card: PublicationStore.CardRecord?
                 do { card = try PublicationStore(database: database).card(id: cardID) }
-                catch { reportFailure(error); return }
+            catch { reportFailure(error, operation: .openCard); return }
                 guard let sourceID = card?.sourceID else {
                     store.showToast(text: String(localized: "Esta carta não declara uma fonte"),
                         systemImage: "info.circle")
@@ -2323,7 +2323,7 @@ final class FeedAssociation {
                     if PlatformPasteboard.copy(text) {
                         store.showToast(text: String(localized: "Link copiado"), systemImage: "doc.on.doc")
                     } else {
-                        reportFailure(ReaderActionError.unusableReference(text))
+                        reportFailure(ReaderActionError.unusableReference(text), operation: .copy)
                     }
                 case .share(let payload):
                     onShare?(SharedLink(url: payload.url, subject: payload.subject))
@@ -2334,7 +2334,7 @@ final class FeedAssociation {
                     // carries nothing playable.
                     onMedia?(cardID)
                 }
-            } catch { reportFailure(error) }
+            } catch { reportFailure(error, operation: Self.operation(for: action)) }
         }
     }
 
@@ -2366,7 +2366,7 @@ final class FeedAssociation {
             // Owner directive 2026-10-17 §2: the link and its content are one promise. A save starts the
             // occurrence's media preparation and records what the link can open; an unsave clears the claim.
             prepareSavedMediaAndPublish(cardID, announceFailure: false)
-        } catch { reportFailure(error) }
+        } catch { reportFailure(error, operation: .save) }
     }
 
     /// P2: every preparation settles into the saved surface. A refused durable write has no row, so its failure
@@ -4114,17 +4114,57 @@ final class FeedAssociation {
         transport.invalidateAndCancel()
     }
 
-    func reportFailure(_ error: any Error) {
+    /// What the failing operation was. Only a **feed update** may present the feed's own failure state: a save, a
+    /// copy, a share or opening a card is a local action, and telling the reader "Falha ao atualizar o feed" for it
+    /// is a false statement about what failed (PD-2026-10-20 D5). Local actions state themselves in a toast and
+    /// never touch the presented feed, so what the reader already had is not replaced by a report about something
+    /// else.
+    enum FailureOperation: Equatable {
+        case feedRefresh
+        case openCard
+        case save
+        case copy
+        case share
+
+        /// The reader's words for this operation's failure. The feed's own message is deliberately absent: it
+        /// belongs to `.feedRefresh` only, which is rendered as the feed's work state.
+        var statement: String? {
+            switch self {
+            case .feedRefresh: return nil
+            case .openCard: return String(localized: "Não foi possível abrir esta carta")
+            case .save: return String(localized: "Não foi possível salvar")
+            case .copy: return String(localized: "Não foi possível copiar")
+            case .share: return String(localized: "Não foi possível compartilhar")
+            }
+        }
+    }
+
+    /// Which statement a failed card action owes the reader. Only a feed update may speak for the feed; a
+    /// copy, a save, a share or opening a card answer for themselves (PD-2026-10-20 D5).
+    nonisolated static func operation(for action: ReaderCardAction) -> FailureOperation {
+        switch action {
+        case .copyLink: return .copy
+        case .share: return .share
+        case .save: return .save
+        case .open, .viewSource, .addSourceToCollection, .openMedia: return .openCard
+        }
+    }
+
+    func reportFailure(_ error: any Error, operation: FailureOperation = .feedRefresh) {
         if let rejection = error as? FeedPresentationStateError {
             Self.log("projection rejected \(rejection)")
             return // typed structural rejection is logged; never install an alternative result/work.
         }
         guard active else { return }
-        Self.log("execution failure \(String(describing: error))")
+        Self.log("execution failure \(String(describing: error)) operation=\(String(describing: operation))")
+        if let statement = operation.statement {
+            store.showToast(text: statement, systemImage: "exclamationmark.triangle")
+            return
+        }
         // PO/R3: a connection failure is stated as such — and only when the transport proved one.
         let work: FeedPresentationState.Work = Self.isConnectionFailure(error)
             ? .unreachable
-            : .failed(message: "Falha ao atualizar o feed")
+            : .failed(message: String(localized: "Falha ao atualizar o feed"))
         do { try install(store.state.reporting(work)) }
         catch { Self.log("failure reporting rejected \(String(describing: error))") }
     }
