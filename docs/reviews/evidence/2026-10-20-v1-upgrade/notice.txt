@@ -1,8 +1,7 @@
-NOTICE — measured on build c7c850af, as-specified layout, 2026-10-20 12:18-12:20
+NOTICE — run 4, build 03fab3ab, as-specified layout, 2026-10-20 12:34
 
 WHAT IS DRAWN
-`run-3-application-support/notice-drawn.png` (device frame, 0.7 s after launch) and the
-accessibility tree both carry the alert:
+`run-4-volume-gated/notice-painted.png` (device frame, ~0.3 s after launch) is the UIKit alert:
 
   Da versão anterior
   Importados da versão anterior: caixas 1, fontes 3, coleções 1. Ainda inacessíveis nesta versão:
@@ -10,34 +9,36 @@ accessibility tree both carry the alert:
   da versão anterior.
   [Entendi]
 
-AX, read from the Simulator window while the alert was up:
+In the same frame the reader's own surface still shows through — "Going after what's worth reading"
+and "As primeiras manchetes aparecem aqui" are painted over the alert card.
+
+AX, from the Simulator window with `ax(all: true)` (the default depth hides it under one unreadable node):
 
   - statictext "Da versão anterior"
   - statictext "Importados da versão anterior: caixas 1, fontes 3, coleções 1. Ainda inacessívei…"
   - button "Entendi"
 
-The copy matches AppComposition.legacyUpgradeNoticeText (AppComposition.swift:1178-1191) for the receipt
-(boxes 1, sources 3, collections 1; savedArticles 2, smartFeeds 0, curatedFeeds 0).
+The alert is in the accessibility tree at **1.21 s** and again at **2.0 s** after launch.
 
-WHY IT CANNOT BE ACKNOWLEDGED
-The alert is not in front of the reader. `run-3-application-support/notice-behind-surface.png` is a
-window frame 0.45 s after launch: the reader's own surface ("Going after what's worth reading", "As
-primeiras manchetes aparecem aqui") is painted **over** the alert, and by 0.95 s the reader's
-"Couldn't connect." surface and its blue "Try again" button are on top of the alert's "Entendi" — the
-two buttons occupy the same pixels. The alert fades out within ~1 s.
+WHAT THE SCREEN SHOWS AT 2 s AND LATER
+`run-4-volume-gated/no-alert-at-5s-no-tap.png` (≈5 s after launch, no tap anywhere) and
+`run-4-volume-gated/no-alert-at-5s-second-shot.png` (≈8 s) show the reader's "Couldn't connect." and
+its "Try again" button — no alert. The burst around launch shows the alert painted at ~0.3-0.6 s and
+gone from ~0.9 s onward. So it is drawn, but it does not stay: the requirement "the alert stays on
+screen at ≥2 s" is **not** met.
 
-Consequences, measured:
+THE FLAG
+`notice_presented` = **0** on a launch with no tap (measured twice, at 5 s and 8 s), and still **0**
+after every acknowledgement attempt:
 
-- Every pointer click aimed at (456, 1231) — the Entendi bar, calibrated from those same window frames —
-  landed on "Try again": the reader restarted its load instead of acknowledging. Clicks were issued at
-  0.18, 0.30, 0.42, 0.54, 0.62, 0.82, 1.02 and 1.22 s after launch (click delivery verified separately:
-  a click on "Try again" does start a retry). None reached Entendi.
-- The accessibility press on the alert's button is no better: `win.find("Entendi")` returned no element
-  in a 22 s poll at 0.1 s intervals on this build.
-- `notice_presented` stayed **0** through ~10 launches. No acknowledgement was recorded, and — the part
-  that is right — none was recorded without a tap either.
+- AX press on the "Entendi" element found at 1.21 s — no change.
+- window click at the Entendi bar (pixels 456,1239 in the window frame, calibrated from the frame
+  above) issued 0.35 s after launch — no change.
+- Further presses/clicks in runs 3 and 4 (eight timings between 0.18 s and 1.22 s) — no change.
 
-=> The notice is now *drawn* on the as-specified layout, but it is not presented above the reader
-   surface and cannot be dismissed. Acceptance "the reader dismisses it, notice_presented flipping only
-   on that tap" is NOT met. The fix's stated intent (host it on the NavigationStack so it survives the
-   swap) holds for survival of the view, not for its z-order: the alert is behind the content.
+So the flag is correctly untouched without a tap, and it is also untouched *with* one: the tap never
+reaches the button, because the alert is under the reader's layer and is removed ~1 s after it appears.
+
+=> Acceptance for the notice is NOT met. The UIKit presentation renders the same symptom as the SwiftUI
+   alert did: drawn behind the reader's surface, short-lived, not hittable. Evidence frames and the AX
+   tree at 1.2 s / 2.0 s are the record; no workaround was attempted beyond repeating the tap.

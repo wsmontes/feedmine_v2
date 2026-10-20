@@ -1,15 +1,21 @@
 {
-  "build_commit": "c7c850af54f2a718a757612173a47c41d56d432d",
-  "layout": "as specified: V1 data at Library/Application Support/Feedmine, V2 Release installed over the same bundle id, no rename, no move, no deletion",
-  "container_before_install": "5008052D-A728-409B-B3C4-708C76E1B263",
-  "container_after_install": "EEAF13CE-5353-415C-BAD8-992FA369259B",
-  "store_opened_at": "Library/Application Support/Feedmine/runtime.sqlite (inside V1's own directory)",
+  "build_commit": "03fab3abca0a1e89b09b0e1921432426e263a841",
+  "worktree": "clean (0 modified files at build time)",
+  "layout": "as specified: V1 data at Library/Application Support/Feedmine, V2 Release over the same bundle id, no rename, no move, no deletion",
+  "volume_probe": "/tmp/Abc resolves as abc, and the simulator Devices dir likewise: volume is case-insensitive",
+  "container_before_install": "845159A5-69B0-4EC7-AAB4-2165DA6E31D5",
+  "container_after_install": "67A965C9-E934-4A71-80A6-A60F9B8E951D",
+  "application_support_entries": [
+    "Feedmine"
+  ],
+  "runtime_sqlite_files_found": 1,
+  "store_path": "Library/Application Support/Feedmine/runtime.sqlite (opened inside V1's directory; the exact spelling could not be created, the volume is case-insensitive, so the existing variant was reused)",
   "receipt": [
     {
       "singleton_id": 1,
-      "source_path": "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/EEAF13CE-5353-415C-BAD8-992FA369259B/Library/Application Support/Feedmine/user.sqlite",
+      "source_path": "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/67A965C9-E934-4A71-80A6-A60F9B8E951D/Library/Application Support/Feedmine/user.sqlite",
       "status": "completed",
-      "ran_at": 1792523778.805289,
+      "ran_at": 1792524829.018832,
       "failure_reason": null,
       "imported_boxes": 1,
       "imported_sources": 3,
@@ -94,6 +100,14 @@
       "source_key": "https://exemplo.test/tecnologia/feed"
     }
   ],
-  "second_launch": "ran_at and every count identical across ~10 launches; no duplicated row",
-  "notice": "drawn but never frontmost: notice_presented stayed 0"
+  "second_launch": "ran_at and every count identical across ~6 launches; no duplicated row",
+  "notice": {
+    "in_ax_at_seconds": [
+      1.21,
+      2.0
+    ],
+    "painted_window_seconds": "~0.3-0.6 s only",
+    "notice_presented_without_tap": 0,
+    "notice_presented_after_tap_attempts": 0
+  }
 }
