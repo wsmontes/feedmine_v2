@@ -197,6 +197,19 @@ struct FeedMineApp: App {
     /// *sheet's* own presentation, anchored on the sheet (`exportSheet`), not the feed's: the reader asks for it
     /// while the sheet is up, and a surface presented by a presenter that already has one up is deferred.
     @State private var sharedExport: SharedLink?
+    /// Presents the V1-upgrade notice on the window's topmost controller, which is above the reader's own
+    /// presented surface. The receipt is recorded **only** by the reader's acknowledgement.
+    @MainActor private func presentLegacyUpgradeNoticeIfOwed() {
+        guard !showsLegacyUpgradeNotice, let notice = composition.legacyUpgradeNotice else { return }
+        showsLegacyUpgradeNotice = true
+        LegacyUpgradeNoticePresenter.present(title: String(localized: "Da versão anterior"),
+            message: composition.legacyUpgradeNoticeText) { [composition] in
+            self.showsLegacyUpgradeNotice = false
+            composition.acknowledgeLegacyUpgradeNotice()
+            _ = notice
+        }
+    }
+
     /// T11: the onboarding gate and the curated feed's own hood.
     @State private var showsOnboarding = false
     /// What the reader answered in this session, so the block that asked shows the answer — and the way back —
@@ -521,21 +534,14 @@ struct FeedMineApp: App {
             }
             // D7-A: the first open after a V1 upgrade states what was carried and what this build still
             // cannot open. Dismissing it records the presentation; the receipt keeps the counts.
-            .alert("Da versão anterior", isPresented: $showsLegacyUpgradeNotice) {
-                // Only the reader's own acknowledgement records the presentation. A computed binding whose
-                // setter acknowledged on `false` was cleared by SwiftUI before the alert could be drawn
-                // (measured in the D7-A rehearsal: `notice_presented` flipped to 1 with no alert on screen).
-                Button("Entendi", role: .cancel) { composition.acknowledgeLegacyUpgradeNotice() }
-            } message: {
-                Text(composition.legacyUpgradeNoticeText)
-            }
-            .task {
-                showsLegacyUpgradeNotice = composition.legacyUpgradeNotice != nil
-            }
-            // The receipt is read during launch, which can finish after this surface first appears: react to the
-            // state, not only to the one-shot appear, or the notice stays invisible for a second reason.
-            .onChange(of: composition.legacyUpgradeNotice != nil) { _, owed in
-                showsLegacyUpgradeNotice = owed
+            // D7-A: the notice is presented by the host's own topmost view controller, not by a SwiftUI alert.
+            // Measured in the rehearsal: an alert hosted in this hierarchy is painted **behind** the reader's
+            // presented controller, so the reader saw it for under a second and every tap landed on the reader's
+            // own button behind it. `.task` covers the receipt that is already loaded; `.onChange` covers the one
+            // that loads after this surface first appears.
+            .task { presentLegacyUpgradeNoticeIfOwed() }
+            .onChange(of: composition.legacyUpgradeNotice != nil) { _, _ in
+                presentLegacyUpgradeNoticeIfOwed()
             }
             .task {
                 // U2: the reader stays in the app. The composition resolves the frozen target and
@@ -685,7 +691,27 @@ struct FeedMineApp: App {
     /// refuses raises no error and calls no completion, so a host that inferred the reader's state from
     /// `presentingViewController`, or that marked a page shown before it was, left the reader on screen with its
     /// close and its site controls wired to nothing.
-    struct ReaderHost: UIViewControllerRepresentable {
+    /// Presents the one-time V1-upgrade notice above whatever the window is showing. UIKit, not SwiftUI: the
+/// reader is a presented `UIViewController`, and a SwiftUI alert in the reader's hierarchy is painted behind it
+/// (measured 2026-10-20 — the reader saw the alert for under a second and its taps hit the reader's own button).
+@MainActor
+enum LegacyUpgradeNoticePresenter {
+    static func present(title: String, message: String, onAcknowledge: @escaping () -> Void) {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }) ?? UIApplication.shared
+                .connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+            var top = (scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first)?.rootViewController
+        else { return }
+        while let presented = top.presentedViewController { top = presented }
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: String(localized: "Entendi"), style: .cancel) { _ in
+            onAcknowledge()
+        })
+        top.present(alert, animated: true)
+    }
+}
+
+struct ReaderHost: UIViewControllerRepresentable {
         /// The reader that is up, if any, plus a token that changes while it is up: the reader's content reads
         /// the live playback state, so the host must re-render it when that state changes instead of keeping the
         /// view it was presented with (a review measured a bar frozen at whatever it was built with).

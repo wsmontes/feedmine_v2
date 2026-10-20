@@ -81,15 +81,27 @@ public struct WALCheckpointResult: Sendable, Equatable {
 public final class RuntimeDatabase: Sendable {
     private let pool: DatabasePool
 
-    /// The directory a store is actually opened in: an existing case variant of the requested name wins, because
-    /// the volume may not let us create the other spelling (EIO) and the existing one holds the reader's data.
-    static func resolveExistingDirectory(_ directory: URL, fileManager: FileManager = .default) -> URL {
+    /// Whether the volume holding `url` can tell two spellings apart. True (the safe, isolating answer) when the
+    /// question cannot be answered: only a volume that *says* it is case-insensitive may collapse the names.
+    static func volumeIsCaseSensitive(_ url: URL, fileManager: FileManager = .default) -> Bool {
+        var probe = url
+        while probe.path != "/" {
+            if let values = try? probe.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]),
+                let insensitive = values.volumeSupportsCaseSensitiveNames {
+                return insensitive
+            }
+            probe = probe.deletingLastPathComponent()
+        }
+        return true
+    }
+
+    /// The existing sibling whose name differs only by case, if any.
+    static func caseVariantDirectory(of directory: URL, fileManager: FileManager = .default) -> URL? {
         let parent = directory.deletingLastPathComponent()
         let name = directory.lastPathComponent
         guard let entries = try? fileManager.contentsOfDirectory(at: parent,
-            includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return directory }
-        if let exact = entries.first(where: { $0.lastPathComponent == name }) { return exact }
-        return entries.first { $0.lastPathComponent.lowercased() == name.lowercased() } ?? directory
+            includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return nil }
+        return entries.first { $0.lastPathComponent.lowercased() == name.lowercased() }
     }
 
     public convenience init(
@@ -105,15 +117,22 @@ public final class RuntimeDatabase: Sendable {
         migrator: DatabaseMigrator,
         fileManager: FileManager = .default
     ) throws {
-        // Open the directory that exists, not the spelling we prefer. On a case-insensitive volume, creating
-        // `FeedMine` beside an existing `Feedmine` fails with EIO inside the app sandbox (measured 2026-10-20 in
-        // the D7-A rehearsal: NSCocoaErrorDomain 512 / POSIX 5), and the existing case variant is the reader's own
-        // directory — on an upgrade it is exactly where V1's data lives.
-        let directory = Self.resolveExistingDirectory(location.directory, fileManager: fileManager)
+        // The **exact** spelling wins whenever it can exist: on a case-sensitive volume (the iPhone's) `Feedmine`
+        // and `FeedMine` are genuinely distinct directories, and V2's store must never be opened inside V1's
+        // data directory. Only when creation fails *and* the volume cannot tell the spellings apart is the
+        // existing variant reused — that failure is the case-collision (measured 2026-10-20 in the D7-A
+        // rehearsal: NSCocoaErrorDomain 512 / POSIX 5 EIO), and there the two names are one directory anyway.
+        var directory = location.directory
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
-            throw RuntimeDatabaseError.couldNotCreateDirectory(directory: directory, message: error.localizedDescription)
+            if !Self.volumeIsCaseSensitive(directory, fileManager: fileManager),
+                let variant = Self.caseVariantDirectory(of: directory, fileManager: fileManager) {
+                directory = variant
+            } else {
+                throw RuntimeDatabaseError.couldNotCreateDirectory(directory: directory,
+                    message: error.localizedDescription)
+            }
         }
         let databaseURL = directory.appendingPathComponent("runtime.sqlite")
 
