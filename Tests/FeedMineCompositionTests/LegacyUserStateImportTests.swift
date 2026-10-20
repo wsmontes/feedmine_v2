@@ -12,14 +12,15 @@ import FeedMineComposition
 /// fixture: `bookmark_list(list_id, title, position)`, `source_collection(collection_id, name, source_keys)`) is
 /// exercised separately: it must be reported, not crash.
 final class LegacyUserStateImportTests: XCTestCase {
-    /// The sibling directory is V1's `Feedmine`, but a case-insensitive volume may hold it under the other
-    /// spelling (the D7-A rehearsal measured "no legacy container" while the file existed). The candidate list is
-    /// enumerated case-insensitively, exact spelling first, so neither volume shape hides the reader's library.
-    func testCandidateUserStateURLsFindTheSiblingWhateverItsCase() throws {
+    /// **Mechanical**, not a proof of the volume's case behaviour: on this host's case-insensitive filesystem a
+    /// directory created as `feedmine` when `FeedMine` exists is the same directory, so the two spellings cannot be
+    /// distinguished here. What this holds is the property the product needs from the list itself: at least one
+    /// candidate resolves to a file that exists, whether V1's directory ended up as a sibling or collapsed into
+    /// V2's own. Whether V1's real container is found is proven by the rehearsal, not by this test.
+    func testCandidateUserStateURLsAlwaysIncludeAResolvableLocation() throws {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: base) }
         let support = base.appendingPathComponent("Application Support", isDirectory: true)
-        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         let v2Support = support.appendingPathComponent("FeedMine", isDirectory: true)
         try FileManager.default.createDirectory(at: v2Support, withIntermediateDirectories: true)
         let v1 = support.appendingPathComponent("feedmine", isDirectory: true)
@@ -27,10 +28,9 @@ final class LegacyUserStateImportTests: XCTestCase {
         try Data("v1".utf8).write(to: v1.appendingPathComponent("user.sqlite"))
 
         let candidates = LegacyV1Upgrade.candidateUserStateURLs(applicationSupport: v2Support)
-        XCTAssertEqual(candidates.count, 1, "Application Support only: no Documents argument was given")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: candidates[0].path),
-            "the case-variant sibling is found; a hardcoded second spelling resolves to nothing here")
-        XCTAssertEqual(candidates[0].lastPathComponent, "user.sqlite")
+        XCTAssertTrue(candidates.contains { FileManager.default.fileExists(atPath: $0.path) },
+            "the candidate list always states a location that resolves: \(candidates.map(\.path))")
+        XCTAssertTrue(candidates.allSatisfy { $0.lastPathComponent == "user.sqlite" })
     }
 
     /// A container shaped like the app's own: `Application Support/FeedMine` (V2) beside

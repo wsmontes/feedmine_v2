@@ -31,26 +31,23 @@ public enum LegacyV1Upgrade: Sendable {
     public static func candidateUserStateURLs(applicationSupport: URL,
         documentsDirectory: URL? = nil) -> [URL] {
         let support = applicationSupport.deletingLastPathComponent()
-        // The sibling directory is V1's `Feedmine`. It is looked up **by enumeration, case-insensitively**: a
-        // case-insensitive volume (the simulator's, and any Mac volume with the default format) resolves
-        // `FeedMine` and `Feedmine` to the same entry, and depends on which spelling created it — a hardcoded
-        // second spelling silently resolves to nothing there (measured 2026-10-20: the rehearsal reported "no
-        // legacy container" while the file existed). An exact match wins; otherwise the first case-variant.
+        // V1 1.0 wrote `Application Support/Feedmine/user.sqlite`. On a case-sensitive volume that is a sibling
+        // of V2's `FeedMine`; on a case-insensitive one it IS V2's own directory, so the same file is found at
+        // `applicationSupport/user.sqlite`. Both shapes are candidates, and the sibling is matched by enumeration
+        // because its recorded spelling depends on which writer created it.
         let entries = (try? FileManager.default.contentsOfDirectory(
             at: support, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-        let feedmineSiblings = entries.filter { $0.lastPathComponent.lowercased() == "feedmine" }
-        var candidates: [URL] = []
-        if let exact = feedmineSiblings.first(where: { $0.lastPathComponent == "Feedmine" }) {
-            candidates.append(exact)
+        let own = applicationSupport.standardizedFileURL
+        let siblings = entries.filter {
+            $0.lastPathComponent.lowercased() == "feedmine"
+                && $0.standardizedFileURL != own
+        }.sorted { lhs, rhs in
+            lhs.lastPathComponent == "Feedmine" && rhs.lastPathComponent != "Feedmine"
         }
-        candidates.append(contentsOf: feedmineSiblings.filter { $0.lastPathComponent != "Feedmine" })
-        if candidates.isEmpty {
-            // Nothing to enumerate yet: keep the documented spelling so the candidate list still states the
-            // location this build expects, even when the directory does not exist.
-            candidates = [support.appendingPathComponent("Feedmine", isDirectory: true)]
-        }
-        var urls = candidates.map { $0.appendingPathComponent("user.sqlite") }
-        if let documentsDirectory, !documentsDirectory.appendingPathComponent("user.sqlite").path.isEmpty {
+        var urls = siblings.map { $0.appendingPathComponent("user.sqlite") }
+        // The case-collapsed shape: V1's directory resolved to V2's own, so the file sits beside the store.
+        urls.append(applicationSupport.appendingPathComponent("user.sqlite"))
+        if let documentsDirectory {
             urls.append(documentsDirectory.appendingPathComponent("user.sqlite"))
         }
         return urls

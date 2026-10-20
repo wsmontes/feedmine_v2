@@ -335,6 +335,11 @@ struct FeedMineApp: App {
                 .task {
                     showsLegacyUpgradeNotice = composition.legacyUpgradeNotice != nil
                 }
+                // The receipt is read during launch, which can finish after this surface first appears: react to the
+                // state, not only to the one-shot appear, or the notice stays invisible for a second reason.
+                .onChange(of: composition.legacyUpgradeNotice != nil) { _, owed in
+                    showsLegacyUpgradeNotice = owed
+                }
                 .sheet(item: sheetItem, onDismiss: {
                     // A selection made in the source surface is adopted when it closes, never mid-list, and the
                     // appearance is re-derived because the settings surface may have changed it.
