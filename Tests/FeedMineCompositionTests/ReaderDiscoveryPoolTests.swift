@@ -46,12 +46,17 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
                     (13, 'https://science.pod/pod', 'Podcast', 'https://science.pod/pod', 'https://science.pod/pod', 'audio', 'pt', 95),
                     (14, 'https://sport.pt/feed', 'Sport PT', 'https://sport.pt/feed', 'https://sport.pt/feed', 'text', 'pt', 60),
                     (15, 'https://science.pt-two/feed', 'Ciência PT 2', 'https://science.pt-two/feed', 'https://science.pt-two/feed', 'text', 'pt-BR', 85),
-                    (16, 'https://both.xx/feed', 'Ciência e esporte', 'https://both.xx/feed', 'https://both.xx/feed', 'text', NULL, 50);
+                    (16, 'https://both.xx/feed', 'Ciência e esporte', 'https://both.xx/feed', 'https://both.xx/feed', 'text', NULL, 50),
+                    -- D10: the highest-quality source here is video, in the topic and language every discovery
+                    -- profile below names — so "video never enters the automatic pool" is a fact of the pool and
+                    -- not of a fixture that simply has none.
+                    (17, 'https://science.video/feed', 'Vídeo', 'https://science.video/feed', 'https://science.video/feed', 'video', 'pt', 99);
                 INSERT INTO catalog_placement (source_id, node_id, node_name, opml_file, sort_order) VALUES
                     (10, 2, 'Science', 'x.opml', 0), (11, 2, 'Science', 'x.opml', 1),
                     (12, 2, 'Science', 'x.opml', 2), (13, 2, 'Science', 'x.opml', 3),
                     (14, 3, 'Sport', 'y.opml', 0), (15, 2, 'Science', 'x.opml', 4),
-                    (16, 2, 'Science', 'x.opml', 5), (16, 3, 'Sport', 'y.opml', 1);
+                    (16, 2, 'Science', 'x.opml', 5), (16, 3, 'Sport', 'y.opml', 1),
+                    (17, 2, 'Science', 'x.opml', 6);
                 """)
         }
         return url
@@ -279,12 +284,16 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
         for _ in 0..<200 where discovery.entries.count < 119 { try? await Task.sleep(for: .milliseconds(25)) }
         XCTAssertEqual(discovery.entries.count, 119)
         _ = try await driver.drive(resources: resources)
-        for _ in 0..<200 where discovery.entries.count < 127 { try? await Task.sleep(for: .milliseconds(25)) }
-        XCTAssertEqual(discovery.entries.count, 127)
+        for _ in 0..<200 where discovery.entries.count < 128 { try? await Task.sleep(for: .milliseconds(25)) }
+        // 125 progressive sources plus the three fixture sources the catalogue places in the reader's language as
+        // text or audio: the walk reaches every one of them, past the legacy 120 ceiling, and stops there.
+        XCTAssertEqual(discovery.entries.count, 128)
         XCTAssertTrue(discovery.exhausted)
         let entries = discovery.entries
+        XCTAssertTrue(entries.contains { $0.principal == "https://science.pod/pod" },
+            "the walk admits the audio source of the reader's language, not only its text sources")
         let targets = try acquisition.eligibleTargets(for: context)
-        XCTAssertEqual(targets.count, 126)
+        XCTAssertEqual(targets.count, 127)
         XCTAssertFalse(targets.contains { $0.id == revoked.targetID })
         XCTAssertTrue(targets.allSatisfy { acquisition.connector(for: $0) != nil })
         let settled = SettledCounter()
@@ -690,9 +699,14 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
             XCTAssertNotEqual(page.nextCursor, cursor)
             cursor = page.nextCursor
         }
-        XCTAssertEqual(keys.count, 253)
-        XCTAssertEqual(Set(keys).count, 253)
-        XCTAssertEqual(examined, 256, "Language misses consume examination capacity, not eligibility")
+        // 250 bulk sources plus the four base sources the catalogue places under the profile's topics in Portuguese
+        // as text or audio. The English, language-less, other-topic and video rows are misses, not entries; the
+        // video row is not even examined, since the pool never reads that kind (D10).
+        XCTAssertEqual(keys.count, 254)
+        XCTAssertEqual(Set(keys).count, 254, "no source is admitted twice across pages")
+        XCTAssertTrue(keys.contains("https://science.pod/pod"),
+            "the audio source is walked like any other: discovery is not a text-only internet")
+        XCTAssertEqual(examined, 257, "Language and media misses consume examination capacity, not eligibility")
     }
 
     func testEmptyFilteredPageAdvancesAndCursorCannotCrossProfiles() throws {
@@ -710,7 +724,9 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
             if page.exhausted { break }
             after = page.nextCursor
         }
-        XCTAssertEqual(Set(principals), ["https://science.pt/feed", "https://science.pt-two/feed"])
+        XCTAssertEqual(Set(principals), ["https://science.pod/pod", "https://science.pt-two/feed",
+            "https://science.pt/feed"],
+            "one-record pages still reach every candidate of the topic — audio beside text, never video")
         XCTAssertThrowsError(try builder.page(for: .init(languages: ["en"]), after: cursor, examinedCapacity: 1)) {
             XCTAssertEqual($0 as? ReaderDiscoveryError, .cursorScopeMismatch)
         }
@@ -721,17 +737,21 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
         XCTAssertThrowsError(try builder.page(for: profile, after: nil, examinedCapacity: 0))
     }
 
-    /// A profile of one topic and one language yields that topic's sources, in that language, as text — and only
-    /// those. A source the catalogue does not define the language for is not discovered by a language-constrained
-    /// profile: the pool must not invent relevance.
+    /// A profile of one topic and one language yields that topic's sources, in that language, as text **and**
+    /// audio — and only those (D10). A source the catalogue does not define the language for is not discovered by
+    /// a language-constrained profile: the pool must not invent relevance. The video source the fixture files in
+    /// exactly this topic and language never enters the automatic pool, even though the catalogue rates it above
+    /// every admitted source.
     func testAPoolIsTheTopicsSourcesInTheReadersLanguage() throws {
         let builder = ReaderDiscoveryBuilder(catalogURL: try catalog())
         let pool = try builder.pool(for: ReaderDiscoveryProfile(languages: ["pt"],
             topicNodeKeys: ["topics/science"]), limit: 10)
         XCTAssertEqual(pool.entries.map(\.principal),
-            ["https://science.pt/feed", "https://science.pt-two/feed"],
-            "ordered by the catalogue's own quality, with the region form of the language accepted")
-        XCTAssertEqual(pool.entries.count, 2)
+            ["https://science.pod/pod", "https://science.pt/feed", "https://science.pt-two/feed"],
+            "the topic's sources in the reader's language — audio beside text, ordered by the catalogue's own "
+                + "quality, with the region form of the language accepted")
+        XCTAssertFalse(pool.entries.contains { $0.principal == "https://science.video/feed" },
+            "video stays out of the automatic pool even as the catalogue's highest-quality match")
     }
 
     /// Deterministic: the same profile gives the same pool, in the same order, every time.
@@ -746,11 +766,13 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
     func testAProfileThatNamesNothingDiscoversNothing() throws {
         let builder = ReaderDiscoveryBuilder(catalogURL: try catalog())
         XCTAssertTrue(try builder.pool(for: ReaderDiscoveryProfile(), limit: 10).isEmpty)
-        // A language alone is a profile the catalogue can answer: every text source in it, whatever topic it is
-        // filed under — and still nothing the catalogue does not place in that language.
+        // A language alone is a profile the catalogue can answer: every text **and** audio source in it, whatever
+        // topic it is filed under — and still nothing the catalogue does not place in that language, nor any video.
         XCTAssertEqual(try builder.pool(for: ReaderDiscoveryProfile(languages: ["pt"], topicNodeKeys: []),
             limit: 10).entries.map(\.principal).sorted(),
-            ["https://science.pt-two/feed", "https://science.pt/feed", "https://sport.pt/feed"])
+            ["https://science.pod/pod", "https://science.pt-two/feed", "https://science.pt/feed",
+                "https://sport.pt/feed"],
+            "a language-only profile discovers text and audio alike, and never video")
     }
 
     /// A language the catalogue has nothing for yields an empty pool rather than another language's sources.
@@ -760,12 +782,18 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
             topicNodeKeys: ["topics/science"]), limit: 10).isEmpty)
     }
 
-    /// The limit is a ceiling on the work, and it keeps the highest-quality sources.
+    /// The limit is a ceiling on the work, and it keeps the highest-quality sources regardless of kind: the audio
+    /// podcast outranks the text source, and the video source the catalogue rates above both is never a candidate
+    /// at all (D10).
     func testTheLimitIsRespectedAndKeepsQualityOrder() throws {
         let builder = ReaderDiscoveryBuilder(catalogURL: try catalog())
-        let pool = try builder.pool(for: ReaderDiscoveryProfile(languages: ["pt"], topicNodeKeys: ["topics"]),
-            limit: 1)
-        XCTAssertEqual(pool.entries.map(\.principal), ["https://science.pt/feed"])
+        let profile = ReaderDiscoveryProfile(languages: ["pt"], topicNodeKeys: ["topics"])
+        let pool = try builder.pool(for: profile, limit: 1)
+        XCTAssertEqual(pool.entries.map(\.principal), ["https://science.pod/pod"])
+        XCTAssertEqual(pool.entries.count, 1, "the limit remains a ceiling")
+        XCTAssertEqual(try builder.pool(for: profile, limit: 2).entries.map(\.principal),
+            ["https://science.pod/pod", "https://science.pt/feed"],
+            "quality orders the pool across kinds instead of exhausting text before audio")
     }
 
     /// F02's "menos desse assunto": a source the catalogue files **only** under the subject the reader asked for
