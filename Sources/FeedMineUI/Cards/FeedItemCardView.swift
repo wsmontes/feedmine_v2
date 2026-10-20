@@ -326,6 +326,25 @@ public struct FeedItemCardView: View, Equatable {
 
             if isAudio { mediaBadge(String(localized: "Podcast"), color: .purple) }
 
+            // D1: "hear" has to work with a finger. The play action used to exist only as an accessibility action
+            // on the body, and a text-only audio card has no hero to tap, so a normal tap opened the article and
+            // the player was unreachable (measured 2026-10-20 on the published catalogue: three audio cards, all
+            // textOnly, zero plays). A visible control on the metadata row gives every audio card the same touch
+            // path, in addition to the accessibility action that stays where it was.
+            if isAudio, availableActions.contains(.openMedia) {
+                Button { emit(.openMedia) } label: {
+                    Label(String(localized: "Tocar"), systemImage: "play.fill")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("card.play")
+                .accessibilityLabel(String(localized: "Tocar episódio"))
+            }
+
             Spacer(minLength: 0)
 
             if !card.isImageBearing { inlineBookmarkControl }
