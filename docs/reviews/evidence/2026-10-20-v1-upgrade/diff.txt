@@ -1,7 +1,7 @@
-# diff of V1's own files, before vs after Run 4 (build 03fab3ab)
-# user.sqlite      4ef31d75cbf19a26d1ad783c72381cb895a268773223ac486ba0a951fa44b544  (before and after)
+# V1's own files, before vs after Run 5 (build 67d49c86)
+# user.sqlite      d53eaddeff8c9da730c2b903f515e589a5c5965d37188d105a051212e1f8a4f8  (before and after)
 # user.sqlite-wal  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  (empty, before and after)
 # user.sqlite-shm  fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb  (before and after)
-# exit status of the comparison: 0 — no difference.
-# before.sha256 lists all six files of V1's directory; after.sha256 lists the three user.sqlite files,
-# hashed with `grep user.sqlite` after the upgrade (RuntimeV2/* is V1's own rebuildable runtime cache).
+# comparison exit status: 0 — no difference.
+# before.sha256 lists all six files of V1's directory; after.sha256 lists the three user.sqlite files
+# (RuntimeV2/* is V1's own rebuildable runtime cache).

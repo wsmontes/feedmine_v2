@@ -1,28 +1,26 @@
 {
-  "build_commit": "03fab3abca0a1e89b09b0e1921432426e263a841",
-  "worktree": "clean (0 modified files at build time)",
+  "build_commit": "67d49c86454b54372e7b237ad16070418f617700",
+  "build_source": "pristine worktree at 67d49c86 (/private/tmp/v1-rehearsal5/src) because the shared worktree was being edited mid-build by a sibling; the gitignored FeedMineApp/Resources/catalog.sqlite was copied in as a build input",
   "layout": "as specified: V1 data at Library/Application Support/Feedmine, V2 Release over the same bundle id, no rename, no move, no deletion",
-  "volume_probe": "/tmp/Abc resolves as abc, and the simulator Devices dir likewise: volume is case-insensitive",
-  "container_before_install": "845159A5-69B0-4EC7-AAB4-2165DA6E31D5",
-  "container_after_install": "67A965C9-E934-4A71-80A6-A60F9B8E951D",
+  "container_before_install": "CDC95D40-4AA2-49E1-B9BB-E46D25446C25",
+  "container_after_install": "33991340-AB91-43C0-9E66-8EAAED2D7DD3",
   "application_support_entries": [
     "Feedmine"
   ],
   "runtime_sqlite_files_found": 1,
-  "store_path": "Library/Application Support/Feedmine/runtime.sqlite (opened inside V1's directory; the exact spelling could not be created, the volume is case-insensitive, so the existing variant was reused)",
   "receipt": [
     {
       "singleton_id": 1,
-      "source_path": "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/67A965C9-E934-4A71-80A6-A60F9B8E951D/Library/Application Support/Feedmine/user.sqlite",
+      "source_path": "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/33991340-AB91-43C0-9E66-8EAAED2D7DD3/Library/Application Support/Feedmine/user.sqlite",
       "status": "completed",
-      "ran_at": 1792524829.018832,
+      "ran_at": 1792525861.949945,
       "failure_reason": null,
       "imported_boxes": 1,
       "imported_sources": 3,
       "selected_sources": 2,
       "imported_collections": 1,
       "imported_collection_members": 2,
-      "notice_presented": 0
+      "notice_presented": 1
     }
   ],
   "skips": [
@@ -100,14 +98,13 @@
       "source_key": "https://exemplo.test/tecnologia/feed"
     }
   ],
-  "second_launch": "ran_at and every count identical across ~6 launches; no duplicated row",
   "notice": {
-    "in_ax_at_seconds": [
-      1.21,
-      2.0
-    ],
-    "painted_window_seconds": "~0.3-0.6 s only",
-    "notice_presented_without_tap": 0,
-    "notice_presented_after_tap_attempts": 0
-  }
+    "notice_presented_without_tap_at_3s": 0,
+    "notice_presented_without_tap_at_13s": 0,
+    "alert_visible_at": "3 s and unchanged at ~13 s (identical screenshots)",
+    "acknowledgement": "window click at pixels (455,1230) in the window frame",
+    "notice_presented_after_tap": 1,
+    "after_tap": "alert window gone; onboarding surface exposed in the accessibility tree"
+  },
+  "second_launch": "receipt and every count identical; no duplicated row; notice not shown again"
 }

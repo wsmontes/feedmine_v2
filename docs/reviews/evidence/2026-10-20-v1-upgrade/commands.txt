@@ -1,25 +1,24 @@
-Run 4 — V1 -> V2 upgrade rehearsal, as specified (2026-10-20)
-Build under test: product worktree HEAD 03fab3abca0a1e89b09b0e1921432426e263a841 (tree clean at build time).
+Run 5 — V1 -> V2 upgrade rehearsal, as specified (2026-10-20)
+Build under test: 67d49c86454b54372e7b237ad16070418f617700.
+Built from a pristine worktree at that commit (`git worktree add --detach <path> 67d49c86`) because the
+shared worktree was being edited mid-build by a sibling; the gitignored build input
+`FeedMineApp/FeedMineApp/Resources/catalog.sqlite` (118 MB, not in git) was copied in.
 
-# 0. Volume probe (the fix gates the case fallback on this answer)
-mkdir -p /tmp/abc ; [ -e /tmp/Abc ] && echo case-insensitive     # -> resolves: case-insensitive
-mkdir -p <Devices>/abc ; [ -e <Devices>/Abc ] && echo case-insensitive   # -> resolves: case-insensitive
-
-# 1. Clean state
+# 0. Clean state
 xcrun simctl erase  B89B80FE-6B5D-423E-B1F4-519F1AB0737F
 xcrun simctl boot   B89B80FE-6B5D-423E-B1F4-519F1AB0737F
 open -a Simulator --args -CurrentDeviceUDID B89B80FE-6B5D-423E-B1F4-519F1AB0737F
 
-# 2. V1 from source
+# 1. V1 from source
 cd /Users/wagnersilvamontes/Documents/GitHub/_legacy_feedmine_v1
 xcodebuild -project feedmine.xcodeproj -scheme feedmine -configuration Debug -sdk iphonesimulator \
-    -destination 'generic/platform=iOS Simulator' -derivedDataPath /private/tmp/v1-rehearsal4/v1 build
+    -destination 'generic/platform=iOS Simulator' -derivedDataPath /private/tmp/v1-rehearsal5/v1 build
 xcrun simctl install   B89B80FE-... .../Debug-iphonesimulator/feedmine.app
 xcrun simctl launch    B89B80FE-... com.feedmine.app ; sleep 8 ; xcrun simctl terminate B89B80FE-... com.feedmine.app
-xcrun simctl get_app_container B89B80FE-... com.feedmine.app data      # 845159A5-69B0-4EC7-AAB4-2165DA6E31D5
+xcrun simctl get_app_container B89B80FE-... com.feedmine.app data      # CDC95D40-4AA2-49E1-B9BB-E46D25446C25
 #   <container>/Library/Application Support/Feedmine/{user.sqlite,-wal,-shm,RuntimeV2}
 
-# 3. Seed (V1's own DDL; unchanged from the earlier runs)
+# 2. Seed (V1's own DDL, unchanged from runs 1-4)
 sqlite3 "<container>/Library/Application Support/Feedmine/user.sqlite" <<'SQL'
 PRAGMA journal_mode=WAL;
 BEGIN;
@@ -44,43 +43,40 @@ SQL
 cd "<container>" && find "Library/Application Support/Feedmine" -type f -print0 | sort -z \
     | xargs -0 shasum -a 256 | tee before.sha256
 
-# 4. V2 Release from HEAD
-cd /Users/wagnersilvamontes/.codex/worktrees/v2-fluidez-capacidade/feedmine_v2
+# 3. V2 Release from the pristine worktree
+git -C <product worktree> worktree add --detach /private/tmp/v1-rehearsal5/src 67d49c86
+cp <product worktree>/FeedMineApp/FeedMineApp/Resources/catalog.sqlite /private/tmp/v1-rehearsal5/src/FeedMineApp/FeedMineApp/Resources/
+cd /private/tmp/v1-rehearsal5/src
 xcodebuild -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine -configuration Release \
-    -sdk iphonesimulator -destination 'id=B89B80FE-...' -derivedDataPath /private/tmp/v1-rehearsal4/v2 build
+    -sdk iphonesimulator -destination 'id=B89B80FE-...' -derivedDataPath /private/tmp/v1-rehearsal5/v2 build
 
-# 5. Install over the same bundle id — no rename, no move, no deletion
-xcrun simctl get_app_container B89B80FE-... com.feedmine.app data     # 845159A5-…
+# 4. Install over the same bundle id — no rename, no move, no deletion
+xcrun simctl get_app_container B89B80FE-... com.feedmine.app data     # CDC95D40-…
 xcrun simctl install  B89B80FE-... .../Release-iphonesimulator/FeedMine.app
-xcrun simctl get_app_container B89B80FE-... com.feedmine.app data     # 67A965C9-…
+xcrun simctl get_app_container B89B80FE-... com.feedmine.app data     # 33991340-…
 cd "<container>" && find "Library/Application Support/Feedmine" -type f -print0 | sort -z \
     | xargs -0 shasum -a 256        # identical to before.sha256
 
-# 6. First launch — store isolation
+# 5. First launch: store, receipt, notice
 xcrun simctl launch B89B80FE-... com.feedmine.app ; sleep 3
 ls "<container>/Library/Application Support/"                  # one entry: Feedmine
-ls "<container>/Library/Application Support/Feedmine/"         # runtime.sqlite* beside user.sqlite
-find "<container>/Library/Application Support" -name runtime.sqlite | wc -l   # 1
-sqlite3 -json "<container>/Library/Application Support/Feedmine/runtime.sqlite" \
-    "SELECT * FROM reader_legacy_upgrade;"
-#   completed, ran_at 1792524829.018832, boxes 1, sources 3, selected 2, collections 1, members 2,
-#   source_path …/Application Support/Feedmine/user.sqlite, notice_presented 0
+sqlite3 "<container>/Library/Application Support/Feedmine/runtime.sqlite" \
+    "SELECT * FROM reader_legacy_upgrade;"                     # notice_presented 0
+xcrun simctl io B89B80FE-... screenshot notice-3s.png
+sleep 10 ; xcrun simctl io B89B80FE-... screenshot notice-5s.png   # identical frame, still up
 
-# 7. Notice — with no tap, then with a tap
-xcrun simctl io B89B80FE-... screenshot no-tap-3s.png          # ~5 s, no alert on screen
-sqlite3 "<container>/Library/Application Support/FeedMine/runtime.sqlite" \
-    "SELECT notice_presented FROM reader_legacy_upgrade;"      # 0
-#   AX (computer-use, ax(all: true)) lists the alert at 1.21 s and at 2.0 s:
-#     statictext "Da versão anterior" / statictext "Importados …" / button "Entendi"
-#   burst of device screenshots shows it painted at ~0.3-0.6 s only
-#   acknowledgement attempts: AX press on Entendi at 1.21 s; window click at (456,1239) 0.35 s after
-#   a later launch -> notice_presented stays 0
+# 6. Acknowledge with a real pointer click
+#   window frame measured: Entendi bar centre at pixels (455,1230)
+#   <computer-use> win.click(455, 1230)
+sqlite3 "<container>/Library/Application Support/Feedmine/runtime.sqlite" \
+    "SELECT notice_presented FROM reader_legacy_upgrade;"       # 1
+xcrun simctl io B89B80FE-... screenshot after-tap.png           # window gone, onboarding visible
 
-# 8. After hashes and repeat launches
-cd "<container>" && find "Library/Application Support/Feedmine" -type f -print0 | sort -z \
-    | xargs -0 shasum -a 256 | grep user.sqlite > after.sha256
+# 7. Second launch
 xcrun simctl terminate B89B80FE-... com.feedmine.app ; xcrun simctl launch B89B80FE-... com.feedmine.app
-#   ran_at and every count unchanged across ~6 launches
+#   receipt and all counts identical; no duplicate; no notice
 
-# 9. Cleanup
-xcrun simctl shutdown B89B80FE-... ; rm -rf /private/tmp/v1-rehearsal4/v1 /private/tmp/v1-rehearsal4/v2
+# 8. Cleanup
+xcrun simctl shutdown B89B80FE-...
+rm -rf /private/tmp/v1-rehearsal5/v1 /private/tmp/v1-rehearsal5/v2
+git -C <product worktree> worktree remove --force /private/tmp/v1-rehearsal5/src
