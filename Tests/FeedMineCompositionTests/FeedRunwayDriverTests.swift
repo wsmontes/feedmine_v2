@@ -354,6 +354,10 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(deadlines.count, 2, "The opportunity must actually prepare several slices")
         XCTAssertEqual(Set(deadlines).count, 1, "A later slice cannot earn a new media wait")
         _ = try await driver.drive(resources: resources())
+        let deadline = Date().addingTimeInterval(2)
+        while journal.values.filter({ $0 == "begin" }).count < 2, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
         XCTAssertEqual(journal.values.filter { $0 == "begin" }.count, 2, "A new caller owns a new budget")
     }
 
@@ -1064,19 +1068,29 @@ final class FeedRunwayDriverTests: XCTestCase {
             segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date(timeIntervalSince1970: 31), cardIDs: prepared.cardIDs))
         try PublicationHistory(database: f.database).saveCursor(.init(editionID: otherEdition,
             anchor: .init(cardID: prepared.cardIDs[0], placement: .center)), updatedAt: Date(timeIntervalSince1970: 32))
-        let restored = try await f.session.admitPresentation(.restore(.init(backwardCapacity: 1, forwardCapacity: 4)))
-        let current = try XCTUnwrap(restored)
-        let activated = try await f.driver.activateCurrentPresentation(resources: resources())
-        XCTAssertEqual(activated, current)
-        let before = await f.runway.snapshot()
+        // Real replacement: a second association/owner is created for B. The old A owner is suspended before its
+        // tail releases, so its durable result no longer authorizes publication in A.
+        let otherSession = FeedSession(publicationHistory: PublicationHistory(database: f.database))
+        let otherRestored = try await otherSession.admitPresentation(.restore(.init(backwardCapacity: 1, forwardCapacity: 4)))
+        let b = try XCTUnwrap(otherRestored)
+        XCTAssertEqual(b.editionID, otherEdition, "B must assume the presentation before A's tail releases")
+        let otherRunway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1, releaseMarginSeconds: 0)!,
+            consumptionSampleLimit: 2, replenishmentSampleLimit: 2)!)
+        let otherDriver = try FeedRunwayDriver(session: otherSession, runway: otherRunway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            makeSegmentIdentity: { .init(segmentID: .init(), segmentSeed: 1, segmentCreatedAt: Date())! },
+            prepare: Self.prepared)
+        let activated = try await otherDriver.activateCurrentPresentation(resources: resources())
+        XCTAssertEqual(activated?.editionID, otherEdition)
+        await f.driver.suspendForBackground()
         f.http.release(); let result = try await first.value
-        XCTAssertEqual(result, current)
-        let after = await f.runway.snapshot(); XCTAssertEqual(after.scope, before.scope)
-        XCTAssertNotNil(after.readyAhead); XCTAssertEqual(after.readyAhead?.anchorCardID, current.window.anchor.cardID)
-        let final = await f.session.currentPresentation(); XCTAssertEqual(final, current)
+        XCTAssertEqual(result?.editionID, f.edition, "the old tail still states A, not B")
+        let final = await otherSession.currentPresentation(); XCTAssertEqual(final, activated)
         XCTAssertEqual(final?.contextKey, otherPlan.context.key)
         XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: otherEdition).count, 1)
-        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.edition).count, 1)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.edition).count, 1,
+            "A's old owner loses publication authorization when B assumes the association")
         XCTAssertEqual(try ContentStore(database: f.database).candidateWindow(sourceID: f.source, after: nil, examinedCapacity: 8).records.count, 1)
         XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.otherHTTP.calls, 0)
     }

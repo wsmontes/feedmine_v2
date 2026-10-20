@@ -246,6 +246,12 @@ enum FeedPositionRequest {
 @available(iOS 18, macOS 15, *)
 struct NativeFeedTargets: ViewModifier {
     func body(content: Content) -> some View {
-        content.scrollTargetLayout().padding().coordinateSpace(name: "feed-visual-content")
+        // Keep the page margins around the content, but not above its first card: `scrollPosition(id:)` aligns an
+        // anchored card to the viewport's top edge. A top margin would make the very same card land 16 pt lower when
+        // the reader returns from above (the first topmost card sits after the padding), so geometry would not be
+        // preserved at ±1 pt (E03). Horizontal and bottom margins remain the design's own.
+        content.scrollTargetLayout()
+            .padding([.horizontal, .bottom])
+            .coordinateSpace(name: "feed-visual-content")
     }
 }

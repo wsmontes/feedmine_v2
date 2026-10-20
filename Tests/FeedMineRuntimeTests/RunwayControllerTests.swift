@@ -203,6 +203,63 @@ final class RunwayControllerTests: XCTestCase {
         let snap = await sut.snapshot(); XCTAssertTrue(snap.localSupplyExhausted); XCTAssertFalse(snap.pendingSupplyReset)
     }
 
+    func testFreshSupplySurvivesEpisodePassAndServesThePendingHeadUnderHold() async throws {
+        let sut = controller(); _ = try await start(sut)
+        let seed = try await intent(sut, at: 10)
+        try await sut.completeLocalSlice(seed, outcome: outcome(seed, after: cursor(1)), at: time(11))
+
+        // Arm the head reconsideration, then take that head slice in flight. Selecting the head leaves the
+        // episode as the preferred next lane.
+        try await sut.noteLocalSupplyChanged(scope: scope())
+        let head = try await intent(sut, at: 12)
+        XCTAssertEqual(head.lane, .headReconsideration)
+
+        // A second supply fact arrives while the head slice is in flight. Fairness will choose the older episode
+        // lane first; the fresh authorization must survive that pass for the still-pending head.
+        try await sut.noteLocalSupplyChanged(scope: scope())
+        try await sut.completeLocalSlice(head, outcome: outcome(head, after: cursor(10)), at: time(13))
+
+        let healthy = observation(2, 2)
+        try await sut.submitObservation(healthy)
+        try await sut.acceptMeasurement(facts(healthy, amount: .exact(16),
+            from: observation(1, 0).anchorCardID, advance: .same))
+
+        let older = try await sut.reconsider(resources: resources(), at: time(14))
+        guard case .runLocalSlice(let episode) = older else { return XCTFail("Expected the fairness pass") }
+        XCTAssertEqual(episode.lane, .episode, "fairness walks the older lane before the pending head")
+        XCTAssertEqual(episode.after, cursor(1), "the older episode keeps its own progress")
+        try await sut.completeLocalSlice(episode, outcome: outcome(episode, after: cursor(2)), at: time(15))
+
+        let freshHead = try await sut.reconsider(resources: resources(), at: time(16))
+        guard case .runLocalSlice(let pendingHead) = freshHead else {
+            return XCTFail("healthy .hold must still serve the fresh head reconsideration")
+        }
+        XCTAssertEqual(pendingHead.lane, .headReconsideration)
+        XCTAssertNil(pendingHead.after, "the fresh head starts at the head, not at the old episode cursor")
+    }
+
+    func testFreshSupplyConsumedByResetEpisodeDoesNotAuthorizeSecondSlice() async throws {
+        let sut = controller(); _ = try await start(sut)
+        let first = try await intent(sut, at: 10)
+        try await sut.noteLocalSupplyChanged(scope: scope())
+        try await sut.completeLocalSlice(first, outcome: outcome(first, after: cursor(1), exhausted: true),
+            at: time(11))
+
+        let healthy = observation(2, 2)
+        try await sut.submitObservation(healthy)
+        try await sut.acceptMeasurement(facts(healthy, amount: .exact(16),
+            from: observation(1, 0).anchorCardID, advance: .same))
+
+        // selectLane()'s reset branch clears pendingReset and consumes the head on this episode slice.
+        let reset = try await intent(sut, at: 12)
+        XCTAssertEqual(reset.lane, .episode)
+        XCTAssertNil(reset.after)
+        try await sut.completeLocalSlice(reset, outcome: outcome(reset, after: cursor(2)), at: time(13))
+
+        let held = try await sut.reconsider(resources: resources(), at: time(14))
+        XCTAssertEqual(held, .none, "the reset episode consumed the only fresh authorization")
+    }
+
     func testUnknownBootstrapOnceAndExactZeroPressureCanContinueSeparateSlices() async throws {
         let sut = controller(), o = try await start(sut,amount: .exact(4))
         let first = try await intent(sut,at: 10)

@@ -403,8 +403,14 @@ public actor RunwayController {
 
     private func takeLocalSlice(scope: RunwayScope, resources: RunwayResourceFacts, now: RunwayMonotonicTime,
         coverage: RunwayCoverage, observation: RunwayObservation) -> RunwayLocalSliceIntent? {
+        // The fresh authorization belongs to the head reconsideration, even when fairness walks the episode lane
+        // first. Consuming it on that older pass would let a healthy `.hold` strand the pending head.
         guard let readyAhead, let lane = selectLane() else { return nil }
-        freshSupplyOpportunity = false
+        // Read the reset state **after** `selectLane()`: its exhaustion branch clears `pendingReset` and consumes
+        // the head reset on the same slice. Computing this before would preserve the authorization for a head that
+        // no longer exists and grant one extra slice.
+        let headPending = pendingReset || (head != nil && head?.exhausted == false)
+        if lane == .headReconsideration || !headPending { freshSupplyOpportunity = false }
         let progress = lane == .episode ? episode : head!
         let intent = RunwayLocalSliceIntent(scope: scope, lane: lane, after: progress.cursor,
             examinedCapacity: resources.examinedCandidateCapacity, startedAt: now)

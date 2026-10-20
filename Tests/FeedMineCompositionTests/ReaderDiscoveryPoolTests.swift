@@ -461,6 +461,78 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
     }
 
     @MainActor
+    func testStaleCallerBudgetIsNotInstalledIntoTheNextExecution() async throws {
+        let f = try await progressiveFixture(count: 5)
+        let pages = DiscoveryPageJournal(), media = MediaCallJournal()
+        let (ownerRelease, ownerSignal) = AsyncStream<Void>.makeStream()
+        defer { ownerSignal.finish() }
+        let (staleRelease, staleSignal) = AsyncStream<Void>.makeStream()
+        defer { staleSignal.finish() }
+        let (pageRelease, pageSignal) = AsyncStream<Void>.makeStream()
+        defer { pageSignal.finish() }
+        let runway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1, releaseMarginSeconds: 0)!,
+            consumptionSampleLimit: 2, replenishmentSampleLimit: 2)!)
+        let driver = try FeedRunwayDriver(session: f.session, runway: runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            makeSegmentIdentity: { .init(segmentID: .init(), segmentSeed: 1, segmentCreatedAt: Date())! },
+            prepare: Self.prepareDiscovery, selectedSourceCoverage: .init(selectedSourceCoverageFor: f.plan.context.key,
+                editorialRevisionID: f.plan.revision.id),
+            onDiscoveryPage: { _ in
+                // Pages 1 and 2 belong to the owner; page 3 is the new execution, kept active here.
+                if pages.record() == 3 { for await _ in pageRelease { break } }
+            },
+            makeMediaOpportunity: {
+                let call = media.next()
+                if call == 1 { for await _ in ownerRelease { break } }
+                if call == 2 { for await _ in staleRelease { break } }
+                return MediaPreparationOpportunity(waitSeconds: 0, startedAt: 0,
+                    prepare: { _, _ in media.prepare(call) })
+            })
+        let resources = FeedRunwayDriverResources(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 8,
+            readyProbeBound: 4, readyProbeCeiling: 8, forwardAdvanceProbeBound: 8, reserveCards: 1)!,
+            acquisition: .init(targetWorkCapacity: 2, batchCapacityPerNewExecution: 1,
+                observationCapacityPerBatch: 8, byteCapacityPerBatch: 100_000)!, discoveryExaminedCapacity: 3)
+
+        let owner = Task { try await driver.activateCurrentPresentation(resources: resources) }
+        var deadline = Date().addingTimeInterval(5)
+        while media.callCount < 1, Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(media.callCount, 1)
+        _ = try await driver.drive(resources: resources) // coalesces a caller and its page
+        ownerSignal.yield(())
+        _ = try await owner.value
+        deadline = Date().addingTimeInterval(5)
+        while media.callCount < 2, Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(media.callCount, 2, "the coalesced caller's budget is suspended")
+
+        let next = Task { try await driver.drive(resources: resources) }
+        deadline = Date().addingTimeInterval(5)
+        while media.callCount < 3 || pages.served < 3, Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(media.callCount, 3)
+        XCTAssertEqual(pages.served, 3, "the new execution is active on its page")
+
+        // The old budget returns while the new execution owns the scope. Wait until that return is processed.
+        let refreshesBefore = await driver.callerMediaRefreshCompletions
+        staleSignal.yield(())
+        deadline = Date().addingTimeInterval(5)
+        while await driver.callerMediaRefreshCompletions == refreshesBefore, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        let refreshesAfter = await driver.callerMediaRefreshCompletions
+        XCTAssertEqual(refreshesAfter, refreshesBefore + 1,
+            "the stale return was processed by finishCallerMediaRefresh")
+        media.clearPrepared()
+        await driver.noteMediaReadinessChanged()
+        pageSignal.yield(())
+        _ = try? await next.value
+        deadline = Date().addingTimeInterval(5)
+        while media.preparedCalls.isEmpty, Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertFalse(media.preparedCalls.contains(2),
+            "the stale call 2 budget must never be installed or used by the new execution")
+        XCTAssertTrue(media.preparedCalls.contains(3), "the new execution uses its own budget")
+    }
+
+    @MainActor
     func testColdDiscoveryResumesAfterAnEmptyProfilePageUsingTheSameCoordinator() async throws {
         let url = try catalog()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -722,6 +794,16 @@ private final class DiscoveryPageJournal: @unchecked Sendable {
     private var recorded = 0
     func record() -> Int { lock.withLock { recorded += 1; return recorded } }
     var served: Int { lock.withLock { recorded } }
+}
+private final class MediaCallJournal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    private var prepared: [Int] = []
+    func next() -> Int { lock.withLock { calls += 1; return calls } }
+    func prepare(_ call: Int) { lock.withLock { prepared.append(call) } }
+    func clearPrepared() { lock.withLock { prepared.removeAll() } }
+    var callCount: Int { lock.withLock { calls } }
+    var preparedCalls: [Int] { lock.withLock { prepared } }
 }
 
 private final class ProgressiveDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {

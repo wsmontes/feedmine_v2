@@ -4,7 +4,7 @@ import FeedMineDomain
 import FeedMinePersistence
 import FeedMineAcquisition
 import FeedMineEditorial
-import FeedMinePublication
+@testable import FeedMinePublication
 @testable import FeedMineRuntime
 @testable import FeedMineComposition
 
@@ -16,6 +16,13 @@ private final class CoverageJournal: @unchecked Sendable {
     func settle(_ id: AcquisitionTargetID) { lock.withLock { terminals.append(id) } }
     var pulls: [AcquisitionTargetID] { lock.withLock { entries } }
     var outcomes: [AcquisitionTargetID] { lock.withLock { terminals } }
+}
+private final class CompletionCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Int?
+    func set(_ value: Int) { lock.withLock { stored = value } }
+    @discardableResult func increment() -> Int { lock.withLock { stored = (stored ?? 0) + 1; return stored! } }
+    var value: Int? { lock.withLock { stored } }
 }
 private enum CoverageResponse: Equatable, Sendable { case items, empty, upToDate, failure }
 private final class CoverageGate: Sendable {
@@ -112,11 +119,13 @@ final class SelectedSourceCoverageTests: XCTestCase {
                 contentEntityID: nil, contentClusterID: nil, primaryAction: .localContentDetail, presentation: .textOnly)
         }, cardIDs: selection.orderedCandidates.map { _ in PublicationCardID() })
     }
-    private func resources(targetCapacity: Int = 2, reserve: Int = 16) -> FeedRunwayDriverResources {
+    private func resources(targetCapacity: Int = 2, reserve: Int = 16,
+        discovery: Int? = nil) -> FeedRunwayDriverResources {
         .init(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 100, readyProbeBound: 64,
             readyProbeCeiling: 128, forwardAdvanceProbeBound: 64, reserveCards: reserve)!,
             acquisition: .init(targetWorkCapacity: targetCapacity, batchCapacityPerNewExecution: 1,
-                observationCapacityPerBatch: 100, byteCapacityPerBatch: 100_000)!)
+                observationCapacityPerBatch: 100, byteCapacityPerBatch: 100_000)!,
+            discoveryExaminedCapacity: discovery ?? 0)
     }
     /// The fixture alternates sources, so a late occurrence from the same source as the Edition's tail is held
     /// by the selection rule and never publishes. Pick a cold source that differs from the last admitted card.
@@ -159,6 +168,8 @@ final class SelectedSourceCoverageTests: XCTestCase {
     }
 
     private func driver(_ f: Fixture, readiness: MediaReadiness? = nil,
+        selectedSourceCoverage: Bool = true,
+        onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)? = nil,
         makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil)
         throws -> (FeedRunwayDriver, RunwayController) {
         let runway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1, releaseMarginSeconds: 0)!,
@@ -167,8 +178,10 @@ final class SelectedSourceCoverageTests: XCTestCase {
             acquisition: f.snapshot, coordinator: f.coordinator, monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
             makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 2, segmentCreatedAt: Date(timeIntervalSince1970: 203))! },
             prepare: Self.prepare,
-            selectedSourceCoverage: .init(selectedSourceCoverageFor: f.plan.context.key, editorialRevisionID: f.plan.revision.id),
-            readiness: readiness, makeMediaOpportunity: makeMediaOpportunity), runway)
+            selectedSourceCoverage: selectedSourceCoverage
+                ? .init(selectedSourceCoverageFor: f.plan.context.key, editorialRevisionID: f.plan.revision.id) : nil,
+            readiness: readiness, onDiscoveryPage: onDiscoveryPage,
+            makeMediaOpportunity: makeMediaOpportunity), runway)
     }
 
     private func waitUntil(_ seconds: Double, _ condition: @escaping () async -> Bool) async -> Bool {
@@ -311,6 +324,167 @@ final class SelectedSourceCoverageTests: XCTestCase {
             .flatMap { segment in try segment.cardIDs.compactMap { try PublicationStore(database: f.database).card(id: $0) } }
         XCTAssertTrue(publishedCards.contains { $0.originRevisionID == revision },
             "the published segment carries A's late revision before B is released")
+    }
+
+    /// Codex P1.1 (second interleaving): a late fact that arrives while a **caller** execution is suspended must
+    /// carry its own fresh authorization. The execution was started by a foreground opportunity, but the fact is
+    /// late; publishing A cannot wait for another gesture or for B to be released.
+    func testP11LateFactCoalescedIntoCallerExecutionPublishesBeforeSuspendedTargetReleases() async throws {
+        let gate = CoverageGate {}
+        defer { gate.release() }
+        let mediaEntered = CompletionCount()
+        let mediaGate = CoverageGate { if mediaEntered.value == nil { mediaEntered.set(1) } }
+        defer { mediaGate.release() }
+        let readiness = MediaReadiness()
+        let f = try fixture(gate: gate), first = try await cold(f)
+        for record in try ContentStore(database: f.database).candidateWindow(sourceID: nil, after: nil,
+            examinedCapacity: 100).records {
+            readiness.record(record.originRevisionID, nil, textDeclared: true)
+        }
+        let (driver, runway) = try driver(f, readiness: readiness, selectedSourceCoverage: false,
+            makeMediaOpportunity: {
+            await mediaGate.wait()
+            return MediaPreparationOpportunity(waitSeconds: 0, startedAt: 0, prepare: { _, _ in })
+        })
+        let suspended = startSuspendedTarget(f)
+        defer { _ = try? suspended }
+        let scopeValue = await f.session.currentRunwayScope()
+        let scope = try XCTUnwrap(scopeValue)
+        await runway.activate(scope)
+        let prime = RunwayObservation(editionID: first.editionID,
+            anchorCardID: first.window.anchor.cardID,
+            sampledAt: .init(seconds: ProcessInfo.processInfo.systemUptime)!, activity: .stationary)
+        try await runway.submitObservation(prime)
+        try await runway.acceptMeasurement(RunwayMeasurement(observation: prime,
+            readyAhead: ReadyAheadFacts(editionID: first.editionID, anchorCardID: prime.anchorCardID,
+                observedTailCardID: prime.anchorCardID, amount: .exact(64)),
+            advanceFromHighWater: nil))
+        let before = try PublicationStore(database: f.database).segments(editionID: first.editionID).count
+        let activation = Task {
+            try await driver.activateCurrentPresentation(resources: resources(reserve: 1))
+        }
+        let reachedMedia = await waitUntil(5) { mediaEntered.value != nil }
+        XCTAssertTrue(reachedMedia, "the caller execution reached its media barrier")
+
+        let late = try lateTargetAndSource(f, editionID: first.editionID)
+        let revision = try Self.admitLateLocal(f.database, target: late.0, source: late.1)
+        readiness.record(revision, nil, textDeclared: true)
+        // Coalesces into the caller execution already in flight; no new gesture follows.
+        await driver.noteMediaReadinessChanged()
+        mediaGate.release()
+        _ = try await activation.value
+
+        // No new gesture: the deferred late drive is the only opportunity after the caller releases ownership.
+        let published = await waitUntil(5) {
+            (try? PublicationStore(database: f.database).segments(editionID: first.editionID).count) ?? before > before
+        }
+        XCTAssertTrue(published,
+            "the coalesced late fact publishes after the caller releases ownership, without a new gesture")
+        let cards = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+            .flatMap { try $0.cardIDs.compactMap { try PublicationStore(database: f.database).card(id: $0) } }
+        XCTAssertTrue(cards.contains { $0.originRevisionID == revision },
+            "the segment carries A's late revision while the selected target is still suspended")
+    }
+
+    /// Codex P1.1 (durable path): `RunwayAcquisitionCycle` arms the fresh supply through `noteLocalSupplyChanged`
+    /// and then coalesces the result through `noteLateDurableFact`. That fact must survive the caller execution too.
+    func testP11DurableFactCoalescedIntoCallerExecutionPublishesWithoutNewGesture() async throws {
+        let gate = CoverageGate {}
+        defer { gate.release() }
+        let mediaEntered = CompletionCount()
+        let mediaGate = CoverageGate { if mediaEntered.value == nil { mediaEntered.set(1) } }
+        defer { mediaGate.release() }
+        let readiness = MediaReadiness()
+        let f = try fixture(gate: gate), first = try await cold(f)
+        for record in try ContentStore(database: f.database).candidateWindow(sourceID: nil, after: nil,
+            examinedCapacity: 100).records {
+            readiness.record(record.originRevisionID, nil, textDeclared: true)
+        }
+        let (driver, runway) = try driver(f, readiness: readiness, selectedSourceCoverage: false,
+            makeMediaOpportunity: {
+            await mediaGate.wait()
+            return MediaPreparationOpportunity(waitSeconds: 0, startedAt: 0, prepare: { _, _ in })
+        })
+        let suspended = startSuspendedTarget(f)
+        defer { _ = try? suspended }
+        let scopeValue = await f.session.currentRunwayScope()
+        let scope = try XCTUnwrap(scopeValue)
+        await runway.activate(scope)
+        let prime = RunwayObservation(editionID: first.editionID,
+            anchorCardID: first.window.anchor.cardID,
+            sampledAt: .init(seconds: ProcessInfo.processInfo.systemUptime)!, activity: .stationary)
+        try await runway.submitObservation(prime)
+        try await runway.acceptMeasurement(RunwayMeasurement(observation: prime,
+            readyAhead: ReadyAheadFacts(editionID: first.editionID, anchorCardID: prime.anchorCardID,
+                observedTailCardID: prime.anchorCardID, amount: .exact(64)),
+            advanceFromHighWater: nil))
+        let before = try PublicationStore(database: f.database).segments(editionID: first.editionID).count
+        let activation = Task {
+            try await driver.activateCurrentPresentation(resources: resources(reserve: 1))
+        }
+        let reachedMedia = await waitUntil(5) { mediaEntered.value != nil }
+        XCTAssertTrue(reachedMedia, "the caller execution reached its media barrier")
+
+        let late = try lateTargetAndSource(f, editionID: first.editionID)
+        let revision = try Self.admitLateLocal(f.database, target: late.0, source: late.1)
+        readiness.record(revision, nil, textDeclared: true)
+        // The acquisition cycle's durable path: note the local supply, then coalesce the result into the caller.
+        try await runway.noteLocalSupplyChanged(scope: scope)
+        await driver.noteLateDurableFact()
+        mediaGate.release()
+        _ = try await activation.value
+
+        let published = await waitUntil(5) {
+            (try? PublicationStore(database: f.database).segments(editionID: first.editionID).count) ?? before > before
+        }
+        XCTAssertTrue(published, "the durable fact publishes after the caller releases ownership")
+        let cards = try PublicationStore(database: f.database).segments(editionID: first.editionID)
+            .flatMap { try $0.cardIDs.compactMap { try PublicationStore(database: f.database).card(id: $0) } }
+        XCTAssertTrue(cards.contains { $0.originRevisionID == revision })
+    }
+
+    /// Codex review: a coalesced caller whose media budget is still being created must not lose its page when the
+    /// owner finishes first, and the late budget must not be installed into the next execution.
+    func testCoalescedCallerBudgetReturningAfterOwnerDoesNotContaminateTheNextExecution() async throws {
+        let f = try fixture(), first = try await cold(f)
+        let mediaCalls = CompletionCount()
+        let ownerGate = CoverageGate {}
+        defer { ownerGate.release() }
+        let refreshGate = CoverageGate {}
+        defer { refreshGate.release() }
+        let (driver, _) = try driver(f, selectedSourceCoverage: false,
+            makeMediaOpportunity: {
+                let call = mediaCalls.increment()
+                if call == 1 { await ownerGate.wait() }
+                else if call == 2 { await refreshGate.wait() }
+                return MediaPreparationOpportunity(waitSeconds: 0, startedAt: 0, prepare: { _, _ in })
+            })
+        let owner = Task { try await driver.activateCurrentPresentation(resources: resources(discovery: 3)) }
+        let ownerStarted = await waitUntil(5) { mediaCalls.value == 1 }
+        XCTAssertTrue(ownerStarted, "the owner creates its media budget")
+
+        let caller = Task {
+            try await driver.submitViewport(.init(anchor: first.window.anchor), activity: .forward,
+                resources: resources(discovery: 3))
+        }
+        _ = try? await caller.value
+        ownerGate.release()
+        let refreshStarted = await waitUntil(5) { mediaCalls.value == 2 }
+        XCTAssertTrue(refreshStarted, "the coalesced caller's budget is created off the owner loop")
+
+        // The owner finishes while that budget creation is still suspended.
+        _ = try await owner.value
+        // A new execution claims the same scope before the stale budget returns.
+        let next = Task {
+            try await driver.submitViewport(.init(anchor: first.window.anchor), activity: .forward,
+                resources: resources(discovery: 3))
+        }
+        let nextBudget = await waitUntil(5) { (mediaCalls.value ?? 0) >= 3 }
+        XCTAssertTrue(nextBudget, "the next execution creates its own budget")
+        refreshGate.release()
+        try? await Task.sleep(for: .milliseconds(100))
+        _ = try? await next.value
+        XCTAssertEqual(mediaCalls.value ?? 0, 3, "the stale budget returning late cannot replace the new one")
     }
 
     /// Codex P1.2: background during an executor already in flight. The executor was started by a caller, is

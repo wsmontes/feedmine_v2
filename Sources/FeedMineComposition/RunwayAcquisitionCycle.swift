@@ -59,7 +59,7 @@ public struct RunwayAcquisitionCycle: Sendable {
     /// by the plan (at most one result per planned item); the round keeps running after the caller stops reading.
     public func start(_ intent: RunwayAcquisitionIntent, eligibleTargets: [AcquisitionTarget],
         resources: AcquisitionPlanningResources, preferUnattempted: Bool = false,
-        onDurableResult: (@Sendable (AcquisitionExecutionResult) async -> Void)? = nil) async throws
+        onDurableResult: (@Sendable (AcquisitionExecutionResult, RunwayScope) async -> Void)? = nil) async throws
         -> RunwayAcquisitionStart {
         let snapshot = await runway.snapshot()
         guard snapshot.outstandingAcquisition == intent else { throw RunwayAcquisitionCycleError.staleIntent }
@@ -107,12 +107,15 @@ public struct RunwayAcquisitionCycle: Sendable {
                     // notification, and the notification is the existing local-supply one.
                     continuation.yield(result)
                     guard result.selectableSupplyChanged else { return }
-                    do { try await runway.noteLocalSupplyChanged(scope: scope) }
-                    catch RunwayControllerError.noActiveScope {}
-                    catch RunwayControllerError.scopeMismatch {}
-                    // P02: the caller observes this same durable fact per result, before the rest of the round
-                    // settles; a slow later target cannot hold an already-published supply change.
-                    await onDurableResult?(result)
+                    do {
+                        try await runway.noteLocalSupplyChanged(scope: scope)
+                    } catch RunwayControllerError.noActiveScope {
+                        return
+                    } catch RunwayControllerError.scopeMismatch {
+                        return
+                    }
+                    // The origin's authorization was accepted; only then does this become a reconsideration.
+                    await onDurableResult?(result, scope)
                 }
             }
             return .round(RunwayAcquisitionRound(results: stream, completion: completion,
@@ -165,7 +168,7 @@ public struct RunwayAcquisitionCycle: Sendable {
     /// yielded and notified as they settle; completion is observed by the caller.
     public func startCoverage(_ demand: AcquisitionDemand, scope: RunwayScope,
         eligibleTargets: [AcquisitionTarget], resources: AcquisitionPlanningResources,
-        onDurableResult: (@Sendable (AcquisitionExecutionResult) async -> Void)? = nil) async throws
+        onDurableResult: (@Sendable (AcquisitionExecutionResult, RunwayScope) async -> Void)? = nil) async throws
         -> RunwayAcquisitionStart {
         guard demand.pressure == .selectedSourceCoverage,
             demand.contextKey == scope.contextKey, demand.editorialRevisionID == scope.editorialRevisionID,
@@ -194,10 +197,14 @@ public struct RunwayAcquisitionCycle: Sendable {
                 return try await coordinator.executeConcurrently(owned, trace: trace) { result in
                     continuation.yield(result)
                     guard result.selectableSupplyChanged else { return }
-                    do { try await runway.noteLocalSupplyChanged(scope: scope) }
-                    catch RunwayControllerError.noActiveScope {}
-                    catch RunwayControllerError.scopeMismatch {}
-                    await onDurableResult?(result)
+                    do {
+                        try await runway.noteLocalSupplyChanged(scope: scope)
+                    } catch RunwayControllerError.noActiveScope {
+                        return
+                    } catch RunwayControllerError.scopeMismatch {
+                        return
+                    }
+                    await onDurableResult?(result, scope)
                 }
             }
             return .round(RunwayAcquisitionRound(results: stream, completion: completion,

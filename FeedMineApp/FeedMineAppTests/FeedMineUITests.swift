@@ -2106,17 +2106,13 @@ final class FeedMineUITests: XCTestCase {
             scroll.swipeDown(velocity: .slow)
         }
         guard let returned else { return XCTFail("the anchored card is not reachable after the distant return") }
-        // The offset is evidence, not a hidden tolerance: the initial position pins the card's top to the viewport,
-        // while the way back from above lands on the content's own origin, whose layout carries a 16 pt margin
-        // (`NativeFeedTargets.padding`; recorded 2026-10-18 in the execution review as an owner decision, not a
-        // violation). Anything beyond that margin is a real shift.
+        // The offset is the criterion: the initial position and the way back from above must both sit at the
+        // content origin. The content carries no top margin (`NativeFeedTargets`), precisely so the first topmost
+        // card the reader returns to is the same coordinate the anchored card started at.
         let delta = returned.frame.minY - anchor.frame.minY
         print("E03_OFFSET start=\(anchor.frame.minY) returned=\(returned.frame.minY) delta=\(delta)")
-        // The exercise returns from **above** the anchor, so the way back lands on the content origin, whose
-        // layout carries exactly the 16 pt margin of `NativeFeedTargets.padding`. The value is the criterion, not
-        // a hidden tolerance: 16 pt ± 1. A different sign or magnitude is a real shift and must fail.
-        XCTAssertEqual(delta, 16, accuracy: 1,
-            "returning from above the anchor lands on the documented 16 pt content margin")
+        XCTAssertEqual(delta, 0, accuracy: 1,
+            "the distant return preserves the anchored card's position (E03, ±1 pt)")
         attachShot("e03-distant-return")
     }
 

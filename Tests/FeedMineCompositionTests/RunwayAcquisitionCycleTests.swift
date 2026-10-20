@@ -418,7 +418,7 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
         let (facts, factsContinuation) = AsyncStream<(AcquisitionTargetID, Bool)>.makeStream()
         let cycle = RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: a,second.id: b]))
         let start = try await cycle.start(intent,eligibleTargets: [f.target,second],resources: resources(2),
-            onDurableResult: { result in factsContinuation.yield((result.targetID,result.selectableSupplyChanged)) })
+            onDurableResult: { result, _ in factsContinuation.yield((result.targetID,result.selectableSupplyChanged)) })
         guard case .round(let round) = start else { return XCTFail("Expected an owned round") }
         var iterator = facts.makeAsyncIterator()
         let first = await iterator.next()
