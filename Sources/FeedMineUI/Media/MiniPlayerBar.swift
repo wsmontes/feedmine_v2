@@ -75,6 +75,19 @@ public struct MiniPlayerBar: View {
         .overlay(alignment: .top) {
             Divider()
         }
+        #if DEBUG
+        // The bar's own item identity, for the run that has to prove the player is on the card the reader
+        // tapped: the title is a string that two cards can share, the published card id is not. Hidden from
+        // layout, hit testing and VoiceOver (the same instrument `feed-window-proof` uses for the feed).
+        .overlay(alignment: .topLeading) {
+            Text(verbatim: state.item?.cardID.rawValue.uuidString ?? "")
+                .font(.system(size: 1))
+                .frame(width: 1, height: 1)
+                .opacity(0)
+                .allowsHitTesting(false)
+                .accessibilityIdentifier("mini-player-card")
+        }
+        #endif
     }
 
     @ViewBuilder private var progress: some View {
@@ -174,8 +187,10 @@ public struct FullPlayerView: View {
                     .accessibilityIdentifier("full-player-scrub")
                 HStack {
                     Text(verbatim: Self.clock(state.position))
-                    Spacer()
+                        .accessibilityIdentifier("full-player-position")
+                        Spacer()
                     Text(verbatim: Self.clock(duration))
+                        .accessibilityIdentifier("full-player-duration")
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)

@@ -126,6 +126,7 @@ public struct FeedItemCardView: View, Equatable {
                     .fontWeight(appearance.titleWeight)
                     .lineLimit(2)
                     .foregroundStyle(isRead ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                    .accessibilityIdentifier("card.title")
                     .padding(.horizontal, appearance.contentPadding)
                     // Keyed on the reserved slot, never on whether bytes arrived: a late image must not move
                     // this line or anything below it.
@@ -199,6 +200,7 @@ public struct FeedItemCardView: View, Equatable {
                 .fontWeight(appearance.titleWeight)
                 .lineLimit(2)
                 .foregroundStyle(isRead ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                .accessibilityIdentifier("card.title")
                 .padding(.top, 4)
 
             if let summary = card.primaryText, !summary.isEmpty {
@@ -240,6 +242,13 @@ public struct FeedItemCardView: View, Equatable {
                 : TapGesture().onEnded { emit(.open) })
             .overlay { mediaOverlay }
             .overlay(alignment: .topTrailing) { bookmarkOverlay }
+            // The slot states which of its two states it is in: a decoded bitmap fills it, or the frozen
+            // placeholder does. The container form (never a plain identifier) keeps the bookmark control
+            // inside it queryable and leaves VoiceOver focusing the control, not the drawing.
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(card.image?.cgImage != nil
+                ? "\(card.id.rawValue.uuidString)-media-image"
+                : "\(card.id.rawValue.uuidString)-media-slot")
     }
 
     @ViewBuilder private var decodedImage: some View {
