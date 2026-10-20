@@ -15,7 +15,10 @@ import XCTest
 ///  * o relógio do player declara `full-player-position` em segundos (`MiniPlayerBar.swift:190`), para que "o
 ///    progresso avança" não dependa de porcentagem arredondada, e a barra declara `mini-player-card` com o id
 ///    publicado da carta (`MiniPlayerBar.swift:88`), para que a identidade do item seja a carta tocada e não um
-///    título que duas cartas podem compartilhar.
+///    título que duas cartas podem compartilhar;
+///  * toda carta tocável declara o controle visível `card.play` na linha de metadados, com 44 pt mínimos
+///    (`FeedItemCardView.swift:329-345`). É ele que o teste **toca**, com um toque comum; um selo "Podcast" sem
+///    esse controle é um defeito medido com id e árvore, nunca substituído por outro caminho.
 ///
 /// D2 (build 54): vídeo não tem player nativo. A exigência é identidade de vídeo, abrir a origem, nunca oferecer
 /// "Tocar" e não existir o aviso "Mídia indisponível nesta compilação". Onde o produto ainda não tem a identidade,
@@ -232,23 +235,23 @@ final class FeedMediaJourneyUITests: XCTestCase {
             }
         }
 
-        // (5) ÁUDIO: o critério é o que o toque **faz**, não o selo que a carta desenha. A seleção anterior por
-        //     selo escolheu duas vezes um artigo: o AX mostrou o "Podcast" de uma carta vizinha respondendo pela
-        //     outra (a consulta por descendentes de uma carta não delimita de forma confiável no SwiftUI). Agora
-        //     cada candidato é tocado e só conta quando o player aparece; um hero de artigo abre leitura e é
-        //     descartado com essa medida, nunca reclassificado como áudio.
-        playbackNotes.append("audio path code: hero emits openMedia (FeedItemCardView.swift:238-240); "
+        // (5) ÁUDIO: o caminho do dedo é o controle visível `card.play` na linha de metadados (D1). O teste toca
+        //     **o controle**, com um toque comum — nunca a ação de acessibilidade nem o corpo da carta. Se uma
+        //     carta declara o selo 'Podcast' e não tem `card.play`, isso é um defeito medido e o teste falha com
+        //     o id e a árvore, em vez de improvisar outro caminho.
+        playbackNotes.append("audio path code: card.play emits openMedia (FeedItemCardView.swift:329-345); "
             + "FeedAssociation.perform executes the card's own target (AppComposition.swift:2330-2335) through "
             + "ReaderMediaCoordinator.toggle (ReaderMediaCoordinator.swift:32-40); the payload is the item's "
             + "enclosure candidate (AppComposition.swift:2948-2952) published as mediaPlayback "
             + "(AppComposition.swift:3184)")
         var audioCard: XCUIElement?
         var audioStart: PlaybackStart?
+        var audioDefect: String?
         var audioAttempts: [String] = []
         var tried: Set<String> = []
         let audioDeadline = Date().addingTimeInterval(budget(110))
-        while audioStart == nil && Date() < audioDeadline {
-            guard let candidate = findPlayableCard(app, within: budget(35), excluding: tried) else { break }
+        while audioStart == nil && audioDefect == nil && Date() < audioDeadline {
+            guard let candidate = findPlayableCard(app, within: budget(40), excluding: tried) else { break }
             tried.insert(candidate.identifier)
             let candidateTitle = title(of: candidate, in: app)
             let result = startPlayback(app, card: candidate)
@@ -256,12 +259,21 @@ final class FeedMediaJourneyUITests: XCTestCase {
             case .playing:
                 audioCard = candidate
                 audioStart = result
-            case .article, .notice, .unavailable:
+            case .defect(let reason):
+                audioDefect = "id=\(candidate.identifier) '\(candidateTitle)' — \(reason)"
+                let tree = XCTAttachment(string: app.debugDescription)
+                tree.name = "5-audio-defeito-arvore"
+                tree.lifetime = .keepAlways
+                add(tree)
+                attach(app, name: "5-audio-defeito")
+            case .notice, .unavailable:
                 audioAttempts.append(describe(result, title: candidateTitle))
             }
         }
         playbackNotes.append("audio attempts=\(audioAttempts.count) [\(audioAttempts.joined(separator: " | "))]")
-        if let audioCard, let audioStart {
+        if let audioDefect {
+            failures.append("D1: carta com selo 'Podcast' e sem o controle visível card.play — \(audioDefect)")
+        } else if let audioCard, let audioStart {
             let expectedTitle = title(of: audioCard, in: app)
             switch audioStart {
             case .playing(let observedTitle):
@@ -292,7 +304,7 @@ final class FeedMediaJourneyUITests: XCTestCase {
                         + "\(measured.pausedSecond.map(String.init) ?? "-")→"
                         + "\(measured.resumed.map(String.init) ?? "-") s")
                 }
-            case .article, .notice, .unavailable:
+            case .defect, .notice, .unavailable:
                 break // the loop only selects a candidate that played
             }
         } else {
@@ -301,18 +313,14 @@ final class FeedMediaJourneyUITests: XCTestCase {
                 + "\(audioAttempts.isEmpty ? "nenhuma" : audioAttempts.joined(separator: " | "))")
         }
 
-        // O estado da oferta de áudio, medido no feed misto: quantas cartas tocáveis visíveis não oferecem alvo
-        // de toque nenhum. Uma carta `mediaPlayback` sem imagem não tem hero (FeedItemCardView.swift:238-240) e
-        // o corpo dela emite `.open`; o único caminho para "Tocar" é a ação de acessibilidade, que um toque comum
-        // não alcança. É um fato do produto, e não se confunde com "não há áudio no catálogo".
+        // A cobertura do controle visível no feed misto: quantas cartas com selo 'Podcast' oferecem `card.play`.
+        // Uma que não ofereça é o defeito que a Jornada falha acima, com id e árvore.
         let podcastCards = visibleCards(app).filter { podcastBadge(of: $0) != nil }
-        let withoutTouchTarget = podcastCards.filter { heroIdentifier(of: $0, in: app) == nil }.count
-        playbackNotes.append("audio offers: podcastsVisible=\(podcastCards.count) "
-            + "withoutTouchTarget=\(withoutTouchTarget)")
-        if withoutTouchTarget > 0 {
-            playbackNotes.append("audio gap: \(withoutTouchTarget) carta(s) tocável(is) sem imagem não têm hero; "
-                + "o corpo emite .open e só a ação de acessibilidade nomeia Tocar "
-                + "(FeedItemCardView.swift:107-108,238-240)")
+        let withPlay = podcastCards.filter { playButton(of: $0) != nil }.count
+        playbackNotes.append("audio offers: podcastsVisible=\(podcastCards.count) withCardPlay=\(withPlay)")
+        if withPlay < podcastCards.count {
+            playbackNotes.append("audio defect candidates: \(podcastCards.count - withPlay) carta(s) com selo "
+                + "'Podcast' sem card.play no frame (FeedItemCardView.swift:329-345)")
         }
 
         // (6) VÍDEO — o critério D2, medido onde é medível e vermelho onde o produto ainda não o cumpre.
@@ -569,21 +577,25 @@ final class FeedMediaJourneyUITests: XCTestCase {
 
     // MARK: - Filtros e mídia
 
-    /// Uma carta tocável declara o selo "Podcast" na linha da fonte (`isAudio` é `mediaPlayback`). Cartas sem
-    /// payload tocável não o declaram, e tocá-las abriria o artigo — o teste não confunde uma coisa com a outra.
+    /// Uma carta tocável declara o selo "Podcast" na linha de metadados (`isAudio` é `mediaPlayback`) **e** o
+    /// controle visível `card.play` (`FeedItemCardView.swift:329-345`). Cartas sem payload tocável não declaram
+    /// nenhum dos dois, e tocá-las abriria o artigo — o teste não confunde uma coisa com a outra.
     ///
-    /// O alvo de toque para tocar é o **hero**. Uma carta tocável que a publicação decidiu `textOnly` não tem
-    /// hero: o `openingSurface` dela declara a ação `Tocar` só como ação de acessibilidade, e um toque comum abre
-    /// o artigo (`emit(.open)`). Por isso o teste procura, primeiro, uma carta tocável com hero; a sem hero fica
-    /// como último recurso, para que a lacuna seja medida e não escondida.
+    /// O candidato preferido é a carta com `card.play`, porque é ele que o dedo toca. Uma carta com o selo e sem
+    /// o controle é devolvida como último recurso para que `startPlayback` a reporte como defeito, com id e
+    /// árvore — nunca para que o teste invente um caminho que o leitor não tem.
     private func findPlayableCard(_ app: XCUIApplication, within seconds: TimeInterval,
         excluding tried: Set<String> = []) -> XCUIElement? {
         let deadline = Date().addingTimeInterval(seconds)
         var fallback: XCUIElement?
         while Date() < deadline {
-            let candidates = visibleCards(app)
-                .filter { podcastBadge(of: $0) != nil && !tried.contains($0.identifier) }
-            if let card = candidates.first(where: { heroIdentifier(of: $0, in: app) != nil }) { return card }
+            let candidates = visibleCards(app).filter {
+                !tried.contains($0.identifier)
+                    && (playButton(of: $0) != nil || podcastBadge(of: $0) != nil)
+            }
+            // O controle visível é o critério; o selo sozinho só serve para que a ausência do controle seja
+            // medida como defeito (nunca para improvisar um toque no corpo).
+            if let card = candidates.first(where: { playButton(of: $0) != nil }) { return card }
             if fallback == nil { fallback = candidates.first }
             let feed = app.scrollViews.firstMatch
             if feed.exists { feed.swipeUp(velocity: .slow) }
@@ -592,20 +604,10 @@ final class FeedMediaJourneyUITests: XCTestCase {
         return fallback
     }
 
-    /// O slot visual da carta, decodificado ou ainda em placeholder — o alvo que o hero entrega a `openMedia`.
-    private func heroIdentifier(of card: XCUIElement, in app: XCUIApplication) -> String? {
-        for suffix in ["-media-image", "-media-slot"] {
-            let identifier = card.identifier + suffix
-            let candidate = element(app, identifier)
-            if candidate.exists && candidate.frame.height > 1 { return identifier }
-        }
-        return nil
-    }
-
     private enum PlaybackStart {
         case playing(String)
-        /// O toque abriu leitura: a carta não é tocável (ou o hero não é o alvo de mídia dela).
-        case article
+        /// A carta declara o selo "Podcast" e não oferece o controle visível `card.play`: defeito do produto.
+        case defect(String)
         case notice(String)
         case unavailable(String)
     }
@@ -613,65 +615,64 @@ final class FeedMediaJourneyUITests: XCTestCase {
     private func describe(_ outcome: PlaybackStart, title: String) -> String {
         switch outcome {
         case .playing(let observed): return "\(title)=PLAYING(\(observed))"
-        case .article: return "\(title)=abriuLeitura"
+        case .defect(let reason): return "\(title)=DEFEITO(\(reason))"
         case .notice(let text): return "\(title)=aviso(\(text))"
         case .unavailable(let reason): return "\(title)=semPlayer(\(reason))"
         }
     }
 
-    /// Toca a **área da mídia** da carta (o hero): ela é o alvo de `openMedia` no card; o texto abaixo abre o
-    /// artigo e por isso não é usado. O player (barra) é a primeira coisa a aparecer.
-    ///
-    /// O hero tem de estar na dobra **antes** do toque. Medido: tocar uma coordenada de um hero que o framework
-    /// precisava rolar até a tela não abriu player nenhum — o toque caiu fora do alvo. Depois do toque, a espera é
-    /// de 25 s porque o adapter só instala o item depois de `AVURLAsset.load(.isPlayable)` responder
+    /// O controle visível da linha de metadados (`card.play`), com o alvo de toque que o produto declara: 44 pt
+    /// de altura mínima. A consulta é delimitada pelo frame da carta — medido: descendentes de uma carta não se
+    /// delimitam de forma confiável no SwiftUI, e a seleção já escolheu um artigo vizinho por isso.
+    private func playButton(of card: XCUIElement) -> XCUIElement? {
+        let frame = card.frame
+        return card.buttons.matching(identifier: "card.play").allElementsBoundByIndex
+            .first { $0.exists && frame.contains($0.frame) && $0.frame.height >= 40 }
+    }
+
+    /// Toca **`card.play`**, com um toque comum. A ação de acessibilidade "Tocar" e o corpo da carta ficam de
+    /// fora: o critério é o caminho do dedo. O controle é trazido à dobra antes do toque e, depois dele, a espera
+    /// é de 25 s porque o adapter só instala o item depois de `AVURLAsset.load(.isPlayable)` responder
     /// (MediaPlaybackAdapter.swift:276-284): uma URL de rede lenta não é uma carta sem mídia.
+    ///
+    /// Um selo "Podcast" sem `card.play` é um defeito do produto, medido com o id e a árvore — nunca substituído
+    /// por outro caminho.
     private func startPlayback(_ app: XCUIApplication, card: XCUIElement) -> PlaybackStart {
-        guard let hero = heroIdentifier(of: card, in: app) else {
-            // A lacuna medida, não inferida: a carta tocável sem imagem não tem hero, então o toque do leitor cai
-            // no corpo dela. O teste faz esse toque e diz o que abriu — leitura, ou nada. A carta é trazida à
-            // dobra antes, porque um controle sob a borda não é hittable (medido: a primeira tentativa devolveu
-            // 'sem corpo tocável' com a carta na dobra inferior).
-            _ = bringIntoView(app, identifier: card.identifier, minimum: 0.9)
-            let settled = self.card(app, identifier: card.identifier)
-            let frame = settled.frame
-            let body = settled.buttons.matching(identifier: "card.open").allElementsBoundByIndex
-                .first { $0.exists && frame.contains($0.frame) }
-            guard let body, body.isHittable else {
-                return .unavailable("a carta tocável não tem hero nem corpo tocável hittable "
-                    + "(frame \(frame), viewport \(viewport(app)))")
+        guard playButton(of: card) != nil else {
+            if podcastBadge(of: card) != nil {
+                return .defect("selo 'Podcast' sem card.play dentro do frame \(card.frame); uma carta de áudio "
+                    + "precisa do controle visível (FeedItemCardView.swift:329-345)")
             }
-            body.tap()
-            let openedReading = waitForReader(app, within: budget(15))
-            let playerAppeared = app.otherElements["mini-player"].exists
-            if openedReading {
-                attach(app, name: "5-audio-corpo-abre-leitura")
-                closeReader(app)
-            }
-            let playerSurface = playerAppeared ? "sim" : "não"
-            if openedReading {
-                return .article
-            }
-            return .unavailable("a carta tocável não tem hero (publicação textOnly, sem imagem): o toque no "
-                + "corpo não abriu leitura nem player (player=\(playerSurface)); o único caminho para 'Tocar' é "
-                + "a ação de acessibilidade, que um toque comum não alcança "
-                + "(FeedItemCardView.swift:107-108,238-240)")
+            return .unavailable("a carta não declara card.play")
         }
-        guard let target = bringIntoView(app, identifier: hero, minimum: 0.9) else {
-            return .unavailable("o hero \(hero) não pôde ser trazido ao viewport")
+        _ = bringIntoView(app, identifier: card.identifier, minimum: 0.9)
+        var settled = self.card(app, identifier: card.identifier)
+        guard var button = playButton(of: settled) else {
+            return .defect("card.play desapareceu ao trazer a carta ao viewport (frame \(settled.frame))")
         }
-        target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // Um controle sob a borda não é hittable; dois passos pequenos na direção dele resolvem sem repetir o
+        // swipe cego que já passou do alvo.
+        for _ in 0..<2 where !button.isHittable {
+            let view = viewport(app)
+            if button.frame.midY < view.midY { app.scrollViews.firstMatch.swipeDown(velocity: .slow) }
+            else { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+            Thread.sleep(forTimeInterval: 0.8)
+            settled = self.card(app, identifier: card.identifier)
+            guard let refreshed = playButton(of: settled) else {
+                return .defect("card.play desapareceu ao ajustar a dobra (frame \(settled.frame))")
+            }
+            button = refreshed
+        }
+        guard button.isHittable else {
+            return .unavailable("card.play não está hittable (carta \(settled.frame), controle \(button.frame), "
+                + "viewport \(viewport(app)))")
+        }
+        button.tap()
         let player = app.otherElements["mini-player"]
         let notice = app.staticTexts[Self.unavailableMediaNotice]
         let deadline = Date().addingTimeInterval(25)
         while Date() < deadline {
             if player.exists { return .playing(app.staticTexts["mini-player-title"].label) }
-            // A leitura abrir é o resultado **medido** de um hero que não é alvo de mídia: a carta é um artigo.
-            // Ele é descartado como candidato, nunca contado como áudio.
-            if app.staticTexts["reading.headline"].exists || app.webViews.firstMatch.exists {
-                closeReader(app)
-                return .article
-            }
             if notice.exists { return .notice(notice.label) }
             let toast = app.otherElements["reader-toast"]
             if toast.exists {
@@ -680,8 +681,12 @@ final class FeedMediaJourneyUITests: XCTestCase {
             }
             Thread.sleep(forTimeInterval: 0.5)
         }
-        return .unavailable("o player não apareceu em 25 s (hero \(hero) em \(target.frame)); sem item, o app "
-            + "não tem superfície para o erro de mídia (FeedMineApp.swift:308)")
+        if app.webViews.firstMatch.exists || app.staticTexts["reading.headline"].exists {
+            closeReader(app)
+            return .notice("card.play abriu leitura em vez do player")
+        }
+        return .unavailable("o player não apareceu em 25 s depois do toque em card.play; sem item, o app não "
+            + "tem superfície para o erro de mídia (FeedMineApp.swift:308)")
     }
 
     private struct PlaybackMeasurement {
