@@ -3369,6 +3369,12 @@ final class FeedAssociation {
     /// and one opportunity goes out now, through the same path the reader's foreground uses.
     func retryNow() async {
         guard active else { return }
+        #if DEBUG
+        // The deterministic recovery journey: with `FEEDMINE_FAIL_FIRST_FEED_ATTEMPT=1` the app's own fixture
+        // transport fails until this point, and the reader's retry is what restores it. In every other run this is
+        // a no-op (the flag is off), and no product path reads it.
+        DevelopmentLocalFeeds.allowRecovery()
+        #endif
         retryTask?.cancel()
         retryTask = nil
         await foreground()

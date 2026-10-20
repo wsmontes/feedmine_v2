@@ -65,6 +65,11 @@ public enum FeedLaunchWitness {
     /// The first pass that carried the reader's own ready cards: how many, and when. One value, for the same reason.
     private static var firstCards: (count: Int, at: Double)?
 
+    /// The geometry of the **first card-carrying layout**, measured where the cards are actually laid out
+    /// (`FeedScreen`): the bottom of the last laid-out card in viewport coordinates and the viewport height. One
+    /// value, written once, so the record can never pair a content bottom with a different viewport.
+    private static var firstCardsGeometry: (count: Int, contentBottom: Double, viewportHeight: Double)?
+
     /// The origin every fact is stated from. The app arms it at the very top of its own construction
     /// (`FeedMineApp.init`), so the record's numbers read as "milliseconds since this launch began".
     ///
@@ -91,6 +96,17 @@ public enum FeedLaunchWitness {
         }
     }
 
+    /// The geometry of the first card-carrying presentation. `isLast` states that this card is the last item the
+    /// presentation draws; a card whose bottom already reaches the viewport is conclusive too, because cards are laid
+    /// out in order — the content reaches at least that far. The **first** conclusive measurement is kept, so a later
+    /// scroll or window change cannot rewrite what the first presentation showed.
+    public static func noteCardsGeometry(count: Int, contentBottom: Double,
+        viewportHeight: Double, isLast: Bool) {
+        guard firstCardsGeometry == nil, count > 0 else { return }
+        guard isLast || contentBottom >= viewportHeight - 1 else { return }
+        firstCardsGeometry = (count, contentBottom, viewportHeight)
+    }
+
     private static func noteWaitSurface(_ kind: String) {
         let now = elapsedMilliseconds()
         waitPasses += 1
@@ -102,10 +118,13 @@ public enum FeedLaunchWitness {
     public static var record: String {
         let wait = firstWait
         let cards = firstCards
+        let geometry = firstCardsGeometry
         return "wait_passes=\(waitPasses) kind=\(wait?.kind ?? "none")"
             + " first_wait_ms=\(wait.map { clock($0.at) } ?? "n/a")"
             + " last_wait_ms=\(lastWaitAt.map(clock) ?? "n/a")"
             + " cards=\(cards?.count ?? 0) first_cards_ms=\(cards.map { clock($0.at) } ?? "n/a")"
+            + " content_bottom=\(geometry.map { clock($0.contentBottom) } ?? "n/a")"
+            + " viewport_height=\(geometry.map { clock($0.viewportHeight) } ?? "n/a")"
     }
 
     /// Whether the reader's first reading surface was already their feed: no wait surface was rendered at all, or

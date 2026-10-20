@@ -464,6 +464,28 @@ enum DevelopmentLocalFeeds {
     /// A serial the fixture's timestamps do not share: it exists so two runs of the same test cannot look
     /// different to a reader, and it is never used for a decision.
     private static let stampedSerial = 1
+
+    /// `FEEDMINE_FAIL_FIRST_FEED_ATTEMPT=1` makes this transport fail the **first** request to each endpoint like an
+    /// unreachable host, then answer every following attempt normally. It is the deterministic fault that lets a
+    /// journey prove "Tentar novamente" does real work: the first attempt cannot produce content, and the retry can.
+    /// DEBUG only, behind a flag no product path reads.
+    static var failsFirstAttempt: Bool {
+        ProcessInfo.processInfo.environment["FEEDMINE_FAIL_FIRST_FEED_ATTEMPT"] == "1"
+    }
+
+    /// Whether the reader's own retry has restored the supply. While false (and the flag above is on) every request
+    /// fails; "Tentar novamente" calls `allowRecovery()`, so what the test observes afterwards can only have arrived
+    /// through the retry the reader asked for.
+    private static let recoveryAllowed = Mutex(false)
+
+    static func allowRecovery() {
+        guard failsFirstAttempt else { return }
+        recoveryAllowed.withLock { $0 = true }
+    }
+
+    static var isRecovered: Bool {
+        failsFirstAttempt && recoveryAllowed.withLock { $0 }
+    }
 }
 
 private final class LocalFeedProtocol: URLProtocol {
@@ -477,6 +499,13 @@ private final class LocalFeedProtocol: URLProtocol {
 
     override func startLoading() {
         guard let url = request.url else { return }
+        // The recoverable fault: one failure per endpoint, then the same fixture answers. It runs before the image
+        // and delay branches so the first attempt can never produce content.
+        if DevelopmentLocalFeeds.failsFirstAttempt, !DevelopmentLocalFeeds.isRecovered,
+            DevelopmentLocalFeeds.endpoints.contains(url.absoluteString) {
+            client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+            return
+        }
         // A imagem do fixture é o único byte que este transporte serve além dos documentos: o mesmo dono,
         // o mesmo `URLSessionConfiguration` da composição, então o caminho de mídia é o de produção.
         guard !DevelopmentLocalFeeds.answersCardImage(url) else { return deliverCardImage(url) }
