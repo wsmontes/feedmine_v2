@@ -23,6 +23,7 @@
 //
 // It is not the benchmark's driver and it judges nothing: the frozen oracle owns acceptance. This is the visual
 // evidence the acceptance asked for, and every measurement it makes is stated in the run's own attachments.
+import SQLite3
 import XCTest
 
 @MainActor
@@ -49,7 +50,13 @@ final class EditorialOfferBudgetUITests: XCTestCase {
     /// answered inside the feed — that is F02's whole point — so nothing here invents a subject answer. It runs
     /// only the first time this namespace is used; afterwards the reader's stored answers are the profile, which is
     /// what makes the test repeatable (and it is the reader's own state, not a fixture the test wrote).
-    private func walkTheFirstRun(_ app: XCUIApplication) throws {
+    ///
+    /// The answers are the point: an unanswered composer stores an empty profile (languages `[]`, no place), and
+    /// the app then correctly draws `feed-empty-state` / "Nenhuma fonte habilitada" — discovery has nowhere to
+    /// look, so there is no feed to be offered an invitation on and nothing here can be measured
+    /// (measured 2026-10-18: the walk tapped "Abrir meu feed" at t+8 s and read the empty state, run-final3.log
+    /// lines 34852-35901).
+    private func walkTheFirstRun(_ app: XCUIApplication, namespace: String) throws {
         XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 120),
             "the app meets the reader before the feed")
         app.buttons["welcome-shape"].tap()
@@ -57,12 +64,212 @@ final class EditorialOfferBudgetUITests: XCTestCase {
             "the first run states what it collects")
         let composer = app.otherElements["onboarding"].scrollViews.firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 30))
+
+        // A language, by identifier: the interface language is the device's, so the answer is named by its code.
+        let portuguese = app.buttons["composer-language-pt"]
+        guard reveal(portuguese, in: composer) else {
+            return XCTFail("the first run offers the language the reader reads in")
+        }
+        portuguese.tap()
+        let languageSelected = portuguese.isSelected
+        XCTAssertTrue(languageSelected, "the language the reader chose states itself selected")
+
+        // A place, by the catalogue's own key. The places are drawn in a `LazyVGrid`, so a chip below the fold is
+        // **not in the accessibility tree** until the composer scrolls it into view — which is why the earlier
+        // instrument took whatever chip happened to be realised (`algeria`, 0 pt sources) as if it were Brazil.
+        let brazil = app.buttons["composer-region-\(Self.brazilRegion)"]
+        guard reveal(brazil, in: composer) else {
+            return XCTFail("the first run's places include Brazil (\(Self.brazilRegion))")
+        }
+        brazil.tap()
+        print("PROFILE_ANSWERED language=pt selected=\(languageSelected) "
+            + "place=\(Self.brazilRegion) selected=\(brazil.isSelected)")
+        XCTAssertTrue(brazil.isSelected, "the place the reader chose states itself selected")
+
         let open = app.buttons["composer-open-feed"]
         for _ in 0..<6 where !open.isHittable { composer.swipeUp() }
         XCTAssertTrue(open.isHittable, "the first run's own action opens the feed")
         open.tap()
+
+        // The chain, read from the app's own store **before** a card or an offer is evaluated: the answers are the
+        // stored profile, the profile makes sources eligible, and eligibility starts acquisition. Only after this
+        // does the test require publication.
+        let record = awaitTheRunRecord(namespace)
+        print(record?.line ?? "PROFILE_PERSISTED absent")
+        XCTAssertEqual(record?.languages ?? [], ["pt"], "the stored profile carries the language the reader chose")
+        XCTAssertEqual(record?.preference, "more", "the stored profile carries the place the reader chose")
+        XCTAssertGreaterThan(record?.eligibleSources ?? 0, 0,
+            "the stored profile makes at least one catalogue source eligible")
+        XCTAssertGreaterThan(record?.targets ?? 0, 0, "an eligible set starts acquisition targets")
+
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 240),
             "the reader reaches content on the real catalogue")
+        XCTAssertFalse(app.otherElements["feed-empty-state"].exists,
+            "an answered profile reaches the catalogue instead of the empty state")
+    }
+
+    /// The catalogue's own node key for Brazil (`90_countries/brazil`): the identifier's tail, never its label.
+    private static let brazilRegion = "90_countries/brazil"
+    /// The recipe's own vocabulary for an answer on that place.
+    private static let brazilPreference = "topic:90_countries/brazil"
+
+    /// What the app itself recorded for this run, read from the file the app writes: `runtime.sqlite` under the
+    /// launch's own runtime namespace (the path `RuntimeDatabaseLocation` names). The three facts are the chain the
+    /// acceptance asks to see in order — the **stored** answers, the sources discovery made eligible, and the
+    /// acquisition targets it started — so a run that publishes nothing says which link broke instead of reading
+    /// as one undifferentiated failure.
+    struct RunRecord {
+        var languages: [String]
+        var preferences: [String: String]
+        var targets: Int
+        var eligibleSources: Int
+
+        var preference: String { preferences[Self.brazilPreference] ?? "absent" }
+        var line: String {
+            "PROFILE_PERSISTED languages=\(languages) place=\(Self.brazilPreference)=\(preference) "
+                + "acquisition_targets=\(targets) eligible_sources=\(eligibleSources)"
+        }
+        private static let brazilPreference = "topic:90_countries/brazil"
+    }
+
+    /// The app's container in this simulator, found by the namespace the test chose: the UI-test runner lives in
+    /// the simulator's own `Containers/Data/Application`, so the app's container is a sibling of its own.
+    private func runDatabase(_ namespace: String) -> URL? {
+        let runner = URL(fileURLWithPath: NSHomeDirectory())
+        let containers = runner.deletingLastPathComponent()
+        guard let children = try? FileManager.default.contentsOfDirectory(at: containers,
+            includingPropertiesForKeys: nil) else { return nil }
+        for container in children {
+            let support = container.appendingPathComponent("Library/Application Support/FeedMine", isDirectory: true)
+            let url = support.appendingPathComponent(namespace, isDirectory: true)
+                .appendingPathComponent("runtime.sqlite")
+            if FileManager.default.fileExists(atPath: url.path) { return url }
+        }
+        return nil
+    }
+
+    /// A private copy of the store: the app owns the original and may be writing while the test reads, and a
+    /// read-only open of a WAL store can refuse recovery. Copying the three files is the snapshot; the copy is the
+    /// test's own and opens like any store.
+    private func copyOfRunDatabase(_ namespace: String) -> URL? {
+        guard let source = runDatabase(namespace) else { return nil }
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fm-run-record-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for suffix in ["", "-wal", "-shm"] {
+            let from = URL(fileURLWithPath: source.path + suffix)
+            guard FileManager.default.fileExists(atPath: from.path) else { continue }
+            try? FileManager.default.copyItem(at: from,
+                to: folder.appendingPathComponent("runtime.sqlite" + suffix))
+        }
+        let copy = folder.appendingPathComponent("runtime.sqlite")
+        return FileManager.default.fileExists(atPath: copy.path) ? copy : nil
+    }
+
+    private func readRunRecord(_ url: URL) -> RunRecord? {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+            let database else {
+            sqlite3_close(database)
+            return nil
+        }
+        defer { sqlite3_close(database) }
+        sqlite3_busy_timeout(database, 2_000)
+
+        func scalar(_ sql: String) -> Int {
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+                sqlite3_step(statement) == SQLITE_ROW else { return -1 }
+            return Int(sqlite3_column_int64(statement, 0))
+        }
+        func settings() -> [String: Any]? {
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_prepare_v2(database,
+                "SELECT settings_json FROM reader_preferences WHERE singleton_id = 1", -1, &statement, nil)
+                == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW else { return nil }
+            if sqlite3_column_type(statement, 0) == SQLITE_NULL { return nil }
+            let bytes = sqlite3_column_blob(statement, 0)
+            let count = Int(sqlite3_column_bytes(statement, 0))
+            let data = bytes.map { Data(bytes: $0, count: count) }
+                ?? String(cString: sqlite3_column_text(statement, 0)).data(using: .utf8)
+            return data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+        }
+
+        guard let profile = (settings()?["discoveryProfile"] as? [String: Any]) else { return nil }
+        let languages = profile["languages"] as? [String] ?? []
+        let preferences = (profile["topicPreferences"] as? [String: Any] ?? [:])
+            .compactMapValues { $0 as? String }
+        return RunRecord(languages: languages, preferences: preferences,
+            targets: scalar("SELECT COUNT(*) FROM acquisition_targets"),
+            eligibleSources: scalar("SELECT COUNT(*) FROM acquisition_target_sources"))
+    }
+
+    /// Waits for the app's own record to state the whole chain the acceptance names, in order: the stored answers,
+    /// then a non-empty eligible set, then acquisition actually started. Evaluated **before** any card or offer is
+    /// read, so a later absence is a finding about publication rather than about the instrument.
+    private func awaitTheRunRecord(_ namespace: String, within seconds: TimeInterval = 240) -> RunRecord? {
+        let deadline = Date().addingTimeInterval(seconds)
+        var last: RunRecord?
+        while Date() < deadline {
+            if let url = copyOfRunDatabase(namespace) {
+                let record = readRunRecord(url)
+                try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+                if let record {
+                    last = record
+                    if record.languages.contains("pt"), record.preference == "more",
+                        record.targets > 0, record.eligibleSources > 0 {
+                        return record
+                    }
+                }
+            }
+            Thread.sleep(forTimeInterval: 2)
+        }
+        return last
+    }
+
+    /// Makes an element the accessibility tree has not realised yet reachable: the discovery answers are a
+    /// `LazyVGrid` inside the surface's scroll view, so a chip below the fold does not exist until the scroll
+    /// brings it into view. Returns whether it is both present and hittable.
+    @discardableResult
+    private func reveal(_ element: XCUIElement, in scroller: XCUIElement, attempts: Int = 14) -> Bool {
+        for _ in 0..<attempts {
+            if element.exists, element.isHittable { return true }
+            scroller.swipeUp()
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+        return element.exists && element.isHittable
+    }
+
+    /// The preferences page's own scroll surface. `scrollViews.firstMatch` is not it: the settings list this page
+    /// is pushed from is still in the tree, and the order between the two is not a contract (measured 2026-10-20:
+    /// swiping `firstMatch` scrolled the settings list behind the page, so the page's own chips were never realised
+    /// and the toggle was never hittable).
+    private func preferencesScroller(_ app: XCUIApplication) -> XCUIElement {
+        let identified = app.scrollViews.matching(identifier: "discovery-preferences").firstMatch
+        if identified.exists { return identified }
+        return app.scrollViews.containing(.any, identifier: "discovery-editorial-tips").firstMatch
+    }
+
+    /// The profile the app **stored**, read where the app reads it: the discovery preferences page renders the
+    /// same `ReaderSettingsStore` value the feed's discovery uses, and a chip states its selection to the
+    /// accessibility tree (`.isSelected`). This is the "non-empty profile" the acceptance asks for, not the
+    /// composer's own transient state.
+    private func assertThePersistedProfile(_ app: XCUIApplication) {
+        let page = preferencesScroller(app)
+        XCTAssertTrue(page.waitForExistence(timeout: 20), "the preferences page has its own scroll surface")
+        for _ in 0..<8 { page.swipeDown() }
+        let language = app.buttons["discovery-language-pt"]
+        let place = app.buttons["discovery-region-\(Self.brazilRegion)"]
+        let languageReachable = reveal(language, in: page)
+        let placeReachable = reveal(place, in: page)
+        let languageSelected = languageReachable ? language.isSelected : false
+        let placeSelected = placeReachable ? place.isSelected : false
+        print("PROFILE_PREFERENCES_PAGE language=pt present=\(languageReachable) selected=\(languageSelected) "
+            + "place=\(Self.brazilRegion) present=\(placeReachable) selected=\(placeSelected)")
+        XCTAssertTrue(languageSelected, "the stored profile carries the language the reader answered")
+        XCTAssertTrue(placeSelected, "the stored profile carries the place the reader answered")
     }
 
     /// The real catalogue is not the corpus: the first cards arrive about **fifty seconds** after the feed opens
@@ -277,7 +484,8 @@ final class EditorialOfferBudgetUITests: XCTestCase {
         row.tap()
         let toggle = app.switches["discovery-editorial-tips"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 20), "the discovery preferences opened")
-        for _ in 0..<6 where !toggle.isHittable { app.swipeUp() }
+        let page = preferencesScroller(app)
+        for _ in 0..<6 where !toggle.isHittable { page.swipeUp() }
         return toggle
     }
 
@@ -321,7 +529,7 @@ final class EditorialOfferBudgetUITests: XCTestCase {
         let app = launchForTheOfferBudget(namespace, firstRun: true)
         // A fresh reader meets the app; the first run is walked the way the product asks for it, and the profile it
         // gives is what makes discovery — and therefore the invitations — possible at all.
-        try walkTheFirstRun(app)
+        try walkTheFirstRun(app, namespace: namespace)
         chooseTheLargestTextSize(app)
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
 
@@ -430,6 +638,10 @@ final class EditorialOfferBudgetUITests: XCTestCase {
         let toggle = openDiscoveryPreferences(app)
         XCTAssertTrue(toggle.waitForExistence(timeout: 10), "the page offers the way back")
         XCTAssertEqual(toggle.value as? String, "0", "the switch states that the suggestions are hidden")
+        // The same page reads the stored profile: the reader's own answers are the settings' value, which is what
+        // the acceptance means by a non-empty profile.
+        assertThePersistedProfile(app)
+        for _ in 0..<10 where !toggle.isHittable { preferencesScroller(app).swipeUp() }
         toggle.switches.firstMatch.tap()
         XCTAssertEqual(toggle.value as? String, "1", "the switch states what the reader chose")
         attach(app, "re-enable-in-the-existing-preferences")
@@ -440,13 +652,32 @@ final class EditorialOfferBudgetUITests: XCTestCase {
             XCTAssertEqual(anchoredBeforePreferences.frame.minY, after, accuracy: 1,
                 "the reader's place survives the preferences round-trip that re-enabled the offers")
         }
-        var restored = walkToNextOffer(app, excluding: [secondSubject])
+        // The way back is bounded by **supply**, not by distance alone: re-enabling states its own interval, and the
+        // product offers only on a card the reader has not been exposed to yet — a block behind the reader is one
+        // they never meet, so it refuses that card. The step-5 walk ends at the tail, so the offer arrives with the
+        // next publication; the loop keeps reading forward and waits when the tree did not grow, instead of walking
+        // back over cards the ledger already counts (measured 2026-10-20: the backwards fallback found nothing in
+        // 30 screens, because every card it crossed had been exposed before the offers were hidden).
+        var restored: XCUIElement?
+        let restoreDeadline = Date().addingTimeInterval(300)
+        var seenCards = Set(visibleCardFrames(app).keys)
+        let cardsAtReEnable = seenCards.count
+        print("RESTORE_START cards=\(cardsAtReEnable)")
+        var pass = 0
+        while Date() < restoreDeadline, restored == nil {
+            // Short passes, so the deadline measures supply and distance — not one long walk that spends it.
+            restored = walk(app, steps: 40, direction: nudgeUp, excluding: [secondSubject])
+            pass += 1
+            if restored != nil { break }
+            let now = Set(visibleCardFrames(app).keys)
+            print("RESTORE_PASS \(pass) cards=\(now.count) new=\(now.subtracting(seenCards).count) "
+                + "invitations=\(invitationButtons(app, "feed-invitation-").count)")
+            if now == seenCards { Thread.sleep(forTimeInterval: 5) }
+            seenCards = now
+        }
         if restored == nil {
-            for _ in 0..<30 where restored == nil {
-                app.scrollViews.firstMatch.swipeDown()
-                Thread.sleep(forTimeInterval: 0.3)
-                restored = invitationButtons(app, "feed-invitation-more-").first(where: { onScreen(app, $0) })
-            }
+            print("RESTORE_MISS cards=\(seenCards.count) sinceReEnable=\(seenCards.count - cardsAtReEnable) "
+                + "invitations=\(invitationButtons(app, "feed-invitation-").count)")
         }
         XCTAssertNotNil(restored, "showing the suggestions again restores them where the reader is")
         attach(app, "offers-restored")

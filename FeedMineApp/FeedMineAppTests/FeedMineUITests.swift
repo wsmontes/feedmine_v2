@@ -2011,12 +2011,24 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForExistence(timeout: 20))
         // Addressed by identifier, never by text: two languages can read alike, and the interface language is
         // whatever the device is set to (round 9 replaced the ambiguous `label CONTAINS 'Portuguese'` lookup).
+        let composer = app.otherElements["onboarding"].scrollViews.firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 30))
         let portuguese = app.buttons["composer-language-pt"]
         if portuguese.waitForExistence(timeout: 10) { portuguese.tap() }
-        let places = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-region-'"))
-        XCTAssertTrue(places.firstMatch.waitForExistence(timeout: 30))
-        let brazil = places.matching(NSPredicate(format: "identifier CONTAINS[c] 'brazil'")).firstMatch
-        (brazil.exists ? brazil : places.firstMatch).tap()
+        // The places are a `LazyVGrid`: a chip below the fold is not in the accessibility tree, so the earlier
+        // instrument found `algeria` (the first realised chip, 0 pt sources) and measured that instead of Brazil
+        // (measured 2026-10-18, run-final3.log lines 38818-40119). The answer is named by the catalogue's own node
+        // key and the surface is scrolled until it exists — never the first chip.
+        let brazil = app.buttons["composer-region-90_countries/brazil"]
+        for _ in 0..<14 where !(brazil.exists && brazil.isHittable) {
+            composer.swipeUp()
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+        XCTAssertTrue(brazil.exists && brazil.isHittable,
+            "the first run's places include Brazil (90_countries/brazil), reached by scrolling")
+        brazil.tap()
+        print("BRAZIL_SELECTED identifier=composer-region-90_countries/brazil selected=\(brazil.isSelected)")
+        XCTAssertTrue(brazil.isSelected, "the place the reader chose states itself selected")
         app.buttons["composer-open-feed"].tap()
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 180))
