@@ -37,8 +37,8 @@ final class MediaPreparationTraceTests: XCTestCase {
         var count: Int { lock.lock(); defer { lock.unlock() }; return storage.count }
     }
 
-    private static func policy() -> MediaPolicy? {
-        guard let conditions = MediaDeviceConditions(heroSlotPointWidth: 2, thumbnailSlotPointWidth: 1,
+    private static func policy(hero: Double = 2, thumbnail: Double = 1) -> MediaPolicy? {
+        guard let conditions = MediaDeviceConditions(heroSlotPointWidth: hero, thumbnailSlotPointWidth: thumbnail,
             screenScale: 1, network: .unconstrained, measuredBytesPerSecond: nil, waitBudgetSeconds: nil,
             freeStorageBytes: nil, lowPowerMode: false, thermal: .nominal),
             let ceilings = MediaSafetyCeilings(maximumDownloadBytes: 1_000_000,
@@ -93,6 +93,7 @@ final class MediaPreparationTraceTests: XCTestCase {
         XCTAssertEqual(lines[0]["declared_image"], "true")
         XCTAssertEqual(lines[0]["outcome"], "ready-image")
         XCTAssertEqual(lines[0]["elapsed_ms"], "2500", "elapsed is measured from first consideration")
+        XCTAssertNil(lines[0]["reason"], "a ready image states no failure cause")
         XCTAssertEqual(recorder.count, 1, "the path states this revision's facts once")
     }
 
@@ -135,6 +136,7 @@ final class MediaPreparationTraceTests: XCTestCase {
         XCTAssertEqual(lines.count, 1)
         XCTAssertEqual(lines[0]["declared_image"], "false")
         XCTAssertEqual(lines[0]["outcome"], "text-only")
+        XCTAssertNil(lines[0]["reason"], "text as designed is not a failure")
         XCTAssertEqual(prefetcher.readiness.presentation(for: revision), .textOnly)
     }
 
@@ -153,6 +155,8 @@ final class MediaPreparationTraceTests: XCTestCase {
         XCTAssertEqual(lines.count, 1)
         XCTAssertEqual(lines[0]["declared_image"], "true")
         XCTAssertEqual(lines[0]["outcome"], "unavailable")
+        XCTAssertEqual(lines[0]["reason"], "unknown",
+            "a caller that states only the classification cannot invent a cause")
         XCTAssertTrue(prefetcher.readiness.isSettled(revision))
         XCTAssertNil(prefetcher.readiness.presentation(for: revision),
             "an unavailable declared image has no text fallback")
@@ -173,6 +177,7 @@ final class MediaPreparationTraceTests: XCTestCase {
         XCTAssertEqual(lines.count, 1)
         XCTAssertEqual(lines[0]["outcome"], "deferred")
         XCTAssertEqual(lines[0]["declared_image"], "true")
+        XCTAssertNil(lines[0]["reason"], "a deferred attempt decides nothing")
         XCTAssertFalse(prefetcher.readiness.isSettled(revision))
     }
 
@@ -210,5 +215,62 @@ final class MediaPreparationTraceTests: XCTestCase {
         await prefetcher.prefetch([revision])
         XCTAssertEqual(prefetcher.readiness.presentation(for: revision), .textOnly,
             "the behavior without a trace is the behavior the module had before")
+    }
+
+    /// A definitive end states its cause: an image refused over the byte ceiling is not the same fact as a 404 or
+    /// a tiny image, and only the cause lets a run tell them apart.
+    func testOverCeilingFetchStatesItsReason() async throws {
+        let (db, assets) = try setup()
+        let revision = try admit(db, images: ["https://example.test/huge.png"], source: SourceID())
+        let recorder = TraceRecorder()
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            fetch: { _, _ in throw MediaFetchFailure(.definitive, reason: .overCeiling) },
+            conditions: { _ in Self.policy() }, mediaTrace: recorder.trace)
+
+        await prefetcher.prefetch([revision])
+
+        let lines = recorder.fields(ReplenishmentEvent.mediaSettled)
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines[0]["outcome"], "unavailable")
+        XCTAssertEqual(lines[0]["reason"], "over-ceiling")
+    }
+
+    /// Measured pixels below the slot minimum are their own cause, distinct from any fetch failure.
+    func testTooSmallMeasurementStatesItsReason() async throws {
+        let (db, assets) = try setup()
+        let revision = try admit(db, images: ["https://example.test/tiny.png"], source: SourceID())
+        let recorder = TraceRecorder(), png = self.png
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            fetch: { _, _ in png },
+            conditions: { _ in Self.policy(hero: 40, thumbnail: 40) }, mediaTrace: recorder.trace)
+
+        await prefetcher.prefetch([revision])
+
+        let lines = recorder.fields(ReplenishmentEvent.mediaSettled)
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines[0]["outcome"], "unavailable")
+        XCTAssertEqual(lines[0]["reason"], "too-small")
+        XCTAssertNil(prefetcher.readiness.presentation(for: revision))
+    }
+
+    /// A timeout is retried, so it must never read as a definitive cause: the outcome is `transient-failed` and
+    /// the cause is the timeout itself.
+    func testTransientTimeoutIsNotReportedAsADefinitiveReason() async throws {
+        let (db, assets) = try setup()
+        let revision = try admit(db, images: ["https://example.test/slow.png"], source: SourceID())
+        let recorder = TraceRecorder()
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            transientRetryBaseSeconds: 10,
+            fetch: { _, _ in throw URLError(.timedOut) },
+            conditions: { _ in Self.policy() }, mediaTrace: recorder.trace)
+
+        await prefetcher.prefetch([revision])
+
+        let lines = recorder.fields(ReplenishmentEvent.mediaSettled)
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines[0]["outcome"], "transient-failed")
+        XCTAssertEqual(lines[0]["reason"], "timeout")
+        XCTAssertNotEqual(lines[0]["outcome"], "unavailable")
+        XCTAssertFalse(prefetcher.readiness.isSettled(revision), "a timeout decides nothing")
     }
 }

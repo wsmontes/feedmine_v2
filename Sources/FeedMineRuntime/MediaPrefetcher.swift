@@ -121,11 +121,77 @@ public enum MediaPreparationOutcome: Hashable, Sendable {
     case insufficientSpace
 }
 
-/// How a media fetch failed. Definitive failures (missing, not an image, too large) settle the
-/// revision as designed text-only; transient ones (timeouts, 5xx, lost connection) retry later.
-public enum MediaFetchFailure: Error, Hashable, Sendable {
-    case transient
-    case definitive
+/// Why a fetch failed, in the vocabulary the run trace states. It names the cause the fetcher already observed;
+/// it never decides anything — `MediaFetchFailure.classification` is what the retry policy reads.
+public enum MediaFetchFailureReason: Hashable, Sendable {
+    case status(Int)
+    case notAnImage
+    case overCeiling
+    case httpDowngrade
+    case privateHost
+    case timeout
+    case offline
+    case invalidURL
+    case transport
+    case storage
+    case tooSmall
+    case insufficientSpace
+    /// The cause could not be stated by a typed failure the caller already had.
+    case unknown
+
+    /// The token a settlement line carries. A status stays its own fact (`status-404`), never a bucket.
+    public var traced: String {
+        switch self {
+        case .status(let code): return "status-\(code)"
+        case .notAnImage: return "not-an-image"
+        case .overCeiling: return "over-ceiling"
+        case .httpDowngrade: return "http-downgrade"
+        case .privateHost: return "private-host"
+        case .timeout: return "timeout"
+        case .offline: return "offline"
+        case .invalidURL: return "invalid-url"
+        case .transport: return "transport"
+        case .storage: return "storage"
+        case .tooSmall: return "too-small"
+        case .insufficientSpace: return "insufficient-space"
+        case .unknown: return "unknown"
+        }
+    }
+}
+
+/// How a media fetch failed. `classification` is the only part the retry policy reads: definitive failures
+/// (missing, not an image, too large) settle the revision as designed text-only; transient ones (timeouts, 5xx,
+/// lost connection) retry later. `reason` is the cause the fetcher observed, carried for the run trace — it never
+/// changes the classification and never decides anything.
+public struct MediaFetchFailure: Error, Hashable, Sendable {
+    public enum Classification: Hashable, Sendable {
+        case transient
+        case definitive
+    }
+
+    public let classification: Classification
+    public let reason: MediaFetchFailureReason
+
+    public init(_ classification: Classification, reason: MediaFetchFailureReason = .unknown) {
+        self.classification = classification
+        self.reason = reason
+    }
+
+    /// A failure whose caller knows only the classification (tests, old call sites): the cause is `unknown`.
+    public static let transient = MediaFetchFailure(.transient)
+    public static let definitive = MediaFetchFailure(.definitive)
+}
+
+/// One attempt's outcome with the cause the settlement line states for a non-ready end. Internal: the decision
+/// is still `MediaPreparationOutcome`, and the reason is evidence that nothing consults.
+struct MediaPreparationAttempt: Sendable {
+    let outcome: MediaPreparationOutcome
+    let reason: MediaFetchFailureReason?
+
+    init(_ outcome: MediaPreparationOutcome, reason: MediaFetchFailureReason? = nil) {
+        self.outcome = outcome
+        self.reason = reason
+    }
 }
 
 /// Resumes one continuation exactly once, from whichever racer gets there first.
@@ -185,7 +251,7 @@ public actor MediaPrefetcher {
     /// One entry per revision with work in progress: the single-flight owner both supply and saved preparation
     /// join. It replaces the set of in-flight ids so a save can wait for the same download instead of starting
     /// a second one.
-    private var running: [OriginRevisionID: Task<MediaPreparationOutcome, Never>] = [:]
+    private var running: [OriginRevisionID: Task<MediaPreparationAttempt, Never>] = [:]
     private var measuredBytesPerSecond: Double?
     private var transientFailures: [OriginRevisionID: Int] = [:]
     private var transientRetryAt: [OriginRevisionID: Double] = [:]
@@ -309,16 +375,16 @@ public actor MediaPrefetcher {
     /// Supply's own use of the pipeline: run one attempt and turn its outcome into the readiness decision the
     /// feed's selection reads. Nothing here is about a saved card.
     private func prepare(_ revision: OriginRevisionID) async {
-        let outcome = await acquireSingleFlight(revision)
+        let attempt = await acquireSingleFlight(revision)
         #if DEBUG
         // One line per revision per attempt, written at the attempt's end — including the attempts that end
         // without settling, because "still pending" is a fact the run must be able to read.
         if let mediaWitness {
-            mediaWitness.settle(revision, outcome: outcome,
+            mediaWitness.settle(revision, outcome: attempt.outcome, reason: attempt.reason,
                 facts: MediaRevisionFacts.read(revision, in: contentStore))
         }
         #endif
-        switch outcome {
+        switch attempt.outcome {
         case .ready(let value): await settle(revision, value, textDeclared: false)
         case .textOnly: await settle(revision, nil, textDeclared: true)
         // An image the card declared could not be prepared: it settles without a presentation, which keeps it out
@@ -346,13 +412,13 @@ public actor MediaPrefetcher {
     /// never converted into a text card under the same identity.
     public func prepareForSave(_ revision: OriginRevisionID) async -> MediaPreparationOutcome {
         guard !retired else { return .deferred }
-        return await acquireSingleFlight(revision)
+        return await acquireSingleFlight(revision).outcome
     }
 
     /// One attempt per revision at a time, shared by supply and saved preparation. A caller that arrives while
     /// work is running waits for that work rather than starting a competing download.
-    private func acquireSingleFlight(_ revision: OriginRevisionID) async -> MediaPreparationOutcome {
-        guard !retired else { return .deferred }
+    private func acquireSingleFlight(_ revision: OriginRevisionID) async -> MediaPreparationAttempt {
+        guard !retired else { return MediaPreparationAttempt(.deferred) }
         // Only the owner of the work removes it. A joiner that removed it after resuming could erase a *newer*
         // task registered in the same revision, and the next caller would start a second download.
         if let work = running[revision] { return await work.value }
@@ -362,10 +428,10 @@ public actor MediaPrefetcher {
         return await work.value
     }
 
-    private func acquire(_ revision: OriginRevisionID) async -> MediaPreparationOutcome {
+    private func acquire(_ revision: OriginRevisionID) async -> MediaPreparationAttempt {
         guard let policy = conditions(measuredBytesPerSecond),
             let candidates = try? contentStore.mediaCandidates(originRevisionID: revision) else {
-            return .deferred // Conditions unknown or storage unreadable: leave unsettled for a later opportunity.
+            return MediaPreparationAttempt(.deferred) // Conditions unknown or storage unreadable: leave unsettled.
         }
         // The card contract is what the feed declared: a visible card image. Without one (an audio-only or
         // text-only item) the text presentation is the card as designed, and settling it as text is not a fallback.
@@ -373,23 +439,35 @@ public actor MediaPrefetcher {
         let first: MediaCandidate, fallbacks: [MediaCandidate]
         switch MediaResolver.resolve(candidates, policy: policy) {
         case .prepare(let chosen, let rest): first = chosen; fallbacks = rest
-        case .textOnly(.conditionsForbidRemoteMedia): return .deferred // Offline or overheated: try again later.
+        case .textOnly(.conditionsForbidRemoteMedia): return MediaPreparationAttempt(.deferred) // Offline or hot.
         case .textOnly:
             // Nothing viable to prepare. Whether that means "a text card as designed" or "an image the feed
-            // declared could not be prepared" is the feed's declaration, not the resolver's answer.
-            return declaresImage ? .unavailable : .textOnly
+            // declared could not be prepared" is the feed's declaration, not the resolver's answer. A declared
+            // image refused here was skipped by its own declaration (non-image MIME, SVG, over the ceiling).
+            return declaresImage
+                ? MediaPreparationAttempt(.unavailable, reason: Self.declaredRefusal(candidates, policy: policy))
+                : MediaPreparationAttempt(.textOnly)
         }
         let ceiling = policy.downloadByteBudget
-        guard ceiling > 0 else { return .deferred } // Not affordable now; retry when conditions improve.
+        guard ceiling > 0 else { return MediaPreparationAttempt(.deferred) } // Not affordable now; retry later.
         var sawTransient = false, sawStorageFailure = false, sawSpace = false
+        // The cause the settlement line states. The first definitive refusal is the preferred candidate's, which
+        // is the most informative one; a transient attempt keeps its own cause because it is retried.
+        var definitiveReason: MediaFetchFailureReason?
+        var transientReason: MediaFetchFailureReason?
         for candidate in [first] + fallbacks {
-            if Task.isCancelled { return .deferred }
+            if Task.isCancelled { return MediaPreparationAttempt(.deferred) }
             let started = ProcessInfo.processInfo.systemUptime
             let bytes: Data
             do { bytes = try await fetch(candidate.remoteURL, ceiling) }
             catch {
                 // Review F04: only a definitive answer (missing, not an image, too large) is final.
-                if Self.isTransient(error) { sawTransient = true }
+                if Self.isTransient(error) {
+                    sawTransient = true
+                    if transientReason == nil { transientReason = Self.failureReason(error) }
+                } else if definitiveReason == nil {
+                    definitiveReason = Self.failureReason(error)
+                }
                 continue
             }
             observeThroughput(bytes: bytes.count, seconds: ProcessInfo.processInfo.systemUptime - started)
@@ -397,18 +475,57 @@ public actor MediaPrefetcher {
             do { result = try preparation.prepare(candidate: candidate, input: .bytes(bytes)) }
             catch LocalMediaAssetError.insufficientSpace { sawSpace = true; continue }
             catch { sawStorageFailure = true; continue }
-            guard case .usable(let asset) = result.state else { continue }
+            guard case .usable(let asset) = result.state else {
+                // Media's own inspection refused the bytes as an image container (`invalidImage`).
+                if definitiveReason == nil { definitiveReason = .notAnImage }
+                continue
+            }
             let fit = policy.fit(measuredPixelWidth: asset.pixelWidth, height: asset.pixelHeight)
-            guard fit != .unsuitable else { continue }
-            return .ready(.init(result: result, fit: fit))
+            guard fit != .unsuitable else {
+                if definitiveReason == nil {
+                    definitiveReason = Self.fitReason(width: asset.pixelWidth, height: asset.pixelHeight,
+                        ceilings: policy.ceilings)
+                }
+                continue
+            }
+            return MediaPreparationAttempt(.ready(.init(result: result, fit: fit)))
         }
         // A volume that could not hold the chosen image is the most specific fact, and the one the reader can
         // act on; then a failed attempt; only then "this occurrence's declared media is unusable".
-        if sawSpace { return .insufficientSpace }
-        if sawStorageFailure || sawTransient { return .failed }
+        if sawSpace { return MediaPreparationAttempt(.insufficientSpace, reason: .insufficientSpace) }
+        if sawStorageFailure { return MediaPreparationAttempt(.failed, reason: .storage) }
+        if sawTransient { return MediaPreparationAttempt(.failed, reason: transientReason ?? .unknown) }
         // Every viable candidate was definitively unusable. A card that declared an image leaves the current
         // publication queue (INV-17); only an occurrence that declared no image is the text card as designed.
-        return declaresImage ? .unavailable : .textOnly
+        return declaresImage
+            ? MediaPreparationAttempt(.unavailable, reason: definitiveReason ?? .unknown)
+            : MediaPreparationAttempt(.textOnly)
+    }
+
+    /// Why a declared image was refused before any bytes moved: the resolver skips a candidate whose declared
+    /// MIME is not an image (or is SVG) or whose declared pixels exceed the safety ceiling. `unknown` when the
+    /// resolver refused for a reason none of those facts states.
+    static func declaredRefusal(_ candidates: [MediaCandidate], policy: MediaPolicy) -> MediaFetchFailureReason {
+        for candidate in candidates where candidate.role == .cardVisual && candidate.mediaClass == .image {
+            if let mime = candidate.declaredMimeType?.lowercased(), !mime.hasPrefix("image/") || mime.contains("svg") {
+                return .notAnImage
+            }
+            if let width = candidate.declaredPixelWidth, let height = candidate.declaredPixelHeight,
+                width > policy.ceilings.maximumPixelSide || height > policy.ceilings.maximumPixelSide {
+                return .overCeiling
+            }
+        }
+        return .unknown
+    }
+
+    /// Why a measured image fits no slot: over a safety ceiling, or smaller than the thumbnail minimum.
+    static func fitReason(width: Int, height: Int, ceilings: MediaSafetyCeilings) -> MediaFetchFailureReason {
+        if width > ceilings.maximumPixelSide || height > ceilings.maximumPixelSide
+            || width.multipliedReportingOverflow(by: height).overflow
+            || width * height > ceilings.maximumPixelCount {
+            return .overCeiling
+        }
+        return .tooSmall
     }
 
     /// A real transition may reopen the existing supply episode; no polling or retry owner is added.
@@ -422,7 +539,7 @@ public actor MediaPrefetcher {
     /// Definitive failures are explicitly marked by the fetcher; anything else (timeouts, lost
     /// connections, 5xx, unknown errors) is treated as transient.
     static func isTransient(_ error: any Error) -> Bool {
-        if let failure = error as? MediaFetchFailure { return failure == .transient }
+        if let failure = error as? MediaFetchFailure { return failure.classification == .transient }
         if let url = error as? URLError {
             switch url.code {
             case .badURL, .unsupportedURL, .fileDoesNotExist, .noPermissionsToReadFile, .dataLengthExceedsMaximum: return false
@@ -430,6 +547,25 @@ public actor MediaPrefetcher {
             }
         }
         return true
+    }
+
+    /// The cause a fetch error already states, for the settlement line. This reads the existing typed failure
+    /// (or the `URLError` code); it classifies nothing and changes nothing.
+    static func failureReason(_ error: any Error) -> MediaFetchFailureReason {
+        if let failure = error as? MediaFetchFailure { return failure.reason }
+        if let url = error as? URLError {
+            switch url.code {
+            case .timedOut: return .timeout
+            case .notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost,
+                .dnsLookupFailed, .internationalRoamingOff, .dataNotAllowed, .resourceUnavailable:
+                return .offline
+            case .dataLengthExceedsMaximum: return .overCeiling
+            case .badURL, .unsupportedURL: return .invalidURL
+            case .cancelled: return .transport
+            default: return .transport
+            }
+        }
+        return .unknown
     }
 
     /// Exponentially weighted throughput; feeds the next policy's byte budget (PD-6).

@@ -102,20 +102,30 @@ final class MediaPreparationWitness: @unchecked Sendable {
     }
 
     /// One line for this attempt's end: the revision, its source, what the feed declared, the outcome and the
-    /// whole interval since first consideration.
-    func settle(_ revision: OriginRevisionID, outcome: MediaPreparationOutcome, facts: MediaRevisionFacts) {
+    /// whole interval since first consideration. A definitive or transient end also states its **cause** — the
+    /// reason is only meaningful there; a ready, text-only or deferred end has none to report.
+    func settle(_ revision: OriginRevisionID, outcome: MediaPreparationOutcome,
+        reason: MediaFetchFailureReason?, facts: MediaRevisionFacts) {
         lock.lock()
         let considered = firstConsideration[revision] ?? clock()
         let elapsed = max(0, clock() - considered)
         lock.unlock()
-        trace.record(ReplenishmentEvent.mediaSettled, [
+        let settled = MediaSettlementOutcome(outcome)
+        var fields = [
             "revision": revision.rawValue.uuidString,
             "source": facts.sources.isEmpty ? "none"
                 : facts.sources.map(\.rawValue.uuidString).sorted().joined(separator: ","),
             "declared_image": facts.declaredImage.rawValue,
-            "outcome": MediaSettlementOutcome(outcome).rawValue,
+            "outcome": settled.rawValue,
             "elapsed_ms": String(Int((elapsed * 1000).rounded()))
-        ])
+        ]
+        switch settled {
+        case .unavailable, .transientFailed:
+            fields["reason"] = (reason ?? .unknown).traced
+        case .readyImage, .textOnly, .deferred:
+            break
+        }
+        trace.record(ReplenishmentEvent.mediaSettled, fields)
     }
 }
 
