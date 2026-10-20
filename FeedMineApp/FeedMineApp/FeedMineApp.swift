@@ -319,6 +319,17 @@ struct FeedMineApp: App {
                         onClose: { showsPlayer = false })
                 }
                 .toolbar(.hidden, for: .navigationBar)
+                // D7-A: the first open after a V1 upgrade states what was carried and what this build still
+                // cannot open. Dismissing it records the presentation; the receipt keeps the counts.
+                .alert("Da versão anterior", isPresented: Binding(
+                    get: { composition.legacyUpgradeNotice != nil },
+                    set: { presented in
+                        if !presented { composition.acknowledgeLegacyUpgradeNotice() }
+                    })) {
+                    Button("Entendi", role: .cancel) { composition.acknowledgeLegacyUpgradeNotice() }
+                } message: {
+                    Text(composition.legacyUpgradeNoticeText)
+                }
                 .sheet(item: sheetItem, onDismiss: {
                     // A selection made in the source surface is adopted when it closes, never mid-list, and the
                     // appearance is re-derived because the settings surface may have changed it.

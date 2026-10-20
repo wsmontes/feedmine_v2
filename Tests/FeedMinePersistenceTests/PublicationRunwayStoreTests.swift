@@ -257,7 +257,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
                 "reader-settings-v1","reader-imported-sources-v1","reader-curated-recipe-v1",
                 "reader-curated-recipe-revision-v1","reader-playback-positions-v1",
                  "content-fingerprint-generation-v2","reader-source-identity-v1","saved-media-availability-v1",
-                 "publication-editorial-diversity-v1"])
+                 "publication-editorial-diversity-v1","reader-legacy-upgrade-receipt-v1"])
         }
     }
 
@@ -476,14 +476,42 @@ extension PublicationRunwayStoreTests {
                 """,
                 "sqlite_autoindex_saved_media_availability_1:"
             ]
+            // D7-A: the V1 upgrade receipt, additive only. The two tables state what the upgrade carried and
+            // every reported skip; nothing here rewrites a shipped row.
+            let legacyUpgradeObjects: Set<String> = [
+                """
+                reader_legacy_upgrade:CREATE TABLE reader_legacy_upgrade (
+                    singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+                    source_path TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('completed', 'unsupported', 'failed')),
+                    ran_at REAL NOT NULL,
+                    failure_reason TEXT,
+                    imported_boxes INTEGER NOT NULL DEFAULT 0,
+                    imported_sources INTEGER NOT NULL DEFAULT 0,
+                    selected_sources INTEGER NOT NULL DEFAULT 0,
+                    imported_collections INTEGER NOT NULL DEFAULT 0,
+                    imported_collection_members INTEGER NOT NULL DEFAULT 0,
+                    notice_presented INTEGER NOT NULL DEFAULT 0 CHECK(notice_presented IN (0, 1))
+                )
+                """,
+                """
+                reader_legacy_upgrade_skips:CREATE TABLE reader_legacy_upgrade_skips (
+                    category TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    count INTEGER NOT NULL CHECK(count >= 0),
+                    PRIMARY KEY (category, reason)
+                )
+                """,
+                "sqlite_autoindex_reader_legacy_upgrade_skips_1:"
+            ]
             XCTAssertEqual(priorDefinitions.subtracting(normalizedBefore),
                 Set([originIndex, authorityTable, authorityIndex]).union(contextual)
                     .union(mediaRebuild).union(fingerprintObjects).union(identityObjects)
-                    .union(savedAvailabilityObjects))
+                    .union(savedAvailabilityObjects).union(legacyUpgradeObjects))
             XCTAssertEqual(Self.normalizeRebuiltDefinitions(schemaAfter).subtracting(normalizedBefore),
                 Set([originIndex, originDefinition, revisionDefinition, authorityTable, authorityIndex]).union(contextual)
                     .union(mediaRebuild).union(fingerprintObjects).union(identityObjects)
-                    .union(savedAvailabilityObjects))
+                    .union(savedAvailabilityObjects).union(legacyUpgradeObjects))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }

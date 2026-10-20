@@ -591,6 +591,33 @@ public enum RuntimeMigrations {
             try db.execute(sql: "ALTER TABLE published_cards ADD COLUMN diversity_facts TEXT")
             try db.execute(sql: "ALTER TABLE retired_published_cards ADD COLUMN diversity_facts TEXT")
         }
+        // D7-A: the V1 upgrade's receipt. V1's own `user.sqlite` stays the authority for what this build does
+        // not carry (saved articles, smart and curated feeds); this table states which generation was upgraded,
+        // what was imported, every reported skip with its reason, and whether the reader has been told.
+        // Additive only: no shipped row is rewritten, and the marker commits with the imported rows.
+        migrator.registerMigration("reader-legacy-upgrade-receipt-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE reader_legacy_upgrade (
+                    singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+                    source_path TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('completed', 'unsupported', 'failed')),
+                    ran_at REAL NOT NULL,
+                    failure_reason TEXT,
+                    imported_boxes INTEGER NOT NULL DEFAULT 0,
+                    imported_sources INTEGER NOT NULL DEFAULT 0,
+                    selected_sources INTEGER NOT NULL DEFAULT 0,
+                    imported_collections INTEGER NOT NULL DEFAULT 0,
+                    imported_collection_members INTEGER NOT NULL DEFAULT 0,
+                    notice_presented INTEGER NOT NULL DEFAULT 0 CHECK(notice_presented IN (0, 1))
+                );
+                CREATE TABLE reader_legacy_upgrade_skips (
+                    category TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    count INTEGER NOT NULL CHECK(count >= 0),
+                    PRIMARY KEY (category, reason)
+                );
+                """)
+        }
         return migrator
     }
 

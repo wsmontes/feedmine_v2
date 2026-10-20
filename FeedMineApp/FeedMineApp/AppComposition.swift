@@ -32,6 +32,9 @@ final class AppComposition {
     private(set) var association: FeedAssociation?
     /// The product-facing message the reader sees when the composition cannot start.
     private(set) var startupFailure: String?
+    /// D7-A: what the V1 upgrade carried and what remains inaccessible, owed to the reader on the first open
+    /// after the upgrade. Nil when no upgrade is pending or the reader has already dismissed it.
+    private(set) var legacyUpgradeNotice: ReaderLegacyUpgradeReceipt?
     /// The technical detail behind `startupFailure`: it belongs to diagnostics, never to the reader's copy
     /// (R5: a raw error description must not be shown as if it were product language).
     private(set) var startupFailureDetail: String?
@@ -471,6 +474,21 @@ final class AppComposition {
                 // OMP C1: the repair path (toggleSource) needs preferences even if resolution fails.
                 self.preferences = preferences
                 var saved = try preferences.initialize(sourceKeys: feeds.map(\.principal))
+                // D7-A: the V1 upgrade runs on the first launch that finds a V1 container in this app's own
+                // container, after the preferences row exists (so an enabled V1 source can join the selection)
+                // and before any session reads the library. A second launch reads the completed marker and does
+                // nothing. Failure is recorded, never translated into an empty/default library.
+                let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+                switch LegacyV1Upgrade.runAtLaunch(applicationSupport: self.directory,
+                    documentsDirectory: documents, into: database) {
+                case .upgraded, .alreadyHandled:
+                    saved = (try? preferences.load()) ?? saved
+                case .failed(let reason):
+                    Self.log("legacy V1 upgrade failed: \(reason)")
+                case .noLegacyContainer:
+                    break
+                }
+                self.legacyUpgradeNotice = LegacyV1Upgrade.pendingNotice(in: database)
                 #if DEBUG
                 // T7 UI evidence: launch with no selected source at all, which is a state V1 allowed and
                 // stated with its own surface.
@@ -1144,6 +1162,34 @@ final class AppComposition {
     /// The library boundary, for the reader's own actions on it.
     private func libraryCoordinator() -> ReaderLibraryCoordinator? {
         libraryDatabase().map(ReaderLibraryCoordinator.init(database:))
+    }
+
+    /// D7-A: the reader dismissed the first-open notice. The durable receipt is the record; the in-memory value
+    /// only decides whether this presentation is still owed.
+    func acknowledgeLegacyUpgradeNotice() {
+        if let database = libraryDatabase() {
+            try? ReaderLibraryStore(database: database).markLegacyUpgradeNoticePresented()
+        }
+        legacyUpgradeNotice = nil
+    }
+
+    /// What the first open tells the reader. It states the imported counts and what remains inaccessible in
+    /// this build; it never claims the upgrade is complete or that the library was lost.
+    var legacyUpgradeNoticeText: String {
+        guard let notice = legacyUpgradeNotice else { return "" }
+        if notice.status == .unsupported {
+            return String(localized: "Encontramos dados da versão anterior, mas este formato de biblioteca não pode ser lido por esta versão. Nada foi alterado no arquivo original.")
+        }
+        func count(_ category: String) -> Int {
+            notice.skips.filter { $0.category == category }.reduce(0) { $0 + $1.count }
+        }
+        return String(localized: """
+            Importados da versão anterior: caixas \(notice.importedBoxes), fontes \(notice.importedSources), \
+            coleções \(notice.importedCollections).
+            Ainda inacessíveis nesta versão: artigos salvos \(notice.inaccessibleSavedArticles), \
+            marcadores inteligentes \(count("smartFeeds")), feeds curados \(count("curatedFeeds")).
+            Eles permanecem no arquivo original da versão anterior.
+            """)
     }
 
     /// The reader's own sources — a pasted link, an imported file — as entries a session can be built from.
