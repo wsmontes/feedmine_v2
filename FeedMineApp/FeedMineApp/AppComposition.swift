@@ -2282,10 +2282,11 @@ final class FeedAssociation {
                 case .share(let payload):
                     onShare?(SharedLink(url: payload.url, subject: payload.subject))
                 case .media:
-                    // No card this pipeline publishes carries a playable target yet (PORT_LOG, T9): the surface
-                    // states that instead of opening a player on nothing.
-                    store.showToast(text: String(localized: "Mídia indisponível nesta compilação"),
-                        systemImage: "speaker.slash")
+                    // D1 (PD-2026-10-20): the card's own playable target is executed, not refused. The channel
+                    // already existed and was wired to the app-wide player; the surface simply answered with a
+                    // toast. The coordinator owns V1's tap behaviour and states its own reason when the card
+                    // carries nothing playable.
+                    onMedia?(cardID)
                 }
             } catch { reportFailure(error) }
         }
