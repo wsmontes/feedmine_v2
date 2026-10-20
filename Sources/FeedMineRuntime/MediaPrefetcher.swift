@@ -192,13 +192,19 @@ public actor MediaPrefetcher {
     /// R20/P01 retirement fence. Once set, no new download may start on the shared transport; the owner refuses
     /// new work and lets the current attempts settle (or its bounded drain expire) before the transport dies.
     private var retired = false
+    #if DEBUG
+    /// Evidence of the supply preparation path (first consideration, settlement line). Nil records nothing; a
+    /// shipping build compiles it out. It is not read by any decision.
+    private let mediaWitness: MediaPreparationWitness?
+    #endif
 
     public init(database: RuntimeDatabase, assetDirectory: URL, readiness: MediaReadiness = MediaReadiness(),
         concurrentDownloadLimit: Int, transientRetryBaseSeconds: Double = 30,
         monotonicSeconds: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime },
         preparation: MediaPreparation? = nil,
         fetch: @escaping Fetch, conditions: @escaping Conditions,
-        onReadinessChanged: (@Sendable (OriginRevisionID) async -> Void)? = nil) {
+        onReadinessChanged: (@Sendable (OriginRevisionID) async -> Void)? = nil,
+        mediaTrace: ReplenishmentTrace? = nil) {
         self.readiness = readiness
         contentStore = ContentStore(database: database)
         self.preparation = preparation ?? MediaPreparation(assetDirectory: assetDirectory)
@@ -208,6 +214,9 @@ public actor MediaPrefetcher {
         self.concurrentDownloadLimit = max(1, concurrentDownloadLimit)
         self.transientRetryBaseSeconds = transientRetryBaseSeconds.isFinite && transientRetryBaseSeconds > 0 ? transientRetryBaseSeconds : 30
         self.monotonicSeconds = monotonicSeconds
+        #if DEBUG
+        mediaWitness = mediaTrace.map { MediaPreparationWitness(trace: $0, clock: monotonicSeconds) }
+        #endif
     }
 
     /// Retirement order for the shared transport owner (P01/R20): deny every new start first, cancel the attempts
@@ -244,6 +253,11 @@ public actor MediaPrefetcher {
     /// editorial candidates). Same deadline contract as `prefetchSupplyHead`.
     public func prefetch(_ ordered: [OriginRevisionID], deadline: Double? = nil) async {
         guard !retired else { return }
+        #if DEBUG
+        // Every revision handed to the path is one it considers for publication; the first instant is what the
+        // settlement line measures its elapsed time from.
+        mediaWitness?.consider(ordered)
+        #endif
         let now = monotonicSeconds()
         var seen = Set<OriginRevisionID>()
         let revisions = ordered.filter { revision in
@@ -295,7 +309,16 @@ public actor MediaPrefetcher {
     /// Supply's own use of the pipeline: run one attempt and turn its outcome into the readiness decision the
     /// feed's selection reads. Nothing here is about a saved card.
     private func prepare(_ revision: OriginRevisionID) async {
-        switch await acquireSingleFlight(revision) {
+        let outcome = await acquireSingleFlight(revision)
+        #if DEBUG
+        // One line per revision per attempt, written at the attempt's end — including the attempts that end
+        // without settling, because "still pending" is a fact the run must be able to read.
+        if let mediaWitness {
+            mediaWitness.settle(revision, outcome: outcome,
+                facts: MediaRevisionFacts.read(revision, in: contentStore))
+        }
+        #endif
+        switch outcome {
         case .ready(let value): await settle(revision, value, textDeclared: false)
         case .textOnly: await settle(revision, nil, textDeclared: true)
         // An image the card declared could not be prepared: it settles without a presentation, which keeps it out

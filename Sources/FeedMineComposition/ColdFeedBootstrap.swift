@@ -139,6 +139,7 @@ public struct ColdFeedBootstrap: Sendable {
         prepare: @escaping @Sendable (SelectionResult) throws -> LocalPreparedPublication,
         evidence: (@Sendable (ColdFeedEvidence) async -> Void)? = nil,
         readiness: MediaReadiness? = nil,
+        trace: ReplenishmentTrace? = nil,
         onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)? = nil,
         makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw ColdFeedBootstrapError.policyContextMismatch }
@@ -150,7 +151,8 @@ public struct ColdFeedBootstrap: Sendable {
         self.policy = policy
         self.acquisition = acquisition
         self.coordinator = coordinator
-        initialProductionSlice = InitialProductionSlice(database: acquisition.runtimeDatabase, readiness: readiness)
+        initialProductionSlice = InitialProductionSlice(database: acquisition.runtimeDatabase, readiness: readiness,
+            trace: trace)
         self.prepare = prepare
     }
 

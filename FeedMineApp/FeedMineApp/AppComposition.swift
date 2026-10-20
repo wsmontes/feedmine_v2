@@ -2909,12 +2909,20 @@ final class FeedAssociation {
         // relay; the association points the relay at its own drive opportunity once every stored property is
         // set (below). Nothing here decides anything beyond "a readiness transition happened".
         let readinessRelay = MediaReadinessRelay()
+        // The replenishment port. The points live in the library modules, which must not know the host's trace:
+        // one adapter is built here, beside the trace itself, and handed to the owners of the points. With no
+        // trace it is `nil`, and the modules behave exactly as they did before the port existed. It is built
+        // before the media owner because the media preparation path also reports through it (DEBUG only there).
+        let replenishment: ReplenishmentTrace? = trace.map { sink in
+            ReplenishmentTrace { event, fields in sink.record(event, fields) }
+        }
         let media = MediaPrefetcher(database: db, assetDirectory: assetDirectory, readiness: readiness,
             concurrentDownloadLimit: max(2, ProcessInfo.processInfo.activeProcessorCount / 2),
             fetch: { try await fetcher.fetch($0, byteCeiling: $1) },
             conditions: { rate in DeviceMediaConditions.policy(device: device, measuredBytesPerSecond: rate,
                 assetDirectory: assetDirectory, waitBudgetSeconds: mediaWaitBudget.current) },
-            onReadinessChanged: { _ in await readinessRelay.deliver() })
+            onReadinessChanged: { _ in await readinessRelay.deliver() },
+            mediaTrace: replenishment)
         self.media = media
         savedMedia = SavedMediaCoordinator(database: db, assetDirectory: assetDirectory, prefetcher: media)
         tidy = MediaTidy(assetDirectory: assetDirectory, prefetcher: media, freeStorageBytes: {
@@ -2953,12 +2961,6 @@ final class FeedAssociation {
         // The trace is a value: the preparation closure is `@Sendable` and may run off the main actor.
         let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication = {
             try Self.prepare($0, readiness: readiness, names: names.current, trace: trace, playback: playback)
-        }
-        // The replenishment port. The three points live in the library modules, which must not know the host's
-        // trace: one adapter is built here, beside the trace itself, and handed to the owners of the points. With
-        // no trace it is `nil`, and the modules behave exactly as they did before the port existed.
-        let replenishment: ReplenishmentTrace? = trace.map { sink in
-            ReplenishmentTrace { event, fields in sink.record(event, fields) }
         }
         // The runway is built before the media closures because they read its **measured** tolerance. §5.3/PD-6:
         // the media window is a per-operation limit, computed from facts this process already measures — the
@@ -3001,7 +3003,7 @@ final class FeedAssociation {
         }
         maintainTail = { lease in
             let opportunity = await makeMediaOpportunity()
-            return try await HiddenTailMaintenance(database: db).run(plan: plan, policy: policy, lease: lease, examinedCapacity: 256,
+            return try await HiddenTailMaintenance(database: db, trace: replenishment).run(plan: plan, policy: policy, lease: lease, examinedCapacity: 256,
                 prefetch: { await opportunity.prepare($0) }, prepare: prepare)
         }
         // §5.3 (Codex's page review): a discovery page updates the **metadata** that preparation consults — the names
@@ -3044,7 +3046,8 @@ final class FeedAssociation {
             // **same** factory the runway driver uses (one owner for the derived budget, `mediaWaitSeconds`), which
             // is what makes the first screen and the live feed agree on "prepared" — the quality Codex's page review
             // named: two different views of what is ready is how a suspended candidate becomes a text-only card.
-            readiness: readiness, onDiscoveryPage: onDiscoveryPage, makeMediaOpportunity: makeMediaOpportunity)
+            readiness: readiness, trace: replenishment, onDiscoveryPage: onDiscoveryPage,
+            makeMediaOpportunity: makeMediaOpportunity)
         targetNames = Dictionary(uniqueKeysWithValues: feeds.map { ($0.targetID, $0.displayName) })
         let provider = CandidateProvider(contentStore: ContentStore(database: db))
         admittedHeadlines = { (try? provider.candidates(for: plan, after: nil, examinedCapacity: 12))?.candidates.compactMap(\.headline) ?? [] }

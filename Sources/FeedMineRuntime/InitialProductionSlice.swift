@@ -23,10 +23,17 @@ public struct InitialProductionSlice: Sendable {
     private let selectionEngine: SelectionEngine
     private let coordinator: PublicationCoordinator
     private let readiness: MediaReadiness?
+    private let contentStore: ContentStore
+    /// Optional evidence of the publication this slice concludes; nil records nothing. DEBUG-only at the point
+    /// of recording (the host passes nil in a shipping build).
+    private let trace: ReplenishmentTrace?
 
-    public init(database: RuntimeDatabase, readiness: MediaReadiness? = nil) {
+    public init(database: RuntimeDatabase, readiness: MediaReadiness? = nil,
+        trace: ReplenishmentTrace? = nil) {
         self.readiness = readiness
-        candidateProvider = CandidateProvider(contentStore: ContentStore(database: database))
+        self.trace = trace
+        self.contentStore = ContentStore(database: database)
+        candidateProvider = CandidateProvider(contentStore: contentStore)
         selectionEngine = SelectionEngine()
         coordinator = PublicationCoordinator(database: database)
     }
@@ -117,7 +124,11 @@ public struct InitialProductionSlice: Sendable {
             segmentCreatedAt: request.segmentCreatedAt, cardIDs: plan.cardIDs)
         switch try coordinator.createInitialEdition(.init(publication: publication,
             anchorPlacement: request.anchorPlacement, checkpointedAt: request.checkpointedAt)) {
-        case .published(let receipt): return .published(progress, receipt)
+        case .published(let receipt):
+            #if DEBUG
+            MediaPreparationTrace.recordPublished(plan.drafts, in: contentStore, to: trace)
+            #endif
+            return .published(progress, receipt)
         case .nothingToPublish: throw InitialProductionSliceError.inconsistentPublicationOutcome
         }
     }

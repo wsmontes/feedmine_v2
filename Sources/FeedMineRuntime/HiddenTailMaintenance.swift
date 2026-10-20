@@ -8,7 +8,13 @@ import FeedMinePublication
 
 public struct HiddenTailMaintenance: Sendable {
     private let database: RuntimeDatabase
-    public init(database: RuntimeDatabase) { self.database = database }
+    /// Optional evidence of the publication this maintenance concludes; nil records nothing. DEBUG-only at the
+    /// point of recording.
+    private let trace: ReplenishmentTrace?
+    public init(database: RuntimeDatabase, trace: ReplenishmentTrace? = nil) {
+        self.database = database
+        self.trace = trace
+    }
 
     public func run(plan: FeedPlan, policy: ResolvedSelectionPolicy, lease: PublicationStore.HiddenTailLease,
         examinedCapacity: Int, prefetch: @Sendable ([OriginRevisionID]) async -> Void,
@@ -42,8 +48,12 @@ public struct HiddenTailMaintenance: Sendable {
             guard let new = latest[old.originRecordID] else { return false }
             return old.originRevisionID == new.origin.originRevisionID && old.mediaKey == new.media.primary?.key.rawValue
         }) { return .ineligible }
-        return try PublicationCoordinator(database: database).succeedTail(.init(selection: plan.selection,
+        let result = try PublicationCoordinator(database: database).succeedTail(.init(selection: plan.selection,
             drafts: plan.drafts, editionID: lease.editionID, segmentID: FeedSegmentID(), segmentSeed: 1,
             segmentCreatedAt: Date(), cardIDs: plan.cardIDs, originRecurrence: .whenMaterialChanged), lease: lease)
+        #if DEBUG
+        if result == .applied { MediaPreparationTrace.recordPublished(plan.drafts, in: content, to: trace) }
+        #endif
+        return result
     }
 }

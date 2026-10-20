@@ -142,7 +142,16 @@ public struct LocalProductionSlice: Sendable {
             originRecurrence: request.policy.exposure == .excludePublishedMaterial ? .whenMaterialChanged : .forbidden,
             operation: request.operation)
         switch try coordinator.append(append, expectingTailCardID: facts.observedTailCardID) {
-        case .published(let receipt): return .published(progress, receipt)
+        case .published(let receipt):
+            #if DEBUG
+            // The slice's contract with the port is that work which is not a replenishment reports nothing; the
+            // media fact rides the same port, so it follows the same rule. Production local slices always carry
+            // the operation their attempt minted.
+            if request.operation != nil {
+                MediaPreparationTrace.recordPublished(plan.drafts, in: contentStore, to: trace)
+            }
+            #endif
+            return .published(progress, receipt)
         case .nothingToPublish: throw LocalProductionSliceError.inconsistentPublicationOutcome
         }
     }

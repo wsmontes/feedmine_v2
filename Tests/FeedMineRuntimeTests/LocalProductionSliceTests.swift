@@ -91,6 +91,19 @@ private final class LocalPreparationCalls: @unchecked Sendable {
     var value: Int { lock.lock(); defer { lock.unlock() }; return count }
 }
 
+/// What the slice said through the host's trace port, in order.
+private final class PublicationTrace: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [(event: String, fields: [String: String])] = []
+    var trace: ReplenishmentTrace { ReplenishmentTrace { [self] event, fields in
+        lock.lock(); storage.append((event, fields)); lock.unlock()
+    } }
+    func fields(_ event: String) -> [[String: String]] {
+        lock.lock(); defer { lock.unlock() }
+        return storage.filter { $0.event == event }.map(\.fields)
+    }
+}
+
 final class LocalProductionSliceTests: XCTestCase {
     private enum PreparationFailure: Error { case refused }
     private func fixture(initial: [OriginRevision] = [LocalSliceFixture.revision(900)],
@@ -320,6 +333,55 @@ final class LocalProductionSliceTests: XCTestCase {
         guard case .advancedWithoutPublication(let progress) = outcome else { return XCTFail("Expected empty exhausted progress") }
         XCTAssertEqual(progress.examinedCount,0); XCTAssertNil(progress.nextCursor); XCTAssertTrue(progress.exhausted)
         try assertOnlyInitial(f)
+    }
+
+    /// The publication half of the evidence: each card that reaches history states the revision it froze, what
+    /// that revision's feed declared and whether the card carries media. The text card's declaration is `false`
+    /// and its media `none`; the image card's are `true` and `image`.
+    func testPublishedCardsRecordTheirDeclaredImageAndCarriedMedia() throws {
+        let f = try fixture()
+        let image = LocalSliceFixture.revision(1), text = LocalSliceFixture.revision(2)
+        let media = try XCTUnwrap(MediaCandidate(id: MediaCandidateID(), originRevisionID: image.id,
+            role: .cardVisual, mediaClass: .image, remoteURL: URL(string: "https://example.test/card.png")!,
+            declaredMimeType: "image/png", declaredPixelWidth: 2, declaredPixelHeight: 3))
+        try f.admit(image, media: [media])
+        try f.admit(text)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAEElEQVR4nGP4z8AARAwoFABE0AX7pM/egAAAAABJRU5ErkJggg==")!
+        let result = try MediaPreparation(assetDirectory: directory).prepare(candidate: media, input: .bytes(png))
+        guard case .usable = result.state else { return XCTFail("the fixture image must prepare") }
+        let recorder = PublicationTrace()
+        let slice = LocalProductionSlice(database: f.database, trace: recorder.trace)
+        let base = f.request(capacity: 2)
+        let request = LocalProductionSlice.Request(plan: base.plan, policy: base.policy,
+            editionID: base.editionID, after: base.after, examinedCapacity: base.examinedCapacity,
+            segmentID: base.segmentID, segmentSeed: base.segmentSeed,
+            segmentCreatedAt: base.segmentCreatedAt, readerAnchorCardID: base.readerAnchorCardID,
+            operation: FeedReplenishmentOperationID())
+        let (_, receipt) = try published(slice.run(request) { selection in
+            let inputs = selection.orderedCandidates.map { candidate -> PublicationPreparationInput in
+                let presentation: PublicationPresentation = candidate.originRevisionID == image.id
+                    ? .image(result, layout: .hero) : .textOnly
+                return PublicationPreparationInput(
+                    origin: PublishedOrigin(originRecordID: candidate.originRecordID,
+                        originRevisionID: candidate.originRevisionID, sourceID: nil,
+                        providerID: candidate.providerID, sourceDisplayName: nil, providerDisplayName: nil),
+                    contentEntityID: nil, contentClusterID: nil, primaryAction: .localContentDetail,
+                    presentation: presentation)
+            }
+            return LocalPreparedPublication(inputs: inputs,
+                cardIDs: selection.orderedCandidates.map(LocalSliceFixture.cardID))
+        })
+        XCTAssertEqual(receipt.cardIDs.count, 2)
+        let lines = recorder.fields(ReplenishmentEvent.mediaPublished)
+        XCTAssertEqual(lines.count, 2, "one line per published card")
+        let byRevision = Dictionary(uniqueKeysWithValues: lines.map { ($0["revision"] ?? "", $0) })
+        XCTAssertEqual(byRevision[image.id.rawValue.uuidString]?["declared_image"], "true")
+        XCTAssertEqual(byRevision[image.id.rawValue.uuidString]?["media"], "image")
+        XCTAssertEqual(byRevision[image.id.rawValue.uuidString]?["layout"], "hero")
+        XCTAssertEqual(byRevision[text.id.rawValue.uuidString]?["declared_image"], "false")
+        XCTAssertEqual(byRevision[text.id.rawValue.uuidString]?["media"], "none")
     }
 }
 

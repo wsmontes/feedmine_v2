@@ -52,6 +52,15 @@ public enum ReplenishmentEvent {
     /// history; the host still has to install it, which is what `admitted` records).
     public static let concluded = "replenishment_concluded"
 
+    /// One origin revision the supply media-preparation path **considered for publication**, at the moment an
+    /// attempt ended: `revision`, `source`, `declared_image` (`true`/`false`/`unknown`), `outcome`
+    /// (`ready-image`/`unavailable`/`transient-failed`/`deferred`/`text-only`) and `elapsed_ms` since the first
+    /// consideration. `transient-failed` is a retry, never the definitive `unavailable`.
+    public static let mediaSettled = "media_preparation_settled"
+    /// One card that reached history: `revision`, `source`, `declared_image`, `media` (`image`/`none`) and
+    /// `layout`. Written only after the append succeeded, so the line is a publication, not an intention.
+    public static let mediaPublished = "media_card_published"
+
     /// The trace's own record that it **lost** events — the ceiling, a failed encoding, a write that never landed.
     /// Without it a run whose evidence was discarded looks exactly like a run where nothing happened.
     public static let truncated = "trace_truncated"
