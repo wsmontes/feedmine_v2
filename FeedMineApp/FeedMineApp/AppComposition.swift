@@ -2944,13 +2944,11 @@ final class FeedAssociation {
         // adopts its pool behind the reader's own window (`adopt(_:)`).
         let names = LiveValue(Dictionary(uniqueKeysWithValues: supply.map { ($0.sourceID, $0.displayName) }))
         self.names = names
-        // T9: the playable payload a card's tap should use, read from the candidate the feed declared.
-        let playback: @Sendable (OriginRevisionID) -> URL? = { revision in
+        // T9/D2: the playable payload a card's tap should use, read from the candidate the feed declared. The
+        // candidate (not just its URL) is what states whether the enclosure is audio or video.
+        let playback: @Sendable (OriginRevisionID) -> MediaCandidate? = { revision in
             // `try?` flattens the store's own optional: a nil here means "no playable payload declared".
-            guard let playable = try? ContentStore(database: db).playbackCandidate(originRevisionID: revision) else {
-                return nil
-            }
-            return playable.remoteURL
+            (try? ContentStore(database: db).playbackCandidate(originRevisionID: revision)) ?? nil
         }
         // The trace is a value: the preparation closure is `@Sendable` and may run off the main actor.
         let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication = {
@@ -3151,7 +3149,7 @@ final class FeedAssociation {
     /// Attribution (source id/name) is frozen into the card, which also feeds PD-4 adjacency.
     nonisolated private static func prepare(_ selection: SelectionResult, readiness: MediaReadiness,
         names: [SourceID: String], trace: RunwayTrace? = nil,
-        playback: (OriginRevisionID) -> URL? = { _ in nil }) throws -> LocalPreparedPublication {
+        playback: (OriginRevisionID) -> MediaCandidate? = { _ in nil }) throws -> LocalPreparedPublication {
         // F06-A: the selection has **already** been restricted to candidates with a legitimate presentation (the
         // slice takes the readiness facts as selection input, before ordering). What arrives here is publishable —
         // and the inputs must stay aligned one-for-one with the selection, or the runtime refuses the batch
@@ -3175,14 +3173,16 @@ final class FeedAssociation {
             }
             let source = candidate.sourceIDs.sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }.first { names[$0] != nil }
                 ?? candidate.sourceIDs.first
+            // F10/T9/D2: one decision states both facts — the card's identity (audio, video or none), read from
+            // the enclosure's own class, and the one action it may carry. An audio episode plays from its
+            // enclosure; a video item opens its article at the origin; anything else opens its article.
+            let decision = PublishedMediaDecision.resolve(playback: playback(candidate.originRevisionID),
+                link: candidate.primaryLink)
             return .init(origin: .init(originRecordID: candidate.originRecordID, originRevisionID: candidate.originRevisionID,
                 sourceID: source, providerID: candidate.providerID, sourceDisplayName: source.flatMap { names[$0] },
                 providerDisplayName: nil),
                 contentEntityID: nil, contentClusterID: nil,
-                // F10/T9: V1's precedence, stated once — an episode plays from the enclosure its feed
-                // declared, and every other card opens its article.
-                primaryAction: playback(candidate.originRevisionID).map { .mediaPlayback($0) }
-                    ?? candidate.primaryLink.map { .externalURL($0) },
+                primaryAction: decision.primaryAction, mediaIdentity: decision.identity,
                 presentation: presentation)
         }, cardIDs: selection.orderedCandidates.map { _ in PublicationCardID() })
     }

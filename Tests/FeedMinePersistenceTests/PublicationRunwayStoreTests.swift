@@ -26,6 +26,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
             // `schemaBeforeAvailability`, and the rest of each definition stays byte-compared.
             if entry.hasPrefix("published_cards:") || entry.hasPrefix("retired_published_cards:") {
                 return entry.replacingOccurrences(of: ", diversity_facts TEXT", with: "")
+                    .replacingOccurrences(of: ", media_identity TEXT", with: "")
             }
             return entry
         })
@@ -70,6 +71,11 @@ final class PublicationRunwayStoreTests: XCTestCase {
             XCTAssertEqual(diversity["notnull"] as Int, 0)
             XCTAssertNil(diversity["dflt_value"] as String?)
             XCTAssertEqual(diversity["pk"] as Int, 0)
+            let identity = try XCTUnwrap(Row.fetchOne(db, sql: "SELECT type, \"notnull\", dflt_value, pk FROM pragma_table_info('\(table)') WHERE name = 'media_identity'"))
+            XCTAssertEqual(identity["type"] as String, "TEXT")
+            XCTAssertEqual(identity["notnull"] as Int, 0, "history without the fact stays NULL, never defaulted")
+            XCTAssertNil(identity["dflt_value"] as String?)
+            XCTAssertEqual(identity["pk"] as Int, 0)
         }
         return Set(Self.normalizeRebuiltDefinitions(schema).map { entry in
             if entry == origin { return entry.replacingOccurrences(of: addition, with: "") }
@@ -257,7 +263,8 @@ final class PublicationRunwayStoreTests: XCTestCase {
                 "reader-settings-v1","reader-imported-sources-v1","reader-curated-recipe-v1",
                 "reader-curated-recipe-revision-v1","reader-playback-positions-v1",
                  "content-fingerprint-generation-v2","reader-source-identity-v1","saved-media-availability-v1",
-                 "publication-editorial-diversity-v1","reader-legacy-upgrade-receipt-v1"])
+                 "publication-editorial-diversity-v1","reader-legacy-upgrade-receipt-v1",
+                 "publication-media-identity-v1"])
         }
     }
 

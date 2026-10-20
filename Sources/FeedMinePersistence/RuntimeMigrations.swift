@@ -618,6 +618,14 @@ public enum RuntimeMigrations {
                 );
                 """)
         }
+        // D2 (PD-2026-10-20): a card states what its own payload is (audio, video, none). Nullable on purpose:
+        // rows written before this schema keep their exact past and read as unknown, and the projection never
+        // infers "audio" from `primary_action_kind`. No existing row is rewritten. Both card tables gain the
+        // column because history is archived by `INSERT ... SELECT *`, which needs the same column order.
+        migrator.registerMigration("publication-media-identity-v1") { db in
+            try db.execute(sql: "ALTER TABLE published_cards ADD COLUMN media_identity TEXT")
+            try db.execute(sql: "ALTER TABLE retired_published_cards ADD COLUMN media_identity TEXT")
+        }
         return migrator
     }
 

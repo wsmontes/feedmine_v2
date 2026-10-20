@@ -93,6 +93,8 @@ extension PublicationStore {
             renderMediaAspectRatio: try f.optionalReal("render_media_aspect_ratio"),
             primaryActionKind: try f.optionalString("primary_action_kind"),
             primaryActionReference: try f.optionalString("primary_action_reference"),
+            // D2: absent column or NULL is unknown history, never an inferred audio card.
+            mediaIdentity: f.optionalStringIfPresent("media_identity"),
             // A historical schema opened by a migration test has no such column: absence is unknown, not an error.
             diversity: try Self.decodeDiversity(f.optionalStringIfPresent("diversity_facts"))
         )

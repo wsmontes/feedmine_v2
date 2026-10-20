@@ -16,14 +16,18 @@ public struct PublicationPreparationInput: Hashable, Sendable {
     public let contentEntityID: ContentEntityID?
     public let contentClusterID: ContentClusterID?
     public let primaryAction: PublishedPrimaryAction?
+    /// D2: the media kind the caller resolved from the occurrence's enclosure; nil for callers that predate it.
+    public let mediaIdentity: PublishedMediaIdentity?
     public let presentation: PublicationPresentation
 
     public init(origin: PublishedOrigin, contentEntityID: ContentEntityID?, contentClusterID: ContentClusterID?,
-        primaryAction: PublishedPrimaryAction?, presentation: PublicationPresentation) {
+        primaryAction: PublishedPrimaryAction?, mediaIdentity: PublishedMediaIdentity? = nil,
+        presentation: PublicationPresentation) {
         self.origin = origin
         self.contentEntityID = contentEntityID
         self.contentClusterID = contentClusterID
         self.primaryAction = primaryAction
+        self.mediaIdentity = mediaIdentity
         self.presentation = presentation
     }
 }
@@ -93,6 +97,7 @@ public enum PublicationPreparation {
             text: PublishedText(title: candidate.headline, primaryText: candidate.summary),
             timestamp: PublishedTimestamp(value: candidate.timestamp.value, kind: timestampKind),
             media: media, renderContract: contract, primaryAction: input.primaryAction,
+            mediaIdentity: input.mediaIdentity,
             // P10: frozen at publication from the candidate's own facts — never from the latest canonical revision.
             diversity: EditorialDiversityFact(sourceIDs: Array(candidate.sourceIDs), providerID: candidate.providerID,
                 subjects: candidate.topics.identities.map(\.key))) else {

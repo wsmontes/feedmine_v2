@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// **A jornada de mídia real** — o que a bateria de fixtures não podia responder.
 ///
@@ -21,8 +24,9 @@ import XCTest
 ///    esse controle é um defeito medido com id e árvore, nunca substituído por outro caminho.
 ///
 /// D2 (build 54): vídeo não tem player nativo. A exigência é identidade de vídeo, abrir a origem, nunca oferecer
-/// "Tocar" e não existir o aviso "Mídia indisponível nesta compilação". Onde o produto ainda não tem a identidade,
-/// o teste fica **vermelho** e nomeia a lacuna com arquivo:linha — nunca troca a exigência por uma mais fraca.
+/// "Tocar" e não existir o aviso "Mídia indisponível nesta compilação". O destino aberto é comparado ao **link
+/// congelado da própria carta** (a ação "Copiar link" resolve o mesmo `externalURL` que `card.open` executa),
+/// nunca a uma suposição do teste.
 ///
 /// A jornada declara um orçamento total (`journeyBudget`): cada espera é limitada pelo tempo que resta e o resumo
 /// falha se o relógio passar de seis minutos. O teste **não** aceita silêncio: se um tipo de mídia não aparecer no
@@ -323,45 +327,89 @@ final class FeedMediaJourneyUITests: XCTestCase {
                 + "'Podcast' sem card.play no frame (FeedItemCardView.swift:329-345)")
         }
 
-        // (6) VÍDEO — o critério D2, medido onde é medível e vermelho onde o produto ainda não o cumpre.
-        //     D2 (build 54): nenhum player nativo; uma carta de vídeo identifica-se como vídeo, abre a origem, não
-        //     oferece "Tocar", e o aviso "Mídia indisponível nesta compilação" não existe em lugar nenhum.
+        // (6) VÍDEO — o critério D2, medido nas quatro cláusulas.
+        //     D2 (build 54): nenhum player nativo; uma carta de vídeo identifica-se como vídeo ("Vídeo"), abre a
+        //     origem (o link do próprio item, nunca o invólucro de mídia), não oferece "Tocar", e o aviso
+        //     "Mídia indisponível nesta compilação" não existe em lugar nenhum.
         //
-        //     A única cláusula que esta build hoje consegue medir é a ausência do aviso. As outras três falham na
-        //     primeira premissa — não existe identidade de vídeo para observar:
-        //       * `PresentationPrimaryActionKind` só tem `externalURL`, `mediaPlayback`, `localContentDetail`
-        //         (PresentationCard.swift:28-32), e a carta apresentada não carrega mime/classe de mídia;
-        //       * todo `mediaPlayback` é desenhado como áudio: `isAudio` é o próprio kind
-        //         (FeedItemCardView.swift:58) e o selo é "Podcast" (FeedItemCardView.swift:327);
-        //       * "abrir a origem" só existe para `primaryActionKind == "externalURL"`
-        //         (ReaderActionCoordinator.swift:87-90), então uma carta de vídeo não tem caminho de origem;
-        //       * e toda carta tocável oferece a ação "Tocar" (FeedItemCardView.swift:108), que D2 proíbe em vídeo.
-        //     O player é só `AVPlayer()` sem camada (MediaPlaybackAdapter.swift:35): tocar um vídeo tocaria o som
-        //     sem imagem. Por isso `videoPlayed` fica 0 e a lacuna é nomeada, nunca mascarada.
-        attach(app, name: "6-video-lacuna")
-        let videoNamedCards = visibleCards(app).filter {
-            $0.staticTexts.matching(NSPredicate(format: "label == %@", "Vídeo")).count > 0
-        }.count
+        //     Testemunhas, todas do produto e nenhuma do teste:
+        //       * o selo "Vídeo" existe **dentro do frame da própria carta** (o mesmo limite usado pelo selo
+        //         "Podcast" das cartas de áudio);
+        //       * `card.play` e qualquer controle cujo rótulo comece por "Tocar" não existem dentro do frame;
+        //       * o destino é o **link congelado da carta**: "Copiar link" resolve o mesmo `externalURL` que
+        //         `card.open` executa (`ReaderActionCoordinator`), então o valor copiado é o destino esperado;
+        //       * o navegador in-app (`SFSafariViewController`) expõe o endereço no controle `URL`, e o mini-player
+        //         não aparece — nada foi tocado no app.
+        attach(app, name: "6-video")
         let noticeVisible = app.staticTexts[Self.unavailableMediaNotice].exists
         XCTAssertFalse(noticeVisible,
             "D2: o aviso '\(Self.unavailableMediaNotice)' não existe em lugar nenhum")
-        playbackNotes.append("video identity=absent cardsNamedVideo=\(videoNamedCards) "
-            + "noticeVisible=\(noticeVisible) surface=AVPlayer-only (MediaPlaybackAdapter.swift:35)")
-        playbackNotes.append("video D2 unverifiable clauses: identity (PresentationCard.swift:28-32), origin "
-            + "(ReaderActionCoordinator.swift:87-90), no-Tocar (FeedItemCardView.swift:108); badge is always "
-            + "'Podcast' (FeedItemCardView.swift:327); the notice's key still ships unused at "
-            + "Localizable.xcstrings:1921")
+        var videoIdentity = false, videoNoPlayer = false, videoOrigin = false
+        var videoNotes: [String] = []
+        if let videoCard = findVideoCard(app, within: budget(60)) {
+            _ = bringIntoView(app, identifier: videoCard.identifier, minimum: 0.9)
+            let settled = card(app, identifier: videoCard.identifier)
+            let cardFrame = settled.frame
+            let badge = videoBadge(of: settled)
+            videoIdentity = badge != nil
+            XCTAssertNotNil(badge, "D2: a carta de vídeo declara o selo 'Vídeo' dentro do frame \(cardFrame)")
+            let play = playButton(of: settled)
+            let tocar = settled.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Tocar"))
+                .allElementsBoundByIndex.first { $0.exists && cardFrame.contains($0.frame) }
+            videoNoPlayer = play == nil && tocar == nil
+            XCTAssertNil(play, "D2: uma carta de vídeo não oferece o controle visível card.play")
+            XCTAssertNil(tocar, "D2: uma carta de vídeo não oferece 'Tocar'")
+            videoNotes.append("card=\(videoCard.identifier) badge=\(badge?.label ?? "-") "
+                + "cardPlay=\(play != nil) tocar=\(tocar?.label ?? "-")")
+            attach(app, name: "6-video-identidade")
+
+            if let link = copiedLink(of: settled, in: app) {
+                videoNotes.append("link(copied from the card's own frozen externalURL)='\(link)'")
+                if let address = openOrigin(of: videoCard, in: app) {
+                    switch destinationVerdict(address: address, link: link) {
+                    case .matched(let precision):
+                        videoOrigin = true
+                        videoNotes.append("destination=\(precision) address='\(address)'")
+                    case .mismatch(let why):
+                        failures.append("D2: a carta de vídeo não abriu o link do item — \(why) "
+                            + "(endereço='\(address)', link='\(link)')")
+                    }
+                    closeReader(app)
+                } else {
+                    failures.append("D2: tocar a carta de vídeo não abriu a origem no orçamento da jornada")
+                }
+            } else {
+                // Sem link copiável: a carta não declara origem. O toque não pode abrir um alvo inventado; a
+                // recusa do próprio app é a resposta honesta. A cláusula da origem fica nomeada como lacuna.
+                let address = openOrigin(of: videoCard, in: app)
+                if let address {
+                    failures.append("D2: a carta de vídeo abriu '\(address)' sem link copiável — a origem não "
+                        + "foi comprovada")
+                    closeReader(app)
+                } else {
+                    let refused = app.staticTexts["Não foi possível abrir esta carta"].exists
+                    videoNotes.append("origin=none (a carta não declara link; recusa do app=\(refused)); "
+                        + "nenhum alvo tocável foi inventado")
+                }
+            }
+        } else {
+            attach(app, name: "6-video-ausente")
+            failures.append("D2: nenhuma carta com selo 'Vídeo' apareceu no feed no orçamento "
+                + "(cartas visíveis=\(visibleCards(app).count))")
+            videoNotes.append("gap: nenhuma carta com selo 'Vídeo' nas telas percorridas")
+        }
+        playbackNotes.append("video \(videoNotes.joined(separator: " | "))")
+        playbackNotes.append("video clauses identity=\(videoIdentity) noPlayer=\(videoNoPlayer) "
+            + "origin=\(videoOrigin) noticeVisible=\(noticeVisible)")
         if noticeVisible {
             failures.append("D2: o aviso '\(Self.unavailableMediaNotice)' reapareceu na árvore")
         }
-        verdicts["video"] = false
-        failures.append("D2 vermelho — não há identidade de vídeo no produto para afirmar 'vídeo exibido': "
-            + "PresentationPrimaryActionKind não tem caso de vídeo (PresentationCard.swift:28-32); todo "
-            + "mediaPlayback desenha o selo 'Podcast' (FeedItemCardView.swift:58,327); a origem só é alcançável "
-            + "para externalURL (ReaderActionCoordinator.swift:87-90); 'Tocar' é oferecido a toda carta tocável "
-            + "(FeedItemCardView.swift:108); e o player é AVPlayer sem camada "
-            + "(MediaPlaybackAdapter.swift:35). Das cláusulas D2, só a ausência do aviso é medível hoje "
-            + "(noticeVisible=\(noticeVisible))")
+        verdicts["video"] = videoIdentity && videoNoPlayer && videoOrigin && !noticeVisible
+        if verdicts["video"] != true {
+            failures.append("D2: a jornada de vídeo não fecha todas as cláusulas (identity=\(videoIdentity), "
+                + "noPlayer=\(videoNoPlayer), origin=\(videoOrigin), noticeVisible=\(noticeVisible)) — "
+                + videoNotes.joined(separator: " | "))
+        }
 
         if !playerInstalled {
             attach(app, name: "8-estado-final")
@@ -528,6 +576,106 @@ final class FeedMediaJourneyUITests: XCTestCase {
         let frame = card.frame
         return card.staticTexts.matching(NSPredicate(format: "label == %@", "Podcast"))
             .allElementsBoundByIndex.first { $0.exists && frame.contains($0.frame) }
+    }
+
+    /// D2: o selo que diz que a carta é vídeo, pertencendo a **esta** carta (dentro do frame dela). O feed rola
+    /// com o gesto do próprio ScrollView, como em `findPlayableCard`, porque a carta de vídeo pode estar abaixo
+    /// da dobra.
+    private func findVideoCard(_ app: XCUIApplication, within seconds: TimeInterval) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if let card = visibleCards(app).first(where: { videoBadge(of: $0) != nil }) { return card }
+            let feed = app.scrollViews.firstMatch
+            guard feed.exists else { break }
+            feed.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 1.2)
+        }
+        return visibleCards(app).first { videoBadge(of: $0) != nil }
+    }
+
+    private func videoBadge(of card: XCUIElement) -> XCUIElement? {
+        let frame = card.frame
+        return card.staticTexts.matching(NSPredicate(format: "label == %@", "Vídeo"))
+            .allElementsBoundByIndex.first { $0.exists && frame.contains($0.frame) }
+    }
+
+    /// O link congelado da própria carta, lido pela ação do produto: "Copiar link" resolve o mesmo `externalURL`
+    /// que `card.open` executa (`ReaderActionCoordinator`), então o valor copiado é o destino esperado — não um
+    /// palpite do teste. Nil quando a carta não declara link (a ação é recusada, sem "Link copiado").
+    private func copiedLink(of card: XCUIElement, in app: XCUIApplication) -> String? {
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1.2)
+        let copy = app.buttons["Copiar link"].firstMatch
+        guard copy.waitForExistence(timeout: 10) else { return nil }
+        copy.tap()
+        guard app.staticTexts["Link copiado"].waitForExistence(timeout: 10) else { return nil }
+        Thread.sleep(forTimeInterval: 0.5)
+        #if canImport(UIKit)
+        let value = UIPasteboard.general.string
+        return value?.isEmpty == false ? value : nil
+        #else
+        return nil
+        #endif
+    }
+
+    /// Abre a carta e devolve o endereço que o navegador in-app mostra. Se a leitura local da mesma carta aparece,
+    /// a origem é alcançada pelo controle "Abrir no site" que ela própria declara, e o endereço é medido depois
+    /// dele. Nil quando nada abriu (uma carta sem link responde com a recusa do app, não com um alvo inventado).
+    private func openOrigin(of card: XCUIElement, in app: XCUIApplication) -> String? {
+        _ = bringIntoView(app, identifier: card.identifier, minimum: 0.9)
+        let fresh = self.card(app, identifier: card.identifier)
+        let open = fresh.buttons["card.open"].firstMatch
+        guard open.exists && open.isHittable else { return nil }
+        open.tap()
+        let surfaceDeadline = Date().addingTimeInterval(budget(25))
+        while Date() < surfaceDeadline {
+            if app.buttons["URL"].exists || app.webViews.firstMatch.exists { break }
+            if app.staticTexts["reading.headline"].exists { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        let localSite = app.buttons["Abrir no site"].firstMatch
+        if app.staticTexts["reading.headline"].exists, localSite.exists, localSite.isHittable {
+            localSite.tap()
+        }
+        return browserAddress(app, within: budget(20))
+    }
+
+    private func browserAddress(_ app: XCUIApplication, within seconds: TimeInterval) -> String? {
+        let control = app.buttons["URL"].firstMatch
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if control.exists {
+                let value = String(describing: control.value)
+                if !value.isEmpty && value != "nil" { return value }
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return nil
+    }
+
+    private enum DestinationVerdict {
+        /// The browser showed the item's link. `full` is the whole URL; `host` is the weaker form Safari may show.
+        case matched(String)
+        case mismatch(String)
+    }
+
+    /// D2: o endereço é o **link do item**, nunca o invólucro de mídia. Quando o navegador mostra a URL inteira a
+    /// comparação é exata; quando mostra só o host (ou um caminho truncado), o host tem de ser o do link copiado e
+    /// o endereço não pode nomear um arquivo de mídia. Os dois casos são registrados com a precisão observada.
+    private func destinationVerdict(address: String, link: String) -> DestinationVerdict {
+        let shown = address.lowercased(), expected = link.lowercased()
+        guard let expectedURL = URL(string: link), let host = expectedURL.host?.lowercased(), !host.isEmpty else {
+            return .mismatch("o link copiado não é uma URL utilizável: '\(link)'")
+        }
+        let mediaExtensions = [".mp3", ".m4a", ".mp4", ".m4v", ".mov", ".m3u8", ".webm", ".aac", ".wav", ".ogg"]
+        if let media = mediaExtensions.first(where: { shown.contains($0) }) {
+            return .mismatch("o navegador abriu um endereço de mídia (\(media)): '\(address)'")
+        }
+        if shown.contains(expected) { return .matched("full") }
+        guard shown.contains(host) else {
+            return .mismatch("o endereço '\(address)' não é o host do link copiado '\(link)'")
+        }
+        // Weaker but measured: Safari collapsed the address to its host, which is the item's own host.
+        return .matched("host")
     }
 
     private func card(_ app: XCUIApplication, identifier: String) -> XCUIElement {

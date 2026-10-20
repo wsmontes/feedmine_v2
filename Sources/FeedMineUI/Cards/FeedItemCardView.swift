@@ -55,7 +55,9 @@ public struct FeedItemCardView: View, Equatable {
     }
 
     private var isLandscape: Bool { horizontalSizeClass == .regular }
-    private var isAudio: Bool { card.primaryActionKind == .mediaPlayback }
+    /// D2: only a card the publication stated as audio may draw the Podcast badge, the audio placeholder and the
+    /// in-app play control. An unknown identity is never inferred as audio from the action kind.
+    private var isAudio: Bool { card.playsAudio }
 
     public var body: some View {
         Group {
@@ -324,7 +326,7 @@ public struct FeedItemCardView: View, Equatable {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
-            if isAudio { mediaBadge(String(localized: "Podcast"), color: .purple) }
+            if isAudio || card.identifiesVideo { MediaIdentityBadge(identity: card.mediaIdentity) }
 
             // D1: "hear" has to work with a finger. The play action used to exist only as an accessibility action
             // on the body, and a text-only audio card has no hero to tap, so a normal tap opened the article and
@@ -439,17 +441,6 @@ public struct FeedItemCardView: View, Equatable {
             .frame(width: appearance.accentBarWidth)
             .padding(.vertical, verticalInset)
             .padding(.leading, appearance.accentBarInset)
-    }
-
-    private func mediaBadge(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(.caption2)
-            .fontWeight(.heavy)
-            .foregroundStyle(color)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(color.opacity(0.1))
-            .clipShape(Capsule())
     }
 
     /// The same menu V1 offered, minus the two controls that need a resolved URL or a rendered image:
