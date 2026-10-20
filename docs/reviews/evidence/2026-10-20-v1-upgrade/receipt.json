@@ -1,14 +1,15 @@
 {
-  "build_commit": "3a1f72a7c854666590b8f4d6e9bacbacf1076b61",
-  "layout": "case-collapsed: V1 user.sqlite and the V2 store in the same Application Support/FeedMine directory",
-  "container": "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/BB8BE5F1-8406-4C9F-A931-0FFF6353F15D",
-  "store": "Library/Application Support/FeedMine/runtime.sqlite",
+  "build_commit": "c7c850af54f2a718a757612173a47c41d56d432d",
+  "layout": "as specified: V1 data at Library/Application Support/Feedmine, V2 Release installed over the same bundle id, no rename, no move, no deletion",
+  "container_before_install": "5008052D-A728-409B-B3C4-708C76E1B263",
+  "container_after_install": "EEAF13CE-5353-415C-BAD8-992FA369259B",
+  "store_opened_at": "Library/Application Support/Feedmine/runtime.sqlite (inside V1's own directory)",
   "receipt": [
     {
       "singleton_id": 1,
-      "source_path": "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/BB8BE5F1-8406-4C9F-A931-0FFF6353F15D/Library/Application Support/FeedMine/user.sqlite",
+      "source_path": "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/EEAF13CE-5353-415C-BAD8-992FA369259B/Library/Application Support/Feedmine/user.sqlite",
       "status": "completed",
-      "ran_at": 1792522460.08012,
+      "ran_at": 1792523778.805289,
       "failure_reason": null,
       "imported_boxes": 1,
       "imported_sources": 3,
@@ -93,11 +94,6 @@
       "source_key": "https://exemplo.test/tecnologia/feed"
     }
   ],
-  "selection": [
-    {
-      "source_keys": "[\"https:\\/\\/exemplo.test\\/ciencia\\/feed.xml\",\"https:\\/\\/exemplo.test\\/tecnologia\\/feed\"]",
-      "selection_version": 3
-    }
-  ],
-  "second_launch": "receipt and every count identical after a relaunch (diff of the same queries: empty)"
+  "second_launch": "ran_at and every count identical across ~10 launches; no duplicated row",
+  "notice": "drawn but never frontmost: notice_presented stayed 0"
 }

@@ -1,30 +1,23 @@
-V1 -> V2 upgrade rehearsal, second run — exact commands (2026-10-20, host = macOS 25.5 / arm64)
-Build under test: product worktree HEAD 3a1f72a7c854666590b8f4d6e9bacbacf1076b61
-(working tree additionally dirty with a sibling's edits to FeedItemCardView.swift, MiniPlayerBar.swift,
-project.pbxproj and an untracked FeedMediaJourneyUITests.swift; the Release binary was built from it).
+Run 3 — V1 -> V2 upgrade rehearsal, as specified (2026-10-20)
+Build under test: product worktree HEAD c7c850af54f2a718a757612173a47c41d56d432d
+(working tree additionally dirty with 16 sibling-edited files; Release built from it).
 
-# 0. Disk
-df -h /                       # 13 GB free
-
-# 1. Clean state
-xcrun simctl erase  B89B80FE-6B5D-423E-B1F4-519F1AB0737F      # the device from the first rehearsal
+# 0. Clean state
+xcrun simctl erase  B89B80FE-6B5D-423E-B1F4-519F1AB0737F
 xcrun simctl boot   B89B80FE-6B5D-423E-B1F4-519F1AB0737F
 open -a Simulator --args -CurrentDeviceUDID B89B80FE-6B5D-423E-B1F4-519F1AB0737F
 
-# 2. V1 from source
+# 1. V1 from source
 cd /Users/wagnersilvamontes/Documents/GitHub/_legacy_feedmine_v1
 xcodebuild -project feedmine.xcodeproj -scheme feedmine -configuration Debug -sdk iphonesimulator \
-    -destination 'generic/platform=iOS Simulator' -derivedDataPath /private/tmp/v1-rehearsal2/v1 build
-# BUILD SUCCEEDED
-
-xcrun simctl install   B89B80FE-... /private/tmp/v1-rehearsal2/v1/Build/Products/Debug-iphonesimulator/feedmine.app
+    -destination 'generic/platform=iOS Simulator' -derivedDataPath /private/tmp/v1-rehearsal3/v1 build
+xcrun simctl install   B89B80FE-... .../Debug-iphonesimulator/feedmine.app
 xcrun simctl launch    B89B80FE-... com.feedmine.app ; sleep 8 ; xcrun simctl terminate B89B80FE-... com.feedmine.app
 xcrun simctl get_app_container B89B80FE-... com.feedmine.app data
-#   FA41F31E-0FA8-4777-9C8D-7FD07058131F
-ls "<container>/Library/Application Support/"                 # -> Feedmine
-ls "<container>/Library/Application Support/Feedmine/"        # -> user.sqlite, -wal, -shm, RuntimeV2/
+#   5008052D-A728-409B-B3C4-708C76E1B263
+#   <container>/Library/Application Support/Feedmine/{user.sqlite,-wal,-shm,RuntimeV2}
 
-# 3. Seed (V1's own DDL; the same insert as the first rehearsal)
+# 2. Seed (V1's own DDL; unchanged from the earlier runs)
 sqlite3 "<container>/Library/Application Support/Feedmine/user.sqlite" <<'SQL'
 PRAGMA journal_mode=WAL;
 BEGIN;
@@ -46,59 +39,47 @@ INSERT INTO source_collection_member (collection_id, source_identity, source_url
 COMMIT;
 PRAGMA wal_checkpoint(TRUNCATE);
 SQL
-
 cd "<container>" && find "Library/Application Support/Feedmine" -type f -print0 | sort -z \
     | xargs -0 shasum -a 256 | tee before.sha256
 
-# 4. V2 Release from HEAD
+# 3. V2 Release from HEAD
 cd /Users/wagnersilvamontes/.codex/worktrees/v2-fluidez-capacidade/feedmine_v2
 xcodebuild -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine -configuration Release \
-    -sdk iphonesimulator -destination 'id=B89B80FE-...' -derivedDataPath /private/tmp/v1-rehearsal2/v2 build
-# BUILD SUCCEEDED; product .../Release-iphonesimulator/FeedMine.app, com.feedmine.app 1.0 (53)
+    -sdk iphonesimulator -destination 'id=B89B80FE-...' -derivedDataPath /private/tmp/v1-rehearsal3/v2 build
 
-# 5. RUN A — as specified, no rename, no move
-xcrun simctl get_app_container B89B80FE-... com.feedmine.app data      # FA41F31E-…
+# 4. Install over the same bundle id — no rename, no move, no deletion
+xcrun simctl get_app_container B89B80FE-... com.feedmine.app data     # 5008052D-…
 xcrun simctl install  B89B80FE-... .../Release-iphonesimulator/FeedMine.app
-xcrun simctl get_app_container B89B80FE-... com.feedmine.app data      # 0C601A5B-…  (UUID changed)
-#   data carried with it: every file of V1's directory hashes identically in the new container
-xcrun simctl launch B89B80FE-... com.feedmine.app
-xcrun simctl io B89B80FE-... screenshot run-a-as-specified-failure.png
-#   screen: "Não foi possível carregar suas fontes."; no runtime.sqlite, no catalogue, no receipt;
-#   V1 files unchanged.
-#   inside the app, with lldb: fileExists("…/Feedmine/user.sqlite")=true, fileExists("…/FeedMine")=false,
-#   createDirectory("…/FeedMine") -> NSCocoaErrorDomain 512 / NSPOSIXErrorDomain 5 (EIO)
+xcrun simctl get_app_container B89B80FE-... com.feedmine.app data     # EEAF13CE-…
+cd "<container>" && find "Library/Application Support/Feedmine" -type f -print0 | sort -z \
+    | xargs -0 shasum -a 256        # identical to before.sha256: the data moved with the container
 
-# 6. RUN B — the case-collapsed shape the fix targets (no rename, V1's file in Application Support)
-xcrun simctl uninstall B89B80FE-... com.feedmine.app
-xcrun simctl install   B89B80FE-... .../Release-iphonesimulator/FeedMine.app
-#   container BB8BE5F1-8406-4C9F-A931-0FFF6353F15D; V2 launch creates Application Support/FeedMine/
-#   with runtime.sqlite + catalogue; terminate.
-cp <run-A container>/Library/Application\ Support/Feedmine/user.sqlite* \
-   <run-B container>/Library/Application\ Support/FeedMine/
-#   the three files V1's binary produced, placed beside V2's store — the shape a case-insensitive
-#   volume produces when `Feedmine` and `FeedMine` are one directory
-cd "<run-B container>" && for f in user.sqlite user.sqlite-wal user.sqlite-shm; do
-    shasum -a 256 "Library/Application Support/FeedMine/$f"; done | tee before.sha256
-xcrun simctl launch B89B80FE-... com.feedmine.app
-
-# 7. Capture the notice (window must be raised for the alert to present)
-open -a Simulator ; # window "FeedMine V1V2 Upgrade"
-#  burst of simctl screenshots right after launch; the alert is painted at ~1.2-1.5 s
-#  AX (computer-use, Simulator window):
-#    statictext "Da versão anterior"
-#    statictext "Importados da versão anterior: caixas 1, fontes 3, coleções 1. Ainda inacessívei…"
-#    button "Entendi"
-#  attempts to acknowledge: el.press() x2, win.click(271,751) x2 within ~0.3 s of the alert appearing
-#  -> notice_presented stayed 0
-
-# 8. AFTER hashes and second launch
-cd "<run-B container>" && for f in user.sqlite user.sqlite-wal user.sqlite-shm; do
-    shasum -a 256 "Library/Application Support/FeedMine/$f"; done > after.sha256
-diff before.sha256 after.sha256                     # exit 0, empty
-xcrun simctl terminate B89B80FE-... com.feedmine.app ; xcrun simctl launch B89B80FE-... com.feedmine.app
-sqlite3 -json "<run-B container>/Library/Application Support/FeedMine/runtime.sqlite" \
+# 5. First launch
+xcrun simctl launch B89B80FE-... com.feedmine.app ; sleep 9
+ls "<container>/Library/Application Support/Feedmine/"
+#   runtime.sqlite, runtime.sqlite-shm, runtime.sqlite-wal now sit beside user.sqlite
+sqlite3 -json "<container>/Library/Application Support/Feedmine/runtime.sqlite" \
     "SELECT * FROM reader_legacy_upgrade;"
-#   ran_at unchanged, counts unchanged, no new rows
+#   completed, ran_at 1792523778.805289, boxes 1, sources 3, selected 2, collections 1, members 2,
+#   source_path …/Library/Application Support/Feedmine/user.sqlite, notice_presented 0
 
-# 9. Cleanup
-xcrun simctl shutdown B89B80FE-... ; rm -rf /private/tmp/v1-rehearsal2/v1 /private/tmp/v1-rehearsal2/v2
+# 6. The notice — capture, then attempt the acknowledgement
+open -a Simulator                     # window "FeedMine V1V2 Upgrade"
+#   burst of window screenshots right after launch: the alert is drawn at ~0.45-1.0 s
+#   run-3-application-support/notice-drawn.png         (alert with the exact copy)
+#   run-3-application-support/notice-behind-surface.png (reader surface painted over the alert)
+#   clicks at the Entendi bar (window pixels 456,1231), issued at 0.18/0.30/0.42/0.54/0.62/0.82/1.02/1.22 s
+#   -> every one landed on the reader's "Try again" (a click there provably starts a retry)
+#   AX poll for "Entendi" every 0.1 s for 22 s -> no element
+sqlite3 "<container>/Library/Application Support/FeedMine/runtime.sqlite" \
+    "SELECT notice_presented FROM reader_legacy_upgrade;"       # 0
+
+# 7. After hashes and second launch
+cd "<container>" && find "Library/Application Support/Feedmine" -type f -print0 | sort -z \
+    | xargs -0 shasum -a 256 | grep user.sqlite > after.sha256
+diff before.sha256 after.sha256        # the user.sqlite* rows are identical
+xcrun simctl terminate B89B80FE-... com.feedmine.app ; xcrun simctl launch B89B80FE-... com.feedmine.app
+#   ran_at and every count unchanged across ~10 launches
+
+# 8. Cleanup
+xcrun simctl shutdown B89B80FE-... ; rm -rf /private/tmp/v1-rehearsal3/v1 /private/tmp/v1-rehearsal3/v2

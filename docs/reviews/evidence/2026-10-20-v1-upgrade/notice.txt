@@ -1,40 +1,43 @@
-NOTICE — what was on screen, captured 2026-10-20 11:58 (build 3a1f72a7)
+NOTICE — measured on build c7c850af, as-specified layout, 2026-10-20 12:18-12:20
 
-ACCESSIBILITY TREE, read from the Simulator window while the alert was up:
-
-  - window "FeedMine V1V2 Upgrade – iOS 26.5"
-    - group
-      - statictext "Da versão anterior"
-      - statictext "Importados da versão anterior: caixas 1, fontes 3, coleções 1. Ainda inacessívei…"
-      - button "Entendi"
-
-EXACT COPY, read off the screen in screenshot.png (the AX body is truncated at 80 characters; the
-screenshot shows it whole):
+WHAT IS DRAWN
+`run-3-application-support/notice-drawn.png` (device frame, 0.7 s after launch) and the
+accessibility tree both carry the alert:
 
   Da versão anterior
-
-  Importados da versão anterior: caixas 1, fontes 3, coleções 1.
-  Ainda inacessíveis nesta versão: artigos salvos 2, marcadores inteligentes 0, feeds curados 0.
-  Eles permanecem no arquivo original da versão anterior.
-
+  Importados da versão anterior: caixas 1, fontes 3, coleções 1. Ainda inacessíveis nesta versão:
+  artigos salvos 2, marcadores inteligentes 0, feeds curados 0. Eles permanecem no arquivo original
+  da versão anterior.
   [Entendi]
 
-That matches AppComposition.legacyUpgradeNoticeText (AppComposition.swift:1178-1191) fed by the receipt
-(boxes 1, sources 3, collections 1, savedArticles 2, smartFeeds 0, curatedFeeds 0).
+AX, read from the Simulator window while the alert was up:
 
-WHAT THE READER CAN DO WITH IT — measured, and it is the remaining defect:
+  - statictext "Da versão anterior"
+  - statictext "Importados da versão anterior: caixas 1, fontes 3, coleções 1. Ainda inacessívei…"
+  - button "Entendi"
 
-- The alert is drawn (screenshot.png is a real frame of the simulator screen with the alert on it).
-- It lives for about one second and is then torn down by SwiftUI, not by the reader: the reader surface
-  swaps from "Looking for more news…" to "Couldn't connect." (the feeds are offline), and the alert is
-  attached to that swapping view. Burst capture right after launch: alert present at ~1.2-1.5 s, gone by
-  ~1.8 s, with no input in between.
-- The acknowledgement is therefore never recorded: `notice_presented` stayed 0 across eight launches,
-  and four attempts to hit "Entendi" (AX press twice, window clicks at the button's frame position twice,
-  each fired within ~0.3 s of the alert appearing) left it 0.
-- The old silent-consumption bug is gone: the receipt is no longer marked presented without the reader.
-  What is still missing is a notice that survives long enough to be read and dismissed.
+The copy matches AppComposition.legacyUpgradeNoticeText (AppComposition.swift:1178-1191) for the receipt
+(boxes 1, sources 3, collections 1; savedArticles 2, smartFeeds 0, curatedFeeds 0).
 
-=> Acceptance "the reader sees the notice and dismisses it, notice_presented flipping only on that tap"
-   is NOT met. Seeing is proven (screenshot + AX); dismissing is not reachable in this environment because
-   the host view disappears under the alert.
+WHY IT CANNOT BE ACKNOWLEDGED
+The alert is not in front of the reader. `run-3-application-support/notice-behind-surface.png` is a
+window frame 0.45 s after launch: the reader's own surface ("Going after what's worth reading", "As
+primeiras manchetes aparecem aqui") is painted **over** the alert, and by 0.95 s the reader's
+"Couldn't connect." surface and its blue "Try again" button are on top of the alert's "Entendi" — the
+two buttons occupy the same pixels. The alert fades out within ~1 s.
+
+Consequences, measured:
+
+- Every pointer click aimed at (456, 1231) — the Entendi bar, calibrated from those same window frames —
+  landed on "Try again": the reader restarted its load instead of acknowledging. Clicks were issued at
+  0.18, 0.30, 0.42, 0.54, 0.62, 0.82, 1.02 and 1.22 s after launch (click delivery verified separately:
+  a click on "Try again" does start a retry). None reached Entendi.
+- The accessibility press on the alert's button is no better: `win.find("Entendi")` returned no element
+  in a 22 s poll at 0.1 s intervals on this build.
+- `notice_presented` stayed **0** through ~10 launches. No acknowledgement was recorded, and — the part
+  that is right — none was recorded without a tap either.
+
+=> The notice is now *drawn* on the as-specified layout, but it is not presented above the reader
+   surface and cannot be dismissed. Acceptance "the reader dismisses it, notice_presented flipping only
+   on that tap" is NOT met. The fix's stated intent (host it on the NavigationStack so it survives the
+   swap) holds for survival of the view, not for its z-order: the alert is behind the content.

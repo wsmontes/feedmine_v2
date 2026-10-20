@@ -1,130 +1,114 @@
 # V1 → V2 upgrade rehearsal (decision D7-A) — 2026-10-20
 
-Two runs against the same simulator device, second run on a fresh (erased) container and the fixes
-from `7c0fed41` + `3a1f72a7`:
+Latest run: **`c7c850af`**, the as-specified layout, no rename, no move, no deletion. The store now opens
+inside V1's own `Application Support/Feedmine` directory and the upgrade runs; the notice is drawn but
+still cannot be acknowledged. Details below, with the two earlier runs kept as history.
 
-- **Run A — the as-specified layout, attempted again with no workaround.** V1's data at
-  `Library/Application Support/Feedmine`, V2 Release installed over the same bundle id. **It still
-  cannot reach the upgrade**, and the measurement below says why: inside the app's sandbox the
-  directory lookup is case-exact and creating the case-variant of an existing directory fails with
-  `EIO`. Details in `run-a-as-specified.txt`.
-- **Run B — the case-collapsed shape the fix was written for.** V2's own `Application Support/FeedMine`
-  holds the store and V1's `user.sqlite`; the upgrade runs, and the receipt's `source_path` shows the
-  new `applicationSupport/user.sqlite` candidate is what found V1's file. This is the run whose
-  artifacts sit at the top level of this directory.
+## Run 3 — as specified, at `c7c850af` (this run)
 
-## History of this evidence directory
-
-The first rehearsal (commit `e98e47dc`, still in git history) ran the upgrade through
-`Documents/user.sqlite`, V2's other documented candidate, because the shipped layout failed on this
-host. That run's diagnosis — "the two spellings collide and the app cannot see the case variant" — was
-right about the symptom and incomplete about the cause: it did not separate the *container* from the
-*case*, and it did not measure the failing call. Both are measured now:
-
-| question | measurement |
+| step | result |
 |---|---|
-| Does `simctl install` change the data container? | **Yes.** `FA41F31E-0FA8-4777-9C8D-7FD07058131F` → `0C601A5B-880F-4E81-9856-A0BE2726DC38`. |
-| Does the data survive that change? | **Yes.** All six files of V1's directory hash identically in the new container, before any launch. The UUID change is therefore not what breaks run A. |
-| Is the host volume case-insensitive? | **Yes.** `stat` returns one inode for `FeedMine`, `Feedmine`, `FEEDMINE`. |
-| Is the app's view the same? | **No.** In the app's process: `contentsOfDirectory` → `["Feedmine"]`, `fileExists("…/Feedmine/user.sqlite")` → **true**, `fileExists("…/FeedMine")` → **false**, and `createDirectory("…/FeedMine")` fails with `NSCocoaErrorDomain 512` / `NSPOSIXErrorDomain 5` (EIO). |
+| V1 built from source, launched, container created | directory on disk **`Feedmine`** (V1's spelling) |
+| seeded | `imported_source` 3 (one `enabled = 0`), `bookmark_list` 2, `bookmark_item` 2, `bookmark_snapshot` 2, `source_collection` 1, `source_collection_member` 2 |
+| V2 Release installed over `com.feedmine.app` | container `5008052D…` → `EEAF13CE…`; the data moves with it (all seven files hash-identically after the install) |
+| first launch | **no failure surface**: "Não foi possível carregar suas fontes." is gone. `runtime.sqlite`, `runtime.sqlite-wal` and `runtime.sqlite-shm` appear **inside `Application Support/Feedmine`**, beside `user.sqlite` |
+| receipt | `status completed`, `ran_at 1792523778.805289`, boxes **1**, sources **3**, selected **2**, collections **1**, members **2** |
+| `source_path` | `…/Application Support/Feedmine/user.sqlite` — the **sibling** candidate, V1's own directory, exactly as intended |
+| skip | `savedArticles / notImportedInThisBuild / 2` |
+| V1 files | `before.sha256` → `after.sha256` identical for `user.sqlite` (`c3f08b44…`), `-wal` (empty), `-shm` (`fd4c9fda…`) |
+| second launch | `ran_at` and every count identical across ~10 launches; no duplicated row |
 
-So the earlier fallback was justified, but for a sharper reason than "the container moved": V2's own
-store path is unusable while the sibling exists under the other spelling, and no candidate-list change
-can reach the upgrade because the failure is in `RuntimeDatabase`, before `LegacyV1Upgrade` runs.
+Because the store and V1's database now share one directory, the upgrade no longer needs the
+case-collapsed candidate nor the Documents fallback: the sibling `Feedmine/user.sqlite` is what the
+receipt names.
+
+### The notice: drawn, but behind the reader surface, and unacknowledgeable
+
+`run-3-application-support/notice-drawn.png` shows the alert with the exact copy; the AX tree carries
+"Da versão anterior" and the "Entendi" button. But `run-3-application-support/notice-behind-surface.png`
+(0.45 s after launch) shows the reader's own surface painted **over** the alert, and by 0.95 s the
+reader's "Try again" button sits on the same pixels as "Entendi". The alert fades within ~1 s.
+
+- Pointer clicks at the Entendi bar, calibrated from those frames and issued at eight moments between
+  0.18 s and 1.22 s after launch, all landed on "Try again" (click delivery itself was verified: a click
+  there does restart the load).
+- `win.find("Entendi")` returned no element in a 22 s AX poll at 0.1 s intervals.
+- `notice_presented` stayed **0** throughout: nothing was acknowledged, and nothing was recorded without
+  a tap either.
+
+Acceptance "the reader sees the notice and dismisses it, with the flag flipping only on that tap" is
+**not met**: seeing is proven, dismissing is not reachable while the alert is below the content.
+
+## History
+
+### Run 2 — `3a1f72a7`, as-specified attempted, blocked before the upgrade
+
+V1's `Feedmine` existed; V2's `RuntimeDatabase` asked for `FeedMine` and the app sandbox refused:
+`fileExists("…/Feedmine/user.sqlite")` = true, `fileExists("…/FeedMine")` = false,
+`createDirectory("…/FeedMine")` → `NSCocoaErrorDomain 512` / `NSPOSIXErrorDomain 5` (EIO). The app showed
+"Não foi possível carregar suas fontes." and wrote nothing. The container UUID changed on install, but
+the data hashed identically across the move, so the container was not the cause. Full record:
+`run-a-as-specified.txt`, `run-a-lldb-filesystem.log`, `run-a-as-specified-failure.png`.
+
+The upgrade itself was then proven through the case-collapsed shape (V2's `FeedMine` holding the store
+and V1's `user.sqlite`), with `source_path` naming `applicationSupport/user.sqlite`. That is the run whose
+notice first appeared; it lived ~1 s and was torn down by the reader swap.
+
+### Run 1 — first rehearsal (git `e98e47dc`)
+
+Same blocker, not yet measured precisely; the upgrade was run through `Documents/user.sqlite`, V2's other
+documented candidate. Its artifacts are in git at `e98e47dc`; only the V1 screenshot is kept locally in
+`rehearsal-1-documents/`.
 
 ## What was built
 
 | | source | result |
 |---|---|---|
 | V1 | `_legacy_feedmine_v1`, `feedmine.xcodeproj` scheme `feedmine`, Debug / iphonesimulator | BUILD SUCCEEDED |
-| V2 | product worktree HEAD `3a1f72a7`, `FeedMineApp/FeedMineApp.xcodeproj` scheme `FeedMine`, **Release** / iphonesimulator | BUILD SUCCEEDED |
+| V2 | product worktree HEAD `c7c850af`, `FeedMineApp/FeedMineApp.xcodeproj` scheme `FeedMine`, **Release** | BUILD SUCCEEDED |
 
-V2 Release keeps `com.feedmine.app`, so it installs into V1's container. Both applications were built
-from source; nothing here is schema-only. The product tree was additionally dirty with a sibling's
-in-flight edits (`FeedItemCardView.swift`, `MiniPlayerBar.swift`, `project.pbxproj`, untracked
-`FeedMediaJourneyUITests.swift`) and the binary was built from that tree.
+V2 Release keeps `com.feedmine.app`, so it installs into V1's container. The product tree was dirty with
+a sibling's in-flight work (16 files: `PublicationStore*`, `RuntimeMigrations`, `PublicationCardDraft`,
+`PublicationCoordinator`, `PresentationCard`, `PublicationPreparation`, `FeedItemCardView`,
+`FeedItemRowView`, two test files, `AppComposition.swift`, and the untracked
+`FeedMediaJourneyUITests.swift`); the Release binary was built from that tree. None of those edits touch
+the upgrade path or the notice.
 
-V1's database was created by V1's own binary (`v1_bookmarks … v11_user_operation`), then seeded with
+V1's database was created by V1's own binary (`v1_bookmarks … v11_user_operation`) and then seeded with
 `sqlite3` using V1's shipped DDL and only the columns the V2 reader selects
-(`Sources/FeedMinePersistence/LegacyUserStateReader.swift`). Inserted: `imported_source` 3 (one
-`enabled = 0`), `bookmark_list` 2 (V1's default `Favorites` + `Leituras longas`), `bookmark_item` 2,
-`bookmark_snapshot` 2, `source_collection` 1, `source_collection_member` 2.
+(`Sources/FeedMinePersistence/LegacyUserStateReader.swift`). No table was invented.
 
-## Where the directory ends up, and how the candidate found it
-
-- **Run A:** on disk the directory is spelled **`Feedmine`** (V1 created it). V2 asks for `FeedMine`;
-  it cannot create or open it, and fails before the upgrade.
-- **Run B:** on disk the directory is spelled **`FeedMine`**, created by V2's own store. V1's
-  `user.sqlite` sits inside it — the case-collapsed shape. The candidate list does not find it through
-  a sibling: the receipt's `source_path` is
-  `…/Library/Application Support/FeedMine/user.sqlite`, i.e. the `applicationSupport/user.sqlite` entry
-  added in `3a1f72a7`, and `LegacyV1Upgrade` reads V1's schema from there unchanged.
-
-## Result (Run B)
-
-`reader_legacy_upgrade`: `status completed`, `ran_at 1792522460.08012`, boxes **1**, sources **3**,
-selected **2**, collections **1**, collection members **2**.
-
-Skips recorded with the receipt: `savedArticles / notImportedInThisBuild / 2`. `smartFeeds` and
-`curatedFeeds` are 0 (V1 had none).
+## Result detail (Run 3)
 
 | category | V1 had | V2 has |
 |---|---|---|
-| personal sources | 3 (one disabled) | 3 rows: `…/ciencia/feed.xml`, `…/tecnologia/feed`, `…/arquivo/feed`; the two enabled ones are in the selection, the disabled one is preserved and not selected |
+| personal sources | 3 (one disabled) | 3 rows — `…/ciencia/feed.xml`, `…/tecnologia/feed`, `…/arquivo/feed`; the two enabled ones are in the selection, the disabled one is preserved and not selected |
 | browser boxes | default `Favorites` + `Leituras longas` | `saved` (V2's own default) + `v1:list:2` "Leituras longas"; the default is not duplicated; `reader_bookmark_memberships` = 0 because saved articles are not imported in this build |
 | collections | 1 with 2 members | `v1:collection:1` "Ciência e Tecnologia" with 2 memberships, keyed by V1's `source_identity` |
-
-V1's files (`user.sqlite`, `-wal`, `-shm`): `diff before.sha256 after.sha256` is empty, exit 0 —
-byte-identical after the upgrade. Second launch: receipt and every count identical, no duplicated row.
-
-## The notice — seen, but not dismissable
-
-The alert is now drawn: `screenshot.png` is a real frame of the simulator screen showing
-
-> **Da versão anterior**
-> Importados da versão anterior: caixas 1, fontes 3, coleções 1. Ainda inacessíveis nesta versão:
-> artigos salvos 2, marcadores inteligentes 0, feeds curados 0. Eles permanecem no arquivo original
-> da versão anterior.
-> **[Entendi]**
-
-and the accessibility tree carries the same title and button. The old silent-consumption defect is
-gone: `notice_presented` is **0** and stays 0, so the receipt is not marked presented behind the
-reader's back.
-
-What is still missing: the alert survives about one second and is then torn down by SwiftUI when the
-reader surface swaps from "Looking for more news…" to "Couldn't connect." (the seeded hosts do not
-resolve). Because the host view disappears, the reader's tap never lands: four acknowledgement attempts
-fired within ~0.3 s of the alert appearing (AX press twice, window click at the button's frame position
-twice) all left `notice_presented` at 0. **Acceptance "the reader sees it and dismisses it, with the
-flag flipping only on that tap" is therefore half met: seeing is proven, dismissing is not reachable in
-this state.**
 
 ## Files
 
 | file | what |
 |---|---|
-| `before.sha256` / `after.sha256` / `diff.txt` | V1's three files, before and after Run B (diff empty, exit 0) |
-| `receipt.json` | raw `sqlite3 -json`: receipt, skips, counts, imported sources, boxes, collections, members, selection |
-| `notice.txt` | the AX tree of the alert, the exact copy, and the acknowledgement measurement |
-| `screenshot.png` | the alert as drawn (Run B) |
-| `run-a-as-specified.txt` | Run A: what was done, the container UUIDs, the exact error, V1 files unchanged |
-| `run-a-as-specified-failure.png` | Run A's screen: "Não foi possível carregar suas fontes." |
-| `run-b-collapsed/` | Run B extras: the notice frame and the raw lldb transcripts |
-| `case-collision-lldb.log` | first rehearsal's in-app filesystem probe (kept for continuity) |
-| `commands.txt` | every command, in order |
+| `before.sha256` / `after.sha256` / `diff.txt` | V1's files before and after Run 3 |
+| `receipt.json` | raw `sqlite3 -json`: receipt, skips, counts, sources, boxes, collections, members, container UUIDs |
+| `notice.txt` | the alert's AX tree, the exact copy, and the measurements showing it cannot be dismissed |
+| `screenshot.png` | the alert as drawn (Run 3) |
+| `run-3-application-support/` | the alert frame and the frame showing the reader surface painted over it |
+| `run-a-as-specified.txt`, `run-a-*.png`, `run-a-lldb-*.log` | Run 2's blocked attempt, with the measured EIO |
+| `case-collision-lldb.log` | Run 1's in-app filesystem probe |
+| `rehearsal-1-documents/` | the only Run 1 artifact kept locally |
+| `commands.txt` | every command of Run 3 |
 
 ## What this does NOT prove
 
-- **Not the as-specified same-directory layout.** Run A shows it is unreachable on this host; the
-  upgrade was proven through the case-collapsed candidate instead. Whether a device (case-sensitive
-  filesystem, two distinct directories) behaves as designed is untested here.
-- **Not the notice's acceptance.** It is drawn but torn down before it can be dismissed; nothing here
-  shows a reader acknowledging it, and nothing shows what a second launch does after an
-  acknowledgement.
-- **Not real users' V1 databases.** One synthetic database, seeded to the shapes the reader selects:
-  no unusual schema, no corrupt file, no permission or read-only case, no large library.
-- **Not a device or an iOS upgrade path.** Simulator only, no signing, no App Store install-over.
-- **Not the declined data.** Saved articles (2), smart feeds and curated feeds are reported, not
-  imported.
-- **Not concurrency or interruption.** One import, one relaunch, no kill during the import.
+- **Not the notice's acceptance.** It is drawn but sits below the reader surface; no tap reaches it and
+  `notice_presented` never becomes 1. Nothing here shows a second launch after an acknowledgement.
+- **Not real users' V1 databases.** One synthetic database seeded to the shapes the reader selects: no
+  unusual schema, corrupt file, permission case or large library.
+- **Not a device or an iOS upgrade path.** Simulator only, iOS 26.5, no signing, no App Store install-over,
+  no real-device filesystem.
+- **Not the declined data.** Saved articles (2), smart feeds and curated feeds are reported, not imported.
+- **Not concurrency or interruption.** One import, then relaunches; no kill during the import, no
+  crash-restart, no partial write.
 - **Not the other runtime categories** (feed content, editions, media, session checkpoints).

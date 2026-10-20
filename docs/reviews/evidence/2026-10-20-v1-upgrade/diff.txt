@@ -1,7 +1,7 @@
-# diff before.sha256 after.sha256  (Run B, build 3a1f72a7)
-# exit status: 0
-# output: (empty) — V1's three files are byte-identical after the upgrade.
-#
-#   e6dd5d93…  user.sqlite
-#   e3b0c442…  user.sqlite-wal   (empty)
-#   fd4c9fda…  user.sqlite-shm
+# diff of V1's own files, before vs after Run 3 (build c7c850af)
+# user.sqlite   c3f08b448d0bbba7ec3b77b77f60c97776d6aea94df1624c5f44a484441b30c6  (before and after)
+# user.sqlite-wal  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  (empty, before and after)
+# user.sqlite-shm  fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb  (before and after)
+# exit status of the comparison: 0 — no difference.
+# (before.sha256 lists all seven files of V1's directory; after.sha256 lists the three user.sqlite files,
+#  hashed with `grep user.sqlite` after the upgrade. RuntimeV2/* is V1's own rebuildable runtime cache.)
