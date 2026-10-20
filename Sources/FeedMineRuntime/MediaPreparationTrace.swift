@@ -102,17 +102,18 @@ final class MediaPreparationWitness: @unchecked Sendable {
         }
     }
 
-    /// The exact ceiling this attempt will hand the fetcher, stated before the fetch starts so a refusal can be
+    /// The exact terms this attempt runs under, stated before the fetch starts so a truncation or a refusal can be
     /// paired with the number that caused it and where that number came from. Read from the same value the fetch
-    /// is handed, never re-derived.
+    /// is handed, never re-derived: `affordable_bytes` is what fits the wait, `safety_ceiling` is what may be
+    /// transferred at all.
     func byteBudget(_ revision: OriginRevisionID, _ budget: MediaByteBudget) {
         trace.record(ReplenishmentEvent.mediaByteBudget, [
             "revision": revision.rawValue.uuidString,
-            "ceiling": String(budget.ceiling),
+            "affordable_bytes": String(budget.affordableBytes),
             "source": budget.source.rawValue,
             "rate_bps": budget.measuredBytesPerSecond.map { String($0) } ?? "none",
             "wait_seconds": budget.waitSeconds.map { String($0) } ?? "none",
-            "cap": String(budget.maximumDownloadBytes)
+            "safety_ceiling": String(budget.safetyCeilingBytes)
         ])
     }
 

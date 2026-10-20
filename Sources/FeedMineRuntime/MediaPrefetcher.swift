@@ -126,7 +126,11 @@ public enum MediaPreparationOutcome: Hashable, Sendable {
 public enum MediaFetchFailureReason: Hashable, Sendable {
     case status(Int)
     case notAnImage
+    /// The file is over the **safety** ceiling (bytes, pixels or pixel count): refused, not merely late.
     case overCeiling
+    /// The attempt ran out of the wait the device had. It is a fact about time, never about the image, and it is
+    /// transient: the revision stays eligible for a later attempt.
+    case deadline
     case httpDowngrade
     case privateHost
     case timeout
@@ -145,6 +149,7 @@ public enum MediaFetchFailureReason: Hashable, Sendable {
         case .status(let code): return "status-\(code)"
         case .notAnImage: return "not-an-image"
         case .overCeiling: return "over-ceiling"
+        case .deadline: return "deadline"
         case .httpDowngrade: return "http-downgrade"
         case .privateHost: return "private-host"
         case .timeout: return "timeout"
@@ -160,9 +165,9 @@ public enum MediaFetchFailureReason: Hashable, Sendable {
 }
 
 /// How a media fetch failed. `classification` is the only part the retry policy reads: definitive failures
-/// (missing, not an image, too large) settle the revision as designed text-only; transient ones (timeouts, 5xx,
-/// lost connection) retry later. `reason` is the cause the fetcher observed, carried for the run trace — it never
-/// changes the classification and never decides anything.
+/// (missing, not an image, over the **safety** ceiling) settle the revision as designed text-only; transient ones
+/// (timeouts, 5xx, lost connection, the wait running out) retry later. `reason` is the cause the fetcher observed,
+/// carried for the run trace — it never changes the classification and never decides anything.
 public struct MediaFetchFailure: Error, Hashable, Sendable {
     public enum Classification: Hashable, Sendable {
         case transient
@@ -216,6 +221,81 @@ final class ResumeOnce: @unchecked Sendable {
     }
 }
 
+/// First answer wins: the transport returned bytes, it threw, or the attempt's time allowance ended. The loser is
+/// never awaited here, so a transport that ignores cancellation cannot hold the owner past the deadline.
+private final class MediaFetchSettlement: @unchecked Sendable {
+    struct Box: @unchecked Sendable { let error: any Error }
+    enum Outcome: @unchecked Sendable {
+        case bytes(Data)
+        case failure(Box)
+        case expired
+    }
+
+    private let lock = NSLock()
+    private var outcome: Outcome?
+    private var continuation: CheckedContinuation<Outcome, Never>?
+
+    func settle(_ value: Outcome) {
+        lock.lock()
+        guard outcome == nil else { lock.unlock(); return }
+        outcome = value
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(returning: value)
+    }
+
+    func wait() async -> Outcome {
+        if let settled = settled() { return settled }
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Outcome, Never>) in
+            // Re-read under the lock: the answer may have arrived between the check above and this install.
+            lock.lock()
+            if let settled = outcome {
+                lock.unlock()
+                continuation.resume(returning: settled)
+                return
+            }
+            self.continuation = continuation
+            lock.unlock()
+        }
+    }
+
+    private func settled() -> Outcome? {
+        lock.lock(); defer { lock.unlock() }
+        return outcome
+    }
+}
+
+/// Runs one transport call inside what is left of the attempt's time allowance. A call still running when the
+/// allowance ends is cut and reported as the transient `deadline` cause: the device ran out of wait, the image did
+/// not fail, and the revision stays eligible for a later attempt. Without an allowance (no measured wait) the call
+/// is bounded only by the transport itself.
+private func fetchWithinTimeAllowance(_ seconds: Double?,
+    _ operation: @escaping @Sendable () async throws -> Data) async throws -> Data {
+    guard let seconds else { return try await operation() }
+    guard seconds.isFinite, seconds > 0 else { throw MediaFetchFailure(.transient, reason: .deadline) }
+    let settlement = MediaFetchSettlement()
+    let work = Task { [settlement] in
+        do { settlement.settle(.bytes(try await operation())) }
+        catch { settlement.settle(.failure(MediaFetchSettlement.Box(error: error))) }
+    }
+    // A day is far past any runway tolerance; the cap only keeps the nanosecond conversion inside UInt64.
+    let timer = Task { [settlement] in
+        try? await Task.sleep(nanoseconds: UInt64((min(seconds, 86_400) * 1_000_000_000).rounded(.up)))
+        guard !Task.isCancelled else { return }
+        settlement.settle(.expired)
+    }
+    let outcome = await settlement.wait()
+    timer.cancel()
+    switch outcome {
+    case .bytes(let data): return data
+    case .failure(let boxed): throw boxed.error
+    case .expired:
+        work.cancel()
+        throw MediaFetchFailure(.transient, reason: .deadline)
+    }
+}
+
 /// First answer wins: the drain finished, or its budget expired. The budget only bounds the wait; the retirement
 /// fence in `MediaPrefetcher` is what forbids later starts.
 private actor MediaRetirementSettlement {
@@ -236,7 +316,10 @@ private actor MediaRetirementSettlement {
 }
 
 public actor MediaPrefetcher {
-    public typealias Fetch = @Sendable (_ url: URL, _ byteCeiling: Int) async throws -> Data
+    /// One transport call under the terms its attempt runs on: the budget states the safety ceiling the bytes may
+    /// not exceed and the wait the owner allows. It never asks the transport to refuse an image for not fitting the
+    /// wait — that is `MediaPrefetcher`'s time allowance, and its outcome is transient.
+    public typealias Fetch = @Sendable (_ url: URL, _ budget: MediaByteBudget) async throws -> Data
     public typealias Conditions = @Sendable (_ measuredBytesPerSecond: Double?) -> MediaPolicy?
 
     public nonisolated let readiness: MediaReadiness
@@ -449,12 +532,18 @@ public actor MediaPrefetcher {
                 : MediaPreparationAttempt(.textOnly)
         }
         let budget = policy.byteBudget
-        guard budget.ceiling > 0 else { return MediaPreparationAttempt(.deferred) } // Not affordable now; retry later.
+        // The affordable bytes never decide whether to attempt — only a zero wait does, because then there is no time
+        // at all and a call could only fail. The revision is left eligible rather than refused.
+        guard budget.waitSeconds.map({ $0 > 0 }) ?? true else { return MediaPreparationAttempt(.deferred) }
         #if DEBUG
-        // The ceiling and its provenance, once per attempt and before the first fetch, so a refusal pairs with
-        // the exact number that caused it. Emitted from the same value the fetch below is handed.
+        // The terms and their provenance, once per attempt and before the first fetch, so a truncation pairs with
+        // the exact allowance that caused it. Emitted from the same value the fetch below is handed.
         mediaWitness?.byteBudget(revision, budget)
         #endif
+        // The time this revision's attempt has, read once: the budget's own wait tolerance. A candidate that does not
+        // finish inside it is cut as `deadline` (transient); a candidate larger than `affordableBytes` is attempted
+        // like any other and is never refused for it.
+        let allowanceEnds = budget.waitSeconds.map { monotonicSeconds() + $0 }
         var sawTransient = false, sawStorageFailure = false, sawSpace = false
         // The cause the settlement line states. The first definitive refusal is the preferred candidate's, which
         // is the most informative one; a transient attempt keeps its own cause because it is retried.
@@ -463,10 +552,14 @@ public actor MediaPrefetcher {
         for candidate in [first] + fallbacks {
             if Task.isCancelled { return MediaPreparationAttempt(.deferred) }
             let started = ProcessInfo.processInfo.systemUptime
+            let remaining = allowanceEnds.map { $0 - monotonicSeconds() }
             let bytes: Data
-            do { bytes = try await fetch(candidate.remoteURL, budget.ceiling) }
-            catch {
-                // Review F04: only a definitive answer (missing, not an image, too large) is final.
+            do {
+                bytes = try await fetchWithinTimeAllowance(remaining) {
+                    try await self.fetch(candidate.remoteURL, budget)
+                }
+            } catch {
+                // Review F04: only a definitive answer (missing, not an image, over the safety ceiling) is final.
                 if Self.isTransient(error) {
                     sawTransient = true
                     if transientReason == nil { transientReason = Self.failureReason(error) }

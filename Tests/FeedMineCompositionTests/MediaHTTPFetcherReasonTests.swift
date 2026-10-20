@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import FeedMineDomain
+import FeedMineMedia
 import FeedMineRuntime
 @testable import FeedMineComposition
 
@@ -48,19 +49,32 @@ final class MediaHTTPFetcherReasonTests: XCTestCase {
         super.tearDown()
     }
 
-    private func failure(byteCeiling: Int = 1_000_000) async -> MediaFetchFailure? {
+    /// The terms an attempt runs on: `affordable` is what fits the wait, `safetyCeiling` is what may be transferred
+    /// at all. Stated apart so a test never has to conflate the two.
+    private func budget(affordable: Int = 50_000, safetyCeiling: Int = 12_000_000,
+        waitSeconds: Double? = 0.5) -> MediaByteBudget {
+        MediaByteBudget(affordableBytes: affordable, source: .dynamic, measuredBytesPerSecond: 100_000,
+            waitSeconds: waitSeconds, safetyCeilingBytes: safetyCeiling)
+    }
+
+    /// The bytes the real fetcher returned, or the typed failure it stated.
+    private func result(_ budget: MediaByteBudget) async -> Result<Data, MediaFetchFailure> {
         do {
-            _ = try await MediaHTTPFetcher(session: session)
-                .fetch(URL(string: "https://images.example.com/card.png")!, byteCeiling: byteCeiling)
-            return nil
+            return .success(try await MediaHTTPFetcher(session: session)
+                .fetch(URL(string: "https://images.example.com/card.png")!, budget: budget))
         } catch {
-            return error as? MediaFetchFailure
+            return .failure(error as? MediaFetchFailure ?? MediaFetchFailure(.transient, reason: .unknown))
         }
+    }
+
+    private func failure(_ budget: MediaByteBudget) async -> MediaFetchFailure? {
+        if case .failure(let failure) = await result(budget) { return failure }
+        return nil
     }
 
     func testAMissingImageStatesItsStatusAndStaysDefinitive() async throws {
         Stub.status = 404
-        let observed = await failure()
+        let observed = await failure(budget())
         let failure = try XCTUnwrap(observed)
         XCTAssertEqual(failure.classification, .definitive)
         XCTAssertEqual(failure.reason, .status(404))
@@ -69,7 +83,7 @@ final class MediaHTTPFetcherReasonTests: XCTestCase {
 
     func testAServerErrorStatesItsStatusAndStaysTransient() async throws {
         Stub.status = 503
-        let observed = await failure()
+        let observed = await failure(budget())
         let failure = try XCTUnwrap(observed)
         XCTAssertEqual(failure.classification, .transient)
         XCTAssertEqual(failure.reason, .status(503))
@@ -77,24 +91,45 @@ final class MediaHTTPFetcherReasonTests: XCTestCase {
 
     func testANonImageContentTypeIsNotAnImage() async throws {
         Stub.headers = ["Content-Type": "text/html; charset=utf-8"]
-        let observed = await failure()
+        let observed = await failure(budget(safetyCeiling: 1_000_000))
         let failure = try XCTUnwrap(observed)
         XCTAssertEqual(failure.classification, .definitive)
         XCTAssertEqual(failure.reason, .notAnImage)
     }
 
-    func testADeclaredLengthOverTheCeilingIsOverCeiling() async throws {
+    func testADeclaredLengthOverTheSafetyCeilingIsOverCeiling() async throws {
         Stub.contentLength = 2_000
         Stub.body = Data(repeating: 0, count: 2_000)
-        let observed = await failure(byteCeiling: 1_000)
+        let observed = await failure(budget(safetyCeiling: 1_000))
         let failure = try XCTUnwrap(observed)
         XCTAssertEqual(failure.classification, .definitive)
         XCTAssertEqual(failure.reason, .overCeiling)
     }
 
-    func testABodyThatOutgrowsTheCeilingWithoutALengthIsOverCeiling() async throws {
+    func testABodyThatOutgrowsTheSafetyCeilingWithoutALengthIsOverCeiling() async throws {
         Stub.body = Data(repeating: 0, count: 2_000)
-        let observed = await failure(byteCeiling: 1_000)
+        let observed = await failure(budget(safetyCeiling: 1_000))
+        let failure = try XCTUnwrap(observed)
+        XCTAssertEqual(failure.classification, .definitive)
+        XCTAssertEqual(failure.reason, .overCeiling)
+    }
+
+    /// Product decision: the dynamic budget must not reject the typical image. 3 MB is inside the 12 MB safety
+    /// ceiling, so it is fetched even though only 50 KB fitted the wait that used to refuse it. The owner's time
+    /// allowance — not the byte count — is what bounds such an attempt.
+    func testAnImageAboveTheAffordableBytesButInsideTheSafetyCeilingIsFetched() async throws {
+        Stub.contentLength = 3_000_000
+        Stub.body = Data(repeating: 0xAB, count: 3_000_000)
+        guard case .success(let data) = await result(budget(affordable: 50_000, safetyCeiling: 12_000_000))
+        else { return XCTFail("an image above the affordable bytes must be fetched, never refused") }
+        XCTAssertEqual(data.count, 3_000_000)
+    }
+
+    /// The safety ceiling still protects: 13 MB is refused outright, whatever the wait would have allowed.
+    func testAnImageOverTheSafetyCeilingIsRefusedEvenWhenTheWaitWouldAllowIt() async throws {
+        Stub.contentLength = 13_000_000
+        Stub.body = Data(repeating: 0, count: 16)
+        let observed = await failure(budget(affordable: 20_000_000, safetyCeiling: 12_000_000))
         let failure = try XCTUnwrap(observed)
         XCTAssertEqual(failure.classification, .definitive)
         XCTAssertEqual(failure.reason, .overCeiling)
@@ -103,7 +138,7 @@ final class MediaHTTPFetcherReasonTests: XCTestCase {
     func testANonPublicHostIsPrivateHost() async throws {
         do {
             _ = try await MediaHTTPFetcher(session: session)
-                .fetch(URL(string: "http://127.0.0.1:8080/card.png")!, byteCeiling: 1_000)
+                .fetch(URL(string: "http://127.0.0.1:8080/card.png")!, budget: budget(safetyCeiling: 1_000))
             XCTFail("a loopback locator must be refused")
         } catch {
             let failure = try XCTUnwrap(error as? MediaFetchFailure)

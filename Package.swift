@@ -82,6 +82,7 @@ let package = Package(
                 "FeedMinePersistence",
                 "FeedMineAcquisition",
                 "FeedMineEditorial",
+                "FeedMineMedia",
                 "FeedMinePublication",
                 "FeedMineRuntime",
                 // The T7 adapter conforms to the source surface's protocol, which is declared in UI.

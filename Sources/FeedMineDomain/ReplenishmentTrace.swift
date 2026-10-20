@@ -56,13 +56,14 @@ public enum ReplenishmentEvent {
     /// attempt ended: `revision`, `source`, `declared_image` (`true`/`false`/`unknown`), `outcome`
     /// (`ready-image`/`unavailable`/`transient-failed`/`deferred`/`text-only`), `elapsed_ms` since the first
     /// consideration and — for `unavailable`/`transient-failed` only — `reason`, the cause the typed failure
-    /// already stated (`status-404`, `not-an-image`, `over-ceiling`, `http-downgrade`, `private-host`, `timeout`,
-    /// `offline`, `too-small`, ..., or `unknown`). `transient-failed` is a retry, never `unavailable`.
+    /// already stated (`status-404`, `not-an-image`, `over-ceiling`, `deadline`, `http-downgrade`, `private-host`,
+    /// `timeout`, `offline`, `too-small`, ..., or `unknown`). `transient-failed` is a retry, never `unavailable`;
+    /// `deadline` says the attempt ran out of the wait the device had, not that the image is unusable.
     public static let mediaSettled = "media_preparation_settled"
-    /// The byte ceiling one fetch attempt was given, stated **before** the fetch starts: `revision`, `ceiling`,
-    /// `source` (`dynamic` = measured rate × wait; `ceiling-cap` = no usable measurement), `rate_bps`,
-    /// `wait_seconds` and `cap` (the safety constant the budget may never exceed). A refused attempt pairs with
-    /// the exact number that refused it.
+    /// The terms one fetch attempt ran under, stated **before** the fetch starts: `revision`, `affordable_bytes`
+    /// (measured rate × wait — what fits, never a refusal), `source` (`dynamic` = measured rate × wait;
+    /// `ceiling-cap` = no usable measurement), `rate_bps`, `wait_seconds` and `safety_ceiling` (the only byte count
+    /// that refuses a file).
     public static let mediaByteBudget = "media_byte_budget"
     /// One card that reached history: `revision`, `source`, `declared_image`, `media` (`image`/`none`) and
     /// `layout`. Written only after the append succeeded, so the line is a publication, not an intention.

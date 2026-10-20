@@ -2902,7 +2902,7 @@ final class FeedAssociation {
         // F06-G/PD-6: one derived tolerance feeds both the preparation window and the byte budget below. The media
         // layer used to be handed a fixed 5 s here while the window was computed elsewhere — two numbers for one
         // fact. The box is what makes them one: the window writes the measured value, and every later policy read
-        // (which is how `downloadByteBudget` = measured rate × wait is computed) sees it.
+        // (which is how `MediaPolicy.byteBudget` = measured rate × wait is computed) sees it.
         let mediaWaitBudget = LiveValue(Self.mediaWaitBootstrapSeconds)
         self.mediaWaitBudget = mediaWaitBudget
         // B/§3: the prefetcher is built before the driver exists, so its readiness callback points at this
@@ -2918,7 +2918,7 @@ final class FeedAssociation {
         }
         let media = MediaPrefetcher(database: db, assetDirectory: assetDirectory, readiness: readiness,
             concurrentDownloadLimit: max(2, ProcessInfo.processInfo.activeProcessorCount / 2),
-            fetch: { try await fetcher.fetch($0, byteCeiling: $1) },
+            fetch: { try await fetcher.fetch($0, budget: $1) },
             conditions: { rate in DeviceMediaConditions.policy(device: device, measuredBytesPerSecond: rate,
                 assetDirectory: assetDirectory, waitBudgetSeconds: mediaWaitBudget.current) },
             onReadinessChanged: { _ in await readinessRelay.deliver() },
@@ -4230,7 +4230,7 @@ struct DeviceMediaConditions: Sendable {
             network: NetworkPathObserver.shared.current, measuredBytesPerSecond: measuredBytesPerSecond,
             // Supplied, never assumed: one image may cost the host as much time as the runway already tolerates for
             // one feed request, and that tolerance is measured (§5.3/PD-6, F06-G). The byte budget follows from it
-            // and the measured rate inside `MediaPolicy.downloadByteBudget`.
+            // and the measured rate inside `MediaPolicy.byteBudget`.
             waitBudgetSeconds: waitBudgetSeconds, freeStorageBytes: free, lowPowerMode: info.isLowPowerModeEnabled, thermal: thermal),
             // Decode-bomb and stream safety ceilings (v1 hardened: 12 MB, 12k px side, 50 MP).
             let ceilings = MediaSafetyCeilings(maximumDownloadBytes: 12_000_000, maximumPixelSide: 12_000,

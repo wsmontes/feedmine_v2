@@ -39,13 +39,19 @@ final class MediaPreparationTraceTests: XCTestCase {
 
     private final class FetchProbe: @unchecked Sendable {
         private let lock = NSLock()
-        private var seenCeiling: Int?
+        private var seenSafetyCeiling: Int?
+        private var seenAffordable: Int?
         private var budgetLines = 0
 
-        func observe(ceiling: Int, budgetLines: Int) {
-            lock.lock(); seenCeiling = ceiling; self.budgetLines = budgetLines; lock.unlock()
+        func observe(safetyCeiling: Int, affordable: Int, budgetLines: Int) {
+            lock.lock()
+            seenSafetyCeiling = safetyCeiling
+            seenAffordable = affordable
+            self.budgetLines = budgetLines
+            lock.unlock()
         }
-        var ceiling: Int? { lock.lock(); defer { lock.unlock() }; return seenCeiling }
+        var safetyCeiling: Int? { lock.lock(); defer { lock.unlock() }; return seenSafetyCeiling }
+        var affordable: Int? { lock.lock(); defer { lock.unlock() }; return seenAffordable }
         var linesBeforeFetch: Int { lock.lock(); defer { lock.unlock() }; return budgetLines }
     }
 
@@ -290,15 +296,15 @@ final class MediaPreparationTraceTests: XCTestCase {
         XCTAssertFalse(prefetcher.readiness.isSettled(revision), "a timeout decides nothing")
     }
 
-    /// The ceiling is not a constant: with a measured rate and a wait it is their product. The line is written
-    /// before the fetch and carries exactly the number the fetch was handed.
+    /// What fits the wait is not a constant: with a measured rate and a wait it is their product. The line is
+    /// written before the fetch, and the fetch is handed the **safety** ceiling — the product is never a refusal.
     func testByteBudgetLineCarriesTheMeasuredProductBeforeTheFetch() async throws {
         let (db, assets) = try setup()
         let revision = try admit(db, images: ["https://example.test/card.png"], source: SourceID())
         let recorder = TraceRecorder(), png = self.png, probe = FetchProbe()
         let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
-            fetch: { _, ceiling in
-                probe.observe(ceiling: ceiling,
+            fetch: { _, budget in
+                probe.observe(safetyCeiling: budget.safetyCeilingBytes, affordable: budget.affordableBytes,
                     budgetLines: recorder.fields(ReplenishmentEvent.mediaByteBudget).count)
                 return png
             },
@@ -309,16 +315,18 @@ final class MediaPreparationTraceTests: XCTestCase {
         let lines = recorder.fields(ReplenishmentEvent.mediaByteBudget)
         XCTAssertEqual(lines.count, 1, "one budget line per attempt")
         XCTAssertEqual(lines[0]["revision"], revision.rawValue.uuidString)
-        XCTAssertEqual(lines[0]["ceiling"], "2000")
+        XCTAssertEqual(lines[0]["affordable_bytes"], "2000", "2000 B fit a 2 s wait at 1000 B/s")
         XCTAssertEqual(lines[0]["source"], "dynamic")
         XCTAssertEqual(lines[0]["rate_bps"], "1000.0")
         XCTAssertEqual(lines[0]["wait_seconds"], "2.0")
-        XCTAssertEqual(lines[0]["cap"], "1000000")
+        XCTAssertEqual(lines[0]["safety_ceiling"], "1000000")
         XCTAssertEqual(probe.linesBeforeFetch, 1, "the line exists before the fetch starts")
-        XCTAssertEqual(probe.ceiling, 2_000, "the traced ceiling is the one the fetch was handed")
+        XCTAssertEqual(probe.affordable, 2_000, "the traced affordability is the one the attempt computed")
+        XCTAssertEqual(probe.safetyCeiling, 1_000_000,
+            "the fetch is bounded by the safety ceiling, never by what fits the wait")
     }
 
-    /// Without a measured rate the budget is the safety cap itself, and the line states that provenance.
+    /// Without a measured rate affordability is stated as the safety ceiling, and the line says so.
     func testByteBudgetLineStatesTheCapWhenNothingWasMeasured() async throws {
         let (db, assets) = try setup()
         let revision = try admit(db, images: ["https://example.test/card.png"], source: SourceID())
@@ -331,10 +339,10 @@ final class MediaPreparationTraceTests: XCTestCase {
 
         let lines = recorder.fields(ReplenishmentEvent.mediaByteBudget)
         XCTAssertEqual(lines.count, 1)
-        XCTAssertEqual(lines[0]["ceiling"], "1000000")
+        XCTAssertEqual(lines[0]["affordable_bytes"], "1000000")
         XCTAssertEqual(lines[0]["source"], "ceiling-cap")
         XCTAssertEqual(lines[0]["rate_bps"], "none")
         XCTAssertEqual(lines[0]["wait_seconds"], "none")
-        XCTAssertEqual(lines[0]["cap"], "1000000")
+        XCTAssertEqual(lines[0]["safety_ceiling"], "1000000")
     }
 }
