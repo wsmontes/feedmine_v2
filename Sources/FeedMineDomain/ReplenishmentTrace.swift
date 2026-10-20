@@ -59,6 +59,11 @@ public enum ReplenishmentEvent {
     /// already stated (`status-404`, `not-an-image`, `over-ceiling`, `http-downgrade`, `private-host`, `timeout`,
     /// `offline`, `too-small`, ..., or `unknown`). `transient-failed` is a retry, never `unavailable`.
     public static let mediaSettled = "media_preparation_settled"
+    /// The byte ceiling one fetch attempt was given, stated **before** the fetch starts: `revision`, `ceiling`,
+    /// `source` (`dynamic` = measured rate × wait; `ceiling-cap` = no usable measurement), `rate_bps`,
+    /// `wait_seconds` and `cap` (the safety constant the budget may never exceed). A refused attempt pairs with
+    /// the exact number that refused it.
+    public static let mediaByteBudget = "media_byte_budget"
     /// One card that reached history: `revision`, `source`, `declared_image`, `media` (`image`/`none`) and
     /// `layout`. Written only after the append succeeded, so the line is a publication, not an intention.
     public static let mediaPublished = "media_card_published"

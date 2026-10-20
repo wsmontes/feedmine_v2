@@ -18,6 +18,7 @@ import Foundation
 
 #if DEBUG
 import FeedMineDomain
+import FeedMineMedia
 import FeedMinePersistence
 import FeedMinePublication
 
@@ -99,6 +100,20 @@ final class MediaPreparationWitness: @unchecked Sendable {
         for revision in revisions where firstConsideration[revision] == nil {
             firstConsideration[revision] = now
         }
+    }
+
+    /// The exact ceiling this attempt will hand the fetcher, stated before the fetch starts so a refusal can be
+    /// paired with the number that caused it and where that number came from. Read from the same value the fetch
+    /// is handed, never re-derived.
+    func byteBudget(_ revision: OriginRevisionID, _ budget: MediaByteBudget) {
+        trace.record(ReplenishmentEvent.mediaByteBudget, [
+            "revision": revision.rawValue.uuidString,
+            "ceiling": String(budget.ceiling),
+            "source": budget.source.rawValue,
+            "rate_bps": budget.measuredBytesPerSecond.map { String($0) } ?? "none",
+            "wait_seconds": budget.waitSeconds.map { String($0) } ?? "none",
+            "cap": String(budget.maximumDownloadBytes)
+        ])
     }
 
     /// One line for this attempt's end: the revision, its source, what the feed declared, the outcome and the

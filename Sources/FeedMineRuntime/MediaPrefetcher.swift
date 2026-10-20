@@ -448,8 +448,13 @@ public actor MediaPrefetcher {
                 ? MediaPreparationAttempt(.unavailable, reason: Self.declaredRefusal(candidates, policy: policy))
                 : MediaPreparationAttempt(.textOnly)
         }
-        let ceiling = policy.downloadByteBudget
-        guard ceiling > 0 else { return MediaPreparationAttempt(.deferred) } // Not affordable now; retry later.
+        let budget = policy.byteBudget
+        guard budget.ceiling > 0 else { return MediaPreparationAttempt(.deferred) } // Not affordable now; retry later.
+        #if DEBUG
+        // The ceiling and its provenance, once per attempt and before the first fetch, so a refusal pairs with
+        // the exact number that caused it. Emitted from the same value the fetch below is handed.
+        mediaWitness?.byteBudget(revision, budget)
+        #endif
         var sawTransient = false, sawStorageFailure = false, sawSpace = false
         // The cause the settlement line states. The first definitive refusal is the preferred candidate's, which
         // is the most informative one; a transient attempt keeps its own cause because it is retried.
@@ -459,7 +464,7 @@ public actor MediaPrefetcher {
             if Task.isCancelled { return MediaPreparationAttempt(.deferred) }
             let started = ProcessInfo.processInfo.systemUptime
             let bytes: Data
-            do { bytes = try await fetch(candidate.remoteURL, ceiling) }
+            do { bytes = try await fetch(candidate.remoteURL, budget.ceiling) }
             catch {
                 // Review F04: only a definitive answer (missing, not an image, too large) is final.
                 if Self.isTransient(error) {

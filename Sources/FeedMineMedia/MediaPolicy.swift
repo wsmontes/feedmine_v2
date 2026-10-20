@@ -74,6 +74,34 @@ public struct MediaSafetyCeilings: Hashable, Sendable {
     }
 }
 
+/// Where a byte budget came from: the measured rate × wait, or the safety ceiling when nothing was measured.
+public enum MediaByteBudgetSource: String, Hashable, Sendable {
+    /// The measured throughput times the wait tolerance, clamped by the safety ceiling.
+    case dynamic
+    /// No usable measurement (or a non-finite product): the safety ceiling itself.
+    case ceilingCap = "ceiling-cap"
+}
+
+/// The byte ceiling a fetch attempt is given and its provenance. `MediaPolicy.downloadByteBudget` reads
+/// `ceiling`, so the number the fetch is handed and the number a trace states cannot disagree.
+public struct MediaByteBudget: Hashable, Sendable {
+    public let ceiling: Int
+    public let source: MediaByteBudgetSource
+    public let measuredBytesPerSecond: Double?
+    public let waitSeconds: Double?
+    /// The safety cap the budget may never exceed.
+    public let maximumDownloadBytes: Int
+
+    public init(ceiling: Int, source: MediaByteBudgetSource,
+        measuredBytesPerSecond: Double?, waitSeconds: Double?, maximumDownloadBytes: Int) {
+        self.ceiling = ceiling
+        self.source = source
+        self.measuredBytesPerSecond = measuredBytesPerSecond
+        self.waitSeconds = waitSeconds
+        self.maximumDownloadBytes = maximumDownloadBytes
+    }
+}
+
 /// How a measured image can serve this device's card slots.
 public enum MediaSlotFit: Hashable, Sendable {
     case hero
@@ -113,15 +141,27 @@ public struct MediaPolicy: Hashable, Sendable {
             || conditions.network == .constrained || conditions.network == .expensive
     }
 
-    /// Bytes that can arrive inside the runway's wait budget at the measured throughput,
-    /// bounded by the safety ceiling. Without measurements only the ceiling applies.
-    public var downloadByteBudget: Int {
-        guard let rate = conditions.measuredBytesPerSecond, let wait = conditions.waitBudgetSeconds else {
-            return ceilings.maximumDownloadBytes
+    /// Bytes that can arrive inside the runway's wait budget at the measured throughput, bounded by the safety
+    /// ceiling. Without measurements only the ceiling applies. Read from `byteBudget`, so the number the fetch is
+    /// handed and the provenance a trace states are one value.
+    public var downloadByteBudget: Int { byteBudget.ceiling }
+
+    /// The byte budget with its provenance: the exact ceiling a fetch attempt is given, and where it came from.
+    /// `dynamic` is the measured rate times the wait tolerance (clamped by the safety ceiling); `ceilingCap` is
+    /// the safety ceiling itself when no usable measurement exists.
+    public var byteBudget: MediaByteBudget {
+        let cap = ceilings.maximumDownloadBytes
+        if let rate = conditions.measuredBytesPerSecond, let wait = conditions.waitBudgetSeconds {
+            let affordable = rate * wait
+            if affordable.isFinite {
+                return MediaByteBudget(ceiling: max(0, min(cap, Int(affordable.rounded(.down)))),
+                    source: .dynamic, measuredBytesPerSecond: rate, waitSeconds: wait,
+                    maximumDownloadBytes: cap)
+            }
         }
-        let affordable = rate * wait
-        guard affordable.isFinite else { return ceilings.maximumDownloadBytes }
-        return max(0, min(ceilings.maximumDownloadBytes, Int(affordable.rounded(.down))))
+        return MediaByteBudget(ceiling: cap, source: .ceilingCap,
+            measuredBytesPerSecond: conditions.measuredBytesPerSecond,
+            waitSeconds: conditions.waitBudgetSeconds, maximumDownloadBytes: cap)
     }
 
     /// Fit of an inspected image. Uses measured dimensions only, never declared hints.
