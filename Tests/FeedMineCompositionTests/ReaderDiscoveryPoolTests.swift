@@ -785,6 +785,52 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
         XCTAssertTrue(principals.contains("https://both.xx/feed"),
             "a source that is also filed under a wanted subject stays")
     }
+
+    /// **D10**: discovery draws from text **and** audio sources. A pool that admitted only text handed the reader
+    /// a text-only internet while the product promises "listen" (measured 2026-10-20: the pool default was
+    /// `["text"]` while the shipped catalogue carries 23.446 audio sources). Video sources stay out of the
+    /// automatic pool this round; an explicit override still decides its own set.
+    func testTheDefaultPoolAdmitsTextAndAudioButNotVideo() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("discovery-kinds-\(UUID().uuidString).sqlite")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        let queue = try DatabaseQueue(path: url.path)
+        try queue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE catalog_node (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, parent_id INTEGER,
+                    name TEXT NOT NULL, kind INTEGER NOT NULL, source_count INTEGER NOT NULL DEFAULT 0,
+                    child_count INTEGER NOT NULL DEFAULT 0, language TEXT);
+                CREATE TABLE catalog_source (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+                    declared_url TEXT NOT NULL, request_url TEXT NOT NULL, display_host TEXT, media_kind TEXT NOT NULL,
+                    language TEXT, site_url TEXT, description TEXT, tags TEXT, nature TEXT, activity TEXT,
+                    latest_item_at TEXT, quality_score INTEGER, default_enabled INTEGER NOT NULL DEFAULT 1,
+                    contact_email TEXT, contact_name TEXT, contact_source TEXT, contact_type TEXT);
+                CREATE TABLE catalog_placement (id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL, node_id INTEGER NOT NULL,
+                    node_name TEXT NOT NULL, opml_file TEXT NOT NULL, sort_order INTEGER NOT NULL, title_override TEXT,
+                    language_override TEXT, media_kind_override TEXT);
+                INSERT INTO catalog_node (id, key, parent_id, name, kind) VALUES (1, 'topics', NULL, 'Topics', 0);
+                INSERT INTO catalog_source (id, key, title, declared_url, request_url, media_kind, language, quality_score) VALUES
+                    (10, 'https://text.pt/feed', 'Texto', 'https://text.pt/feed', 'https://text.pt/feed', 'text', 'pt', 90),
+                    (11, 'https://audio.pt/pod', 'Podcast', 'https://audio.pt/pod', 'https://audio.pt/pod', 'audio', 'pt', 95),
+                    (12, 'https://video.pt/feed', 'Vídeo', 'https://video.pt/feed', 'https://video.pt/feed', 'video', 'pt', 99);
+                INSERT INTO catalog_placement (source_id, node_id, node_name, opml_file, sort_order) VALUES
+                    (10, 1, 'Topics', 'x.opml', 0), (11, 1, 'Topics', 'x.opml', 1), (12, 1, 'Topics', 'x.opml', 2);
+                """)
+        }
+        let profile = ReaderDiscoveryProfile(topicNodeKeys: ["topics"])
+        let defaulted = try ReaderDiscoveryBuilder(catalogURL: url).pool(for: profile, limit: 20)
+        let admitted = Set(defaulted.entries.map(\.principal))
+        XCTAssertTrue(admitted.contains("https://text.pt/feed"), "text sources are discovered")
+        XCTAssertTrue(admitted.contains("https://audio.pt/pod"),
+            "audio sources are discovered: a text-only pool is the defect D10 names")
+        XCTAssertFalse(admitted.contains("https://video.pt/feed"),
+            "video stays out of the automatic pool this round")
+
+        let explicit = try ReaderDiscoveryBuilder(catalogURL: url, mediaKinds: ["video"])
+            .pool(for: profile, limit: 20)
+        XCTAssertEqual(Set(explicit.entries.map(\.principal)), ["https://video.pt/feed"],
+            "an explicit kind set is honoured as stated")
+    }
 }
 
 /// Counts the catalogue pages one driver serves, so a test can hold the first one while an external
