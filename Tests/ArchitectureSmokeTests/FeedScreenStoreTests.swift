@@ -290,7 +290,12 @@ final class FeedScreenStoreTests: XCTestCase {
             // pages and executes destinations. These are values/closures, never execution mechanisms.
             "searchPresentation", "searchSourcePage", "_isSearchingResults", "_searchResultsFailed", "_searchScope",
             "onSelectSearchResult", "onRequestSearchPage", "onRequestSourcePage", "onSearchScopeChanged",
-            "onRequestSearchAgain"])
+            "onRequestSearchAgain",
+            // D4: the first screen's facts (measured layout, the sticky exposure, the host's inputs and bound) are
+            // **one** value read by the screen and by the host's launch record, never a second presentation. Its
+            // measured layout is `@ObservationIgnored`; the two sticky facts are observable so the cover leaves on
+            // the pass a measurement settles the transition.
+            "firstScreen"])
     }
 
     /// P08: a truncated source page is actionable. The surface requests the next page through the same token and

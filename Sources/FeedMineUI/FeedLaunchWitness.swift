@@ -65,15 +65,15 @@ public enum FeedLaunchWitness {
     /// The first pass that carried the reader's own ready cards: how many, and when. One value, for the same reason.
     private static var firstCards: (count: Int, at: Double)?
 
-    /// The geometry of the **first card-carrying layout**, measured where the cards are actually laid out
-    /// (`FeedScreen`): how many **distinct** cards that layout drew, the bottom of the last laid-out card in
-    /// viewport coordinates and the viewport height. One value, written once, so the record can never pair a content
-    /// bottom with a different viewport or a different card count.
-    private static var firstCardsGeometry: (count: Int, contentBottom: Double, viewportHeight: Double)?
-
-    /// The publication ids the first card-carrying layout actually laid out. Repeat reports of the same card are
-    /// one card — the criterion counts distinct ids, never repeated frames.
-    private static var firstCardsLaidOutIDs = Set<String>()
+    /// The geometry of the **first exposed layout** — the cards on screen the moment the reading surface was first
+    /// shown (`FeedScreen`, `FeedFirstScreenGate`): how many distinct cards that layout carries, the bottom of the
+    /// lowest one in viewport coordinates and the viewport height. One value, written once, so the record can never
+    /// pair a content bottom with a different viewport or a different card count.
+    ///
+    /// It is deliberately **not** the first layout pass: the product holds the preparation surface over the cards
+    /// while the layout is proven, so a layout that was measured under the cover was never a first screen. The proof
+    /// must observe the exposure.
+    private static var firstExposure: (count: Int, contentBottom: Double, viewportHeight: Double)?
 
     /// The origin every fact is stated from. The app arms it at the very top of its own construction
     /// (`FeedMineApp.init`), so the record's numbers read as "milliseconds since this launch began".
@@ -101,17 +101,13 @@ public enum FeedLaunchWitness {
         }
     }
 
-    /// The geometry of the first card-carrying presentation. `isLast` states that this card is the last item the
-    /// presentation draws; a card whose bottom already reaches the viewport is conclusive too, because cards are laid
-    /// out in order — the content reaches at least that far. The **first** conclusive measurement is kept, so a later
-    /// scroll or window change cannot rewrite what the first presentation showed. The count is the number of
-    /// **distinct publication ids** that layout reported, so one tall card can never satisfy a two-card criterion.
-    public static func noteCardsGeometry(cardID: String, contentBottom: Double,
-        viewportHeight: Double, isLast: Bool) {
-        guard firstCardsGeometry == nil else { return }
-        firstCardsLaidOutIDs.insert(cardID)
-        guard isLast || contentBottom >= viewportHeight - 1 else { return }
-        firstCardsGeometry = (firstCardsLaidOutIDs.count, contentBottom, viewportHeight)
+    /// The geometry of the **first exposure**: the layout that is on screen when the reading surface is first shown.
+    /// `FeedScreen` states it once, at that moment, from the measurements it made under the preparation surface. The
+    /// first value is kept, so a later scroll or window change cannot rewrite what the first screen showed. The count
+    /// is a fact about that layout (its distinct cards), never a threshold: the criterion is the geometry.
+    public static func noteFirstExposure(cardCount: Int, contentBottom: Double, viewportHeight: Double) {
+        guard firstExposure == nil, cardCount > 0, contentBottom.isFinite, viewportHeight.isFinite else { return }
+        firstExposure = (cardCount, contentBottom, viewportHeight)
     }
 
     private static func noteWaitSurface(_ kind: String) {
@@ -125,14 +121,14 @@ public enum FeedLaunchWitness {
     public static var record: String {
         let wait = firstWait
         let cards = firstCards
-        let geometry = firstCardsGeometry
+        let exposure = firstExposure
         return "wait_passes=\(waitPasses) kind=\(wait?.kind ?? "none")"
             + " first_wait_ms=\(wait.map { clock($0.at) } ?? "n/a")"
             + " last_wait_ms=\(lastWaitAt.map(clock) ?? "n/a")"
             + " cards=\(cards?.count ?? 0) first_cards_ms=\(cards.map { clock($0.at) } ?? "n/a")"
-            + " content_bottom=\(geometry.map { clock($0.contentBottom) } ?? "n/a")"
-            + " viewport_height=\(geometry.map { clock($0.viewportHeight) } ?? "n/a")"
-            + " render_ready_cards=\(geometry?.count ?? 0)"
+            + " content_bottom=\(exposure.map { clock($0.contentBottom) } ?? "n/a")"
+            + " viewport_height=\(exposure.map { clock($0.viewportHeight) } ?? "n/a")"
+            + " render_ready_cards=\(exposure?.count ?? 0)"
     }
 
     /// Whether the reader's first reading surface was already their feed: no wait surface was rendered at all, or
@@ -155,6 +151,7 @@ public enum FeedLaunchWitness {
         firstWait = nil
         lastWaitAt = nil
         firstCards = nil
+        firstExposure = nil
         origin = nil
     }
 

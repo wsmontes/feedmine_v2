@@ -117,6 +117,13 @@ final class AppComposition {
         return Self.namesAnything(settings.discoveryProfile)
     }
     var currentPreset: ReaderPresetID { currentContextKey.preset }
+    /// D4: the bound the route to the reading surface is held under — the run's own measured tolerance for one
+    /// operation (`FeedAssociation.preparationWaitSeconds`), or its bootstrap value before the association exists.
+    /// The host executes the wait (it owns the clock); `FeedFirstScreenGate` judges the expiry along with the
+    /// measured layout.
+    var firstScreenWait: Duration {
+        .seconds(association?.preparationWaitSeconds ?? FeedAssociation.mediaWaitBootstrapSeconds)
+    }
     private var selectionVersion: UInt64 = 2
     private(set) var sourceOptions: [FeedSourceOption] = []
     @ObservationIgnored private var sourceSearchID = UUID()
@@ -2181,6 +2188,12 @@ final class FeedAssociation {
     private(set) var savedMediaRevision = 0
     @ObservationIgnored private let tidy: MediaTidy
     @ObservationIgnored private let mediaWaitBudget: LiveValue<Double>
+    /// D4: the tolerance **this run** measured for one operation — the same number the media preparation window and
+    /// its byte budget read (`mediaWaitSeconds`: measured p95 × safety + margin, bounded by the transport's own
+    /// ceiling; the bootstrap value before any sample exists). The first screen reads it as the bound on how long
+    /// its preparation may outlast the cards it already has, so the wait is a measured fact and not a constant of
+    /// the UI.
+    var preparationWaitSeconds: Double { mediaWaitBudget.current }
     /// P05: the volume capacity is sampled **off** the MainActor at causal lifecycle moments and read here as a
     /// snapshot. The budget getter performs no filesystem I/O, so a viewport opportunity cannot freeze on a disk
     /// query.

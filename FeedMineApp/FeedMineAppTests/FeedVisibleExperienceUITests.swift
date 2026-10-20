@@ -3,15 +3,20 @@ import XCTest
 
 /// The facts the architect asked to see, measured instead of argued in a report:
 ///
-///  1. **the first presented screen is full** — one criterion, no average and no fraction: in the first
-///     card-carrying presentation the bottom of the last laid-out card is at (or below) the viewport bottom, with
-///     1 pt of tolerance. The number of distinct render-ready cards is recorded as information, **never** as a
-///     threshold: the PM's corrected D4 states no universal two-card floor. The measurement comes from the app's
-///     own record (`FeedLaunchWitness`, `feed-launch-record`: `content_bottom`,
-///     `viewport_height`, `render_ready_cards`), taken where `FeedScreen` lays the cards out, because
-///     `XCUIApplication.launch()` only returns after the app is idle and can never witness the first frame. Today
-///     the record carries one card, so this test is expected to FAIL: the product fix (hold the presentation until
-///     the screen is covered) is the architect's, not the test's.
+///  1. **the first presented screen is full** — one criterion, no average and no fraction: at the **first exposure**
+///     the bottom of the last laid-out card is at (or below) the viewport bottom, with 1 pt of tolerance. The number
+///     of distinct render-ready cards is recorded as information, **never** as a threshold: the PM's corrected D4
+///     states no universal two-card floor. The measurement comes from the app's own record (`FeedLaunchWitness`,
+///     `feed-launch-record`: `content_bottom`, `viewport_height`, `render_ready_cards`), taken where `FeedScreen`
+///     lays the cards out, because `XCUIApplication.launch()` only returns after the app is idle and can never
+///     witness the first frame.
+///
+///     The record states the **exposure**, not the first layout pass: the product now holds the preparation
+///     surface over the laid-out cards until the measured layout fills the viewport (`FeedFirstScreenGate`), so a
+///     layout measured under that cover was never a first screen. The recorded red run of 2026-10-20
+///     (`docs/reviews/evidence/2026-10-20-first-screen/`: one card, `content_bottom=141` of `viewport_height=730`)
+///     is the case this criterion exists for, and its failing-before/passing-after unit counterpart is
+///     `Tests/FeedMineCompositionTests/FirstScreenPresentationTests.swift`.
 ///  2. **the visible failure recovers** — the fixture transport (`FEEDMINE_LOCAL_FEEDS`) fails until the reader
 ///     taps "Tentar novamente" (`FEEDMINE_FAIL_FIRST_FEED_ATTEMPT=1`, DEBUG only). The surface must be the approved
 ///     `.unreachable` copy, and the retry itself must deliver cards and remove the wait surface.
@@ -48,8 +53,8 @@ final class FeedVisibleExperienceUITests: XCTestCase {
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 120), "o feed precisa chegar à tela")
         // XCTest's launch returns once the app is idle, so this sample is only the state the reader can still see.
-        // The criterion itself is the app's own record: the geometry of the **first card-carrying presentation**,
-        // measured where the cards were laid out (`FeedLaunchWitness.noteCardsGeometry`).
+        // The criterion itself is the app's own record: the geometry of the **first exposure**, stated by
+        // `FeedScreen` when the reading surface is first shown (`FeedLaunchWitness.noteFirstExposure`).
         let first = sampleFirstScreen(app, scroll: scroll, since: started)
         let record = try launchRecord(app, name: "first-screen")
 

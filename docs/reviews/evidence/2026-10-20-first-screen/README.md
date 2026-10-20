@@ -45,3 +45,30 @@ sufficient to fill the real viewport, judged by this geometry, not by a count.
 Reading of this run: the first card-carrying presentation laid out 1 distinct card (141 pt) in a 730 pt viewport;
 the content stopped 589 pt before the viewport bottom. The product fix (hold the presentation until the visible
 area is filled) is the architect's; this evidence is the red side of that criterion.
+
+## Product fix — the transition is held by the measured layout
+
+The red run above is answered in the product, not in the criterion:
+
+- `FeedFirstScreenGate` (`Sources/FeedMineUI/FeedFirstScreenGate.swift`) decides the surface from the **measured**
+  layout — distinct laid-out cards, the lowest card bottom in viewport coordinates, and the measured viewport
+  height — with the same 1 pt tolerance the criterion states. Card count is an output, never the rule.
+- `FeedScreen` keeps the preparation surface over the laid-out cards while the gate says `preparation`. The cards
+  are laid out (that is what makes the measurement possible); publication, admission and the cards themselves are
+  unchanged, and they keep growing underneath. The view remains a renderer: the lifecycle that states the facts
+  (a prepared window, the exposure, the bound) is the host's, and the cards behind the cover are hidden from the
+  accessibility tree for the same reason they are invisible on screen.
+- Exits are stated once and all reach a surface: offer exhausted (`endOfContent`) and transport failure
+  (`unreachable`/`failed`) show what exists at once; the bounded maximum wait is the run's **measured** tolerance
+  for one operation (`FeedAssociation.preparationWaitSeconds`, the number the media window and byte budget already
+  read); no cards draws the existing loading/failure surface, whose copy is its work state.
+- A durable restore (the window already there on the first pass) was never prepared on this screen, so it is shown
+  at once — the reopen criterion is untouched.
+- The launch record now states the **first exposure**, not the first layout pass (`FeedLaunchWitness
+  .noteFirstExposure`, called when the reading surface is first shown), so a layout measured under the cover can
+  never be reported as a first screen.
+
+Unit evidence: `Tests/FeedMineCompositionTests/FirstScreenPresentationTests.swift` (the recorded one-card case is
+held; the 729/730 boundary; one tall card passes and twelve short ones do not; exhausted/offline/bounded exits;
+restore and no-card surfaces). The UI journey above remains the device-level judge; it is not re-run here.
+

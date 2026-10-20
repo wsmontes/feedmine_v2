@@ -279,6 +279,35 @@ struct FeedMineApp: App {
                                 editorialInvitation(for: card, index: index, previous: previous,
                                     association: association)
                             })
+                            // D4: the first screen's lifecycle is the host's, not the renderer's. The screen draws
+                            // `FeedScreenStore.firstScreenSurface`; here the host states the facts that decide it
+                            // (a window that was really prepared, the exposure, the run's bounded maximum wait) and
+                            // keeps the launch record in step with the surface that is actually drawn.
+                            .onAppear {
+                                prepareFirstScreen(of: association)
+                                reportFirstScreenSurface(of: association)
+                            }
+                            .onChange(of: association.store.renderedItems.isEmpty) { _, empty in
+                                if empty { prepareFirstScreen(of: association) }
+                                reportFirstScreenSurface(of: association)
+                            }
+                            .onChange(of: association.store.work) { _, _ in
+                                reportFirstScreenSurface(of: association)
+                            }
+                            .onChange(of: association.store.isSearching) { _, _ in
+                                reportFirstScreenSurface(of: association)
+                            }
+                            // The bounded maximum wait: the run's own tolerance for one operation (the number its
+                            // media window and byte budget already read) is how long a preparation may outlast the
+                            // content it already has. It is the last exit, not the intended one.
+                            .task(id: association.store.firstScreenSurface) {
+                                guard association.store.firstScreenSurface == .preparation else { return }
+                                let remaining = composition.firstScreenWait - association.store.firstScreenWaited
+                                if remaining > .zero { try? await Task.sleep(for: remaining) }
+                                guard !Task.isCancelled else { return }
+                                association.store.expireFirstScreenWait()
+                                reportFirstScreenSurface(of: association)
+                            }
                             .task(id: association.store.state.presentation?.window) {
                                 recordWindowFacts(of: association)
                             }
@@ -1168,6 +1197,23 @@ struct ReaderHost: UIViewControllerRepresentable {
             }))
     }
 
+    /// D4: the facts the first-screen decision needs from the host — whether a selection exists at all, and the bound
+    /// this run measured for one operation. Stated when the screen appears and whenever the window becomes empty
+    /// again; an empty window is what makes the hold legitimate (a durable restore was never prepared on this
+    /// screen). The decision itself is `FeedScreenStore.firstScreenSurface`, which the screen draws and this host's
+    /// launch record reads.
+    @MainActor private func prepareFirstScreen(of association: FeedAssociation) {
+        association.store.noteFirstScreenAppeared(hasSources: composition.hasSelectedSources,
+            maximumWait: composition.firstScreenWait)
+    }
+
+    /// The reading surface is on screen: state it where the launch record and the durability of the decision read it.
+    /// Called after every fact that can settle the question (appearance, a window arrival, the work state, the
+    /// search state, and the host's bounded wait).
+    @MainActor private func reportFirstScreenSurface(of association: FeedAssociation) {
+        association.store.reportFirstScreenSurfaceIfReading()
+    }
+
     /// The facts the invitation depends on, recorded once per window change — off the render path. The cards now
     /// carry their own source, so this is arithmetic over a value, not a database read per card.
     @MainActor private func recordWindowFacts(of association: FeedAssociation) {
@@ -1515,9 +1561,21 @@ struct ReaderHost: UIViewControllerRepresentable {
     private var launchBranch: FeedLaunchWitness.Branch {
         guard let association = composition.association else { return .launchProgress }
         guard composition.hasSelectedSources else { return .notAWaitSurface }
-        let rendered = association.store.renderedItems
-        guard rendered.isEmpty else { return .cards(rendered.count) }
-        return .feedAbsence(Self.absenceKind(association.store.state.work))
+        // D4: the branch is the surface the screen is drawing, read from the **one** decision both sides share
+        // (`FeedScreenStore.firstScreenSurface`). Cards that are still behind the preparation cover are not on
+        // screen, so they are not stated as cards; a search draws its own results surface and is not a wait.
+        switch association.store.firstScreenSurface {
+        case .search, .sourcesEmpty:
+            return .notAWaitSurface
+        case .preparation, .absence:
+            return .feedAbsence(Self.absenceKind(association.store.state.work))
+        case .reading:
+            let rendered = association.store.renderedItems
+            guard !rendered.isEmpty else {
+                return .feedAbsence(Self.absenceKind(association.store.state.work))
+            }
+            return .cards(rendered.count)
+        }
     }
 
     /// The work an absence surface states, as the short token the launch record carries.
