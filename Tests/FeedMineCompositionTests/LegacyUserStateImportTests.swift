@@ -12,6 +12,27 @@ import FeedMineComposition
 /// fixture: `bookmark_list(list_id, title, position)`, `source_collection(collection_id, name, source_keys)`) is
 /// exercised separately: it must be reported, not crash.
 final class LegacyUserStateImportTests: XCTestCase {
+    /// The sibling directory is V1's `Feedmine`, but a case-insensitive volume may hold it under the other
+    /// spelling (the D7-A rehearsal measured "no legacy container" while the file existed). The candidate list is
+    /// enumerated case-insensitively, exact spelling first, so neither volume shape hides the reader's library.
+    func testCandidateUserStateURLsFindTheSiblingWhateverItsCase() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: base) }
+        let support = base.appendingPathComponent("Application Support", isDirectory: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        let v2Support = support.appendingPathComponent("FeedMine", isDirectory: true)
+        try FileManager.default.createDirectory(at: v2Support, withIntermediateDirectories: true)
+        let v1 = support.appendingPathComponent("feedmine", isDirectory: true)
+        try FileManager.default.createDirectory(at: v1, withIntermediateDirectories: true)
+        try Data("v1".utf8).write(to: v1.appendingPathComponent("user.sqlite"))
+
+        let candidates = LegacyV1Upgrade.candidateUserStateURLs(applicationSupport: v2Support)
+        XCTAssertEqual(candidates.count, 1, "Application Support only: no Documents argument was given")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: candidates[0].path),
+            "the case-variant sibling is found; a hardcoded second spelling resolves to nothing here")
+        XCTAssertEqual(candidates[0].lastPathComponent, "user.sqlite")
+    }
+
     /// A container shaped like the app's own: `Application Support/FeedMine` (V2) beside
     /// `Application Support/Feedmine` (V1).
     private struct Container {

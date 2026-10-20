@@ -18,6 +18,9 @@ struct FeedMineApp: App {
     @State private var readerError: String?
     /// The lens hidden by a swipe, keyed by the selection it was hidden for: a new selection shows it again.
     @State private var hiddenLensSignature: String?
+    /// D7-A: whether the reader still owes an acknowledgement for a V1 upgrade. Set once when the surface
+    /// appears; cleared only by the reader's own action.
+    @State private var showsLegacyUpgradeNotice = false
     @Environment(\.scenePhase) private var phase
 
     init() {
@@ -321,14 +324,16 @@ struct FeedMineApp: App {
                 .toolbar(.hidden, for: .navigationBar)
                 // D7-A: the first open after a V1 upgrade states what was carried and what this build still
                 // cannot open. Dismissing it records the presentation; the receipt keeps the counts.
-                .alert("Da versão anterior", isPresented: Binding(
-                    get: { composition.legacyUpgradeNotice != nil },
-                    set: { presented in
-                        if !presented { composition.acknowledgeLegacyUpgradeNotice() }
-                    })) {
+                .alert("Da versão anterior", isPresented: $showsLegacyUpgradeNotice) {
+                    // Only the reader's own acknowledgement records the presentation. A computed binding whose
+                    // setter acknowledged on `false` was cleared by SwiftUI before the alert could be drawn
+                    // (measured in the D7-A rehearsal: `notice_presented` flipped to 1 with no alert on screen).
                     Button("Entendi", role: .cancel) { composition.acknowledgeLegacyUpgradeNotice() }
                 } message: {
                     Text(composition.legacyUpgradeNoticeText)
+                }
+                .task {
+                    showsLegacyUpgradeNotice = composition.legacyUpgradeNotice != nil
                 }
                 .sheet(item: sheetItem, onDismiss: {
                     // A selection made in the source surface is adopted when it closes, never mid-list, and the
