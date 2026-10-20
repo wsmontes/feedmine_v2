@@ -6,7 +6,7 @@ Source run (simulator `FeedMine Fresh`, 92CDD7F7-724B-42D2-A1AA-3B7051E2DD65):
 xcodebuild -project FeedMineApp/FeedMineApp.xcodeproj -scheme FeedMine -configuration Debug \
   -destination 'platform=iOS Simulator,id=92CDD7F7-724B-42D2-A1AA-3B7051E2DD65' \
   -derivedDataPath /private/tmp/fm-firstscreen-derived -parallel-testing-enabled NO \
-  -resultBundlePath /private/tmp/fm-firstscreen-20261020-103552.xcresult \
+  -resultBundlePath /private/tmp/fm-firstscreen-20261020-110324.xcresult \
   -testLanguage pt-BR -testRegion BR \
   -only-testing:FeedMineUITests/FeedVisibleExperienceUITests test
 ```
@@ -22,7 +22,7 @@ of a 730.0 pt viewport: a 589.0 pt gap below the last laid-out card (epsilon 1.0
 The app's own witness (`feed-launch-record`), copied verbatim in `witness.txt`:
 
 ```
-wait_passes=4 kind=launch-progress first_wait_ms=724 last_wait_ms=1020 cards=1 first_cards_ms=1304 content_bottom=141 viewport_height=730
+wait_passes=4 kind=launch-progress first_wait_ms=653 last_wait_ms=929 cards=1 first_cards_ms=1144 content_bottom=141 viewport_height=730 render_ready_cards=1
 ```
 
 `first-presented-screen.json` is the new criterion's complete `VISIBLE_FIRST_SCREEN_JSON` line, verbatim.
@@ -32,6 +32,16 @@ was the criterion that has now been removed. Screenshot,
 accessibility tree and the same JSON are attached to the test in the result bundle under
 `first-presented-screen-*`.
 
-Reading: the first card-carrying presentation laid out one card (141 pt) in a 730 pt viewport; the content
-therefore stopped 589 pt before the viewport bottom. The product fix (hold the presentation until the screen is
-covered) is the architect's; this evidence is the red side of that criterion.
+## Criterion (D4), stated once
+
+The first presented state passes when, on the first card-carrying record:
+
+`content_bottom >= viewport_height - 1 pt` — the last laid-out card reaches (or passes) the viewport bottom.
+
+`render_ready_cards` (distinct publication ids in that same layout) is recorded as information, **never** as a
+threshold: the PM's corrected D4 states no universal two-card floor. The criterion is a valid editorial prefix
+sufficient to fill the real viewport, judged by this geometry, not by a count.
+
+Reading of this run: the first card-carrying presentation laid out 1 distinct card (141 pt) in a 730 pt viewport;
+the content stopped 589 pt before the viewport bottom. The product fix (hold the presentation until the visible
+area is filled) is the architect's; this evidence is the red side of that criterion.

@@ -66,9 +66,14 @@ public enum FeedLaunchWitness {
     private static var firstCards: (count: Int, at: Double)?
 
     /// The geometry of the **first card-carrying layout**, measured where the cards are actually laid out
-    /// (`FeedScreen`): the bottom of the last laid-out card in viewport coordinates and the viewport height. One
-    /// value, written once, so the record can never pair a content bottom with a different viewport.
+    /// (`FeedScreen`): how many **distinct** cards that layout drew, the bottom of the last laid-out card in
+    /// viewport coordinates and the viewport height. One value, written once, so the record can never pair a content
+    /// bottom with a different viewport or a different card count.
     private static var firstCardsGeometry: (count: Int, contentBottom: Double, viewportHeight: Double)?
+
+    /// The publication ids the first card-carrying layout actually laid out. Repeat reports of the same card are
+    /// one card — the criterion counts distinct ids, never repeated frames.
+    private static var firstCardsLaidOutIDs = Set<String>()
 
     /// The origin every fact is stated from. The app arms it at the very top of its own construction
     /// (`FeedMineApp.init`), so the record's numbers read as "milliseconds since this launch began".
@@ -99,12 +104,14 @@ public enum FeedLaunchWitness {
     /// The geometry of the first card-carrying presentation. `isLast` states that this card is the last item the
     /// presentation draws; a card whose bottom already reaches the viewport is conclusive too, because cards are laid
     /// out in order — the content reaches at least that far. The **first** conclusive measurement is kept, so a later
-    /// scroll or window change cannot rewrite what the first presentation showed.
-    public static func noteCardsGeometry(count: Int, contentBottom: Double,
+    /// scroll or window change cannot rewrite what the first presentation showed. The count is the number of
+    /// **distinct publication ids** that layout reported, so one tall card can never satisfy a two-card criterion.
+    public static func noteCardsGeometry(cardID: String, contentBottom: Double,
         viewportHeight: Double, isLast: Bool) {
-        guard firstCardsGeometry == nil, count > 0 else { return }
+        guard firstCardsGeometry == nil else { return }
+        firstCardsLaidOutIDs.insert(cardID)
         guard isLast || contentBottom >= viewportHeight - 1 else { return }
-        firstCardsGeometry = (count, contentBottom, viewportHeight)
+        firstCardsGeometry = (firstCardsLaidOutIDs.count, contentBottom, viewportHeight)
     }
 
     private static func noteWaitSurface(_ kind: String) {
@@ -125,6 +132,7 @@ public enum FeedLaunchWitness {
             + " cards=\(cards?.count ?? 0) first_cards_ms=\(cards.map { clock($0.at) } ?? "n/a")"
             + " content_bottom=\(geometry.map { clock($0.contentBottom) } ?? "n/a")"
             + " viewport_height=\(geometry.map { clock($0.viewportHeight) } ?? "n/a")"
+            + " render_ready_cards=\(geometry?.count ?? 0)"
     }
 
     /// Whether the reader's first reading surface was already their feed: no wait surface was rendered at all, or

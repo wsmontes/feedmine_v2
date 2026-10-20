@@ -3,13 +3,15 @@ import XCTest
 
 /// The facts the architect asked to see, measured instead of argued in a report:
 ///
-///  1. **the first presented screen reaches the bottom of the viewport** — a single criterion, no average and no
-///     fraction: in the first card-carrying presentation the bottom of the last laid-out card is at (or below) the
-///     viewport bottom, with 1 pt of tolerance. The measurement comes from the app's own record
-///     (`FeedLaunchWitness`, `feed-launch-record`: `content_bottom`, `viewport_height`, `cards`), taken where
-///     `FeedScreen` lays the cards out, because `XCUIApplication.launch()` only returns after the app is idle and
-///     can never witness the first frame. Today the record carries one card, so this test is expected to FAIL: the
-///     product fix (hold the presentation until the screen is covered) is the architect's, not the test's.
+///  1. **the first presented screen is full** — one criterion, no average and no fraction: in the first
+///     card-carrying presentation the bottom of the last laid-out card is at (or below) the viewport bottom, with
+///     1 pt of tolerance. The number of distinct render-ready cards is recorded as information, **never** as a
+///     threshold: the PM's corrected D4 states no universal two-card floor. The measurement comes from the app's
+///     own record (`FeedLaunchWitness`, `feed-launch-record`: `content_bottom`,
+///     `viewport_height`, `render_ready_cards`), taken where `FeedScreen` lays the cards out, because
+///     `XCUIApplication.launch()` only returns after the app is idle and can never witness the first frame. Today
+///     the record carries one card, so this test is expected to FAIL: the product fix (hold the presentation until
+///     the screen is covered) is the architect's, not the test's.
 ///  2. **the visible failure recovers** — the fixture transport (`FEEDMINE_LOCAL_FEEDS`) fails until the reader
 ///     taps "Tentar novamente" (`FEEDMINE_FAIL_FIRST_FEED_ATTEMPT=1`, DEBUG only). The surface must be the approved
 ///     `.unreachable` copy, and the retry itself must deliver cards and remove the wait surface.
@@ -69,6 +71,7 @@ final class FeedVisibleExperienceUITests: XCTestCase {
             violations.append("the app's record never carried cards")
         }
         let contentBottom = record.contentBottom
+        let renderReady = record.renderReadyCards
         let viewportHeight = record.viewportHeight
         if contentBottom == nil || viewportHeight == nil {
             violations.append("the app's record did not capture the first card-carrying layout")
@@ -78,6 +81,8 @@ final class FeedVisibleExperienceUITests: XCTestCase {
                 + "\(compact(viewportHeight)) pt viewport: a \(compact(viewportHeight - contentBottom)) pt gap below "
                 + "the last laid-out card (epsilon \(epsilonPoints) pt)")
         }
+        // `render_ready_cards` is recorded as information, never as a threshold: the PM's corrected D4 has no
+        // universal two-card floor. The criterion is the geometry above; the count says how the prefix was made.
 
         let evidence: [String: Any] = [
             "test": "first-presented-screen",
@@ -100,6 +105,7 @@ final class FeedVisibleExperienceUITests: XCTestCase {
             "record_first_cards_ms": record.firstCardsMS ?? -1,
             "record_content_bottom": contentBottom ?? -1,
             "record_viewport_height": viewportHeight ?? -1,
+            "record_render_ready_cards": renderReady ?? -1,
             "record_wait_passes": record.waitPasses,
             "violations": violations
         ]
@@ -382,6 +388,7 @@ final class FeedVisibleExperienceUITests: XCTestCase {
         let firstCardsMS: Int?
         let contentBottom: Double?
         let viewportHeight: Double?
+        let renderReadyCards: Int?
 
         func value(_ field: String) -> String? {
             raw.split(separator: " ").map(String.init).first { $0.hasPrefix(field + "=") }
@@ -412,7 +419,8 @@ final class FeedVisibleExperienceUITests: XCTestCase {
             cards: integer("cards") ?? -1,
             firstCardsMS: integer("first_cards_ms"),
             contentBottom: number("content_bottom"),
-            viewportHeight: number("viewport_height"))
+            viewportHeight: number("viewport_height"),
+            renderReadyCards: integer("render_ready_cards"))
     }
 
     /// One decimal place, for assertion text only.

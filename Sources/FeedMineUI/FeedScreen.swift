@@ -124,7 +124,8 @@ public struct FeedScreen: View {
                                     // The first card-carrying presentation, as it was laid out: the bottom of this
                                     // card in viewport coordinates (`frame` is the scroll view's own space) and the
                                     // viewport height (`height`). The witness keeps the first conclusive value.
-                                    FeedLaunchWitness.noteCardsGeometry(count: items.count,
+                                    FeedLaunchWitness.noteCardsGeometry(
+                                        cardID: card.id.rawValue.uuidString,
                                         contentBottom: Double(proof.frame.maxY),
                                         viewportHeight: Double(proof.height),
                                         isLast: index == items.count - 1)
