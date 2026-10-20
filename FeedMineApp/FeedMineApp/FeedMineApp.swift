@@ -322,24 +322,6 @@ struct FeedMineApp: App {
                         onClose: { showsPlayer = false })
                 }
                 .toolbar(.hidden, for: .navigationBar)
-                // D7-A: the first open after a V1 upgrade states what was carried and what this build still
-                // cannot open. Dismissing it records the presentation; the receipt keeps the counts.
-                .alert("Da versão anterior", isPresented: $showsLegacyUpgradeNotice) {
-                    // Only the reader's own acknowledgement records the presentation. A computed binding whose
-                    // setter acknowledged on `false` was cleared by SwiftUI before the alert could be drawn
-                    // (measured in the D7-A rehearsal: `notice_presented` flipped to 1 with no alert on screen).
-                    Button("Entendi", role: .cancel) { composition.acknowledgeLegacyUpgradeNotice() }
-                } message: {
-                    Text(composition.legacyUpgradeNoticeText)
-                }
-                .task {
-                    showsLegacyUpgradeNotice = composition.legacyUpgradeNotice != nil
-                }
-                // The receipt is read during launch, which can finish after this surface first appears: react to the
-                // state, not only to the one-shot appear, or the notice stays invisible for a second reason.
-                .onChange(of: composition.legacyUpgradeNotice != nil) { _, owed in
-                    showsLegacyUpgradeNotice = owed
-                }
                 .sheet(item: sheetItem, onDismiss: {
                     // A selection made in the source surface is adopted when it closes, never mid-list, and the
                     // appearance is re-derived because the settings surface may have changed it.
@@ -536,6 +518,24 @@ struct FeedMineApp: App {
                 .alert("Não foi possível atualizar", isPresented: Binding(get: { readerError != nil }, set: { if !$0 { readerError = nil } })) {
                     Button("OK") { readerError = nil }
                 } message: { Text(readerError ?? "") }
+            }
+            // D7-A: the first open after a V1 upgrade states what was carried and what this build still
+            // cannot open. Dismissing it records the presentation; the receipt keeps the counts.
+            .alert("Da versão anterior", isPresented: $showsLegacyUpgradeNotice) {
+                // Only the reader's own acknowledgement records the presentation. A computed binding whose
+                // setter acknowledged on `false` was cleared by SwiftUI before the alert could be drawn
+                // (measured in the D7-A rehearsal: `notice_presented` flipped to 1 with no alert on screen).
+                Button("Entendi", role: .cancel) { composition.acknowledgeLegacyUpgradeNotice() }
+            } message: {
+                Text(composition.legacyUpgradeNoticeText)
+            }
+            .task {
+                showsLegacyUpgradeNotice = composition.legacyUpgradeNotice != nil
+            }
+            // The receipt is read during launch, which can finish after this surface first appears: react to the
+            // state, not only to the one-shot appear, or the notice stays invisible for a second reason.
+            .onChange(of: composition.legacyUpgradeNotice != nil) { _, owed in
+                showsLegacyUpgradeNotice = owed
             }
             .task {
                 // U2: the reader stays in the app. The composition resolves the frozen target and

@@ -81,6 +81,17 @@ public struct WALCheckpointResult: Sendable, Equatable {
 public final class RuntimeDatabase: Sendable {
     private let pool: DatabasePool
 
+    /// The directory a store is actually opened in: an existing case variant of the requested name wins, because
+    /// the volume may not let us create the other spelling (EIO) and the existing one holds the reader's data.
+    static func resolveExistingDirectory(_ directory: URL, fileManager: FileManager = .default) -> URL {
+        let parent = directory.deletingLastPathComponent()
+        let name = directory.lastPathComponent
+        guard let entries = try? fileManager.contentsOfDirectory(at: parent,
+            includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return directory }
+        if let exact = entries.first(where: { $0.lastPathComponent == name }) { return exact }
+        return entries.first { $0.lastPathComponent.lowercased() == name.lowercased() } ?? directory
+    }
+
     public convenience init(
         location: RuntimeDatabaseLocation,
         fileManager: FileManager = .default
@@ -94,11 +105,17 @@ public final class RuntimeDatabase: Sendable {
         migrator: DatabaseMigrator,
         fileManager: FileManager = .default
     ) throws {
+        // Open the directory that exists, not the spelling we prefer. On a case-insensitive volume, creating
+        // `FeedMine` beside an existing `Feedmine` fails with EIO inside the app sandbox (measured 2026-10-20 in
+        // the D7-A rehearsal: NSCocoaErrorDomain 512 / POSIX 5), and the existing case variant is the reader's own
+        // directory — on an upgrade it is exactly where V1's data lives.
+        let directory = Self.resolveExistingDirectory(location.directory, fileManager: fileManager)
         do {
-            try fileManager.createDirectory(at: location.directory, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
-            throw RuntimeDatabaseError.couldNotCreateDirectory(directory: location.directory, message: error.localizedDescription)
+            throw RuntimeDatabaseError.couldNotCreateDirectory(directory: directory, message: error.localizedDescription)
         }
+        let databaseURL = directory.appendingPathComponent("runtime.sqlite")
 
         var configuration = Configuration()
         // GRDB applies this to writer and reader connections. No duplicate PRAGMA setup.
@@ -106,7 +123,7 @@ public final class RuntimeDatabase: Sendable {
         // DatabasePool's default persistent journal mode establishes WAL.
         // Reader count and busy behavior use GRDB defaults, not product tuning.
         do {
-            let pool = try DatabasePool(path: location.databaseURL.path, configuration: configuration)
+            let pool = try DatabasePool(path: databaseURL.path, configuration: configuration)
             var nonErasingMigrator = migrator
             // Enforce non-erasure even for an internally supplied test migrator.
             nonErasingMigrator.eraseDatabaseOnSchemaChange = false
