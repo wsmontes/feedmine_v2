@@ -3785,17 +3785,17 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
-    /// Two writes commit in an order the main actor may observe in any sequence. The adapter states that order,
-    /// so a late notification of an older write cannot replace a newer value — and a write the store refuses
-    /// states nothing at all.
-    func testSettingsWritesStateTheirCommitOrderAndARefusedWriteIsSilent() async throws {
+    /// The signal a write sends states **that** a write happened, not the value: the composition drops its cache,
+    /// so two writers reaching the main actor in either order cannot install an older value. A write the store
+    /// refuses sends nothing.
+    func testSettingsWritesAreAnnouncedOnlyWhenStored() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let database = try RuntimeDatabase(location: .init(directory: directory))
         _ = try ReaderPreferencesStore(database: database).initialize(sourceKeys: [])
-        let observed = Mutex<[UInt64]>([])
-        let adapter = ReaderSettingsBackendAdapter(database: database) { _, revision in
-            observed.withLock { $0.append(revision) }
+        let announcements = Mutex<Int>(0)
+        let adapter = ReaderSettingsBackendAdapter(database: database) {
+            announcements.withLock { $0 += 1 }
         }
         var first = ReaderSettings.standard
         first.editorialTipsHidden = true
@@ -3803,9 +3803,7 @@ final class CompositionTests: XCTestCase {
         var second = first
         second.editorialTipsHidden = false
         try await adapter.update(second)
-        let revisions = observed.withLock { $0 }
-        XCTAssertEqual(revisions.count, 2, "each accepted write states its order")
-        XCTAssertLessThan(revisions[0], revisions[1], "and the later write carries the later order")
+        XCTAssertEqual(announcements.withLock { $0 }, 2, "each accepted write is announced")
 
         // The store now cannot accept a write at all: an attempt must throw and must not be announced.
         try await database.write { db in try db.execute(sql: "DROP TABLE reader_preferences") }
@@ -3814,7 +3812,7 @@ final class CompositionTests: XCTestCase {
         var refused = false
         do { try await adapter.update(third) } catch { refused = true }
         XCTAssertTrue(refused, "a write the store cannot accept throws")
-        XCTAssertEqual(observed.withLock { $0 }.count, 2, "and a refused write states nothing")
+        XCTAssertEqual(announcements.withLock { $0 }, 2, "and a refused write states nothing")
     }
 
     /// The other answer to the same question: the reader skips. Nothing is named, so acquisition stays

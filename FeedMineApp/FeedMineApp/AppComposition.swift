@@ -1310,7 +1310,7 @@ final class AppComposition {
         var settings = current.settings
         settings.hasSeenOnboarding = true
         guard (try? preferences.setSettings(settings)) != nil else { return false }
-        noteReaderSettingsWritten(settings)
+        noteReaderSettingsWritten()
         return true
     }
 
@@ -1326,7 +1326,7 @@ final class AppComposition {
             var settings = current.settings
             settings.discoveryProfile = recipe
             settings.hasSeenOnboarding = true
-            if (try? preferences.setSettings(settings)) != nil { noteReaderSettingsWritten(settings); stored = true }
+            if (try? preferences.setSettings(settings)) != nil { noteReaderSettingsWritten(); stored = true }
         }
         // R18: a refused write keeps the reader in the first run; rebuilding the session would present answers that
         // are not durable.
@@ -1442,10 +1442,10 @@ final class AppComposition {
     /// T10: the settings surface's store, and the appearance the reader's own preferences imply right now.
     func makeReaderSettingsStore() -> ReaderSettingsStore? {
         libraryDatabase().map { database in
-            ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: database) { [weak self] stored, revision in
+            ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: database) { [weak self] in
                 // The one place a settings write refreshes what the feed reads: the snapshot this composition
                 // caches for its per-card render path and the per-subject answers cached beside it.
-                self?.noteReaderSettingsWritten(stored, revision: revision)
+                self?.noteReaderSettingsWritten()
             })
         }
     }
@@ -1828,7 +1828,7 @@ final class AppComposition {
         settings.discoveryProfile.topicPreferences["topic:\(node)"] = level == .neutral ? nil : level
         do {
             _ = try preferences.setSettings(settings)
-            noteReaderSettingsWritten(settings)
+            noteReaderSettingsWritten()
         } catch {
             trace?.record("answer_failed", ["subject": node, "stage": "persist"])
             return false
@@ -1886,9 +1886,6 @@ final class AppComposition {
     /// time is a synchronous read on the main actor per card per render: measured, `preferences.load()` was reached
     /// once per card through the `||` short-circuit, plus one more per discovery candidate.
     @ObservationIgnored private var readerSettingsSnapshot: ReaderSettings?
-    /// The commit order of the write the snapshot holds. An older write that arrives late is discarded rather
-    /// than replacing a newer value.
-    @ObservationIgnored private var appliedReaderSettingsRevision: UInt64 = 0
     /// The per-subject answer, so a window of five hundred cards asks the database once per subject instead of once
     /// per card. `.neutral` is remembered too: "nothing declared" is an answer worth caching.
     @ObservationIgnored private var declaredLevels: [String: ReaderPreferenceLevel] = [:]
@@ -1900,16 +1897,11 @@ final class AppComposition {
         return settings
     }
 
-    /// A write just happened: the cache now holds exactly what the database holds, without reading it back.
-    ///
-    /// The revision is the order in which the write committed. Two writers can reach the main actor in either
-    /// order (the preferences surface notifies from its own async update), so an older write arriving late must
-    /// not replace a newer value: the runner that is behind is simply discarded.
-    private func noteReaderSettingsWritten(_ settings: ReaderSettings, revision: UInt64? = nil) {
-        let order = revision ?? ReaderSettingsWriteSequence.shared.next()
-        guard order > appliedReaderSettingsRevision else { return }
-        appliedReaderSettingsRevision = order
-        readerSettingsSnapshot = settings
+    /// A write just happened. The cache is **dropped**, not overwritten with the writer's copy: two writers can
+    /// reach the main actor in either order, and a value carried across that boundary can be older than what the
+    /// database holds. Invalidation has no order to get wrong; the next read takes the stored value once.
+    private func noteReaderSettingsWritten() {
+        readerSettingsSnapshot = nil
         declaredLevels.removeAll(keepingCapacity: true)
     }
 
@@ -1952,7 +1944,7 @@ final class AppComposition {
         var settings = current.settings
         settings.editorialTipsHidden = hidden
         guard (try? preferences.setSettings(settings)) != nil else { return }
-        noteReaderSettingsWritten(settings)
+        noteReaderSettingsWritten()
     }
 
     /// What the feed may ask about: a subject with the catalogue's own name for it.
