@@ -1442,10 +1442,10 @@ final class AppComposition {
     /// T10: the settings surface's store, and the appearance the reader's own preferences imply right now.
     func makeReaderSettingsStore() -> ReaderSettingsStore? {
         libraryDatabase().map { database in
-            ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: database) { [weak self] stored in
+            ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: database) { [weak self] stored, revision in
                 // The one place a settings write refreshes what the feed reads: the snapshot this composition
                 // caches for its per-card render path and the per-subject answers cached beside it.
-                self?.noteReaderSettingsWritten(stored)
+                self?.noteReaderSettingsWritten(stored, revision: revision)
             })
         }
     }
@@ -1886,6 +1886,9 @@ final class AppComposition {
     /// time is a synchronous read on the main actor per card per render: measured, `preferences.load()` was reached
     /// once per card through the `||` short-circuit, plus one more per discovery candidate.
     @ObservationIgnored private var readerSettingsSnapshot: ReaderSettings?
+    /// The commit order of the write the snapshot holds. An older write that arrives late is discarded rather
+    /// than replacing a newer value.
+    @ObservationIgnored private var appliedReaderSettingsRevision: UInt64 = 0
     /// The per-subject answer, so a window of five hundred cards asks the database once per subject instead of once
     /// per card. `.neutral` is remembered too: "nothing declared" is an answer worth caching.
     @ObservationIgnored private var declaredLevels: [String: ReaderPreferenceLevel] = [:]
@@ -1898,7 +1901,14 @@ final class AppComposition {
     }
 
     /// A write just happened: the cache now holds exactly what the database holds, without reading it back.
-    private func noteReaderSettingsWritten(_ settings: ReaderSettings) {
+    ///
+    /// The revision is the order in which the write committed. Two writers can reach the main actor in either
+    /// order (the preferences surface notifies from its own async update), so an older write arriving late must
+    /// not replace a newer value: the runner that is behind is simply discarded.
+    private func noteReaderSettingsWritten(_ settings: ReaderSettings, revision: UInt64? = nil) {
+        let order = revision ?? ReaderSettingsWriteSequence.shared.next()
+        guard order > appliedReaderSettingsRevision else { return }
+        appliedReaderSettingsRevision = order
         readerSettingsSnapshot = settings
         declaredLevels.removeAll(keepingCapacity: true)
     }

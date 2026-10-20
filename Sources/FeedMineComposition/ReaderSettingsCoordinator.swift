@@ -53,10 +53,10 @@ public struct ReaderSettingsBackendAdapter: ReaderSettingsBackend {
     /// not the composition's own, and without this the snapshot kept serving the value from before the write — the
     /// reader re-enabled the suggestions in the preferences page and the feed refused every offer with `.hidden`
     /// until the next launch (measured 2026-10-20).
-    private let onWrite: @MainActor @Sendable (ReaderSettings) -> Void
+    private let onWrite: @MainActor @Sendable (ReaderSettings, UInt64) -> Void
 
     public init(database: RuntimeDatabase,
-        onWrite: @MainActor @Sendable @escaping (ReaderSettings) -> Void = { _ in }) {
+        onWrite: @MainActor @Sendable @escaping (ReaderSettings, UInt64) -> Void) {
         self.database = database
         self.onWrite = onWrite
     }
@@ -68,7 +68,20 @@ public struct ReaderSettingsBackendAdapter: ReaderSettingsBackend {
     public func update(_ settings: ReaderSettings) async throws {
         // The coordinator's own value, not the caller's: a write it normalizes is stored normalized.
         let stored = try ReaderSettingsCoordinator(database: database).update(settings)
+        // Order of the write, allocated after it committed: two writers can reach the main actor in either order,
+        // and the snapshot must keep the value of the write that committed last.
+        let revision = ReaderSettingsWriteSequence.shared.next()
         // Stated before the write returns, so no render observes the new stored value beside the old snapshot.
-        await MainActor.run { onWrite(stored) }
+        await MainActor.run { onWrite(stored, revision) }
     }
+}
+
+/// The order in which settings writes committed, for the one reader of the resulting value. A plain counter is
+/// enough because the writers are the app's own surfaces, not independent processes.
+public final class ReaderSettingsWriteSequence: @unchecked Sendable {
+    public static let shared = ReaderSettingsWriteSequence()
+    private let lock = NSLock()
+    private var value: UInt64 = 0
+    /// A revision a composition-owned write can take without going through the backend adapter.
+    public func next() -> UInt64 { lock.withLock { value &+= 1; return value } }
 }

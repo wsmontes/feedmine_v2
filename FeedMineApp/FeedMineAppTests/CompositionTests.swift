@@ -3766,7 +3766,55 @@ final class CompositionTests: XCTestCase {
             "the feed reads the value the settings surface wrote, without a relaunch")
         XCTAssertEqual(composition.declaredLevel(forNode: "90_countries/brazil"), .more,
             "and the per-subject answers cached beside it are the stored ones too")
+
+        // The same session, the same cadence the feed drives: hidden refuses, and only the composed value can
+        // change that.
+        let cadence = EditorialInvitationCadence()
+        cadence.setHidden(composition.editorialTipsHidden)
+        XCTAssertEqual(cadence.decision(subject: "90_countries/brazil", isAnswered: false, cardsTraversed: 400),
+            .hidden, "while hidden, the cadence refuses every card")
+
+        // Re-enable through the real adapter, as the preferences page does.
+        await store.update { $0.editorialTipsHidden = false }
+        XCTAssertFalse(store.settings.editorialTipsHidden)
+        XCTAssertFalse(composition.editorialTipsHidden,
+            "re-enabling in the surface reaches the feed's snapshot in the same session")
+        cadence.setHidden(composition.editorialTipsHidden)
+        XCTAssertNotEqual(cadence.decision(subject: "90_countries/brazil", isAnswered: false, cardsTraversed: 400),
+            .hidden, "and the cadence can place an offer again")
         await association.close()
+    }
+
+    /// Two writes commit in an order the main actor may observe in any sequence. The adapter states that order,
+    /// so a late notification of an older write cannot replace a newer value — and a write the store refuses
+    /// states nothing at all.
+    func testSettingsWritesStateTheirCommitOrderAndARefusedWriteIsSilent() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        _ = try ReaderPreferencesStore(database: database).initialize(sourceKeys: [])
+        let observed = Mutex<[UInt64]>([])
+        let adapter = ReaderSettingsBackendAdapter(database: database) { _, revision in
+            observed.withLock { $0.append(revision) }
+        }
+        var first = ReaderSettings.standard
+        first.editorialTipsHidden = true
+        try await adapter.update(first)
+        var second = first
+        second.editorialTipsHidden = false
+        try await adapter.update(second)
+        let revisions = observed.withLock { $0 }
+        XCTAssertEqual(revisions.count, 2, "each accepted write states its order")
+        XCTAssertLessThan(revisions[0], revisions[1], "and the later write carries the later order")
+
+        // The store now cannot accept a write at all: an attempt must throw and must not be announced.
+        try await database.write { db in try db.execute(sql: "DROP TABLE reader_preferences") }
+        var third = second
+        third.editorialTipsHidden = true
+        var refused = false
+        do { try await adapter.update(third) } catch { refused = true }
+        XCTAssertTrue(refused, "a write the store cannot accept throws")
+        XCTAssertEqual(observed.withLock { $0 }.count, 2, "and a refused write states nothing")
     }
 
     /// The other answer to the same question: the reader skips. Nothing is named, so acquisition stays
