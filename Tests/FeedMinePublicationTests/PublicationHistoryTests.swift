@@ -119,15 +119,20 @@ final class PublicationHistoryTests: XCTestCase {
         let anchor = FeedWindowAnchor(cardID: cards[0].id, placement: .center)
         let cursor = SessionCursor(editionID: edition.id, anchor: anchor)
         let window = try XCTUnwrap(FeedWindow(editionID: edition.id, cards: cards, anchor: anchor))
-        XCTAssertNotNil(RestoredPublication(edition: edition, cursor: cursor, window: window))
+        let exact = RestoredPosition.exact(cards[0].id)
+        XCTAssertNotNil(RestoredPublication(edition: edition, cursor: cursor, window: window, position: exact))
         XCTAssertNil(RestoredPublication(edition: edition,
-            cursor: SessionCursor(editionID: FeedEditionID(), anchor: anchor), window: window))
+            cursor: SessionCursor(editionID: FeedEditionID(), anchor: anchor), window: window, position: exact))
         XCTAssertNil(RestoredPublication(edition: edition, cursor: cursor,
-            window: try XCTUnwrap(FeedWindow(editionID: FeedEditionID(), cards: cards, anchor: anchor))))
+            window: try XCTUnwrap(FeedWindow(editionID: FeedEditionID(), cards: cards, anchor: anchor)),
+            position: exact))
         for otherAnchor in [FeedWindowAnchor(cardID: cards[1].id, placement: .center),
             FeedWindowAnchor(cardID: cards[0].id, placement: .top)] {
             XCTAssertNil(RestoredPublication(edition: edition,
-                cursor: SessionCursor(editionID: edition.id, anchor: otherAnchor), window: window))
+                cursor: SessionCursor(editionID: edition.id, anchor: otherAnchor), window: window, position: exact))
         }
+        // A statement that lands on a different card than the cursor contradicts itself.
+        XCTAssertNil(RestoredPublication(edition: edition, cursor: cursor, window: window,
+            position: .nearestNeighbour(withdrawn: cards[1].id, landedOn: cards[1].id)))
     }
 }

@@ -203,6 +203,93 @@ extension PublicationStore {
         }
     }
 
+    /// Where one durable card identity lives in published history, and whether it can still be drawn.
+    ///
+    /// The reader's position is a **card**, and a card belongs to exactly one Edition. A durable record may spell
+    /// an Edition that was rebuilt afterwards (a new publication for the same context identity), so the Edition a
+    /// restore must read is the card's own — the one this read answers — and never the one a column happens to say
+    /// (2026-10-20: D10 admitted audio to the discovery pool, the reopen resolved the anchor against an Edition
+    /// whose segments no longer held it, and the reader landed at the top).
+    public struct CardLocation: Hashable, Sendable {
+        public let cardID: PublicationCardID
+        public let editionID: FeedEditionID
+        public let segmentID: FeedSegmentID
+        public let segmentOrdinal: Int
+        public let cardOrdinal: Int
+        /// False when the card is only kept in the Edition's archive (`retired_*`): its position is still known,
+        /// it can no longer be drawn, and the nearest surviving neighbour is what a restore may land on.
+        public let isLive: Bool
+    }
+
+    /// The card's Edition and position, live or archived. Nil means this database has never published the card.
+    public func location(ofCard cardID: PublicationCardID) throws -> CardLocation? {
+        try database.read { db in
+            let key = PersistenceValueCoding.uuid(cardID.rawValue)
+            if let row = try Row.fetchOne(db, sql: """
+                SELECT c.id AS card_id, c.ordinal AS card_ordinal, s.id AS segment_id,
+                    s.ordinal AS segment_ordinal, s.edition_id AS edition_id
+                FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+                WHERE c.id = ?
+                """, arguments: [key]) {
+                return try Self.location(row, live: true)
+            }
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT c.id AS card_id, c.ordinal AS card_ordinal, s.id AS segment_id,
+                    s.ordinal AS segment_ordinal, s.edition_id AS edition_id
+                FROM retired_published_cards c JOIN retired_feed_segments s ON s.id = c.segment_id
+                WHERE c.id = ?
+                """, arguments: [key]) else { return nil }
+            return try Self.location(row, live: false)
+        }
+    }
+
+    /// The nearest card of an Edition that can still be drawn **before** a position, else that Edition's first
+    /// card — the neighbour a restore may land on when the card at that position is no longer published. Nil means
+    /// the Edition holds no drawable card at all.
+    public func survivingCard(inEdition editionID: FeedEditionID, beforeSegment segmentOrdinal: Int,
+        cardOrdinal: Int) throws -> PublicationCardID? {
+        try database.read { db in
+            let key = PersistenceValueCoding.uuid(editionID.rawValue)
+            if let row = try Row.fetchOne(db, sql: """
+                SELECT c.id FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+                WHERE s.edition_id = ? AND (s.ordinal, c.ordinal) < (?, ?)
+                ORDER BY s.ordinal DESC, c.ordinal DESC LIMIT 1
+                """, arguments: [key, segmentOrdinal, cardOrdinal]) {
+                return PublicationCardID(rawValue: try PublicationValueCoding.uuid(row["id"], field: "id"))
+            }
+            return try Self.firstCard(editionKey: key, in: db)
+        }
+    }
+
+    /// The first card of an Edition that can still be drawn, or nil when it holds none.
+    public func firstCard(inEdition editionID: FeedEditionID) throws -> PublicationCardID? {
+        try database.read { db in
+            try Self.firstCard(editionKey: PersistenceValueCoding.uuid(editionID.rawValue), in: db)
+        }
+    }
+
+    private static func firstCard(editionKey: String, in db: Database) throws -> PublicationCardID? {
+        guard let row = try Row.fetchOne(db, sql: """
+            SELECT c.id FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+            WHERE s.edition_id = ? ORDER BY s.ordinal ASC, c.ordinal ASC LIMIT 1
+            """, arguments: [editionKey]) else { return nil }
+        return PublicationCardID(rawValue: try PublicationValueCoding.uuid(row["id"], field: "id"))
+    }
+
+    private static func location(_ row: Row, live: Bool) throws -> CardLocation {
+        let fields = PublicationRecordFields(row)
+        let segmentOrdinal = try fields.integer("segment_ordinal"), cardOrdinal = try fields.integer("card_ordinal")
+        guard segmentOrdinal >= 0, cardOrdinal >= 0,
+            segmentOrdinal <= Int64(Int.max), cardOrdinal <= Int64(Int.max) else {
+            throw PublicationStoreError.corruption("card position")
+        }
+        return CardLocation(
+            cardID: PublicationCardID(rawValue: try fields.uuid("card_id")),
+            editionID: FeedEditionID(rawValue: try fields.uuid("edition_id")),
+            segmentID: FeedSegmentID(rawValue: try fields.uuid("segment_id")),
+            segmentOrdinal: Int(segmentOrdinal), cardOrdinal: Int(cardOrdinal), isLive: live)
+    }
+
     public func cards(editionID: FeedEditionID, around anchorID: PublicationCardID, backwardCapacity: Int, forwardCapacity: Int) throws -> [CardRecord] {
         guard backwardCapacity >= 0, forwardCapacity >= 0 else { throw PublicationStoreError.invalidCapacity }
         return try cards(editionID: editionID, around: anchorID, backwardLimit: backwardCapacity,

@@ -116,7 +116,8 @@ final class PresentationProjectionTests: XCTestCase {
             let anchor = FeedWindowAnchor(cardID: cards[1].id, placement: placement)
             let window = try XCTUnwrap(FeedWindow(editionID: edition.id, cards: cards, anchor: anchor))
             let restored = try XCTUnwrap(RestoredPublication(edition: edition,
-                cursor: SessionCursor(editionID: edition.id, anchor: anchor), window: window))
+                cursor: SessionCursor(editionID: edition.id, anchor: anchor), window: window,
+                position: .exact(anchor.cardID)))
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: directory) }
             let db = try RuntimeDatabase(location: .init(directory: directory))

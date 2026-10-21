@@ -2624,6 +2624,22 @@ final class FeedAssociation {
             keepsAdmittedHead: true)
     }
 
+    /// The restore's own statement, as one log line. The window a restore installs already starts at the card the
+    /// reader left (or at the neighbour it names); this is how that fact reaches the run's record instead of being
+    /// inferred from geometry (`PublicationHistory.RestoredPosition`).
+    nonisolated static func statement(of position: RestoredPosition) -> String {
+        switch position {
+        case .exact(let card):
+            "restore: the reader's card \(card.rawValue.uuidString) is published; the window starts there"
+        case .nearestNeighbour(let withdrawn, let landed):
+            "restore: the reader's card \(withdrawn.rawValue.uuidString) is no longer published; "
+                + "landing on its nearest surviving neighbour \(landed.rawValue.uuidString)"
+        case .unknownCard(let landed):
+            "restore: the reader's card is not in this database; landing on the edition's first surviving card "
+                + landed.rawValue.uuidString
+        }
+    }
+
     /// T6: whether a restored Edition may be shown for the identity the reader is on. It must belong to that
     /// identity — a foreign filter, preset or search scope is a silent swap, even when the policy versions
     /// happen to match — and it must have been published under the current selection, eligibility *and scoring*
@@ -2754,6 +2770,9 @@ final class FeedAssociation {
             try checkpoints.clearCheckpoint(for: contextKey)
             saved = nil
         }
+        // Where the restore landed is stated, never implied: a card that left published history lands on its
+        // nearest surviving neighbour, and the run's log says which card was lost and where the window starts.
+        if let restored = saved { Self.log(Self.statement(of: restored.position)) }
         let v = PolicyVersion(rawValue: 1)
         // T11: a curated feed's ranking is part of the behavior the Edition was published under, so an edit to
         // the recipe (which keeps the identity) is a new revision and never reuses an older checkpoint.

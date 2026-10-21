@@ -63,7 +63,11 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(try db.read { try Int.fetchOne($0, sql:"SELECT count(*) FROM session_checkpoint") }, 1)
     }
 
-    func testPersistedEditionCardMismatchThrowsCorruptionInsteadOfNil() throws {
+    /// 2026-10-20: a record whose card is filed under another Edition is **still the reader's position**, not
+    /// corruption. Reading it as an error would let a rebuilt Edition delete the position (the launch then
+    /// restarts at the top); reading it as nil would be worse — a silent cold start. The record reads, and the
+    /// restore resolves the card against the Edition that actually holds it (`PublicationHistory.restore`).
+    func testACardFiledUnderAnotherEditionStillReadsAsTheReadersPosition() throws {
         let db = try StorageFixture.database(self)
         let publication = PublicationStore(database: db)
         let sessions = SessionStore(database: db)
@@ -72,9 +76,14 @@ final class SessionStoreTests: XCTestCase {
         for (e,c) in [(e1,a),(e2,b)] { try publication.createEdition(e, firstSegment: StorageFixture.segment(e,[c]), cards:[c]) }
         try sessions.saveCheckpoint(.init(editionID:e1.id,cardID:a.id,anchorPlacement:"center",updatedAt:Date(timeIntervalSince1970:1)))
         try db.write { try $0.execute(sql:"UPDATE session_checkpoint SET card_id = ?",arguments:[b.id.rawValue.uuidString.lowercased()]) }
-        XCTAssertThrowsError(try sessions.checkpoint()) { error in
-            guard case SessionStoreError.corruption = error else { return XCTFail("Expected corruption: \(error)") }
-        }
+        let record = try XCTUnwrap(try sessions.checkpoint())
+        XCTAssertEqual(record.cardID, b.id)
+        XCTAssertEqual(record.editionID, e1.id, "a linha continua dizendo onde foi arquivada")
+        XCTAssertEqual(try publication.location(ofCard: b.id)?.editionID, e2.id,
+            "a carta pertence à sua própria edição, e é ela que a restauração lê")
+        // Writing a pair that contradicts itself is still refused: the reader's position must stay locatable.
+        XCTAssertThrowsError(try sessions.saveCheckpoint(.init(editionID: e1.id, cardID: b.id,
+            anchorPlacement: "center", updatedAt: Date(timeIntervalSince1970: 2))))
     }
     func testContextSwitchArchivesAndRestoresEachCheckpoint() throws {
         let db = try StorageFixture.database(self), store = PublicationStore(database: db), sessions = SessionStore(database: db)

@@ -14,19 +14,45 @@ public enum PublicationHistoryError: Error, Equatable, Sendable {
     case invalidExposureRequest
 }
 
+/// How a restore reached the reader's card. A position is the reader's, so it is never replaced silently: the one
+/// case where the card itself is no longer published says so, with the card it lost and the neighbour it landed on.
+public enum RestoredPosition: Hashable, Sendable {
+    /// The card the reader left, restored exactly, in the Edition that card belongs to.
+    case exact(PublicationCardID)
+    /// The card was published and later archived, so it cannot be drawn. Its position is still known: the restore
+    /// lands on the nearest surviving neighbour (the Edition's first card when nothing survived before it).
+    case nearestNeighbour(withdrawn: PublicationCardID, landedOn: PublicationCardID)
+    /// This database holds no trace of the card at all. Stated, never silent, and the landing is the Edition's
+    /// first surviving card — the only position with any evidence behind it.
+    case unknownCard(landedOn: PublicationCardID)
+
+    public var landedOn: PublicationCardID {
+        switch self {
+        case .exact(let card): card
+        case .nearestNeighbour(_, let landed): landed
+        case .unknownCard(let landed): landed
+        }
+    }
+}
+
 /// Exact retained history and logical position, with no mechanical records exposed.
 public struct RestoredPublication: Hashable, Sendable {
     public let edition: FeedEdition
     public let cursor: SessionCursor
     public let window: FeedWindow
+    /// What the restore could honour of the durable statement, and what it landed on when it could not.
+    public let position: RestoredPosition
 
-    public init?(edition: FeedEdition, cursor: SessionCursor, window: FeedWindow) {
+    public init?(edition: FeedEdition, cursor: SessionCursor, window: FeedWindow,
+        position: RestoredPosition) {
         guard edition.id == cursor.editionID,
             edition.id == window.editionID,
-            cursor.anchor == window.anchor else { return nil }
+            cursor.anchor == window.anchor,
+            position.landedOn == cursor.anchor.cardID else { return nil }
         self.edition = edition
         self.cursor = cursor
         self.window = window
+        self.position = position
     }
 }
 
@@ -121,7 +147,7 @@ public struct PublicationHistory: Sendable {
         read: (FeedEdition, FeedWindowAnchor) throws -> [PublicationStore.CardRecord]) throws -> RestoredPublication? {
         let saved = try contextKey.map { try sessionStore.checkpoint(for: $0) } ?? sessionStore.checkpoint()
         guard let checkpoint = saved else { return nil }
-        let cursor = try PublicationPersistenceMapping.cursor(checkpoint)
+        let (cursor, position) = try resolved(try PublicationPersistenceMapping.cursor(checkpoint))
         guard let record = try publicationStore.edition(id: cursor.editionID) else {
             throw PublicationHistoryError.missingEdition
         }
@@ -130,10 +156,43 @@ public struct PublicationHistory: Sendable {
         guard let window = FeedWindow(editionID: edition.id, cards: cards, anchor: cursor.anchor) else {
             throw PublicationHistoryError.invalidWindow
         }
-        guard let restored = RestoredPublication(edition: edition, cursor: cursor, window: window) else {
+        guard let restored = RestoredPublication(edition: edition, cursor: cursor, window: window,
+            position: position) else {
             throw PublicationHistoryError.inconsistentRestore
         }
         return restored
+    }
+
+    /// The reader's position resolved **by the durable card**, not by the Edition a record happens to spell.
+    ///
+    /// The card is the statement; the Edition column is where it was filed. A rebuild publishes a new Edition for
+    /// the same context identity — and with it a new segment seed and a new pool — so that column can name an
+    /// Edition whose segments never held the reader's card. Reading the window from it either throws
+    /// (`anchor membership`) or drops the reader at the top of a layout that is not theirs (D10, 2026-10-20: audio
+    /// sources in the discovery pool rebuilt the Edition and the reopen lost the anchor). So:
+    ///
+    /// - the card's own Edition is the one the window is read from, whatever the record says;
+    /// - a card that was published and archived lands on its nearest surviving neighbour, and says so;
+    /// - a card this database never held is stated, and lands on the Edition's first surviving card.
+    private func resolved(_ stored: SessionCursor) throws -> (SessionCursor, RestoredPosition) {
+        let placement = stored.anchor.placement
+        func cursor(edition: FeedEditionID, card: PublicationCardID) -> SessionCursor {
+            SessionCursor(editionID: edition, anchor: FeedWindowAnchor(cardID: card, placement: placement))
+        }
+        if let located = try publicationStore.location(ofCard: stored.anchor.cardID) {
+            if located.isLive {
+                return (cursor(edition: located.editionID, card: located.cardID), .exact(located.cardID))
+            }
+            if let surviving = try publicationStore.survivingCard(inEdition: located.editionID,
+                beforeSegment: located.segmentOrdinal, cardOrdinal: located.cardOrdinal) {
+                return (cursor(edition: located.editionID, card: surviving),
+                    .nearestNeighbour(withdrawn: located.cardID, landedOn: surviving))
+            }
+        }
+        guard let surviving = try publicationStore.firstCard(inEdition: stored.editionID) else {
+            throw PublicationHistoryError.missingEdition
+        }
+        return (cursor(edition: stored.editionID, card: surviving), .unknownCard(landedOn: surviving))
     }
 
     /// P10/R17: the facts the publication froze for this Edition, newest first. The editorial context reads history,

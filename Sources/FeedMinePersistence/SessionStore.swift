@@ -70,22 +70,33 @@ public struct SessionStore: Sendable {
         try PublicationStore.markSeen(editionID: checkpoint.editionID, cardID: checkpoint.cardID, in: db)
     }
 
+    /// The saved position, read as **the reader's own statement**: the card is their position and an Edition is a
+    /// layout it happened to be published in. A record whose card is no longer a member of the Edition it spells
+    /// is therefore still readable — `PublicationHistory.restore` resolves it against the card's own Edition, and
+    /// lands on the nearest surviving neighbour when the card is gone (2026-10-20). Throwing here instead would
+    /// hand a rebuilt Edition the power to delete the reader's position, and the launch would silently restart at
+    /// the top. Only a record that cannot be read at all (placement, representation) is corruption.
     public func checkpoint() throws -> CheckpointRecord? {
         try database.read { db in
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM session_checkpoint WHERE singleton_id = 1") else { return nil }
             do {
-                let fields = PublicationRecordFields(row)
-                let edition = FeedEditionID(rawValue: try fields.uuid("edition_id"))
-                let card = PublicationCardID(rawValue: try fields.uuid("card_id"))
-                let placement = try fields.string("anchor_placement")
-                guard ["top", "center"].contains(placement), try Self.member(db, editionID: edition, cardID: card) else {
-                    throw SessionStoreError.corruption("checkpoint membership/placement")
-                }
-                return CheckpointRecord(editionID: edition, cardID: card, anchorPlacement: placement, updatedAt: try fields.date("updated_at"))
+                return try Self.checkpoint(row)
             } catch let error as PublicationStoreError {
                 throw SessionStoreError.corruption("checkpoint representation: \(error)")
             }
         }
+    }
+
+    private static func checkpoint(_ row: Row) throws -> CheckpointRecord {
+        let fields = PublicationRecordFields(row)
+        let edition = FeedEditionID(rawValue: try fields.uuid("edition_id"))
+        let card = PublicationCardID(rawValue: try fields.uuid("card_id"))
+        let placement = try fields.string("anchor_placement")
+        guard ["top", "center"].contains(placement) else {
+            throw SessionStoreError.corruption("checkpoint placement")
+        }
+        return CheckpointRecord(editionID: edition, cardID: card, anchorPlacement: placement,
+            updatedAt: try fields.date("updated_at"))
     }
 
     /// Selects the saved position for a logical context *identity* (T6: the whole key — surface, preset,
@@ -171,15 +182,10 @@ public struct SessionStore: Sendable {
                 checkpoint.updatedAt.timeIntervalSince1970, PersistenceValueCoding.uuid(checkpoint.editionID.rawValue)])
     }
 
+    /// A context's saved position, read with the same rule as the singleton: the card is the reader's position and
+    /// the Edition column is only where it was filed. See `checkpoint()`.
     private static func decode(_ row: Row, in db: Database) throws -> CheckpointRecord {
-        let fields = PublicationRecordFields(row)
-        let edition = FeedEditionID(rawValue: try fields.uuid("edition_id"))
-        let card = PublicationCardID(rawValue: try fields.uuid("card_id"))
-        let placement = try fields.string("anchor_placement")
-        guard ["top", "center"].contains(placement), try member(db, editionID: edition, cardID: card) else {
-            throw SessionStoreError.corruption("context checkpoint membership/placement")
-        }
-        return CheckpointRecord(editionID: edition, cardID: card, anchorPlacement: placement, updatedAt: try fields.date("updated_at"))
+        try checkpoint(row)
     }
 
     private static func member(_ db: Database, editionID: FeedEditionID, cardID: PublicationCardID) throws -> Bool {
