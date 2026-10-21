@@ -204,6 +204,40 @@ extension MediaPrefetcherTests {
         XCTAssertNil(prefetcher.readiness.presentation(for: other),
             "a definitively unavailable image is not published as a text card")
     }
+
+    /// The walk that examined a window is one-way: after a transient (`deadline`) attempt the revision is never
+    /// named by a later window again. The owner keeps its backoff, so an opportunity that names *other* revisions
+    /// must still make good on "retry later" — otherwise the story stays pending for the rest of the run and the
+    /// bounded re-offer queue can never present it.
+    func testTransientBackoffIsRetriedByAnOpportunityThatDoesNotNameTheRevision() async throws {
+        let (db, assets) = try setup(), calls = Calls(), clock = Clock(), png = self.png
+        final class Mode: @unchecked Sendable { var failuresLeft = 1 }
+        let mode = Mode()
+        let skipped = try admit(db, urls: ["https://example.test/skipped.png"])
+        let next = try admit(db, urls: ["https://example.test/next.png"])
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            transientRetryBaseSeconds: 30, monotonicSeconds: { clock.now },
+            fetch: { url, _ in
+                calls.add(url)
+                if url.lastPathComponent == "skipped.png", mode.failuresLeft > 0 {
+                    mode.failuresLeft -= 1
+                    throw MediaFetchFailure(.transient, reason: .deadline)
+                }
+                return png
+            }, conditions: { _ in Self.policy() })
+        // The examined window: its declared image runs out of the wait and stays pending.
+        await prefetcher.prefetch([skipped])
+        XCTAssertEqual(calls.all.map(\.lastPathComponent), ["skipped.png"])
+        XCTAssertNil(prefetcher.readiness.presentation(for: skipped))
+        // The cursor moved on: the next opportunity names a different revision only.
+        clock.now = 31
+        await prefetcher.prefetch([next])
+        XCTAssertEqual(calls.all.filter { $0.lastPathComponent == "skipped.png" }.count, 2,
+            "a cut attempt is transient: a later opportunity retries it even though the walk passed it")
+        XCTAssertNotNil(prefetcher.readiness.presentation(for: skipped))
+        XCTAssertNotNil(prefetcher.readiness.presentation(for: next))
+    }
+
     func testExplicitEditorialRevisionsIgnoreGlobalHeadAndDeduplicate() async throws {
         let (db, assets) = try setup(), calls = Calls(), png = self.png
         let unrelated = try admit(db, urls: ["https://example.test/unrelated.png"])
