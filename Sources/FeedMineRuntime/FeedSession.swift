@@ -23,6 +23,10 @@ public enum SettledPositionRecording: Hashable, Sendable {
     /// is **exact** (the card the viewport starts at, `.top`, same Edition): nothing was written and the exact
     /// record stands (lead, 2026-10-14). `cardID` is what the record holds.
     case keptExactRecord(cardID: PublicationCardID)
+    /// The restore could not present the reader's durable card and opened on a substitute; this automatic
+    /// statement named the substitute (or another card the restore itself placed), not a reader move. Nothing was
+    /// written, and the durable record still names the reader's card — `cardID` is what the record holds.
+    case keptUnavailablePosition(cardID: PublicationCardID)
 }
 
 public actor FeedSession {
@@ -33,6 +37,11 @@ public actor FeedSession {
     /// Cards whose decoded pixels were released to bound residency. They are re-decoded from the same
     /// local asset when the reader comes back to them; their frozen descriptor never changed.
     private var releasedImageCards: Set<PublicationCardID> = []
+    /// What a restore could not present: the durable card and the card the restored window had to present instead.
+    /// While it exists the reader has not deliberately moved, so an automatic position statement names a
+    /// substitute — the rendering's own layout — and must not replace the durable record. A deliberate observation
+    /// on another admitted card ends the protection: that is the reader establishing a new position.
+    private var restoredSubstitution: (durable: PublicationCardID, presented: PublicationCardID)?
     /// R03: cards whose bitmap was released and whose reconstruction failed because the local asset is gone. They
     /// keep their admitted identity, order, anchor and frozen geometry (the published placeholder), and they are not
     /// retried on every observation: the unavailable destination is stated once, not spun on.
@@ -81,6 +90,9 @@ public actor FeedSession {
         state = warmStart.projection.state
         releasedImageCards = warmStart.projection.releasedImageCards
         unrecoverableImageCards = warmStart.projection.snapshot.unavailableImageCardIDs
+        if let durable = warmStart.projection.snapshot.unavailablePositionCardID {
+            restoredSubstitution = (durable, warmStart.projection.snapshot.window.anchor.cardID)
+        }
         previousResidencyAnchor = warmStart.projection.snapshot.window.anchor.cardID
         projectionSequenceID = warmStart.projection.sequenceID
         projectionPosition = warmStart.projection.position
@@ -150,7 +162,11 @@ public actor FeedSession {
     /// Recording an observation moves the logical anchor and marks exposure. Evidence of a still
     /// rendered previous window may rematerialize its already-admitted local IDs; it cannot
     /// publish or acquire content. Ordinary admission remains an explicit operation.
-    public func submitViewport(_ observation: ViewportObservation, from evidence: RenderedViewportEvidence? = nil) throws -> FeedPresentationSnapshot? {
+    /// `deliberate` states that this observation is a reader move (a real gesture, a jump, an accessibility
+    /// navigation), not the rendering's own layout settling. It is the fact that ends a restore's substitution
+    /// protection: only a deliberate move to another admitted card establishes a new position.
+    public func submitViewport(_ observation: ViewportObservation, from evidence: RenderedViewportEvidence? = nil,
+        deliberate: Bool = false) throws -> FeedPresentationSnapshot? {
         guard let original = state else { return nil }
         if let evidence {
             guard evidence.observation == observation, evidence.belongs(to: original.presentation),
@@ -180,11 +196,26 @@ public actor FeedSession {
         guard let current = state else { return nil }
         let items = current.presentation.window.items
         guard items.contains(where: { $0.id == observation.anchor.cardID }) else { return current.presentation }
+        // A deliberate move to another admitted card is the reader establishing a new position: the restore's
+        // substitute no longer speaks for them. The layout's own observations (`deliberate == false`) never end it —
+        // the first automatic observation after a restore must not be mistaken for a gesture.
+        var substitutionCleared = false
+        if deliberate, let substitution = restoredSubstitution,
+            observation.anchor.cardID != substitution.presented {
+            restoredSubstitution = nil
+            // The rendering's last automatic top was the substitute. Until the host states the next presented
+            // top, a milestone must fall back to the window anchor the deliberate move produced — not write the
+            // stale substitute.
+            presentedPosition = nil
+            // The snapshot still carries the substitute's position fact; the projection below must state its end
+            // even when this move changed neither the anchor nor residency.
+            substitutionCleared = true
+        }
         try publicationHistory.markSeen(editionID: current.presentation.editionID, cardID: observation.anchor.cardID)
         let (bounded, residencyChanged) = try boundedResidency(items: items,
             editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
         let anchorChanged = observation.anchor != current.presentation.window.anchor
-        guard anchorChanged || residencyChanged else { return current.presentation }
+        guard anchorChanged || residencyChanged || substitutionCleared else { return current.presentation }
         guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else { return current.presentation }
         let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
             editionID: current.presentation.editionID, window: window)
@@ -532,6 +563,9 @@ public actor FeedSession {
         }
         releasedImageCards.formUnion(projected.releasedImageCards)
         unrecoverableImageCards.formUnion(projected.snapshot.unavailableImageCardIDs)
+        if let durable = projected.snapshot.unavailablePositionCardID {
+            restoredSubstitution = (durable, projected.snapshot.window.anchor.cardID)
+        }
         projectionPosition = projected.position
         state = projected.state
         // R03: the restored band is the band the surface will reveal first; the next observation protects it too.
@@ -578,10 +612,14 @@ public actor FeedSession {
             guard let window = projectedWindow(restored.window, bounds: bounds, imageDecoder: imageDecoder,
                 released: &released, unavailable: &unavailable) else { return nil }
             let next = try FeedProjectionProvenance.nextPosition(after: position)
+            // The durable card and the presented anchor are different facts. When the reader's own card could not
+            // be redrawn, the window opens on the closest render-ready card and says which position it stands for.
+            let durable = restored.cursor.anchor.cardID
+            let substituted = durable != window.anchor.cardID && unavailable.contains(durable) ? durable : nil
             let snapshot = FeedPresentationSnapshot(contextKey: restored.edition.contextKey,
                 editionID: restored.edition.id, window: window,
                 provenance: .init(sequenceID: sequenceID, position: next),
-                unavailableImageCardIDs: unavailable)
+                unavailableImageCardIDs: unavailable, unavailablePositionCardID: substituted)
             return FeedCheckpointProjection(
                 state: FeedSessionState(editorialRevisionID: restored.edition.editorialRevision.id,
                     presentation: snapshot, bounds: bounds),
@@ -660,13 +698,15 @@ public actor FeedSession {
         let available = Set(window.items.lazy.filter(\.isRenderReady).map(\.id))
         unrecoverableImageCards.subtract(available)
         let unavailable = unrecoverableImageCards
+        let unavailablePosition = restoredSubstitution?.durable
         if let current = state?.presentation, current.contextKey == contextKey,
             current.editionID == editionID, current.window == window,
-            current.unavailableImageCardIDs == unavailable { return current }
+            current.unavailableImageCardIDs == unavailable,
+            current.unavailablePositionCardID == unavailablePosition { return current }
         let next = try FeedProjectionProvenance.nextPosition(after: projectionPosition)
         let snapshot = FeedPresentationSnapshot(contextKey: contextKey, editionID: editionID, window: window,
             provenance: .init(sequenceID: projectionSequenceID, position: next),
-            unavailableImageCardIDs: unavailable)
+            unavailableImageCardIDs: unavailable, unavailablePositionCardID: unavailablePosition)
         projectionPosition = next
         return snapshot
     }
@@ -680,8 +720,14 @@ public actor FeedSession {
     /// `PresentationProjectionOrderingTests.testO15ReopenStartsIndependentMemorySequenceAndPreservesHistory` pin it.
     /// The rule that keeps an incomplete statement from replacing an exact record belongs to the **automatic**
     /// boundary, which fires from the rendering on its own — `recordSettledPosition(at:settled:)`.
+    ///
+    /// **One exception is not a position the caller chose:** while a restore stands on a substitute because the
+    /// reader's own card could not be redrawn, the current position names that substitute. Writing it on a
+    /// lifecycle milestone would lose the reader's card without any reader move, so the write is refused (false)
+    /// and the durable record keeps its card. A deliberate move ends the protection first.
     public func checkpointCurrentPosition(at date: Date) throws -> Bool {
         guard let current = state else { return false }
+        if restoredSubstitution != nil { return false }
         let anchor = recordedPosition(of: current)
         try publicationHistory.saveCursor(
             SessionCursor(editionID: current.presentation.editionID, anchor: anchor), updatedAt: date)
@@ -768,6 +814,12 @@ public actor FeedSession {
     @discardableResult
     public func recordSettledPosition(at date: Date, settled: Bool = false) throws -> SettledPositionRecording {
         guard let current = state else { return .nothingToRecord }
+        // The rendering's own position, before any deliberate reader move, is the substitute a restore had to
+        // present — not a position the reader established. Keeping the durable record is what lets the original
+        // card come back when its asset does.
+        if let substitution = restoredSubstitution {
+            return .keptUnavailablePosition(cardID: substitution.durable)
+        }
         let anchor = recordedPosition(of: current)
         if let durable = durablePosition {
             if durable.anchor == anchor { return .alreadyDurable }

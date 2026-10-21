@@ -5,7 +5,7 @@ import FeedMineDomain
 import FeedMinePersistence
 import FeedMineEditorial
 import FeedMinePublication
-import FeedMineRuntime
+@testable import FeedMineRuntime
 import FeedMineUI
 import FeedMineComposition
 
@@ -100,6 +100,27 @@ final class FeedScreenStoreTests: XCTestCase {
         XCTAssertEqual(store.state.presentation?.window.items.map(\.id), Array(f.cardIDs.prefix(2)))
         XCTAssertEqual(store.state.presentation?.window.anchor, published.window.anchor)
         XCTAssertEqual(store.state.presentation?.editionID, f.editionID)
+    }
+
+    /// A restore that could not redraw the reader's own card states the substitute through the existing toast —
+    /// once, and without claiming an exact resume. The field belongs to the presentation, so the shell does not
+    /// need a second position record to say it.
+    func testS2aInstallingASubstituteRestoreStatesTheUnavailablePositionOnce() async throws {
+        let f = try fixture(), base = try await snapshot(f)
+        let durable = PublicationCardID()
+        let substituted = FeedPresentationSnapshot(contextKey: base.contextKey, editionID: base.editionID,
+            window: base.window, provenance: base.provenance,
+            unavailableImageCardIDs: [durable], unavailablePositionCardID: durable)
+        let store = FeedScreenStore { _, _ in }
+
+        try store.install(FeedPresentationState(presentation: substituted))
+
+        XCTAssertEqual(store.state.presentation?.unavailablePositionCardID, durable)
+        XCTAssertTrue(store.toast?.text.contains("não está disponível") ?? false,
+            "the surface states the unavailable position instead of claiming an exact resume")
+        store.dismissToast()
+        try store.install(FeedPresentationState(presentation: substituted))
+        XCTAssertNil(store.toast, "the same unavailable position is stated once, not on every projection")
     }
 
     func testS3NativeObservationNotifiesForPresentationAndWorkInstallation() async throws {

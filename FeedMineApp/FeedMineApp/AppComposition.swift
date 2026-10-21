@@ -4004,6 +4004,9 @@ final class FeedAssociation {
         case .some(.keptExactRecord(let cardID)):
             Self.log("settled position kept exact anchor=\(cardID.rawValue.uuidString)")
             trace?.record("position_kept_exact", ["anchor": cardID.rawValue.uuidString])
+        case .some(.keptUnavailablePosition(let cardID)):
+            Self.log("settled position kept unavailable anchor=\(cardID.rawValue.uuidString)")
+            trace?.record("position_kept_unavailable", ["anchor": cardID.rawValue.uuidString])
         case .some(.nothingToRecord), .some(.alreadyDurable), .some(.withinWindow), .none:
             return
         }
