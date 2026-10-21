@@ -1281,5 +1281,5 @@ private final class DriverURLProtocol: URLProtocol, @unchecked Sendable {
     override class func canInit(with request:URLRequest) -> Bool { DriverHTTPFixture.find(request.url) != nil }
     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
     override func startLoading() { DriverHTTPFixture.find(request.url)?.start(self) }
-    override func stopLoading() { print("DRIVER_STOP_LOADING"); DriverHTTPFixture.find(request.url)?.stop(self) }
+    override func stopLoading() { DriverHTTPFixture.find(request.url)?.stop(self) }
 }
