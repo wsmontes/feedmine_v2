@@ -3873,7 +3873,9 @@ final class CompositionTests: XCTestCase {
     func testTheExplicitAllLanguagesAnswerReachesDiscovery() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let composition = root(directory: directory)
+        // No default feeds: this is the first run the surface's question exists for. The development feeds other
+        // cases seed would make `hasSelectedSources` true before any answer and hide the distinction being tested.
+        let composition = root(directory: directory, feeds: [])
         await composition.launch()
         XCTAssertFalse(composition.hasSelectedSources, "before any answer the reader selects sources")
 
