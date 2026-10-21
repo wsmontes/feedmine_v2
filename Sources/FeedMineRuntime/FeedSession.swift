@@ -59,8 +59,9 @@ public actor FeedSession {
     /// Composition-only exception: accepts the semantic Publication boundary.
     /// UI consumes Runtime presentation results without importing Publication.
     /// With a decoder, projected cards carry slot-sized local images. An image card whose pixels cannot be decoded —
-    /// bytes absent or corrupt, or a composition built without a decoder — is admitted as a declared `.textOnly`
-    /// card; it never crosses the boundary as an image slot waiting for bytes.
+    /// bytes absent or corrupt, or a composition built without a decoder — is not admitted at all: it is neither an
+    /// image slot waiting for bytes nor a `.textOnly` card under the same identity, and the ready cards around it are
+    /// admitted normally (INV-17).
     ///
     /// `warmStart` is a window already read and projected from this context's durable checkpoint by
     /// `FeedSession.warmStart(...)`, for a host that must have the reader's own feed **before its first frame**
@@ -314,18 +315,42 @@ public actor FeedSession {
     /// current anchor (an older gesture cannot reinstall a position a newer one already left), the
     /// append is ordered and deduplicated, and the batch is bounded by the frozen forward bound.
     /// *When* a gesture deserves an admission is the UI's demand decision, not a ratio here.
+    ///
+    /// Read progressively past unavailable images (PD-9/INV-17), in local windows bounded by the space still
+    /// available after the anchor. Stop when that space is filled or history ends; never accumulate refused cards
+    /// or decode an extension that the anchored bound would discard.
     private func admitForwardScroll(_ observation: ViewportObservation) throws -> FeedPresentationSnapshot? {
         guard let current = state else { return nil }
         guard current.presentation.window.anchor == observation.anchor else { return current.presentation }
         let items = current.presentation.window.items
-        guard let tail = items.last else { return current.presentation }
-        let published = try publicationHistory.window(editionID: current.presentation.editionID,
-            around: FeedWindowAnchor(cardID: tail.id, placement: .center),
-            backwardCapacity: 0, forwardCapacity: current.bounds.forwardCapacity)
-        let admitted = Set(items.map(\.id))
-        let extensionCards = published.cards.dropFirst().filter { !admitted.contains($0.id) }
-            .prefix(current.bounds.forwardCapacity)
-            .compactMap { Self.admitted($0, decoder: imageDecoder) }
+        guard let tail = items.last,
+            let anchorIndex = items.firstIndex(where: { $0.id == observation.anchor.cardID }) else {
+            return current.presentation
+        }
+        let capacity = max(0, current.bounds.forwardCapacity - (items.count - anchorIndex - 1))
+        guard capacity > 0 else { return current.presentation }
+        var admitted = Set(items.map(\.id))
+        var extensionCards: [PresentationCard] = []
+        extensionCards.reserveCapacity(capacity)
+        var cursor = tail.id
+        while extensionCards.count < capacity {
+            let published = try publicationHistory.window(editionID: current.presentation.editionID,
+                around: FeedWindowAnchor(cardID: cursor, placement: .center),
+                backwardCapacity: 0, forwardCapacity: capacity)
+            // The first card is the cursor itself; the rest are what follows it in published order.
+            let ahead = published.cards.dropFirst()
+            guard let last = ahead.last else { break }
+            for card in ahead where !admitted.contains(card.id) {
+                guard let ready = Self.admitted(card, decoder: imageDecoder) else { continue }
+                admitted.insert(ready.id)
+                extensionCards.append(ready)
+                if extensionCards.count == capacity { break }
+            }
+            // A short window exhausted the forward side: no further read could return another card.
+            guard ahead.count == capacity else { break }
+            // The store only returns cards strictly after the cursor, so this is forward progress.
+            cursor = last.id
+        }
         guard !extensionCards.isEmpty else { return current.presentation }
         // O teto vale para a janela inteira, **nas duas direções** (decisão do arquiteto): crescer para frente sem
         // limite também é defeito. O corte é em volta da âncora, então ordem, identidade, âncora e posição ficam, e

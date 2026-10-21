@@ -11,8 +11,8 @@ import FeedMineRuntime
 
 /// INV: a card enters the feed's presentation only after its preparation is complete
 /// (`docs/product/2026-10-17-render-ready-admission-rule.md`). For an image card that means the pixels are
-/// decoded before admission; a presentation that cannot decode its media is a **declared** text card, never an
-/// image slot waiting for bytes. Released pixels are reconstructed before the card is drawn again.
+/// decoded before admission; a card whose media cannot be decoded is excluded, never converted to text under
+/// the same identity or admitted as an image slot waiting for bytes. Released pixels are reconstructed before return.
 ///
 /// Seam: the injected `PresentationImageDecoder` (its real ImageIO path over a test asset directory, plus its
 /// `onDecode` hook). The failing decode is a genuinely absent local asset; the delay is the hook holding the
@@ -150,6 +150,27 @@ final class RenderReadyAdmissionTests: XCTestCase {
         for item in admitted.window.items {
             XCTAssertEqual(item.layout, .hero)
             XCTAssertNotNil(item.image, "a ready card is admitted with its pixels")
+        }
+    }
+
+    /// A forward admission must not decode cards that cannot fit after the reader's current anchor.
+    func testForwardAdmissionDecodesOnlyTheAvailableAnchoredSpace() async throws {
+        for (anchorIndex, expectedIndices, expectedDecodes) in [(0, [0, 1, 2], 0), (1, [1, 2, 3], 1)] {
+            let f = try fixture(cards: 9, anchor: 0, materialized: [0, 1, 2, 3])
+            let decodes = Counter()
+            let session = try session(f) { decodes.increment() }
+            _ = try await snapshot(session, .restore(.init(backwardCapacity: 0, forwardCapacity: 2)))
+            let observation = ViewportObservation(anchor: .init(cardID: f.ids[anchorIndex], placement: .center))
+            let observed = try await snapshot(session, observation)
+            let before = decodes.value
+
+            let forward = try await snapshot(session, .forwardScroll(observation))
+
+            XCTAssertEqual(forward.window.items.map(\.id), expectedIndices.map { f.ids[$0] })
+            XCTAssertEqual(forward.window.anchor, observed.window.anchor)
+            XCTAssertEqual(decodes.value - before, expectedDecodes,
+                "only cards that can fit after the anchor should be decoded; no scan of the refused tail")
+            if expectedDecodes == 0 { XCTAssertEqual(forward, observed) }
         }
     }
 

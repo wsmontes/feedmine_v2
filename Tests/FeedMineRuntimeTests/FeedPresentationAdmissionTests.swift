@@ -18,10 +18,15 @@ final class FeedPresentationAdmissionTests: XCTestCase {
 
         /// Publishes `cards[4...5]` as a second segment: production after the initial admission.
         func publishTail() throws {
-            let segment = try XCTUnwrap(FeedSegment(id: FeedSegmentID(), editionID: edition.id, ordinal: 1,
-                segmentSeed: 2, publicationSchemaVersion: edition.publicationSchemaVersion,
-                createdAt: edition.createdAt, cardIDs: Array(cards[4...5]).map(\.id)))
-            let values = try PublicationPersistenceMapping.records(segment: segment, cards: Array(cards[4...5]))
+            try publish(Array(cards[4...5]), ordinal: 1)
+        }
+
+        /// Committed publication after the initial admission, as segment `ordinal`.
+        func publish(_ cards: [PublishedCard], ordinal: UInt64) throws {
+            let segment = try XCTUnwrap(FeedSegment(id: FeedSegmentID(), editionID: edition.id, ordinal: ordinal,
+                segmentSeed: UInt64(ordinal + 1), publicationSchemaVersion: edition.publicationSchemaVersion,
+                createdAt: edition.createdAt, cardIDs: cards.map(\.id)))
+            let values = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
             try PublicationStore(database: database).appendSegment(values.0, cards: values.1)
         }
 
@@ -210,6 +215,66 @@ final class FeedPresentationAdmissionTests: XCTestCase {
         XCTAssertEqual(back.window.anchor, .init(cardID: f.cards[2].id, placement: .center))
         XCTAssertFalse(back.window.items.contains { $0.id == f.cards[5].id },
             "The same anchored bound cuts both ends: the far card leaves while the cut one returns")
+    }
+
+    /// PD-9/INV-17: an image without local pixels is not admitted, and it must not hide the ready cards behind it.
+    /// The forward read is bounded but progressive: a run of unprepared images longer than the frozen forward
+    /// capacity is skipped in local windows, and the ready text after it enters in published order.
+    func testForwardScrollAdmitsReadyCardsBehindUnpreparedImages() async throws {
+        let f = try fixture()
+        let before = try await admitted(f.session, .initial(f.bounds))
+        XCTAssertEqual(before.window.items.map(\.id), Array(f.cards[1...3]).map(\.id))
+        let images = try (0..<5).map {
+            try WarmPresentationFixture.card(layout: .hero, action: nil, title: "I\($0)")
+        }
+        let texts = try (0..<2).map {
+            try WarmPresentationFixture.card(layout: .textOnly, action: nil, title: "T\($0)")
+        }
+        // Five unprepared images, then two ready text cards: the run is longer than `forwardCapacity`.
+        try f.publish(images + texts, ordinal: 1)
+        let saved = try PublicationHistory(database: f.database).savedCursor()
+        XCTAssertEqual(saved?.anchor.cardID, f.cards[2].id, "premise: the durable cursor starts on a text card")
+
+        let observed = observation(f.cards[3], placement: .top)
+        _ = try await f.session.submitViewport(observed)
+        let forward = try await admitted(f.session, .forwardScroll(observed))
+
+        let expected = [f.cards[2].id, f.cards[3].id] + texts.map(\.id)
+        XCTAssertEqual(forward.window.items.map(\.id), expected,
+            "the ready text after the unprepared images enters, in order; no image is admitted")
+        XCTAssertTrue(Set(forward.window.items.map(\.id)).isDisjoint(with: Set(images.map(\.id))),
+            "an image with no local pixels never enters the admitted list and is never shown as text")
+        XCTAssertEqual(forward.window.anchor, .init(cardID: f.cards[3].id, placement: .top),
+            "the admission keeps the reader's anchor")
+        let kept = before.window.items.filter { expected.contains($0.id) }
+        XCTAssertEqual(Array(forward.window.items.prefix(kept.count)), kept,
+            "already admitted cards keep identity, order and projection")
+        XCTAssertEqual(forward.provenance.sequenceID, before.provenance.sequenceID)
+        XCTAssertGreaterThan(forward.provenance.position, before.provenance.position)
+        XCTAssertEqual(try PublicationHistory(database: f.database).savedCursor(), saved,
+            "admitting returned cards never moves the durable cursor")
+        // The walk reached the real end; repeating allocates nothing.
+        let repeated = try await admitted(f.session, .forwardScroll(observed))
+        XCTAssertEqual(repeated, forward)
+    }
+
+    /// The same walk at the real end of the Edition: unprepared images with no ready card after them leave the
+    /// presentation exactly as observed, and the admission terminates.
+    func testForwardScrollAtRealEndWithoutReadyCardsKeepsThePresentation() async throws {
+        let f = try fixture()
+        _ = try await admitted(f.session, .initial(f.bounds))
+        let images = try (0..<5).map {
+            try WarmPresentationFixture.card(layout: .hero, action: nil, title: "I\($0)")
+        }
+        try f.publish(images, ordinal: 1)
+        let saved = try PublicationHistory(database: f.database).savedCursor()
+        let observed = observation(f.cards[3], placement: .top)
+        let observedSnapshot = try await recorded(f.session, observed)
+        let forward = try await admitted(f.session, .forwardScroll(observed))
+        XCTAssertEqual(forward, observedSnapshot,
+            "with nothing ready ahead the screen is preserved, not replaced by an end state")
+        XCTAssertEqual(forward.window.anchor, .init(cardID: f.cards[3].id, placement: .top))
+        XCTAssertEqual(try PublicationHistory(database: f.database).savedCursor(), saved)
     }
 
     /// Decisão do dono (2026-10-13): a lista pode **manter a cabeça**. Continua limitada à frente, mas nada acima
