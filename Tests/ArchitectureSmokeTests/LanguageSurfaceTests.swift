@@ -77,6 +77,14 @@ final class LanguageSurfaceTests: XCTestCase {
         XCTAssertTrue(skipped.hasLanguageAnswer, "the empty set is 'all languages', not 'no answer yet'")
         XCTAssertEqual(ReaderDiscoveryControls.namingNoLanguage(in: .neutral(languages: ["en", "pt"])).languages,
             [], "the skip clears a whole selection, not only the last chip")
+        // An older stored recipe with no answer has an empty set too; the chip must not claim an answer the
+        // profile does not have.
+        XCTAssertFalse(ReaderDiscoveryControls.namesAllLanguages(.neutral()),
+            "an unanswered recipe does not select 'Todos os idiomas'")
+        XCTAssertTrue(ReaderDiscoveryControls.namesAllLanguages(.neutral(hasLanguageAnswer: true)),
+            "the explicit answer selects it")
+        XCTAssertFalse(ReaderDiscoveryControls.namesAllLanguages(.neutral(languages: ["pt"])),
+            "a named language is not the all-languages answer")
     }
 
     /// The expansion is information: the row's own identity is the language, so a variant cannot be selected as

@@ -450,7 +450,13 @@ class Insumo:
         return TRACO_SEM_FIM if self.truncation() else EVIDENCIA_INCOMPLETA
 
     def complete(self) -> bool:
-        """O traço é evidência completa? Sem perda anunciada, sem linha ilegível **e com um fim que se prova**."""
+        """O traço é evidência completa? Sem perda anunciada, sem linha ilegível **e com um fim que se prova**.
+
+        A reserva de contexto do RunwayTrace protege os eventos essenciais da jornada, mas **qualquer** perda
+        contada — inclusive `perdidos_do_contexto` — mantém o traço incompleto: M1/M10 leem eventos `window`/`frames`
+        e M3/M4/M7 dependem de eventos que o contexto carrega, então uma perda de contexto impede certificá-los.
+        Não relaxar esta soma sem provar que todos os eventos consumidos continuam presentes.
+        """
         losses = self.losses() or {}
         dropped = sum(value or 0 for key, value in losses.items() if key.startswith("perdidos_"))
         return dropped == 0 and self.invalid_lines == 0 and self.truncation() is None

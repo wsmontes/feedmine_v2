@@ -144,6 +144,10 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
 public struct RenderedViewportEvidence: Sendable {
     public let observation: ViewportObservation
     public let isPositionReconciliation: Bool
+    /// The rendering accepted a requested destination that was ready (a programmatic/VoiceOver jump or the
+    /// prepared successor of one). Reconciliation alone is only a preparation/correction request; this is the fact
+    /// that lets the cursor owner end a restore's substitution, and only after the destination was accepted.
+    public let establishesPosition: Bool
     let ordinal: UInt64
     let contextKey: ContextKey
     let editionID: FeedEditionID
@@ -159,10 +163,11 @@ public struct RenderedViewportEvidence: Sendable {
 }
 
 extension FeedPresentationSnapshot {
-    public func evidence(for observation: ViewportObservation, ordinal: UInt64 = 1, reconciliation: Bool = false) -> RenderedViewportEvidence? {
+    public func evidence(for observation: ViewportObservation, ordinal: UInt64 = 1, reconciliation: Bool = false,
+        establishesPosition: Bool = false) -> RenderedViewportEvidence? {
         guard ordinal > 0, window.admittedIDs.contains(observation.anchor.cardID) else { return nil }
         return RenderedViewportEvidence(observation: observation, isPositionReconciliation: reconciliation,
-            ordinal: ordinal, contextKey: contextKey,
+            establishesPosition: establishesPosition, ordinal: ordinal, contextKey: contextKey,
             editionID: editionID, provenance: provenance, admittedIDs: window.admittedIDs)
     }
 }

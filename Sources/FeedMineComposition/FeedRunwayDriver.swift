@@ -364,11 +364,25 @@ public actor FeedRunwayDriver {
             resources: resources, sampledAt: sampledAt, onCommitted: onCommitted)
     }
 
+    /// Whether an observation is the reader establishing a position. A real movement always is; a reconciliation
+    /// request is **not** one by itself (it may only be a preparation/correction) — it establishes a position only
+    /// when the rendering states that the destination was accepted (`establishesPosition`).
+    static func isDeliberate(activity: RunwayActivity, isReconciliation: Bool,
+        establishesPosition: Bool) -> Bool {
+        // `isReconciliation` alone does not make a move: a preparation/correction request reaches here as a
+        // stationary reconciliation, and it establishes a position only when the destination was accepted.
+        activity != .stationary || establishesPosition
+    }
+
     public func submitViewport(_ evidence: RenderedViewportEvidence, activity: RunwayActivity,
         resources: FeedRunwayDriverResources, sampledAt: RunwayMonotonicTime? = nil,
         onCommitted: (@Sendable (FeedPresentationSnapshot) async -> Void)? = nil) async throws -> FeedPresentationSnapshot? {
+        // A preparation/correction reconciliation is not a completed move; only an accepted destination
+        // (`establishesPosition`) or a real movement ends a restore's substitution.
         guard let recorded = try await session.submitViewport(evidence.observation, from: evidence,
-            deliberate: activity != .stationary || evidence.isPositionReconciliation) else {
+            deliberate: Self.isDeliberate(activity: activity,
+                isReconciliation: evidence.isPositionReconciliation,
+                establishesPosition: evidence.establishesPosition)) else {
             return await session.currentPresentation()
         }
         if evidence.isPositionReconciliation {

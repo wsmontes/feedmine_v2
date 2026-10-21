@@ -197,6 +197,39 @@ final class RenderReadyAdmissionTests: XCTestCase {
         XCTAssertEqual(try store.checkpoint(), durable)
     }
 
+    /// **The accepted jump.** A destination the reader actually moved to (the UI states it as deliberate once the
+    /// gate accepted it) establishes a new position: the substitution ends, the milestone writes that card and the
+    /// next restore lands on it. A preparation request that never became a move (`deliberate: false`) must not:
+    /// the milestone still refuses, and the durable record keeps the reader's card.
+    func testAnAcceptedJumpWritesTheDestinationAndARejectedPreparationKeepsTheDurableCard() async throws {
+        let f = try fixture(cards: 5, anchor: 2, materialized: [0, 1, 3, 4], textIndices: [0, 1, 3, 4])
+        let reader = try session(f)
+        _ = try await snapshot(reader, .restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+        let store = SessionStore(database: f.database)
+        XCTAssertEqual(try store.checkpoint()?.cardID, f.ids[2], "premise: the durable card lost its asset")
+
+        // A preparation request is not a completed move.
+        _ = try await reader.submitViewport(.init(anchor: .init(cardID: f.ids[4], placement: .top)),
+            deliberate: false)
+        let refused = try await reader.checkpointCurrentPosition(at: Date())
+        XCTAssertFalse(refused, "a request for a destination band must not end the restore's substitution")
+        XCTAssertEqual(try store.checkpoint()?.cardID, f.ids[2],
+            "the aborted preparation keeps the reader's durable card")
+
+        // The accepted destination is a real move: the substitution ends and the milestone writes it.
+        _ = try await reader.submitViewport(.init(anchor: .init(cardID: f.ids[4], placement: .top)),
+            deliberate: true)
+        let wrote = try await reader.checkpointCurrentPosition(at: Date())
+        XCTAssertTrue(wrote)
+        XCTAssertEqual(try store.checkpoint()?.cardID, f.ids[4])
+
+        let reopened = try session(f)
+        let restored = try await snapshot(reopened, .restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+        XCTAssertEqual(restored.window.anchor.cardID, f.ids[4],
+            "the next restore lands on the destination the reader established")
+        XCTAssertNil(restored.unavailablePositionCardID, "and no substitute fact remains")
+    }
+
     /// **The automatic boundary.** After a restore that could not redraw the reader's card, the rendering's own
     /// resting position names the substitute. It is not a reader move: the durable record must keep the reader's
     /// card through the automatic statement and through a lifecycle checkpoint. The layout's own observation of

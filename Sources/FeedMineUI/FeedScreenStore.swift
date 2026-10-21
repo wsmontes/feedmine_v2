@@ -378,10 +378,12 @@ public final class FeedScreenStore {
 
     /// Emits one explicit user observation. The external consumer decides how to execute it.
     public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,
-        rendered: FeedPresentationSnapshot? = nil, reconciliation: Bool = false) {
+        rendered: FeedPresentationSnapshot? = nil, reconciliation: Bool = false,
+        establishesPosition: Bool = false) {
         if let onRenderedViewport, let rendered {
             viewportOrdinal += 1
-            guard let evidence = rendered.evidence(for: observation, ordinal: viewportOrdinal, reconciliation: reconciliation) else { return }
+            guard let evidence = rendered.evidence(for: observation, ordinal: viewportOrdinal,
+                reconciliation: reconciliation, establishesPosition: establishesPosition) else { return }
             onRenderedViewport(evidence, activity)
             return
         }

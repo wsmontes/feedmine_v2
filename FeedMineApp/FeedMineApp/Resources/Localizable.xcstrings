@@ -3142,6 +3142,26 @@
         }
       }
     },
+    "O card em que você parou não está disponível; abrimos no card mais próximo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The card where you stopped is unavailable; we opened the closest card."
+          }
+        }
+      }
+    },
+    "Este conteúdo não está disponível": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This content is unavailable"
+          }
+        }
+      }
+    },
     "Todos os idiomas": {
       "localizations": {
         "en": {

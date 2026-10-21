@@ -6,7 +6,7 @@ import FeedMineAcquisition
 import FeedMineEditorial
 @testable import FeedMinePublication
 @testable import FeedMineRuntime
-import FeedMineComposition
+@testable import FeedMineComposition
 
 private final class DriverClock: @unchecked Sendable {
     private let lock = NSLock()
@@ -187,6 +187,22 @@ final class FeedRunwayDriverTests: XCTestCase {
         private var storage = false
         var value: Bool { lock.lock(); defer { lock.unlock() }; return storage }
         func set() { lock.lock(); storage = true; lock.unlock() }
+    }
+
+    /// The deliberate-move decision the anchor protection depends on: a stationary preparation/correction
+    /// reconciliation is not a completed move; only an accepted destination (or a real movement) is.
+    func testAPreparationReconciliationIsNotADeliberateMove() {
+        XCTAssertFalse(FeedRunwayDriver.isDeliberate(activity: .stationary,
+            isReconciliation: true, establishesPosition: false),
+            "a preparation request must not end a restore's substitution")
+        XCTAssertTrue(FeedRunwayDriver.isDeliberate(activity: .stationary,
+            isReconciliation: true, establishesPosition: true),
+            "an accepted destination establishes the position")
+        XCTAssertTrue(FeedRunwayDriver.isDeliberate(activity: .forward,
+            isReconciliation: true, establishesPosition: false),
+            "a real movement is deliberate on its own")
+        XCTAssertTrue(FeedRunwayDriver.isDeliberate(activity: .backward,
+            isReconciliation: false, establishesPosition: false))
     }
 
     /// P02/A1: the second durable source arrives **after** the first opportunity returned. The reader makes no

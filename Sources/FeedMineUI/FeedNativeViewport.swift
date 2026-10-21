@@ -210,17 +210,48 @@ struct NativeFeedViewport: ViewModifier {
 /// position directly, because a released head would be exposed without its pixels.
 @MainActor
 enum FeedPositionRequest {
+    /// The destination was accepted: the position is applied **and** stated to the host as an established position.
+    /// A reconciliation request alone is only a preparation/correction; the cursor owner must not end a restore's
+    /// substitution until the destination itself is ready and the position is applied.
+    private static func accept(_ id: PublicationCardID, presented: FeedPresentationSnapshot,
+        capture: inout FeedVisualCapture, store: FeedScreenStore) {
+        capture.pendingJump = nil
+        capture.positionID = id
+        capture.motion.readerCardID = id
+        store.submitViewport(.init(anchor: .init(cardID: id, placement: .top)),
+            activity: .stationary, rendered: presented, reconciliation: true,
+            establishesPosition: true)
+    }
+
     static func apply(_ id: PublicationCardID, presented: FeedPresentationSnapshot,
         capture: inout FeedVisualCapture, store: FeedScreenStore) {
+        // The binding setter also fires on the first layout, on a published window change and while the reader
+        // scrolls. A card reaching the top during a gesture is a real movement the driver already states with
+        // `activity != .stationary`; the first layout and a window change request the window's own anchor. Only a
+        // position outside a gesture, after a presented top exists and toward a card other than the admitted
+        // window's anchor (accessibility, `scrollTo`, "Voltar ao início"), is a requested jump.
+        let establishesPosition = capture.motion.publishedPresentedTop != nil
+            && !capture.reading && !capture.interaction.isHolding
+            && id != presented.window.anchor.cardID
         switch FeedDestinationGate.readiness(of: id, in: presented) {
-        case .ready, .notAdmitted:
+        case .ready where establishesPosition:
+            accept(id, presented: presented, capture: &capture, store: store)
+        case .ready:
+            // The reader's own scrolling (or the first layout): the position is applied locally and the driver's
+            // real-movement observation owns the durable fact. No stationary viewport is submitted here.
+            capture.pendingJump = nil
+            capture.positionID = id
+            capture.motion.readerCardID = id
+        case .notAdmitted:
             capture.pendingJump = nil
             capture.positionID = id
             capture.motion.readerCardID = id
         case .needsPreparation:
+            // A request for the destination band is not a completed move: keep the current reading and the
+            // restore's protection until `settle` sees the prepared destination ready.
             capture.pendingJump = id
             store.submitViewport(.init(anchor: .init(cardID: id, placement: .top)),
-                activity: .stationary, rendered: presented, reconciliation: true)
+                activity: .stationary, rendered: presented, reconciliation: true, establishesPosition: false)
         case .unavailableAfterPreparation:
             capture.pendingJump = nil
         }
@@ -230,9 +261,9 @@ enum FeedPositionRequest {
         guard let destination = capture.pendingJump else { return }
         switch FeedDestinationGate.readinessAfterPreparation(of: destination, in: store.state.presentation) {
         case .ready:
-            capture.positionID = destination
-            capture.motion.readerCardID = destination
-            capture.pendingJump = nil
+            guard let presented = store.state.presentation else { return }
+            // The pending destination was a requested jump; its accepted value is the position to establish.
+            accept(destination, presented: presented, capture: &capture, store: store)
         case .unavailableAfterPreparation:
             capture.pendingJump = nil
             store.showToast(text: String(localized: "Este conteúdo não está disponível"),

@@ -80,6 +80,13 @@ public struct ReaderDiscoveryControls: View {
         return next
     }
 
+    /// Whether the "all languages" chip is the reader's selected answer. An older stored recipe with no answer
+    /// decodes an empty language set too; showing the chip selected there would claim an answer discovery does not
+    /// have.
+    public static func namesAllLanguages(_ recipe: FeedRecipeDefinition) -> Bool {
+        recipe.hasLanguageAnswer && recipe.languages.isEmpty
+    }
+
     private var languageControl: some View {
         // F02 §2.1: the first run starts from the device's own languages when the catalogue carries them, clearly
         // editable — the host seeds `recipe` with that suggestion, and the chip states it as selected. The
@@ -97,7 +104,7 @@ public struct ReaderDiscoveryControls: View {
                 Button {
                     recipe = Self.namingNoLanguage(in: recipe)
                 } label: {
-                    chip(String(localized: "Todos os idiomas"), isOn: recipe.languages.isEmpty)
+                    chip(String(localized: "Todos os idiomas"), isOn: Self.namesAllLanguages(recipe))
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("\(identifierPrefix)-languages-unrestricted")

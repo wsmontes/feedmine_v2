@@ -841,4 +841,90 @@ final class FeedViewportCaptureTests: XCTestCase {
         XCTAssertNil(capture.pendingJump)
     }
 
+    /// The deliberate fact follows the **accepted** destination, not the request: a ready jump states
+    /// `establishesPosition`, a preparation request does not, and a preparation that ends unavailable states nothing.
+    /// This is the UI half of the anchor regression; the runtime half is
+    /// `RenderReadyAdmissionTests.testAnAcceptedJumpWritesTheDestinationAndARejectedPreparationKeepsTheDurableCard`.
+    func testPositionRequestOnlyEstablishesAnAcceptedDestination() throws {
+        let ids = (0..<3).map { _ in PublicationCardID() }
+        let image = PresentationCard(id: ids[0], title: "Image", primaryText: "Body", timestamp: nil,
+            sourceID: nil, sourceDisplayName: nil, providerDisplayName: nil, layout: .hero,
+            mediaAspectRatio: 1.5, primaryActionKind: nil, image: nil)
+        let text = ids.dropFirst().map { id in
+            PresentationCard(id: id, title: "Text", primaryText: "Body", timestamp: nil, sourceID: nil,
+                sourceDisplayName: nil, providerDisplayName: nil, layout: .textOnly,
+                mediaAspectRatio: nil, primaryActionKind: nil, image: nil)
+        }
+        let edition = FeedEditionID(), sequence = UUID()
+        func snapshot(position: UInt64, items: [PresentationCard], anchor: PublicationCardID,
+            unavailable: Set<PublicationCardID> = []) throws -> FeedPresentationSnapshot {
+            .init(contextKey: FeedContext(request: .main).key, editionID: edition,
+                window: try XCTUnwrap(FeedWindowSnapshot(items: items,
+                    anchor: .init(cardID: anchor, placement: .top))),
+                provenance: .init(sequenceID: sequence, position: position),
+                unavailableImageCardIDs: unavailable)
+        }
+        let presented = try snapshot(position: 1, items: [image] + text, anchor: ids[1])
+        var evidence: [RenderedViewportEvidence] = []
+        let store = FeedScreenStore(onViewport: { _, _ in },
+            onRenderedViewport: { value, _ in evidence.append(value) })
+        try store.install(.init(presentation: presented))
+        var capture = FeedVisualCapture()
+
+        // A released bitmap only requests preparation; the restore's protection must survive it.
+        FeedPositionRequest.apply(ids[0], presented: presented, capture: &capture, store: store)
+        XCTAssertEqual(capture.pendingJump, ids[0])
+        XCTAssertEqual(evidence.count, 1)
+        XCTAssertTrue(evidence[0].isPositionReconciliation)
+        XCTAssertFalse(evidence[0].establishesPosition,
+            "a preparation request is not a completed move")
+
+        // A prepared destination that is ready is accepted: the fact that ends a substitution is stated with the
+        // position. This branch is measured with a text destination because the gate only reads `isRenderReady`;
+        // the needs-preparation request above is the image path.
+        var preparedCapture = FeedVisualCapture()
+        preparedCapture.pendingJump = ids[1]
+        FeedPositionRequest.settle(&preparedCapture, store: store)
+        XCTAssertNil(preparedCapture.pendingJump)
+        XCTAssertEqual(preparedCapture.positionID, ids[1], "the accepted destination becomes the applied position")
+        XCTAssertEqual(evidence.last?.observation.anchor.cardID, ids[1])
+        XCTAssertTrue(evidence.last?.isPositionReconciliation == true)
+        XCTAssertTrue(evidence.last?.establishesPosition == true,
+            "an accepted destination establishes the position")
+
+        // A jump to an already-ready card states it immediately — once the screen has a presented top and the
+        // destination differs (the first layout is not a jump).
+        var readyCapture = FeedVisualCapture()
+        readyCapture.motion.presentedTop = ids[1]
+        readyCapture.motion.publishedPresentedTop = ids[1]
+        FeedPositionRequest.apply(ids[2], presented: presented, capture: &readyCapture, store: store)
+        XCTAssertEqual(readyCapture.positionID, ids[2])
+        XCTAssertTrue(evidence.last?.establishesPosition == true)
+
+        // The same binding setter fires during a gesture. A card reaching the top while the reader scrolls is a
+        // real movement (the driver states it with activity != .stationary); it must not become a stationary
+        // deliberate submission of its own.
+        var gesturing = FeedVisualCapture()
+        gesturing.motion.presentedTop = ids[1]
+        gesturing.motion.publishedPresentedTop = ids[1]
+        gesturing.reading = true
+        let beforeGesture = evidence.count
+        FeedPositionRequest.apply(ids[2], presented: presented, capture: &gesturing, store: store)
+        XCTAssertEqual(gesturing.positionID, ids[2], "the gesture still updates the bound position")
+        XCTAssertEqual(evidence.count, beforeGesture,
+            "a gesture-driven position change submits no stationary deliberate viewport")
+
+        // A preparation that ends unavailable states no position at all.
+        let unavailable = try snapshot(position: 4, items: text, anchor: ids[1], unavailable: [ids[0]])
+        try store.install(.init(presentation: unavailable))
+        var failedCapture = FeedVisualCapture()
+        failedCapture.pendingJump = ids[0]
+        let before = evidence.count
+        FeedPositionRequest.settle(&failedCapture, store: store)
+        XCTAssertNil(failedCapture.pendingJump)
+        XCTAssertNil(failedCapture.positionID)
+        XCTAssertEqual(evidence.count, before, "an unavailable destination never establishes a position")
+        XCTAssertNotNil(store.toast)
+    }
+
 }
