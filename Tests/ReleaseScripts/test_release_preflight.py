@@ -25,6 +25,7 @@ class ReleasePreflightTests(unittest.TestCase):
             plistlib.dump({"CFBundleVersion": "46", "CFBundleShortVersionString": "1.0"}, stream)
         shutil.copy2(ROOT / "scripts/release-testflight.sh", self.root / "scripts/release-testflight.sh")
         shutil.copy2(ROOT / "scripts/verify_product_catalogue.sh", self.root / "scripts/verify_product_catalogue.sh")
+        shutil.copy2(ROOT / "scripts/ExportOptions.plist", self.root / "scripts/ExportOptions.plist")
         (self.root / "scripts/release-testflight.sh").chmod(0o755)
         (self.root / "scripts/verify_product_catalogue.sh").chmod(0o755)
         self.bin = self.root / "bin"
