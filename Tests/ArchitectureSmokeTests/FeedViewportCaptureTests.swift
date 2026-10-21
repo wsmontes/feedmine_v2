@@ -822,7 +822,7 @@ final class FeedViewportCaptureTests: XCTestCase {
         try store.install(.init(presentation: presented))
         var capture = FeedVisualCapture()
 
-        FeedPositionRequest.apply(ids[0], presented: presented, capture: &capture, store: store)
+        FeedPositionRequest.apply(ids[0], presented: presented, capture: &capture, store: store, explicit: true)
         XCTAssertNil(capture.positionID, "o topo com bitmap liberado não pode ser aplicado antes do preparo")
         XCTAssertEqual(capture.pendingJump, ids[0])
         XCTAssertEqual(observations.count, 1, "o preparo é um pedido explícito à sessão")
@@ -836,7 +836,7 @@ final class FeedViewportCaptureTests: XCTestCase {
         XCTAssertNil(capture.positionID, "a falha nunca vira posição aplicada")
         XCTAssertNotNil(store.toast)
 
-        FeedPositionRequest.apply(ids[1], presented: failed, capture: &capture, store: store)
+        FeedPositionRequest.apply(ids[1], presented: failed, capture: &capture, store: store, explicit: true)
         XCTAssertEqual(capture.positionID, ids[1], "um destino de texto está pronto e é aplicado na hora")
         XCTAssertNil(capture.pendingJump)
     }
@@ -855,6 +855,10 @@ final class FeedViewportCaptureTests: XCTestCase {
                 sourceDisplayName: nil, providerDisplayName: nil, layout: .textOnly,
                 mediaAspectRatio: nil, primaryActionKind: nil, image: nil)
         }
+        // The prepared value of the released head: same identity, render-ready.
+        let headText = PresentationCard(id: ids[0], title: "Head", primaryText: "Body", timestamp: nil,
+            sourceID: nil, sourceDisplayName: nil, providerDisplayName: nil, layout: .textOnly,
+            mediaAspectRatio: nil, primaryActionKind: nil, image: nil)
         let edition = FeedEditionID(), sequence = UUID()
         func snapshot(position: UInt64, items: [PresentationCard], anchor: PublicationCardID,
             unavailable: Set<PublicationCardID> = []) throws -> FeedPresentationSnapshot {
@@ -871,8 +875,9 @@ final class FeedViewportCaptureTests: XCTestCase {
         try store.install(.init(presentation: presented))
         var capture = FeedVisualCapture()
 
-        // A released bitmap only requests preparation; the restore's protection must survive it.
-        FeedPositionRequest.apply(ids[0], presented: presented, capture: &capture, store: store)
+        // A released bitmap only requests preparation; even the explicit "Voltar ao início" token does not make
+        // that request a completed move, and the restore's protection must survive it.
+        FeedPositionRequest.apply(ids[0], presented: presented, capture: &capture, store: store, explicit: true)
         XCTAssertEqual(capture.pendingJump, ids[0])
         XCTAssertEqual(evidence.count, 1)
         XCTAssertTrue(evidence[0].isPositionReconciliation)
@@ -884,6 +889,7 @@ final class FeedViewportCaptureTests: XCTestCase {
         // the needs-preparation request above is the image path.
         var preparedCapture = FeedVisualCapture()
         preparedCapture.pendingJump = ids[1]
+        preparedCapture.pendingJumpExplicit = true
         FeedPositionRequest.settle(&preparedCapture, store: store)
         XCTAssertNil(preparedCapture.pendingJump)
         XCTAssertEqual(preparedCapture.positionID, ids[1], "the accepted destination becomes the applied position")
@@ -892,27 +898,60 @@ final class FeedViewportCaptureTests: XCTestCase {
         XCTAssertTrue(evidence.last?.establishesPosition == true,
             "an accepted destination establishes the position")
 
-        // A jump to an already-ready card states it immediately — once the screen has a presented top and the
-        // destination differs (the first layout is not a jump).
+        // An explicit jump states a ready destination immediately, even when it targets the window's own anchor:
+        // the caller's one-shot token decides, not the anchor heuristic.
+        let beforeExplicit = evidence.count
         var readyCapture = FeedVisualCapture()
-        readyCapture.motion.presentedTop = ids[1]
-        readyCapture.motion.publishedPresentedTop = ids[1]
-        FeedPositionRequest.apply(ids[2], presented: presented, capture: &readyCapture, store: store)
-        XCTAssertEqual(readyCapture.positionID, ids[2])
-        XCTAssertTrue(evidence.last?.establishesPosition == true)
+        FeedPositionRequest.apply(ids[1], presented: presented, capture: &readyCapture, store: store,
+            explicit: true)
+        XCTAssertEqual(readyCapture.positionID, ids[1])
+        XCTAssertEqual(evidence.count, beforeExplicit + 1)
+        XCTAssertTrue(evidence.last?.establishesPosition == true,
+            "an explicit ready jump establishes the position, anchor target included")
 
-        // The same binding setter fires during a gesture. A card reaching the top while the reader scrolls is a
-        // real movement (the driver states it with activity != .stationary); it must not become a stationary
-        // deliberate submission of its own.
-        var gesturing = FeedVisualCapture()
-        gesturing.motion.presentedTop = ids[1]
-        gesturing.motion.publishedPresentedTop = ids[1]
-        gesturing.reading = true
-        let beforeGesture = evidence.count
-        FeedPositionRequest.apply(ids[2], presented: presented, capture: &gesturing, store: store)
-        XCTAssertEqual(gesturing.positionID, ids[2], "the gesture still updates the bound position")
-        XCTAssertEqual(evidence.count, beforeGesture,
-            "a gesture-driven position change submits no stationary deliberate viewport")
+        // The binding's own echo after that accept (same id, no token) must not submit again.
+        let afterAccept = evidence.count
+        FeedPositionRequest.apply(ids[1], presented: presented, capture: &readyCapture, store: store,
+            explicit: false)
+        XCTAssertEqual(evidence.count, afterAccept, "the echo after an accepted jump does not duplicate it")
+
+        // An idle setter echo with a different id is not intention either.
+        var observational = FeedVisualCapture()
+        let beforeEcho = evidence.count
+        FeedPositionRequest.apply(ids[2], presented: presented, capture: &observational, store: store,
+            explicit: false)
+        XCTAssertEqual(observational.positionID, ids[2], "the bound position still updates")
+        XCTAssertEqual(evidence.count, beforeEcho,
+            "the idle setter submits no stationary deliberate viewport")
+
+        // A preparation requested by that echo applies its prepared value locally; it cannot establish a position
+        // (and therefore cannot end a restore's substitution). The prepared value keeps the same identity.
+        var echoPreparation = FeedVisualCapture()
+        FeedPositionRequest.apply(ids[0], presented: presented, capture: &echoPreparation, store: store,
+            explicit: false)
+        XCTAssertEqual(echoPreparation.pendingJump, ids[0])
+        XCTAssertFalse(echoPreparation.pendingJumpExplicit)
+        let prepared = try snapshot(position: 2, items: [headText, text[0], text[1]], anchor: ids[1])
+        try store.install(.init(presentation: prepared))
+        let beforeEchoSettle = evidence.count
+        FeedPositionRequest.settle(&echoPreparation, store: store)
+        XCTAssertNil(echoPreparation.pendingJump)
+        XCTAssertEqual(echoPreparation.positionID, ids[0], "the prepared value is applied locally")
+        XCTAssertEqual(evidence.count, beforeEchoSettle,
+            "a layout/window echo's preparation never submits an established position")
+
+        // The same preparation started by an explicit jump does establish the accepted destination.
+        var explicitPreparation = FeedVisualCapture()
+        FeedPositionRequest.apply(ids[0], presented: presented, capture: &explicitPreparation, store: store,
+            explicit: true)
+        XCTAssertEqual(explicitPreparation.pendingJump, ids[0])
+        XCTAssertTrue(explicitPreparation.pendingJumpExplicit)
+        let beforeExplicitSettle = evidence.count
+        FeedPositionRequest.settle(&explicitPreparation, store: store)
+        XCTAssertEqual(evidence.count, beforeExplicitSettle + 1)
+        XCTAssertEqual(explicitPreparation.positionID, ids[0])
+        XCTAssertTrue(evidence.last?.establishesPosition == true,
+            "an explicit jump establishes its prepared destination")
 
         // A preparation that ends unavailable states no position at all.
         let unavailable = try snapshot(position: 4, items: text, anchor: ids[1], unavailable: [ids[0]])

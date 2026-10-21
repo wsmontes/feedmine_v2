@@ -29,11 +29,12 @@ struct NativeFeedViewport: ViewModifier {
             current.provenance.sequenceID == presented.provenance.sequenceID
     }
 
-    /// R04: the one place a requested position is accepted or deferred. A ready destination is applied; a released
-    /// bitmap keeps the reader where they are and asks the session for the destination band; the prepared value
-    /// applies the position (see `settlePendingJump`). VoiceOver, `scrollTo` and a programmatic jump all arrive here.
-    private func requestPosition(_ id: PublicationCardID, presented: FeedPresentationSnapshot) {
-        FeedPositionRequest.apply(id, presented: presented, capture: &capture, store: store)
+    /// R04: the binding's own updates. This is an echo of the rendered position (first layout, a published window
+    /// change, a gesture); it may prevent an empty slot by asking for the destination band, but it is **not** a
+    /// reader intention and never establishes a position. Callers that mean a jump call `FeedPositionRequest.apply`
+    /// with `explicit: true`.
+    private func observePosition(_ id: PublicationCardID, presented: FeedPresentationSnapshot) {
+        FeedPositionRequest.apply(id, presented: presented, capture: &capture, store: store, explicit: false)
     }
 
     /// Applies a position that was waiting for its pixels, or states that the destination is unavailable.
@@ -67,7 +68,7 @@ struct NativeFeedViewport: ViewModifier {
             }, set: { id in
                 guard matchesScope, let id, let presented,
                     presented.window.items.contains(where: { $0.id == id }) else { return }
-                requestPosition(id, presented: presented)
+                observePosition(id, presented: presented)
             }))
             .onScrollPhaseChange { oldPhase, phase, context in
                 #if DEBUG
@@ -205,9 +206,10 @@ struct NativeFeedViewport: ViewModifier {
     }
 }
 
-/// One place where a requested position is accepted, deferred or refused (R04/P03). The scroll binding, VoiceOver,
-/// `scrollTo`, a programmatic jump and "Voltar ao início" all pass through here — none of them may assign the
-/// position directly, because a released head would be exposed without its pixels.
+/// One place where a position is accepted, deferred or refused (R04/P03). The scroll binding uses it
+/// **observationally** (`explicit: false`); a caller that means a jump passes the one-shot `explicit` token
+/// ("Voltar ao início", and the prepared successor). No caller may assign the position directly, because a
+/// released head would be exposed without its pixels.
 @MainActor
 enum FeedPositionRequest {
     /// The destination was accepted: the position is applied **and** stated to the host as an established position.
@@ -216,6 +218,7 @@ enum FeedPositionRequest {
     private static func accept(_ id: PublicationCardID, presented: FeedPresentationSnapshot,
         capture: inout FeedVisualCapture, store: FeedScreenStore) {
         capture.pendingJump = nil
+        capture.pendingJumpExplicit = false
         capture.positionID = id
         capture.motion.readerCardID = id
         store.submitViewport(.init(anchor: .init(cardID: id, placement: .top)),
@@ -223,49 +226,57 @@ enum FeedPositionRequest {
             establishesPosition: true)
     }
 
+    /// `explicit` is the one-shot token from a caller that means a jump ("Voltar ao início", and the prepared
+    /// successor that caller started). The scroll binding passes false: first layout, a published window change,
+    /// a gesture echo and a restore never create intention. An explicit jump is accepted even when it targets the
+    /// window's own anchor; only the caller's token decides.
     static func apply(_ id: PublicationCardID, presented: FeedPresentationSnapshot,
-        capture: inout FeedVisualCapture, store: FeedScreenStore) {
-        // The binding setter also fires on the first layout, on a published window change and while the reader
-        // scrolls. A card reaching the top during a gesture is a real movement the driver already states with
-        // `activity != .stationary`; the first layout and a window change request the window's own anchor. Only a
-        // position outside a gesture, after a presented top exists and toward a card other than the admitted
-        // window's anchor (accessibility, `scrollTo`, "Voltar ao início"), is a requested jump.
-        let establishesPosition = capture.motion.publishedPresentedTop != nil
-            && !capture.reading && !capture.interaction.isHolding
-            && id != presented.window.anchor.cardID
+        capture: inout FeedVisualCapture, store: FeedScreenStore, explicit: Bool = false) {
         switch FeedDestinationGate.readiness(of: id, in: presented) {
-        case .ready where establishesPosition:
+        case .ready where explicit:
             accept(id, presented: presented, capture: &capture, store: store)
         case .ready:
-            // The reader's own scrolling (or the first layout): the position is applied locally and the driver's
-            // real-movement observation owns the durable fact. No stationary viewport is submitted here.
+            // Layout/window/gesture echo: the position is applied locally; the driver's real-movement observation
+            // owns the durable fact. No stationary viewport is submitted here.
             capture.pendingJump = nil
+            capture.pendingJumpExplicit = false
             capture.positionID = id
             capture.motion.readerCardID = id
         case .notAdmitted:
             capture.pendingJump = nil
+            capture.pendingJumpExplicit = false
             capture.positionID = id
             capture.motion.readerCardID = id
         case .needsPreparation:
             // A request for the destination band is not a completed move: keep the current reading and the
             // restore's protection until `settle` sees the prepared destination ready.
             capture.pendingJump = id
+            capture.pendingJumpExplicit = explicit
             store.submitViewport(.init(anchor: .init(cardID: id, placement: .top)),
                 activity: .stationary, rendered: presented, reconciliation: true, establishesPosition: false)
         case .unavailableAfterPreparation:
             capture.pendingJump = nil
+            capture.pendingJumpExplicit = false
         }
     }
 
     static func settle(_ capture: inout FeedVisualCapture, store: FeedScreenStore) {
         guard let destination = capture.pendingJump else { return }
         switch FeedDestinationGate.readinessAfterPreparation(of: destination, in: store.state.presentation) {
-        case .ready:
+        case .ready where capture.pendingJumpExplicit:
             guard let presented = store.state.presentation else { return }
             // The pending destination was a requested jump; its accepted value is the position to establish.
             accept(destination, presented: presented, capture: &capture, store: store)
+        case .ready:
+            // The preparation was requested by a layout/window/animation echo. Apply the prepared value locally;
+            // it never establishes a position and cannot end a restore's substitution.
+            capture.pendingJump = nil
+            capture.pendingJumpExplicit = false
+            capture.positionID = destination
+            capture.motion.readerCardID = destination
         case .unavailableAfterPreparation:
             capture.pendingJump = nil
+            capture.pendingJumpExplicit = false
             store.showToast(text: String(localized: "Este conteúdo não está disponível"),
                 systemImage: "exclamationmark.triangle")
         case .needsPreparation, .notAdmitted:

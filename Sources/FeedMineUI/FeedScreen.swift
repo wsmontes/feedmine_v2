@@ -250,7 +250,8 @@ public struct FeedScreen: View {
                     // bypassed the binding's setter and exposed a released head without preparing its pixels.
                     guard let first = items.first?.id,
                         let presented = capture.interaction.presentation(for: store) else { return }
-                    FeedPositionRequest.apply(first, presented: presented, capture: &capture, store: store)
+                    FeedPositionRequest.apply(first, presented: presented, capture: &capture, store: store,
+                        explicit: true)
                 })
         }
     }
