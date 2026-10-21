@@ -67,8 +67,9 @@ public struct ReaderDiscoveryControls: View {
         return next
     }
 
-    /// The skip: no language named at all. It is the unrestricted scope, and it is the only thing this control
-    /// ever writes from the reader's own answer — never the system language.
+    /// The reader's explicit "all languages": the empty set, selected like any other answer so a reader who
+    /// chose it can see that they did. It is a real answer — the widest language scope the reader can name — and
+    /// taking the **last** language back is never a blocked tap.
     public static func namingNoLanguage(in recipe: FeedRecipeDefinition) -> FeedRecipeDefinition {
         var next = recipe
         next.languages = []
@@ -76,7 +77,8 @@ public struct ReaderDiscoveryControls: View {
     }
 
     private var languageControl: some View {
-        // The first run **asks**: the reader chooses or skips, and nothing is pre-selected from the device. The
+        // F02 §2.1: the first run starts from the device's own languages when the catalogue carries them, clearly
+        // editable — the host seeds `recipe` with that suggestion, and the chip states it as selected. The
         // settings page keeps the plain heading, because the answer there is a value to adjust, not a question.
         OnboardingSection(title: scope == .firstRun
             ? String(localized: "Em quais idiomas você quer ler?")

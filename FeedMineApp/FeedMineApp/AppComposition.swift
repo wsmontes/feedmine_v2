@@ -1388,6 +1388,24 @@ final class AppComposition {
         return true
     }
 
+    /// F02 §2.1: the first run's language question starts from the device's own languages, when the catalogue
+    /// carries them — a suggestion the reader can take back, never an imposition. The catalogue's own choices are
+    /// primary subtags (`ReaderLanguageCode`), so the device's `pt-BR` answers the `pt` chip and `en-US` answers
+    /// `en`. The suggestion is also what gives the broad entry a usable answer: with no language named at all the
+    /// discovery profile is empty, `ReaderDiscoveryPool.pool` returns nothing, and the feed opens on the empty
+    /// selection surface (measured 2026-10-20).
+    nonisolated static func suggestedLanguages(from offered: [OnboardingLanguage],
+        preferred: [String] = ReaderContentFilterTemplate.preferredLanguages) -> [String] {
+        let offeredCodes = Set(offered.map(\.code))
+        var suggestion: [String] = []
+        for code in preferred {
+            let choice = ReaderLanguageCode.choice(code)
+            guard offeredCodes.contains(choice), !suggestion.contains(choice) else { continue }
+            suggestion.append(choice)
+        }
+        return suggestion
+    }
+
     /// What the Composer can offer, from the catalogue the app already reads: its languages, and its own
     /// sections as topics (their keys are the ones a source is placed under, which is what a recipe stores).
     func onboardingOptions() -> (languages: [OnboardingLanguage], topics: [OnboardingTopic],
