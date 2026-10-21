@@ -21,6 +21,10 @@ public struct ReaderOnboardingView: View {
 
     @State private var stage: Stage
     @State private var recipe: FeedRecipeDefinition
+    /// The recipe the host handed in — the reader's own answers from a previous pass, or the first run's
+    /// suggested languages. "Reiniciar" and the broad entry go back to it; resetting to an empty recipe instead
+    /// would throw away the suggestion and leave discovery with no profile at all.
+    private let initialRecipe: FeedRecipeDefinition
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// V1's deep navy. The scene is the one surface the app paints itself, so the palette is stated here.
@@ -49,6 +53,7 @@ public struct ReaderOnboardingView: View {
         onClose: @escaping () -> Void) {
         _stage = State(initialValue: isFirstRun ? .welcome : .composer)
         _recipe = State(initialValue: recipe)
+        self.initialRecipe = recipe
         self.previewCards = previewCards
         self.topics = topics
         self.regions = regions
@@ -183,9 +188,11 @@ public struct ReaderOnboardingView: View {
             .controlSize(.large)
             .accessibilityIdentifier("welcome-shape")
             Button {
-                // Entering wide open **is** the skip: the language answer stays unnamed, which acquisition already
-                // reads as every language — never the device's own, which the reader did not choose.
-                onSave(.neutral())
+                // Entering wide open **is** the skip: the language answer stays the one the host suggested
+                // (F02 §2.1), never an empty set — an empty profile is what discovery reads as "nothing to look
+                // for", and the feed would open on the selection surface. Places stay unnamed, which acquisition
+                // already reads as every place.
+                onSave(initialRecipe)
             } label: {
                 Text(verbatim: String(localized: "Começar amplo")).font(.subheadline)
             }
@@ -279,10 +286,13 @@ public struct ReaderOnboardingView: View {
 
     private var composerFooter: some View {
         HStack(spacing: FeedDesignTokens.Spacing.tight) {
-            Button(String(localized: "Reiniciar")) { recipe = .neutral() }
+            Button(String(localized: "Reiniciar")) { recipe = initialRecipe }
                 .accessibilityIdentifier("composer-reset")
             Spacer()
-            Button(String(localized: "Começar amplo")) { onSave(.neutral()) }
+            // Broad from the Composer: the language answers the reader sees stay (the suggestion, unless they
+            // changed it), and the narrowing places are dropped — "Mundo todo" for places, as F02 §2.1 states.
+            // Saving `.neutral()` here would discard the language suggestion and take discovery back to nothing.
+            Button(String(localized: "Começar amplo")) { onSave(.neutral(languages: recipe.languages)) }
                 .accessibilityIdentifier("composer-start-broad")
             Spacer()
             Button {

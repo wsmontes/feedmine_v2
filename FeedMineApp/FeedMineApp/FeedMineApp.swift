@@ -1009,9 +1009,12 @@ struct ReaderHost: UIViewControllerRepresentable {
     /// T11: V1's own gate — the reader meets the app before the feed, and what they answer becomes a feed.
     @ViewBuilder private var onboardingCover: some View {
         let options = composition.onboardingOptions()
-        // The first run **asks**: no language is pre-selected, and nothing here reads `Locale.current` — the
-        // reader's answer (or the skip) is the only thing that names a language.
-        ReaderOnboardingView(isFirstRun: true,
+        // F02 §2.1: the language question starts from the device's own languages when the catalogue carries them,
+        // clearly editable — a suggestion, never an imposition. It is also what makes "Começar amplo" a usable
+        // entry: a first run that names no language leaves the discovery profile empty, and the feed would open on
+        // the empty-selection surface instead of discovering anything.
+        ReaderOnboardingView(recipe: .neutral(languages: AppComposition.suggestedLanguages(from: options.languages)),
+            isFirstRun: true,
             previewCards: composition.onboardingPreviewCards(),
             topics: options.topics, regions: options.regions, languages: options.languages,
             // NN-08: the reader's own sources can be imported at first contact without becoming a requirement.

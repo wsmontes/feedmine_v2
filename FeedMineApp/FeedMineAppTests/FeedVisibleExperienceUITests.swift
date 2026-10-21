@@ -137,7 +137,12 @@ final class FeedVisibleExperienceUITests: XCTestCase {
     func testFirstPresentedScreenReachesTheViewportBottomOnThePublishedCatalogue() throws {
         let app = XCUIApplication()
         // Nada de fixture: sem FEEDMINE_USE_DEVELOPMENT_FEEDS, sem FEEDMINE_LOCAL_FEEDS, sem itens de fixture.
-        app.launchEnvironment = [:]
+        // Só o namespace (D11, o mesmo padrão da jornada de mídia): um diretório novo não tem janela durável nem
+        // `hasSeenOnboarding`, então o primeiro passo aparece sozinho e o app lê o catálogo embarcado. É o que
+        // torna a medição repetível: o diretório padrão guarda o primeiro passo concluído por uma corrida
+        // anterior, e uma medição de primeira tela precisa de um leitor de primeira abertura.
+        let namespace = UUID().uuidString
+        app.launchEnvironment = ["FEEDMINE_RUNTIME_NAMESPACE": namespace]
         let started = Date()
         app.launch()
         completeOnboardingIfPresented(app)
@@ -163,22 +168,27 @@ final class FeedVisibleExperienceUITests: XCTestCase {
                 + "viewport de \(compact(viewportHeight)) pt: \(compact(viewportHeight - contentBottom)) pt vazios")
         }
         attach(app, name: "published-first-screen",
-            json: jsonLine(["cards": record.cards, "content_bottom": contentBottom,
+            json: jsonLine(["namespace": namespace, "cards": record.cards, "content_bottom": contentBottom,
                 "viewport_height": viewportHeight, "render_ready": record.renderReadyCards,
-                "violations": violations]))
+                "launch_record": record.raw, "violations": violations]))
         XCTAssertTrue(violations.isEmpty, "published-first-screen: " + violations.joined(separator: " | "))
     }
 
-    /// O onboarding do catálogo publicado, pelo próprio toque: "Build my feed" → "Start broad" → "Open my feed".
-    /// As etapas são tolerantes à ausência porque uma instalação já preparada abre direto no feed.
+    /// O onboarding do catálogo publicado, pela entrada **ampla** ("Começar amplo"): a pessoa não preenche
+    /// formulário, aceita a sugestão de idioma que o host oferece (F02 §2.1) e entra no feed. É a jornada mais
+    /// curta do produto e a que a primeira tela precisa medir; idioma e lugar explícitos são um cenário adicional,
+    /// coberto por `testRealCatalogueCardsStayReachableByScrolling`.
+    ///
+    /// Pelos **identificadores** e nunca pelo texto: a língua das chaves é o português e o inglês é tradução, então
+    /// uma jornada que pergunta por "Build my feed" não acha o botão quando roda com `-testLanguage pt-BR` (medido
+    /// em 2026-10-20: onboarding ficou aberto até o timeout de 240 s).
+    ///
+    /// Returns without tapping when the installation was already prepared (the gate is not presented): a first
+    /// run in this journey always has a fresh namespace, so the tap is the normal path.
     private func completeOnboardingIfPresented(_ app: XCUIApplication) {
-        let build = app.buttons["Build my feed"]
-        guard build.waitForExistence(timeout: 20) else { return }
-        build.tap()
-        let broad = app.buttons["Start broad"]
-        if broad.waitForExistence(timeout: 10) { broad.tap() }
-        let open = app.buttons["Open my feed"]
-        if open.waitForExistence(timeout: 10) { open.tap() }
+        let broad = app.buttons["welcome-broad"]
+        guard broad.waitForExistence(timeout: 20) else { return }
+        broad.tap()
     }
 
 
