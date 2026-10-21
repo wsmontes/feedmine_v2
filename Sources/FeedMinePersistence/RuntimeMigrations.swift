@@ -626,6 +626,22 @@ public enum RuntimeMigrations {
             try db.execute(sql: "ALTER TABLE published_cards ADD COLUMN media_identity TEXT")
             try db.execute(sql: "ALTER TABLE retired_published_cards ADD COLUMN media_identity TEXT")
         }
+        // D12: a story the one-way walk passed while its media was still pending is a fact about the supply row,
+        // not about the lifetime of one in-memory queue. These columns are current supply state (never published
+        // history): the Edition whose opportunity deferred it, the first deferral instant, and the last time it was
+        // offered to selection. The page read by an opportunity is bounded; the rows themselves are not evicted by
+        // that bound, so a relaunch and a page rotation still find every deferred story. Nullable on purpose:
+        // existing rows keep their exact past and read as "not deferred".
+        migrator.registerMigration("selection-supply-media-deferral-v1") { db in
+            try db.execute(sql: """
+                ALTER TABLE selection_supply ADD COLUMN media_deferred_edition_id TEXT;
+                ALTER TABLE selection_supply ADD COLUMN media_deferred_at REAL;
+                ALTER TABLE selection_supply ADD COLUMN media_offered_at REAL;
+                CREATE INDEX selection_supply_media_deferral
+                ON selection_supply (media_offered_at, media_deferred_at)
+                WHERE media_deferred_edition_id IS NOT NULL;
+                """)
+        }
         return migrator
     }
 

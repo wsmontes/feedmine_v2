@@ -84,6 +84,8 @@ public actor FeedRunwayDriver {
     private let acquisition: SyndicationAcquisitionSnapshot
     private let publicationHistory: PublicationHistory
     private let localProductionSlice: LocalProductionSlice
+    /// The durable skips this Edition's walk left behind; read to give deferred media a preparation chance.
+    private let reoffer: PendingMediaReconsideration?
     private let acquisitionCycle: RunwayAcquisitionCycle
     private let coordinator: AcquisitionCoordinator
     private let monotonicNow: @Sendable () -> RunwayMonotonicTime
@@ -158,6 +160,7 @@ public actor FeedRunwayDriver {
         self.selectedSourceCoverage = selectedSourceCoverage
         candidateProvider = CandidateProvider(contentStore: ContentStore(database: acquisition.runtimeDatabase))
         self.session = session; self.runway = runway; self.plan = plan; self.policy = policy; self.acquisition = acquisition
+        self.reoffer = reoffer
         publicationHistory = PublicationHistory(database: acquisition.runtimeDatabase)
         localProductionSlice = LocalProductionSlice(database: acquisition.runtimeDatabase, readiness: readiness,
             reoffer: reoffer, trace: trace)
@@ -833,12 +836,26 @@ public actor FeedRunwayDriver {
             originIDs: window.candidates.map(\.originRecordID), readerAnchorCardID: anchor)
         let effectivePolicy = try acquisition.policyIncludingDiscovery(policy)
         let recurring = effectivePolicy.exposure == .excludePublishedMaterial
-        return window.candidates.filter { candidate in
+        var revisions = window.candidates.filter { candidate in
             if case .selectedSources(let sources) = effectivePolicy.eligibility,
                 candidate.sourceIDs.isDisjoint(with: sources) { return false }
             guard facts.publishedOriginIDs.contains(candidate.originRecordID) else { return true }
             return recurring && !facts.unseenOriginIDs.contains(candidate.originRecordID)
         }.map(\.originRevisionID)
+        // A story the walk already passed while its media was pending is not in this structural window, but it is
+        // still a candidate for the slice's reconsideration. Preparing it here is what gives a relaunch its chance:
+        // readiness is in-memory, so without this request the deferred story would never return to readiness. The
+        // page is bounded and read-only (the offer rotation belongs to `reconsider`), and preparation is not a
+        // publication decision — the slice still selects under exposure and policy.
+        if let reoffer {
+            var seen = Set(revisions)
+            for entry in try reoffer.pendingEntries(for: editionID, limit: capacity) {
+                guard !facts.publishedOriginIDs.contains(entry.originRecordID),
+                    seen.insert(entry.originRevisionID).inserted else { continue }
+                revisions.append(entry.originRevisionID)
+            }
+        }
+        return revisions
     }
 
     public func markConsumptionInactive() async { await runway.markConsumptionInactive() }

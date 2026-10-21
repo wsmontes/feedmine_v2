@@ -136,7 +136,7 @@ public struct LocalProductionSlice: Sendable {
                 throw SelectionError.readinessCoverageMismatch
             }
             readinessFacts = snapshot
-            MediaSkippedSupply.remember(structural: structural, editionID: request.editionID,
+            try MediaSkippedSupply.remember(structural: structural, editionID: request.editionID,
                 publishedOriginIDs: facts.publishedOriginIDs, readiness: readiness, reoffer: reoffer)
         } else {
             readinessFacts = nil
@@ -157,8 +157,10 @@ public struct LocalProductionSlice: Sendable {
         // `examinedCount` or `nextCursor`, so a re-offered story never moves the cursor, not even backwards.
         let progress = LocalProductionProgress(examinedCount: structural.examinedCount,
             nextCursor: structural.nextCursor, exhausted: structural.exhausted)
+        // Nothing published settles nothing: a selection emptied by editorial hold, or a preparation that
+        // produced no draft (INV-17), leaves every reconsidered story eligible for a later opportunity. Forgetting
+        // here was the loss path — the media fact stays true, but the only memory that could offer it did not.
         guard !selection.orderedCandidates.isEmpty else {
-            reoffer?.forget(reconsidered.considered)
             return .advancedWithoutPublication(progress)
         }
         let prepared = try prepare(selection)
@@ -166,7 +168,6 @@ public struct LocalProductionSlice: Sendable {
         // opportunity and the ready candidates around it are published normally (INV-17).
         let plan = try PublicationPreparation.plan(selection: selection, publication: prepared)
         guard !plan.drafts.isEmpty else {
-            reoffer?.forget(reconsidered.considered)
             return .advancedWithoutPublication(progress)
         }
         let append = PublicationCoordinator.AppendRequest(selection: plan.selection, drafts: plan.drafts,
@@ -184,9 +185,13 @@ public struct LocalProductionSlice: Sendable {
                 MediaPreparationTrace.recordPublished(plan.drafts, in: contentStore, to: trace)
             }
             #endif
-            // The opportunity settled these skips: published, held by alternation, or excluded by a filter. The
-            // queue is an admission back into selection, not an override of it, so it does not re-offer them.
-            reoffer?.forget(reconsidered.considered)
+            // Only the stories this receipt actually published are settled. A reconsidered story the selection
+            // held (alternation) or excluded with a filter is still eligible; the held one was absent from the
+            // published set precisely because an editorial rule deferred it, not because its chance was spent.
+            let publishedRevisions = Set(plan.selection.orderedCandidates.map(\.originRevisionID))
+            reoffer?.forget(reconsidered.considered.filter {
+                publishedRevisions.contains($0.originRevisionID)
+            })
             return .published(progress, receipt)
         case .nothingToPublish: throw LocalProductionSliceError.inconsistentPublicationOutcome
         }

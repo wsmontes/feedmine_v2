@@ -168,12 +168,22 @@ final class MediaCandidateSchemaTests: XCTestCase {
                     }
                     if table == "feed_editions" { return column.0 != "context_identity" && column.0 != "context_key_json" }
                     if table == "published_cards" { return column.0 != "diversity_facts" && column.0 != "media_identity" }
+                    // D12 added durable deferral state to the existing supply row; it is asserted separately.
+                    if table == "selection_supply" {
+                        return !["media_deferred_edition_id", "media_deferred_at", "media_offered_at"]
+                            .contains(column.0)
+                    }
                     return true
                 }.map { $0.1 }
             } }
         }
-        XCTAssertEqual(after, before) // Original values exact; only two additive columns excluded.
+        XCTAssertEqual(after, before) // Original values exact; only additive columns excluded.
         try database.read { db in
+            let supplyFields = try Row.fetchAll(db, sql: "PRAGMA table_info('selection_supply')").suffix(3)
+            XCTAssertEqual(supplyFields.map { $0["name"] as String },
+                ["media_deferred_edition_id", "media_deferred_at", "media_offered_at"])
+            XCTAssertEqual(Set(supplyFields.map { $0["notnull"] as Int }), [0],
+                "an old supply row reads as not deferred, never defaulted")
             let fields = try Row.fetchAll(db, sql: "PRAGMA table_info('origin_revisions')")
             XCTAssertEqual(fields.suffix(2).map { $0["name"] as String },
                 ["fingerprint_generation", "body_source_element"])
