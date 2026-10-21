@@ -21,9 +21,26 @@ import FeedMineRuntime
 /// Append-only evidence of what the feed actually did, with the clock that observed it.
 final class RunwayTrace: @unchecked Sendable {
     /// B03 walks 1.800 advances **and** records every examined candidate's readiness: the ceiling has to hold a
-    /// thirty-minute trace, or the gate would fail for lack of evidence rather than for lack of content. 40.000
-    /// lines is a few megabytes and still bounded.
-    static let lineCeiling = 40_000
+    /// thirty-minute trace, or the gate would fail for lack of evidence rather than for lack of content.
+    ///
+    /// 40.000 was sized against 1.800 advances and missed: run `20261021T033520Z` wrote **40.060** lines in 1.854 s
+    /// (21,6 lines/s) with **2.944** advances, exhausted the budget just before the last advance and dropped the
+    /// admission after it — which the oracle reads as a one-second stall (B03 FAIL). The arithmetic that fits the
+    /// measured density: a 2.000 s acceptance window (30-minute gate + startup + flush) at 21,6 lines/s is 43.200
+    /// lines; 64.000 holds that with ~45% headroom. At the measured 249 bytes/line it is ~16 MB on disk — bounded,
+    /// and cheaper than a verdict produced by missing evidence.
+    static let lineCeiling = 64_000
+    /// The events a judgment reads: B03's advances and admissions, the readiness of every examined candidate, the
+    /// reader position the reopen gates read, and `runway_completed` — the closure the journey instrument pairs with
+    /// every `advance` (more openings than closures is read as an unfinished opportunity, so dropping the closure
+    /// while keeping the opening would manufacture a lacuna). They may use the whole ceiling.
+    private static let journeyEvents: Set<String> = ["advance", "admitted", "candidate", "position_checkpoint",
+        "runway_completed"]
+    /// The ceiling is partitioned: context events may not consume the last third. In the same measured run the
+    /// journey facts were 16.671 of 40.060 lines, so the 21.333-line reserve covers that volume with margin; a budget
+    /// that lets context crowd them out turns a dense run into a trace that cannot answer B03, which is exactly the
+    /// failure the 40.000-line ceiling produced.
+    private static let contextShare = 2.0 / 3.0
     /// Lines buffer in memory and leave in batches: measured, writing each line as it happens put file I/O on the
     /// main actor during publication, and the acceptance driver timed out on a UI query because of it.
     private static let batchSize = 64
@@ -47,6 +64,8 @@ final class RunwayTrace: @unchecked Sendable {
     /// The instance's ceiling: the default is the documented one, and a test states a small one to prove the loss
     /// is recorded rather than silently absorbed.
     private let ceiling: Int
+    /// How many lines context events may occupy before the journey's own reserve starts protecting the rest.
+    private let contextCeiling: Int
     private let writer = DispatchQueue(label: "feedmine.runway-trace", qos: .utility)
     private var pending: [Data] = []
     private var lines = 0
@@ -59,6 +78,9 @@ final class RunwayTrace: @unchecked Sendable {
     /// Evidence of what this trace lost, by cause: an event the ceiling refused, one that could not be encoded, and
     /// one whose batch never reached the disk. Counted always, stated on the first loss and at flush.
     private var droppedByCeiling = 0
+    /// Context events refused so the journey's reserve stayed available. Counted apart from the ceiling: this is a
+    /// deliberate partition of the budget, and the announcement names it as such.
+    private var droppedByContext = 0
     private var droppedByEncoding = 0
     private var droppedByWrite = 0
     /// The totals already stated, so a flush with nothing new to say stays silent.
@@ -67,6 +89,9 @@ final class RunwayTrace: @unchecked Sendable {
     init(directory: URL, name: String = "trace.jsonl", lineCeiling: Int = RunwayTrace.lineCeiling) {
         url = directory.appendingPathComponent(name)
         ceiling = max(1, lineCeiling)
+        // A small ceiling still reserves at least one line, otherwise a test-sized budget would have no journey
+        // guarantee at all. Context saturates first; the journey always has the rest.
+        contextCeiling = max(1, Int(Double(ceiling) * Self.contextShare))
     }
 
     /// One event. `fields` are strings: the caller states what it knows, and the trace stays a document a script
@@ -82,6 +107,15 @@ final class RunwayTrace: @unchecked Sendable {
             let announce = droppedByCeiling == 1
             lock.unlock()
             if announce { notice("line_ceiling", at: date) }
+            return
+        }
+        // Context may not spend the journey's reserve: an over-dense run loses telemetry, never the advance or the
+        // admission that proves the feed kept moving. The refusal is counted and stated like any other loss.
+        if !Self.journeyEvents.contains(event), lines >= contextCeiling {
+            droppedByContext += 1
+            let announce = droppedByContext == 1
+            lock.unlock()
+            if announce { notice("context_budget", at: date) }
             return
         }
         lines += 1
@@ -121,7 +155,7 @@ final class RunwayTrace: @unchecked Sendable {
     /// it says so here as well — the totals, one line, whatever the cause.
     func flush() {
         lock.lock()
-        let unreported = droppedByCeiling + droppedByEncoding + droppedByWrite - reportedDrops
+        let unreported = droppedByCeiling + droppedByContext + droppedByEncoding + droppedByWrite - reportedDrops
         var batch = pending
         pending.removeAll(keepingCapacity: true)
         if unreported > 0, let data = truncationLine(reason: "flush_total") {
@@ -149,7 +183,7 @@ final class RunwayTrace: @unchecked Sendable {
             return
         }
         notices += 1
-        reportedDrops = droppedByCeiling + droppedByEncoding + droppedByWrite
+        reportedDrops = droppedByCeiling + droppedByContext + droppedByEncoding + droppedByWrite
         pending.append(data)
         let batch = pending
         pending.removeAll(keepingCapacity: true)
@@ -163,6 +197,7 @@ final class RunwayTrace: @unchecked Sendable {
             mono: ProcessInfo.processInfo.systemUptime, event: ReplenishmentEvent.truncated,
             fields: ["reason": reason, "ceiling": String(ceiling),
                 "dropped_by_ceiling": String(droppedByCeiling),
+                "dropped_by_context": String(droppedByContext),
                 "dropped_by_encoding": String(droppedByEncoding),
                 "dropped_by_write": String(droppedByWrite),
                 "written": String(lines)]))

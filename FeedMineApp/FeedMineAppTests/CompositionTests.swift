@@ -4076,13 +4076,15 @@ final class CompositionTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let trace = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 3)
-        for index in 0..<10 { trace.record("event", ["index": String(index)]) }
+        // A journey event on purpose: this case measures the hard ceiling itself, not the context reserve that
+        // protects journey events from context (the case below covers that partition).
+        for index in 0..<10 { trace.record("advance", ["index": String(index)]) }
         trace.flushAndWait()
         let url = directory.appendingPathComponent("trace.jsonl")
         let records = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map { line in
             try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         }
-        XCTAssertEqual(records.filter { $0["event"] as? String == "event" }.count, 3,
+        XCTAssertEqual(records.filter { $0["event"] as? String == "advance" }.count, 3,
             "the ceiling holds: only the events under it were written")
         let truncated = records.filter { $0["event"] as? String == "trace_truncated" }
         XCTAssertEqual(truncated.count, 2, "the first refusal, and the totals at flush")
@@ -4100,6 +4102,118 @@ final class CompositionTests: XCTestCase {
         let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").count
         trace.flushAndWait()
         XCTAssertEqual(try String(contentsOf: url, encoding: .utf8).split(separator: "\n").count, lines)
+    }
+
+    /// Measured failure, replayed. Bench run `20261021T033520Z` wrote 40.060 lines in 1.854 s and exhausted the
+    /// 40.000-line ceiling exactly at the last advance: the admission recorded right after it never reached the
+    /// file, and the oracle — which reads "advance with no admission in the following second" as a visible stall —
+    /// failed B03 on an artifact of the instrument, not on a stall of the feed. The event census below is that
+    /// run's own trace (`advance` 2.944, `admitted` 7.742, `candidate` 2.535, `position_checkpoint` 579,
+    /// `runway_completed` 2.871, context 23.389) replayed on one clock in the run's order: admissions before the
+    /// advance they make possible, and the admission that answers the last advance at the very end. The oracle's
+    /// own rule is applied to what the file retained, so the case proves the capture, not the product.
+    func testTheTraceRetainsTheJourneyUnderTheMeasuredBenchmarkLoad() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let trace = RunwayTrace(directory: directory, name: "trace.jsonl")
+        let start = Date(timeIntervalSince1970: 1_792_555_828)
+        // The run's own pace: 2.944 advances across 1.854 s.
+        let period = 1_854.0 / 2_944.0
+        let contextEvents = ["replenishment_requested", "replenishment_arrived", "window", "editorial_refusal",
+            "media_preparation_settled", "media_card_published", "frames", "replenishment_concluded"]
+        func moment(_ index: Int) -> Double { Double(index) * period }
+        func record(_ event: String, _ fields: [String: String] = [:], _ offset: Double) {
+            trace.record(event, fields, at: start.addingTimeInterval(offset))
+        }
+        // The run's whole-file context is 23.389 lines: these seven, 23.322 inside the walk, and 60 more at the
+        // tail — they are what crowded the journey's last admission out of the old ceiling.
+        record("host_started", [:], -0.50)
+        record("first_frame", [:], -0.40)
+        record("first_frame", [:], -0.30)
+        record("editorial_offer", [:], -0.20)
+        record("editorial_offer", [:], -0.10)
+        record("answer_applied", [:], -0.05)
+        record("answer_applied", [:], -0.02)
+        for index in 0..<2_944 {
+            let here = moment(index)
+            // 3 admissions per advance for the first 1.854, then 2; the last one waits until after the tail.
+            let admissionsHere = (index < 1_854 ? 3 : 2) - (index == 2_943 ? 1 : 0)
+            for _ in 0..<admissionsHere {
+                record("admitted", ["anchor": UUID().uuidString], here - 0.01)
+            }
+            if index < 2_535 { record("candidate", ["readiness": "textOnly"], here - 0.005) }
+            if index % 5 == 0, index < 2_895 {
+                record("position_checkpoint", ["anchor": UUID().uuidString, "placement": "top"], here - 0.004)
+            }
+            // The closure the journey instrument pairs with `advance`; 73 opportunities stay open in the run.
+            if index < 2_871 { record("runway_completed", ["activity": "forward"], here - 0.002) }
+            for step in 0..<(index < 2_714 ? 8 : 7) {
+                record(contextEvents[(index + step) % contextEvents.count], ["n": String(index)], here - 0.001)
+            }
+            record("advance", ["activity": "forward"], here)
+        }
+        for index in 0..<60 {
+            record("replenishment_arrived", ["tail": String(index)], moment(2_943) + 0.001 * Double(index))
+        }
+        record("admitted", ["anchor": UUID().uuidString], moment(2_943) + 0.002)
+        trace.flushAndWait()
+
+        let url = directory.appendingPathComponent("trace.jsonl")
+        let records = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").compactMap { line in
+            try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
+        }
+        XCTAssertEqual(records.count, 40_060, "the measured run fits the budget")
+        XCTAssertFalse(records.contains { $0["event"] as? String == "trace_truncated" },
+            "and it fits whole: no event of the measured run was refused")
+        let advances = records.filter { $0["event"] as? String == "advance" }
+            .compactMap { $0["at"] as? Double }
+        let admissions = records.filter { $0["event"] as? String == "admitted" }
+            .compactMap { $0["at"] as? Double }
+        XCTAssertEqual(advances.count, 2_944)
+        XCTAssertEqual(admissions.count, 7_742)
+        XCTAssertEqual(records.filter { $0["event"] as? String == "candidate" }.count, 2_535,
+            "every examined candidate keeps the readiness the clause reads")
+        XCTAssertEqual(records.filter { $0["event"] as? String == "runway_completed" }.count, 2_871,
+            "the closures the journey instrument pairs with advances are kept too: no false open opportunity")
+        // The oracle's rule, applied to the file: an advance with no admission in the following second is a stall.
+        var cursor = 0
+        var stalls = 0
+        for moment in advances {
+            while cursor < admissions.count, admissions[cursor] < moment { cursor += 1 }
+            if cursor == admissions.count || admissions[cursor] - moment >= 1.0 { stalls += 1 }
+        }
+        XCTAssertEqual(stalls, 0, "the advance that closed the run still has its admission beside it")
+    }
+
+    /// When the budget is under pressure, the partition decides **what** is lost: telemetry, never the journey.
+    /// Before it, context lines could take the whole ceiling and the last advance stood alone in the file — the
+    /// same shape that failed B03, at a scale that fits in a test. Context stops at two thirds of the budget, so
+    /// the reserve is still there when the journey needs it, and the refusal is announced rather than silent.
+    func testContextSaturationSpendsTheReserveBeforeTheJourneyEvidence() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let trace = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 100)
+        for index in 0..<40 { trace.record("advance", ["index": String(index)]) }
+        for index in 0..<200 { trace.record("frames", ["index": String(index)]) }
+        trace.flushAndWait()
+        let url = directory.appendingPathComponent("trace.jsonl")
+        let records = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map { line in
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        }
+        let advances = records.filter { $0["event"] as? String == "advance" }
+        XCTAssertEqual(advances.count, 40, "the journey is whole")
+        XCTAssertEqual(Set(advances.compactMap { ($0["fields"] as? [String: String])?["index"] }),
+            Set((0..<40).map(String.init)), "every advance reached the file, in order")
+        XCTAssertEqual(records.filter { $0["event"] as? String == "frames" }.count, 26,
+            "context spends only what is left below two thirds of the ceiling")
+        let truncated = records.filter { $0["event"] as? String == "trace_truncated" }
+        let first = try XCTUnwrap(truncated.first?["fields"] as? [String: String])
+        XCTAssertEqual(first["reason"], "context_budget")
+        XCTAssertEqual(first["dropped_by_context"], "1")
+        XCTAssertEqual(first["dropped_by_ceiling"], "0")
+        let totals = try XCTUnwrap(truncated.last?["fields"] as? [String: String])
+        XCTAssertEqual(totals["dropped_by_context"], "174", "every refused context line is accounted for")
+        XCTAssertEqual(totals["written"], "66")
     }
 
     /// Codex's review, finding 2: an invitation is only true for a source the app **went and found** in this
