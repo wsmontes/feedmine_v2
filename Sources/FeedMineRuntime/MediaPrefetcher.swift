@@ -402,20 +402,31 @@ public actor MediaPrefetcher {
     /// editorial candidates). Same deadline contract as `prefetchSupplyHead`.
     public func prefetch(_ ordered: [OriginRevisionID], deadline: Double? = nil) async {
         guard !retired else { return }
-        #if DEBUG
-        // Every revision handed to the path is one it considers for publication; the first instant is what the
-        // settlement line measures its elapsed time from.
-        mediaWitness?.consider(ordered)
-        #endif
         let now = monotonicSeconds()
         var seen = Set<OriginRevisionID>()
-        let revisions = ordered.filter { revision in
+        var revisions = ordered.filter { revision in
             guard seen.insert(revision).inserted, !readiness.isSettled(revision), running[revision] == nil else {
                 return false
             }
             if let retry = transientRetryAt[revision], now < retry { return false }
             return true
         }
+        // "Retry later" has to have a later. The editorial walk is one-way: once it passes a revision, no later
+        // window names it again, so a transient end (`deadline`, a 5xx, a lost connection) would leave the story
+        // pending forever — the re-offer queue can only offer a presentation, and nothing would produce one. The
+        // revisions whose backoff has expired are therefore attempted by whichever opportunity runs next, after
+        // the caller's own list: this path keeps no second clock and no new state, only the backoff it already
+        // held.
+        let due = transientRetryAt
+            .filter { $0.value <= now && !readiness.isSettled($0.key) && running[$0.key] == nil }
+            .map(\.key)
+            .sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
+        revisions += due.filter { seen.insert($0).inserted }
+        #if DEBUG
+        // Every revision handed to the path is one it considers for publication; the first instant is what the
+        // settlement line measures its elapsed time from.
+        mediaWitness?.consider(revisions)
+        #endif
         guard !revisions.isEmpty else { return }
         let work = Task { await self.prepareAll(revisions) }
         guard let deadline else { await work.value; return }
