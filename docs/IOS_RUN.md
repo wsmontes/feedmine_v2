@@ -293,6 +293,17 @@ credenciais ASC, não exporta, não faz upload nem tag. Os resultados são escri
 `.build/pd10-p0c-preflight.json` e
 `.build/pd10-p0c-<version>-build-<build>-<sha>.json` somente após verificações completas.
 
+Para assinatura gerenciada, exporte `ASC_KEY_ID`, `ASC_ISSUER_ID` e, se necessário,
+`ASC_KEY_PATH` (padrão: `~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8`).
+O script fornece essas credenciais ao provisionamento do archive e permite atualizar
+o provisionamento na exportação. Sem credenciais, o dry-run ainda pode usar os
+ativos locais de assinatura; não demonstra acesso ao App Store Connect.
+Se o staging validado estiver em outra worktree, informe seu caminho original em
+`P0C_STAGING_ROOT`; não regenere o catálogo para contornar divergências.
+Após o upload, confirme `processingState=VALID` e disponibilidade no grupo interno
+pela API do App Store Connect. A tag local registra envio, não processamento nem
+aprovação pública.
+
 ```sh
 bash -n scripts/fetch-catalog.sh scripts/release-testflight.sh scripts/verify_product_catalogue.sh
 python3 -m unittest discover -s Tests/ReleaseScripts -p 'test_catalog_*.py'
