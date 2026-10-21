@@ -128,6 +128,60 @@ final class FeedVisibleExperienceUITests: XCTestCase {
     /// The transport fault is the app's own fixture transport, made to fail until the reader's retry: the first
     /// attempt cannot produce content, so `.unreachable` is the only honest surface, and "Tentar novamente" runs a
     /// real opportunity that must actually deliver cards.
+    /// **D4 no catálogo publicado, com fixtures desligadas.**
+    ///
+    /// O teste de fixture prova a mecânica; este prova a experiência: nenhuma variável de fixture é ligada, o app
+    /// sobe no catálogo embarcado, atravessa o onboarding pelo próprio toque e a superfície de leitura só pode
+    /// aparecer quando o conteúdo medido alcança o fim do viewport real. A regra é a do próprio app (1 pt de
+    /// tolerância); a contagem de cartas é informação, nunca limiar.
+    func testFirstPresentedScreenReachesTheViewportBottomOnThePublishedCatalogue() throws {
+        let app = XCUIApplication()
+        // Nada de fixture: sem FEEDMINE_USE_DEVELOPMENT_FEEDS, sem FEEDMINE_LOCAL_FEEDS, sem itens de fixture.
+        app.launchEnvironment = [:]
+        let started = Date()
+        app.launch()
+        completeOnboardingIfPresented(app)
+
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 240),
+            "o feed do catálogo publicado precisa chegar à tela (onboarding: \(app.buttons.allElementsBoundByIndex.map(\.label)))")
+        let first = sampleFirstScreen(app, scroll: scroll, since: started)
+        let record = try launchRecord(app, name: "published-first-screen")
+
+        let epsilonPoints = 1.0
+        var violations: [String] = []
+        if first.loadingSurface { violations.append("feed-loading-surface is on screen with the feed") }
+        if first.launchProgress { violations.append("feed-launch-progress is on screen with the feed") }
+        if first.emptySurface { violations.append("feed-empty-state is on screen with the feed") }
+        if record.cards < 1 { violations.append("the app's record never carried cards") }
+        guard let contentBottom = record.contentBottom, let viewportHeight = record.viewportHeight else {
+            XCTFail("published-first-screen: o registro do app não capturou o primeiro layout com cartas: \(record)")
+            return
+        }
+        if contentBottom < viewportHeight - epsilonPoints {
+            violations.append("o primeiro conteúdo apresentado termina em \(compact(contentBottom)) pt de um "
+                + "viewport de \(compact(viewportHeight)) pt: \(compact(viewportHeight - contentBottom)) pt vazios")
+        }
+        attach(app, name: "published-first-screen",
+            json: jsonLine(["cards": record.cards, "content_bottom": contentBottom,
+                "viewport_height": viewportHeight, "render_ready": record.renderReadyCards,
+                "violations": violations]))
+        XCTAssertTrue(violations.isEmpty, "published-first-screen: " + violations.joined(separator: " | "))
+    }
+
+    /// O onboarding do catálogo publicado, pelo próprio toque: "Build my feed" → "Start broad" → "Open my feed".
+    /// As etapas são tolerantes à ausência porque uma instalação já preparada abre direto no feed.
+    private func completeOnboardingIfPresented(_ app: XCUIApplication) {
+        let build = app.buttons["Build my feed"]
+        guard build.waitForExistence(timeout: 20) else { return }
+        build.tap()
+        let broad = app.buttons["Start broad"]
+        if broad.waitForExistence(timeout: 10) { broad.tap() }
+        let open = app.buttons["Open my feed"]
+        if open.waitForExistence(timeout: 10) { open.tap() }
+    }
+
+
     func testConnectionFailureSurfaceOffersARetryThatBringsContent() throws {
         let app = XCUIApplication()
         let namespace = UUID().uuidString
