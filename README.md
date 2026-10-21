@@ -1,53 +1,49 @@
 # FeedMine
 
-**MONITOR EXTERNO DE ARQUITETURA (consultivo, a cada 2 horas):** antes de uma nova rodada de planejamento, consulte o parecer atualizado na branch `monitor/architecture` com `git fetch origin monitor/architecture` e `git show origin/monitor/architecture:docs/reviews/ARCHITECTURE_MONITOR.md`. O relatório pode apontar regressões e prioridades, mas **não** altera a hierarquia de decisões vigente, não autoriza modificações nem substitui provas no Mac. O arquivo do monitor está numa branch separada e não aparece na `main`.
+O FeedMine existe para fazer a internet aberta voltar a ser um lugar onde é gostoso descobrir coisas: abrir, encontrar conteúdo relevante e diverso, continuar lendo e voltar ao mesmo lugar, inclusive offline. Configurar assinaturas não é pré-requisito.
 
-**INSTRUÇÃO ATUAL PARA AGENTES (2026-10-11):** [Diretriz de execução V2 após checkpoint B05](docs/product/V2_AGENT_EXECUTION_DIRECTIVE_2026-10-11.md). Leia antes de iniciar novas correções ou mais documentação; preservar a evidência canônica de B05 e atacar descoberta real, runway e os gates restantes sem alterar a régua.
+O aplicativo iOS é local-first/offline-first, sem servidor próprio de conteúdo. Usa os dez módulos do pacote Swift por referência local.
 
+## Direção e contratos
 
-**Status documental (2026-10-13):** O catálogo público gerenciado em [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository) é a **fonte da verdade** ([PD-10](docs/product/PRODUCT_DECISIONS_2026-10-09.md), [INV-18](docs/architecture/PRODUCT_INVARIANTS.md)). O bundle atual usa o catálogo derivado da revisão pública 5, com inventário e artefato compilado validados por SHA-256. `scripts/fetch-catalog.sh` é legado; o pipeline atual é `scripts/bootstrap_catalog.py`. A sincronização e a travessia progressiva já têm implementações no código, mas release de produção continua condicionada às provas B01–B06. Consulte [a matriz de entrega atual](docs/reviews/2026-10-13-production-delivery.md); relatórios antigos não certificam o HEAD atual.
+Leia nesta ordem antes de decidir uma correção ou funcionalidade:
 
+1. [Norte do produto](docs/product/PRODUCT_NORTH_STAR.md): a experiência que estamos tentando entregar.
+2. [Decisões de produto](docs/product/PRODUCT_DECISIONS_2026-10-09.md): regras vinculantes de descoberta, mídia, publicação e catálogo.
+3. [Invariantes](docs/architecture/PRODUCT_INVARIANTS.md) e [benchmark B01–B06](docs/product/DISCOVERY_ACCEPTANCE_BENCHMARK.md): comportamentos e provas obrigatórios.
+4. [Arquitetura](docs/architecture/ARCHITECTURE.md) e [dependências](docs/architecture/DEPENDENCY_RULES.md): os responsáveis existentes por cada fluxo.
 
-**Por que existe:** fazer a internet aberta voltar a ser um lugar onde é gostoso descobrir coisas. O objetivo é oferecer descoberta contínua de conteúdo interessante, inclusive de fontes que a pessoa ainda não conhece — sem exigir que ela primeiro configure um leitor RSS. Leia o [norte de produto](docs/product/PRODUCT_NORTH_STAR.md) antes de decidir funcionalidades, prioridades ou mudanças na experiência de leitura. O [benchmark de aceitação vigente](docs/product/DISCOVERY_ACCEPTANCE_BENCHMARK.md) fixa as provas de produto: agentes devem implementá-las, executá-las e corrigir falhas autonomamente, sem pedir aprovação intermediária nem baixar a exigência. A [especificação de produto F02](docs/product/F02_DISCOVERY_FEED_ONBOARDING_PRD.md) define o primeiro contato como um feed normal, divertido e interativo, não um formulário obrigatório de onboarding; descreve experiência, interface, linguagem e aceitação, não implementação.
+A [diretriz de execução](docs/product/V2_AGENT_EXECUTION_DIRECTIVE_2026-10-11.md) manda fechar jornadas com correções pequenas e evidência observável. Planos, pesquisas, estudos da V1 e relatórios históricos não substituem esses contratos. Testes verdes não substituem a experiência do leitor.
 
-FeedMine é um feed reader local-first/offline-first, sem servidor próprio. O pacote Swift contém dez módulos; o aplicativo iOS separado usa esses módulos por referência local.
+Antes de planejar, consulte o monitor consultivo: `git fetch origin monitor/architecture` e `git show origin/monitor/architecture:docs/reviews/ARCHITECTURE_MONITOR.md`. O parecer não altera contratos nem certifica o código local; compare seus achados com o HEAD real.
 
-Abra `FeedMineApp/FeedMineApp.xcodeproj`, selecione o scheme compartilhado **FeedMine** e um simulador iOS 18 ou posterior. Não é necessário configurar uma equipe para compilar no simulador. Para um dispositivo físico, configure sua assinatura de desenvolvimento no Xcode.
+## Executar e verificar
 
-O aplicativo restaura publicação local antes de qualquer aquisição. Sem história publicada, usa ColdFeedBootstrap, preparação com evidências reais e publicação incremental. O Runway mantém reserva local, e a mídia é preparada antecipadamente para cards com imagem local ou layout text-only. Cards com link abrem o artigo. O catálogo derivado da revisão pública 5 (77.443 fontes) é empacotado no app com descritor e integridade verificados; fontes selecionadas, contextos, busca local e bookmarks persistem offline. A manutenção da cauda preserva cards já vistos. Consulte o relatório de validação para resultados e pendências.
+Abra `FeedMineApp/FeedMineApp.xcodeproj`, scheme **FeedMine**, em simulador iOS 18 ou posterior. O simulador não exige equipe de assinatura; dispositivo físico exige configuração no Xcode. Detalhes: [execução iOS](docs/IOS_RUN.md).
 
-Coleta inicial: `CollectionLaunchSettings(initialParallelism:)` fornece o orçamento de alvos (padrão 48);
-o coordenador executa no máximo 8 alvos simultâneos. `AcquisitionPlanningResources` continua sem defaults.
-A composição ordena alvos por qualidade/atividade do catálogo e latência medida quando disponível; sem sinais,
-preserva a ordem fornecida. Transições de prontidão de mídia notificam a oportunidade local existente do runway,
-sem publicar mídia pendente nem criar outro pipeline. Os testes de fixture fixam ≥10 cards em ≤3 s com
-`FeedLaunchWitness`, recuperação após prontidão e ordenação estável; não certificam latência de pixels no aparelho.
+Antes de compilar um clone, prepare e instale o par validado `catalog.sqlite` + `catalog.manifest.json` em `FeedMineApp/FeedMineApp/Resources/`, conforme a [procedência do catálogo](FeedMineApp/FeedMineApp/Resources/CATALOG.md) e o procedimento abaixo. O catálogo gerenciado tem autoridade em [wawasoft/feed-repository](https://github.com/wawasoft/feed-repository), conforme PD-10/INV-18. `scripts/fetch-catalog.sh` é legado; use `scripts/bootstrap_catalog.py`.
 
-Antes de compilar um clone, prepare o catálogo público com `python3 scripts/bootstrap_catalog.py` e instale o par validado `build/catalog-bootstrap/catalog.sqlite` + `catalog.manifest.json` em `FeedMineApp/FeedMineApp/Resources/`, conforme [a procedência do catálogo](FeedMineApp/FeedMineApp/Resources/CATALOG.md). `scripts/fetch-catalog.sh` é legado e baixa um snapshot incompatível com o descritor atual; não o execute para preparar uma release. Sem o par válido, a instalação do catálogo é recusada. Git LFS não é mais usado.
+Verificação do pacote: `swift package describe`, `swift build`, `swift test`, `git diff --check`. A suíte do app roda no scheme **FeedMine**; um teste de UI pode ser isolado com `-only-testing:FeedMineUITests/FeedMineUITests/<nome>`.
 
-A rodada atual é verificada localmente, sem CI hospedada. Resultados e limitações ficam em [validação OMP/Codex](docs/reviews/OMP_VALIDATION_2026-10-09.md); a transferência do frontend V1 → V2 tem o seu próprio registro, superfície por superfície, em [evidência da transferência](docs/reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md), com o inventário de controles em `docs/v1-study/UI_TRANSFER_MATRIX.md`.
+Antes de avaliar a experiência no simulador, confirme que o app usa o catálogo de produto:
 
-Verificação do pacote: `swift package describe`, `swift build`, `swift test`, `git diff --check`. A suíte do app roda no simulador pelo scheme **FeedMine**; os testes de UI de um caso por vez com `-only-testing:FeedMineUITests/FeedMineUITests/<nome>` (é assim que a evidência de cada superfície foi produzida), e a corrida completa do scheme é o portão final.
+```sh
+scripts/verify_product_catalogue.sh "$(xcrun simctl get_app_container booted com.feedmine.development app)"
+```
 
-Veja [execução iOS](docs/IOS_RUN.md) e [arquitetura](docs/architecture/ARCHITECTURE.md).
+O benchmark pode deixar instalado um app com catálogo de corpus; isso não representa a descoberta no catálogo real. O verificador informa como reinstalar o build de produto.
 
-Antes de avaliar UX/experiência em um build de simulador, rode `scripts/verify_product_catalogue.sh "$(xcrun simctl get_app_container booted com.feedmine.development app)"`: uma corrida do benchmark instala o app com o catálogo do corpus dentro dele e, fora da corrida, esse app parece não publicar nada (o script sai 1 e diz como reinstalar o build de produto).
+Execute as provas por `scripts/run-discovery-benchmark.sh --gate B01 --profile A --profile B` (ou os demais gates). O launcher configura o transporte fora do avaliador; preserve driver, oráculo, corpus e hashes congelados. No iPhone, forneça `FEEDMINE_BENCH_DEVICE_UDID` e `FEEDMINE_BENCH_TRANSPORT_HOST` (host:porta do Mac).
 
-## Pesquisa Apple — UI/UX, offline e confiabilidade
+## Interpretar o estado do projeto
 
-Documentação primária Apple com limites iOS e cenários verificáveis: [índice de pesquisa Apple](docs/research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md). A terceira onda de [F21–F27](docs/product/PRODUCT_AUDIT_APPLE_FRONTS_21_27.md) complementa F01–F20 em scene lifecycle, rede/offline, background, integridade local, SwiftUI, integrações e recursos; não altera B01–B06 ou o status de release.
+Confira `git status`, `git log -1` e `git worktree list` antes de trabalhar: este checkout pode não ser a linha de produto mais recente. Cada resultado vale para o commit, build, catálogo e ambiente que sua evidência identifica. Um relatório antigo não certifica o HEAD atual.
 
-## Ouro escondido da V1 — backlog de produto para V2
+Os [registros pós-build 53](docs/reviews/2026-10-18-v2-execucao-pos-build53.md), o [snapshot da candidata](docs/reviews/evidence/2026-10-18-candidate-snapshot/README.md) e o [registro de distribuição de 13/out](docs/reviews/2026-10-13-production-delivery.md) documentam suas respectivas execuções; não são declaração de release aprovada. TestFlight interno serve à avaliação. A aprovação pública exige B01–B06 e PD-10 comprovados na candidata, incluindo B06 em iPhone físico.
 
-Análise de 15 oportunidades da V1 com código/linhas como evidência, V2 atual inspecionada e critérios de aceitação: [Garimpo V1: 15 oportunidades com prova no código](docs/v1-study/V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md). Para executar sem copiar o runtime legado: [Briefs de implementação por jornada](docs/product/V1_GOLD_IMPLEMENTATION_BRIEFS_2026-10-10.md). Armadilhas arquiteturais que não devem ser trazidas: [Lista do que não portar](docs/v1-study/V1_GOLD_DO_NOT_PORT_2026-10-10.md). **Não há código novo nem certificação B01–B06 nesses documentos.**
+Referências de apoio: [primeira experiência F02](docs/product/F02_DISCOVERY_FEED_ONBOARDING_PRD.md), [pesquisa Apple](docs/research/APPLE_IOS_UI_UX_RELIABILITY_2026-10-10.md), [transferência da UI V1](docs/reviews/V1_V2_FRONTEND_TRANSFER_EVIDENCE.md) e [o que não portar da V1](docs/v1-study/V1_GOLD_DO_NOT_PORT_2026-10-10.md).
 
-## Avaliador congelado e TestFlight — verificação de 2026-10-13
-
-Execute o benchmark por `scripts/run-discovery-benchmark.sh --gate B01 --profile A --profile B` (ou os demais gates). O launcher configura a origem de transporte no ambiente do app por `UITargetAppEnvironmentVariables` do `.xctestrun` gerado, fora do avaliador; `bench/run.sh`, driver, oráculo e corpus conservam os hashes congelados. Em iPhone físico, forneça `FEEDMINE_BENCH_DEVICE_UDID` e `FEEDMINE_BENCH_TRANSPORT_HOST` (host:porta do Mac).
-
-TestFlight interno confirmado pela API Apple: **1.0 (32)**, commit `c6de80b7decca9a81a4888333521b696f84cf761`, estado `VALID` / `IN_BETA_TESTING`, grupo **WawaTesters**. Esta build corrige o travamento por cardinalidade variável de filhos no lazy layout. Disponibilidade interna não certifica B01–B06 nem aprovação de produção. Evidência atual: [status de entrega](docs/reviews/2026-10-13-production-delivery.md).
-
-### PD10-P0C — preparação verificável de catálogo para novas releases
+## Preparação verificável do catálogo para release
 
 `fetch-catalog.sh` agora recusa explicitamente o catálogo V1. Em um checkout separado do compilador
 V1, mantenha `build_catalog.py` **e** `catalog_identity.py` juntos e identifique seus bytes:
@@ -60,11 +56,16 @@ python3 scripts/bootstrap_catalog.py --compiler "$COMPILER" \
   --compiler-sha256 "$COMPILER_SHA" --identity-sha256 "$IDENTITY_SHA"
 # Examine build/catalog-bootstrap/{provenance.json,state.json,build-report.json}.
 cp build/catalog-bootstrap/{catalog.sqlite,catalog.manifest.json} FeedMineApp/FeedMineApp/Resources/
-# Commit the tracked descriptor before release; catalog.sqlite is Git-ignored and is\n# instead bound to the commit/build by the archive's byte-level evidence.
+# Commit the tracked descriptor before release; catalog.sqlite is Git-ignored and is
+# instead bound to the commit/build by the archive's byte-level evidence.
 scripts/release-testflight.sh --dry-run
 ```
 
-O `catalog.sqlite` é intencionalmente ignorado pelo Git (atualmente maior que 100 MB),\nportanto o SHA Git sozinho **não** certifica seus bytes. A evidência de cada archive vincula\nGit SHA + manifesto público + SHA-256 do SQLite efetivamente distribuído.\n\nO preflight exige manifesto público atual acessível, inventário completo e OPMLs íntegros,
+O `catalog.sqlite` é intencionalmente ignorado pelo Git (atualmente maior que 100 MB),
+portanto o SHA Git sozinho **não** certifica seus bytes. A evidência de cada archive vincula
+Git SHA + manifesto público + SHA-256 do SQLite efetivamente distribuído.
+
+O preflight exige manifesto público atual acessível, inventário completo e OPMLs íntegros,
 relatório e identidade do compilador, par do staging e par de Resources. O archive real é
 revalidado antes de qualquer export/upload. Evidências legíveis por máquina ficam em
 `.build/pd10-p0c-*.json`. O dry-run não exige credenciais do App Store Connect.
