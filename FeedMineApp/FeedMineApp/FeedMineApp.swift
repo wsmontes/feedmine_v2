@@ -1013,7 +1013,13 @@ struct ReaderHost: UIViewControllerRepresentable {
         // clearly editable — a suggestion, never an imposition. It is also what makes "Começar amplo" a usable
         // entry: a first run that names no language leaves the discovery profile empty, and the feed would open on
         // the empty-selection surface instead of discovering anything.
-        ReaderOnboardingView(recipe: .neutral(languages: AppComposition.suggestedLanguages(from: options.languages)),
+        //
+        // The seed is the answer the host proposes, so it is marked as answered even when the device language is
+        // not among the offered chips: the surface then shows "Todos os idiomas" selected, and both broad actions
+        // save that state instead of writing "no answer yet" over it.
+        ReaderOnboardingView(
+            recipe: .neutral(languages: AppComposition.suggestedLanguages(from: options.languages),
+                hasLanguageAnswer: true),
             isFirstRun: true,
             previewCards: composition.onboardingPreviewCards(),
             topics: options.topics, regions: options.regions, languages: options.languages,

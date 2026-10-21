@@ -388,7 +388,7 @@ class Insumo:
         last = notices[-1]
         return {"anúncios": len(notices), "teto": as_int(last.get("ceiling")),
             "escrito": as_int(last.get("written")), "perdidos_pelo_teto": as_int(last.get("dropped_by_ceiling")),
-            # Context refused by the journey reserve (RunwayTrace: journey events keep the last quarter of the
+            # Context refused by the journey reserve (RunwayTrace: journey events keep the last third of the
             # budget). Older traces do not carry the field, and `as_int` then yields 0 through `complete()`.
             "perdidos_do_contexto": as_int(last.get("dropped_by_context")),
             "perdidos_pela_escrita": as_int(last.get("dropped_by_write")),
