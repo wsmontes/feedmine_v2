@@ -197,6 +197,87 @@ final class RenderReadyAdmissionTests: XCTestCase {
         XCTAssertEqual(try store.checkpoint(), durable)
     }
 
+    /// **The automatic boundary.** After a restore that could not redraw the reader's card, the rendering's own
+    /// resting position names the substitute. It is not a reader move: the durable record must keep the reader's
+    /// card through the automatic statement and through a lifecycle checkpoint. The layout's own observation of
+    /// another card is not a gesture either; only a deliberate move may establish a new position.
+    func testAutomaticRestDoesNotReplaceTheUnavailableDurableAnchorAndADeliberateMoveDoes() async throws {
+        let f = try fixture(cards: 5, anchor: 2, materialized: [0, 1, 3, 4], textIndices: [0, 1, 3, 4])
+        let store = SessionStore(database: f.database)
+        let durable = try XCTUnwrap(store.checkpoint())
+        let session = try session(f)
+        let restored = try await snapshot(session, .restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+        XCTAssertEqual(restored.unavailablePositionCardID, f.ids[2])
+        XCTAssertEqual(restored.window.anchor.cardID, f.ids[3])
+
+        let kept = try await session.notePresentedPosition(.init(cardID: f.ids[3], placement: .top), atRest: true,
+            at: Date(timeIntervalSince1970: 1_000))
+        XCTAssertEqual(kept, .keptUnavailablePosition(cardID: f.ids[2]))
+        let checkpointed = try await session.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 1_001))
+        XCTAssertFalse(checkpointed, "a lifecycle milestone is not a reader move either")
+        XCTAssertEqual(try store.checkpoint(), durable,
+            "no reader move: the checkpoint still names the reader's card")
+
+        // A deliberate move establishes the new position.
+        _ = try await session.submitViewport(.init(anchor: .init(cardID: f.ids[4], placement: .center)),
+            deliberate: true)
+        let afterMove = await session.currentPresentation()
+        XCTAssertNil(afterMove?.unavailablePositionCardID, "the substitute no longer stands for the reader")
+        // The automatic rest above left the substitute as the rendering's presented top. A milestone before the
+        // next report must not fall back to it: no reader move would repair that record afterwards.
+        let milestone = try await session.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 1_003))
+        XCTAssertTrue(milestone)
+        XCTAssertEqual(try store.checkpoint()?.cardID, f.ids[4])
+        let written = try await session.notePresentedPosition(.init(cardID: f.ids[4], placement: .top),
+            atRest: true, at: Date(timeIntervalSince1970: 1_004))
+        XCTAssertEqual(written, .written(cardID: f.ids[4], placement: .top),
+            "the exact top replaces the milestone's window anchor, never the substitute")
+        XCTAssertEqual(try store.checkpoint()?.cardID, f.ids[4])
+    }
+
+    /// The rendering's own observation of another card is not a gesture: the substitution protection stays until a
+    /// deliberate move, and the automatic rest at that card is still refused.
+    func testAutomaticObservationOfAnotherCardDoesNotEndTheSubstitutionProtection() async throws {
+        let f = try fixture(cards: 5, anchor: 2, materialized: [0, 1, 3, 4], textIndices: [0, 1, 3, 4])
+        let store = SessionStore(database: f.database)
+        let durable = try XCTUnwrap(store.checkpoint())
+        let session = try session(f)
+        _ = try await snapshot(session, .restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+
+        _ = try await session.submitViewport(.init(anchor: .init(cardID: f.ids[4], placement: .center)))
+        let stillKept = try await session.notePresentedPosition(.init(cardID: f.ids[4], placement: .top),
+            atRest: true, at: Date(timeIntervalSince1970: 1_002))
+        XCTAssertEqual(stillKept, .keptUnavailablePosition(cardID: f.ids[2]))
+        XCTAssertEqual(try store.checkpoint(), durable,
+            "a layout observation is not a reader move")
+    }
+
+    /// **Asset recovery.** With the durable record protected from the automatic substitute, the bytes coming back
+    /// make the next restore land on the reader's original card — not on the neighbour the first run had to draw.
+    func testReturningAssetLetsTheNextRestoreLandOnTheOriginalCard() async throws {
+        let f = try fixture(cards: 5, anchor: 2, materialized: [0, 1, 3, 4], textIndices: [0, 1, 3, 4])
+        let store = SessionStore(database: f.database)
+        let durable = try XCTUnwrap(store.checkpoint())
+        let session = try session(f)
+        let restored = try await snapshot(session, .restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+        _ = try await session.notePresentedPosition(.init(cardID: restored.window.anchor.cardID,
+            placement: .top), atRest: true, at: Date(timeIntervalSince1970: 1_000))
+        _ = try await session.checkpointCurrentPosition(at: Date(timeIntervalSince1970: 1_001))
+        XCTAssertEqual(try store.checkpoint(), durable)
+
+        let key = try XCTUnwrap(f.cards[2].mediaKey)
+        let digest = String(key.dropFirst("sha256:".count))
+        try pngBytes(shade: UInt8(20 + (2 * 17) % 200))
+            .write(to: f.assets.appendingPathComponent("sha256").appendingPathComponent(digest))
+
+        let reopened = FeedSession(publicationHistory: .init(database: f.database),
+            imageDecoder: try decoder(f))
+        let again = try await snapshot(reopened, .restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+        XCTAssertEqual(again.window.anchor.cardID, f.ids[2], "the reader's card, not the substitute")
+        XCTAssertNil(again.unavailablePositionCardID)
+        XCTAssertTrue(again.unavailableImageCardIDs.isEmpty)
+    }
+
     /// The launch path, not only `.restore`: a warm start projects the reader's window **before the actor exists**,
     /// so the unavailable fact has to be in that value, and the session that adopts it must keep it across the next
     /// projection instead of dropping the excluded card from its memory.

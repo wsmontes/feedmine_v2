@@ -284,6 +284,14 @@ public final class FeedScreenStore {
         } else {
             presentationState = state
         }
+        // A restore that could not redraw the reader's own card states it once, through the existing toast: the
+        // screen opened on the closest ready card, and claiming an exact resume would be false. The same position
+        // reported again (another projection) does not repeat the notice.
+        if let substituted = presentationState.presentation?.unavailablePositionCardID,
+            substituted != state.presentation?.unavailablePositionCardID {
+            showToast(text: String(localized: "O card em que você parou não está disponível; abrimos no card mais próximo."),
+                systemImage: "exclamationmark.triangle")
+        }
         state = presentationState.reporting(received.work)
         // **Só o que a lista desenha é republicado.** A posição do leitor e a proveniência continuam em `state`,
         // que muda a cada avanço; a lista observa os itens, que mudam quando a janela muda. Sem isso, cada avanço

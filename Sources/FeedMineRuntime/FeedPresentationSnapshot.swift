@@ -111,6 +111,11 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
     /// names that card here too, even though it is excluded from the window (the presented anchor is the closest
     /// render-ready card) — the failure is stated, never hidden behind the substitute.
     public let unavailableImageCardIDs: Set<PublicationCardID>
+    /// The reader's durable position this presentation could not redraw: the checkpoint's card, when its image
+    /// could not be reconstructed and the window had to open on the closest render-ready card. Nil when the
+    /// window's anchor is the reader's own position. A surface may state the unavailable position honestly; the
+    /// substitute is not the reader's card, and no exact resume can be claimed for it.
+    public let unavailablePositionCardID: PublicationCardID?
 
     init(restoredPublication: RestoredPublication, provenance: FeedProjectionProvenance) {
         self.init(contextKey: restoredPublication.edition.contextKey,
@@ -123,12 +128,14 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
     }
 
     init(contextKey: ContextKey, editionID: FeedEditionID, window: FeedWindowSnapshot,
-        provenance: FeedProjectionProvenance, unavailableImageCardIDs: Set<PublicationCardID> = []) {
+        provenance: FeedProjectionProvenance, unavailableImageCardIDs: Set<PublicationCardID> = [],
+        unavailablePositionCardID: PublicationCardID? = nil) {
         self.contextKey = contextKey
         self.editionID = editionID
         self.window = window
         self.provenance = provenance
         self.unavailableImageCardIDs = unavailableImageCardIDs
+        self.unavailablePositionCardID = unavailablePositionCardID
     }
 }
 

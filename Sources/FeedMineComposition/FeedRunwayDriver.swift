@@ -353,7 +353,11 @@ public actor FeedRunwayDriver {
     public func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,
         resources: FeedRunwayDriverResources, sampledAt: RunwayMonotonicTime? = nil,
         onCommitted: (@Sendable (FeedPresentationSnapshot) async -> Void)? = nil) async throws -> FeedPresentationSnapshot? {
-        guard let recorded = try await session.submitViewport(observation) else {
+        // A real movement (or an accessibility/programmatic navigation) is the reader establishing a position; a
+        // semantic settle of the rendering is not. The session needs the difference to protect a restore's
+        // substitute from becoming durable without a reader move.
+        guard let recorded = try await session.submitViewport(observation,
+            deliberate: activity != .stationary) else {
             await runway.deactivate(); return nil
         }
         return try await finishViewport(observation, recorded: recorded, activity: activity,
@@ -363,7 +367,8 @@ public actor FeedRunwayDriver {
     public func submitViewport(_ evidence: RenderedViewportEvidence, activity: RunwayActivity,
         resources: FeedRunwayDriverResources, sampledAt: RunwayMonotonicTime? = nil,
         onCommitted: (@Sendable (FeedPresentationSnapshot) async -> Void)? = nil) async throws -> FeedPresentationSnapshot? {
-        guard let recorded = try await session.submitViewport(evidence.observation, from: evidence) else {
+        guard let recorded = try await session.submitViewport(evidence.observation, from: evidence,
+            deliberate: activity != .stationary || evidence.isPositionReconciliation) else {
             return await session.currentPresentation()
         }
         if evidence.isPositionReconciliation {
