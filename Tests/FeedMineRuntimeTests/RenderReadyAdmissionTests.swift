@@ -77,8 +77,10 @@ final class RenderReadyAdmissionTests: XCTestCase {
         return data as Data
     }
 
-    /// `cards` real published rows, every one an image card, anchored at `anchor` (center).
-    private func fixture(cards count: Int = 3, anchor: Int, materialized: Set<Int>) throws -> Fixture {
+    /// `cards` real published rows, image cards unless `textIndices` declares a card as text, anchored at
+    /// `anchor` (center).
+    private func fixture(cards count: Int = 3, anchor: Int, materialized: Set<Int>,
+        textIndices: Set<Int> = []) throws -> Fixture {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let assets = directory.appendingPathComponent("Media/sha256", isDirectory: true)
@@ -97,12 +99,16 @@ final class RenderReadyAdmissionTests: XCTestCase {
             if materialized.contains(index) {
                 try bytes.write(to: assets.appendingPathComponent(digest))
             }
+            let isText = textIndices.contains(index)
             return PublicationStore.CardRecord(id: PublicationCardID(), originRecordID: OriginRecordID(),
                 originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil, sourceDisplayName: nil,
                 providerDisplayName: nil, contentEntityID: nil, contentClusterID: nil, title: "C\(index)",
-                primaryText: "Local image", timestampValue: nil, timestampKind: nil,
-                mediaKey: "sha256:" + digest, mediaPixelWidth: 60, mediaPixelHeight: 40,
-                mediaMimeType: "image/png", renderLayout: "hero", renderMediaAspectRatio: 1.5,
+                primaryText: isText ? "Local text" : "Local image", timestampValue: nil, timestampKind: nil,
+                mediaKey: isText ? nil : "sha256:" + digest,
+                mediaPixelWidth: isText ? nil : 60, mediaPixelHeight: isText ? nil : 40,
+                mediaMimeType: isText ? nil : "image/png",
+                renderLayout: isText ? "textOnly" : "hero",
+                renderMediaAspectRatio: isText ? nil : 1.5,
                 primaryActionKind: nil, primaryActionReference: nil)
         }
         let database = try RuntimeDatabase(location: .init(directory: directory))
@@ -116,10 +122,14 @@ final class RenderReadyAdmissionTests: XCTestCase {
             assets: directory.appendingPathComponent("Media"))
     }
 
-    private func session(_ f: Fixture, onDecode: @escaping @Sendable () -> Void = {}) throws -> FeedSession {
-        let decoder = try XCTUnwrap(PresentationImageDecoder(assetDirectory: f.assets,
+    private func decoder(_ f: Fixture, onDecode: @escaping @Sendable () -> Void = {}) throws
+        -> PresentationImageDecoder {
+        try XCTUnwrap(PresentationImageDecoder(assetDirectory: f.assets,
             heroMaxPixel: 60, thumbnailMaxPixel: 30, onDecode: onDecode))
-        return FeedSession(publicationHistory: .init(database: f.database), imageDecoder: decoder)
+    }
+
+    private func session(_ f: Fixture, onDecode: @escaping @Sendable () -> Void = {}) throws -> FeedSession {
+        FeedSession(publicationHistory: .init(database: f.database), imageDecoder: try decoder(f, onDecode: onDecode))
     }
 
     private func snapshot(_ session: FeedSession, _ admission: FeedPresentationAdmission) async throws
@@ -151,6 +161,97 @@ final class RenderReadyAdmissionTests: XCTestCase {
             XCTAssertEqual(item.layout, .hero)
             XCTAssertNotNil(item.image, "a ready card is admitted with its pixels")
         }
+    }
+
+    /// **The reopen.** The durable checkpoint names an image card whose local asset is gone; the ready text cards
+    /// around it are admitted. The missing card does not cross the admission boundary (the owner's render-ready
+    /// rule), so the window is presented on the closest ready card — but the media failure must be *stated*, not
+    /// hidden behind a position that looks like the reader's own, and the durable record must keep naming the
+    /// reader's card. Before the fix the restored snapshot carried no `unavailableImageCardIDs` at all.
+    func testRestoreStatesAnUnavailableDurableAnchorWithoutRewritingTheCheckpoint() async throws {
+        let f = try fixture(cards: 5, anchor: 2, materialized: [0, 1, 3, 4], textIndices: [0, 1, 3, 4])
+        let store = SessionStore(database: f.database)
+        let durable = try XCTUnwrap(store.checkpoint())
+        XCTAssertEqual(durable.cardID, f.ids[2], "premise: the reader's card is the image card without an asset")
+
+        let session = try session(f)
+        let restored = try await snapshot(session, .restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+
+        XCTAssertEqual(restored.window.items.map(\.id), [f.ids[0], f.ids[1], f.ids[3], f.ids[4]],
+            "the missing card does not cross the boundary; the ready cards around it are admitted")
+        XCTAssertEqual(restored.window.anchor.cardID, f.ids[3],
+            "the presented anchor is the closest ready card, not the card without pixels")
+        XCTAssertEqual(restored.unavailableImageCardIDs, [f.ids[2]],
+            "the media failure of the reader's own card is stated, never hidden")
+        XCTAssertEqual(try store.checkpoint(), durable,
+            "the durable identity still names the reader's card; the substitute is a presentation fact")
+        XCTAssertEqual(FeedDestinationGate.readiness(of: f.ids[3], in: restored), .ready)
+        XCTAssertEqual(FeedDestinationGate.readinessAfterPreparation(of: f.ids[2], in: restored),
+            .unavailableAfterPreparation)
+
+        // The next observation replaces the projection; the unavailable fact must survive it.
+        let observed = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[0], placement: .center)))
+        XCTAssertEqual(observed.unavailableImageCardIDs, [f.ids[2]],
+            "the unavailable fact survives the projection that follows the restore")
+        XCTAssertEqual(try store.checkpoint(), durable)
+    }
+
+    /// The launch path, not only `.restore`: a warm start projects the reader's window **before the actor exists**,
+    /// so the unavailable fact has to be in that value, and the session that adopts it must keep it across the next
+    /// projection instead of dropping the excluded card from its memory.
+    func testWarmStartKeepsTheUnavailableDurableAnchorAcrossTheAdoptedSession() async throws {
+        let f = try fixture(cards: 5, anchor: 2, materialized: [0, 1, 3, 4], textIndices: [0, 1, 3, 4])
+        let decoder = try decoder(f)
+        let warm = try XCTUnwrap(FeedSession.warmStart(publicationHistory: .init(database: f.database),
+            imageDecoder: decoder, bounds: .init(backwardCapacity: 2, forwardCapacity: 2)))
+        XCTAssertEqual(warm.snapshot.window.anchor.cardID, f.ids[3])
+        XCTAssertEqual(warm.snapshot.unavailableImageCardIDs, [f.ids[2]],
+            "the value drawn before the first frame states the media failure")
+
+        let session = FeedSession(publicationHistory: .init(database: f.database), imageDecoder: decoder,
+            warmStart: warm)
+        let observed = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[0], placement: .center)))
+        XCTAssertEqual(observed.unavailableImageCardIDs, [f.ids[2]],
+            "the adopted session keeps the fact the warm start stated")
+    }
+
+    /// The unavailable fact is a **decision**, not a per-projection answer: when the bytes come back and the card is
+    /// admitted with pixels, the decision ends for good. A later release outside the pixel band is residency, not a
+    /// new media failure — and the card must be reconstructible again on return.
+    func testARecoveredAnchorStopsBeingUnavailableAndIsReconstructedOnReturn() async throws {
+        let f = try fixture(cards: 8, anchor: 3, materialized: [3], textIndices: [0, 1, 4, 5, 6, 7])
+        let session = try session(f)
+        let restored = try await snapshot(session, .restore(.init(backwardCapacity: 1, forwardCapacity: 4)))
+        XCTAssertEqual(restored.window.items.map(\.id), [f.ids[3], f.ids[4], f.ids[5], f.ids[6], f.ids[7]])
+        XCTAssertEqual(restored.unavailableImageCardIDs, [f.ids[2]], "premise: card 2 has no asset")
+
+        // The asset returns while the session lives; the next admission reconstructs the card.
+        let key = try XCTUnwrap(f.cards[2].mediaKey)
+        let digest = String(key.dropFirst("sha256:".count))
+        try pngBytes(shade: UInt8(20 + (2 * 17) % 200))
+            .write(to: f.assets.appendingPathComponent("sha256").appendingPathComponent(digest))
+        let backward = try await snapshot(session,
+            .backwardScroll(ViewportObservation(anchor: .init(cardID: f.ids[3], placement: .center))))
+        XCTAssertEqual(backward.window.items.map(\.id), [f.ids[2], f.ids[3], f.ids[4], f.ids[5], f.ids[6], f.ids[7]])
+        XCTAssertNotNil(backward.window.items[0].image, "the reconstructed card returns with its pixels")
+        XCTAssertTrue(backward.unavailableImageCardIDs.isEmpty,
+            "the reconstruction ends the unavailable decision")
+
+        // Two moves forward leave card 2 outside the protected band, so its bitmap is released.
+        _ = try await snapshot(session, ViewportObservation(anchor: .init(cardID: f.ids[7], placement: .center)))
+        let forwarded = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[6], placement: .center)))
+        XCTAssertNil(forwarded.window.items[0].image, "premise: card 2 released its pixels")
+        XCTAssertTrue(forwarded.unavailableImageCardIDs.isEmpty,
+            "a residency release does not declare the media unavailable again")
+
+        // And the return reaches it: the decision no longer blocks the reconstruction.
+        let reversed = try await snapshot(session,
+            ViewportObservation(anchor: .init(cardID: f.ids[2], placement: .center)))
+        XCTAssertNotNil(reversed.window.items[0].image, "the card is reconstructed on return")
+        XCTAssertTrue(reversed.unavailableImageCardIDs.isEmpty)
     }
 
     /// A forward admission must not decode cards that cannot fit after the reader's current anchor.

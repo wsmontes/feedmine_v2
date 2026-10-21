@@ -105,9 +105,11 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
     public let editionID: FeedEditionID
     public let window: FeedWindowSnapshot
     public let provenance: FeedProjectionProvenance
-    /// R03/R04: admitted cards whose local asset could not be reconstructed when their band was prepared. They keep
-    /// their identity, order, anchor and frozen geometry; the fact lets the destination gate state `unavailable`
-    /// instead of asking for preparation forever.
+    /// R03/R04 and restore: cards of this association whose local asset could not be reconstructed. An admitted card
+    /// keeps its identity, order, anchor and frozen geometry, and the fact lets the destination gate state
+    /// `unavailable` instead of asking for preparation forever. A restore whose durable anchor could not be redrawn
+    /// names that card here too, even though it is excluded from the window (the presented anchor is the closest
+    /// render-ready card) — the failure is stated, never hidden behind the substitute.
     public let unavailableImageCardIDs: Set<PublicationCardID>
 
     init(restoredPublication: RestoredPublication, provenance: FeedProjectionProvenance) {
