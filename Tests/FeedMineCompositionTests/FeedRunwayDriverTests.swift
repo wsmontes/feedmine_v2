@@ -133,6 +133,14 @@ final class FeedRunwayDriverTests: XCTestCase {
             monotonicNow:{ clock.next() },makeSegmentIdentity:{ .init(segmentID:FeedSegmentID(),segmentSeed:2,segmentCreatedAt:Date(timeIntervalSince1970:6))! },prepare:{ selection in
                 if cancelPrepare { throw CancellationError() }; if prepareFailure { throw Failure.preparation }; return Self.prepared(selection)
             }, onPublication: { receipt in publications.append(receipt) })
+        // The association's close order, in the fixture: stop new starts and the late-opportunity drain, cancel and
+        // await every authorized pull, and only then let the registered transport invalidation run. Registered
+        // after that block, this teardown runs before it (LIFO), so no escaped task can call
+        // `URLSession.bytes` on an invalidated session in the next test.
+        addTeardownBlock {
+            await driver.deactivate()
+            _ = await coordinator.settleInFlight()
+        }
         return .init(database:db,location:.init(directory:root),plan:p,policy:pol,edition:edition,cards:prepared.cardIDs,source:source,target:target,otherTarget:otherTarget,otherSource:otherSource,session:session,runway:runway,driver:driver,acquisition:acquisition,coordinator:coordinator,http:http,otherHTTP:otherHTTP,clock:clock,publications:publications)
     }
     private func restore(_ f:Fixture,forward:Int = 4,resources:FeedRunwayDriverResources? = nil) async throws -> FeedPresentationSnapshot {

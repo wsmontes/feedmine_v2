@@ -135,6 +135,13 @@ final class SelectedSourceCoverageTests: XCTestCase {
                 gate: target.id == targets[2].id ? gate : nil)
         }, backoff: .init(baseSeconds: 30, ceilingSeconds: 60), concurrentTargetLimit: 2,
             monotonicSeconds: { 1 })
+        // Retirement order: a transport may only be invalidated after no authorized pull can create another URL
+        // session task. This teardown is registered after the invalidation block, so it runs first; a pull that
+        // outlives the test is cancelled and awaited instead of firing into an invalidated session.
+        addTeardownBlock {
+            await coordinator.setNewStartsAllowed(false)
+            _ = await coordinator.settleInFlight()
+        }
         return .init(database: database, plan: plan, policy: policy, session: FeedSession(publicationHistory: .init(database: database)),
             snapshot: snapshot, coordinator: coordinator, journal: journal, targets: targets, sources: sources)
     }
@@ -770,7 +777,17 @@ final class SelectedSourceCoverageTests: XCTestCase {
     func testP4SharedTargetRunsOnceAndRetainsDistinctSourceMemberships() async throws {
         let f = try fixture(shared: true), first = try await cold(f), (driver, _) = try driver(f)
         _ = try await driver.activateCurrentPresentation(resources: resources())
-        _ = await waitUntil(5) { f.journal.pulls.count >= 3 }
+        // The pull journal counts executions, not durable admissions: the third pull can be recorded while its
+        // admission is still committing. Wait for the fact the assertion reads — the candidates of every source —
+        // so a loaded machine cannot turn a slow commit into a missing membership. The bound is the same 5 s; a
+        // product that loses an admission still times out and fails the assertions below.
+        let expectedSources = Set(f.sources)
+        _ = await waitUntil(5) {
+            guard f.journal.pulls.count >= 3,
+                let candidates = try? CandidateProvider(contentStore: .init(database: f.database))
+                    .candidates(for: f.plan, after: nil, examinedCapacity: 100).candidates else { return false }
+            return Set(candidates.flatMap(\.sourceIDs)) == expectedSources
+        }
         XCTAssertEqual(f.journal.pulls.count, 3); XCTAssertEqual(Set(f.journal.pulls).count, 3)
         let candidates = try CandidateProvider(contentStore: .init(database: f.database)).candidates(for: f.plan, after: nil, examinedCapacity: 100).candidates
         XCTAssertTrue(candidates.contains { $0.sourceIDs == Set(f.sources.prefix(2)) })
