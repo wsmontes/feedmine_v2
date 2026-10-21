@@ -667,6 +667,56 @@ final class RunwayControllerTests: XCTestCase {
         catch { XCTAssertEqual(error as? RunwayControllerError,.staleAcquisitionAcknowledgement) }
     }
 
+    /// D12: a page of the durable skip pass that ends without a presentable revision leaves work the **same**
+    /// authorization owes. When no lane has structural work left, that page is taken as a queue-only slice: it
+    /// examines no supply, moves no lane or cursor, and the page that ends the pass closes the chain.
+    func testAContinuationWithNoLaneTakesAQueueOnlySliceAndMovesNoCursor() async throws {
+        let sut = controller()
+        // Premise: a measured zero rate with a card ready ahead is a healthy reserve, so the policy holds.
+        let a = observation(1, 0, activity: .stationary)
+        await sut.activate(scope()); try await sut.submitObservation(a)
+        try await sut.acceptMeasurement(facts(a, amount: .exact(1)))
+        let still = observation(1, 2, activity: .stationary)
+        try await sut.submitObservation(still)
+        try await sut.acceptMeasurement(facts(still, amount: .exact(1), from: a.anchorCardID, advance: .same))
+        let hold = try await sut.reconsider(resources: resources(), at: time(3)); XCTAssertEqual(hold, .none)
+        let held = await sut.snapshot()
+        XCTAssertEqual(held.lastCoverage, .healthy, "premissa: a reserva está saudável")
+
+        // One authorized opportunity walks its window and reviews one page; the page ends with rows behind it and
+        // no presentable revision, so the walk is spent while the pass still owes the next page.
+        try await sut.noteLocalSupplyChanged(scope: scope())
+        let first = try await intent(sut, at: 4)
+        XCTAssertFalse(first.reconsiderationOnly, "a lane still had work")
+        let walked = LocalProductionProgress(examinedCount: 7, nextCursor: nil, exhausted: true,
+            reconsiderationContinues: true)
+        try await sut.completeLocalSlice(first, outcome: .advancedWithoutPublication(walked), at: time(5))
+        var snap = await sut.snapshot()
+        XCTAssertTrue(snap.localSupplyExhausted, "the walk is spent")
+        XCTAssertNil(snap.readyAhead)
+
+        // Exhaustion settled the reserve, so the next decision measures first; the owed page is then the only work.
+        let later = observation(1, 6, activity: .stationary)
+        try await sut.submitObservation(later)
+        try await sut.acceptMeasurement(facts(later, amount: .exact(1), from: a.anchorCardID, advance: .same))
+        let queueOnly = try await intent(sut, at: 8)
+        XCTAssertTrue(queueOnly.reconsiderationOnly, "no lane has work: the owed page is taken alone")
+        XCTAssertEqual(queueOnly.lane, .episode)
+        XCTAssertNil(queueOnly.after)
+        XCTAssertEqual(queueOnly.examinedCapacity, 7)
+
+        // Completing it with a progress that would otherwise advance the walk must not move any lane or cursor.
+        let reviewed = LocalProductionProgress(examinedCount: 0, nextCursor: cursor(99), exhausted: false,
+            reconsiderationContinues: false)
+        try await sut.completeLocalSlice(queueOnly, outcome: .advancedWithoutPublication(reviewed), at: time(9))
+        snap = await sut.snapshot()
+        XCTAssertTrue(snap.localSupplyExhausted, "the queue-only page moved the walk")
+        XCTAssertFalse(snap.pendingSupplyReset)
+        XCTAssertEqual(snap.latestObservation, later)
+        let settled = try await sut.reconsider(resources: resources(), at: time(10))
+        XCTAssertEqual(settled, .none, "the page that ends the pass closes the chain")
+    }
+
 }
 
 extension RunwayControllerTests {

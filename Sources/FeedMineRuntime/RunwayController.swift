@@ -97,25 +97,32 @@ public struct RunwayLocalSliceIntent: Hashable, Sendable {
     /// and at the destination — `==` below deliberately ignores it, because the decisions that compare intents
     /// (in-flight completion, acknowledgement) must keep exactly the meaning they had before it existed.
     public let operation: FeedReplenishmentOperationID
+    /// This slice reviews a page of the durable skip pass and examines no structural supply: the walk has no work,
+    /// but the authorized continuation still owes rows. It moves no cursor and completes no lane.
+    public let reconsiderationOnly: Bool
     public init(scope: RunwayScope, lane: RunwayProductionLane, after: CandidateSupplyCursor?,
         examinedCapacity: Int, startedAt: RunwayMonotonicTime,
-        operation: FeedReplenishmentOperationID = FeedReplenishmentOperationID()) {
+        operation: FeedReplenishmentOperationID = FeedReplenishmentOperationID(),
+        reconsiderationOnly: Bool = false) {
         self.scope = scope
         self.lane = lane
         self.after = after
         self.examinedCapacity = examinedCapacity
         self.startedAt = startedAt
         self.operation = operation
+        self.reconsiderationOnly = reconsiderationOnly
     }
 
     public static func == (left: Self, right: Self) -> Bool {
         left.scope == right.scope && left.lane == right.lane && left.after == right.after
             && left.examinedCapacity == right.examinedCapacity && left.startedAt == right.startedAt
+            && left.reconsiderationOnly == right.reconsiderationOnly
     }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(scope); hasher.combine(lane); hasher.combine(after)
         hasher.combine(examinedCapacity); hasher.combine(startedAt)
+        hasher.combine(reconsiderationOnly)
     }
 }
 
@@ -207,6 +214,10 @@ public actor RunwayController {
     /// policy would hold. It is separate from `pendingReset`: the latter belongs to the lane walk and is asserted
     /// by the acquisition cadence; this flag exists only to authorize one fresh local slice.
     private var freshSupplyOpportunity = false
+    /// A page of the durable skip pass ended without a presentable revision while rows remained: the **same**
+    /// authorization still owes the page behind it. It is not a new opportunity and not a second owner — the
+    /// executor that took the slice keeps it, and a page that ends the pass clears it.
+    private var reconsiderationOwed = false
     private var preferredLane: RunwayProductionLane = .episode
     private var bootstrapObservation: RunwayObservation?
     private var lastFailure: RunwayLocalFailure?
@@ -310,6 +321,7 @@ public actor RunwayController {
         head = nil
         pendingReset = false
         freshSupplyOpportunity = false
+        reconsiderationOwed = false
         preferredLane = .episode
         lastFailure = nil
         lastFailureAt = nil
@@ -376,7 +388,11 @@ public actor RunwayController {
         case .pressured, .logicalPressure: previouslyPressured = true
         case .unknown: break
         }
-        if allowFreshSupply, freshSupplyOpportunity, evaluation.action == .hold, resources.localWorkAllowed,
+        // A continuation is the same owner finishing the pass it was already authorized to review, so it does not
+        // depend on `allowFreshSupply` (that guard keeps an *external* fact from authorizing a slice inside a caller
+        // drive). It is bounded by the durable pass: a page that ends it reports no continuation.
+        let owesContinuation = reconsiderationOwed || (allowFreshSupply && freshSupplyOpportunity)
+        if owesContinuation, evaluation.action == .hold, resources.localWorkAllowed,
             let intent = takeLocalSlice(scope: scope, resources: resources, now: now,
                 coverage: evaluation.coverage, observation: observation) {
             return .runLocalSlice(intent)
@@ -405,15 +421,25 @@ public actor RunwayController {
         coverage: RunwayCoverage, observation: RunwayObservation) -> RunwayLocalSliceIntent? {
         // The fresh authorization belongs to the head reconsideration, even when fairness walks the episode lane
         // first. Consuming it on that older pass would let a healthy `.hold` strand the pending head.
-        guard let readyAhead, let lane = selectLane() else { return nil }
+        guard let readyAhead else { return nil }
+        let lane = selectLane()
+        // No lane has structural work left, but the authorized pass still owes pages: the page is taken as a
+        // queue-only slice, which examines no supply and completes no lane.
+        guard lane != nil || reconsiderationOwed else { return nil }
+        let reconsiderationOnly = lane == nil
         // Read the reset state **after** `selectLane()`: its exhaustion branch clears `pendingReset` and consumes
         // the head reset on the same slice. Computing this before would preserve the authorization for a head that
         // no longer exists and grant one extra slice.
         let headPending = pendingReset || (head != nil && head?.exhausted == false)
-        if lane == .headReconsideration || !headPending { freshSupplyOpportunity = false }
-        let progress = lane == .episode ? episode : head!
-        let intent = RunwayLocalSliceIntent(scope: scope, lane: lane, after: progress.cursor,
-            examinedCapacity: resources.examinedCandidateCapacity, startedAt: now)
+        if reconsiderationOnly || lane == .headReconsideration || !headPending { freshSupplyOpportunity = false }
+        let progress: Progress
+        if reconsiderationOnly { progress = Progress() }
+        else if lane == .episode { progress = episode }
+        else { progress = head! }
+        let intent = RunwayLocalSliceIntent(scope: scope, lane: lane ?? .episode,
+            after: reconsiderationOnly ? nil : progress.cursor,
+            examinedCapacity: resources.examinedCandidateCapacity, startedAt: now,
+            reconsiderationOnly: reconsiderationOnly)
         inFlight = intent
         if attemptStartedAt == nil { attemptStartedAt = now }
         if coverage == .unknown { bootstrapObservation = observation }
@@ -450,6 +476,7 @@ public actor RunwayController {
             coverage: coverage, ready: ready)
         fields["lane"] = intent.lane == .episode ? "episode" : "head_reconsideration"
         fields["examined_capacity"] = String(intent.examinedCapacity)
+        if intent.reconsiderationOnly { fields["reconsideration_only"] = "1" }
         return fields
     }
 
@@ -537,10 +564,16 @@ public actor RunwayController {
         consecutiveLocalFailures = 0
         lastFailureAt = nil
         if progress.exhausted { readyAhead = nil }
-        let updated = Progress(cursor: progress.nextCursor, exhausted: progress.exhausted)
-        if intent.lane == .episode { episode = updated }
-        else if progress.exhausted { episode = updated; head = nil }
-        else { head = updated }
+        // A queue-only slice examines no structural supply: it reports no progress and must not move a cursor.
+        if !intent.reconsiderationOnly {
+            let updated = Progress(cursor: progress.nextCursor, exhausted: progress.exhausted)
+            if intent.lane == .episode { episode = updated }
+            else if progress.exhausted { episode = updated; head = nil }
+            else { head = updated }
+        }
+        // The pass owns the remaining work: the page behind this one is still owed to the same authorization, and
+        // the page that ends the pass clears the obligation (the chain therefore terminates).
+        reconsiderationOwed = progress.reconsiderationContinues
         inFlight = nil
         if published {
             latencySamples.append(latency)
@@ -555,6 +588,9 @@ public actor RunwayController {
         try validateCompletion(intent, at: completedAt)
         inFlight = nil
         attemptStartedAt = nil
+        // A failed slice did not advance the pass. The runway fences local work until a new supply fact anyway, and
+        // a stale obligation must not authorize a page without that fact.
+        reconsiderationOwed = false
         lastFailure = failure
         lastFailureAt = completedAt
         if failure == .failed { consecutiveLocalFailures += 1 }
@@ -566,6 +602,9 @@ public actor RunwayController {
         invalidateAcquisitionDemand()
         lastFailure = nil
         bootstrapObservation = nil
+        // A new supply/readiness fact starts a new pass: the obligation belongs to the pass that was interrupted by
+        // this fact, and the caller resets the pass position itself.
+        reconsiderationOwed = false
         if inFlight == nil, head == nil, episode.exhausted {
             episode = Progress()
             pendingReset = false

@@ -982,9 +982,9 @@ extension LocalProductionSliceTests {
         XCTAssertEqual(reoffer.count, 0, "the opportunity settled the skip")
     }
 
-    /// D12/PD-1: the durable skip page rotates instead of evicting, another Edition is never offered, and an
-    /// entry that can no longer be published (published elsewhere, superseded) leaves the memory.
-    func testReofferMemoryRotatesItsBoundedPageAndDropsOnlySettledEntries() throws {
+    /// D12/PD-1: the pass reads every row without evicting or writing, the preparation page rotates so a relaunch
+    /// reaches the rows behind the first one, and an entry that can no longer be published leaves the memory.
+    func testReofferMemoryReviewsEveryRowAndRotatesOnlyThePreparationPage() throws {
         let f = try fixture(initial: [LocalSliceFixture.revision(1)])
         for n in 2...7 { try f.admit(LocalSliceFixture.revision(n)) }
         let editionA = f.editionID, editionB = FeedEditionID()
@@ -997,22 +997,37 @@ extension LocalProductionSliceTests {
         try queue.remember([2, 3, 4].map { entry($0, editionA) })
         try queue.remember([5, 6, 7].map { entry($0, editionA) })
         XCTAssertEqual(queue.count, 6, "the page bound does not evict eligibility")
-        XCTAssertEqual(try queue.entries(for: editionA).map(\.originRevisionID),
+
+        // The pass is read in deferral order, one bounded page at a time, and continues where it stopped.
+        queue.beginReviewPass()
+        let firstPage = try queue.reviewPage(for: editionA)
+        XCTAssertEqual(firstPage.entries.map(\.originRevisionID),
             [2, 3, 4].map { LocalSliceFixture.revision($0).id }, "longest-waiting first")
-        XCTAssertEqual(try queue.entries(for: editionA).map(\.originRevisionID),
-            [5, 6, 7].map { LocalSliceFixture.revision($0).id }, "the next page is the rows behind it")
-        XCTAssertEqual(queue.count, 6)
+        XCTAssertNotNil(firstPage.next, "a full page says where the pass continues")
+        let secondPage = try queue.reviewPage(for: editionA)
+        XCTAssertEqual(secondPage.entries.map(\.originRevisionID),
+            [5, 6, 7].map { LocalSliceFixture.revision($0).id }, "the pass continues behind the page")
+        XCTAssertNil(secondPage.next, "the pass ends where the durable rows end")
+        XCTAssertEqual(queue.count, 6, "reviewing a row changes nothing")
 
-        // An Edition this process no longer serves is never offered, and it does not erase the served one's rows.
+        // The preparation page rotates: successive drives prepare the rows behind the last page instead of the
+        // same prefix, which is what lets a relaunch reach every deferred story.
+        XCTAssertEqual(try queue.pendingEntries(for: editionA, limit: 3).map(\.originRevisionID),
+            [2, 3, 4].map { LocalSliceFixture.revision($0).id })
+        XCTAssertEqual(try queue.pendingEntries(for: editionA, limit: 3).map(\.originRevisionID),
+            [5, 6, 7].map { LocalSliceFixture.revision($0).id })
+
+        // A deferral belongs to one Edition at a time: recording the same skip for another Edition moves that row
+        // and never erases the served one's other rows.
         try queue.remember([entry(2, editionB)])
-        XCTAssertEqual(try queue.entries(for: editionB).map(\.originRevisionID),
+        queue.beginReviewPass()
+        XCTAssertEqual(try queue.reviewPage(for: editionB).entries.map(\.originRevisionID),
             [LocalSliceFixture.revision(2).id])
-        XCTAssertEqual(try queue.entries(for: editionA).count, 3)
         XCTAssertEqual(queue.count, 6)
 
-        // Only a settled skip leaves; the rest of the page is untouched.
+        // Only a settled skip leaves; the rest of the queue is untouched.
         queue.forget([entry(3, editionA)])
-        XCTAssertFalse(try queue.entries(for: editionA).map(\.originRevisionID)
+        XCTAssertFalse(try queue.pendingEntries(for: editionA, limit: 10).map(\.originRevisionID)
             .contains(LocalSliceFixture.revision(3).id))
         XCTAssertEqual(queue.count, 5)
     }
@@ -1133,12 +1148,12 @@ extension LocalProductionSliceTests {
         // Process end: a new queue instance and a new readiness index, same durable supply.
         let relaunched = PendingMediaReconsideration(database: f.database)
         XCTAssertEqual(relaunched.count, 40, "the skips survive the process, not just the object")
-        // The media opportunity reads the page without consuming the offer rotation: preparation and selection
-        // of one drive see the same rows, and the slice's own rotation advances the next drive.
+        // The preparation page rotates: successive drives prepare the rows behind the last page instead of the same
+        // prefix forever, which is what lets a relaunch reach every deferred story again.
         let preparationPage = try relaunched.pendingEntries(for: f.editionID, limit: 32)
         XCTAssertEqual(preparationPage.count, 32)
-        XCTAssertEqual(try relaunched.pendingEntries(for: f.editionID, limit: 32).map(\.originRevisionID),
-            preparationPage.map(\.originRevisionID))
+        XCTAssertNotEqual(try relaunched.pendingEntries(for: f.editionID, limit: 32).map(\.originRevisionID),
+            preparationPage.map(\.originRevisionID), "the next preparation page starts behind the last one")
         let relaunchedReadiness = MediaReadiness()
         relaunchedReadiness.record(firstSkipped.id, nil, textDeclared: true)
         let relaunchedSlice = LocalProductionSlice(database: f.database, readiness: relaunchedReadiness,
@@ -1190,7 +1205,8 @@ extension LocalProductionSliceTests {
         XCTAssertEqual(receipt.cardIDs, [LocalSliceFixture.cardID(LocalSliceFixture.candidate(a))])
         XCTAssertNil(try PublicationStore(database: f.database).card(
             id: LocalSliceFixture.cardID(LocalSliceFixture.candidate(b))))
-        XCTAssertEqual(try reoffer.entries(for: f.editionID).map(\.originRevisionID), [b.id],
+        XCTAssertEqual(reoffer.count, 1)
+        XCTAssertEqual(try reoffer.pendingEntries(for: f.editionID, limit: 4).map(\.originRevisionID), [b.id],
             "the held story is still eligible after a publication in the same opportunity")
 
         // A tail that shares no source with B lets it through on a later opportunity.
@@ -1244,7 +1260,8 @@ extension LocalProductionSliceTests {
         guard case .advancedWithoutPublication(let p2) = second else {
             return XCTFail("an unavailable image publishes no draft")
         }
-        XCTAssertEqual(try reoffer.entries(for: f.editionID).map(\.originRevisionID).sorted { $0.rawValue.uuidString < $1.rawValue.uuidString },
+        XCTAssertEqual(try reoffer.pendingEntries(for: f.editionID, limit: 4).map(\.originRevisionID)
+            .sorted { $0.rawValue.uuidString < $1.rawValue.uuidString },
             [a.id, b.id].sorted { $0.rawValue.uuidString < $1.rawValue.uuidString },
             "no publication means no settled skip")
 
@@ -1257,3 +1274,4 @@ extension LocalProductionSliceTests {
              LocalSliceFixture.cardID(LocalSliceFixture.candidate(b)).rawValue.uuidString].sorted())
     }
 }
+

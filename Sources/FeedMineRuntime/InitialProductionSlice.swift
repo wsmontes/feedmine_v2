@@ -128,7 +128,8 @@ public struct InitialProductionSlice: Sendable {
         // revisit it under fresh exposure and readiness facts without rewinding this walk.
         // The reconsidered set contributes candidates to this attempt and nothing to what the walk reports.
         let progress = LocalProductionProgress(examinedCount: structural.examinedCount,
-            nextCursor: structural.nextCursor, exhausted: structural.exhausted)
+            nextCursor: structural.nextCursor, exhausted: structural.exhausted,
+            reconsiderationContinues: reconsidered.continues)
         // An opportunity that publishes nothing settles nothing: the reconsidered story stays eligible.
         guard !selection.orderedCandidates.isEmpty else {
             return .advancedWithoutPublication(progress)

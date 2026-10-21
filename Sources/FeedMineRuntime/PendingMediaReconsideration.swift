@@ -16,12 +16,13 @@ import FeedMinePersistence
 /// unexaminable. Selection's own rules (recency, diversity, source alternation, exposure, PD-4) still decide what is
 /// placed; nothing here ranks, mixes or reserves a position.
 ///
-/// Bound, stated: `ceiling` entries per opportunity. That is a work page, never eligibility — the store rotates the
-/// page (never-offered first, then the oldest offer) so a row behind the page is offered by a later opportunity and
-/// survives a relaunch. A row leaves only when its skip is definitively settled: published, no longer in supply,
+/// Bound, stated: `ceiling` rows per work page, and one page per reconsideration opportunity. That is a work
+/// bound, never eligibility: a pass advances page by page inside the one authorization that stated the readiness
+/// fact, and stops at the first page holding a presentable revision, so a row behind the page is reached by the
+/// same opportunity. A row leaves only when its skip is definitively settled: published, no longer in supply,
 /// superseded, filtered out, or decided with no presentation at all.
 public final class PendingMediaReconsideration: @unchecked Sendable {
-    /// How many deferred rows one opportunity offers. Operational, not a product limit.
+    /// How many deferred rows one page of a pass reads. Operational, not a product limit.
     public static let defaultCeiling = 32
 
     /// One story a publication opportunity could not select because its media was pending.
@@ -40,9 +41,20 @@ public final class PendingMediaReconsideration: @unchecked Sendable {
         }
     }
 
+    /// One page of the current pass.
+    public struct ReviewPage: Sendable {
+        public let entries: [Entry]
+        /// Where the pass continues; nil when this page ended the durable queue.
+        public let next: MediaDeferralCursor?
+    }
+
     private let lock = NSLock()
     public let ceiling: Int
     private let store: MediaDeferralStore
+    /// Position inside the current pass, and the Edition that pass belongs to. The rows are durable; this only says
+    /// which one the same owner reads next, so an opportunity that stops early leaves every row where it was.
+    private var reviewCursor: MediaDeferralCursor?
+    private var reviewEdition: FeedEditionID?
 
     public init(database: RuntimeDatabase, ceiling: Int = PendingMediaReconsideration.defaultCeiling) {
         self.ceiling = max(1, ceiling)
@@ -56,7 +68,7 @@ public final class PendingMediaReconsideration: @unchecked Sendable {
     }
 
     /// Records every skip in one write. A revision already deferred keeps its first instant and its place in the
-    /// rotation: re-recording the same skip must not let one long-pending story outlive every entry behind it.
+    /// pass order: re-recording the same skip must not let one long-pending story outlive every entry behind it.
     public func remember(_ entries: some Sequence<Entry>, at date: Date = Date()) throws {
         let records = entries.map { entry in
             MediaDeferralRecord(editionID: entry.editionID, originRecordID: entry.originRecordID,
@@ -67,21 +79,37 @@ public final class PendingMediaReconsideration: @unchecked Sendable {
         try store.record(records, at: date)
     }
 
-    /// One bounded work page of `editionID`'s deferred rows, longest-waiting first, rotated so the next opportunity
-    /// sees the rows behind this page. The page is the only quantity the opportunity is charged for.
-    public func entries(for editionID: FeedEditionID, at date: Date = Date()) throws -> [Entry] {
+    /// Starts a new pass from the first durable row. A readiness fact is the trigger: the new fact must be able to
+    /// see rows the previous pass already passed, otherwise a story that became ready just behind the last page
+    /// would wait for a pass that never restarts.
+    public func beginReviewPass() {
         lock.lock(); defer { lock.unlock() }
-        return try store.page(editionID: editionID, limit: ceiling, offerAt: date).map {
-            Entry(editionID: $0.editionID, originRecordID: $0.originRecordID,
-                originRevisionID: $0.originRevisionID)
-        }
+        reviewCursor = nil
+        reviewEdition = nil
     }
 
-    /// The same rows without rotating them: the media opportunity uses this to prepare deferred stories (including
-    /// after a relaunch) without consuming their place in the offer rotation.
-    public func pendingEntries(for editionID: FeedEditionID, limit: Int) throws -> [Entry] {
+    /// One bounded page of the current pass, in deferral order. The caller reviews this page and reports whether the
+    /// pass continues; no other reader and no other walk is involved.
+    public func reviewPage(for editionID: FeedEditionID) throws -> ReviewPage {
         lock.lock(); defer { lock.unlock() }
-        return try store.page(editionID: editionID, limit: limit, offerAt: nil).map {
+        if reviewEdition != editionID {
+            reviewCursor = nil
+            reviewEdition = editionID
+        }
+        let page = try store.passPage(editionID: editionID, limit: ceiling, after: reviewCursor)
+        reviewCursor = page.next
+        return ReviewPage(entries: page.records.map {
+            Entry(editionID: $0.editionID, originRecordID: $0.originRecordID,
+                originRevisionID: $0.originRevisionID)
+        }, next: page.next)
+    }
+
+    /// The media opportunity's preparation page: the same rows, rotating, so successive drives prepare the rows
+    /// behind the last page instead of the same prefix forever. A relaunch has no readiness facts, so this rotation
+    /// is what lets preparation reach every deferred story again. Preparation is not an offer and never evicts.
+    public func pendingEntries(for editionID: FeedEditionID, limit: Int, at date: Date = Date()) throws -> [Entry] {
+        lock.lock(); defer { lock.unlock() }
+        return try store.page(editionID: editionID, limit: limit, offerAt: date).map {
             Entry(editionID: $0.editionID, originRecordID: $0.originRecordID,
                 originRevisionID: $0.originRevisionID)
         }
@@ -108,6 +136,9 @@ enum MediaSkippedSupply {
     struct Reconsidered {
         var candidates: [Candidate] = []
         var considered: [PendingMediaReconsideration.Entry] = []
+        /// True when this page ended without a presentable revision while rows remained behind it: the same
+        /// authorization still owes the next page.
+        var continues = false
     }
 
     /// The stories the one-way walk already passed whose media became ready since.
@@ -118,30 +149,35 @@ enum MediaSkippedSupply {
     /// window's candidates and does not read their array position. Appending rather than interleaving is what keeps
     /// the structural window's own count and cursor the facts the opportunity reports: a re-offer can publish a card
     /// or leave the queue, but it can never move the walk or take the position of a candidate the walk produced.
-    /// There is no quota and no mixing rule: the bound is the store's page, and everything ready in it is offered to
-    /// the one selection.
+    /// There is no quota and no mixing rule: one page of the durable pass is reviewed here, and every presentable
+    /// revision in it is offered to the one selection. A page that ends without a presentable revision reports the
+    /// continuation instead of turning the page: the same authorized opportunity owes the rows behind it.
     static func reconsider(provider: CandidateProvider, plan: FeedPlan, editionID: FeedEditionID,
         structural: CandidateSupplyWindow, readiness: MediaReadiness?,
         reoffer: PendingMediaReconsideration?) throws -> Reconsidered {
         guard let readiness, let reoffer else { return Reconsidered() }
-        let queued = try reoffer.entries(for: editionID)
-        guard !queued.isEmpty else { return Reconsidered() }
-        let presentations = readiness.presentations(for: queued.map(\.originRevisionID))
-        // A queued revision with no presentation is still pending: it stays queued for a later opportunity. One
-        // whose media was *decided* without a presentation (a declared image that could not be prepared) can never
-        // become a card under this identity, so it leaves the durable memory instead of being retried forever.
-        let decidedWithoutPresentation = queued.filter {
-            presentations[$0.originRevisionID] == nil && readiness.isSettled($0.originRevisionID)
+        let page = try reoffer.reviewPage(for: editionID)
+        guard !page.entries.isEmpty else { return Reconsidered() }
+        // One complete decision per row, taken under the index's own lock. Reading the presentation snapshot and
+        // then asking about settlement let a media transition land between the two reads: the row was absent from
+        // the snapshot, decided a moment later, and erased as if its image could never be presented.
+        var decisions: [(entry: PendingMediaReconsideration.Entry, decision: MediaReadinessDecision)] = []
+        decisions.reserveCapacity(page.entries.count)
+        for entry in page.entries {
+            decisions.append((entry, readiness.decision(for: entry.originRevisionID)))
         }
-        reoffer.forget(decidedWithoutPresentation)
-        let ready = queued.filter { presentations[$0.originRevisionID] != nil }
-        guard !ready.isEmpty else { return Reconsidered() }
+        // A pending row is not gone: only a revision whose media was decided with no presentation at all can never
+        // become a card under this identity, so only that one leaves the durable memory here.
+        reoffer.forget(decisions.filter { $0.decision == .decidedWithoutPresentation }.map { $0.entry })
+        let ready = decisions.filter { $0.decision == .presentable }.map { $0.entry }
+        var result = Reconsidered()
+        result.continues = ready.isEmpty && page.next != nil
+        guard !ready.isEmpty else { return result }
         let resolution = try resolve(ready, provider: provider, plan: plan)
         // Superseded, withdrawn or filtered out: these skips can never be published under the identity the queue
         // remembers, so they are stated as gone instead of being carried into every future opportunity.
         reoffer.forget(resolution.gone)
         let structuralOrigins = Set(structural.candidates.map(\.originRecordID))
-        var result = Reconsidered()
         for (entry, candidate) in resolution.ready {
             result.considered.append(entry)
             // When the walk still holds the origin, its candidate is the one that participates; the entry was not
@@ -162,7 +198,7 @@ enum MediaSkippedSupply {
         var entries: [PendingMediaReconsideration.Entry] = []
         for candidate in structural.candidates {
             guard !publishedOriginIDs.contains(candidate.originRecordID),
-                !readiness.isSettled(candidate.originRevisionID) else { continue }
+                readiness.decision(for: candidate.originRevisionID) == .pending else { continue }
             entries.append(.init(editionID: editionID,
                 originRecordID: candidate.originRecordID, originRevisionID: candidate.originRevisionID))
         }

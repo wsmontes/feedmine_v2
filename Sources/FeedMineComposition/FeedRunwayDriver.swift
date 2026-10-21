@@ -175,12 +175,16 @@ public actor FeedRunwayDriver {
     /// the same notification a committed acquisition receipt gives the runway (`noteLocalSupplyChanged`), so the
     /// next drive opportunity is the existing one — no second pipeline and no publication from the callback.
     ///
-    /// The story the transition made ready is not named here on purpose. The slice this drive executes reads the
-    /// bounded skip queue (`PendingMediaReconsideration`) that the walk itself filled, so every ready skip is
-    /// offered to that opportunity regardless of which transition arrived — and a transition that finds the queue
-    /// empty (a story the walk had not passed yet) simply lets the normal window select it.
+    /// The story the transition made ready is not named here on purpose. The slice this drive executes reviews the
+    /// durable pass the walk filled (`PendingMediaReconsideration`), page by page inside this one authorization,
+    /// until a page holds a presentable revision; the continuation belongs to the same executor, so no second
+    /// notification, timer or owner brings it back. A transition for a story the walk had not passed yet finds the
+    /// queue empty and simply lets the normal window select it.
     public func noteMediaReadinessChanged() async {
         guard let scope = try? await validateCurrentScope() else { return }
+        // The fact starts a new pass over the durable skips: rows an earlier pass already reviewed must be seen
+        // again, because this is the transition that can make one of them presentable.
+        reoffer?.beginReviewPass()
         do { try await runway.noteLocalSupplyChanged(scope: scope) }
         catch RunwayControllerError.noActiveScope { return }
         catch RunwayControllerError.scopeMismatch { return }
@@ -340,6 +344,9 @@ public actor FeedRunwayDriver {
             await runway.deactivate(); return nil
         }
         await runway.activate(scope)
+        // A new activation is a new presentation: the pass over durable skips starts from the first row rather than
+        // continuing a position that belonged to the previous interval.
+        reoffer?.beginReviewPass()
         try await runway.submitObservation(.init(editionID: presentation.editionID,
             anchorCardID: presentation.window.anchor.cardID, sampledAt: monotonicNow(), activity: .stationary))
         return try await drive(resources: resources)
@@ -775,11 +782,14 @@ public actor FeedRunwayDriver {
                     // slice. The slice selects only ready supply through the same readiness index; a candidate
                     // whose media is still pending is simply not in this publication (INV-17), and the readiness
                     // transition wakes the existing reconsideration. The opportunity is the only channel — the
-                    // product always provides it, and an execution without one has nothing to request.
-                    let revisions = try await nextEditorialRevisions(after: intent.after,
-                        capacity: intent.examinedCapacity, editionID: intent.scope.editionID,
-                        operation: intent.operation)
-                    causalExecution?.mediaOpportunity?.request(revisions)
+                    // product always provides it, and an execution without one has nothing to request. A
+                    // queue-only slice examines no supply, so it requests nothing.
+                    if !intent.reconsiderationOnly {
+                        let revisions = try await nextEditorialRevisions(after: intent.after,
+                            capacity: intent.examinedCapacity, editionID: intent.scope.editionID,
+                            operation: intent.operation)
+                        causalExecution?.mediaOpportunity?.request(revisions)
+                    }
                     guard await session.currentRunwayScope() == scope, await runway.snapshot().scope == scope else {
                         try? await runway.failLocalSlice(intent, failure: .cancelled, at: monotonicNow())
                         return await session.currentPresentation()
@@ -789,7 +799,7 @@ public actor FeedRunwayDriver {
                         after: intent.after, examinedCapacity: intent.examinedCapacity, segmentID: identity.segmentID,
                         segmentSeed: identity.segmentSeed, segmentCreatedAt: identity.segmentCreatedAt,
                         readerAnchorCardID: await session.currentPresentation()?.window.anchor.cardID,
-                        operation: intent.operation)
+                        operation: intent.operation, reconsiderationOnly: intent.reconsiderationOnly)
                     let outcome = try localProductionSlice.run(request, prepare: prepare)
                     try await runway.completeLocalSlice(intent, outcome: outcome, at: monotonicNow())
                     // Publication extends the reserve only. Installing a different admitted list here
@@ -845,8 +855,9 @@ public actor FeedRunwayDriver {
         // A story the walk already passed while its media was pending is not in this structural window, but it is
         // still a candidate for the slice's reconsideration. Preparing it here is what gives a relaunch its chance:
         // readiness is in-memory, so without this request the deferred story would never return to readiness. The
-        // page is bounded and read-only (the offer rotation belongs to `reconsider`), and preparation is not a
-        // publication decision — the slice still selects under exposure and policy.
+        // preparation page rotates (it stamps its rows), so successive drives prepare the rows behind it instead of
+        // the same prefix forever; preparation is not a publication decision — the slice still selects under
+        // exposure and policy.
         if let reoffer {
             var seen = Set(revisions)
             for entry in try reoffer.pendingEntries(for: editionID, limit: capacity) {

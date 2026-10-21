@@ -21,6 +21,18 @@ public struct LocalProductionProgress: Hashable, Sendable {
     public let examinedCount: Int
     public let nextCursor: CandidateSupplyCursor?
     public let exhausted: Bool
+    /// True when this opportunity reviewed a full page of durable skips and none was presentable: the rows behind
+    /// that page are still owed to the same authorization, and the runway keeps the opportunity open for the next
+    /// page. The pass advances durably, so a page that ends it reports false and the chain stops.
+    public let reconsiderationContinues: Bool
+
+    public init(examinedCount: Int, nextCursor: CandidateSupplyCursor?, exhausted: Bool,
+        reconsiderationContinues: Bool = false) {
+        self.examinedCount = examinedCount
+        self.nextCursor = nextCursor
+        self.exhausted = exhausted
+        self.reconsiderationContinues = reconsiderationContinues
+    }
 }
 
 public enum LocalProductionSliceOutcome: Hashable, Sendable {
@@ -75,13 +87,18 @@ public struct LocalProductionSlice: Sendable {
         /// The replenishment attempt this slice belongs to, when a host decided one; nil for work that is not a
         /// replenishment (the first Edition, hidden tail maintenance).
         public let operation: FeedReplenishmentOperationID?
+        /// This opportunity examines no structural supply: it only reviews the next page of the durable skip pass.
+        /// Used when the walk has no lane work left but the authorized continuation still owes pages; the slice then
+        /// reports no structural progress at all, so no cursor moves.
+        public let reconsiderationOnly: Bool
 
         public init(plan: FeedPlan, policy: ResolvedSelectionPolicy, editionID: FeedEditionID,
             after: CandidateSupplyCursor?, examinedCapacity: Int, segmentID: FeedSegmentID,
             segmentSeed: UInt64, segmentCreatedAt: Date, readerAnchorCardID: PublicationCardID? = nil,
-            operation: FeedReplenishmentOperationID? = nil) {
+            operation: FeedReplenishmentOperationID? = nil, reconsiderationOnly: Bool = false) {
             self.readerAnchorCardID = readerAnchorCardID
             self.operation = operation
+            self.reconsiderationOnly = reconsiderationOnly
             self.plan = plan
             self.policy = policy
             self.editionID = editionID
@@ -100,10 +117,17 @@ public struct LocalProductionSlice: Sendable {
             throw LocalProductionSliceError.automaticExposurePolicyRequired
         }
         // Examination advances through structural supply, independently of editorial holds: the progress this
-        // slice reports below is this window's, never the reconsidered set's.
-        let structural = try candidateProvider.candidates(for: request.plan,
-            after: request.after, examinedCapacity: request.examinedCapacity,
-            operation: request.operation, consult: "slice", trace: trace)
+        // slice reports below is this window's, never the reconsidered set's. A queue-only opportunity has no
+        // structural window at all — its work is the durable page, and it must not move a cursor.
+        let structural: CandidateSupplyWindow
+        if request.reconsiderationOnly {
+            structural = CandidateSupplyWindow(candidates: [], examinedCount: 0,
+                nextCursor: request.after, exhausted: false)
+        } else {
+            structural = try candidateProvider.candidates(for: request.plan,
+                after: request.after, examinedCapacity: request.examinedCapacity,
+                operation: request.operation, consult: "slice", trace: trace)
+        }
         // What the one-way walk already passed and whose media became ready since. It joins the same selection,
         // after the structural candidates, and the structural walk stays exactly where it was.
         let reconsidered = try MediaSkippedSupply.reconsider(provider: candidateProvider, plan: request.plan,
@@ -156,7 +180,8 @@ public struct LocalProductionSlice: Sendable {
         // The reconsidered set is not part of that walk: it adds candidates to this opportunity and nothing to
         // `examinedCount` or `nextCursor`, so a re-offered story never moves the cursor, not even backwards.
         let progress = LocalProductionProgress(examinedCount: structural.examinedCount,
-            nextCursor: structural.nextCursor, exhausted: structural.exhausted)
+            nextCursor: structural.nextCursor, exhausted: structural.exhausted,
+            reconsiderationContinues: reconsidered.continues)
         // Nothing published settles nothing: a selection emptied by editorial hold, or a preparation that
         // produced no draft (INV-17), leaves every reconsidered story eligible for a later opportunity. Forgetting
         // here was the loss path — the media fact stays true, but the only memory that could offer it did not.

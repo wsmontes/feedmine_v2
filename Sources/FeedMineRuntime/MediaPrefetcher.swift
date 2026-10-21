@@ -72,6 +72,20 @@ public final class MediaReadiness: @unchecked Sendable {
         return presentationLocked(for: revision)
     }
 
+    /// One complete decision about a revision's media, taken under a **single** lock acquisition.
+    ///
+    /// The supply rule that keeps a skipped story eligible needs both facts — settlement and presentation — and
+    /// reading them in separate calls let a media transition land between them: the presentation snapshot said
+    /// "absent" and the later settlement said "decided", so a skip whose image had just been prepared was erased as
+    /// if its image could never be presented. Settlement is monotone (`record` decides a revision once) and a
+    /// decided revision's presentation is final, so one read under the index's own lock states the three possible
+    /// facts without mixing instants.
+    public func decision(for revision: OriginRevisionID) -> MediaReadinessDecision {
+        lock.lock(); defer { lock.unlock() }
+        guard settled.contains(revision) else { return .pending }
+        return presentationLocked(for: revision) == nil ? .decidedWithoutPresentation : .presentable
+    }
+
     /// One atomic snapshot for a publication opportunity. Missing entries are suspended;
     /// their records and acquisition/preparation work remain in their existing owners.
     public func presentations(for revisions: [OriginRevisionID]) -> [OriginRevisionID: PublicationPresentation] {
@@ -94,6 +108,17 @@ public final class MediaReadiness: @unchecked Sendable {
         case .unsuitable: return .textOnly
         }
     }
+}
+
+/// What the readiness index states about one revision's media, as one fact rather than two reads.
+///
+/// `pending` is not "text-only" and not "unavailable": it is the only state that can still turn into a
+/// presentation, so it is the only state that keeps a skipped story's durable row waiting. `decidedWithoutPresentation`
+/// is the opposite: a declared image that could never be prepared, an identity that can never become a card.
+public enum MediaReadinessDecision: Hashable, Sendable {
+    case pending
+    case presentable
+    case decidedWithoutPresentation
 }
 
 /// What one preparation attempt produced, in the terms a durable save has to state honestly.

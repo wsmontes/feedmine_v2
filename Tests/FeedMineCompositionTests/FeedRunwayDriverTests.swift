@@ -76,8 +76,8 @@ final class FeedRunwayDriverTests: XCTestCase {
             scoringPolicyVersion:r.scoringPolicyVersion,sequencingPolicyVersion:r.sequencingPolicyVersion,exposurePolicyVersion:r.exposurePolicyVersion,
             selectionSchemaVersion:r.selectionSchemaVersion,eligibility:.structuralOnly,scoring:.equal,sequencing:.recencyDescending,exposure:.excludePublishedRevisions)
     }
-    private func resources(targets:Int = 1,local:Bool = true) -> FeedRunwayDriverResources {
-        .init(runway:.init(localWorkAllowed:local,examinedCandidateCapacity:8,readyProbeBound:8,readyProbeCeiling:64,forwardAdvanceProbeBound:64)!,
+    private func resources(targets:Int = 1,local:Bool = true, examinedCapacity: Int = 8) -> FeedRunwayDriverResources {
+        .init(runway:.init(localWorkAllowed:local,examinedCandidateCapacity:examinedCapacity,readyProbeBound:8,readyProbeCeiling:64,forwardAdvanceProbeBound:64)!,
             acquisition:.init(targetWorkCapacity:targets,batchCapacityPerNewExecution:1,observationCapacityPerBatch:8,byteCapacityPerBatch:100_000)!)
     }
     private func fixture(historyCount:Int = 1,checkpoint:Bool = true,seedLocal:Bool = false,registrations:Bool = true,
@@ -1247,6 +1247,221 @@ final class FeedRunwayDriverTests: XCTestCase {
             XCTAssertNil(source.range(of: #"\bmakeCoordinator\s*\("#, options: .regularExpression), file)
             XCTAssertNil(source.range(of: #"\bAcquisitionCoordinator\s*\("#, options: .regularExpression), file)
         }
+    }
+
+    /// D12: 32 is the size of a work page, never a ceiling of eligibility. With a healthy reserve, one readiness
+    /// notification has to bring back a story that sits behind the first page of durable skips: no cadence, no
+    /// second notification and no extra drive of the reader. The story is the oldest in supply, so the slice's
+    /// structural window cannot offer it; only the reconsideration can.
+    func testOneReadinessNotificationOffersADeferredSkipBehindTheFirstPage() async throws {
+        let f = try fixture(registrations: false)
+        // A frozen card after the anchor is the reserve the runway measures; it is published durably, not by a
+        // drive, so no opportunity has to read the skip queue before the notification.
+        try Self.appendReserve(f, headline: "reserve")
+        let stories = try Self.admitPendingStories(f.database, target: f.target.id, source: f.source, count: 40)
+        let target = try XCTUnwrap(stories.min { $0.sortDate < $1.sortDate })
+        let readiness = MediaReadiness(), reoffer = PendingMediaReconsideration(database: f.database)
+        let driver = try FeedRunwayDriver(session: f.session, runway: f.runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            makeSegmentIdentity: { .init(segmentID: .init(), segmentSeed: 1, segmentCreatedAt: Date())! },
+            prepare: Self.prepared, readiness: readiness, reoffer: reoffer,
+            onPublication: { receipt in f.publications.append(receipt) })
+        addTeardownBlock { await driver.deactivate() }
+        let restoredValue = try await driver.restoreAndActivate(backwardCapacity: 1,
+            forwardCapacity: 4, resources: resources())
+        let restored = try XCTUnwrap(restoredValue)
+        // A second stationary observation gives the runway a measured zero rate: with one card ready ahead, the
+        // reserve is healthy and the policy holds instead of asking for pressured local work.
+        _ = try await driver.submitViewport(.init(anchor: restored.window.anchor), activity: .stationary,
+            resources: resources())
+        let coverage = await f.runway.snapshot().lastCoverage
+        XCTAssertEqual(coverage, RunwayCoverage.healthy,
+            "premissa: a reserva está saudável e nenhuma pressão autoriza trabalho")
+
+        // 40 durable skips, all pending. The ready one is the last row of the pass order, so it sits behind the
+        // first page — and being the oldest story in supply, it is outside the structural window of the slice.
+        try Self.seedDeferrals(reoffer, edition: f.edition, stories: stories, target: target)
+        XCTAssertEqual(reoffer.count, 40)
+        XCTAssertFalse(try reoffer.pendingEntries(for: f.edition,
+            limit: PendingMediaReconsideration.defaultCeiling).contains {
+                $0.originRevisionID == target.originRevisionID
+            }, "premissa: a revisão pronta está atrás da primeira página")
+
+        // The one notification the media pipeline states, and nothing else.
+        readiness.record(target.originRevisionID, nil, textDeclared: true)
+        await driver.noteMediaReadinessChanged()
+        let deadline = Date().addingTimeInterval(5)
+        while f.publications.values.isEmpty, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(f.publications.values.count, 1,
+            "uma única notificação de prontidão publica a revisão pronta atrás da página")
+        let receipt = try XCTUnwrap(f.publications.values.first)
+        let store = PublicationStore(database: f.database)
+        XCTAssertEqual(try receipt.cardIDs.map { try XCTUnwrap(store.card(id: $0)).originRevisionID },
+            [target.originRevisionID], "a pronta atrás da página volta à seleção sem drive artificial")
+        XCTAssertEqual(reoffer.count, 39, "só a publicação settleou uma linha; as demais continuam elegíveis")
+        let current = await f.session.currentPresentation()
+        XCTAssertEqual(current?.window.anchor, restored.window.anchor, "a publicação não move a posição do leitor")
+    }
+
+    /// The reserve card frozen durably after the checkpoint anchor; the driver measures it, never publishes it.
+    private static func appendReserve(_ f: Fixture, headline: String) throws {
+        let candidate = Candidate(originRecordID: OriginRecordID(), originRevisionID: OriginRevisionID(),
+            headline: headline, summary: nil, timestamp: .init(value: Date(timeIntervalSince1970: 3), kind: .observed),
+            language: nil, providerID: nil)
+        let selection = SelectionResult(editorialRevision: f.plan.revision, orderedCandidates: [candidate],
+            supplyReport: .init(examinedCount: 0, nextCursor: nil, exhausted: false))
+        let prepared = Self.prepared(selection)
+        _ = try PublicationCoordinator(database: f.database).append(.init(selection: selection,
+            drafts: PublicationPreparation.drafts(selection: selection, inputs: prepared.inputs),
+            editionID: f.edition, segmentID: FeedSegmentID(), segmentSeed: 3,
+            segmentCreatedAt: Date(timeIntervalSince1970: 7), cardIDs: prepared.cardIDs))
+    }
+
+    /// Local observations with no media decision of their own: every story is pending until the pipeline decides.
+    /// Distinct authored dates make the supply order the authored order, so the first story admitted is the oldest.
+    nonisolated private static func admitPendingStories(_ database: RuntimeDatabase, target: AcquisitionTargetID,
+        source: SourceID, count: Int) throws -> [ContentStore.CandidateRecord] {
+        for index in 0..<count {
+            let observation = AcquisitionObservation(
+                objectIdentity: .init(connectorKind: .syndication, namespace: "deferred",
+                    value: "deferred-\(index)", role: .object),
+                versionIdentity: nil, precedence: .makeCurrent, availability: .available,
+                headline: "deferred-\(index)", summary: nil, bodyText: nil,
+                authoredAt: Date(timeIntervalSince1970: Double(index + 1)), modifiedAt: nil,
+                observedAt: Date(timeIntervalSince1970: 4), language: nil, primaryLink: nil,
+                searchProjection: nil, providerID: nil,
+                memberships: [.init(sourceID: source, kind: .direct)], mediaCandidates: [])!
+            _ = try AdmissionPolicy(database: database).admit(.init(targetID: target, targetGeneration: 1,
+                expectedCheckpointRevision: 0, observations: [observation], nextCheckpoint: nil)!)
+        }
+        return try ContentStore(database: database).candidateWindow(sourceID: nil, after: nil,
+            examinedCapacity: count + 8).records
+    }
+
+    /// One durable skip per admitted story; the target is seeded last, so it is behind the first page while its
+    /// origin stays the oldest in supply and therefore outside any structural window used here.
+    nonisolated private static func seedDeferrals(_ reoffer: PendingMediaReconsideration, edition: FeedEditionID,
+        stories: [ContentStore.CandidateRecord], target: ContentStore.CandidateRecord) throws {
+        var deferredAt = 0.0
+        for record in stories where record.originRevisionID != target.originRevisionID {
+            deferredAt += 1
+            try reoffer.remember([.init(editionID: edition, originRecordID: record.originRecordID,
+                originRevisionID: record.originRevisionID)], at: Date(timeIntervalSince1970: deferredAt))
+        }
+        try reoffer.remember([.init(editionID: edition, originRecordID: target.originRecordID,
+            originRevisionID: target.originRevisionID)], at: Date(timeIntervalSince1970: 1000))
+    }
+
+    /// D12 + durability: the skip lives in the file, not in an object. A second connection over the same
+    /// runtime.sqlite (the relaunch) still holds the row, and the one readiness notification must offer the story
+    /// behind the first page without any caller drive.
+    func testAReopenedDatabaseOffersTheDeferredSkipBehindThePageAfterOneNotification() async throws {
+        let f = try fixture(registrations: false)
+        try Self.appendReserve(f, headline: "reserve")
+        let stories = try Self.admitPendingStories(f.database, target: f.target.id, source: f.source, count: 40)
+        let target = try XCTUnwrap(stories.min { $0.sortDate < $1.sortDate })
+        try Self.seedDeferrals(PendingMediaReconsideration(database: f.database), edition: f.edition,
+            stories: stories, target: target)
+        _ = try f.database.checkpointWAL(mode: .truncate)
+
+        // The relaunch: a new connection, a new session/runway/coordinator over the same file, and no readiness.
+        let reopened = try RuntimeDatabase(location: f.location)
+        let transport = URLSession(configuration: .ephemeral)
+        addTeardownBlock { transport.invalidateAndCancel() }
+        let acquisition = try SyndicationAcquisitionSnapshot(database: reopened, registrations: [],
+            session: transport, redirectCapacity: 0, now: { Date(timeIntervalSince1970: 5) })
+        let session = FeedSession(publicationHistory: .init(database: reopened))
+        let runway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1,
+            releaseMarginSeconds: 0)!, consumptionSampleLimit: 4, replenishmentSampleLimit: 4)!)
+        let clock = DriverClock()
+        let publications = DriverPublicationLog()
+        let readiness = MediaReadiness(), reoffer = PendingMediaReconsideration(database: reopened)
+        let driver = try FeedRunwayDriver(session: session, runway: runway, plan: f.plan, policy: f.policy,
+            acquisition: acquisition, coordinator: acquisition.makeCoordinator(),
+            monotonicNow: { clock.next() },
+            makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 2,
+                segmentCreatedAt: Date(timeIntervalSince1970: 6))! },
+            prepare: Self.prepared, readiness: readiness, reoffer: reoffer,
+            onPublication: { receipt in publications.append(receipt) })
+        addTeardownBlock { await driver.deactivate() }
+        XCTAssertEqual(reoffer.count, 40, "os skips sobrevivem ao processo, não só ao objeto")
+        let restoredValue = try await driver.restoreAndActivate(backwardCapacity: 1,
+            forwardCapacity: 4, resources: resources())
+        let restored = try XCTUnwrap(restoredValue)
+        _ = try await driver.submitViewport(.init(anchor: restored.window.anchor), activity: .stationary,
+            resources: resources())
+        let coverage = await runway.snapshot().lastCoverage
+        XCTAssertEqual(coverage, RunwayCoverage.healthy, "premissa: a reserva está saudável")
+        XCTAssertFalse(try reoffer.pendingEntries(for: f.edition,
+            limit: PendingMediaReconsideration.defaultCeiling).contains {
+                $0.originRevisionID == target.originRevisionID
+            }, "premissa: a revisão pronta está atrás da primeira página")
+
+        // The relaunch has no readiness facts: the pipeline states the decision for the media it already has, and
+        // the one notification has to carry the pass to the page that holds it.
+        readiness.record(target.originRevisionID, nil, textDeclared: true)
+        await driver.noteMediaReadinessChanged()
+        let deadline = Date().addingTimeInterval(5)
+        while publications.values.isEmpty, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(publications.values.count, 1)
+        let receipt = try XCTUnwrap(publications.values.first)
+        let store = PublicationStore(database: reopened)
+        XCTAssertEqual(try receipt.cardIDs.map { try XCTUnwrap(store.card(id: $0)).originRevisionID },
+            [target.originRevisionID], "o banco reaberto oferece a pronta atrás da página")
+        XCTAssertEqual(reoffer.count, 39)
+        let current = await session.currentPresentation()
+        XCTAssertEqual(current?.window.anchor, restored.window.anchor)
+    }
+
+    /// D12: one notification must reach a skip the first slice's structural window did not contain. The window is
+    /// 64 rows and the skip is the oldest of 96, so the walk and the durable pass both have to advance inside the
+    /// same authorization before the ready story can be offered — no gesture, no second notification, no timer.
+    func testOneNotificationReachesAReadySkipOutsideTheFirstStructuralWindow() async throws {
+        let f = try fixture(registrations: false)
+        try Self.appendReserve(f, headline: "reserve")
+        let stories = try Self.admitPendingStories(f.database, target: f.target.id, source: f.source, count: 96)
+        let target = try XCTUnwrap(stories.min { $0.sortDate < $1.sortDate })
+        let capacity = 64
+        let readiness = MediaReadiness(), reoffer = PendingMediaReconsideration(database: f.database)
+        let driver = try FeedRunwayDriver(session: f.session, runway: f.runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            makeSegmentIdentity: { .init(segmentID: .init(), segmentSeed: 1, segmentCreatedAt: Date())! },
+            prepare: Self.prepared, readiness: readiness, reoffer: reoffer,
+            onPublication: { receipt in f.publications.append(receipt) })
+        addTeardownBlock { await driver.deactivate() }
+        let restoredValue = try await driver.restoreAndActivate(backwardCapacity: 1, forwardCapacity: 4,
+            resources: resources(examinedCapacity: capacity))
+        let restored = try XCTUnwrap(restoredValue)
+        _ = try await driver.submitViewport(.init(anchor: restored.window.anchor), activity: .stationary,
+            resources: resources(examinedCapacity: capacity))
+        let coverage = await f.runway.snapshot().lastCoverage
+        XCTAssertEqual(coverage, RunwayCoverage.healthy, "premissa: a reserva está saudável")
+
+        // 96 durable skips: the target is the last row of the pass order, three pages away, and the oldest story in
+        // supply, so a 64-row structural window never contains it.
+        try Self.seedDeferrals(reoffer, edition: f.edition, stories: stories, target: target)
+        XCTAssertEqual(reoffer.count, 96)
+        XCTAssertFalse(try reoffer.pendingEntries(for: f.edition, limit: 32).contains {
+            $0.originRevisionID == target.originRevisionID
+        }, "premissa: a revisão pronta está atrás da primeira página")
+
+        readiness.record(target.originRevisionID, nil, textDeclared: true)
+        await driver.noteMediaReadinessChanged()
+        let deadline = Date().addingTimeInterval(5)
+        while f.publications.values.isEmpty, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(f.publications.values.count, 1,
+            "uma notificação alcança a pronta fora da primeira janela estrutural")
+        let receipt = try XCTUnwrap(f.publications.values.first)
+        let store = PublicationStore(database: f.database)
+        XCTAssertEqual(try receipt.cardIDs.map { try XCTUnwrap(store.card(id: $0)).originRevisionID },
+            [target.originRevisionID])
+        // The same authorization also reviews the page that still held the now-published skip; that page is the one
+        // that removes its durable row, so the count converges instead of staying at the published row.
+        let settled = Date().addingTimeInterval(5)
+        while reoffer.count > 95, Date() < settled { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(reoffer.count, 95)
     }
 
 }
