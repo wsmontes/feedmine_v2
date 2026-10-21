@@ -36,6 +36,11 @@ public actor FeedSession {
     /// R03: cards whose bitmap was released and whose reconstruction failed because the local asset is gone. They
     /// keep their admitted identity, order, anchor and frozen geometry (the published placeholder), and they are not
     /// retried on every observation: the unavailable destination is stated once, not spun on.
+    ///
+    /// **It is also the restore's memory of what the checkpoint could not redraw.** A durable anchor whose asset is
+    /// absent after a process death is excluded from the restored window (render-ready admission), so its identity
+    /// lives only in the durable record; the projection reports it here so the failure is stated, and the fact
+    /// survives the next observation instead of being discarded with the excluded card.
     private var unrecoverableImageCards: Set<PublicationCardID> = []
     /// R03: the anchor of the last residency decision. Its band is kept alive with the current one, because the
     /// surface reveals the region the reader was **just** looking at before the runtime receives the next
@@ -75,6 +80,7 @@ public actor FeedSession {
         guard let warmStart else { return }
         state = warmStart.projection.state
         releasedImageCards = warmStart.projection.releasedImageCards
+        unrecoverableImageCards = warmStart.projection.snapshot.unavailableImageCardIDs
         previousResidencyAnchor = warmStart.projection.snapshot.window.anchor.cardID
         projectionSequenceID = warmStart.projection.sequenceID
         projectionPosition = warmStart.projection.position
@@ -525,6 +531,7 @@ public actor FeedSession {
             return nil
         }
         releasedImageCards.formUnion(projected.releasedImageCards)
+        unrecoverableImageCards.formUnion(projected.snapshot.unavailableImageCardIDs)
         projectionPosition = projected.position
         state = projected.state
         // R03: the restored band is the band the surface will reveal first; the next observation protects it too.
@@ -567,12 +574,14 @@ public actor FeedSession {
             try publicationHistory.markSeen(editionID: restored.edition.id,
                 cardID: restored.cursor.anchor.cardID)
             var released: Set<PublicationCardID> = []
+            var unavailable: Set<PublicationCardID> = []
             guard let window = projectedWindow(restored.window, bounds: bounds, imageDecoder: imageDecoder,
-                released: &released) else { return nil }
+                released: &released, unavailable: &unavailable) else { return nil }
             let next = try FeedProjectionProvenance.nextPosition(after: position)
             let snapshot = FeedPresentationSnapshot(contextKey: restored.edition.contextKey,
                 editionID: restored.edition.id, window: window,
-                provenance: .init(sequenceID: sequenceID, position: next))
+                provenance: .init(sequenceID: sequenceID, position: next),
+                unavailableImageCardIDs: unavailable)
             return FeedCheckpointProjection(
                 state: FeedSessionState(editorialRevisionID: restored.edition.editorialRevision.id,
                     presentation: snapshot, bounds: bounds),
@@ -580,11 +589,16 @@ public actor FeedSession {
         }
 
         private static func projectedWindow(_ published: FeedWindow, bounds: FeedPresentationBounds,
-            imageDecoder: PresentationImageDecoder?, released: inout Set<PublicationCardID>) -> FeedWindowSnapshot? {
+            imageDecoder: PresentationImageDecoder?, released: inout Set<PublicationCardID>,
+            unavailable: inout Set<PublicationCardID>) -> FeedWindowSnapshot? {
             // FeedWindow guarantees its anchor is one of its cards; a window without a numbered band has no outside
             // to release, so every card crosses the admission gate and nothing is admitted as a placeholder.
             guard let anchorIndex = published.cards.firstIndex(where: { $0.id == published.anchor.cardID }) else {
-                let items = published.cards.compactMap { FeedSession.admitted($0, decoder: imageDecoder) }
+                let items = published.cards.compactMap { card -> PresentationCard? in
+                    let value = FeedSession.admitted(card, decoder: imageDecoder)
+                    if value == nil, imageDecoder != nil { unavailable.insert(card.id) }
+                    return value
+                }
                 return FeedWindowSnapshot(items: items, publishedAnchor: published.anchor)
             }
             let first = max(0, anchorIndex - bounds.backwardCapacity)
@@ -595,6 +609,9 @@ public actor FeedSession {
                 let value: PresentationCard?
                 if first...last ~= index {
                     value = FeedSession.admitted(card, decoder: imageDecoder)
+                    // The band is what a restore decodes: an image card refused here is a card whose local asset
+                    // could not be reconstructed now. The refusal is stated, never hidden behind the substitute.
+                    if value == nil, imageDecoder != nil { unavailable.insert(card.id) }
                 } else if imageDecoder == nil {
                     // Nothing can reconstruct pixels in this composition, so an outside-band image card has no
                     // presentation now or later: it is not admitted anywhere in the window.
@@ -608,16 +625,19 @@ public actor FeedSession {
                 if let value { items.append(value) }
             }
             // The window must name the reader's position among presented values. When the published anchor is one
-            // of the excluded cards, the closest admitted card carries the same placement.
+            // of the excluded cards, the closest **render-ready** card carries the same placement: a card whose
+            // pixels were released outside the band is not a value the restore may draw before preparation, and an
+            // image card admitted without pixels would be the empty first frame the owner's rule forbids.
             var anchorID = published.anchor.cardID
             if !items.contains(where: { $0.id == anchorID }) {
-                let following = items.first { candidate in
+                let ready = items.filter(\.isRenderReady)
+                let following = ready.first { candidate in
                     guard let position = published.cards.firstIndex(where: { $0.id == candidate.id }) else {
                         return false
                     }
                     return position > anchorIndex
                 }
-                guard let fallback = following ?? items.last else { return nil }
+                guard let fallback = following ?? ready.last else { return nil }
                 anchorID = fallback.id
             }
             return FeedWindowSnapshot(items: items,
@@ -629,7 +649,17 @@ public actor FeedSession {
     /// An unchanged effective projection retains its exact provenance, even after another read.
     private func projectWindow(contextKey: ContextKey, editionID: FeedEditionID,
         window: FeedWindowSnapshot) throws -> FeedPresentationSnapshot {
-        let unavailable = unrecoverableImageCards.intersection(window.admittedIDs)
+        // The unavailable fact is **not** limited to `window.admittedIDs`: a durable anchor whose asset could not
+        // be reconstructed is excluded from the window (the owner's render-ready rule), so the intersection would
+        // discard the very fact the restore just recorded, and the surface would never state the failure.
+        //
+        // A card that is render-ready in this window was reconstructed after all: the decision ends **durably**.
+        // Merely hiding it from this projection would make the same card unavailable again when its bitmap is
+        // released outside the band — and `boundedResidency` would never reconstruct it, because the set still
+        // refuses the retry. A release is residency, not a new media failure.
+        let available = Set(window.items.lazy.filter(\.isRenderReady).map(\.id))
+        unrecoverableImageCards.subtract(available)
+        let unavailable = unrecoverableImageCards
         if let current = state?.presentation, current.contextKey == contextKey,
             current.editionID == editionID, current.window == window,
             current.unavailableImageCardIDs == unavailable { return current }
