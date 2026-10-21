@@ -23,14 +23,19 @@ import UIKit
 ///    (`FeedItemCardView.swift:329-345`). É ele que o teste **toca**, com um toque comum; um selo "Podcast" sem
 ///    esse controle é um defeito medido com id e árvore, nunca substituído por outro caminho.
 ///
-/// D2 (build 54): vídeo não tem player nativo. A exigência é identidade de vídeo, abrir a origem, nunca oferecer
-/// "Tocar" e não existir o aviso "Mídia indisponível nesta compilação". O destino aberto é comparado ao **link
-/// congelado da própria carta** (a ação "Copiar link" resolve o mesmo `externalURL` que `card.open` executa),
-/// nunca a uma suposição do teste.
+/// D2 (build 54): vídeo não tem player nativo. **Quando uma carta de vídeo aparece**, a exigência é identidade de
+/// vídeo, abrir a origem, nunca oferecer "Tocar" e não existir o aviso "Mídia indisponível nesta compilação". O
+/// destino aberto é comparado ao **link congelado da própria carta** (a ação "Copiar link" resolve o mesmo
+/// `externalURL` que `card.open` executa), nunca a uma suposição do teste.
+///
+/// D10 (PD-2026-10-20) decide que a descoberta automática admite **texto + áudio**; vídeo fica fora do pool nesta
+/// rodada. Esta jornada percorre justamente essa descoberta automática (não adiciona fonte alguma), então a
+/// ausência de vídeo é o contrato, não uma falha: a cláusula D2 é medida aqui se uma fonte de texto/áudio carregar
+/// um item de vídeo, e é provada por `VideoCardJourneyUITests`, que adiciona um feed de vídeo explicitamente.
 ///
 /// A jornada declara um orçamento total (`journeyBudget`): cada espera é limitada pelo tempo que resta e o resumo
-/// falha se o relógio passar de seis minutos. O teste **não** aceita silêncio: se um tipo de mídia não aparecer no
-/// orçamento, ele falha com o motivo medido e anexa a tela.
+/// falha se o relógio passar de seis minutos. Para feed, imagem e áudio o teste **não** aceita silêncio: se não
+/// aparecerem no orçamento, ele falha com o motivo medido e anexa a tela.
 @MainActor
 final class FeedMediaJourneyUITests: XCTestCase {
     /// A carta carrega o próprio id publicado como identificador (`FeedItemView`), e é ele que diz que a **mesma**
@@ -43,7 +48,13 @@ final class FeedMediaJourneyUITests: XCTestCase {
     /// O aviso que a build 54 **não pode ter em lugar nenhum** (D2). O `case .media` de `FeedAssociation.perform`
     /// passou a executar o alvo (AppComposition.swift:2330-2335), então a frase só pode aparecer como resíduo: se
     /// aparecer na árvore, é uma regressão e o teste a nomeia.
-    private static let unavailableMediaNotice = "Mídia indisponível nesta compilação"
+    private static let unavailableMediaNotices = ["Mídia indisponível nesta compilação",
+        "Media unavailable in this build"]
+
+    /// O aviso é uma regressão em qualquer idioma do app; a árvore expõe a forma localizada.
+    private static func mediaNotice(in app: XCUIApplication) -> XCUIElement? {
+        unavailableMediaNotices.lazy.map { app.staticTexts[$0] }.first { $0.exists }
+    }
 
     /// O orçamento medido da jornada. Cada espera recebe `min(pedido, restante)`, então uma rede lenta encurta a
     /// medida em vez de transformar o teste numa corrida de dez minutos; o resumo falha se passar de seis minutos.
@@ -71,7 +82,9 @@ final class FeedMediaJourneyUITests: XCTestCase {
         var playerInstalled = false
         var audioPlayed = false
         let videoPlayed = false
-        var verdicts: [String: Bool] = ["feed": false, "image": false, "audio": false, "video": false]
+        // D10 keeps video out of automatic discovery: its verdict only exists when a card actually measured it,
+        // so the summary states `video=N/A` instead of a false FAIL.
+        var verdicts: [String: Bool] = ["feed": false, "image": false, "audio": false]
         var playbackNotes: [String] = []
 
         // D11: nenhuma variável de fixture pode estar ligada. Se estiver, a prova de imagem/áudio não vale e o
@@ -341,12 +354,14 @@ final class FeedMediaJourneyUITests: XCTestCase {
         //       * o navegador in-app (`SFSafariViewController`) expõe o endereço no controle `URL`, e o mini-player
         //         não aparece — nada foi tocado no app.
         attach(app, name: "6-video")
-        let noticeVisible = app.staticTexts[Self.unavailableMediaNotice].exists
+        let noticeVisible = Self.mediaNotice(in: app) != nil
         XCTAssertFalse(noticeVisible,
-            "D2: o aviso '\(Self.unavailableMediaNotice)' não existe em lugar nenhum")
+            "D2: o aviso de mídia indisponível não existe em lugar nenhum")
         var videoIdentity = false, videoNoPlayer = false, videoOrigin = false
+        var videoMeasured = false
         var videoNotes: [String] = []
         if let videoCard = findVideoCard(app, within: budget(60)) {
+            videoMeasured = true
             _ = bringIntoView(app, identifier: videoCard.identifier, minimum: 0.9)
             let settled = card(app, identifier: videoCard.identifier)
             let cardFrame = settled.frame
@@ -354,7 +369,8 @@ final class FeedMediaJourneyUITests: XCTestCase {
             videoIdentity = badge != nil
             XCTAssertNotNil(badge, "D2: a carta de vídeo declara o selo 'Vídeo' dentro do frame \(cardFrame)")
             let play = playButton(of: settled)
-            let tocar = settled.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Tocar"))
+            let tocar = settled.buttons.matching(NSPredicate(format:
+                "label BEGINSWITH %@ OR label BEGINSWITH %@", "Tocar", "Play"))
                 .allElementsBoundByIndex.first { $0.exists && cardFrame.contains($0.frame) }
             videoNoPlayer = play == nil && tocar == nil
             XCTAssertNil(play, "D2: uma carta de vídeo não oferece o controle visível card.play")
@@ -394,21 +410,25 @@ final class FeedMediaJourneyUITests: XCTestCase {
             }
         } else {
             attach(app, name: "6-video-ausente")
-            failures.append("D2: nenhuma carta com selo 'Vídeo' apareceu no feed no orçamento "
-                + "(cartas visíveis=\(visibleCards(app).count))")
-            videoNotes.append("gap: nenhuma carta com selo 'Vídeo' nas telas percorridas")
+            // D10: o pool automático é texto + áudio. Nenhuma carta de vídeo é o esperado; medir a ausência como
+            // reprovação transformaria a decisão de produto em requisito do instrumento.
+            videoNotes.append("not measured: D10 admits text+audio in automatic discovery and keeps video out of "
+                + "the pool; D2 is measured by VideoCardJourneyUITests with an explicitly added video feed "
+                + "(cards visible=\(visibleCards(app).count))")
         }
         playbackNotes.append("video \(videoNotes.joined(separator: " | "))")
         playbackNotes.append("video clauses identity=\(videoIdentity) noPlayer=\(videoNoPlayer) "
             + "origin=\(videoOrigin) noticeVisible=\(noticeVisible)")
         if noticeVisible {
-            failures.append("D2: o aviso '\(Self.unavailableMediaNotice)' reapareceu na árvore")
+            failures.append("D2: o aviso de mídia indisponível reapareceu na árvore")
         }
-        verdicts["video"] = videoIdentity && videoNoPlayer && videoOrigin && !noticeVisible
-        if verdicts["video"] != true {
-            failures.append("D2: a jornada de vídeo não fecha todas as cláusulas (identity=\(videoIdentity), "
-                + "noPlayer=\(videoNoPlayer), origin=\(videoOrigin), noticeVisible=\(noticeVisible)) — "
-                + videoNotes.joined(separator: " | "))
+        if videoMeasured {
+            verdicts["video"] = videoIdentity && videoNoPlayer && videoOrigin && !noticeVisible
+            if verdicts["video"] != true {
+                failures.append("D2: a jornada de vídeo não fecha todas as cláusulas (identity=\(videoIdentity), "
+                    + "noPlayer=\(videoNoPlayer), origin=\(videoOrigin), noticeVisible=\(noticeVisible)) — "
+                    + videoNotes.joined(separator: " | "))
+            }
         }
 
         if !playerInstalled {
@@ -595,7 +615,7 @@ final class FeedMediaJourneyUITests: XCTestCase {
 
     private func videoBadge(of card: XCUIElement) -> XCUIElement? {
         let frame = card.frame
-        return card.staticTexts.matching(NSPredicate(format: "label == %@", "Vídeo"))
+        return card.staticTexts.matching(NSPredicate(format: "label IN %@", ["Vídeo", "Video"]))
             .allElementsBoundByIndex.first { $0.exists && frame.contains($0.frame) }
     }
 
@@ -817,11 +837,10 @@ final class FeedMediaJourneyUITests: XCTestCase {
         }
         button.tap()
         let player = app.otherElements["mini-player"]
-        let notice = app.staticTexts[Self.unavailableMediaNotice]
         let deadline = Date().addingTimeInterval(25)
         while Date() < deadline {
             if player.exists { return .playing(app.staticTexts["mini-player-title"].label) }
-            if notice.exists { return .notice(notice.label) }
+            if let notice = Self.mediaNotice(in: app) { return .notice(notice.label) }
             let toast = app.otherElements["reader-toast"]
             if toast.exists {
                 let text = toast.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " ")
@@ -966,7 +985,8 @@ final class FeedMediaJourneyUITests: XCTestCase {
             + "functions=[\(functions.sorted().joined(separator: ","))] "
             + "textOnly=\(textOnly ? 1 : 0) elapsed=\(elapsed)s"
         let criteria = ["feed", "image", "audio", "video"].map { name in
-            "\(name)=\(verdicts[name] == true ? "PASS" : "FAIL")"
+            guard let verdict = verdicts[name] else { return "\(name)=N/A" }
+            return "\(name)=\(verdict ? "PASS" : "FAIL")"
         }.joined(separator: " ")
         print(summary)
         print("MEDIA_JOURNEY criteria \(criteria)")
