@@ -33,7 +33,8 @@ final class VideoCardJourneyUITests: XCTestCase {
     /// O feed que o leitor adiciona. A identidade de mídia de cada carta vem do invólucro do **item**
     /// (`video/mp4` neste feed), nunca do tipo da fonte.
     private static let feedURL = "https://feeds.twit.tv/twit_video_hd.xml"
-    private static let unavailableMediaNotice = "Mídia indisponível nesta compilação"
+    private static let unavailableMediaNotices = ["Mídia indisponível nesta compilação",
+        "Media unavailable in this build"]
     /// D11: nenhuma variável de fixture pode estar ligada nesta corrida.
     private static let fixtureVariables = ["FEEDMINE_USE_DEVELOPMENT_FEEDS", "FEEDMINE_LOCAL_FEEDS",
         "FEEDMINE_MEDIA_SIMULATION", "FEEDMINE_FIXTURE_MEDIA", "FEEDMINE_FIXTURE_ITEMS",
@@ -84,10 +85,10 @@ final class VideoCardJourneyUITests: XCTestCase {
         XCTAssertTrue(addFeedEntry.waitForExistence(timeout: budget(15)),
             "o menu do leitor oferece adicionar um feed")
         addFeedEntry.tap()
-        XCTAssertTrue(app.navigationBars["Adicionar fontes"].waitForExistence(timeout: budget(20)),
-            "a folha de fontes do app abre")
+        // A folha é provada pelo próprio campo que ela oferece; o título da barra é localizado e já mudou de
+        // idioma entre execuções (medido: "Add sources" no simulador em inglês).
         let field = element(app, "add-feed-input")
-        XCTAssertTrue(field.waitForExistence(timeout: budget(15)), "a folha aceita um endereço")
+        XCTAssertTrue(field.waitForExistence(timeout: budget(20)), "a folha de fontes do app abre")
         field.tap()
         field.typeText(Self.feedURL)
         XCTAssertEqual(field.value as? String, Self.feedURL, "o campo recebe o endereço que o leitor digita")
@@ -156,7 +157,8 @@ final class VideoCardJourneyUITests: XCTestCase {
         }
         // (2b) O player do app não existe para esta carta: nem `card.play`, nem o controle/ação "Tocar".
         let play = playButton(of: videoCard)
-        let tocar = videoCard.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Tocar"))
+        let tocar = videoCard.buttons.matching(NSPredicate(format:
+            "label BEGINSWITH %@ OR label BEGINSWITH %@", "Tocar", "Play"))
             .allElementsBoundByIndex.first { $0.exists && cardFrame.contains($0.frame) }
         XCTAssertNil(play, "D2: uma carta de vídeo não oferece o controle visível card.play")
         XCTAssertNil(tocar, "D2: uma carta de vídeo não oferece 'Tocar'")
@@ -164,8 +166,8 @@ final class VideoCardJourneyUITests: XCTestCase {
             failures.append("D2: a carta de vídeo oferece um player (card.play=\(play != nil), "
                 + "Tocar='\(tocar?.label ?? "-")')")
         }
-        XCTAssertFalse(app.staticTexts[Self.unavailableMediaNotice].exists,
-            "D2: o aviso '\(Self.unavailableMediaNotice)' não existe em lugar nenhum")
+        let noticeVisible = Self.unavailableMediaNotices.contains { app.staticTexts[$0].exists }
+        XCTAssertFalse(noticeVisible, "D2: o aviso de mídia indisponível não existe em lugar nenhum")
         stamp(started, "identity badge=\(badge?.label ?? "-") play=\(play != nil) tocar=\(tocar?.label ?? "-")")
         attach(app, name: "3-carta-de-video")
 
@@ -386,7 +388,7 @@ final class VideoCardJourneyUITests: XCTestCase {
 
     private func videoBadge(of card: XCUIElement) -> XCUIElement? {
         let frame = card.frame
-        return card.staticTexts.matching(NSPredicate(format: "label == %@", "Vídeo"))
+        return card.staticTexts.matching(NSPredicate(format: "label IN %@", ["Vídeo", "Video"]))
             .allElementsBoundByIndex.first { $0.exists && frame.contains($0.frame) }
     }
 
