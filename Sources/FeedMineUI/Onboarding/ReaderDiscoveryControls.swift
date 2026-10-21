@@ -64,6 +64,7 @@ public struct ReaderDiscoveryControls: View {
         } else {
             next.languages.append(choice)
         }
+        next.hasLanguageAnswer = true
         return next
     }
 
@@ -73,6 +74,9 @@ public struct ReaderDiscoveryControls: View {
     public static func namingNoLanguage(in recipe: FeedRecipeDefinition) -> FeedRecipeDefinition {
         var next = recipe
         next.languages = []
+        // The empty set is the answer, not the absence of one: discovery must search the whole catalogue instead
+        // of reading "nothing to look for".
+        next.hasLanguageAnswer = true
         return next
     }
 

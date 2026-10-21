@@ -111,13 +111,20 @@ public struct FeedRecipeDefinition: Hashable, Codable, Sendable {
     public var mediaTypes: Set<ReaderRecipeMediaType>
     /// V1's `adjustFromOpens`: whether later reading adjusts the recipe.
     public var adjustFromOpens: Bool
+    /// Whether the reader actually answered the language question. The empty `languages` set is two different facts
+    /// and the product must not confuse them: "no answer yet" (the gate was closed, nothing was chosen) and
+    /// "all languages" (the reader named the widest scope, which discovery must serve). Only the second one is a
+    /// profile; it carries no language restriction and still searches. Absent in an older stored recipe, the flag
+    /// derives from the languages it already holds, so a recipe that named `pt` stays a restriction.
+    public var hasLanguageAnswer: Bool
     public var modelVersion: Int
 
     public init(languages: [String] = [], discoveryLevel: Double = 0.5,
         topicPreferences: [String: ReaderPreferenceLevel] = [:],
         editorialPreferences: [String: ReaderPreferenceLevel] = [:],
         mediaTypes: Set<ReaderRecipeMediaType> = [.article, .podcast, .video],
-        adjustFromOpens: Bool = false, modelVersion: Int = FeedRecipeDefinition.currentModelVersion) {
+        adjustFromOpens: Bool = false, hasLanguageAnswer: Bool? = nil,
+        modelVersion: Int = FeedRecipeDefinition.currentModelVersion) {
         self.languages = ReaderLanguageCode.choices(languages).sorted()
         self.discoveryLevel = min(1, max(0, discoveryLevel))
         self.topicPreferences = topicPreferences
@@ -125,6 +132,7 @@ public struct FeedRecipeDefinition: Hashable, Codable, Sendable {
         // An empty set is not a recipe that asks for nothing: it is V1's own default, every kind.
         self.mediaTypes = mediaTypes.isEmpty ? [.article, .podcast, .video] : mediaTypes
         self.adjustFromOpens = adjustFromOpens
+        self.hasLanguageAnswer = hasLanguageAnswer ?? !self.languages.isEmpty
         self.modelVersion = modelVersion
     }
 
@@ -143,14 +151,19 @@ public struct FeedRecipeDefinition: Hashable, Codable, Sendable {
                 ?? standard.mediaTypes,
             adjustFromOpens: try container.decodeIfPresent(Bool.self, forKey: .adjustFromOpens)
                 ?? standard.adjustFromOpens,
+            hasLanguageAnswer: try container.decodeIfPresent(Bool.self, forKey: .hasLanguageAnswer),
             modelVersion: try container.decodeIfPresent(Int.self, forKey: .modelVersion)
                 ?? FeedRecipeDefinition.currentModelVersion)
     }
 
     /// V1's "Start broad" / "Reset to neutral": everything at its middle, every kind, the reader's language.
-    public static func neutral(languages: [String] = []) -> FeedRecipeDefinition {
+    /// `hasLanguageAnswer` carries the reader's explicit "all languages" through the broad action: by default a
+    /// recipe with no language is "no answer yet", while `.neutral(hasLanguageAnswer: true)` names every language.
+    public static func neutral(languages: [String] = [],
+        hasLanguageAnswer: Bool? = nil) -> FeedRecipeDefinition {
         FeedRecipeDefinition(languages: languages, discoveryLevel: 0.55, topicPreferences: [:],
-            editorialPreferences: [:], mediaTypes: [.article, .podcast, .video], adjustFromOpens: false)
+            editorialPreferences: [:], mediaTypes: [.article, .podcast, .video], adjustFromOpens: false,
+            hasLanguageAnswer: hasLanguageAnswer)
     }
 
     // MARK: - Weight keys

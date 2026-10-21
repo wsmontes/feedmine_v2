@@ -28,9 +28,13 @@ public struct ReaderDiscoveryProfile: Hashable, Sendable {
     /// under these is not discovered. A source that is also filed under something the reader wants stays — one
     /// answer about a subject must not delete a source that covers two.
     public let excludedTopicNodeKeys: Set<String>
+    /// The reader explicitly named **all languages**. An empty `languages` set alone is not this fact: it is also
+    /// "no answer yet", which discovers nothing. With this flag the profile carries no language restriction and
+    /// still searches — the widest scope the reader can name, not the absence of discovery.
+    public let namesAllLanguages: Bool
 
     public init(languages: Set<String> = [], topicNodeKeys: Set<String> = [],
-        excludedTopicNodeKeys: Set<String> = []) {
+        excludedTopicNodeKeys: Set<String> = [], namesAllLanguages: Bool = false) {
         // A profile matches a source's own declaration by language, so both sides are the same vocabulary here:
         // a regional selection (`pt-BR`) answers the same rows as the language it belongs to.
         self.languages = ReaderLanguageCode.choices(languages)
@@ -38,10 +42,14 @@ public struct ReaderDiscoveryProfile: Hashable, Sendable {
             .filter { !$0.isEmpty })
         self.excludedTopicNodeKeys = Set(excludedTopicNodeKeys
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+        self.namesAllLanguages = namesAllLanguages && self.languages.isEmpty
     }
 
-    /// A profile that names nothing discovers nothing: the plain feed stays the reader's own selection.
-    public var isEmpty: Bool { languages.isEmpty && topicNodeKeys.isEmpty }
+    /// A profile that names nothing discovers nothing: the plain feed stays the reader's own selection. Naming
+    /// **all languages** is not "nothing": the reader answered, and the pool must serve the whole catalogue.
+    public var isEmpty: Bool {
+        languages.isEmpty && topicNodeKeys.isEmpty && !namesAllLanguages
+    }
 }
 
 public extension ReaderDiscoveryProfile {
@@ -72,7 +80,8 @@ public extension ReaderDiscoveryProfile {
             excluded.insert(node)
         }
         self.init(languages: Set(recipe.languages), topicNodeKeys: interested,
-            excludedTopicNodeKeys: excluded)
+            excludedTopicNodeKeys: excluded,
+            namesAllLanguages: recipe.hasLanguageAnswer && recipe.languages.isEmpty)
     }
 }
 

@@ -3866,6 +3866,37 @@ final class CompositionTests: XCTestCase {
         await secondLaunch.association?.close()
     }
 
+    /// The explicit "Todos os idiomas" answer, with no place named ("Mundo todo"), is a profile and must reach
+    /// discovery. Before this, the empty language set was read as "no answer yet": `namesAnything` was false, the
+    /// stored recipe was ignored, the pool was empty and the reader landed on "Escolher fontes". The two facts are
+    /// now distinct — the gate's close still discovers nothing, the explicit answer searches the whole catalogue.
+    func testTheExplicitAllLanguagesAnswerReachesDiscovery() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        XCTAssertFalse(composition.hasSelectedSources, "before any answer the reader selects sources")
+
+        await composition.completeFirstRun(discovery: .neutral(hasLanguageAnswer: true))
+
+        let stored = try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+            .load()
+        XCTAssertEqual(stored?.settings.discoveryProfile.languages, [],
+            "the answer names no language restriction")
+        XCTAssertEqual(stored?.settings.discoveryProfile.hasLanguageAnswer, true,
+            "but it is an answer, not the absence of one")
+        XCTAssertTrue(AppComposition.namesAnything(try XCTUnwrap(stored?.settings.discoveryProfile)))
+        let association = try XCTUnwrap(composition.association)
+        XCTAssertFalse(association.discoveryProfile.isEmpty,
+            "discovery has the whole catalogue to work with")
+        XCTAssertTrue(association.discoveryProfile.namesAllLanguages)
+        XCTAssertEqual(association.discoveryProfile.languages, [], "and no language restriction was invented")
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50,
+            "the explicit answer reaches the pool instead of the empty selection surface")
+        XCTAssertTrue(composition.hasSelectedSources, "so the reader is not told to choose sources")
+        await association.close()
+    }
+
     /// F02, the door back to a feed of the reader's own: the rules are stated once in the discovery preferences and
     /// a feed is created from them — and **creating does not activate it, does not move the reading**, and the
     /// library keeps it. Opening it is the reader's own next step.

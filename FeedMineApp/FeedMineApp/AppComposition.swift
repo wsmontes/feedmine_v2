@@ -1863,9 +1863,12 @@ final class AppComposition {
             topicNodeKeys: key.filter.taxonomyNodeIDs)
     }
 
-    /// Whether a stored recipe says anything at all: a neutral recipe is "no answers yet", not a profile.
+    /// Whether a stored recipe says anything at all: a neutral recipe is "no answers yet", not a profile. The
+    /// explicit **all languages** answer is a profile too — it names the whole catalogue — even though its
+    /// language set is empty.
     static func namesAnything(_ recipe: FeedRecipeDefinition) -> Bool {
         !recipe.languages.isEmpty || !recipe.topicPreferences.isEmpty || !recipe.editorialPreferences.isEmpty
+            || recipe.hasLanguageAnswer
     }
 
     /// A recipe in the catalogue's vocabulary. The rule lives on `ReaderDiscoveryProfile` so the onboarding answer

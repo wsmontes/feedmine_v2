@@ -292,8 +292,10 @@ public struct ReaderOnboardingView: View {
             // Broad from the Composer: the language answers the reader sees stay (the suggestion, unless they
             // changed it), and the narrowing places are dropped — "Mundo todo" for places, as F02 §2.1 states.
             // Saving `.neutral()` here would discard the language suggestion and take discovery back to nothing.
-            Button(String(localized: "Começar amplo")) { onSave(.neutral(languages: recipe.languages)) }
-                .accessibilityIdentifier("composer-start-broad")
+            Button(String(localized: "Começar amplo")) {
+                onSave(.neutral(languages: recipe.languages, hasLanguageAnswer: recipe.hasLanguageAnswer))
+            }
+            .accessibilityIdentifier("composer-start-broad")
             Spacer()
             Button {
                 onSave(recipe)

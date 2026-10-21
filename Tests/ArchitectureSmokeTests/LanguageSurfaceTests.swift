@@ -64,12 +64,17 @@ final class LanguageSurfaceTests: XCTestCase {
     func testTheLanguageStepStartsUnansweredAndTheLastAnswerIsTheSkip() {
         XCTAssertTrue(FeedRecipeDefinition.neutral().languages.isEmpty,
             "the first run starts with no answer — nothing is inferred for the reader")
+        XCTAssertFalse(FeedRecipeDefinition.neutral().hasLanguageAnswer,
+            "no answer yet is not the all-languages answer")
         let chosen = ReaderDiscoveryControls.choosing("pt-BR", in: .neutral())
         XCTAssertEqual(chosen.languages, ["pt"], "the answer is the language, normalized")
+        XCTAssertTrue(chosen.hasLanguageAnswer)
         let back = ReaderDiscoveryControls.choosing("pt", in: chosen)
         XCTAssertTrue(back.languages.isEmpty, "taking the last answer back is how the reader skips")
+        XCTAssertTrue(back.hasLanguageAnswer, "and taking the last chip back is still an answer")
         let skipped = ReaderDiscoveryControls.namingNoLanguage(in: chosen)
         XCTAssertTrue(skipped.languages.isEmpty, "and the skip is one explicit answer")
+        XCTAssertTrue(skipped.hasLanguageAnswer, "the empty set is 'all languages', not 'no answer yet'")
         XCTAssertEqual(ReaderDiscoveryControls.namingNoLanguage(in: .neutral(languages: ["en", "pt"])).languages,
             [], "the skip clears a whole selection, not only the last chip")
     }

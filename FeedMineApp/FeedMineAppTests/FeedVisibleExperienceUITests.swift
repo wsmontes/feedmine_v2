@@ -174,6 +174,62 @@ final class FeedVisibleExperienceUITests: XCTestCase {
         XCTAssertTrue(violations.isEmpty, "published-first-screen: " + violations.joined(separator: " | "))
     }
 
+    /// A outra entrada visível da primeira tela: o leitor escolhe explicitamente **"Todos os idiomas"** no
+    /// Composer, sem nomear lugar ("Mundo todo"), e abre o feed. O rótulo é uma resposta — elegibilidade sem
+    /// restrição de idioma — e não "nenhuma configuração": antes desta correção o perfil ficava vazio, o pool não
+    /// produzia nada e a pessoa caía em "Escolher fontes". A prova é a mesma geometria real da primeira tela, no
+    /// catálogo publicado e sem fixtures.
+    func testTheAllLanguagesEntryReachesAFilledFirstScreenOnThePublishedCatalogue() throws {
+        let app = XCUIApplication()
+        let namespace = UUID().uuidString
+        app.launchEnvironment = ["FEEDMINE_RUNTIME_NAMESPACE": namespace]
+        let started = Date()
+        app.launch()
+
+        let shape = app.buttons["welcome-shape"]
+        XCTAssertTrue(shape.waitForExistence(timeout: 30),
+            "o primeiro passo aparece num namespace novo; árvore=\(app.debugDescription)")
+        shape.tap()
+        let unrestricted = app.buttons["composer-languages-unrestricted"]
+        XCTAssertTrue(unrestricted.waitForExistence(timeout: 30),
+            "o Composer oferece a resposta 'Todos os idiomas'")
+        unrestricted.tap()
+        let open = app.buttons["composer-open-feed"]
+        XCTAssertTrue(open.waitForExistence(timeout: 30), "o Composer oferece abrir o feed")
+        XCTAssertTrue(open.isEnabled)
+        open.tap()
+
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 240),
+            "'Todos os idiomas' precisa chegar à superfície de leitura, não a 'Escolher fontes' "
+                + "(onboarding: \(app.buttons.allElementsBoundByIndex.map(\.label)))")
+        let first = sampleFirstScreen(app, scroll: scroll, since: started)
+        let record = try launchRecord(app, name: "all-languages-first-screen")
+
+        let epsilonPoints = 1.0
+        var violations: [String] = []
+        if first.loadingSurface { violations.append("feed-loading-surface is on screen with the feed") }
+        if first.launchProgress { violations.append("feed-launch-progress is on screen with the feed") }
+        if first.emptySurface { violations.append("feed-empty-state is on screen with the feed") }
+        if !first.placeholderTexts.isEmpty {
+            violations.append("placeholder copy is on screen: \(first.placeholderTexts.joined(separator: " | "))")
+        }
+        if record.cards < 1 { violations.append("the app's record never carried cards") }
+        guard let contentBottom = record.contentBottom, let viewportHeight = record.viewportHeight else {
+            XCTFail("all-languages-first-screen: o registro do app não capturou o primeiro layout com cartas: \(record)")
+            return
+        }
+        if contentBottom < viewportHeight - epsilonPoints {
+            violations.append("o primeiro conteúdo apresentado termina em \(compact(contentBottom)) pt de um "
+                + "viewport de \(compact(viewportHeight)) pt: \(compact(viewportHeight - contentBottom)) pt vazios")
+        }
+        let line = jsonLine(["test": "all-languages-first-screen", "namespace": namespace,
+            "cards": record.cards, "content_bottom": contentBottom, "viewport_height": viewportHeight,
+            "render_ready": record.renderReadyCards, "launch_record": record.raw, "violations": violations])
+        attach(app, name: "all-languages-first-screen", json: line)
+        XCTAssertTrue(violations.isEmpty, "all-languages-first-screen: " + violations.joined(separator: " | "))
+    }
+
     /// O onboarding do catálogo publicado, pela entrada **ampla** ("Começar amplo"): a pessoa não preenche
     /// formulário, aceita a sugestão de idioma que o host oferece (F02 §2.1) e entra no feed. É a jornada mais
     /// curta do produto e a que a primeira tela precisa medir; idioma e lugar explícitos são um cenário adicional,

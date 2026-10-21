@@ -775,6 +775,35 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
             "a language-only profile discovers text and audio alike, and never video")
     }
 
+    /// "Todos os idiomas" is an answer, not the absence of one. The recipe carries it through `neutral()`, the
+    /// profile names the whole catalogue and the pool serves every eligible text/audio source — while a truly
+    /// unanswered profile still discovers nothing and a named language remains an absolute restriction.
+    func testTheExplicitAllLanguagesAnswerDiscoversWithoutNarrowingTheLanguage() throws {
+        let builder = ReaderDiscoveryBuilder(catalogURL: try catalog())
+        let unanswered = ReaderDiscoveryProfile(recipe: .neutral())
+        XCTAssertTrue(unanswered.isEmpty, "closing the gate answers nothing: still no discovery")
+        XCTAssertTrue(try builder.pool(for: unanswered, limit: 50).isEmpty)
+
+        let all = ReaderDiscoveryProfile(recipe: .neutral(hasLanguageAnswer: true))
+        XCTAssertFalse(all.isEmpty, "the explicit answer is a profile, even with an empty language set")
+        XCTAssertTrue(all.namesAllLanguages)
+        XCTAssertEqual(try builder.pool(for: all, limit: 50).entries.map(\.principal).sorted(),
+            ["https://both.xx/feed", "https://science.en/feed", "https://science.pod/pod",
+                "https://science.pt-two/feed", "https://science.pt/feed", "https://science.unknown/feed",
+                "https://sport.pt/feed"],
+            "all languages means every eligible text and audio source, whatever its topic or declared language")
+        XCTAssertFalse(try builder.pool(for: all, limit: 50).entries
+            .contains { $0.principal == "https://science.video/feed" },
+            "and still no video in the automatic pool (D10)")
+
+        let restricted = ReaderDiscoveryProfile(recipe: .neutral(languages: ["pt"]))
+        XCTAssertFalse(restricted.namesAllLanguages)
+        XCTAssertEqual(try builder.pool(for: restricted, limit: 50).entries.map(\.principal).sorted(),
+            ["https://science.pod/pod", "https://science.pt-two/feed", "https://science.pt/feed",
+                "https://sport.pt/feed"],
+            "a named language stays an absolute restriction, not a hint")
+    }
+
     /// A language the catalogue has nothing for yields an empty pool rather than another language's sources.
     func testALanguageWithNoSourcesYieldsNothing() throws {
         let builder = ReaderDiscoveryBuilder(catalogURL: try catalog())
