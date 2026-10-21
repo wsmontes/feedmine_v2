@@ -108,7 +108,10 @@ final class FeedRunwayDriverTests: XCTestCase {
             try PublicationHistory(database: db).readyAhead(editionID: edition, anchorCardID: prepared.cardIDs[0], probeBound: 64).amount
         })
         addTeardownBlock { http.remove() }
+        // The controlled transport never answers a cancelled request; without a short timeout the
+        // cancellation test waits the default 60 s for the request to end (measured 60.05 s).
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [DriverURLProtocol.self]
+        config.timeoutIntervalForRequest = 1
         let transport = URLSession(configuration:config); addTeardownBlock { transport.invalidateAndCancel() }
         let binding = SourceBinding(id:SourceBindingID(),sourceID:source,externalPrincipal:.init(connectorKind:.syndication,namespace:"p",value:"p",role:.principal),aliases:[],generation:1,state:.enabled)!
         let otherHTTP = DriverHTTPFixture(paused:otherPaused,error:nil, readyBeforePull: {
@@ -1257,6 +1260,15 @@ private final class DriverHTTPFixture: @unchecked Sendable {
         signal.yield(()); let callback = lock.withLock { startCallback }; callback?(); if !wait { respond(loader) }
     }
     func release() { let loader = lock.withLock { released = true; let value = pending; pending = nil; return value }; if let loader { respond(loader) } }
+    /// URLSession calls this when the task is cancelled. Without it the pending loader is never
+    /// resumed, so the cancellation only completes when the request timeout fires (measured: 60 s).
+    func stop(_ loader:DriverURLProtocol) {
+        let stopped = lock.withLock { () -> DriverURLProtocol? in
+            guard pending === loader else { return nil }
+            let current = pending; pending = nil; return current
+        }
+        if let stopped { stopped.client?.urlProtocol(stopped, didFailWithError: URLError(.cancelled)) }
+    }
     private func respond(_ loader:DriverURLProtocol) {
         if let error { loader.client?.urlProtocol(loader,didFailWithError:error); return }
         let response = HTTPURLResponse(url:url,statusCode:200,httpVersion:"HTTP/1.1",headerFields:["Content-Type":"application/rss+xml"])!
@@ -1269,5 +1281,5 @@ private final class DriverURLProtocol: URLProtocol, @unchecked Sendable {
     override class func canInit(with request:URLRequest) -> Bool { DriverHTTPFixture.find(request.url) != nil }
     override class func canonicalRequest(for request:URLRequest) -> URLRequest { request }
     override func startLoading() { DriverHTTPFixture.find(request.url)?.start(self) }
-    override func stopLoading() {}
+    override func stopLoading() { print("DRIVER_STOP_LOADING"); DriverHTTPFixture.find(request.url)?.stop(self) }
 }
