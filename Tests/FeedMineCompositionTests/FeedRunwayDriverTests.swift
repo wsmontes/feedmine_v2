@@ -341,6 +341,77 @@ final class FeedRunwayDriverTests: XCTestCase {
             "the prepared skip becomes eligible and publishes without a new viewport")
     }
 
+    /// MR-8: with more pending stories than one page (48 persisted, capacity 8), every deferred revision must reach
+    /// the production driver's bounded preparation across real opportunities. The deferred stories are the 40 oldest;
+    /// eight newer stories occupy the structural window, so the request cannot come from re-examining the walk.
+    /// No readiness is seeded: the journal records the preparation requests themselves. A second Edition's
+    /// association must survive untouched.
+    func testEveryPersistedSkipReachesPreparationWithSmallCapacity() async throws {
+        let f = try fixture(seedLocal: false, registrations: false), readiness = MediaReadiness()
+        let requested = DriverMediaJournal(), reoffer = PendingMediaReconsideration(database: f.database)
+        let driver = try FeedRunwayDriver(session: f.session, runway: f.runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            makeSegmentIdentity: { .init(segmentID: .init(), segmentSeed: 1, segmentCreatedAt: Date())! },
+            prepare: Self.prepared, readiness: readiness, reoffer: reoffer,
+            makeMediaOpportunity: {
+                MediaPreparationOpportunity(waitSeconds: 4, startedAt: 100) { revisions, _ in
+                    requested.append(revisions.map { $0.rawValue.uuidString }.joined(separator: ","))
+                }
+            }, onPublication: { receipt in f.publications.append(receipt) })
+
+        var deferred: [MediaDeferralRecord] = []
+        for n in 0..<40 {
+            let (record, _) = try Self.admitLocalDeferral(f.database, target: f.target.id, source: f.source,
+                edition: f.edition, observedAt: Double(n))
+            deferred.append(record)
+        }
+        // Newer structural stories, deliberately not deferred: capacity 8 examines these, never the older 40.
+        for n in 40..<48 {
+            _ = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source, observedAt: Double(n))
+        }
+        try MediaDeferralStore(database: f.database).record(deferred, at: Date(timeIntervalSince1970: 100))
+        let otherEdition = FeedEditionID()
+        let foreign = MediaDeferralRecord(editionID: otherEdition,
+            originRecordID: deferred[0].originRecordID, originRevisionID: deferred[0].originRevisionID)
+        try MediaDeferralStore(database: f.database).record([foreign], at: Date(timeIntervalSince1970: 101))
+
+        let restored = try await driver.restoreAndActivate(backwardCapacity: 0, forwardCapacity: 1,
+            resources: resources())
+        let initial = try XCTUnwrap(restored)
+        _ = try await driver.submitViewport(.init(anchor: initial.window.anchor), activity: .explicitTailApproach,
+            resources: resources())
+        requested.reset()
+
+        // Each opportunity is the production drive after a supply/media fact. Eight opportunities with capacity 8
+        // must expose the whole persisted page; the mutation `reoffer.ceiling` -> `capacity` cannot.
+        for _ in 0..<8 {
+            await driver.noteMediaReadinessChanged()
+            _ = try await driver.drive(resources: resources())
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        let deferredIDs = Set(deferred.map { $0.originRevisionID.rawValue.uuidString })
+        let batches = requested.values.map { Set($0.split(separator: ",").map(String.init)) }
+        // Request tasks are detached, so batch order is not guaranteed; the largest single batch is the bounded
+        // page one opportunity actually handed to preparation. Ceiling is 32; structural capacity is 8.
+        let largestBatch = batches.map { $0.intersection(deferredIDs).count }.max() ?? 0
+        // One request is structural candidates (at most `capacity`) plus the pending page. Under the mutation
+        // `reoffer.ceiling` -> `capacity`, no single request can name more than 2 * capacity deferred revisions;
+        // the ceiling page must exceed that, which is what proves the page and not the structural walk supplied it.
+        XCTAssertGreaterThan(largestBatch, 2 * resources().runway.examinedCandidateCapacity,
+            "one bounded preparation page must carry the deferral page, not only the structural capacity")
+        let requestedIDs = batches.reduce(into: Set<String>()) { $0.formUnion($1) }
+        for record in deferred {
+            XCTAssertTrue(requestedIDs.contains(record.originRevisionID.rawValue.uuidString),
+                "deferred revision \(record.originRevisionID) never reached bounded preparation")
+        }
+        let store = MediaDeferralStore(database: f.database)
+        XCTAssertEqual(try store.page(editionID: otherEdition, limit: 32, offerAt: nil), [foreign],
+            "preparing Edition A must not consume another Edition's association")
+        XCTAssertEqual(try PendingMediaReconsideration(database: f.database)
+            .pendingEntries(for: otherEdition, limit: 32).map(\.originRevisionID), [foreign.originRevisionID])
+    }
+
     /// P02: two late facts that arrive together are one publisher pass: no duplicate card, no second loop.
     func testConcurrentLateFactsUseOneCausalPublisher() async throws {
         let f = try fixture(registrations: false), readiness = MediaReadiness()
@@ -382,6 +453,16 @@ final class FeedRunwayDriverTests: XCTestCase {
         let records = try ContentStore(database: database).candidateWindow(sourceID: nil, after: nil,
             examinedCapacity: 8).records
         return try XCTUnwrap(records.first?.originRevisionID)
+    }
+
+    /// Admits one local story and returns the deferral record a relaunch would have persisted for it.
+    nonisolated private static func admitLocalDeferral(_ database: RuntimeDatabase, target: AcquisitionTargetID,
+        source: SourceID, edition: FeedEditionID, observedAt: TimeInterval) throws -> (MediaDeferralRecord, OriginRevisionID) {
+        let revision = try admitLateLocal(database, target: target, source: source, observedAt: observedAt)
+        let records = try ContentStore(database: database).candidateWindow(sourceID: nil, after: nil,
+            examinedCapacity: 64).records
+        let origin = try XCTUnwrap(records.first { $0.originRevisionID == revision }?.originRecordID)
+        return (.init(editionID: edition, originRecordID: origin, originRevisionID: revision), revision)
     }
 
     /// R06: a round that is still running when the scope is retired must not publish into the old scope. The
