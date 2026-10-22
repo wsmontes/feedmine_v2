@@ -1445,15 +1445,22 @@ final class FeedMineUITests: XCTestCase {
             return
         }
         print("FAST_CONTINUE restored=\(restoredLine) id=\(continuedID) line=\(continuedLine) h=\(continuedHeight)")
-        XCTAssertTrue(continuedStable, "the feed settles after a real scroll; samples \(continuedSamples.suffix(8))")
-        // Different visible content at the same relative offset is valid progress; the no-op is the same card at
-        // the same line. The next close still compares the exact same UUID/height/line.
-        XCTAssertTrue(continuedID != beforeID || abs(continuedLine - restoredLine) > 20,
-            "a real scroll after the reopen changes the visible content or moves the line; the restore must not pull it back")
         let continueShot = XCTAttachment(screenshot: app.screenshot())
         continueShot.name = "fastdrag-continue-\(continuedID)-line-\(continuedLine)-h-\(continuedHeight)"
         continueShot.lifetime = .keepAlways
         add(continueShot)
+        // Short-circuit on the first actual continuation failure: do not relaunch with an unsettled or no-op
+        // point and then count cascaded invalid comparisons.
+        guard continuedStable else {
+            XCTFail("the feed settles after a real scroll; samples \(continuedSamples.suffix(8))")
+            return
+        }
+        // Different visible content at the same relative offset is valid progress; the no-op is the same card at
+        // the same line. The next close still compares the exact same UUID/height/line.
+        guard continuedID != beforeID || abs(continuedLine - restoredLine) > 20 else {
+            XCTFail("a real scroll after the reopen changes the visible content or moves the line")
+            return
+        }
         Thread.sleep(forTimeInterval: 3)
         app.terminate()
         Thread.sleep(forTimeInterval: 2)
