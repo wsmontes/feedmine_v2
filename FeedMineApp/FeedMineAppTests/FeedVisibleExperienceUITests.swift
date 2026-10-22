@@ -158,10 +158,19 @@ final class FeedVisibleExperienceUITests: XCTestCase {
         waitForExposure(app, scroll: scroll, name: "published-first-screen")
         let first = sampleFirstScreen(app, scroll: scroll, since: started)
         // `feed-launch-record` exists only in DEBUG. In Release (the shipped app) the same first exposure is
-        // measured from the native accessibility frames already on screen: the viewport and the card frames.
+        // measured from the native accessibility frames already on screen: the viewport and the card frames. The
+        // element is not even queried in Release: waiting on an identifier the product never draws is dead
+        // instrumentation, not a measurement.
+        let recordAvailable: Bool
+        let record: LaunchRecord?
+        #if DEBUG
         let recordElement = app.descendants(matching: .any)["feed-launch-record"]
-        let recordAvailable = recordElement.waitForExistence(timeout: 5)
-        let record = recordAvailable ? try launchRecord(app, name: "published-first-screen") : nil
+        recordAvailable = recordElement.waitForExistence(timeout: 5)
+        record = recordAvailable ? try launchRecord(app, name: "published-first-screen") : nil
+        #else
+        recordAvailable = false
+        record = nil
+        #endif
 
         let epsilonPoints = 1.0
         var violations: [String] = []
