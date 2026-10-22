@@ -1276,14 +1276,20 @@ final class FeedMineUITests: XCTestCase {
         }
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 180))
+        // A test-runner parameter, not an app seam: the same journey on a card class selected by its measured
+        // height. The default 0 keeps the original fast-drag regression unchanged.
+        let minimumCardHeight = ProcessInfo.processInfo.environment["FEEDMINE_TEST_MIN_CARD_HEIGHT"]
+            .flatMap(Double.init) ?? 0
         let uuid = "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
         func cards(_ scroll: XCUIElement) -> [XCUIElement] {
             scroll.descendants(matching: .any).matching(NSPredicate(format: "identifier MATCHES %@", uuid))
                 .allElementsBoundByIndex.filter { $0.frame.height > 40 }
         }
-        func containing(_ scroll: XCUIElement) -> XCUIElement? {
+        func containing(_ scroll: XCUIElement, minHeight: CGFloat = 0) -> XCUIElement? {
             let top = scroll.frame.minY
-            return cards(scroll).first { $0.frame.minY < top - 20 && $0.frame.maxY > top + 40 }
+            return cards(scroll).first {
+                $0.frame.height >= minHeight && $0.frame.minY < top - 20 && $0.frame.maxY > top + 40
+            }
         }
         XCTAssertTrue(cards(scroll).first != nil || app.buttons.matching(identifier: "card.bookmark").firstMatch.waitForExistence(timeout: 240))
         let cover = app.descendants(matching: .any)["feed-loading-surface"]
@@ -1295,8 +1301,13 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(scroll.isHittable, "the feed is interactive before the gesture")
         let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
         start.press(forDuration: 0.05, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
-        for _ in 0..<8 where containing(scroll) == nil { scroll.swipeUp() }
-        let card = try XCTUnwrap(containing(scroll), "a card contains the line")
+        let searchBound = minimumCardHeight > 0 ? 24 : 8
+        for _ in 0..<searchBound where containing(scroll, minHeight: minimumCardHeight) == nil {
+            scroll.swipeUp()
+        }
+        let card = try XCTUnwrap(containing(scroll, minHeight: minimumCardHeight),
+            "a card of at least \(minimumCardHeight) pt contains the line")
+        print("FAST_SELECT min=\(minimumCardHeight) id=\(card.identifier) h=\(card.frame.height)")
         var samples: [CGFloat] = []
         var stable = false
         for _ in 0..<40 {
@@ -1354,6 +1365,71 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertEqual(afterHeight, beforeHeight, accuracy: 1, "the card's measured height is unchanged")
         XCTAssertEqual(after, line, accuracy: 1,
             "the fast drag's line inside the card is preserved across a forced close, at the same height")
+
+        // The reopened restore is a substitution, not ownership. A real scroll after it must move the viewport
+        // and stay moved, and the point the reader stops at must be what another close restores.
+        let restoredLine = after
+        reopened.swipeUp()
+        var continuedID = ""
+        var continuedLine: CGFloat = .nan
+        var continuedHeight: CGFloat = .nan
+        var continuedSamples: [CGFloat] = []
+        var continuedStable = false
+        for _ in 0..<40 {
+            Thread.sleep(forTimeInterval: 0.5)
+            guard let current = containing(reopened) else { continue }
+            continuedID = current.identifier
+            continuedLine = current.frame.minY - reopened.frame.minY
+            continuedHeight = current.frame.height
+            continuedSamples.append(continuedLine)
+            if continuedSamples.count >= 5, let low = continuedSamples.suffix(5).min(),
+                let high = continuedSamples.suffix(5).max(), high - low <= 0.5 {
+                continuedStable = true; break
+            }
+        }
+        print("FAST_CONTINUE restored=\(restoredLine) id=\(continuedID) line=\(continuedLine) h=\(continuedHeight)")
+        XCTAssertTrue(continuedStable, "the feed settles after a real scroll; samples \(continuedSamples.suffix(8))")
+        XCTAssertGreaterThan(abs(continuedLine - restoredLine), 20,
+            "a real scroll after the reopen moves the viewport; the restore must not pull it back")
+        Thread.sleep(forTimeInterval: 3)
+        app.terminate()
+        Thread.sleep(forTimeInterval: 2)
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 90))
+        let third = app.scrollViews.firstMatch
+        let thirdCover = app.descendants(matching: .any)["feed-loading-surface"]
+        if thirdCover.exists {
+            let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+                object: thirdCover)
+            XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 120), .completed,
+                "the third feed is exposed before measuring")
+        }
+        XCTAssertTrue(third.isHittable, "the third feed is interactive")
+        var thirdLine: CGFloat = .nan
+        var thirdHeight: CGFloat = .nan
+        var thirdFrame = CGRect.null
+        var thirdSamples: [CGFloat] = []
+        var thirdSettled = false
+        for _ in 0..<40 {
+            Thread.sleep(forTimeInterval: 0.5)
+            let match = cards(third).filter { $0.identifier == continuedID }
+            guard let current = match.first(where: { $0.frame.width > 300 }) ?? match.first else { continue }
+            thirdFrame = current.frame
+            thirdLine = current.frame.minY - third.frame.minY
+            thirdHeight = current.frame.height
+            thirdSamples.append(thirdLine)
+            if thirdSamples.count >= 5, let low = thirdSamples.suffix(5).min(),
+                let high = thirdSamples.suffix(5).max(), high - low <= 0.5 {
+                thirdSettled = true; break
+            }
+        }
+        print("FAST_CONTINUE_REOPEN id=\(continuedID) line=\(thirdLine) h=\(thirdHeight)")
+        XCTAssertTrue(thirdSettled, "the third feed settles; samples \(thirdSamples.suffix(8))")
+        XCTAssertTrue(thirdFrame.width.isFinite && thirdFrame.height.isFinite
+            && thirdFrame.width > 0 && thirdFrame.height > 0, "the continued card frame is real")
+        XCTAssertEqual(thirdHeight, continuedHeight, accuracy: 1, "the continued card's height is unchanged")
+        XCTAssertEqual(thirdLine, continuedLine, accuracy: 1,
+            "the point a real scroll reached after the reopen survives the next close")
     }
 
     /// relaunch blocks the RSS network so the stored feed is the only content and no refresh race can change the
