@@ -308,6 +308,7 @@ aprovação pública.
 bash -n scripts/fetch-catalog.sh scripts/release-testflight.sh scripts/verify_product_catalogue.sh
 python3 -m unittest discover -s Tests/ReleaseScripts -p 'test_catalog_*.py'
 python3 -m unittest discover -s Tests/ReleaseScripts -p 'test_release_preflight.py'
+python3 -m unittest discover -s Tests/ReleaseScripts -p 'test_release_identity.py'
 swift build
 swift test
 git diff --check

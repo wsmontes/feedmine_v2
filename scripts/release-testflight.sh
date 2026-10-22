@@ -4,7 +4,8 @@
 # Ported from the V1 pipeline (feedmine-dev/scripts/release-testflight.sh). The invariants are:
 #   * refuses a dirty working tree — an uploaded binary must be reproducible from a commit;
 #   * refuses archive unless current public inventory, compiler and bundled SQLite provenance agree;
-#   * archives, then verifies the git SHA stamped inside the archive against HEAD, aborting on mismatch;
+#   * archives, then verifies the SHA/branch/build-date written inside the archive against this
+#     clean HEAD and release run, aborting on any mismatch;
 #   * signs the archive and uploads with the App Store Connect API key (the Xcode Apple-ID path
 #     fails on this machine: no Apple identity, profile or account in Xcode); the same key drives
 #     cloud signing at archive time and re-signing at export time, both with -allowProvisioningUpdates;
@@ -148,10 +149,14 @@ require() {
 
 SHA="$(git rev-parse HEAD)"
 SHORT="$(git rev-parse --short HEAD)"
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST")"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")"
 require "git SHA" "$SHA"
 require "git short SHA" "$SHORT"
+require "git branch" "$BRANCH"
+require "build date" "$BUILD_DATE"
 require "CFBundleVersion ($INFO_PLIST)" "$BUILD"
 require "CFBundleShortVersionString ($INFO_PLIST)" "$VERSION"
 TAG="ios/$VERSION-build.$BUILD-$SHORT"
@@ -178,8 +183,15 @@ if [ -n "$KEY_ID" ] && [ -n "$ISSUER_ID" ]; then
   SIGN_ARGS=(-authenticationKeyPath "$KEY_PATH"
              -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID")
 fi
+# The app's Info.plist carries FEEDMINE_GIT_SHA/BRANCH/BUILD_DATE placeholders, expanded by
+# ProcessInfoPlistFile. They are passed as command-line build settings, not exported environment:
+# xcodebuild only turns the NAME=VALUE arguments into build settings. This makes the plist writer
+# own the identity, so no run-script phase can race with/after it (see
+# docs/reviews/FEEDMINE_V2_RELEASE_EVIDENCE.md). Defaults in the project are "unknown", so a build
+# without these overrides fails the archive checks below instead of storing a stale SHA.
 if xcodebuild archive -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
   -destination "generic/platform=iOS" -archivePath "$ARCHIVE" -allowProvisioningUpdates \
+  FEEDMINE_GIT_SHA="$SHORT" FEEDMINE_GIT_BRANCH="$BRANCH" FEEDMINE_BUILD_DATE="$BUILD_DATE" \
   ${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"} \
   > /tmp/fm-v2-tf-archive.log 2>&1; then
   :
@@ -189,9 +201,11 @@ fi
 
 APP="$ARCHIVE/Products/Applications/FeedMine.app"
 ARCHIVED_SHA="$(/usr/libexec/PlistBuddy -c 'Print :FeedmineGitSHA' "$APP/Info.plist" 2>/dev/null || echo 'absent')"
+ARCHIVED_BRANCH="$(/usr/libexec/PlistBuddy -c 'Print :FeedmineGitBranch' "$APP/Info.plist" 2>/dev/null || echo 'absent')"
+ARCHIVED_DATE="$(/usr/libexec/PlistBuddy -c 'Print :FeedmineBuildDate' "$APP/Info.plist" 2>/dev/null || echo 'absent')"
 ARCHIVED_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" 2>/dev/null || echo '?')"
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" 2>/dev/null || echo '?')"
-echo "archived: bundle=$BUNDLE_ID version=$VERSION build=$ARCHIVED_BUILD sha=$ARCHIVED_SHA"
+echo "archived: bundle=$BUNDLE_ID version=$VERSION build=$ARCHIVED_BUILD sha=$ARCHIVED_SHA branch=$ARCHIVED_BRANCH date=$ARCHIVED_DATE"
 
 if [ "$BUNDLE_ID" != "com.feedmine.app" ]; then
   echo "ABORTADO: bundle id '$BUNDLE_ID' != com.feedmine.app (record ASC 6793279758)"
@@ -199,6 +213,14 @@ if [ "$BUNDLE_ID" != "com.feedmine.app" ]; then
 fi
 if [ "$ARCHIVED_SHA" != "$SHORT" ]; then
   echo "ABORTADO: the archive carries SHA '$ARCHIVED_SHA' but HEAD is '$SHORT' — the pairing is not proven"
+  exit 8
+fi
+if [ "$ARCHIVED_BRANCH" != "$BRANCH" ]; then
+  echo "ABORTADO: the archive carries branch '$ARCHIVED_BRANCH' but this build is from '$BRANCH'"
+  exit 8
+fi
+if [ "$ARCHIVED_DATE" != "$BUILD_DATE" ]; then
+  echo "ABORTADO: the archive carries build date '$ARCHIVED_DATE' but this release started at '$BUILD_DATE'"
   exit 8
 fi
 # The final archive is the authority on what would be distributed, not Resources.

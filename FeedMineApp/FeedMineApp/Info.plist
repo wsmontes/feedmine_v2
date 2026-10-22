@@ -27,6 +27,12 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>54</string>
+	<key>FeedmineBuildDate</key>
+	<string>$(FEEDMINE_BUILD_DATE)</string>
+	<key>FeedmineGitBranch</key>
+	<string>$(FEEDMINE_GIT_BRANCH)</string>
+	<key>FeedmineGitSHA</key>
+	<string>$(FEEDMINE_GIT_SHA)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UIApplicationSceneManifest</key>

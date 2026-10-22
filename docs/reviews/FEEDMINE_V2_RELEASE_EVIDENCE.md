@@ -50,6 +50,22 @@ No `UserDefaults`.
   annotated tag `ios/<version>-build.<build>-<sha>` (never pushes it).
 - `scripts/ExportOptions.plist`: `app-store-connect`, `destination: upload`, team `955573A4YH`.
 
+### Identity (2026-10-22)
+
+The run-script phase above raced with `ProcessInfoPlistFile`: the implicit plist task could run
+after the stamp and rebuild the product plist from the source one, dropping
+`FeedmineGitSHA`/`FeedmineBuildDate` (observed in incremental and Release test builds). The phase
+and `scripts/generate_build_info.sh` are therefore removed.
+
+- `FeedMineApp/Info.plist` declares `FeedmineGitSHA = $(FEEDMINE_GIT_SHA)`,
+  `FeedmineGitBranch = $(FEEDMINE_GIT_BRANCH)` and `FeedmineBuildDate = $(FEEDMINE_BUILD_DATE)`;
+  the app target defaults all three to `unknown`.
+- `scripts/release-testflight.sh` passes the clean tree's HEAD, branch and UTC build date as
+  command-line build settings to `xcodebuild archive`, so `ProcessInfoPlistFile` writes the
+  identity together with the rest of the plist. It then aborts unless the archived SHA, branch and
+  date match that release run. A build without the overrides carries `unknown` and fails the gate
+  instead of storing a stale SHA.
+
 ## 4. Build 22 — pipeline validation
 
 First attempt was rejected by App Store Connect:
