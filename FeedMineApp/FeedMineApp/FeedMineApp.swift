@@ -1096,8 +1096,12 @@ struct ReaderHost: UIViewControllerRepresentable {
                                 return
                             }
                             guard tries > 1 else {
+                                // The budget is spent: the reader ends through its existing finish route, so the
+                                // surface it was opened from is back and the same card can ask again. No control
+                                // is left visible while ignoring the URL.
                                 self.refusedSite = url
                                 self.sitePending = false
+                                self.onFinish()
                                 return
                             }
                             self.showSite(url, tries: tries - 1, retry: true)

@@ -24,6 +24,14 @@ final class ReadingSurfaceUITests: XCTestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@", identifier)).firstMatch
     }
 
+    /// The linear ProgressView publishes its position as a localized percentage ("37 %" or "37%"); the digits
+    /// are the measurable fact behind "the position advanced".
+    private func progressPercent(_ value: Any?) -> Int? {
+        guard let text = value as? String else { return nil }
+        let digits = text.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        return Int(digits)
+    }
+
     /// Safari's chrome belongs to SafariViewService: its element can be queried while its tap does not reach the
     /// X. The fallback is the X's own frame, so it follows the device's geometry instead of a screen constant.
     private func tapSafariClose(_ app: XCUIApplication, _ close: XCUIElement?) {
@@ -392,8 +400,9 @@ final class ReadingSurfaceUITests: XCTestCase {
         guard let (identity, _) = openTheFirstCard(app) else { return XCTFail("no card to open") }
         XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 25))
         let progress = byIdentifier(app, "mini-player-progress")
-        let before = progress.value as? String
-        XCTAssertNotNil(before, "the bar reports its position while playing")
+        guard let before = progressPercent(progress.value) else {
+            return XCTFail("the bar reports its position while playing")
+        }
 
         byIdentifier(app, "reading.open-site").tap()
         guard let close = siteReaderClose(app, timeout: 20) else {
@@ -409,8 +418,11 @@ final class ReadingSurfaceUITests: XCTestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 10))
         XCTAssertEqual(toggle.label, "Pausar",
             "the episode is still playing after passing through the site")
-        XCTAssertNotEqual(progress.value as? String, before,
-            "and its position advanced while Safari was up")
+        guard let after = progressPercent(progress.value) else {
+            return XCTFail("the bar still reports its position")
+        }
+        XCTAssertGreaterThan(after, before,
+            "and its position advanced while Safari was up (before=\(before), after=\(after))")
         attach(app, "reader-playback-through-site")
     }
 
@@ -530,14 +542,15 @@ final class ReadingSurfaceUITests: XCTestCase {
         let added = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == %@", "add-feed-result-added")).firstMatch
         if !added.waitForExistence(timeout: 120) {
-            // The sheet's result element is an instrument; the durable effect is the feed's own card, asserted
-            // below. Record why the element was late instead of turning the instrument into a product failure.
+            // The fresh-container run observed ADDED; a missing result here is a real failure of the setup, and
+            // the diagnostic keeps the sheet's own error and tree with the artifact.
             let error = app.staticTexts["add-feed-error"]
             let failure = XCTAttachment(string:
                 "add-feed-result-missing; add-feed-error=\(error.exists ? error.label : "-")\n\(app.debugDescription)")
             failure.name = "live-add-feed-tree"
             failure.lifetime = .keepAlways
             add(failure)
+            XCTFail("the real site's feed was discovered, stored and selected on a fresh container")
         }
         attach(app, "live-add-feed")
         app.buttons["add-feed-cancel"].tap()

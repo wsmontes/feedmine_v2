@@ -230,8 +230,9 @@ final class ReaderHostTests: XCTestCase {
     /// clear so a later open-site can try again — the retry budget is never reset by the retry itself.
     func testAPersistentlyRefusedSitePresentationStopsAtTheBound() async {
         var attempts = 0
-        let coordinator = Host.Coordinator(platform: PlatformDouble(), reader: reader(Recorder()),
-            onFinish: {},
+        let recorder = Recorder()
+        let coordinator = Host.Coordinator(platform: PlatformDouble(), reader: reader(recorder),
+            onFinish: { recorder.finishes += 1 },
             raiseSite: { _, _, _, done in
                 attempts += 1
                 done(false)
@@ -251,6 +252,7 @@ final class ReaderHostTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(settled, 2, "the refusal was retried")
         XCTAssertLessThanOrEqual(settled, 20, "and the retries are bounded")
         XCTAssertEqual(attempts, settled, "no retry survives the bound")
+        XCTAssertEqual(recorder.finishes, 1, "the exhausted budget ends the reader once, through its finish route")
         coordinator.show(.site(Self.url))
         try? await Task.sleep(for: .milliseconds(200))
         XCTAssertEqual(attempts, settled, "a render for the same refused request does not restart the budget")
