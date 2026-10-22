@@ -1407,36 +1407,25 @@ final class FeedMineUITests: XCTestCase {
         // The reopened restore is a substitution, not ownership. A real scroll after it must move the viewport
         // and stay moved, and the point the reader stops at must be what another close restores.
         let restoredLine = after
+        // Exactly one user action. No fallback gesture: if no visible card is at the line afterwards, that is a
+        // failure with a screenshot, not another scroll or an empty-UUID relaunch.
         reopened.swipeUp()
-        var continueAttempts = 0
-        var continued = boundaryCard(reopened)
-        while continued == nil && continueAttempts < 5 {
-            reopened.swipeUp()
-            continueAttempts += 1
-            Thread.sleep(forTimeInterval: 0.5)
-            continued = boundaryCard(reopened)
-        }
-        while continued == nil && continueAttempts < 10 {
-            reopened.swipeDown()
-            continueAttempts += 1
-            Thread.sleep(forTimeInterval: 0.5)
-            continued = boundaryCard(reopened)
-        }
-        guard let continued = continued else {
-            let shot = XCTAttachment(screenshot: app.screenshot())
-            shot.name = "fastdrag-continue-empty-restored-\(restoredLine)"
-            shot.lifetime = .keepAlways
-            add(shot)
-            XCTFail("no visible hittable card at the line after a real scroll")
-            return
-        }
-        let continuedID = continued.identifier
+        var continuedID = ""
         var continuedLine: CGFloat = .nan
         var continuedHeight: CGFloat = .nan
         var continuedSamples: [CGFloat] = []
         var continuedStable = false
         for _ in 0..<40 {
             Thread.sleep(forTimeInterval: 0.5)
+            if continuedID.isEmpty {
+                guard let current = boundaryCard(reopened) else { continue }
+                let frame = current.frame
+                continuedID = current.identifier
+                continuedLine = frame.minY - reopened.frame.minY
+                continuedHeight = frame.height
+                continuedSamples = [continuedLine]
+                continue
+            }
             let match = cards(reopened).filter { $0.identifier == continuedID }
             guard let current = match.first(where: { $0.frame.width > 300 }) ?? match.first else { continue }
             continuedLine = current.frame.minY - reopened.frame.minY
@@ -1447,13 +1436,20 @@ final class FeedMineUITests: XCTestCase {
                 continuedStable = true; break
             }
         }
-        print("FAST_CONTINUE restored=\(restoredLine) id=\(continuedID) line=\(continuedLine) h=\(continuedHeight) attempts=\(continueAttempts)")
+        guard !continuedID.isEmpty else {
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "fastdrag-continue-empty-restored-\(restoredLine)"
+            shot.lifetime = .keepAlways
+            add(shot)
+            XCTFail("no visible hittable card at the line after one real scroll")
+            return
+        }
+        print("FAST_CONTINUE restored=\(restoredLine) id=\(continuedID) line=\(continuedLine) h=\(continuedHeight)")
         XCTAssertTrue(continuedStable, "the feed settles after a real scroll; samples \(continuedSamples.suffix(8))")
-        // The visual fact is the line, not the identity: a different card at the same line is not a meaningful
-        // scroll, and the fallback direction could otherwise look like a new point after a bounce. Require the
-        // viewport line itself to have moved.
-        XCTAssertGreaterThan(abs(continuedLine - restoredLine), 20,
-            "a real scroll after the reopen moves the viewport; the restore must not pull it back")
+        // Different visible content at the same relative offset is valid progress; the no-op is the same card at
+        // the same line. The next close still compares the exact same UUID/height/line.
+        XCTAssertTrue(continuedID != beforeID || abs(continuedLine - restoredLine) > 20,
+            "a real scroll after the reopen changes the visible content or moves the line; the restore must not pull it back")
         let continueShot = XCTAttachment(screenshot: app.screenshot())
         continueShot.name = "fastdrag-continue-\(continuedID)-line-\(continuedLine)-h-\(continuedHeight)"
         continueShot.lifetime = .keepAlways
