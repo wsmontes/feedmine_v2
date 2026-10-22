@@ -130,8 +130,9 @@ struct FeedVisualCapture {
     /// **retired for this capture**. A later projection can carry a new `sequenceID` and the same restored point
     /// after a window advance; re-arming it would suppress the position the reader now holds and make the next
     /// close restore an older card (measured 2026-10-22: the durable row stopped at 9CC4020F -110.52 while the
-    /// drawn card was 52C31222 -117.25, and the reopen missed by 1420 pt). Only a new capture (store/edition/context
-    /// reset, or `onDisappear`) starts a new restore.
+    /// drawn card was 52C31222 -117.25, and the reopen missed by 1420 pt). A new capture (store/edition/context
+    /// reset, or the view rebuilt after disappearing) starts a new restore; `onDisappear` on the same capture also
+    /// retires it.
     private var restorationRetired = false
 
     struct FeedRestoration: Equatable, Sendable {

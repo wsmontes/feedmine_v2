@@ -1293,7 +1293,10 @@ final class FeedMineUITests: XCTestCase {
             // 9CC4020F at -110.52 vs test 52C31222 at -117.25, then a 1420 pt reopen miss).
             return cards(scroll)
                 .filter {
-                    $0.frame.height >= minHeight && $0.frame.minY < top - 20 && $0.frame.maxY > top + 40
+                    // The app's containment predicate (`refreshPresentedTop`): a card whose top is on the line
+                    // is still its boundary card. The old 20/40 pt margins excluded exactly that case.
+                    $0.frame.height >= minHeight
+                        && $0.frame.minY <= top + 1 && $0.frame.maxY >= top - 1
                 }
                 .max { $0.frame.minY < $1.frame.minY }
         }
