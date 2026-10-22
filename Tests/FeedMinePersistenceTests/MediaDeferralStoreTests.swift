@@ -96,6 +96,14 @@ final class MediaDeferralStoreTests: XCTestCase {
         let db = try RuntimeDatabase(location: location)
         let x = try admit(db, edition: edition, n: 7)
         try db.write { sql in
+            // Reconstruct the v1-columns shape whether or not this build registered v1 as columns. A build that
+            // registered v1 as the table (the preserved WIP) has no columns, so they are added here before the
+            // table is removed; v1's bookkeeping row stays, exactly as in a database upgraded from the old line.
+            let columns = Set(try sql.columns(in: "selection_supply").map(\.name))
+            for column in [("media_deferred_edition_id", "TEXT"), ("media_deferred_at", "REAL"),
+                ("media_offered_at", "REAL")] where !columns.contains(column.0) {
+                try sql.execute(sql: "ALTER TABLE selection_supply ADD COLUMN \(column.0) \(column.1)")
+            }
             try sql.execute(sql: "DROP TABLE IF EXISTS selection_supply_media_deferrals")
             try sql.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'selection-supply-media-deferral-v2'")
             try sql.execute(sql: """
@@ -147,5 +155,28 @@ final class MediaDeferralStoreTests: XCTestCase {
         let reopened = MediaDeferralStore(database: try RuntimeDatabase(location: location))
         XCTAssertEqual(try reopened.count(editionID: edition), 40)
         XCTAssertEqual(try reopened.page(editionID: edition, limit: 32, offerAt: nil).count, 32)
+    }
+
+    /// The never-shipped candidate build registered the table under the v1 identifier and never added the columns.
+    /// Reopening that shape must keep its rows: v2 sees the table, skips creation and backfill, and changes nothing.
+    func testExistingTableShapeKeepsRowsWhenLegacyColumnsNeverExisted() throws {
+        let location = location(), edition = FeedEditionID()
+        let db = try RuntimeDatabase(location: location)
+        let records = try (0..<3).map { try admit(db, edition: edition, n: $0) }
+        try MediaDeferralStore(database: db).record(records, at: Date(timeIntervalSince1970: 1))
+        try db.write { sql in
+            // Remove every trace of the column shape from the final schema, leaving the table and the v1
+            // bookkeeping exactly as the preserved candidate build wrote them.
+            try sql.execute(sql: "DROP INDEX selection_supply_media_deferral")
+            try sql.execute(sql: "ALTER TABLE selection_supply DROP COLUMN media_deferred_edition_id")
+            try sql.execute(sql: "ALTER TABLE selection_supply DROP COLUMN media_deferred_at")
+            try sql.execute(sql: "ALTER TABLE selection_supply DROP COLUMN media_offered_at")
+            try sql.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'selection-supply-media-deferral-v2'")
+        }
+        let reopened = MediaDeferralStore(database: try RuntimeDatabase(location: location))
+        XCTAssertEqual(try reopened.count(editionID: edition), 3,
+            "a table-shaped v1 database must not lose or duplicate rows on the v2 migration")
+        XCTAssertEqual(Set(try reopened.page(editionID: edition, limit: 32, offerAt: nil)
+            .map(\.originRevisionID)), Set(records.map(\.originRevisionID)))
     }
 }
