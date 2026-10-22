@@ -1007,8 +1007,9 @@ final class FeedViewportCaptureTests: XCTestCase {
         XCTAssertNotNil(store.toast)
     }
 
-    /// An accepted destination owns the viewport. The launch restore may not keep writing its old point back
-    /// after the reader asked for another one, and an observational echo is not that request.
+    /// An accepted destination owns the viewport. While the launch restore is armed, the capture publishes no
+    /// position (the pass is a substitution, not what the reader holds). An explicit jump ends that suppression
+    /// — the accepted anchor is reported again; a layout echo does not.
     func testExplicitJumpReleasesAStandingRestore() throws {
         let ids = (0..<2).map { _ in PublicationCardID() }
         let cards = ids.map { id in
@@ -1027,15 +1028,32 @@ final class FeedViewportCaptureTests: XCTestCase {
         let point = try XCTUnwrap(CardTopOffset(topDelta: -266.333, height: 508.5))
         let restored = PresentationAnchor(cardID: ids[1], placement: .top, progress: point)
 
-        var echoed = FeedVisualCapture()
-        echoed.armRestoration(restored)
-        FeedPositionRequest.apply(ids[1], presented: presented, capture: &echoed, store: store, explicit: false)
-        XCTAssertNotNil(echoed.restoration, "a layout echo is not an intention and keeps the restore armed")
+        func captureAtTheLine() -> FeedVisualCapture {
+            var capture = FeedVisualCapture()
+            _ = capture.observe(.init(offset: 120, extent: 1_000, height: 800))
+            capture.observeCard(.init(cardID: ids[0],
+                frame: .init(x: 0, y: -120, width: 400, height: 200), offset: 120, height: 800))
+            return capture
+        }
 
-        var jumped = FeedVisualCapture()
+        var jumped = captureAtTheLine()
         jumped.armRestoration(restored)
+        var released: [PresentationAnchor] = []
+        jumped.reportPresentedPosition { anchor, _ in released.append(anchor) }
+        XCTAssertTrue(released.isEmpty, "the armed restore suppresses publication")
+
         FeedPositionRequest.apply(ids[1], presented: presented, capture: &jumped, store: store, explicit: true)
-        XCTAssertNil(jumped.restoration, "the accepted explicit jump owns the position")
+        jumped.reportPresentedPosition { anchor, _ in released.append(anchor) }
+        XCTAssertEqual(released.map(\.cardID), [ids[0]],
+            "the accepted explicit jump lets the drawn anchor be published again")
+
+        var echoed = captureAtTheLine()
+        echoed.armRestoration(restored)
+        var suppressed: [PresentationAnchor] = []
+        echoed.reportPresentedPosition { anchor, _ in suppressed.append(anchor) }
+        FeedPositionRequest.apply(ids[1], presented: presented, capture: &echoed, store: store, explicit: false)
+        echoed.reportPresentedPosition { anchor, _ in suppressed.append(anchor) }
+        XCTAssertTrue(suppressed.isEmpty, "a layout echo is not an intention and keeps the restore armed")
     }
 
 }
