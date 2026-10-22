@@ -1287,9 +1287,15 @@ final class FeedMineUITests: XCTestCase {
         }
         func containing(_ scroll: XCUIElement, minHeight: CGFloat = 0) -> XCUIElement? {
             let top = scroll.frame.minY
-            return cards(scroll).first {
-                $0.frame.height >= minHeight && $0.frame.minY < top - 20 && $0.frame.maxY > top + 40
-            }
+            // The app's boundary rule: among the cards that contain the line, the one with the greatest top is
+            // the presented anchor. The accessibility tree can carry an older sibling with a similar frame; picking
+            // the first element in tree order measured a card the app never published (2026-10-22: durable
+            // 9CC4020F at -110.52 vs test 52C31222 at -117.25, then a 1420 pt reopen miss).
+            return cards(scroll)
+                .filter {
+                    $0.frame.height >= minHeight && $0.frame.minY < top - 20 && $0.frame.maxY > top + 40
+                }
+                .max { $0.frame.minY < $1.frame.minY }
         }
         XCTAssertTrue(cards(scroll).first != nil || app.buttons.matching(identifier: "card.bookmark").firstMatch.waitForExistence(timeout: 240))
         let cover = app.descendants(matching: .any)["feed-loading-surface"]
