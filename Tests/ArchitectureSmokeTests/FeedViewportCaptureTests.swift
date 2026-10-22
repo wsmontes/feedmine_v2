@@ -1081,4 +1081,57 @@ final class FeedViewportCaptureTests: XCTestCase {
             "a new sequence cannot resurrect a cancelled restore")
     }
 
+    /// Only an accepted destination ends the restore's substitution. A request that still needs preparation, or
+    /// that is refused, has not established a position and must keep the protection (the runtime contract cited
+    /// by `FeedRunwayDriver`). The observable fact is the same: while protected, nothing is published.
+    func testDeferredOrRefusedExplicitJumpKeepsTheRestoreProtection() throws {
+        let ids = (0..<3).map { _ in PublicationCardID() }
+        let head = PresentationCard(id: ids[0], title: "Image", primaryText: "Body", timestamp: nil,
+            sourceID: nil, sourceDisplayName: nil, providerDisplayName: nil, layout: .hero,
+            mediaAspectRatio: 1.5, primaryActionKind: nil, image: nil)
+        let text = ids.dropFirst().map { id in
+            PresentationCard(id: id, title: "Text", primaryText: "Body", timestamp: nil,
+                sourceID: nil, sourceDisplayName: nil, providerDisplayName: nil, layout: .textOnly,
+                mediaAspectRatio: nil, primaryActionKind: nil, image: nil)
+        }
+        let edition = FeedEditionID(), sequence = UUID()
+        func snapshot(position: UInt64, unavailable: Set<PublicationCardID> = []) throws
+            -> FeedPresentationSnapshot {
+            .init(contextKey: FeedContext(request: .main).key, editionID: edition,
+                window: try XCTUnwrap(FeedWindowSnapshot(items: [head] + text,
+                    anchor: .init(cardID: ids[1], placement: .top))),
+                provenance: .init(sequenceID: sequence, position: position),
+                unavailableImageCardIDs: unavailable)
+        }
+        let presented = try snapshot(position: 1)
+        let store = FeedScreenStore { _, _ in }
+        try store.install(.init(presentation: presented))
+        var capture = FeedVisualCapture()
+        _ = capture.observe(.init(offset: 120, extent: 1_000, height: 800))
+        capture.observeCard(.init(cardID: ids[1],
+            frame: .init(x: 0, y: -120, width: 400, height: 200), offset: 120, height: 800))
+        let point = try XCTUnwrap(CardTopOffset(topDelta: -120, height: 200))
+        capture.armRestoration(PresentationAnchor(cardID: ids[1], placement: .top, progress: point))
+        var published: [PresentationAnchor] = []
+        capture.reportPresentedPosition { anchor, _ in published.append(anchor) }
+        XCTAssertTrue(published.isEmpty, "the restore protects the position before any request")
+
+        FeedPositionRequest.apply(ids[0], presented: presented, capture: &capture, store: store, explicit: true)
+        XCTAssertEqual(capture.pendingJump, ids[0], "a released bitmap still needs preparation")
+        capture.reportPresentedPosition { anchor, _ in published.append(anchor) }
+        XCTAssertTrue(published.isEmpty, "a deferred request has not established anything")
+
+        try store.install(.init(presentation: try snapshot(position: 2, unavailable: [ids[0]])))
+        FeedPositionRequest.settle(&capture, store: store)
+        XCTAssertNil(capture.pendingJump)
+        XCTAssertNotNil(store.toast)
+        capture.reportPresentedPosition { anchor, _ in published.append(anchor) }
+        XCTAssertTrue(published.isEmpty, "a refused preparation has not established anything")
+
+        FeedPositionRequest.apply(PublicationCardID(), presented: presented, capture: &capture, store: store,
+            explicit: true)
+        capture.reportPresentedPosition { anchor, _ in published.append(anchor) }
+        XCTAssertTrue(published.isEmpty, "a not-admitted explicit request has not established anything")
+    }
+
 }

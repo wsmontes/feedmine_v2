@@ -262,9 +262,6 @@ enum FeedPositionRequest {
     /// window's own anchor; only the caller's token decides.
     static func apply(_ id: PublicationCardID, presented: FeedPresentationSnapshot,
         capture: inout FeedVisualCapture, store: FeedScreenStore, explicit: Bool = false) {
-        // The caller means this destination ("Voltar ao início", a prepared successor). Intent wins immediately,
-        // including while the destination still needs preparation: the launch restore may not outlive the request.
-        if explicit { capture.cancelRestoration() }
         switch FeedDestinationGate.readiness(of: id, in: presented) {
         case .ready where explicit:
             accept(id, presented: presented, capture: &capture, store: store)
