@@ -172,17 +172,19 @@ final class FeedSessionCheckpointTests: XCTestCase {
             // Enquanto ela vive, o desenho da sessão do leitor afirma a carta do topo: o registro fica exato.
             let reading = FeedSession(publicationHistory: PublicationHistory(database: try RuntimeDatabase(location: location)))
             _ = try await reading.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 6)))
+            // O topo relatado é cards[3]: uma carta **acima** da âncora da janela (cards[4]), como na tela — a
+            // borda superior do viewport nunca começa abaixo da carta em que a leitura está.
             _ = try await reading.notePresentedPosition(
-                PresentationAnchor(cardID: cards[6].id, placement: .top), atRest: true)
+                PresentationAnchor(cardID: cards[3].id, placement: .top), atRest: true)
             let exact = try XCTUnwrap(SessionStore(database: try RuntimeDatabase(location: location)).checkpoint())
-            XCTAssertEqual(exact.cardID, cards[6].id)
+            XCTAssertEqual(exact.cardID, cards[3].id)
             XCTAssertEqual(exact.anchorPlacement, "top")
             // E agora o milestone da reconstruída, 145 ms depois na corrida medida, não o substitui.
             let recorded = try await rebuilt.recordSettledPosition(at: Date(timeIntervalSince1970: 900), settled: true)
-            XCTAssertEqual(recorded, .keptExactRecord(cardID: cards[6].id),
+            XCTAssertEqual(recorded, .keptExactRecord(cardID: cards[3].id),
                 "a afirmação incompleta diz qual registro exato ficou de pé")
             let after = try XCTUnwrap(SessionStore(database: try RuntimeDatabase(location: location)).checkpoint())
-            XCTAssertEqual(after.cardID, cards[6].id, "a carta do topo fica")
+            XCTAssertEqual(after.cardID, cards[3].id, "a carta do topo fica")
             XCTAssertEqual(after.anchorPlacement, "top", "e fica exata")
             XCTAssertEqual(after.updatedAt, exact.updatedAt, "nada foi reescrito")
             // O milestone da reconstruída é uma afirmação **explícita** do chamador, com contrato próprio (§9): ele
@@ -210,11 +212,12 @@ final class FeedSessionCheckpointTests: XCTestCase {
             let approximated = try XCTUnwrap(SessionStore(database: database).checkpoint())
             XCTAssertEqual(approximated.anchorPlacement, "center")
             XCTAssertEqual(approximated.updatedAt, Date(timeIntervalSince1970: 700))
-            // Uma afirmação exata do desenho substitui a aproximada — é mais nova e mais precisa.
+            // Uma afirmação exata do desenho substitui a aproximada — é mais nova e mais precisa. O topo é cards[3],
+            // acima da âncora da janela (cards[4]): é a única forma que a tela sustenta.
             _ = try await window.notePresentedPosition(
-                PresentationAnchor(cardID: cards[5].id, placement: .top), atRest: true)
+                PresentationAnchor(cardID: cards[3].id, placement: .top), atRest: true)
             let exact = try XCTUnwrap(SessionStore(database: database).checkpoint())
-            XCTAssertEqual(exact.cardID, cards[5].id)
+            XCTAssertEqual(exact.cardID, cards[3].id)
             XCTAssertEqual(exact.anchorPlacement, "top")
         }
     }
@@ -482,8 +485,13 @@ final class FeedSessionCheckpointTests: XCTestCase {
             // porque é isso que a regra do lead exige saber.
             var exactWrites = 0
             let exactStarted = ProcessInfo.processInfo.systemUptime
+            // O caminho exato mede afirmações **legais**: a carta do topo está na janela e começa acima da carta em
+            // que a leitura está (ou nela), como na tela. A janela volta à âncora de cards[4], que o laço anterior
+            // deixou duas cartas adiante, e o ciclo passa pelas três cartas que a sustentam.
+            _ = try await session.submitViewport(ViewportObservation(
+                anchor: PresentationAnchor(cardID: cards[4].id, placement: .center)))
             for step in 0..<200 {
-                let card = cards[2 + (step % 5)]
+                let card = cards[2 + (step % 3)]
                 guard case .written = try await session.notePresentedPosition(
                     PresentationAnchor(cardID: card.id, placement: .top), atRest: true,
                     at: base.addingTimeInterval(window * Double(step))) else {
@@ -523,6 +531,48 @@ final class FeedSessionCheckpointTests: XCTestCase {
             let checkpoint = try XCTUnwrap(SessionStore(database: database).checkpoint())
             XCTAssertEqual(checkpoint.cardID, cards[3].id)
             XCTAssertEqual(checkpoint.anchorPlacement, "top", "o topo é gravado como topo")
+        }
+    }
+
+    /// **O topo não pode começar abaixo da carta em que a leitura está.** A âncora da janela apresentada é a carta
+    /// que a captura escolheu pela linha de referência, e a borda superior do viewport está sempre nessa carta ou
+    /// acima dela — nunca numa carta adiante. Um fato de desenho que sobreviveu a uma rolagem para trás (a posição
+    /// apresentada vale para a janela em que foi medida) nomeava uma carta **abaixo** da âncora e era gravado como
+    /// `.top`, exato: a proteção de `exactRecordStanding` só olha a afirmação `.center`, então a escrita passava
+    /// direto e a reabertura restaurava uma carta à frente da tela — a mesma classe do FAIL intermitente do B05
+    /// (2026-10-22: `bench/run/…005447Z` FAIL e `…005755Z` PASS no mesmo commit, conforme onde o dedo parou).
+    func testATopBelowThePresentedAnchorIsNotWrittenAsExact() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            // O desenho mediu o topo em cards[3] e o relatou em movimento: lembrado, não gravado.
+            _ = try await session.notePresentedPosition(
+                PresentationAnchor(cardID: cards[3].id, placement: .top), atRest: false)
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.cardID, cards[4].id,
+                "premissa: o registro durável ainda é o card restaurado")
+            // O leitor rola para trás até cards[2]: a janela passa a ser cards[0...4] e cards[3] continua dentro.
+            _ = try await session.submitViewport(ViewportObservation(
+                anchor: PresentationAnchor(cardID: cards[2].id, placement: .center)), deliberate: true)
+            let current = await session.currentPresentation()
+            XCTAssertEqual(current?.window.anchor, PresentationAnchor(cardID: cards[2].id, placement: .center))
+            let items = try XCTUnwrap(current?.window.items.map(\.id))
+            let anchorIndex = try XCTUnwrap(items.firstIndex(of: cards[2].id))
+            let measuredIndex = try XCTUnwrap(items.firstIndex(of: cards[3].id),
+                "cards[3] continua na janela: não é a pertinência que o impede de ser o topo")
+            XCTAssertGreaterThan(measuredIndex, anchorIndex,
+                "a premissa é a ordem: o topo medido começa abaixo da âncora apresentada "
+                    + "(janela=\(items.count) itens)")
+            // O repouso automático não grava um `.top` para uma carta que começa **abaixo** da âncora: a posição
+            // registrada é a âncora da janela apresentada, a única afirmação completa que a tela sustenta.
+            let recording = try await session.recordSettledPosition(at: Date(timeIntervalSince1970: 900),
+                settled: true)
+            XCTAssertEqual(recording, .written(cardID: cards[2].id, placement: .center),
+                "cards[3] começa abaixo de cards[2]: não é onde o viewport começa")
+            let checkpoint = try XCTUnwrap(SessionStore(database: database).checkpoint())
+            XCTAssertEqual(checkpoint.cardID, cards[2].id)
+            XCTAssertEqual(checkpoint.anchorPlacement, "center")
         }
     }
 
@@ -577,10 +627,10 @@ final class FeedSessionCheckpointTests: XCTestCase {
             let session = FeedSession(publicationHistory: PublicationHistory(database: database))
             _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
             _ = try await session.notePresentedPosition(
-                PresentationAnchor(cardID: cards[6].id, placement: .top), atRest: false)
+                PresentationAnchor(cardID: cards[3].id, placement: .top), atRest: false)
             let saved = try await session.checkpointCurrentPosition(at: milestoneTime)
             XCTAssertTrue(saved)
-            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.cardID, cards[6].id)
+            XCTAssertEqual(try SessionStore(database: database).checkpoint()?.cardID, cards[3].id)
             XCTAssertEqual(try SessionStore(database: database).checkpoint()?.anchorPlacement, "top")
         }
     }

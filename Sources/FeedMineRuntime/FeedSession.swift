@@ -841,8 +841,9 @@ public actor FeedSession {
         return .written(cardID: anchor.cardID, placement: Self.presentationPlacement(of: anchor.placement))
     }
 
-    /// The app states where the reader's **rendered viewport starts** — the first card whose top edge is at or
-    /// below the viewport's top edge. That is the position a restore can honour **exactly** (pin the card's top
+    /// The app states where the reader's **rendered viewport starts** — the card that **contains** the viewport's
+    /// top edge (its top at or above that edge, its bottom below it; the next card is named only when the edge falls
+    /// in the spacing between two cards). That is the position a restore can honour **exactly** (pin the card's top
     /// edge to the viewport's top edge), which is why the durable record states it with `.top` instead of the
     /// admitted window's own anchor. The window's anchor is the card the reader is *on* — the one straddling the
     /// capture's reference line — and the record is **incomplete** for it: the distance from that line to the
@@ -868,14 +869,28 @@ public actor FeedSession {
     }
 
     /// The position a durable write states. The app's presented top card wins **only when this admitted window
-    /// holds it**: a record may never name a card the reader's own window does not carry, so a stale rendering
-    /// fact (another context, another Edition, a card the window trimmed) falls back to the window's own anchor
-    /// instead of writing a position nobody can restore. Both boundaries state the position through this one
-    /// mapping, so they can never disagree about what "the reader's position" is.
+    /// holds it and it does not start below the window's anchor**: a record may never name a card the reader's own
+    /// window does not carry, so a stale rendering fact (another context, another Edition, a card the window
+    /// trimmed) falls back to the window's own anchor instead of writing a position nobody can restore.
+    ///
+    /// The second half is geometric, and it is the one the exact record was missing: the anchor is the card the
+    /// capture chose by its reference line — the middle of the viewport —, so the viewport's top edge is inside
+    /// that card or above it, **never** in a card further down. A presented top that survives a backward scroll
+    /// (the fact belongs to the window where it was measured) names a card below the anchor; written as `.top` it
+    /// was an exact record of a place the screen never showed, and a reopen landed ahead of the reader — the class
+    /// of the intermittent B05 failure (2026-10-22: FAIL and PASS on the same commit, according to where the
+    /// finger stopped). `exactRecordStanding` guards only the `.center` side of this boundary, so the check lives
+    /// here, where both boundaries meet.
+    ///
+    /// Both boundaries state the position through this one mapping, so they can never disagree about what "the
+    /// reader's position" is.
     private func recordedPosition(of current: FeedSessionState) -> FeedWindowAnchor {
+        let window = current.presentation.window
         guard let presentedTop = presentedPosition?.cardID,
-            current.presentation.window.items.contains(where: { $0.id == presentedTop })
-        else { return Self.durableAnchor(of: current.presentation.window.anchor) }
+            let topIndex = window.items.firstIndex(where: { $0.id == presentedTop }),
+            let anchorIndex = window.items.firstIndex(where: { $0.id == window.anchor.cardID }),
+            topIndex <= anchorIndex
+        else { return Self.durableAnchor(of: window.anchor) }
         return FeedWindowAnchor(cardID: presentedTop, placement: .top)
     }
 

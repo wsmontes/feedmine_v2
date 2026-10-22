@@ -62,14 +62,15 @@ final class FeedVisualMotion {
     /// viewport, e foi isso que fez a primeira versão publicar seis posições distintas num único repouso (medido em
     /// B05, 2026-10-14: o cursor terminou num card que não era o do topo da tela).
     var presentedTop: PublicationCardID?
-    /// A borda superior de cada carta **no conteúdo** (`frame.minY + offset`), que não se move quando o leitor rola.
-    /// É a base da escolha acima; podada ao redor do viewport, porque uma carta a mais de uma tela de distância
-    /// nunca é o topo e volta a reportar quando se aproxima.
+    /// A borda superior de cada carta **no conteúdo** (`frame.minY + offset`), que não se move quando o leitor rola,
+    /// com a **altura** da carta — as duas juntas dizem se o offset caiu **dentro** dela. É a base da escolha acima;
+    /// podada ao redor do viewport, porque uma carta a mais de uma tela de distância nunca é o topo e volta a
+    /// reportar quando se aproxima.
     ///
     /// O **offset em que ela foi medida** anda junto porque os dois números juntos distinguem o que moveu a carta:
     /// numa rolagem só o offset anda; num inserto/retirada de conteúdo **acima** dela os dois andam o mesmo tanto —
     /// e é esse segundo caso que envelhece as entradas das cartas que não voltaram a reportar.
-    var cardContentTops: [PublicationCardID: (top: CGFloat, offset: CGFloat)] = [:]
+    var cardContentTops: [PublicationCardID: (top: CGFloat, height: CGFloat, offset: CGFloat)] = [:]
     /// Uma animação programática (não um gesto do leitor) está em curso: nada do que o desenho mostrar enquanto ela
     /// durar é uma posição em repouso.
     var animating = false
@@ -142,9 +143,9 @@ struct FeedVisualCapture {
             cardHeight: proof.height)
     }
 
-    /// Onde o **viewport desenhado começa**, na forma que uma restauração honra exatamente: o primeiro card cuja
-    /// borda superior está dentro do viewport, preso à borda de cima. É a posição que o host publica e grava — nunca
-    /// pixels, e nunca o card em que o leitor *está* (esse não determina o viewport).
+    /// Onde o **viewport desenhado começa**, na forma que uma restauração honra exatamente: o card que **contém** a
+    /// borda superior do viewport, restaurado com a borda superior dele presa à de cima. É a posição que o host
+    /// publica e grava — nunca pixels, e nunca o card em que o leitor *está* (esse não determina o viewport).
     var presentedAnchor: PresentationAnchor? {
         motion.presentedTop.map { PresentationAnchor(cardID: $0, placement: .top) }
     }
@@ -228,14 +229,30 @@ struct FeedVisualCapture {
         return reconsider()
     }
 
-    /// O card em que o **viewport começa**, decidido em coordenadas de conteúdo: o de menor borda superior entre os
-    /// que começam dentro do viewport (a mesma regra da aceitação, com a mesma tolerância de um ponto). A escolha
-    /// depende só do conteúdo acumulado e do offset atual, então repetir o mesmo estado devolve o mesmo card — é
-    /// isso que impede um repouso de publicar seis posições diferentes.
+    /// O card em que o **viewport começa**, decidido em coordenadas de conteúdo: o card que **contém** a borda
+    /// superior do viewport (`top <= offset + 1` e `top + height >= offset - 1`, a tolerância de um ponto da
+    /// aceitação). Só quando **nenhum** contém — o offset caiu no espaçamento entre duas cartas — a escolha é a
+    /// próxima cujo topo começa nela (`top >= offset - 1`). Entre os que contêm fica o de **maior** topo: duas
+    /// cartas se tocam na borda (uma termina onde a outra começa) e a escolha é a que começa exatamente nela,
+    /// que é a que uma restauração `.top` reproduz sem deslocar conteúdo.
+    ///
+    /// A escolha depende só do conteúdo acumulado e do offset atual, então repetir o mesmo estado devolve o mesmo
+    /// card — é isso que impede um repouso de publicar seis posições diferentes. Nomear a carta **seguinte** quando
+    /// a de cima ainda contém o offset registrava uma posição à frente da tela, e a reabertura restaurava uma carta
+    /// adiante: o FAIL intermitente do B05 (2026-10-22), que dependia só de onde o dedo parou dentro da carta.
     private func refreshPresentedTop(offset: CGFloat, reach: CGFloat) {
         if motion.cardContentTops.count > 64 {
             // Uma carta a mais de um viewport acima do leitor nunca é o topo, e volta a reportar ao se aproximar.
-            motion.cardContentTops = motion.cardContentTops.filter { $0.value.top >= offset - reach }
+            motion.cardContentTops = motion.cardContentTops.filter {
+                $0.value.top + $0.value.height >= offset - reach
+            }
+        }
+        let containing = motion.cardContentTops.filter {
+            $0.value.top <= offset + 1 && $0.value.top + $0.value.height >= offset - 1
+        }
+        if let deepest = containing.max(by: { $0.value.top < $1.value.top }) {
+            motion.presentedTop = deepest.key
+            return
         }
         motion.presentedTop = motion.cardContentTops
             .filter { $0.value.top >= offset - 1 }
@@ -257,31 +274,39 @@ struct FeedVisualCapture {
         if isLast { motion.tailOffset = intersects ? proof.offset : nil }
         // **Onde o viewport começa.** A carta entra na base com a sua borda superior **no conteúdo**
         // (`frame.minY + offset`), que a rolagem não move: é o que torna as cartas comparáveis entre passadas
-        // diferentes do layout. A escolha em si só pode mudar quando a carta medida entra acima da escolhida, e as
-        // duas decisões são O(1) — a lista de topo é lida uma vez por mudança de geometria do scroll, não por carta.
+        // diferentes do layout. A escolha só pode mudar quando a carta medida **contém** a borda superior ou entra
+        // acima da escolhida — a lista de topo é lida uma vez por carta que pode mudar a decisão, não por carta
+        // abaixo do topo.
         let contentTop = proof.frame.minY + proof.offset
         // **Um inserto (ou uma retirada) de conteúdo acima da leitora move todas as coordenadas abaixo dele — e as
         // cartas que não voltam a reportar ficam com a coordenada velha.** O sinal é a carta que reporta: numa
         // rolagem só o offset anda (a coordenada de conteúdo é imune a ela); num inserto os **dois** andam o mesmo
         // tanto. Aplicar esse mesmo deslocamento ao mapa inteiro realinha as entradas que não foram remedidas, e sem
-        // isso a carta verdadeira do topo é descartada pelo filtro (`top >= offset - 1` — a entrada velha herda uma
-        // posição acima do viewport), a escolha cai numa carta mais funda e a posição publicada nomeia o que a tela
-        // **não** mostra. Medido, e reproduzido no teste determinístico desta rodada: 8 onde a tela mostra 6.
+        // isso a entrada velha da carta verdadeira do topo herda uma posição acima do viewport, deixa de conter o
+        // offset, a escolha cai numa carta mais funda e a posição publicada nomeia o que a tela **não** mostra.
+        // Medido, e reproduzido no teste determinístico desta rodada: 8 onde a tela mostra 6.
         if let previous = motion.cardContentTops[proof.cardID] {
             let shift = proof.offset - previous.offset
             let moved = contentTop - previous.top
             if abs(shift) > 0.5, abs(moved - shift) <= 0.5 {
                 motion.cardContentTops = motion.cardContentTops.mapValues {
-                    (top: $0.top + shift, offset: $0.offset + shift)
+                    (top: $0.top + shift, height: $0.height, offset: $0.offset + shift)
                 }
                 refreshPresentedTop(offset: proof.offset, reach: motion.geometry?.height ?? proof.height)
             }
         }
-        motion.cardContentTops[proof.cardID] = (top: contentTop, offset: proof.offset)
+        motion.cardContentTops[proof.cardID] = (top: contentTop, height: proof.frame.height,
+            offset: proof.offset)
         let offset = motion.geometry?.offset ?? proof.offset
         let reach = motion.geometry?.height ?? proof.height
         let aboveTheChoice = motion.presentedTop.flatMap { motion.cardContentTops[$0] }.map { contentTop < $0.top } ?? true
-        if contentTop >= offset - 1, aboveTheChoice { refreshPresentedTop(offset: offset, reach: reach) }
+        // Uma carta que **contém** a borda superior pode ser a escolha mesmo começando acima dela; as demais só
+        // quando começam dentro do viewport e acima da escolhida. A lista de topo é lida uma vez por carta que pode
+        // mudar a decisão, não por carta abaixo do topo.
+        let containsTop = contentTop <= offset + 1 && contentTop + proof.frame.height >= offset - 1
+        if containsTop || (contentTop >= offset - 1 && aboveTheChoice) {
+            refreshPresentedTop(offset: offset, reach: reach)
+        }
         if let old = motion.priorProof, old.cardID == proof.cardID {
             let stable = old.frame.size == proof.frame.size && old.height == proof.height &&
                 abs((old.frame.minY + old.offset) - (proof.frame.minY + proof.offset)) <= 0.5
