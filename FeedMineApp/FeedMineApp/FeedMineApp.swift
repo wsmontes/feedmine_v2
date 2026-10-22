@@ -403,14 +403,16 @@ struct FeedMineApp: App {
                             // here with the real cards on screen, never behind an opaque cover forever.
                             .task(id: association.store.firstScreenSurface) {
                                 guard association.store.firstScreenSurface == .preparation else { return }
+                                // One captured limit for the whole wait: the gate stored it at appearance, and a
+                                // later live composition value must not renew the hold without a context reset.
+                                let limit = association.store.firstScreenWaitLimit
                                 while !Task.isCancelled,
                                     association.store.firstScreenSurface == .preparation {
-                                    let remaining = composition.firstScreenWait
-                                        - association.store.firstScreenWaited
+                                    let remaining = limit - association.store.firstScreenWaited
                                     if remaining > .zero { try? await Task.sleep(for: remaining) }
                                     guard !Task.isCancelled,
                                         association.store.firstScreenSurface == .preparation else { return }
-                                    guard association.store.firstScreenWaited >= composition.firstScreenWait else {
+                                    guard association.store.firstScreenWaited >= limit else {
                                         continue // a card arrived during the sleep and reset the stall clock
                                     }
                                     association.store.expireFirstScreenWait()

@@ -18,6 +18,8 @@
 import XCTest
 @testable import FeedMineUI
 import FeedMineRuntime
+import FeedMineDomain
+import FeedMinePublication
 
 @MainActor
 final class FirstScreenPresentationTests: XCTestCase {
@@ -231,4 +233,24 @@ final class FirstScreenPresentationTests: XCTestCase {
         XCTAssertTrue(deep.coversViewport, "content past the viewport bottom covers it")
         XCTAssertEqual(deep.laidOutCards, 3)
     }
+    /// The stall clock is a **coverage high-water** clock. Repeating 500 -> 510 -> 500 -> 510 and inserting a card
+    /// whose bottom is above the line are not progress: they must not renew the hold. 288's current-max clock reset
+    /// on the 510 after 500 and on the new ID, so this deterministic record/waited test fails it.
+    @MainActor
+    func testTheStallClockResetsOnlyOnARealHighWaterAdvance() {
+        var now = 10.0
+        let hold = FeedFirstScreenHold(clock: { now })
+        let card = PublicationCardID(), above = PublicationCardID(), lower = PublicationCardID()
+        hold.record(cardID: card, contentBottom: 500, viewportHeight: 718, at: 0)
+        hold.record(cardID: card, contentBottom: 510, viewportHeight: 718, at: 1)
+        hold.record(cardID: card, contentBottom: 500, viewportHeight: 718, at: 2)
+        hold.record(cardID: card, contentBottom: 510, viewportHeight: 718, at: 3)
+        hold.record(cardID: above, contentBottom: 505, viewportHeight: 718, at: 4)
+        XCTAssertEqual(hold.waited, .seconds(9),
+            "the only advance was the first 510 at t=1; repeated 500/510 and the inserted above card buy nothing")
+        hold.record(cardID: lower, contentBottom: 520, viewportHeight: 718, at: 5)
+        XCTAssertEqual(hold.waited, .seconds(5), "a real lower bottom resets the stall clock")
+    }
+
+
 }

@@ -334,6 +334,11 @@ public final class FeedScreenStore {
     /// measured tolerance; a new card resets it.
     public var firstScreenWaited: Duration { firstScreen.hold.waited }
 
+    /// The bound captured when the first screen appeared. The host loop uses **this** value for the gate, the
+    /// remaining wait and the expiry; a later live composition value cannot renew the hold without a new
+    /// appearance (the context reset), which is what `noteFirstScreenAppeared` states.
+    public var firstScreenWaitLimit: Duration { firstScreen.maximumWait }
+
     /// The host's own inputs for the decision, stated when the screen appears and whenever its window becomes empty
     /// again; an empty window is what makes the hold legitimate (a durable restore was never prepared here).
     public func noteFirstScreenAppeared(hasSources: Bool, maximumWait: Duration) {
@@ -451,8 +456,16 @@ final class FeedFirstScreenFacts {
 final class FeedFirstScreenHold {
     private var contentBottoms: [PublicationCardID: CGFloat] = [:]
     private var viewportHeight: CGFloat = 0
+    /// The lowest bottom ever reached. A new card above the line, or a card that shrinks and grows back, does not
+    /// buy another stall window: only a real, monotonic advance of the coverage resets the clock.
+    private var highWaterBottom: CGFloat = 0
     private var startedAt: Double?
+    private let clock: () -> Double
     private(set) var preparationShown = false
+
+    init(clock: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) {
+        self.clock = clock
+    }
     /// Whether the first exposure was already written to the launch record.
     var noteRecorded = false
     /// Once the decision is made the record is closed: a long read must not pay for a measurement nothing asks about.
@@ -462,7 +475,7 @@ final class FeedFirstScreenHold {
     /// stall the gate is allowed to wait out, not the total time the preparation has been on screen.
     var waited: Duration {
         guard let startedAt else { return .zero }
-        return .seconds(max(0, ProcessInfo.processInfo.systemUptime - startedAt))
+        return .seconds(max(0, clock() - startedAt))
     }
 
     /// The layout as measured so far: distinct cards, the lowest bottom reported, and the viewport they were
@@ -478,15 +491,17 @@ final class FeedFirstScreenHold {
 
     /// One laid-out card, as the scroll view measured it. The bottom is in viewport coordinates, so the card's own
     /// height and every spacing above it are already part of the value.
-    func record(cardID: PublicationCardID, contentBottom: CGFloat, viewportHeight: CGFloat) {
+    func record(cardID: PublicationCardID, contentBottom: CGFloat, viewportHeight: CGFloat,
+        at instant: Double? = nil) {
         guard !frozen, viewportHeight.isFinite, viewportHeight > 0, contentBottom.isFinite else { return }
-        let previousBottom = contentBottoms.values.max() ?? 0
-        let isNewCard = contentBottoms[cardID] == nil
         self.viewportHeight = viewportHeight
         contentBottoms[cardID] = contentBottom
-        // Progress is a new card or a layout that reaches lower; a card that shrinks does not buy more hold time.
-        if startedAt == nil || isNewCard || contentBottom > previousBottom {
-            startedAt = ProcessInfo.processInfo.systemUptime
+        // Only a real monotonic advance of the coverage buys more hold time: 510 -> 500 -> 510 does not reset, and
+        // an inserted card whose bottom is above the line is not progress even though its ID is new.
+        let advanced = contentBottom > highWaterBottom
+        if advanced { highWaterBottom = contentBottom }
+        if startedAt == nil || advanced {
+            startedAt = instant ?? clock()
         }
     }
 

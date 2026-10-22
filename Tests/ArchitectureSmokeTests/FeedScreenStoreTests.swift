@@ -532,4 +532,18 @@ extension FeedScreenStoreTests {
         store.perform(.init(action: .save, cardID: PublicationCardID()))
         XCTAssertEqual(events.map(\.action), [.save], "an unknown occurrence is inert")
     }
+    /// FR2: the host loop must use the limit captured when the first screen appeared. A later live composition
+    /// value (5 s -> 60 s) is not read here; only a new appearance, which is the context reset, states a new limit.
+    func testS14FirstScreenLimitIsCapturedAtAppearanceAndRenewedOnlyByAReset() {
+        let store = FeedScreenStore(onViewport: { _, _ in }, onPresentedPosition: { _, _ in })
+        store.noteFirstScreenAppeared(hasSources: true, maximumWait: .seconds(5))
+        XCTAssertEqual(store.firstScreenWaitLimit, .seconds(5))
+        // The composition now reports 60 s. Without a new appearance the captured limit is still 5 s, so the
+        // hold cannot be renewed by the live value.
+        XCTAssertEqual(store.firstScreenWaitLimit, .seconds(5))
+        store.noteFirstScreenAppeared(hasSources: true, maximumWait: .seconds(60))
+        XCTAssertEqual(store.firstScreenWaitLimit, .seconds(60), "a context reset captures the new limit")
+    }
+
+
 }
