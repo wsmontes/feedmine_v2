@@ -42,8 +42,10 @@ No `UserDefaults`.
   "Feedmine", ID 6793279758, SKU feedmine-ios-2026), `DEVELOPMENT_TEAM = 955573A4YH`,
   `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`. Debug keeps `com.feedmine.development`.
 - `ITSAppUsesNonExemptEncryption = false` (HTTPS only). `CFBundleVersion` 22 then 23.
-- `scripts/generate_build_info.sh` runs as the app target's last build phase and writes
-  `FeedmineGitSHA` / `FeedmineGitBranch` / `FeedmineBuildDate` into the built `Info.plist`.
+- **Historical, removed 2026-10-22:** `scripts/generate_build_info.sh` used to run as the app
+  target's last build phase and write `FeedmineGitSHA` / `FeedmineGitBranch` / `FeedmineBuildDate`
+  into the built `Info.plist`. It no longer exists; see "Identity (2026-10-22)" below for the
+  current placeholders/build-settings mechanism and its SHA/branch/date archive checks.
 - `scripts/release-testflight.sh`: refuses a dirty tree, a missing catalog or a missing API key;
   archives Release for `generic/platform=iOS`; aborts when the archived SHA differs from `HEAD` or
   the bundle id is not `com.feedmine.app`; uploads with the App Store Connect key; creates the local
