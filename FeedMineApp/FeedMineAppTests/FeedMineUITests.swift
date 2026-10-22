@@ -2674,6 +2674,9 @@ final class FeedMineUITests: XCTestCase {
         app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["FEEDMINE_MEDIA_SIMULATION"] = "1"
+        // The site is a modal SFSafariViewController now (Apple's contract), so it covers the app's bar by
+        // design; the bar the reader keeps visible is the local page's. A stored body opens that page.
+        app.launchEnvironment["FEEDMINE_FIXTURE_TEXT"] = "body"
         app.launch()
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 45))
@@ -2687,7 +2690,9 @@ final class FeedMineUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 45), "a real published occurrence must appear")
         card.tap()
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "tapping the card opens the reader")
+        XCTAssertTrue(app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", "reading.body"))
+            .firstMatch.waitForExistence(timeout: 30), "tapping the card opens the local reader")
         XCTAssertTrue(app.buttons["mini-player-toggle"].waitForExistence(timeout: 15),
             "the reader keeps the playback bar visible")
         XCTAssertEqual(app.buttons["mini-player-toggle"].label, "Pausar", "and it is the live state, not a copy")

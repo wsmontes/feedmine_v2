@@ -19,6 +19,7 @@ final class ReaderMediaCoordinatorTests: XCTestCase {
         private(set) var pauses = 0, resumes = 0, stops = 0
         private(set) var skips: [TimeInterval] = []
         private(set) var seeks: [TimeInterval] = []
+        private(set) var refusals: [(message: String, item: ReaderMediaItem?)] = []
         var refuses = false
 
         func play(_ item: ReaderMediaItem) async throws {
@@ -41,7 +42,12 @@ final class ReaderMediaCoordinatorTests: XCTestCase {
 
         func seek(to seconds: TimeInterval) async { seeks.append(seconds) }
 
-        func reportUnavailable(_ message: String) async { state = state.failing(message) }
+        func reportUnavailable(_ message: String, item: ReaderMediaItem?) async {
+            refusals.append((message, item))
+            state = state.item == nil && item != nil
+                ? ReaderMediaState(item: item, isPlaying: false, position: 0, duration: nil, error: message)
+                : state.failing(message)
+        }
 
         func stop() async {
             stops += 1
@@ -116,6 +122,65 @@ final class ReaderMediaCoordinatorTests: XCTestCase {
         let other = ReaderMediaCoordinator(database: try published([playable]), player: refusing)
         await other.toggle(cardID: playable.id)
         XCTAssertNotNil(other.state.error)
+    }
+
+    /// F15 R4: a card that carries a playable locator but which the player refuses keeps its reference, so the
+    /// surface can name what could not play. The host also receives the reason, for the card that has nothing
+    /// playable at all and therefore no bar to attach to — and only that case is a toast.
+    func testARefusedPayloadKeepsItsReferenceAndReturnsTheReason() async throws {
+        let playable = card("mediaPlayback", "https://cdn.example/ep.mp3")
+        let refusing = FakePlayer()
+        refusing.refuses = true
+        let coordinator = ReaderMediaCoordinator(database: try published([playable]), player: refusing)
+
+        let outcome = await coordinator.toggle(cardID: playable.id)
+        guard case .unavailable(let message, presentedByBar: true) = outcome else {
+            return XCTFail("a refusal with an occurrence is named by the bar, got \(outcome)")
+        }
+        XCTAssertFalse(message.isEmpty)
+        let refusal = try XCTUnwrap(refusing.refusals.last)
+        XCTAssertEqual(refusal.message, message)
+        XCTAssertEqual(refusal.item?.cardID, playable.id,
+            "the refused occurrence is handed to the player as the bar's reference")
+        XCTAssertEqual(refusal.item?.url, URL(string: "https://cdn.example/ep.mp3"))
+        XCTAssertEqual(coordinator.state.item?.cardID, playable.id)
+        XCTAssertEqual(coordinator.state.error, message)
+
+        // A card with no payload at all states the reason with nothing to reference, so the host toasts it.
+        let article = card("externalURL", "https://example.com/artigo")
+        let empty = FakePlayer()
+        let noPayload = ReaderMediaCoordinator(database: try published([article]), player: empty)
+        guard case .unavailable(_, presentedByBar: false) = await noPayload.toggle(cardID: article.id) else {
+            return XCTFail("a card without a payload is refused outside the bar")
+        }
+        XCTAssertEqual(empty.refusals.last?.item, nil, "there is no occurrence to name")
+        XCTAssertNotNil(noPayload.state.error)
+
+        // A card without a payload, tapped while another episode is installed, keeps that episode and states the
+        // reason in the bar — the host must not repeat it as a toast.
+        let playing = FakePlayer()
+        let installed = ReaderMediaCoordinator(database: try published([playable, article]), player: playing)
+        await installed.toggle(cardID: playable.id)
+        XCTAssertNotNil(installed.state.item)
+        guard case .unavailable(_, presentedByBar: true) = await installed.toggle(cardID: article.id) else {
+            return XCTFail("the existing bar states the reason; there is no toast to duplicate it")
+        }
+        XCTAssertEqual(installed.state.item?.cardID, playable.id,
+            "the episode the reader was hearing stays the bar's reference")
+        XCTAssertNotNil(installed.state.error)
+    }
+
+    /// The bar's own play after a refusal reaches the player's resume, which is where the retry lives; the same
+    /// card's second tap must also retry instead of resolving a new payload and starting from zero.
+    func testTappingAgainAfterARefusalReachesResume() async throws {
+        let playable = card("mediaPlayback", "https://cdn.example/ep.mp3")
+        let refusing = FakePlayer()
+        refusing.refuses = true
+        let coordinator = ReaderMediaCoordinator(database: try published([playable]), player: refusing)
+        _ = await coordinator.toggle(cardID: playable.id)
+        _ = await coordinator.toggle(cardID: playable.id)
+        XCTAssertEqual(refusing.resumes, 1, "the second tap retries the kept occurrence")
+        XCTAssertEqual(refusing.played.count, 0, "the refusal is not resolved into a second payload")
     }
 
     /// The intents the surfaces issue reach the player, and progress is a value the bar can draw.

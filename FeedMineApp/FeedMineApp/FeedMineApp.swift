@@ -1,4 +1,5 @@
 import SwiftUI
+import SafariServices
 import UniformTypeIdentifiers
 import FeedMineUI
 import FeedMineDomain
@@ -86,6 +87,8 @@ struct FeedMineApp: App {
         case curatedHood
         case export
         case filters
+        /// V1's "Criar feed curado": the composer creates a preset without activating it.
+        case curatedComposer
         /// V1's "Add Feeds": the reader's own composer for a pasted link.
         case addFeed
         var id: String {
@@ -97,6 +100,7 @@ struct FeedMineApp: App {
             case .curatedHood: return "curatedHood"
             case .export: return "export"
             case .filters: return "filters"
+            case .curatedComposer: return "curatedComposer"
             case .addFeed: return "addFeed"
             }
         }
@@ -233,11 +237,13 @@ struct FeedMineApp: App {
         case collectSources
         case saveSmartBookmark
         case deleteSmartFeed
+        case deleteCuratedFeed
         var id: String {
             switch self {
             case .collectSources: return "collectSources"
             case .saveSmartBookmark: return "saveSmartBookmark"
             case .deleteSmartFeed: return "deleteSmartFeed"
+            case .deleteCuratedFeed: return "deleteCuratedFeed"
             }
         }
         var title: String {
@@ -245,6 +251,99 @@ struct FeedMineApp: App {
             case .collectSources: return String(localized: "Reunir estas fontes")
             case .saveSmartBookmark: return String(localized: "Salvar como marcador inteligente")
             case .deleteSmartFeed: return String(localized: "Excluir marcador inteligente")
+            case .deleteCuratedFeed: return String(localized: "Excluir feed curado")
+            }
+        }
+    }
+
+    /// V1's "Criar feed curado": the first-run composer entered directly, saving a preset of the reader's own
+    /// without moving the reading. Its failure stays in this sheet so the reader sees it where they acted; the
+    /// root error alert is behind a presented sheet and cannot serve this action.
+    private struct CuratedComposerSheet: View {
+        let composition: AppComposition
+        let onClose: () -> Void
+        @State private var errorMessage: String?
+        @State private var isSaving = false
+
+        var body: some View {
+            let options = composition.onboardingOptions()
+            NavigationStack {
+                VStack(spacing: 0) {
+                    if let errorMessage {
+                        Text(verbatim: errorMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, FeedDesignTokens.Spacing.page)
+                            .padding(.top, FeedDesignTokens.Spacing.tight)
+                            .accessibilityIdentifier("curated-composer-error")
+                    }
+                    ReaderOnboardingView(
+                        recipe: .neutral(languages: AppComposition.suggestedLanguages(from: options.languages),
+                            hasLanguageAnswer: true),
+                        isFirstRun: false,
+                        previewCards: [],
+                        topics: options.topics, regions: options.regions, languages: options.languages,
+                        isSaving: isSaving,
+                        primaryTitle: String(localized: "Salvar feed curado"),
+                        onSave: { recipe in save(recipe) },
+                        onClose: onClose)
+                }
+            }
+        }
+
+        private func save(_ recipe: FeedRecipeDefinition) {
+            isSaving = true
+            do {
+                if try composition.saveCuratedFeed(recipe, named: String(localized: "Meu feed curado")) != nil {
+                    onClose()
+                } else {
+                    errorMessage = String(localized: "Não foi possível criar o feed curado. Tente novamente.")
+                    isSaving = false
+                }
+            } catch {
+                errorMessage = String(localized: "Não foi possível criar o feed curado. Tente novamente.")
+                isSaving = false
+            }
+        }
+    }
+
+    /// The filter sheet and the country levels it opens. The navigation state lives with the sheet's own
+    /// content: a push inside this host keeps the reader's draft and cannot be lost in a re-render of the
+    /// feed's body. The country level mirrors the source sheet's own `SourceRoute`.
+    private struct FilterSurfaceHost: View {
+        let composition: AppComposition
+        let store: SourceManagementStore?
+        let onDone: () -> Void
+        @State private var path: [SourceRoute] = []
+
+        var body: some View {
+            NavigationStack(path: $path) {
+                FilterSheetView(applying: composition.currentFilter,
+                    preset: composition.currentPreset,
+                    availableCriteria: ReaderFilterCriterion.enforceable,
+                    languages: composition.filterLanguages(),
+                    presets: composition.presetRows(),
+                    onApply: { filter, preset in
+                        try await composition.applyFilter(filter, preset: preset)
+                    },
+                    onActivate: { key in try await composition.activateSavedPreset(key) },
+                    onShowCountries: { path.append(.countries) },
+                    onDone: onDone)
+                    .navigationDestination(for: SourceRoute.self) { route in
+                        if let store {
+                            switch route {
+                            case .countries:
+                                CountriesListView(store: store,
+                                    onOpenNode: { path.append(.node($0)) },
+                                    onClose: { path.removeAll() })
+                            case .node(let node):
+                                NodeSourcesView(store: store, node: node,
+                                    onOpenNode: { path.append(.node($0)) })
+                            }
+                        } else {
+                            ProgressView("Abrindo o catálogo de fontes")
+                        }
+                    }
             }
         }
     }
@@ -401,23 +500,15 @@ struct FeedMineApp: App {
                         }
                     case .curatedHood:
                         curatedHood
+                    case .curatedComposer:
+                        CuratedComposerSheet(composition: composition, onClose: { popSurface() })
                     case .addFeed:
                         addFeedSheet
                     case .export:
                         exportSheet
                     case .filters:
-                        NavigationStack {
-                            FilterSheetView(applying: composition.currentFilter,
-                                preset: composition.currentPreset,
-                                availableCriteria: ReaderFilterCriterion.enforceable,
-                                languages: composition.filterLanguages(),
-                                presets: composition.presetRows(),
-                                onApply: { filter, preset in
-                                    try await composition.applyFilter(filter, preset: preset)
-                                },
-                                onActivate: { key in try await composition.activateSavedPreset(key) },
-                                onDone: { popSurface() })
-                        }
+                        FilterSurfaceHost(composition: composition, store: sourcesStore,
+                            onDone: { popSurface() })
                     case .bookmarkBoxes:
                         NavigationStack(path: $libraryPath) {
                             if let store = boxesStore {
@@ -527,7 +618,8 @@ struct FeedMineApp: App {
                 }
                 .alert(libraryPrompt?.title ?? "", isPresented: Binding(
                     get: { libraryPrompt != nil }, set: { if !$0 { libraryPrompt = nil } })) {
-                    if libraryPrompt == .deleteSmartFeed {
+                    if libraryPrompt == .deleteSmartFeed || libraryPrompt == .deleteCuratedFeed {
+                        Button("Cancelar", role: .cancel) { libraryPrompt = nil }
                         Button("Excluir", role: .destructive) {
                             Task { try? await composition.deleteCurrentPreset() }
                         }
@@ -555,7 +647,9 @@ struct FeedMineApp: App {
                         ? String(localized: "Uma coleção reúne as fontes do que você está lendo agora.")
                         : libraryPrompt == .saveSmartBookmark
                             ? String(localized: "A busca e os filtros atuais ficam guardados com este nome.")
-                            : String(localized: "O marcador inteligente guardado com este nome será removido."))
+                            : libraryPrompt == .deleteCuratedFeed
+                                ? String(localized: "O feed curado será removido. As fontes continuam selecionadas.")
+                                : String(localized: "O marcador inteligente guardado com este nome será removido."))
                 }
                 .alert("Não foi possível atualizar", isPresented: Binding(get: { readerError != nil }, set: { if !$0 { readerError = nil } })) {
                     Button("OK") { readerError = nil }
@@ -614,11 +708,11 @@ struct FeedMineApp: App {
                     case .collections: present(.collections)
                     case .settings: present(.settings)
                     case .curatedOnboarding:
-                        showsOnboarding = true
+                        present(.curatedComposer)
                     case .curatedInspector:
                         present(.curatedHood)
                     case .curatedDeletion:
-                        readerError = String(localized: "Excluir este feed curado?")
+                        libraryPrompt = .deleteCuratedFeed
                     case .export, .collectionExport:
                         exportRequest = ReaderExportRequest(scope: .selection, format: .opml)
                         exportText = composition.exportPreview(exportRequest)
@@ -728,6 +822,20 @@ struct FeedMineApp: App {
 @MainActor
 enum LegacyUpgradeNoticePresenter {
     private static var current: NoticeWindow?
+    /// What the reader's acknowledgement owes: recorded once, cleared with the window. The alert's only action
+    /// and the test both go through `acknowledge()`, so the end of the notice is one route.
+    private static var pendingAcknowledge: (() -> Void)?
+
+    /// The one platform act: raising the alert in the notice's own window. UIKit raises no error and calls no
+    /// completion for a presentation it refuses, so the act reports its outcome on the next turn of the runloop —
+    /// the first moment at which the presented controller is really the alert or really nothing. A test replaces
+    /// it to exercise the refusal, which a working screen cannot stage; production uses the default below.
+    static var presentAlert: @MainActor (UIViewController, UIAlertController,
+        @MainActor @escaping (Bool) -> Void) -> Void = {
+        host, alert, done in
+        host.present(alert, animated: true)
+        Task { @MainActor in done(host.presentedViewController === alert) }
+    }
 
     static func present(title: String, message: String, onAcknowledge: @escaping () -> Void) {
         guard current == nil else { return }
@@ -737,27 +845,61 @@ enum LegacyUpgradeNoticePresenter {
         else { return }
         let window = NoticeWindow(windowScene: scene)
         window.windowLevel = .alert + 1
-        window.rootViewController = NoticeHost { [weak window] in
-            window?.isHidden = true
-            current = nil
-            onAcknowledge()
-        }
+        pendingAcknowledge = onAcknowledge
+        let host = NoticeHost(
+            onAcknowledge: { acknowledge() },
+            onRefusal: { [weak window] in
+                // A window at alert level that never raised its alert is a transparent full-screen shell: it takes
+                // every touch in the app, the reader's own controls included. If the alert could not be raised the
+                // window must go. The notice is not recorded — only the reader's acknowledgement writes the
+                // receipt — so it stays owed and is offered again on the next launch.
+                window?.isHidden = true
+                current = nil
+                pendingAcknowledge = nil
+            })
+        window.rootViewController = host
         window.frame = scene.coordinateSpace.bounds
         window.isHidden = false
         current = window
-        (window.rootViewController as? NoticeHost)?.showNotice(title: title, message: message)
+        host.showNotice(title: title, message: message)
     }
 
-    final class NoticeWindow: UIWindow {}
+    /// Takes the notice down without recording it. This is the one dismissal route: the reader's own
+    /// acknowledgement above and a test that has to leave the scene as it found it both go through it.
+    static func dismiss() {
+        current?.isHidden = true
+        current = nil
+        pendingAcknowledge = nil
+    }
+
+    /// The reader's own acknowledgement: take the notice down and record what it owed. This is the alert's only
+    /// action and the test's route, so "Entendi ends the notice" is exercised without a second implementation.
+    static func acknowledge() {
+        current?.isHidden = true
+        current = nil
+        let owed = pendingAcknowledge
+        pendingAcknowledge = nil
+        owed?()
+    }
+
+    /// The notice is informational: its alert accepts clicks while this window is not key (measured), and the
+    /// reader's presenter takes the key window's topmost controller. Keeping the notice out of key ownership
+    /// makes it impossible for the reader to be presented inside a window that later hides.
+    final class NoticeWindow: UIWindow {
+        override var canBecomeKey: Bool { false }
+    }
 
     /// The window's content: a transparent host that raises one alert and reports the reader's own
-    /// acknowledgement. Nothing here decides *when* the notice is owed; the app's receipt state does.
+    /// acknowledgement. Nothing here decides *when* the notice is owed; the app's receipt state does. A refused
+    /// alert is reported, never assumed: the host is the only owner of the window that could block the app.
     final class NoticeHost: UIViewController {
         private let onAcknowledge: () -> Void
+        private let onRefusal: () -> Void
         private var presented = false
 
-        init(onAcknowledge: @escaping () -> Void) {
+        init(onAcknowledge: @escaping () -> Void, onRefusal: @escaping () -> Void = {}) {
             self.onAcknowledge = onAcknowledge
+            self.onRefusal = onRefusal
             super.init(nibName: nil, bundle: nil)
         }
 
@@ -775,7 +917,11 @@ enum LegacyUpgradeNoticePresenter {
             alert.addAction(UIAlertAction(title: String(localized: "Entendi"), style: .cancel) { [weak self] _ in
                 self?.onAcknowledge()
             })
-            present(alert, animated: true)
+            LegacyUpgradeNoticePresenter.presentAlert(self, alert) { [weak self] isUp in
+                guard let self, !isUp else { return }
+                self.presented = false
+                self.onRefusal()
+            }
         }
     }
 }
@@ -857,8 +1003,9 @@ struct ReaderHost: UIViewControllerRepresentable {
             }
 
             /// The topmost surface the app has up: the reader is presented over it, and it is what the reader
-            /// returns to.
-            private static func topmost() -> UIViewController? {
+            /// returns to. The site presentation is made from it too: SFSafariViewController is presented
+            /// modally, as Apple requires, never embedded.
+            static func topmost() -> UIViewController? {
                 let windows = UIApplication.shared.connectedScenes
                     .compactMap { $0 as? UIWindowScene }
                     .flatMap(\.windows)
@@ -869,7 +1016,7 @@ struct ReaderHost: UIViewControllerRepresentable {
         }
 
         @MainActor
-        final class Coordinator {
+        final class Coordinator: NSObject, SFSafariViewControllerDelegate {
             /// The reader's content and what its chrome reports: both are refreshed by every render of the host,
             /// never kept as the values the coordinator happened to be built with.
             private var reader: (ReaderPage, @escaping () -> Void) -> AnyView
@@ -884,13 +1031,45 @@ struct ReaderHost: UIViewControllerRepresentable {
             private var isUp = false
             /// An attempt is being made, and its report is still owed: one at a time, whatever re-renders.
             private var isAttempting = false
+            /// The site page is its own modal presentation. Apple requires SFSafariViewController to be
+            /// presented, never embedded in another controller's hierarchy; the text page's hosting controller
+            /// cannot host it. The site therefore covers the reader's text page and ends the reader when its own
+            /// close control reports back — the product's "site replaces the text; closing returns to the feed".
+            private var site: SFSafariViewController?
+            private var siteURL: URL?
+            /// A site presentation attempt is in flight; one at a time, whatever re-renders.
+            private var siteRaising = false
+            /// The site the app state asks for. A retry only belongs to this request; closing the reader or
+            /// changing page invalidates it.
+            private var requestedSite: URL?
+            /// The site whose attempts were exhausted. It blocks render-driven retries for that same request;
+            /// clearing the request (close, local page, a different site) clears it.
+            private var refusedSite: URL?
+            /// One site presentation chain at a time: a render during an attempt or its pending retry must not
+            /// start a second budget. Only the chain itself clears this (success, exhaustion, teardown).
+            private var sitePending = false
+            /// Bumped by every teardown: a pending retry that captured an older generation is dropped.
+            private var siteGeneration = 0
+            /// The one platform act that raises the site page. It is a seam for the same reason as `Presentation`:
+            /// a test can see the modal presentation and its presenter without a Safari view service. Production
+            /// presents with the platform's own modal presentation, as Apple requires.
+            typealias SiteAct = (SFSafariViewController, URL, UIViewController,
+                @escaping (Bool) -> Void) -> Void
+            private let raiseSite: SiteAct
 
             init(platform: Presentation,
                 reader: @escaping (ReaderPage, @escaping () -> Void) -> AnyView,
-                onFinish: @escaping () -> Void) {
+                onFinish: @escaping () -> Void,
+                raiseSite: @escaping SiteAct = { safari, _, presenter, done in
+                    presenter.present(safari, animated: true)
+                    // A refused presentation leaves no error; where the controller ended up is its account.
+                    done(presenter.presentedViewController === safari)
+                }) {
                 self.platform = platform
                 self.reader = reader
                 self.onFinish = onFinish
+                self.raiseSite = raiseSite
+                super.init()
             }
 
             /// The closures the reader's own chrome reports to, kept current by the host's own render.
@@ -909,6 +1088,21 @@ struct ReaderHost: UIViewControllerRepresentable {
                     dismissReader()
                     return
                 }
+                switch page {
+                case .site(let url):
+                    requestedSite = url
+                    showSite(url)
+                case .local:
+                    requestedSite = nil
+                    refusedSite = nil
+                    showLocal(page)
+                }
+            }
+
+            /// The text page: the reader's own hosting controller, presented full screen.
+            private func showLocal(_ page: ReaderPage) {
+                // The local page and the site never coexist: a page the chrome asks for replaces the one up.
+                dismissSite()
                 let content = reader(page) { [weak self] in self?.onFinish() }
                 if let controller = presented {
                     // The reader that is up draws the page the app has now. Presenting again for a new page
@@ -935,16 +1129,121 @@ struct ReaderHost: UIViewControllerRepresentable {
                 open(controller, page: page, tries: Self.presentationAttempts)
             }
 
+            /// The site page: SFSafariViewController presented modally with the default style, as Apple
+            /// requires, from the surface that asked for the reader. It is not a child of the reader's hosting
+            /// controller and the text page is taken down while it is up — the site replaces the text. Its own
+            /// close control reports through the delegate; finishing ends the reader and returns to the surface
+            /// that opened it. Playback lives in the composition, so audio and system controls continue.
+            private func showSite(_ url: URL, tries: Int? = nil, retry: Bool = false) {
+                let tries = tries ?? Self.presentationAttempts
+                if refusedSite != url { refusedSite = nil }
+                guard refusedSite != url else { return }
+                if site != nil, siteURL == url { return }
+                if !retry, sitePending { return }
+                dismissSite()
+                // Presenting from the reader that is already up keeps the two presentations sequential: UIKit
+                // refuses a present made while a dismissal is in flight, so the text page is not taken down
+                // first. It stays underneath, invisible under Safari; the reader's own dismissal happens after
+                // Safari reports its close, through `onFinish` → `dismissReader`.
+                guard let presenter = presented ?? WindowReaderPresentation.topmost() else { return }
+                let configuration = SFSafariViewController.Configuration()
+                configuration.entersReaderIfAvailable = false
+                let controller = SFSafariViewController(url: url, configuration: configuration)
+                controller.delegate = self
+                controller.dismissButtonStyle = .close
+                controller.preferredControlTintColor = .tintColor
+                site = controller
+                siteURL = url
+                sitePending = true
+                raise(controller, url, presenter, tries: tries)
+            }
+
+            /// The site's presentation is made on the platform's own turn and reports whether it really went up.
+            /// A refusal raises no error and calls no completion, so a page the chrome asks for is attempted
+            /// again — bounded, on the platform's own report — instead of being stranded behind a stale `site`.
+            private func raise(_ controller: SFSafariViewController, _ url: URL,
+                _ presenter: UIViewController, tries: Int) {
+                guard tries > 0, !siteRaising, site === controller, siteURL == url else { return }
+                siteRaising = true
+                Task { @MainActor in
+                    guard siteRaising, site === controller else {
+                        siteRaising = false
+                        return
+                    }
+                    raiseSite(controller, url, presenter) { [weak self] isUp in
+                        guard let self, self.siteRaising else { return }
+                        self.siteRaising = false
+                        guard self.site === controller, self.siteURL == url else { return }
+                        guard !isUp else {
+                            self.sitePending = false
+                            return
+                        }
+                        self.site = nil
+                        self.siteURL = nil
+                        let generation = self.siteGeneration
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(50))
+                            guard self.siteGeneration == generation, self.requestedSite == url,
+                                self.site == nil, self.siteURL == nil else {
+                                self.sitePending = false
+                                return
+                            }
+                            guard tries > 1 else {
+                                // The budget is spent: the reader ends through its existing finish route, so the
+                                // surface it was opened from is back and the same card can ask again. No control
+                                // is left visible while ignoring the URL.
+                                self.refusedSite = url
+                                self.sitePending = false
+                                self.onFinish()
+                                return
+                            }
+                            self.showSite(url, tries: tries - 1, retry: true)
+                        }
+                    }
+                }
+            }
+
+            private func dismissSite() {
+                siteRaising = false
+                sitePending = false
+                siteGeneration &+= 1
+                guard let controller = site else { return }
+                site = nil
+                siteURL = nil
+                controller.dismiss(animated: false)
+            }
+
             /// The reader goes down when the app's state says it is no longer up, and the platform is asked to
             /// take it down: the dismissal is never inferred from the controller's own state, which reports no
             /// `presentingViewController` for a presentation that was refused.
             private func dismissReader() {
+                requestedSite = nil
+                refusedSite = nil
                 shown = nil
                 isUp = false
                 isAttempting = false
+                dismissSite()
                 guard let controller = presented else { return }
                 presented = nil
                 platform.dismiss(controller)
+            }
+
+            /// Safari's own close control: the reader asked to leave the site. Safari dismisses itself after the
+            /// delegate returns; the reader state is cleared only after that dismissal completes, so the host
+            /// never asks a dismissing presentation to take its presenter down at the same time.
+            nonisolated func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
+                MainActor.assumeIsolated {
+                    guard site === controller else { return }
+                    // Apple's delegate contract: cleanup here, and the view controller is dismissed afterwards.
+                    // No second dismissal is asked for, and the reader's state is not chained to a completion
+                    // UIKit does not owe for a dismissal it is already making.
+                    site = nil
+                    siteURL = nil
+                    siteRaising = false
+                    sitePending = false
+                    requestedSite = nil
+                    onFinish()
+                }
             }
 
             /// The reader is presented from the surface the app has on top, so it covers whatever asked for it
@@ -983,15 +1282,15 @@ struct ReaderHost: UIViewControllerRepresentable {
     }
 
     /// T9: the article the reader opened, with the playback bar kept visible inside it (V1's own reader).
-    /// U-reading: the same presentation carries the local reading surface, so a card's text and a card's site are
-    /// one place to come back from — the surface that asked for them survives either way.
+    /// U-reading: the local reading surface. The site is not content of this page: SFSafariViewController must be
+    /// presented modally (Apple's contract), so `ReaderHost` presents it as its own modal and this page never
+    /// embeds it.
     @ViewBuilder private func readerBody(_ page: ReaderPage, close: @escaping () -> Void) -> some View {
         VStack(spacing: 0) {
             switch page {
-            case .site(let url):
-                // SafariServices owns the reader's close control, so its finish comes back here: the host owns the
-                // presentation, and the state it was presented from is what goes away.
-                InAppBrowser(url: url, onFinish: close)
+            case .site:
+                // Unreachable: the host draws only the local page and presents the site itself.
+                EmptyView()
             case .local(let content):
                 let openSite: (() -> Void)? = content.siteURL.map { url in { pushReader(.site(url)) } }
                 FeedReadingSurface(content: content, appearance: composition.currentAppearance(),
@@ -1471,8 +1770,15 @@ struct ReaderHost: UIViewControllerRepresentable {
                     guard let removal = chip.removal else { return }
                     Task {
                         do {
-                            try await composition.applyFilter(filter.removing(removal),
-                                preset: composition.currentPreset)
+                            // V1's preset chip removes the *preset*, not a filter criterion
+                            // (`TaxonomyChipBar`: `setActivePreset(.everything)`). The filter's own criteria
+                            // keep their own chips and stay applied.
+                            if removal == .preset {
+                                try await composition.applyFilter(filter, preset: .everything)
+                            } else {
+                                try await composition.applyFilter(filter.removing(removal),
+                                    preset: composition.currentPreset)
+                            }
                         } catch {
                             // R5: a raw error description is diagnostics, never the reader's copy. The failure
                             // states whether the selection was saved, so a confirmed-but-not-presented filter

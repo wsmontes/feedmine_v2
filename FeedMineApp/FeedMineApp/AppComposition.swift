@@ -202,10 +202,16 @@ final class AppComposition {
             Task { await self.rerunUnifiedSearch(scope: nil) }
         }
         association.onShare = { [weak self] link in self?.onShare?(link) }
-        // T9: a card's media action is resolved and played through the app-wide player.
-        association.onMedia = { [weak self] cardID in
-            guard let self else { return }
-            Task { await self.media?.toggle(cardID: cardID) }
+        // T9: a card's media action is resolved and played through the app-wide player. A refusal is stated by
+        // the player (which keeps the occurrence's reference for the bar); only a card with no playable payload
+        // at all has no bar to carry the reason, so only that case becomes the reader's own toast (F15 R4, D5).
+        association.onMedia = { [weak self, weak association] cardID in
+            guard let self, let association else { return }
+            Task {
+                guard case .unavailable(let message, presentedByBar: false) = await self.toggleMedia(cardID: cardID)
+                else { return }
+                association.store.showToast(text: message, systemImage: "exclamationmark.triangle")
+            }
         }
 
         return association
@@ -1550,10 +1556,13 @@ final class AppComposition {
     var mediaState: ReaderMediaState { mediaAdapter.state }
 
     /// T9: the four intents the surfaces issue. They are the coordinator's, wrapped so the shell never holds it.
-    func toggleMedia(cardID: PublicationCardID? = nil) async {
-        guard let media else { return }
-        if let cardID { await media.toggle(cardID: cardID) }
-        else if media.state.isPlaying { await media.pause() } else { await media.resume() }
+    /// The card intent's refusal is returned to the caller that owns a surface to state it.
+    @discardableResult
+    func toggleMedia(cardID: PublicationCardID? = nil) async -> ReaderMediaIntentOutcome {
+        guard let media else { return .handled }
+        if let cardID { return await media.toggle(cardID: cardID) }
+        if media.state.isPlaying { await media.pause() } else { await media.resume() }
+        return .handled
     }
 
     func skipMedia(by seconds: TimeInterval) async { await media?.skip(by: seconds) }
