@@ -274,17 +274,25 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
     // MARK: - Playback
 
     func play(_ item: ReaderMediaItem) async throws {
+        try await play(item, retrying: false)
+    }
+
+    /// `retrying` is the difference that matters after a refusal: the fresh item keeps the reason and where the
+    /// reader was, and never claims playback itself — the player proves it through `timeControlStatus`. The retry
+    /// intent is passed explicitly instead of inferred from `currentItem`, because a refusal keeps no item at all.
+    private func play(_ item: ReaderMediaItem, retrying: Bool) async throws {
         let asset = AVURLAsset(url: item.url)
         let playable = try await asset.load(.isPlayable)
         guard playable else {
             // V1's shape: a refused item never becomes the current one. Installing it here would leave the
             // previous episode audible under a bar naming the new one, and the next tick would save that episode's
-            // position under the refused card. The caller reports the refusal through `reportUnavailable`.
+            // position under the refused card. The caller reports the refusal through `reportUnavailable`, which
+            // keeps this item as the bar's reference when nothing else is installed.
             throw MediaPlaybackError.notPlayable
         }
         // Re-tapping the item that is already up never restarts it: the reader asked to hear it, not to begin
         // again — and an item that had finished starts over (V1's `prepareCompletedItemForReplay`).
-        if state.item?.cardID == item.cardID, player.currentItem != nil {
+        if !retrying, state.item?.cardID == item.cardID, player.currentItem != nil {
             if completedCardID == item.cardID { prepareCompletedItemForReplay() }
             activateSession()
             player.play()
@@ -296,6 +304,15 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
         // Leaving one episode for another keeps where the reader was: the periodic save is up to five seconds
         // behind, and a switch must not throw those away (V1's `stop()` saved before it tore the player down).
         savePosition()
+        install(item, asset: asset, retrying: retrying)
+    }
+
+    /// Hands the player one item and installs its observations. A retry preserves the stated reason and the
+    /// position, and leaves `isPlaying` to the player's own reports.
+    private func install(_ item: ReaderMediaItem, asset: AVURLAsset, retrying: Bool) {
+        let startAt = retrying ? state.position : 0
+        let statedReason = retrying ? state.error : nil
+        let statedDuration = retrying ? state.duration : nil
         generation &+= 1
         let generation = self.generation
         interactionRevision &+= 1
@@ -309,14 +326,14 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
         let playerItem = AVPlayerItem(asset: asset)
         player.replaceCurrentItem(with: playerItem)
         observeEnd(of: playerItem, generation: generation)
-        state = ReaderMediaState(item: item, isPlaying: false, position: 0, duration: nil, error: nil)
+        state = ReaderMediaState(item: item, isPlaying: false, position: startAt,
+            duration: statedDuration, error: statedReason)
         failureObservation = playerItem.observe(\.status, options: [.new]) { [weak self] observed, _ in
             guard observed.status == .failed else { return }
             Task { @MainActor [weak self] in
                 // An item the reader has already left cannot report a failure into the one they are on.
                 guard let self, self.generation == generation else { return }
-                self.state = self.state.failing(observed.error?.localizedDescription
-                    ?? String(localized: "Não foi possível tocar esta mídia"))
+                self.state = self.state.failing(observed.error?.localizedDescription ?? Self.playbackRefusal)
             }
         }
         // V1 read the playing state from `timeControlStatus`: a player that is waiting to play is not playing.
@@ -332,10 +349,19 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
             }
         }
         player.play()
-        state = state.reporting(position: 0, duration: state.duration, isPlaying: true)
-        updateNowPlaying(force: true)
-        restorePositionIfNeeded(for: item, generation: generation)
+        if retrying {
+            // Nothing was proven yet: `setPlaying(true)` clears the reason when the player really reports
+            // playback, or a new failure states it again.
+            updateNowPlaying(force: true)
+        } else {
+            state = state.reporting(position: 0, duration: state.duration, isPlaying: true)
+            updateNowPlaying(force: true)
+            restorePositionIfNeeded(for: item, generation: generation)
+        }
     }
+
+    /// What the reader is told when the player cannot take the item, in the interface's own words.
+    static let playbackRefusal = String(localized: "Não foi possível tocar esta mídia")
 
     private func setPlaying(_ playing: Bool) {
         // An item that reached its end stays paused at its end until the reader does something — resuming it or
@@ -356,9 +382,16 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
     }
 
     func resume() async {
-        guard state.item != nil, player.currentItem != nil else { return }
+        guard let item = state.item else { return }
         activateSession()
-        if let cardID = state.item?.cardID, completedCardID == cardID { prepareCompletedItemForReplay() }
+        // A refusal keeps the occurrence with no player item installed. The bar's play — or the same card's
+        // second tap — retries it explicitly; returning early here is what made the bar's own button dead.
+        guard player.currentItem != nil else {
+            do { try await play(item, retrying: true) }
+            catch { await reportUnavailable(state.error ?? Self.playbackRefusal, item: item) }
+            return
+        }
+        if completedCardID == item.cardID { prepareCompletedItemForReplay() }
         player.play()
         state = state.reporting(position: state.position, duration: state.duration, isPlaying: true)
         updateNowPlaying(force: true)
@@ -367,8 +400,9 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
     /// The lock screen's own toggle: play when paused, pause when playing.
     func togglePlayPause() async {
         // A play order for an item that was never chosen has nothing to resume; V1's `guard player != nil`
-        // refused it the same way.
-        guard state.item != nil, player.currentItem != nil else { return }
+        // refused it the same way. A refused item keeps its reference with no player item installed, and is
+        // retried by `resume()` rather than ignored.
+        guard state.item != nil else { return }
         if state.isPlaying { await pause() } else { await resume() }
     }
 
@@ -409,7 +443,16 @@ final class MediaPlaybackAdapter: ReaderMediaPlaying {
         updateNowPlaying(force: true)
     }
 
-    func reportUnavailable(_ message: String) async {
+    func reportUnavailable(_ message: String, item: ReaderMediaItem?) async {
+        // Nothing installed: the refusal itself is the state. When the surface that asked for playback had an
+        // item, the bar keeps its reference — the card that could not play — so the reason has something to
+        // name and `FullPlayerView` stays reachable (F15 R4). With no payload at all, only the reason is kept;
+        // the host states it in a toast, because there is nothing to attach a bar to.
+        guard player.currentItem != nil else {
+            state = ReaderMediaState(item: item, isPlaying: false, position: 0, duration: nil, error: message)
+            updateNowPlaying(force: true)
+            return
+        }
         player.pause()
         state = state.failing(message)
         updateNowPlaying(force: true)

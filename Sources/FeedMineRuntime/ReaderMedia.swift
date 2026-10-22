@@ -75,7 +75,10 @@ public protocol ReaderMediaPlaying: AnyObject {
     func skip(by seconds: TimeInterval) async
     func seek(to seconds: TimeInterval) async
     func stop() async
-    /// The coordinator's own refusal (a card with nothing to play, a missing occurrence) is stated *by the
-    /// player*, which owns the state — V1's `lastPlaybackError` was the same fact in the same place.
-    func reportUnavailable(_ message: String) async
+    /// The coordinator's own refusal (a card with nothing to play, a missing occurrence, a payload the player
+    /// refused) is stated *by the player*, which owns the state — V1's `lastPlaybackError` was the same fact in
+    /// the same place. `item` is the occurrence that could not play: F15 R4 keeps its reference so the surface
+    /// can name what failed instead of showing a reason with nothing attached. Nil when the card carries no
+    /// playable payload at all.
+    func reportUnavailable(_ message: String, item: ReaderMediaItem?) async
 }

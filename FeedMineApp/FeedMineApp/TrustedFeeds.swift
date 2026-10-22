@@ -304,10 +304,24 @@ enum DevelopmentLocalFeeds {
         case off
         /// Cada item declara `cardImageURL` como o seu visual.
         case image
+        /// Cada item declara um episódio de áudio cujo endereço não resolve. É a forma que exercita a recusa de
+        /// reprodução sem rede: o card é áudio de verdade (selo, identidade, `openMedia`), e o player descobre que
+        /// não pode tocá-lo. Não é prova de mídia do catálogo (D11): é a prova da superfície de recusa.
+        case audio
 
         static var current: MediaShape {
             MediaShape(rawValue: ProcessInfo.processInfo.environment["FEEDMINE_FIXTURE_MEDIA"] ?? "") ?? .off
         }
+    }
+
+    /// O episódio da forma `audio`: nome público válido para o localizador (passa a política de host), mas que
+    /// nenhum resolvedor conhece — `.invalid` é reservado e a falha de DNS é imediata e local à execução.
+    static let unplayableAudioURL = "https://fixture.invalid/feedmine/episode.mp3"
+
+    /// O elemento de reprodução da forma `audio` (vazio nas demais).
+    static var playbackElement: String {
+        guard mediaShape == .audio else { return "" }
+        return "<enclosure url=\"\(unplayableAudioURL)\" type=\"audio/mpeg\" length=\"64\"/>"
     }
 
     static var mediaShape: MediaShape { MediaShape.current }
@@ -428,6 +442,7 @@ enum DevelopmentLocalFeeds {
               <guid>\(url.absoluteString)#\(index + 1)</guid>
               \(summaryElement(index, feedTitle))
               \(DevelopmentLocalFeeds.imageElement)
+              \(DevelopmentLocalFeeds.playbackElement)
               <pubDate>Sun, 05 Oct 2026 12:00:00 GMT</pubDate>
             </item>
             """

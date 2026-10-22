@@ -339,12 +339,44 @@ final class PlaybackTests: XCTestCase {
         adapter.positions = Positions()
         defer { adapter.teardown() }
         try await adapter.play(try episode())
-        await adapter.reportUnavailable("Sem nada para tocar")
+        await adapter.reportUnavailable("Sem nada para tocar", item: nil)
         let error = try XCTUnwrap(adapter.state.error)
 
         try await Task.sleep(for: .milliseconds(800))
         XCTAssertEqual(adapter.state.error, error, "the reason the reader was given must stay stated")
         XCTAssertFalse(adapter.state.isPlaying)
+    }
+
+    /// F15 R4: a first play that cannot happen keeps the occurrence and states the reason. The bar is gated on
+    /// `state.item != nil`, so the reference is what makes the refusal visible at all; nothing is claimed playing.
+    func testAFirstRefusalKeepsTheOccurrenceAndTheReason() async throws {
+        let adapter = MediaPlaybackAdapter()
+        adapter.positions = Positions()
+        defer { adapter.teardown() }
+        let item = try episode(title: "Episódio indisponível")
+        let reason = "Não foi possível tocar esta mídia"
+
+        await adapter.reportUnavailable(reason, item: item)
+        XCTAssertEqual(adapter.state.item, item, "the refused occurrence stays the bar's reference")
+        XCTAssertEqual(adapter.state.error, reason)
+        XCTAssertFalse(adapter.state.isPlaying)
+        XCTAssertNil(adapter.currentPlayerItem, "nothing was installed for a payload the player refused")
+    }
+
+    /// The bar's own play button after a refusal must retry instead of returning early: the refused occurrence
+    /// has no player item, so `resume()` has to hand it to the player again rather than do nothing.
+    func testResumingAfterARefusalRetriesTheOccurrenceInsteadOfDoingNothing() async throws {
+        let adapter = MediaPlaybackAdapter()
+        adapter.positions = Positions()
+        defer { adapter.teardown() }
+        let item = try episode(title: "Episódio recuperável")
+        await adapter.reportUnavailable("Não foi possível tocar esta mídia", item: item)
+
+        await adapter.resume()
+        XCTAssertNotNil(adapter.currentPlayerItem,
+            "the resume after a refusal creates the item again; the bar's play is not inert")
+        let playing = await wait { adapter.state.isPlaying && adapter.state.error == nil }
+        XCTAssertTrue(playing, "the retry plays, and only then clears the reason; state: \(adapter.state)")
     }
 
     /// Teardown takes the item and the lock screen's dictionary with it: the app's player outlives every surface,

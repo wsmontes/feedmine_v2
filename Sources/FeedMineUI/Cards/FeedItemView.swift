@@ -63,7 +63,9 @@ public struct FeedItemView: View, Equatable {
                 // its own (its menu rides on the `contextMenu` below, a different gesture from this tap). A button
                 // was tried first and was the wrong tool: measured, it widened the card past the readable column
                 // (730.25 pt against 704) in the iPad's landscape pass.
-                FeedItemRowView(card: card, appearance: appearance, isRead: isRead)
+                FeedItemRowView(card: card, appearance: appearance, isRead: isRead,
+                    onPlay: card.playsAudio && availableActions.contains(.openMedia)
+                        ? { emit(.openMedia) } : nil)
                     .contentShape(Rectangle())
                     .onTapGesture { emit(.open) }
                     .contextMenu { rowContextMenu }
