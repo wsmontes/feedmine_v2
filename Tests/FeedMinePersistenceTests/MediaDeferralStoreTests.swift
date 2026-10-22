@@ -158,7 +158,8 @@ final class MediaDeferralStoreTests: XCTestCase {
     }
 
     /// The never-shipped candidate build registered the table under the v1 identifier and never added the columns.
-    /// Reopening that shape must keep its rows: v2 sees the table, skips creation and backfill, and changes nothing.
+    /// Reopening that shape must keep its rows: v2 sees the table, adds the retired columns additively (so every
+    /// upgraded database exposes one schema), finds no stored column deferral to copy, and changes no row.
     func testExistingTableShapeKeepsRowsWhenLegacyColumnsNeverExisted() throws {
         let location = location(), edition = FeedEditionID()
         let db = try RuntimeDatabase(location: location)

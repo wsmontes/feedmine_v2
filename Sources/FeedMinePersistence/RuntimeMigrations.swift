@@ -647,8 +647,9 @@ public enum RuntimeMigrations {
         // history, no longer read by the store.
         //
         // Compatibility: one never-shipped candidate build registered a table under the V1 identifier. The schema is
-        // therefore detected instead of trusted: a database from that build has no V1 columns, so the backfill is
-        // skipped and its existing table and rows are left untouched.
+        // therefore detected instead of trusted: that database has no V1 columns, so V2 adds the same nullable
+        // columns here (additive, v1's bookkeeping untouched). Every upgraded database then exposes one schema; the
+        // columns remain retired state and the store does not read or write them.
         migrator.registerMigration("selection-supply-media-deferral-v2") { db in
             if try db.tableExists("selection_supply_media_deferrals") == false {
                 try db.execute(sql: """
@@ -665,10 +666,11 @@ public enum RuntimeMigrations {
                     ON selection_supply_media_deferrals (edition_id, turn_at, origin_record_id)
                     """)
             }
-            let hasLegacyColumns = try db.columns(in: "selection_supply").contains {
-                $0.name == "media_deferred_edition_id"
+            let present = Set(try db.columns(in: "selection_supply").map(\.name))
+            for (name, type) in [("media_deferred_edition_id", "TEXT"), ("media_deferred_at", "REAL"),
+                ("media_offered_at", "REAL")] where !present.contains(name) {
+                try db.execute(sql: "ALTER TABLE selection_supply ADD COLUMN \(name) \(type)")
             }
-            guard hasLegacyColumns else { return }
             try db.execute(sql: """
                 INSERT OR IGNORE INTO selection_supply_media_deferrals
                     (edition_id, origin_record_id, origin_revision_id, turn_at)

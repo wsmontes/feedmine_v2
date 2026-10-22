@@ -298,6 +298,18 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(durable.map(\.originRevisionID), [revision],
             "the process-equivalent reread finds the skip on disk before any media work")
 
+        // Push the deferred story out of the structural window (capacity 8): nine newer stories sort ahead of it.
+        // Without this, the journal could contain the revision merely because the walk re-examined it, and the test
+        // would not prove the reoffer wiring.
+        for n in 0..<9 {
+            _ = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source,
+                observedAt: 10 + Double(n))
+        }
+        let structural = try ContentStore(database: f.database)
+            .candidateWindow(sourceID: nil, after: nil, examinedCapacity: 8).records
+        XCTAssertFalse(structural.map(\.originRevisionID).contains(revision),
+            "the deferred story is outside the structural window this opportunity examines")
+
         // A later opportunity must prepare that persisted revision through the production driver. The journal is
         // the only readiness source here; readiness is not written by hand until after this assertion.
         requested.reset()
@@ -358,11 +370,11 @@ final class FeedRunwayDriverTests: XCTestCase {
 
     /// P02 setup: a local occurrence admitted after the first drain, with no media candidate of its own.
     nonisolated private static func admitLateLocal(_ database: RuntimeDatabase, target: AcquisitionTargetID,
-        source: SourceID) throws -> OriginRevisionID {
+        source: SourceID, observedAt: TimeInterval = 4) throws -> OriginRevisionID {
         let observation = AcquisitionObservation(
             objectIdentity: .init(connectorKind: .syndication, namespace: "late", value: UUID().uuidString, role: .object),
             versionIdentity: nil, precedence: .makeCurrent, availability: .available, headline: "late", summary: nil,
-            bodyText: nil, authoredAt: nil, modifiedAt: nil, observedAt: Date(timeIntervalSince1970: 4),
+            bodyText: nil, authoredAt: nil, modifiedAt: nil, observedAt: Date(timeIntervalSince1970: observedAt),
             language: nil, primaryLink: nil, searchProjection: nil, providerID: nil,
             memberships: [.init(sourceID: source, kind: .direct)], mediaCandidates: [])!
         _ = try AdmissionPolicy(database: database).admit(.init(targetID: target, targetGeneration: 1,
