@@ -76,6 +76,31 @@ final class FeedSessionWarmRestoreTests: XCTestCase {
         }
     }
 
+    /// Warm start and cold restore share one projection: the relative point a durable checkpoint holds is
+    /// carried by the snapshot the host installs before its first frame.
+    func testWarmStartCarriesTheRelativePointForTheExactAnchor() async throws {
+        try await withLocation { location in
+            let edition = WarmPresentationFixture.edition()
+            let cards = try (0..<6).map { _ in try WarmPresentationFixture.card(layout: .textOnly) }
+            try persist(edition: edition, cards: cards, location: location)
+            let database = try RuntimeDatabase(location: location)
+            let progress = try XCTUnwrap(CardTopOffset(topDelta: -120, height: 500))
+            try PublicationHistory(database: database).saveCursor(
+                SessionCursor(editionID: edition.id,
+                    anchor: FeedWindowAnchor(cardID: cards[4].id, placement: .top), progress: progress),
+                updatedAt: Date(timeIntervalSince1970: 301))
+            let expected = PresentationAnchor(cardID: cards[4].id, placement: .top, progress: progress)
+            let warm = try XCTUnwrap(FeedSession.warmStart(
+                publicationHistory: PublicationHistory(database: database), imageDecoder: nil,
+                bounds: .init(backwardCapacity: 4, forwardCapacity: 1)))
+            XCTAssertEqual(warm.snapshot.restoredPosition, expected)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database), warmStart: warm)
+            let current = await session.currentPresentation()
+            XCTAssertEqual(current?.restoredPosition, expected,
+                "o warm start instala o mesmo ponto relativo que a restauração fria")
+        }
+    }
+
     /// A composition without a decoder can never produce the pixels an image card was published with. The warm
     /// restore excludes those cards instead of presenting the occurrence as a text card; with nothing left to
     /// present there is no snapshot, and the durable checkpoint is left untouched.
