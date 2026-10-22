@@ -28,20 +28,26 @@ final class ReadingSurfaceUITests: XCTestCase {
     /// X. The fallback is the X's own frame, so it follows the device's geometry instead of a screen constant.
     private func tapSafariClose(_ app: XCUIApplication, _ close: XCUIElement?) {
         guard let close else { return }
-        // The frame is read while Safari is still up: after its close is tapped the service element is gone and
-        // a late frame query is an XCTest error, not a measurement.
+        // The remote service element's activation point is not where its X is drawn (measured: the frame's mid
+        // matches the visual X, the synthesized tap point does not). One tap at the frame centre is the human
+        // gesture; there is no second tap, because a fallback could land on the app already uncovered.
         let frame = close.frame
-        close.tap()
-        guard app.buttons["URL"].exists else { return }
+        let point = CGPoint(x: frame.midX, y: frame.midY)
+        let path = XCTAttachment(string: "frame=\(frame) point=\(point) source=SafariViewService element frame")
+        path.name = "safari-close-path"
+        path.lifetime = .keepAlways
+        add(path)
         guard frame.width > 0, frame.height > 0 else {
-            let tree = XCTAttachment(string: "close-frame=\(frame)")
-            tree.name = "safari-close-frame"
-            tree.lifetime = .keepAlways
-            add(tree)
+            XCTFail("Safari's close control has no frame to tap")
             return
         }
         app.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
+            .withOffset(CGVector(dx: point.x, dy: point.y)).tap()
+        // The address bar stays while the dismissal animates; the effect is observed, not assumed.
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, app.buttons["URL"].exists {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
     }
 
     /// The site reader is `SFSafariViewController`, and its dismissal control is labelled in the device's own
@@ -93,11 +99,33 @@ final class ReadingSurfaceUITests: XCTestCase {
         return app
     }
 
+    /// A card the reader can really act on: its opening control is hittable and the card is inside the window.
+    /// No fixed top/bottom margins: on the iPhone 14 Plus the first card's top is 107 pt and the second sits at
+    /// 550–896 pt of a 926 pt screen; both are real, and a margin constant would call the feed empty.
     private func visibleCard(_ app: XCUIApplication) -> XCUIElement? {
         let window = app.windows.firstMatch.frame
         return app.descendants(matching: .any).matching(Self.cardIdentifier).allElementsBoundByIndex
-            .filter { $0.exists && $0.frame.height > 40 }
-            .first { $0.frame.minY > window.minY + 120 && $0.frame.maxY < window.maxY - 80 }
+            .filter { $0.exists && $0.frame.height > 40 && $0.frame.intersects(window) }
+            .first { card in
+                let control = openControl(card)
+                return control.exists && control.isHittable
+            }
+    }
+
+    private func card(_ app: XCUIApplication, identity: String) -> XCUIElement? {
+        let element = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", identity)).firstMatch
+        return element.exists ? element : nil
+    }
+
+    private func waitForCard(_ app: XCUIApplication, identity: String,
+        within seconds: TimeInterval) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if let card = card(app, identity: identity) { return card }
+            Thread.sleep(forTimeInterval: 1.0)
+        }
+        return card(app, identity: identity)
     }
 
     /// The card's own *open* control. It carries `card.open`: measured on the device
@@ -106,7 +134,8 @@ final class ReadingSurfaceUITests: XCTestCase {
     /// identifier") — and the bookmark comes first, so guessing wrong saved the article instead of opening it. The
     /// compact row answers the same tap with a gesture and has no control of its own, hence the card itself.
     private func openControl(_ card: XCUIElement) -> XCUIElement {
-        let control = card.buttons["card.open"]
+        // A card can expose more than one element matching the query; one is the control the reader taps.
+        let control = card.buttons["card.open"].firstMatch
         return control.exists ? control : card
     }
 
@@ -354,6 +383,37 @@ final class ReadingSurfaceUITests: XCTestCase {
         attach(app, "reader-control-press-spanning-renders")
     }
 
+    /// F15 R3: playback is the composition's, so passing through a modal Safari must not pause or restart it.
+    /// The simulated episode plays under the site; after the site closes, the bar is the live one and its
+    /// position has advanced.
+    func testPlaybackContinuesAcrossTheSite() throws {
+        let app = launched(shape: "body", media: true)
+        defer { app.terminate() }
+        guard let (identity, _) = openTheFirstCard(app) else { return XCTFail("no card to open") }
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 25))
+        let progress = byIdentifier(app, "mini-player-progress")
+        let before = progress.value as? String
+        XCTAssertNotNil(before, "the bar reports its position while playing")
+
+        byIdentifier(app, "reading.open-site").tap()
+        guard let close = siteReaderClose(app, timeout: 20) else {
+            return XCTFail("the site's close control is reachable")
+        }
+        tapSafariClose(app, close)
+        XCTAssertFalse(app.buttons["URL"].exists, "Safari's chrome is gone")
+        guard let returned = waitForCard(app, identity: identity, within: 20) else {
+            return XCTFail("the feed returns with the same card")
+        }
+        XCTAssertTrue(openControl(returned).isHittable)
+        let toggle = app.buttons["mini-player-toggle"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        XCTAssertEqual(toggle.label, "Pausar",
+            "the episode is still playing after passing through the site")
+        XCTAssertNotEqual(progress.value as? String, before,
+            "and its position advanced while Safari was up")
+        attach(app, "reader-playback-through-site")
+    }
+
     func testTheLocalReaderHonoursALargeAccessibilityTextSize() throws {
         let app = launched(shape: "body", largeText: true)
         guard openTheFirstCard(app) != nil else { return XCTFail("no card to open") }
@@ -406,7 +466,7 @@ final class ReadingSurfaceUITests: XCTestCase {
     /// to, and none stacked underneath it either.
     func testOpeningTheSiteFromTheLocalReaderIsAnExplicitRequestAndComesBackToTheFeed() throws {
         let app = launched(shape: "body")
-        guard openTheFirstCard(app) != nil else { return XCTFail("no card to open") }
+        guard let (identity, frame) = openTheFirstCard(app) else { return XCTFail("no card to open") }
         XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 20))
 
         byIdentifier(app, "reading.open-site").tap()
@@ -424,7 +484,13 @@ final class ReadingSurfaceUITests: XCTestCase {
         tapSafariClose(app, siteReaderClose(app))
         XCTAssertTrue(byIdentifier(app, "reading.body").waitForNonExistence(timeout: 20),
             "closing the site ends the reader: the text does not come back as a surface of its own")
-        XCTAssertTrue(waitForAVisibleCard(app, within: 20), "and the feed the reader was opened from is back")
+        XCTAssertFalse(app.buttons["URL"].exists, "Safari's chrome is gone, not merely covered")
+        guard let returned = waitForCard(app, identity: identity, within: 20) else {
+            return XCTFail("the card the reader was opened from is back")
+        }
+        XCTAssertEqual(returned.frame.minY, frame.minY, accuracy: 1.0,
+            "the same card returns at the same position")
+        XCTAssertTrue(openControl(returned).isHittable, "and its own open control is actionable")
         attach(app, "reading-back-in-the-feed")
     }
 
@@ -442,6 +508,9 @@ final class ReadingSurfaceUITests: XCTestCase {
     //     -destination 'platform=iOS Simulator,id=<sim>' -derivedDataPath <abs> \
     //     -only-testing:FeedMineUITests/ReadingSurfaceUITests/testLiveReaderControlsOnTheRealCatalogueAndNetwork
     func testLiveReaderControlsOnTheRealCatalogueAndNetwork() throws {
+        guard ProcessInfo.processInfo.environment["FEEDMINE_LIVE_SURFACES"] == "1" else {
+            throw XCTSkip("live surfaces proof requires FEEDMINE_LIVE_SURFACES=1")
+        }
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launch()
@@ -513,7 +582,10 @@ final class ReadingSurfaceUITests: XCTestCase {
         byIdentifier(app, "reading.close").tap()
         XCTAssertTrue(byIdentifier(app, "reading.body").waitForNonExistence(timeout: 30),
             "close returns to the feed")
-        XCTAssertTrue(waitForAVisibleCard(app, within: 60), "the feed is back")
+        guard let firstReturned = waitForCard(app, identity: first.identifier, within: 60) else {
+            return XCTFail("the feed returns with the same card")
+        }
+        XCTAssertTrue(openControl(firstReturned).isHittable, "and the card is actionable")
 
         // 2. Two open/close cycles while the live session is acquiring.
         for cycle in 1...2 {
@@ -528,6 +600,7 @@ final class ReadingSurfaceUITests: XCTestCase {
 
         // 3. The explicit site request and Safari's own control on the real HTTPS page.
         guard let card = codingHorrorCard(within: 90) else { return XCTFail("no card for the site path") }
+        let siteCardIdentity = card.identifier
         openCard(card)
         XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 60))
         byIdentifier(app, "reading.open-site").tap()
@@ -545,7 +618,11 @@ final class ReadingSurfaceUITests: XCTestCase {
         XCTAssertTrue(address.exists || app.webViews.firstMatch.exists,
             "the real page is in the app's reader")
         tapSafariClose(app, close)
-        XCTAssertTrue(waitForAVisibleCard(app, within: 60), "Safari's close returns to the feed")
+        XCTAssertFalse(app.buttons["URL"].exists, "Safari's chrome is gone, not merely covered")
+        guard let siteReturned = waitForCard(app, identity: siteCardIdentity, within: 60) else {
+            return XCTFail("Safari's close returns to the same card")
+        }
+        XCTAssertTrue(openControl(siteReturned).isHittable, "and the card the reader left is actionable")
         attach(app, "live-back-in-feed")
     }
 }

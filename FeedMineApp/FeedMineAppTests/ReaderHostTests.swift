@@ -84,7 +84,10 @@ final class ReaderHostTests: XCTestCase {
         _ sites: SiteRecorder = SiteRecorder()) -> Host.Coordinator {
         Host.Coordinator(platform: platform, reader: reader(recorder),
             onFinish: { recorder.finishes += 1 },
-            raiseSite: { safari, url, presenter in sites.raised.append((safari, url, presenter)) })
+            raiseSite: { safari, url, presenter, done in
+                sites.raised.append((safari, url, presenter))
+                done(true)
+            })
     }
 
     /// The host presents on its own turn of the main actor, so a run that has just asked for a page waits for the
@@ -201,6 +204,98 @@ final class ReaderHostTests: XCTestCase {
         XCTAssertEqual(platform.attempts.count, 1, "and no second hosting presentation was made")
     }
 
+    /// A site presentation the platform refuses must not strand `.site`: the next attempt is made on the
+    /// platform's own report, mirroring the reader's presentation, instead of `open-site` going inert for the
+    /// life of the reader.
+    func testARefusedSitePresentationIsAttemptedAgain() async {
+        let recorder = Recorder()
+        let sites = SiteRecorder()
+        var attempts = 0
+        let coordinator = Host.Coordinator(platform: PlatformDouble(), reader: reader(recorder),
+            onFinish: { recorder.finishes += 1 },
+            raiseSite: { safari, url, presenter, done in
+                attempts += 1
+                sites.raised.append((safari, url, presenter))
+                done(attempts > 1)
+            })
+
+        coordinator.show(.site(Self.url))
+        await waitUntil { attempts >= 2 }
+
+        XCTAssertGreaterThanOrEqual(attempts, 2, "a refused site presentation is attempted again")
+        XCTAssertEqual(sites.raised.last?.url, Self.url)
+    }
+
+    /// A site the platform refuses every time must stop at the reader's own attempt bound, leaving the state
+    /// clear so a later open-site can try again — the retry budget is never reset by the retry itself.
+    func testAPersistentlyRefusedSitePresentationStopsAtTheBound() async {
+        var attempts = 0
+        let coordinator = Host.Coordinator(platform: PlatformDouble(), reader: reader(Recorder()),
+            onFinish: {},
+            raiseSite: { _, _, _, done in
+                attempts += 1
+                done(false)
+            })
+
+        coordinator.show(.site(Self.url))
+        // The host calls show(.site) on every app render; those renders must not open another budget while the
+        // chain is pending.
+        for _ in 0..<30 {
+            coordinator.show(.site(Self.url))
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        await waitUntil({ attempts >= 20 }, seconds: 3)
+        let settled = attempts
+        try? await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertGreaterThanOrEqual(settled, 2, "the refusal was retried")
+        XCTAssertLessThanOrEqual(settled, 20, "and the retries are bounded")
+        XCTAssertEqual(attempts, settled, "no retry survives the bound")
+        coordinator.show(.site(Self.url))
+        try? await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(attempts, settled, "a render for the same refused request does not restart the budget")
+        coordinator.show(nil)
+        coordinator.show(.site(Self.url))
+        await waitUntil { attempts > settled }
+        XCTAssertGreaterThan(attempts, settled, "closing and reopening the reader starts a fresh attempt")
+    }
+
+    /// Closing the reader while a refused site attempt is waiting for its retry must cancel that retry: otherwise
+    /// Safari appears over the feed with no reader state to return to.
+    func testAClosedReaderCancelsAPendingSiteRetry() async {
+        let recorder = Recorder()
+        var attempts = 0
+        let coordinator = Host.Coordinator(platform: PlatformDouble(), reader: reader(recorder),
+            onFinish: { recorder.finishes += 1 },
+            raiseSite: { _, _, _, done in
+                attempts += 1
+                done(false)
+            })
+
+        coordinator.show(.site(Self.url))
+        await waitUntil { attempts == 1 }
+        coordinator.show(nil)
+        try? await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertEqual(attempts, 1, "a retry for a closed reader is not attempted")
+    }
+
+    /// Apple's delegate contract dismisses the controller after the delegate returns. The reader's state must be
+    /// cleared once, in the delegate, not chained to a redundant dismissal's completion (which UIKit does not owe
+    /// for a dismissal it is already making).
+    func testSafariFinishingEndsTheReaderOnce() async {
+        let recorder = Recorder()
+        let sites = SiteRecorder()
+        let coordinator = coordinator(PlatformDouble(), recorder, sites)
+        coordinator.show(.site(Self.url))
+        await waitUntil { sites.raised.count == 1 }
+        guard let safari = sites.raised.first?.safari else { return XCTFail("the site was raised") }
+
+        coordinator.safariViewControllerDidFinish(safari)
+
+        XCTAssertEqual(recorder.finishes, 1, "Safari's finish ends the reader once")
+    }
+
     /// Only a surface that really has the reader is asked to take it down. A controller whose presentation was
     /// refused reports no `presentingViewController`; the surface the attempt was made from is the fallback only
     /// while that surface really has this reader, so a surface with something else up is left alone.
@@ -295,6 +390,26 @@ final class NoticeWindowTests: XCTestCase {
         await waitUntil { attempts == 2 }
         XCTAssertEqual(attempts, 2, "a second notice is attempted after the refused one")
         XCTAssertTrue(alertLevelWindows().isEmpty, "and its refusal is taken down too")
+    }
+
+    /// The only gesture that ends the notice: the action the alert's Entendi runs is the same route tested here.
+    /// It must take the window down and record exactly one acknowledgement.
+    func testTheAcknowledgementEndsTheNoticeAndRecordsIt() async {
+        Notice.dismiss()
+        let original = Notice.presentAlert
+        defer {
+            Notice.presentAlert = original
+            Notice.dismiss()
+        }
+        Notice.presentAlert = { _, _, done in done(true) }
+        var acknowledged = 0
+
+        Notice.present(title: "Da versão anterior", message: "Importados") { acknowledged += 1 }
+        await waitUntil { !self.alertLevelWindows().isEmpty }
+        Notice.acknowledge()
+
+        XCTAssertEqual(acknowledged, 1, "the notice's own route records the acknowledgement once")
+        XCTAssertTrue(alertLevelWindows().isEmpty, "and the notice window is gone")
     }
 
     /// The composition on the platform in use: the alert is really up in the notice's own window, and that window

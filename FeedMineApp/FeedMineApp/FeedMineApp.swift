@@ -729,6 +729,9 @@ struct FeedMineApp: App {
 @MainActor
 enum LegacyUpgradeNoticePresenter {
     private static var current: NoticeWindow?
+    /// What the reader's acknowledgement owes: recorded once, cleared with the window. The alert's only action
+    /// and the test both go through `acknowledge()`, so the end of the notice is one route.
+    private static var pendingAcknowledge: (() -> Void)?
 
     /// The one platform act: raising the alert in the notice's own window. UIKit raises no error and calls no
     /// completion for a presentation it refuses, so the act reports its outcome on the next turn of the runloop —
@@ -749,12 +752,9 @@ enum LegacyUpgradeNoticePresenter {
         else { return }
         let window = NoticeWindow(windowScene: scene)
         window.windowLevel = .alert + 1
+        pendingAcknowledge = onAcknowledge
         let host = NoticeHost(
-            onAcknowledge: { [weak window] in
-                window?.isHidden = true
-                current = nil
-                onAcknowledge()
-            },
+            onAcknowledge: { acknowledge() },
             onRefusal: { [weak window] in
                 // A window at alert level that never raised its alert is a transparent full-screen shell: it takes
                 // every touch in the app, the reader's own controls included. If the alert could not be raised the
@@ -762,6 +762,7 @@ enum LegacyUpgradeNoticePresenter {
                 // receipt — so it stays owed and is offered again on the next launch.
                 window?.isHidden = true
                 current = nil
+                pendingAcknowledge = nil
             })
         window.rootViewController = host
         window.frame = scene.coordinateSpace.bounds
@@ -775,6 +776,17 @@ enum LegacyUpgradeNoticePresenter {
     static func dismiss() {
         current?.isHidden = true
         current = nil
+        pendingAcknowledge = nil
+    }
+
+    /// The reader's own acknowledgement: take the notice down and record what it owed. This is the alert's only
+    /// action and the test's route, so "Entendi ends the notice" is exercised without a second implementation.
+    static func acknowledge() {
+        current?.isHidden = true
+        current = nil
+        let owed = pendingAcknowledge
+        pendingAcknowledge = nil
+        owed?()
     }
 
     /// The notice is informational: its alert accepts clicks while this window is not key (measured), and the
@@ -932,20 +944,33 @@ struct ReaderHost: UIViewControllerRepresentable {
             /// close control reports back — the product's "site replaces the text; closing returns to the feed".
             private var site: SFSafariViewController?
             private var siteURL: URL?
-            /// The site is on its way out. A host render while Safari dismisses must not raise it again: the
-            /// app state still says `.site` until the dismissal completes and `onFinish` pops it.
-            private var siteFinishing = false
+            /// A site presentation attempt is in flight; one at a time, whatever re-renders.
+            private var siteRaising = false
+            /// The site the app state asks for. A retry only belongs to this request; closing the reader or
+            /// changing page invalidates it.
+            private var requestedSite: URL?
+            /// The site whose attempts were exhausted. It blocks render-driven retries for that same request;
+            /// clearing the request (close, local page, a different site) clears it.
+            private var refusedSite: URL?
+            /// One site presentation chain at a time: a render during an attempt or its pending retry must not
+            /// start a second budget. Only the chain itself clears this (success, exhaustion, teardown).
+            private var sitePending = false
+            /// Bumped by every teardown: a pending retry that captured an older generation is dropped.
+            private var siteGeneration = 0
             /// The one platform act that raises the site page. It is a seam for the same reason as `Presentation`:
             /// a test can see the modal presentation and its presenter without a Safari view service. Production
             /// presents with the platform's own modal presentation, as Apple requires.
-            typealias SiteAct = (SFSafariViewController, URL, UIViewController) -> Void
+            typealias SiteAct = (SFSafariViewController, URL, UIViewController,
+                @escaping (Bool) -> Void) -> Void
             private let raiseSite: SiteAct
 
             init(platform: Presentation,
                 reader: @escaping (ReaderPage, @escaping () -> Void) -> AnyView,
                 onFinish: @escaping () -> Void,
-                raiseSite: @escaping SiteAct = { safari, _, presenter in
+                raiseSite: @escaping SiteAct = { safari, _, presenter, done in
                     presenter.present(safari, animated: true)
+                    // A refused presentation leaves no error; where the controller ended up is its account.
+                    done(presenter.presentedViewController === safari)
                 }) {
                 self.platform = platform
                 self.reader = reader
@@ -972,8 +997,11 @@ struct ReaderHost: UIViewControllerRepresentable {
                 }
                 switch page {
                 case .site(let url):
+                    requestedSite = url
                     showSite(url)
                 case .local:
+                    requestedSite = nil
+                    refusedSite = nil
                     showLocal(page)
                 }
             }
@@ -1013,9 +1041,12 @@ struct ReaderHost: UIViewControllerRepresentable {
             /// controller and the text page is taken down while it is up — the site replaces the text. Its own
             /// close control reports through the delegate; finishing ends the reader and returns to the surface
             /// that opened it. Playback lives in the composition, so audio and system controls continue.
-            private func showSite(_ url: URL) {
-                guard !siteFinishing else { return }
+            private func showSite(_ url: URL, tries: Int? = nil, retry: Bool = false) {
+                let tries = tries ?? Self.presentationAttempts
+                if refusedSite != url { refusedSite = nil }
+                guard refusedSite != url else { return }
                 if site != nil, siteURL == url { return }
+                if !retry, sitePending { return }
                 dismissSite()
                 // Presenting from the reader that is already up keeps the two presentations sequential: UIKit
                 // refuses a present made while a dismissal is in flight, so the text page is not taken down
@@ -1030,17 +1061,58 @@ struct ReaderHost: UIViewControllerRepresentable {
                 controller.preferredControlTintColor = .tintColor
                 site = controller
                 siteURL = url
-                raiseSite(controller, url, presenter)
+                sitePending = true
+                raise(controller, url, presenter, tries: tries)
+            }
+
+            /// The site's presentation is made on the platform's own turn and reports whether it really went up.
+            /// A refusal raises no error and calls no completion, so a page the chrome asks for is attempted
+            /// again — bounded, on the platform's own report — instead of being stranded behind a stale `site`.
+            private func raise(_ controller: SFSafariViewController, _ url: URL,
+                _ presenter: UIViewController, tries: Int) {
+                guard tries > 0, !siteRaising, site === controller, siteURL == url else { return }
+                siteRaising = true
+                Task { @MainActor in
+                    guard siteRaising, site === controller else {
+                        siteRaising = false
+                        return
+                    }
+                    raiseSite(controller, url, presenter) { [weak self] isUp in
+                        guard let self, self.siteRaising else { return }
+                        self.siteRaising = false
+                        guard self.site === controller, self.siteURL == url else { return }
+                        guard !isUp else {
+                            self.sitePending = false
+                            return
+                        }
+                        self.site = nil
+                        self.siteURL = nil
+                        let generation = self.siteGeneration
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(50))
+                            guard self.siteGeneration == generation, self.requestedSite == url,
+                                self.site == nil, self.siteURL == nil else {
+                                self.sitePending = false
+                                return
+                            }
+                            guard tries > 1 else {
+                                self.refusedSite = url
+                                self.sitePending = false
+                                return
+                            }
+                            self.showSite(url, tries: tries - 1, retry: true)
+                        }
+                    }
+                }
             }
 
             private func dismissSite() {
-                guard let controller = site else {
-                    siteFinishing = false
-                    return
-                }
+                siteRaising = false
+                sitePending = false
+                siteGeneration &+= 1
+                guard let controller = site else { return }
                 site = nil
                 siteURL = nil
-                siteFinishing = false
                 controller.dismiss(animated: false)
             }
 
@@ -1048,6 +1120,8 @@ struct ReaderHost: UIViewControllerRepresentable {
             /// take it down: the dismissal is never inferred from the controller's own state, which reports no
             /// `presentingViewController` for a presentation that was refused.
             private func dismissReader() {
+                requestedSite = nil
+                refusedSite = nil
                 shown = nil
                 isUp = false
                 isAttempting = false
@@ -1063,15 +1137,15 @@ struct ReaderHost: UIViewControllerRepresentable {
             nonisolated func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
                 MainActor.assumeIsolated {
                     guard site === controller else { return }
-                    siteFinishing = true
-                    let finish = onFinish
-                    controller.dismiss(animated: true) { [weak self] in
-                        guard let self else { return }
-                        self.site = nil
-                        self.siteURL = nil
-                        self.siteFinishing = false
-                        finish()
-                    }
+                    // Apple's delegate contract: cleanup here, and the view controller is dismissed afterwards.
+                    // No second dismissal is asked for, and the reader's state is not chained to a completion
+                    // UIKit does not owe for a dismissal it is already making.
+                    site = nil
+                    siteURL = nil
+                    siteRaising = false
+                    sitePending = false
+                    requestedSite = nil
+                    onFinish()
                 }
             }
 
