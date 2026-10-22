@@ -42,13 +42,31 @@ No `UserDefaults`.
   "Feedmine", ID 6793279758, SKU feedmine-ios-2026), `DEVELOPMENT_TEAM = 955573A4YH`,
   `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`. Debug keeps `com.feedmine.development`.
 - `ITSAppUsesNonExemptEncryption = false` (HTTPS only). `CFBundleVersion` 22 then 23.
-- `scripts/generate_build_info.sh` runs as the app target's last build phase and writes
-  `FeedmineGitSHA` / `FeedmineGitBranch` / `FeedmineBuildDate` into the built `Info.plist`.
+- **Historical, removed 2026-10-22:** `scripts/generate_build_info.sh` used to run as the app
+  target's last build phase and write `FeedmineGitSHA` / `FeedmineGitBranch` / `FeedmineBuildDate`
+  into the built `Info.plist`. It no longer exists; see "Identity (2026-10-22)" below for the
+  current placeholders/build-settings mechanism and its SHA/branch/date archive checks.
 - `scripts/release-testflight.sh`: refuses a dirty tree, a missing catalog or a missing API key;
   archives Release for `generic/platform=iOS`; aborts when the archived SHA differs from `HEAD` or
   the bundle id is not `com.feedmine.app`; uploads with the App Store Connect key; creates the local
   annotated tag `ios/<version>-build.<build>-<sha>` (never pushes it).
 - `scripts/ExportOptions.plist`: `app-store-connect`, `destination: upload`, team `955573A4YH`.
+
+### Identity (2026-10-22)
+
+The run-script phase above raced with `ProcessInfoPlistFile`: the implicit plist task could run
+after the stamp and rebuild the product plist from the source one, dropping
+`FeedmineGitSHA`/`FeedmineBuildDate` (observed in incremental and Release test builds). The phase
+and `scripts/generate_build_info.sh` are therefore removed.
+
+- `FeedMineApp/Info.plist` declares `FeedmineGitSHA = $(FEEDMINE_GIT_SHA)`,
+  `FeedmineGitBranch = $(FEEDMINE_GIT_BRANCH)` and `FeedmineBuildDate = $(FEEDMINE_BUILD_DATE)`;
+  the app target defaults all three to `unknown`.
+- `scripts/release-testflight.sh` passes the clean tree's HEAD, branch and UTC build date as
+  command-line build settings to `xcodebuild archive`, so `ProcessInfoPlistFile` writes the
+  identity together with the rest of the plist. It then aborts unless the archived SHA, branch and
+  date match that release run. A build without the overrides carries `unknown` and fails the gate
+  instead of storing a stale SHA.
 
 ## 4. Build 22 — pipeline validation
 

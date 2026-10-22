@@ -177,8 +177,9 @@ Branch `codex/omp-plan-execution`, código `f8eb67e`: fontes/contextos/busca loc
 O app iOS passou a ter distribuição real: bundle de Release `com.feedmine.app`, build 22 (pipeline)
 e build 23 (correção D1), ambos `VALID`/`IN_BETA_TESTING` no App Store Connect. Evidência executada
 em [FEEDMINE_V2_RELEASE_EVIDENCE.md](reviews/FEEDMINE_V2_RELEASE_EVIDENCE.md). O release é feito por
-`scripts/release-testflight.sh`, que recusa árvore suja, confere o `FeedmineGitSHA` gravado no
-archive contra `HEAD` e cria a tag local `ios/<versão>-build.<build>-<sha>`.
+`scripts/release-testflight.sh`, que recusa árvore suja, confere `FeedmineGitSHA`,
+`FeedmineGitBranch` e `FeedmineBuildDate` gravados no archive contra `HEAD`, a branch e o início da
+release, e cria a tag local `ios/<versão>-build.<build>-<sha>`.
 
 O gate U1 (identidade visual do V1 + shell de navegação do V2) está em
 [FEEDMINE_V2_U1_REVIEW.md](reviews/FEEDMINE_V2_U1_REVIEW.md): `FeedMineUI` ganhou uma única
@@ -308,6 +309,7 @@ aprovação pública.
 bash -n scripts/fetch-catalog.sh scripts/release-testflight.sh scripts/verify_product_catalogue.sh
 python3 -m unittest discover -s Tests/ReleaseScripts -p 'test_catalog_*.py'
 python3 -m unittest discover -s Tests/ReleaseScripts -p 'test_release_preflight.py'
+python3 -m unittest discover -s Tests/ReleaseScripts -p 'test_release_identity.py'
 swift build
 swift test
 git diff --check
