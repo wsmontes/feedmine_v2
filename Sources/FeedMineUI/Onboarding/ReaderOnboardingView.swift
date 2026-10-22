@@ -43,12 +43,16 @@ public struct ReaderOnboardingView: View {
     private let onImport: () -> Void
     private let onSave: (FeedRecipeDefinition) -> Void
     private let onClose: () -> Void
+    /// The prominent footer action's label. The first run opens the feed ("Abrir meu feed"); the curated
+    /// composer saves a preset without moving the reading, so its host names the action for what it does.
+    private let primaryTitle: String
 
     /// `isFirstRun` starts at the welcome stage, as V1's gate did; a re-entry from the settings goes straight to
     /// the Composer, which is the stage that has something to change.
     public init(recipe: FeedRecipeDefinition = .neutral(), isFirstRun: Bool = true,
         previewCards: [PresentationCard] = [], topics: [OnboardingTopic] = [], regions: [OnboardingRegion] = [],
         languages: [OnboardingLanguage] = [], isSaving: Bool = false,
+        primaryTitle: String? = nil,
         onImport: @escaping () -> Void = {}, onSave: @escaping (FeedRecipeDefinition) -> Void,
         onClose: @escaping () -> Void) {
         _stage = State(initialValue: isFirstRun ? .welcome : .composer)
@@ -59,6 +63,7 @@ public struct ReaderOnboardingView: View {
         self.regions = regions
         self.languages = languages
         self.isSaving = isSaving
+        self.primaryTitle = primaryTitle ?? String(localized: "Abrir meu feed")
         self.onImport = onImport
         self.onSave = onSave
         self.onClose = onClose
@@ -300,7 +305,7 @@ public struct ReaderOnboardingView: View {
             Button {
                 onSave(recipe)
             } label: {
-                Text(verbatim: String(localized: "Abrir meu feed")).font(.body.weight(.medium))
+                Text(verbatim: primaryTitle).font(.body.weight(.medium))
             }
             .buttonStyle(.borderedProminent)
             .disabled(isSaving || recipe.mediaTypes.isEmpty)

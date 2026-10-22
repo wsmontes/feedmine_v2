@@ -1504,9 +1504,14 @@ struct ReaderHost: UIViewControllerRepresentable {
                 isFirstRun: false,
                 previewCards: [],
                 topics: options.topics, regions: options.regions, languages: options.languages,
+                primaryTitle: String(localized: "Salvar feed curado"),
                 onSave: { recipe in
                     do {
-                        _ = try composition.saveCuratedFeed(recipe, named: String(localized: "Meu feed curado"))
+                        guard try composition.saveCuratedFeed(recipe, named: String(localized: "Meu feed curado")) != nil
+                        else {
+                            readerError = String(localized: "Não foi possível criar o feed curado. Tente novamente.")
+                            return
+                        }
                         popSurface()
                     } catch {
                         readerError = String(localized: "Não foi possível criar o feed curado. Tente novamente.")

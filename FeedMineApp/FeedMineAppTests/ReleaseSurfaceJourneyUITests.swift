@@ -84,10 +84,11 @@ final class ReleaseSurfaceJourneyUITests: XCTestCase {
         add(proof)
     }
 
-    /// The rest of the published surfaces in Release: every destination the menu offers is reachable, and the
-    /// sheets act (Salvos, Coleções, Exportar with a format change, Adicionar feed) without any fixture.
+    /// Reachability of every destination the Release menu offers, plus the one action this test can prove
+    /// without a fixture (the export format recomputes its preview). Opening Salvos, Coleções and Adicionar feed
+    /// is named as reachability, not as an action.
     @MainActor
-    func testReleaseMenusAndToolsAct() throws {
+    func testReleaseMenusAndToolSheetsReachTheirControls() throws {
         let app = XCUIApplication()
         app.launch()
         if app.staticTexts["welcome-headline"].waitForExistence(timeout: 90) {

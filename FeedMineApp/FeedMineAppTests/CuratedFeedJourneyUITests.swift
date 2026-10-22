@@ -111,7 +111,11 @@ final class CuratedFeedJourneyUITests: XCTestCase {
         SurfaceTest.menuEntry(app, "Criar feed curado")
         XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForExistence(timeout: 30),
             "the curated entry opens the composer, not the first-run welcome")
-        app.buttons["composer-start-broad"].tap()
+        let primary = app.buttons["composer-open-feed"]
+        XCTAssertTrue(primary.waitForExistence(timeout: 10))
+        XCTAssertEqual(primary.label, "Salvar feed curado",
+            "the primary action names saving, not opening")
+        primary.tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60),
             "saving the composer returns to the feed")
         XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 30))

@@ -24,7 +24,7 @@ OUT=""
 DERIVED=""
 
 usage() {
-    printf 'usage: %s [--profile smoke|journeys|release] [--destination <xcodebuild destination>] [--out <dir>] [--derived <dir>]\n' "$0"
+    printf 'usage: %s [--profile smoke|journeys|release|reader|seed|live] [--destination <xcodebuild destination>] [--out <dir>] [--derived <dir>]\n' "$0"
 }
 
 while [ $# -gt 0 ]; do
