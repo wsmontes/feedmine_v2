@@ -1294,6 +1294,23 @@ final class FeedMineUITests: XCTestCase {
                 $0.frame.height >= minHeight && $0.frame.minY < top - 20 && $0.frame.maxY > top + 40
             }
         }
+        /// The continuation has a different purpose: it must prove a new user scroll stays put and persists. It may
+        /// legitimately stop at a card boundary or in the spacing, so it uses the app's boundary rule (the
+        /// containing card with the greatest top, else the first visible card below the line) among cards that are
+        /// actually visible and hittable. The permanent FastDrag selector above keeps its 20/40 interior contract.
+        func boundaryCard(_ scroll: XCUIElement) -> XCUIElement? {
+            let top = scroll.frame.minY
+            let visible = cards(scroll).filter {
+                $0.isHittable && $0.frame.maxY > top && $0.frame.minY < scroll.frame.maxY
+            }
+            if let containing = visible.filter({
+                $0.frame.minY <= top + 1 && $0.frame.maxY >= top - 1
+            }).max(by: { $0.frame.minY < $1.frame.minY }) {
+                return containing
+            }
+            return visible.filter { $0.frame.minY >= top - 1 }
+                .min(by: { $0.frame.minY < $1.frame.minY })
+        }
         XCTAssertTrue(cards(scroll).first != nil || app.buttons.matching(identifier: "card.bookmark").firstMatch.waitForExistence(timeout: 240))
         let cover = app.descendants(matching: .any)["feed-loading-surface"]
         if cover.exists {
@@ -1392,25 +1409,36 @@ final class FeedMineUITests: XCTestCase {
         let restoredLine = after
         reopened.swipeUp()
         var continueAttempts = 0
-        while containing(reopened) == nil && continueAttempts < 5 {
+        var continued = boundaryCard(reopened)
+        while continued == nil && continueAttempts < 5 {
             reopened.swipeUp()
             continueAttempts += 1
             Thread.sleep(forTimeInterval: 0.5)
+            continued = boundaryCard(reopened)
         }
-        while containing(reopened) == nil && continueAttempts < 10 {
+        while continued == nil && continueAttempts < 10 {
             reopened.swipeDown()
             continueAttempts += 1
             Thread.sleep(forTimeInterval: 0.5)
+            continued = boundaryCard(reopened)
         }
-        var continuedID = ""
+        guard let continued = continued else {
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "fastdrag-continue-empty-restored-\(restoredLine)"
+            shot.lifetime = .keepAlways
+            add(shot)
+            XCTFail("no visible hittable card at the line after a real scroll")
+            return
+        }
+        let continuedID = continued.identifier
         var continuedLine: CGFloat = .nan
         var continuedHeight: CGFloat = .nan
         var continuedSamples: [CGFloat] = []
         var continuedStable = false
         for _ in 0..<40 {
             Thread.sleep(forTimeInterval: 0.5)
-            guard let current = containing(reopened) else { continue }
-            continuedID = current.identifier
+            let match = cards(reopened).filter { $0.identifier == continuedID }
+            guard let current = match.first(where: { $0.frame.width > 300 }) ?? match.first else { continue }
             continuedLine = current.frame.minY - reopened.frame.minY
             continuedHeight = current.frame.height
             continuedSamples.append(continuedLine)
@@ -1426,6 +1454,10 @@ final class FeedMineUITests: XCTestCase {
         // viewport line itself to have moved.
         XCTAssertGreaterThan(abs(continuedLine - restoredLine), 20,
             "a real scroll after the reopen moves the viewport; the restore must not pull it back")
+        let continueShot = XCTAttachment(screenshot: app.screenshot())
+        continueShot.name = "fastdrag-continue-\(continuedID)-line-\(continuedLine)-h-\(continuedHeight)"
+        continueShot.lifetime = .keepAlways
+        add(continueShot)
         Thread.sleep(forTimeInterval: 3)
         app.terminate()
         Thread.sleep(forTimeInterval: 2)
