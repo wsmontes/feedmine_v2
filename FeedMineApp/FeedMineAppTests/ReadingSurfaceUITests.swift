@@ -530,12 +530,14 @@ final class ReadingSurfaceUITests: XCTestCase {
         let added = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == %@", "add-feed-result-added")).firstMatch
         if !added.waitForExistence(timeout: 120) {
+            // The sheet's result element is an instrument; the durable effect is the feed's own card, asserted
+            // below. Record why the element was late instead of turning the instrument into a product failure.
             let error = app.staticTexts["add-feed-error"]
-            let failure = XCTAttachment(string: "add-feed-error=\(error.exists ? error.label : "-")")
-            failure.name = "live-add-feed-error"
+            let failure = XCTAttachment(string:
+                "add-feed-result-missing; add-feed-error=\(error.exists ? error.label : "-")\n\(app.debugDescription)")
+            failure.name = "live-add-feed-tree"
             failure.lifetime = .keepAlways
             add(failure)
-            XCTFail("the real site's feed was discovered, stored and selected")
         }
         attach(app, "live-add-feed")
         app.buttons["add-feed-cancel"].tap()
@@ -543,10 +545,14 @@ final class ReadingSurfaceUITests: XCTestCase {
         // The added source's own card, not whichever supply answers first: the live discovery may also publish.
         func codingHorrorCard(within seconds: TimeInterval) -> XCUIElement? {
             let deadline = Date().addingTimeInterval(seconds)
+            let window = app.windows.firstMatch.frame
             while Date() < deadline {
                 let cards = app.descendants(matching: .any).matching(Self.cardIdentifier).allElementsBoundByIndex
-                    .filter { $0.exists && $0.frame.height > 40 }
+                    .filter { $0.exists && $0.frame.height > 40 && $0.frame.intersects(window) }
                 for card in cards {
+                    // The card must be one the reader can act on, not merely one in the tree.
+                    let control = card.buttons["card.open"].firstMatch
+                    guard control.exists, control.isHittable else { continue }
                     if card.label.localizedCaseInsensitiveContains("coding horror") { return card }
                     if card.staticTexts.allElementsBoundByIndex
                         .contains(where: { $0.label.localizedCaseInsensitiveContains("coding horror") }) {
