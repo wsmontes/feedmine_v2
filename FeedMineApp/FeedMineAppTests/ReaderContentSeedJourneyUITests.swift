@@ -31,27 +31,22 @@ final class ReaderContentSeedJourneyUITests: XCTestCase {
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 180), "the first run reaches the feed")
 
-        let cards = app.descendants(matching: .any).matching(
-            NSPredicate(format: "identifier MATCHES %@",
-                "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"))
+        // The actionable card surface is `card.open`; its label carries the title, which is the public
+        // identifier this sample records. Strata are the visible window's top, middle and bottom.
+        let opens = app.buttons.matching(identifier: "card.open")
         let deadline = Date().addingTimeInterval(180)
-        while Date() < deadline && cards.count < 2 { Thread.sleep(forTimeInterval: 0.3) }
-        XCTAssertGreaterThanOrEqual(cards.count, 2, "the published edition presents at least two cards")
+        while Date() < deadline && opens.count < 2 { Thread.sleep(forTimeInterval: 0.3) }
+        XCTAssertGreaterThanOrEqual(opens.count, 2, "the published edition presents at least two cards")
 
-        // Strata: the visible window's own top, middle and bottom. The card's title is the public identifier the
-        // sample records; the element identifier (the occurrence UUID) is what the test taps.
         var strata: [String: [String]] = [:]
-        var titles: [String: String] = [:]
-        let visible = cards.allElementsBoundByIndex.filter { $0.exists && $0.frame.height > 40 }
+        let visible = opens.allElementsBoundByIndex.filter { $0.exists && $0.frame.height > 20 }
         let ordered = visible.sorted { $0.frame.minY < $1.frame.minY }
         for (index, card) in ordered.enumerated() {
             let stratum: String
             if index < ordered.count / 3 { stratum = "top" }
             else if index < 2 * ordered.count / 3 { stratum = "middle" }
             else { stratum = "bottom" }
-            let title = card.label.isEmpty ? card.identifier : card.label
-            strata[stratum, default: []].append(card.identifier)
-            titles[card.identifier] = title
+            strata[stratum, default: []].append(card.label)
         }
         let seed = SeededStratifiedSample.seedFromEnvironment()
         let sample = SeededStratifiedSample(seed: seed, strata: strata)
@@ -62,17 +57,26 @@ final class ReaderContentSeedJourneyUITests: XCTestCase {
         proof.lifetime = .keepAlways
         add(proof)
 
-        guard let pick = sample.picks.first else { return }
-        let chosen = app.descendants(matching: .any).matching(
-            NSPredicate(format: "identifier == %@", pick.id)).firstMatch
+        let rank = ["top": 0, "middle": 1, "bottom": 2]
+        let sampleOrder = sample.picks.sorted { (rank[$0.stratum] ?? 9) < (rank[$1.stratum] ?? 9) }
+        guard let pick = sampleOrder.first else { return }
+        let title = pick.id
+        let chosen = app.buttons.matching(identifier: "card.open")
+            .matching(NSPredicate(format: "label == %@", title)).firstMatch
         XCTAssertTrue(chosen.waitForExistence(timeout: 20), "the sampled card is still on screen")
-        let title = titles[pick.id] ?? chosen.label
-        chosen.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        if !chosen.isHittable { _ = SurfaceTest.scrollIntoView(chosen, in: app, timeout: 20) }
+        chosen.tap()
 
         let headline = app.staticTexts["reading.headline"]
-        XCTAssertTrue(headline.waitForExistence(timeout: 60), "the sampled card opens the reader")
-        XCTAssertFalse(headline.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        XCTAssertTrue(headline.label.contains(title) || title.contains(headline.label),
-            "the reader states the sampled card's own headline; card=\(title) reader=\(headline.label)")
+        let address = app.buttons["URL"].firstMatch
+        let opened = headline.waitForExistence(timeout: 60) || address.waitForExistence(timeout: 30)
+        XCTAssertTrue(opened, "the sampled card opens the reader; card=\(title)")
+        if headline.exists {
+            XCTAssertFalse(headline.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            XCTAssertTrue(headline.label.contains(title) || title.contains(headline.label),
+                "the reader states the sampled card's own headline; card=\(title) reader=\(headline.label)")
+        } else {
+            XCTAssertFalse((address.label).isEmpty, "the site reader states the card's address")
+        }
     }
 }

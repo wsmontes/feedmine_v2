@@ -107,10 +107,15 @@ for JOURNEY in "${JOURNEYS[@]}"; do
         xcrun simctl uninstall "${DESTINATION##*id=}" com.feedmine.app >/dev/null 2>&1 || true
     fi
     if [ "$PROFILE" = "live" ]; then
+        # The runner reads the opt-in from its own environment. `simctl launchctl setenv` is the simulator's
+        # environment; it reaches the test runner before the app is launched (a build setting does not).
+        SIM_UDID="${DESTINATION##*id=}"
+        xcrun simctl spawn "$SIM_UDID" launchctl setenv FEEDMINE_LIVE_SURFACES 1
         xcodebuild test-without-building \
             -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIGURATION" \
             -destination "$DESTINATION" -derivedDataPath "$DERIVED" \
-            "${ONLY[@]}" TEST_RUNNER_FEEDMINE_LIVE_SURFACES=1 -resultBundlePath "$RESULT" > "$LOG" 2>&1
+            "${ONLY[@]}" -resultBundlePath "$RESULT" > "$LOG" 2>&1
+        xcrun simctl spawn "$SIM_UDID" launchctl unsetenv FEEDMINE_LIVE_SURFACES || true
     else
         xcodebuild test-without-building \
             -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIGURATION" \
@@ -139,7 +144,13 @@ except Exception as error:
 PY
 )"
     printf '  %s\n' "$COUNTS" | tee -a "$SUMMARY"
+    PASSED="$(printf '%s\n' "$COUNTS" | sed -n 's/.*pass=\([0-9][0-9]*\).*/\1/p')"
     if [ $STATUS -ne 0 ]; then ANY_FAIL=1; fi
+    if [ "${PASSED:-0}" -eq 0 ]; then
+        # A profile that produced no passing test did not verify anything: "success" from a skip is NOTRUN.
+        printf '  NOTRUN %s produced 0 passing tests; not a verification\n' "$JOURNEY" | tee -a "$SUMMARY"
+        ANY_FAIL=1
+    fi
 done
 
 printf 'summary=%s identity=%s derived=%s\n' "$SUMMARY" "$IDENTITY" "$DERIVED"
