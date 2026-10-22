@@ -87,9 +87,13 @@ struct NativeFeedViewport: ViewModifier {
                 // Uma animação programática não é um gesto do leitor: enquanto ela corre, o desenho não está em
                 // repouso e nada do que ele mostrar no meio vira posição durável.
                 capture.motion.animating = phase == .animating
-                // A reader touching the feed owns the position now. The restore is cancelled, never postponed
-                // until the gesture ends: pushing the reader back would be a second, hidden navigation.
-                if phase == .tracking || phase == .interacting { capture.cancelRestoration() }
+                // A reader touching the feed owns the position now, and so does a scroll the reader did not drag:
+                // an accessibility or system animation moves the viewport with intent of its own. The restore is
+                // cancelled, never postponed until the gesture ends: pushing the reader back would be a second,
+                // hidden navigation.
+                if phase == .tracking || phase == .interacting || phase == .animating {
+                    capture.cancelRestoration()
+                }
                 guard matchesScope else { return }
                 #if DEBUG
                 if FeedVisualCapture.tracesCapture {
@@ -168,7 +172,6 @@ struct NativeFeedViewport: ViewModifier {
                 if let event = capture.observe(geometry) {
                     store.submitViewport(event.observation, activity: event.activity, rendered: presented)
                 }
-                if capture.enforceRestoration() { return }
                 // Toda mudança da geometria do scroll é um movimento do viewport — inclusive os que **nenhum gesto**
                 // produziu (uma rolagem de acessibilidade, uma re-layout do sistema, uma animação programática). A
                 // posição onde o viewport começa é publicada aqui: em movimento o dono do cursor só a lembra, e no
@@ -241,6 +244,9 @@ enum FeedPositionRequest {
     /// substitution until the destination itself is ready and the position is applied.
     private static func accept(_ id: PublicationCardID, presented: FeedPresentationSnapshot,
         capture: inout FeedVisualCapture, store: FeedScreenStore) {
+        // An accepted destination establishes the position; the launch restore must not pull the viewport back
+        // to the point it was substituting.
+        capture.cancelRestoration()
         capture.pendingJump = nil
         capture.pendingJumpExplicit = false
         capture.positionID = id
@@ -256,6 +262,9 @@ enum FeedPositionRequest {
     /// window's own anchor; only the caller's token decides.
     static func apply(_ id: PublicationCardID, presented: FeedPresentationSnapshot,
         capture: inout FeedVisualCapture, store: FeedScreenStore, explicit: Bool = false) {
+        // The caller means this destination ("Voltar ao início", a prepared successor). Intent wins immediately,
+        // including while the destination still needs preparation: the launch restore may not outlive the request.
+        if explicit { capture.cancelRestoration() }
         switch FeedDestinationGate.readiness(of: id, in: presented) {
         case .ready where explicit:
             accept(id, presented: presented, capture: &capture, store: store)

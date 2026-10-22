@@ -1007,4 +1007,35 @@ final class FeedViewportCaptureTests: XCTestCase {
         XCTAssertNotNil(store.toast)
     }
 
+    /// An accepted destination owns the viewport. The launch restore may not keep writing its old point back
+    /// after the reader asked for another one, and an observational echo is not that request.
+    func testExplicitJumpReleasesAStandingRestore() throws {
+        let ids = (0..<2).map { _ in PublicationCardID() }
+        let cards = ids.map { id in
+            PresentationCard(id: id, title: "Text", primaryText: "Body", timestamp: nil,
+                sourceID: nil, sourceDisplayName: nil, providerDisplayName: nil, layout: .textOnly,
+                mediaAspectRatio: nil, primaryActionKind: nil, image: nil)
+        }
+        let edition = FeedEditionID(), sequence = UUID()
+        let presented = FeedPresentationSnapshot(contextKey: FeedContext(request: .main).key,
+            editionID: edition,
+            window: try XCTUnwrap(FeedWindowSnapshot(items: cards,
+                anchor: .init(cardID: ids[1], placement: .top))),
+            provenance: .init(sequenceID: sequence, position: 1))
+        let store = FeedScreenStore { _, _ in }
+        try store.install(.init(presentation: presented))
+        let point = try XCTUnwrap(CardTopOffset(topDelta: -266.333, height: 508.5))
+        let restored = PresentationAnchor(cardID: ids[1], placement: .top, progress: point)
+
+        var echoed = FeedVisualCapture()
+        echoed.armRestoration(restored)
+        FeedPositionRequest.apply(ids[1], presented: presented, capture: &echoed, store: store, explicit: false)
+        XCTAssertNotNil(echoed.restoration, "a layout echo is not an intention and keeps the restore armed")
+
+        var jumped = FeedVisualCapture()
+        jumped.armRestoration(restored)
+        FeedPositionRequest.apply(ids[1], presented: presented, capture: &jumped, store: store, explicit: true)
+        XCTAssertNil(jumped.restoration, "the accepted explicit jump owns the position")
+    }
+
 }

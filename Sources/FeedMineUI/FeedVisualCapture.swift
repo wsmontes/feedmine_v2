@@ -95,12 +95,6 @@ final class FeedVisualMotion {
     var acknowledgedPresentedOffset: CardTopOffset?
     // Diagnóstico apenas: um vetor não verificado nunca é autoridade de direção nem veto global.
     var velocityUnverified = false
-    /// The last **fresh** anchor proof (content top and measured height) of the armed restore. Content top is
-    /// invariant to scrolling, so this value stays valid across geometry passes and lets the next geometry
-    /// observation re-check the point even when the card does not report again. Only fresh proofs update it: a
-    /// stale proof carries a content top from a layout that has already moved (measured 2026-10-22: thousands of
-    /// points away), and following it oscillates.
-    var anchorRestoreContent: (top: CGFloat, height: CGFloat)?
     #if DEBUG
     var geometryLogged = false
     #endif
@@ -250,14 +244,12 @@ struct FeedVisualCapture {
     mutating func armRestoration(_ anchor: PresentationAnchor?) {
         guard let anchor, let progress = anchor.progress else { return }
         restoration = FeedRestoration(cardID: anchor.cardID, offset: progress)
-        motion.anchorRestoreContent = nil
     }
 
     /// A real reader intention cancels the restore instead of postponing it until the gesture ends — pushing the
     /// reader back after they moved would be a second, hidden navigation.
     mutating func cancelRestoration() {
         restoration = nil
-        motion.anchorRestoreContent = nil
     }
 
     #if canImport(UIKit)
@@ -269,14 +261,11 @@ struct FeedVisualCapture {
     ///
     /// Freshness and on-screen are the two bounds that matter: an off-screen correction re-bases the lazy layout
     /// and asks for the opposite one (measured ±1.400 to ±6.800 pt alternations), and a stale proof carries a
-    /// content top from a layout that has already moved. Layout-quiet is deliberately not a third gate: a card
-    /// above can re-base the anchor once, with no further geometry callback to lift the gate, leaving the reader
-    /// 435 pt off (measured, deterministic on the 508 pt card 2026-10-22).
-    ///
-    /// The restore stays armed until the reader takes control — a gesture cancels it outright — because the launch
-    /// layout itself adjusts the content offset after the first correction (measured +82.5 pt on 2026-10-22, with
-    /// the screen ending 82 pt off). Each anchor proof is one observation of that layout; there is no timer and no
-    /// queued delta.
+    /// content top from a layout that has already moved. A fresh anchor proof is the **only** writer: the launch
+    /// layout adjusts the content offset after the first correction and the anchor reports again when it moves
+    /// (measured 2026-10-22: an 80 pt native shift followed by a fresh proof of the same content top). A cached
+    /// top paired with a geometry-only pass is deliberately not a third path — it would write against a layout
+    /// the anchor no longer describes, and it can fire on the geometry pass that precedes a real gesture.
     /// Returns true when a native write happened; the callback carrying this proof is then stale by construction.
     @discardableResult
     mutating func applyRestorationIfNeeded(_ proof: FeedVisualCardGeometry) -> Bool {
@@ -291,32 +280,11 @@ struct FeedVisualCapture {
         // And only while the anchor is actually on screen. Correcting an off-screen card changes which lazy cells
         // are realized, which re-bases the anchor's content top, which asks for the opposite correction (measured
         // 2026-10-22: alternating writes of ±1.400 to ±6.800 pt before the reader touched anything).
-        guard proof.frame.maxY > 0, proof.frame.minY < proof.height else { return false }
+        let viewport = motion.geometry?.height ?? proof.height
+        guard proof.frame.maxY > 0, proof.frame.minY < viewport else { return false }
         let contentTop = proof.frame.minY + proof.offset
-        // The content top is scroll-invariant; keeping it lets the geometry-only pass re-check the point when the
-        // card does not report again.
-        motion.anchorRestoreContent = (contentTop, proof.frame.height)
         let minY = contentTop - liveLine
         let (expected, _) = target.offset.restoredTopDelta(forMeasuredHeight: proof.frame.height)
-        let delta = minY - expected
-        guard abs(delta) > CardTopOffset.measurementTolerance else { return false }
-        return nativeScrollOffset.applyRestoration(delta)
-    }
-
-    /// Re-checks the armed restore from the last fresh anchor proof when only the scroll geometry moves: the
-    /// launch layout adjusts the content offset after the first correction, and the card does not always report
-    /// again before the screen comes to rest (measured 2026-10-22: an 80 pt shift after a correct write, with the
-    /// test reading the shifted line). The stored content top is scroll-invariant, so pairing it with the live
-    /// origin is exact; the write still requires a quiet layout and an on-screen anchor.
-    @discardableResult
-    mutating func enforceRestoration() -> Bool {
-        guard let target = restoration, let stored = motion.anchorRestoreContent else { return false }
-        guard let nativeOffset = nativeScrollOffset.contentOffsetY,
-            !nativeScrollOffset.isAnimatingScroll else { return false }
-        let liveLine = nativeOffset + (motion.geometry?.topInset ?? 0)
-        let minY = stored.top - liveLine
-        guard minY < stored.height, minY + stored.height > 0 else { return false }
-        let (expected, _) = target.offset.restoredTopDelta(forMeasuredHeight: Double(stored.height))
         let delta = minY - expected
         guard abs(delta) > CardTopOffset.measurementTolerance else { return false }
         return nativeScrollOffset.applyRestoration(delta)
