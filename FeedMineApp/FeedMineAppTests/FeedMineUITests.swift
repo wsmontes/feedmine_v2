@@ -1243,6 +1243,89 @@ final class FeedMineUITests: XCTestCase {
             "and the card they saved is drawn as saved")
     }
 
+    /// Release within-card continuity after the **original fast drag** (no hold): the regression for the
+    /// transient-height restore. The app's first relaunch proof can measure a 2 pt shorter card; the exact-height
+    /// retry must restore the recorded point instead of leaving the proportional 1.333 pt short.
+    @MainActor
+    func testReleaseForcedCloseKeepsTheCardLineAfterAFastDrag() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 90))
+        app.buttons["welcome-shape"].tap()
+        XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForExistence(timeout: 30))
+        let languages = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-language-'"))
+        if languages.firstMatch.waitForExistence(timeout: 10) {
+            let portuguese = languages.matching(NSPredicate(format: "label CONTAINS[c] 'Portuguese'")).firstMatch
+            if portuguese.exists { portuguese.tap() }
+        }
+        let places = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-region-'"))
+        let composer = app.otherElements["onboarding"].scrollViews.firstMatch
+        var place: XCUIElement?
+        for _ in 0..<10 where place == nil {
+            _ = places.firstMatch.waitForExistence(timeout: 3)
+            if places.firstMatch.exists && places.firstMatch.isHittable { place = places.firstMatch }
+            if place == nil && composer.exists { composer.swipeUp() }
+        }
+        XCTAssertNotNil(place)
+        place!.tap()
+        let open = app.buttons["composer-open-feed"]
+        for _ in 0..<6 where !open.isHittable { composer.swipeUp() }
+        open.tap()
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 180))
+        let uuid = "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+        func cards(_ scroll: XCUIElement) -> [XCUIElement] {
+            scroll.descendants(matching: .any).matching(NSPredicate(format: "identifier MATCHES %@", uuid))
+                .allElementsBoundByIndex.filter { $0.frame.height > 40 }
+        }
+        func containing(_ scroll: XCUIElement) -> XCUIElement? {
+            let top = scroll.frame.minY
+            return cards(scroll).first { $0.frame.minY < top - 20 && $0.frame.maxY > top + 40 }
+        }
+        XCTAssertTrue(cards(scroll).first != nil || app.buttons.matching(identifier: "card.bookmark").firstMatch.waitForExistence(timeout: 240))
+        let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
+        start.press(forDuration: 0.05, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
+        for _ in 0..<8 where containing(scroll) == nil { scroll.swipeUp() }
+        let card = try XCTUnwrap(containing(scroll), "a card contains the line")
+        var samples: [CGFloat] = []
+        var stable = false
+        for _ in 0..<40 {
+            Thread.sleep(forTimeInterval: 0.5)
+            samples.append(card.frame.minY - scroll.frame.minY)
+            if samples.count >= 5, let low = samples.suffix(5).min(), let high = samples.suffix(5).max(),
+                high - low <= 0.5 { stable = true; break }
+        }
+        XCTAssertTrue(stable, "rest; samples \(samples.suffix(8))")
+        let line = card.frame.minY - scroll.frame.minY
+        print("FAST_PRE id=\(card.identifier) h=\(card.frame.height) line=\(line) wall=\(Date().timeIntervalSince1970) scroll=\(scroll.frame)")
+        app.terminate()
+        Thread.sleep(forTimeInterval: 2)
+        app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
+        app.launch()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 90))
+        let reopened = app.scrollViews.firstMatch
+        var afterSamples: [CGFloat] = []
+        var after: CGFloat = .nan
+        var afterHeight: CGFloat = .nan
+        var settled = false
+        for _ in 0..<40 {
+            Thread.sleep(forTimeInterval: 0.5)
+            let match = cards(reopened).filter { $0.identifier == card.identifier }
+            guard let current = match.first(where: { $0.frame.width > 300 }) ?? match.first else { continue }
+            after = current.frame.minY - reopened.frame.minY
+            afterHeight = current.frame.height
+            afterSamples.append(after)
+            if afterSamples.count >= 5, let low = afterSamples.suffix(5).min(), let high = afterSamples.suffix(5).max(),
+                high - low <= 0.5 { settled = true; break }
+        }
+        print("FAST_DRAG id=\(card.identifier) before=\(line) beforeH=\(card.frame.height) after=\(after) afterH=\(afterHeight)")
+        XCTAssertTrue(settled, "the reopened feed settles; samples \(afterSamples.suffix(8))")
+        XCTAssertEqual(afterHeight, card.frame.height, accuracy: 1, "the card's measured height is unchanged")
+        XCTAssertEqual(after, line, accuracy: 1,
+            "the fast drag's line inside the card is preserved across a forced close")
+    }
+
     /// Release within-card continuity on the shipped catalogue. First launch is networked (real content); the
     /// relaunch blocks the RSS network so the stored feed is the only content and no refresh race can change the
     /// window. Both measurements are scoped to the feed's own scroll view and name the card containing the line.

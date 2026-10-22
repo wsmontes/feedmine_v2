@@ -5,6 +5,7 @@ import OSLog
 import FeedMineDomain
 import FeedMineRuntime
 
+
 // Small derived geometry only: no published window, presentation or durable identity owner.
 struct FeedVisualGeometry: Equatable {
     let offset: CGFloat
@@ -123,6 +124,10 @@ struct FeedVisualCapture {
     var restoration: FeedRestoration?
     /// One native write at most. A second application would fight a SwiftUI realignment instead of proving it.
     var restorationApplied = false
+    /// The height used by the first restore write. If that height was a transient layout measurement, the final
+    /// measurement can differ; one exact-height retry corrects the scaled point without fighting the alignment.
+    var restorationAppliedHeight: CGFloat?
+    var restorationExactRetry = false
 
     struct FeedRestoration: Equatable, Sendable {
         let cardID: PublicationCardID
@@ -231,6 +236,8 @@ struct FeedVisualCapture {
         guard let anchor, let progress = anchor.progress else { return }
         restoration = FeedRestoration(cardID: anchor.cardID, offset: progress)
         restorationApplied = false
+        restorationAppliedHeight = nil
+        restorationExactRetry = false
     }
 
     /// A real reader intention cancels the restore instead of postponing it until the gesture ends — pushing the
@@ -238,6 +245,8 @@ struct FeedVisualCapture {
     mutating func cancelRestoration() {
         restoration = nil
         restorationApplied = false
+        restorationAppliedHeight = nil
+        restorationExactRetry = false
     }
 
     #if canImport(UIKit)
@@ -247,10 +256,25 @@ struct FeedVisualCapture {
     mutating func applyRestorationIfNeeded(_ proof: FeedVisualCardGeometry) -> Bool {
         guard let target = restoration, target.cardID == proof.cardID else { return false }
         if restorationApplied {
-            let (expected, _) = target.offset.restoredTopDelta(forMeasuredHeight: proof.frame.height)
+            let (expected, exact) = target.offset.restoredTopDelta(forMeasuredHeight: proof.frame.height)
             if abs(proof.frame.minY - expected) <= CardTopOffset.measurementTolerance {
                 restoration = nil
                 restorationApplied = false
+                restorationAppliedHeight = nil
+                restorationExactRetry = false
+                return false
+            }
+            // The first write may have used a transient card height (measured 544.333 on the relaunch, then the
+            // recorded 546.333): the proportional fallback moved the line 1.333 pt short. Once the measured height
+            // is the recorded height again, one exact retry applies the remaining delta. Bounded to one write and
+            // never while a gesture/scroll animation owns the offset.
+            if exact, !restorationExactRetry, let appliedHeight = restorationAppliedHeight,
+                abs(appliedHeight - target.offset.height) > CardTopOffset.measurementTolerance,
+                !nativeScrollOffset.isAnimatingScroll,
+                proof.frame.minY <= CardTopOffset.tolerance, proof.frame.maxY > 0,
+                nativeScrollOffset.applyRestoration(proof.frame.minY - expected) {
+                restorationExactRetry = true
+                return true
             }
             return false
         }
@@ -266,6 +290,7 @@ struct FeedVisualCapture {
             return false
         }
         restorationApplied = true
+        restorationAppliedHeight = proof.frame.height
         return true
     }
     #endif
