@@ -256,6 +256,57 @@ struct FeedMineApp: App {
         }
     }
 
+    /// V1's "Criar feed curado": the first-run composer entered directly, saving a preset of the reader's own
+    /// without moving the reading. Its failure stays in this sheet so the reader sees it where they acted; the
+    /// root error alert is behind a presented sheet and cannot serve this action.
+    private struct CuratedComposerSheet: View {
+        let composition: AppComposition
+        let onClose: () -> Void
+        @State private var errorMessage: String?
+        @State private var isSaving = false
+
+        var body: some View {
+            let options = composition.onboardingOptions()
+            NavigationStack {
+                VStack(spacing: 0) {
+                    if let errorMessage {
+                        Text(verbatim: errorMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, FeedDesignTokens.Spacing.page)
+                            .padding(.top, FeedDesignTokens.Spacing.tight)
+                            .accessibilityIdentifier("curated-composer-error")
+                    }
+                    ReaderOnboardingView(
+                        recipe: .neutral(languages: AppComposition.suggestedLanguages(from: options.languages),
+                            hasLanguageAnswer: true),
+                        isFirstRun: false,
+                        previewCards: [],
+                        topics: options.topics, regions: options.regions, languages: options.languages,
+                        isSaving: isSaving,
+                        primaryTitle: String(localized: "Salvar feed curado"),
+                        onSave: { recipe in save(recipe) },
+                        onClose: onClose)
+                }
+            }
+        }
+
+        private func save(_ recipe: FeedRecipeDefinition) {
+            isSaving = true
+            do {
+                if try composition.saveCuratedFeed(recipe, named: String(localized: "Meu feed curado")) != nil {
+                    onClose()
+                } else {
+                    errorMessage = String(localized: "Não foi possível criar o feed curado. Tente novamente.")
+                    isSaving = false
+                }
+            } catch {
+                errorMessage = String(localized: "Não foi possível criar o feed curado. Tente novamente.")
+                isSaving = false
+            }
+        }
+    }
+
     /// The filter sheet and the country levels it opens. The navigation state lives with the sheet's own
     /// content: a push inside this host keeps the reader's draft and cannot be lost in a re-render of the
     /// feed's body. The country level mirrors the source sheet's own `SourceRoute`.
@@ -450,7 +501,7 @@ struct FeedMineApp: App {
                     case .curatedHood:
                         curatedHood
                     case .curatedComposer:
-                        curatedComposerSheet
+                        CuratedComposerSheet(composition: composition, onClose: { popSurface() })
                     case .addFeed:
                         addFeedSheet
                     case .export:
@@ -1490,34 +1541,6 @@ struct ReaderHost: UIViewControllerRepresentable {
             showsOnboarding = false
         } else {
             readerError = String(localized: "Não foi possível concluir o primeiro passo. Tente novamente.")
-        }
-    }
-
-    /// V1's "Criar feed curado": the same composer the first run uses, entered directly, saving a preset of
-    /// the reader's own without moving the reading. It is a sheet like the other tools, not the first-run cover.
-    @ViewBuilder private var curatedComposerSheet: some View {
-        let options = composition.onboardingOptions()
-        NavigationStack {
-            ReaderOnboardingView(
-                recipe: .neutral(languages: AppComposition.suggestedLanguages(from: options.languages),
-                    hasLanguageAnswer: true),
-                isFirstRun: false,
-                previewCards: [],
-                topics: options.topics, regions: options.regions, languages: options.languages,
-                primaryTitle: String(localized: "Salvar feed curado"),
-                onSave: { recipe in
-                    do {
-                        guard try composition.saveCuratedFeed(recipe, named: String(localized: "Meu feed curado")) != nil
-                        else {
-                            readerError = String(localized: "Não foi possível criar o feed curado. Tente novamente.")
-                            return
-                        }
-                        popSurface()
-                    } catch {
-                        readerError = String(localized: "Não foi possível criar o feed curado. Tente novamente.")
-                    }
-                },
-                onClose: { popSurface() })
         }
     }
 

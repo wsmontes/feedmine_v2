@@ -1,7 +1,8 @@
 // File: SettingsAndDiscoveryJourneyUITests.swift
 // Module: FeedMineUITests
 // Owns: every published settings option and discovery preference, driven through its control and re-read after
-//       the surface is closed and reopened. A control that only toggles its own pixels is a failure here.
+//       the surface is closed and reopened. These journeys assert the stored/read-back value; they do not claim
+//       the visual typography/palette application or a feed-ranking effect (the remaining T3 gap).
 
 import XCTest
 
