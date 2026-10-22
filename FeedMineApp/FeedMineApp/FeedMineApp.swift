@@ -87,6 +87,8 @@ struct FeedMineApp: App {
         case curatedHood
         case export
         case filters
+        /// V1's "Criar feed curado": the composer creates a preset without activating it.
+        case curatedComposer
         /// V1's "Add Feeds": the reader's own composer for a pasted link.
         case addFeed
         var id: String {
@@ -98,6 +100,7 @@ struct FeedMineApp: App {
             case .curatedHood: return "curatedHood"
             case .export: return "export"
             case .filters: return "filters"
+            case .curatedComposer: return "curatedComposer"
             case .addFeed: return "addFeed"
             }
         }
@@ -249,6 +252,57 @@ struct FeedMineApp: App {
             case .saveSmartBookmark: return String(localized: "Salvar como marcador inteligente")
             case .deleteSmartFeed: return String(localized: "Excluir marcador inteligente")
             case .deleteCuratedFeed: return String(localized: "Excluir feed curado")
+            }
+        }
+    }
+
+    /// V1's "Criar feed curado": the first-run composer entered directly, saving a preset of the reader's own
+    /// without moving the reading. Its failure stays in this sheet so the reader sees it where they acted; the
+    /// root error alert is behind a presented sheet and cannot serve this action.
+    private struct CuratedComposerSheet: View {
+        let composition: AppComposition
+        let onClose: () -> Void
+        @State private var errorMessage: String?
+        @State private var isSaving = false
+
+        var body: some View {
+            let options = composition.onboardingOptions()
+            NavigationStack {
+                VStack(spacing: 0) {
+                    if let errorMessage {
+                        Text(verbatim: errorMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, FeedDesignTokens.Spacing.page)
+                            .padding(.top, FeedDesignTokens.Spacing.tight)
+                            .accessibilityIdentifier("curated-composer-error")
+                    }
+                    ReaderOnboardingView(
+                        recipe: .neutral(languages: AppComposition.suggestedLanguages(from: options.languages),
+                            hasLanguageAnswer: true),
+                        isFirstRun: false,
+                        previewCards: [],
+                        topics: options.topics, regions: options.regions, languages: options.languages,
+                        isSaving: isSaving,
+                        primaryTitle: String(localized: "Salvar feed curado"),
+                        onSave: { recipe in save(recipe) },
+                        onClose: onClose)
+                }
+            }
+        }
+
+        private func save(_ recipe: FeedRecipeDefinition) {
+            isSaving = true
+            do {
+                if try composition.saveCuratedFeed(recipe, named: String(localized: "Meu feed curado")) != nil {
+                    onClose()
+                } else {
+                    errorMessage = String(localized: "Não foi possível criar o feed curado. Tente novamente.")
+                    isSaving = false
+                }
+            } catch {
+                errorMessage = String(localized: "Não foi possível criar o feed curado. Tente novamente.")
+                isSaving = false
             }
         }
     }
@@ -446,6 +500,8 @@ struct FeedMineApp: App {
                         }
                     case .curatedHood:
                         curatedHood
+                    case .curatedComposer:
+                        CuratedComposerSheet(composition: composition, onClose: { popSurface() })
                     case .addFeed:
                         addFeedSheet
                     case .export:
@@ -652,7 +708,7 @@ struct FeedMineApp: App {
                     case .collections: present(.collections)
                     case .settings: present(.settings)
                     case .curatedOnboarding:
-                        showsOnboarding = true
+                        present(.curatedComposer)
                     case .curatedInspector:
                         present(.curatedHood)
                     case .curatedDeletion:

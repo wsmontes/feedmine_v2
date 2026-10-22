@@ -47,10 +47,21 @@ final class LibraryJourneyUITests: XCTestCase {
         let first = app.staticTexts["Caixa A"]
         let second = app.staticTexts["Caixa renomeada"]
         XCTAssertTrue(first.waitForExistence(timeout: 10))
+        let orderBefore = boxLabels(app)
+        XCTAssertEqual(orderBefore.count, 2, "the two boxes are listed before the drag")
         second.press(forDuration: 1.2, thenDragTo: first)
         app.buttons["bookmarkBoxes.reorder"].tap()
-        let reorderedFirst = app.staticTexts.element(boundBy: 0)
-        XCTAssertTrue(reorderedFirst.waitForExistence(timeout: 10))
+        let orderAfter = boxLabels(app)
+        XCTAssertNotEqual(orderAfter, orderBefore,
+            "the drag really changes the box permutation; before=\(orderBefore) after=\(orderAfter)")
+
+        // The permutation is durable before the later delete removes one of the rows.
+        app.buttons["bookmarkBoxes.done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+        app.buttons["bookmark-boxes-button"].tap()
+        XCTAssertTrue(app.navigationBars["Caixas de salvos"].waitForExistence(timeout: 20))
+        XCTAssertEqual(boxLabels(app), orderAfter,
+            "the reordered permutation is the one read after reopening; reopened=\(boxLabels(app))")
 
         // Delete the non-default box through the trailing swipe; no confirmation is promised for a box.
         app.staticTexts["Caixa renomeada"].swipeLeft()
@@ -150,6 +161,13 @@ final class LibraryJourneyUITests: XCTestCase {
         XCTAssertTrue(saved.waitForExistence(timeout: 20),
             "the article saved from the card menu is in the saved list")
         XCTAssertFalse(app.staticTexts["Nenhum artigo salvo"].exists)
+    }
+
+    /// The boxes' own row labels, in drawing order. A reorder assertion needs the permutation, not one row.
+    @MainActor
+    private func boxLabels(_ app: XCUIApplication) -> [String] {
+        app.buttons.matching(identifier: "bookmarkBox.row").allElementsBoundByIndex.map(\.label)
+            .filter { !$0.hasPrefix("Salvos") }
     }
 
     @MainActor
