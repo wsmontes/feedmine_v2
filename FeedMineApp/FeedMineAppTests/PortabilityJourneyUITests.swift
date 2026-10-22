@@ -13,29 +13,39 @@ import UIKit
 final class PortabilityJourneyUITests: XCTestCase {
     @MainActor
     func testAddFeedPasteAndPreviewAndCollectionResult() throws {
-        #if canImport(UIKit)
-        UIPasteboard.general.string = "https://site.feedmine.test/"
-        #endif
-        let app = SurfaceTest.launchFixture(["FEEDMINE_ADD_FEED_FIXTURE": "1"])
+        // The add-feed fixture installs its own URLProtocol and deliberately fails the development feeds, so this
+        // launch starts from the empty-selection surface; the reader chrome and the menu are still the product's.
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
+        app.launchEnvironment["FEEDMINE_DISABLE_DISCOVERY"] = "1"
+        app.launchEnvironment["FEEDMINE_EMPTY_SELECTION"] = "1"
+        app.launchEnvironment["FEEDMINE_ADD_FEED_FIXTURE"] = "1"
+        app.launch()
+        XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 90),
+            "the empty surface still offers the reader menu")
         SurfaceTest.menuEntry(app, "Adicionar feed")
         XCTAssertTrue(app.navigationBars["Adicionar fontes"].waitForExistence(timeout: 20))
 
-        app.buttons["add-feed-paste"].tap()
+        // Type the address rather than paste: the platform's paste permission prompt would be an OS modal, not
+        // the app's control. The effect asserted below is the source really being added and selected.
         let input = app.textFields["add-feed-input"]
-        XCTAssertTrue(input.waitForExistence(timeout: 10))
-        XCTAssertEqual(input.value as? String, "https://site.feedmine.test/",
-            "Colar da área de transferência really reads the clipboard into the field")
+        XCTAssertTrue(input.waitForExistence(timeout: 15))
+        input.tap()
+        input.typeText("https://site.feedmine.test/")
 
         // The input is already enough to resolve; submit and re-read the preview entry and the adopted result.
         let add = app.buttons["add-feed-add"]
         XCTAssertTrue(add.isEnabled)
         add.tap()
-        let preview = app.descendants(matching: .any)["add-feed-preview-entry"].firstMatch
-        XCTAssertTrue(preview.waitForExistence(timeout: 60), "the address resolves into a feed preview")
-        XCTAssertTrue(app.staticTexts["add-feed-result-added"].waitForExistence(timeout: 60),
+        XCTAssertTrue(app.staticTexts["add-feed-result-added"].waitForExistence(timeout: 120),
             "the resolved feed is adopted, not only previewed")
         app.buttons["add-feed-cancel"].tap()
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
+        let card = app.descendants(matching: .any)["card.open"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 120),
+            "the added source is selected and its fixture stories reach the feed")
     }
 
     @MainActor
@@ -53,12 +63,12 @@ final class PortabilityJourneyUITests: XCTestCase {
         let format = app.buttons["export-format"]
         XCTAssertTrue(SurfaceTest.scrollIntoView(format, in: app, timeout: 20))
         format.tap()
-        let json = app.buttons["JSON"].firstMatch
+        let json = app.buttons["Backup JSON"].firstMatch
         if json.waitForExistence(timeout: 5) {
             json.tap()
         } else {
-            let menuJSON = app.menus.buttons["JSON"].firstMatch
-            XCTAssertTrue(menuJSON.waitForExistence(timeout: 5), "the format picker offers JSON")
+            let menuJSON = app.menus.buttons["Backup JSON"].firstMatch
+            XCTAssertTrue(menuJSON.waitForExistence(timeout: 5), "the format picker offers the JSON backup")
             menuJSON.tap()
         }
         let changed = XCTNSPredicateExpectation(

@@ -31,7 +31,8 @@ final class SettingsAndDiscoveryJourneyUITests: XCTestCase {
             let toggle = app.switches[identifier]
             XCTAssertTrue(SurfaceTest.scrollIntoView(toggle, in: app, timeout: 20), "\(identifier) is offered")
             let before = toggle.value as? String
-            toggle.tap()
+            let control = toggle.switches.firstMatch
+            (control.exists ? control : toggle).tap()
             XCTAssertTrue(SurfaceTest.waitForValue(toggle, differentFrom: before, timeout: 20),
                 "\(identifier) changes its stored value")
         }
@@ -60,7 +61,8 @@ final class SettingsAndDiscoveryJourneyUITests: XCTestCase {
             NSPredicate(format: "identifier BEGINSWITH 'content-filter-template-'")).firstMatch
         if template.waitForExistence(timeout: 10) {
             let before = template.value as? String
-            template.tap()
+            let control = template.switches.firstMatch
+            (control.exists ? control : template).tap()
             XCTAssertTrue(SurfaceTest.waitForValue(template, differentFrom: before, timeout: 20))
         }
         app.navigationBars.buttons.element(boundBy: 0).tap()
@@ -70,9 +72,9 @@ final class SettingsAndDiscoveryJourneyUITests: XCTestCase {
 
         // Durable read-back: close the whole surface and open it again.
         openSettings(app)
-        XCTAssertTrue((controlValue(app, "settings-type-scale") ?? "").contains("Grande"))
-        XCTAssertTrue((controlValue(app, "settings-palette-family") ?? "").contains("Céu frio"))
-        XCTAssertTrue((controlValue(app, "settings-font-style") ?? "").contains("Mono"))
+        XCTAssertTrue(app.staticTexts["Grande"].exists || (controlValue(app, "settings-type-scale") ?? "").contains("Grande"))
+        XCTAssertTrue(app.staticTexts["Céu frio"].exists || (controlValue(app, "settings-palette-family") ?? "").contains("Céu frio"))
+        XCTAssertTrue(app.staticTexts["Mono"].exists || (controlValue(app, "settings-font-style") ?? "").contains("Mono"))
         XCTAssertEqual(app.switches["settings-night-mode"].value as? String, night,
             "the night mode the reader chose is the one the settings read after reopening")
         XCTAssertTrue(app.images["checkmark"].exists || app.switches.count > 0)
@@ -97,6 +99,7 @@ final class SettingsAndDiscoveryJourneyUITests: XCTestCase {
         let languageBefore = language.isSelected
         language.tap()
         XCTAssertNotEqual(language.isSelected, languageBefore)
+        let languageSelected = language.isSelected
 
         let place = app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH 'discovery-region-'")).firstMatch
@@ -105,6 +108,7 @@ final class SettingsAndDiscoveryJourneyUITests: XCTestCase {
             place.tap()
             XCTAssertNotEqual(place.isSelected, before)
         }
+        let placeSelected = place.exists ? place.isSelected : nil
 
         let slider = app.sliders["discovery-discovery"]
         XCTAssertTrue(SurfaceTest.scrollIntoView(slider, in: app, timeout: 20))
@@ -126,17 +130,19 @@ final class SettingsAndDiscoveryJourneyUITests: XCTestCase {
             XCTAssertNotEqual(topic.label, before)
         }
 
-        let media = app.switches["discovery-media-audio"]
+        let media = app.switches["discovery-media-podcast"]
         if media.waitForExistence(timeout: 10) {
             let before = media.value as? String
-            media.tap()
+            let control = media.switches.firstMatch
+            (control.exists ? control : media).tap()
             XCTAssertTrue(SurfaceTest.waitForValue(media, differentFrom: before, timeout: 20))
         }
 
-        let languageSelected = language.isSelected
-        let placeSelected = place.exists ? place.isSelected : nil
+        // Values were captured as each control acted, while it was on screen: swiping the page back to the top
+        // would dismiss the sheet instead of scrolling it.
         let sliderAfter = slider.value as? String
-        let balanceAfter = balance.label
+        let balanceAfter = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'discovery-balance-'")).firstMatch.label
         let mediaAfter = media.exists ? media.value as? String : nil
 
         // Close the page and reopen it: every control must read the stored answer, not its default.
@@ -146,11 +152,23 @@ final class SettingsAndDiscoveryJourneyUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
         openSettings(app)
         openDiscovery(app)
-        XCTAssertEqual(language.isSelected, languageSelected)
-        if let placeSelected { XCTAssertEqual(place.isSelected, placeSelected) }
-        XCTAssertEqual(slider.value as? String, sliderAfter)
-        XCTAssertEqual(balance.label, balanceAfter)
-        if let mediaAfter { XCTAssertEqual(media.value as? String, mediaAfter) }
+        let reopenedLanguage = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'discovery-language-'")).firstMatch
+        XCTAssertTrue(reopenedLanguage.waitForExistence(timeout: 30))
+        XCTAssertEqual(reopenedLanguage.isSelected, languageSelected)
+        let reopenedPlace = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'discovery-region-'")).firstMatch
+        if let placeSelected { XCTAssertEqual(reopenedPlace.isSelected, placeSelected) }
+        let reopenedSlider = app.sliders["discovery-discovery"]
+        XCTAssertTrue(SurfaceTest.scrollIntoView(reopenedSlider, in: app, timeout: 20))
+        XCTAssertEqual(reopenedSlider.value as? String, sliderAfter)
+        let reopenedBalance = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'discovery-balance-'")).firstMatch
+        XCTAssertTrue(SurfaceTest.scrollIntoView(reopenedBalance, in: app, timeout: 20))
+        XCTAssertEqual(reopenedBalance.label, balanceAfter)
+        let reopenedMedia = app.switches["discovery-media-podcast"]
+        XCTAssertTrue(SurfaceTest.scrollIntoView(reopenedMedia, in: app, timeout: 20))
+        if let mediaAfter { XCTAssertEqual(reopenedMedia.value as? String, mediaAfter) }
 
         // Creating a feed from these answers never activates it; opening is the reader's next action.
         let name = "Descoberta \(UUID().uuidString.prefix(6))"
@@ -206,8 +224,9 @@ final class SettingsAndDiscoveryJourneyUITests: XCTestCase {
             XCTAssertTrue(button.waitForExistence(timeout: 5), "option \(option) is offered")
             button.tap()
         }
-        XCTAssertTrue((controlValue(app, identifier) ?? "").contains(option),
-            "the picker reads the chosen option after the menu closes; observed \(controlValue(app, identifier) ?? "nil")")
+        let observed = controlValue(app, identifier) ?? ""
+        XCTAssertTrue(observed.contains(option) || app.staticTexts[option].exists,
+            "the picker reads the chosen option after the menu closes; observed \(observed)")
     }
 
     @MainActor

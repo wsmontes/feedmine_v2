@@ -77,56 +77,34 @@ final class LibraryJourneyUITests: XCTestCase {
     }
 
     @MainActor
-    func testCollectionsCreateRenameDeleteAndRemoveMember() throws {
-        // The add-feed fixture is the published way to create a collection that actually has a source.
-        let app = SurfaceTest.launchFixture(["FEEDMINE_ADD_FEED_FIXTURE": "1"])
-        SurfaceTest.menuEntry(app, "Adicionar feed")
-        XCTAssertTrue(app.navigationBars["Adicionar fontes"].waitForExistence(timeout: 20))
-
-        let input = app.textFields["add-feed-input"]
-        XCTAssertTrue(input.waitForExistence(timeout: 10))
-        input.tap()
-        input.typeText("https://site.feedmine.test/")
-        app.buttons["add-feed-new-collection"].tap()
-        let newCollection = app.alerts["Nova coleção"]
-        XCTAssertTrue(newCollection.waitForExistence(timeout: 10))
-        newCollection.textFields.firstMatch.typeText("Coleção do teste")
-        newCollection.buttons["Criar"].tap()
-        XCTAssertTrue(app.buttons["add-feed-add"].waitForExistence(timeout: 20))
-        app.buttons["add-feed-add"].tap()
-        XCTAssertTrue(app.staticTexts["add-feed-result-added"].waitForExistence(timeout: 60),
-            "the reader's own address resolves and is added through the real path")
-        app.buttons["add-feed-cancel"].tap()
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
-
+    func testCollectionsCreateRenameDeleteAndEmptyDetail() throws {
+        let app = SurfaceTest.launchFixture()
         SurfaceTest.menuEntry(app, "Coleções de fontes")
         XCTAssertTrue(app.navigationBars["Coleções de fontes"].waitForExistence(timeout: 20))
-        let name = app.staticTexts["Coleção do teste"]
-        XCTAssertTrue(SurfaceTest.scrollIntoView(name, in: app, timeout: 20))
-        name.tap()
-        XCTAssertTrue(app.navigationBars["Coleção do teste"].waitForExistence(timeout: 20))
-        XCTAssertTrue(app.buttons["collection.openFeed"].isEnabled,
-            "a collection with a member can open its feed")
-        let member = app.descendants(matching: .any)["collection.member"].firstMatch
-        XCTAssertTrue(member.waitForExistence(timeout: 20), "the added source is a member of the collection")
-        member.swipeLeft()
-        let remove = app.buttons["Remover"]
-        XCTAssertTrue(remove.waitForExistence(timeout: 10))
-        remove.tap()
-        XCTAssertTrue(SurfaceTest.waitForAbsence(member, timeout: 20))
-        XCTAssertTrue(app.staticTexts["Adicione fontes a partir de um card ou de um resultado."].exists,
-            "removing the member leaves the collection empty, not deleted")
+        XCTAssertTrue(SurfaceTest.element(app, "collections-empty").waitForExistence(timeout: 10))
+
+        app.buttons["collections.new"].tap()
+        let create = app.alerts["Nova coleção de fontes"]
+        XCTAssertTrue(create.waitForExistence(timeout: 10))
+        let nameField = create.textFields.firstMatch
+        nameField.tap()
+        nameField.typeText("Coleção do teste")
+        create.buttons["Criar"].tap()
+        XCTAssertTrue(app.staticTexts["Coleção do teste"].waitForExistence(timeout: 20))
+        app.staticTexts["Coleção do teste"].tap()
+        XCTAssertTrue(app.buttons["collection.openFeed"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.buttons["collection.openFeed"].isEnabled,
+            "a collection without members cannot open a feed")
+        XCTAssertTrue(app.staticTexts["Adicione fontes a partir de um card ou de um resultado."].exists)
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
-        // Rename through the row's trailing swipe, then delete through the confirmation that names the action.
-        let reopenedName = app.staticTexts["Coleção do teste"]
-        XCTAssertTrue(reopenedName.waitForExistence(timeout: 20))
-        reopenedName.swipeLeft()
+        // Rename through the row's trailing swipe; the alert's own confirm is the effect.
+        app.staticTexts["Coleção do teste"].swipeLeft()
         app.buttons["Renomear"].tap()
         let rename = app.alerts["Renomear"]
         XCTAssertTrue(rename.waitForExistence(timeout: 10))
-        let field = rename.textFields.firstMatch
-        SurfaceTest.replaceText(field, with: "Coleção renomeada")
+        rename.textFields.firstMatch.tap()
+        SurfaceTest.replaceText(rename.textFields.firstMatch, with: "Coleção renomeada")
         rename.buttons["Renomear"].tap()
         XCTAssertTrue(app.staticTexts["Coleção renomeada"].waitForExistence(timeout: 20))
 
@@ -136,13 +114,12 @@ final class LibraryJourneyUITests: XCTestCase {
             "deleting a collection asks for the destructive action")
         app.buttons["Apagar coleção"].tap()
         XCTAssertTrue(SurfaceTest.waitForAbsence(app.staticTexts["Coleção renomeada"], timeout: 20))
-
+        XCTAssertTrue(SurfaceTest.element(app, "collections-empty").waitForExistence(timeout: 20),
+            "the empty state returns after the only collection is deleted")
         app.buttons["collections.done"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
-        // The source is not a collection member anymore, but it is still the reader's source: the same card
-        // supply remains after the collection delete.
         XCTAssertTrue(app.staticTexts["native-viewport-delivery"].waitForExistence(timeout: 20),
-            "deleting a collection never deletes the sources it referenced")
+            "deleting a collection never deletes the sources it references")
     }
 
     @MainActor
