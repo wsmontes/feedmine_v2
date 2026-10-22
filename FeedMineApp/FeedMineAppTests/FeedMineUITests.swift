@@ -1391,6 +1391,17 @@ final class FeedMineUITests: XCTestCase {
         // and stay moved, and the point the reader stops at must be what another close restores.
         let restoredLine = after
         reopened.swipeUp()
+        var continueAttempts = 0
+        while containing(reopened) == nil && continueAttempts < 5 {
+            reopened.swipeUp()
+            continueAttempts += 1
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        while containing(reopened) == nil && continueAttempts < 10 {
+            reopened.swipeDown()
+            continueAttempts += 1
+            Thread.sleep(forTimeInterval: 0.5)
+        }
         var continuedID = ""
         var continuedLine: CGFloat = .nan
         var continuedHeight: CGFloat = .nan
