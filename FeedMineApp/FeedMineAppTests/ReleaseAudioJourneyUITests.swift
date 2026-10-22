@@ -57,7 +57,9 @@ final class ReleaseAudioJourneyUITests: XCTestCase {
         let playFrame = play.frame
         let card = app.descendants(matching: .any).matching(Self.cardIdentifier)
             .allElementsBoundByIndex.first { $0.frame.contains(playFrame) }
-        let cardTitle = card?.staticTexts.allElementsBoundByIndex.map(\.label).first { !$0.isEmpty } ?? ""
+        // The card draws its source row before the title, so the first static text is the source name. The title
+        // itself carries `card.title` in both card layouts; scoping to it is the identity the bar must repeat.
+        let cardTitle = card?.staticTexts["card.title"].label ?? ""
 
         play.tap()
         let bar = app.otherElements["mini-player"]
