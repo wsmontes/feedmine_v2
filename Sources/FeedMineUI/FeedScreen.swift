@@ -162,10 +162,14 @@ public struct FeedScreen: View {
                                     store.noteFirstScreenLayout(cardID: card.id,
                                         contentBottom: proof.frame.maxY, viewportHeight: proof.height)
                                     #if canImport(UIKit)
-                                    // The relative point of a restore is applied to the same frame proof the
-                                    // capture would otherwise treat as movement: the anchor card has landed, and
-                                    // the remaining delta is the difference between this line and the recorded one.
-                                    // The callback carrying the pre-correction geometry is stale by construction.
+                                    // The restore point must be adopted before this proof can become a position:
+                                    // the first proof of a launch arrives before the viewport's `onChange` runs,
+                                    // and publishing it would make a transient layout durable.
+                                    capture.adoptRestoration(store.state.presentation?.restoredPosition,
+                                        sequenceID: store.state.presentation?.provenance.sequenceID)
+                                    // The relative point of a restore is applied to the frame proof the capture
+                                    // would otherwise treat as movement; the callback carrying the pre-correction
+                                    // geometry is stale by construction.
                                     if capture.applyRestorationIfNeeded(proof) {
                                         return
                                     }

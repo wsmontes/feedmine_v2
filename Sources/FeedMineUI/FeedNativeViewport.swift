@@ -44,8 +44,9 @@ struct NativeFeedViewport: ViewModifier {
 
     /// Arms the restore target only when this capture belongs to the presentation that carries it.
     private func armPresentationRestoration(_ position: PresentationAnchor? = nil) {
+        let resolved = position ?? presented?.restoredPosition
         guard matchesScope else { return }
-        capture.armRestoration(position ?? presented?.restoredPosition)
+        capture.adoptRestoration(resolved, sequenceID: presented?.provenance.sequenceID)
     }
 
     // Card bounds use the container viewport; visibleRect may also include safe-area insets.
@@ -78,6 +79,8 @@ struct NativeFeedViewport: ViewModifier {
                 observePosition(id, presented: presented)
             }))
             .onScrollPhaseChange { oldPhase, phase, context in
+                capture.adoptRestoration(store.state.presentation?.restoredPosition,
+                    sequenceID: store.state.presentation?.provenance.sequenceID)
                 #if DEBUG
                 FeedVisualCapture.scrollPhaseEvents += 1
                 #endif
@@ -147,6 +150,8 @@ struct NativeFeedViewport: ViewModifier {
                 #if DEBUG
                 FeedVisualCapture.scrollGeometryEvents += 1
                 #endif
+                capture.adoptRestoration(store.state.presentation?.restoredPosition,
+                    sequenceID: store.state.presentation?.provenance.sequenceID)
                 guard matchesScope else {
                     #if DEBUG
                     FeedVisualCapture.scopeRejections += 1
@@ -163,6 +168,7 @@ struct NativeFeedViewport: ViewModifier {
                 if let event = capture.observe(geometry) {
                     store.submitViewport(event.observation, activity: event.activity, rendered: presented)
                 }
+                if capture.enforceRestoration() { return }
                 // Toda mudança da geometria do scroll é um movimento do viewport — inclusive os que **nenhum gesto**
                 // produziu (uma rolagem de acessibilidade, uma re-layout do sistema, uma animação programática). A
                 // posição onde o viewport começa é publicada aqui: em movimento o dono do cursor só a lembra, e no

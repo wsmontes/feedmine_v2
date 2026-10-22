@@ -13,6 +13,10 @@ import OSLog
 final class FeedNativeScrollOffset {
     weak var scrollView: UIScrollView?
 
+    /// The live content origin. A restore measures against it instead of a card proof's own viewport line: the two
+    /// are delivered in different passes and the proof may describe a scroll the view has already left.
+    var contentOffsetY: CGFloat? { scrollView?.contentOffset.y }
+
     private var correction = FeedWindowOffsetCorrection()
     private var suppressCorrectionEvents = false
     private var correctedOffset: CGFloat = 0
