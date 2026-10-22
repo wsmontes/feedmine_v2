@@ -51,20 +51,29 @@ enum SurfaceTest {
         menu.tap()
     }
 
-    /// Opens the overflow menu and taps the entry with the localized label the build draws.
+    /// Opens the overflow menu and taps the entry with the localized label the build draws. The menu's
+    /// destinations are installed by the composition after launch, so a first open can be empty; the same
+    /// reader gesture is retried without inventing a different control.
     @MainActor
     static func menuEntry(_ app: XCUIApplication, _ label: String) {
-        openMenu(app)
-        // Measured on iOS 26: a SwiftUI `Menu`'s items are exposed as plain buttons, not inside a `menus`
-        // element. The button form is therefore tried first; the `menus` form is kept for the Mac host.
-        let visible = app.buttons[label].firstMatch
-        if visible.waitForExistence(timeout: 5) {
-            visible.tap()
-            return
+        for _ in 0..<4 {
+            openMenu(app)
+            let visible = app.buttons[label].firstMatch
+            if visible.waitForExistence(timeout: 5) {
+                visible.tap()
+                return
+            }
+            let item = app.menus.buttons[label].firstMatch
+            if item.waitForExistence(timeout: 3) {
+                item.tap()
+                return
+            }
+            // Close the empty menu so the next attempt starts from the reader's chrome.
+            let menu = app.buttons["more-menu"]
+            if menu.exists { menu.tap() }
+            Thread.sleep(forTimeInterval: 1)
         }
-        let item = app.menus.buttons[label].firstMatch
-        XCTAssertTrue(item.waitForExistence(timeout: 5), "menu entry \(label) is offered")
-        item.tap()
+        XCTFail("menu entry \(label) is offered")
     }
 
     /// A row of a scrolling list is not in the accessibility hierarchy until it has been scrolled into view.

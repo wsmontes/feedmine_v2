@@ -24,6 +24,8 @@ final class ReleaseSurfaceJourneyUITests: XCTestCase {
         }
         XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 180),
             "the release app reaches its reader chrome")
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 180),
+            "the release association is up before a surface journey starts")
 
         // Settings: one stored option, read back after closing and reopening the sheet.
         SurfaceTest.menuEntry(app, "Ajustes")
@@ -31,7 +33,8 @@ final class ReleaseSurfaceJourneyUITests: XCTestCase {
         let night = app.switches["settings-night-mode"]
         XCTAssertTrue(SurfaceTest.scrollIntoView(night, in: app, timeout: 30))
         let before = night.value as? String
-        night.tap()
+        let nightControl = night.switches.firstMatch
+        (nightControl.exists ? nightControl : night).tap()
         XCTAssertTrue(SurfaceTest.waitForValue(night, differentFrom: before, timeout: 20))
         let after = night.value as? String
         app.buttons["settings-done"].tap()
@@ -52,6 +55,7 @@ final class ReleaseSurfaceJourneyUITests: XCTestCase {
         let country = toggles.firstMatch
         XCTAssertTrue(country.waitForExistence(timeout: 60), "the bundled catalogue lists countries")
         let countryBefore = country.value as? String
+        let countryID = country.identifier
         country.tap()
         XCTAssertTrue(SurfaceTest.waitForValue(country, differentFrom: countryBefore, timeout: 60))
         app.buttons["countries-done"].tap()
@@ -59,7 +63,7 @@ final class ReleaseSurfaceJourneyUITests: XCTestCase {
         app.buttons["filter-done"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
 
-        let proof = XCTAttachment(string: "release-night=\(after ?? "nil") country=\(country.identifier) "
+        let proof = XCTAttachment(string: "release-night=\(after ?? "nil") country=\(countryID) "
             + "countryBefore=\(countryBefore ?? "nil")")
         proof.name = "release-surface-journey"
         proof.lifetime = .keepAlways

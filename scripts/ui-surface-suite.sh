@@ -106,12 +106,17 @@ for JOURNEY in "${JOURNEYS[@]}"; do
         # The Release app's identifier; the scheme builds it from scratch and the journey starts clean.
         xcrun simctl uninstall "${DESTINATION##*id=}" com.feedmine.app >/dev/null 2>&1 || true
     fi
-    LIVE_ENV=()
-    if [ "$PROFILE" = "live" ]; then LIVE_ENV=(TEST_RUNNER_FEEDMINE_LIVE_SURFACES=1); fi
-    xcodebuild test-without-building \
-        -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIGURATION" \
-        -destination "$DESTINATION" -derivedDataPath "$DERIVED" \
-        "${ONLY[@]}" "${LIVE_ENV[@]}" -resultBundlePath "$RESULT" > "$LOG" 2>&1
+    if [ "$PROFILE" = "live" ]; then
+        xcodebuild test-without-building \
+            -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIGURATION" \
+            -destination "$DESTINATION" -derivedDataPath "$DERIVED" \
+            "${ONLY[@]}" TEST_RUNNER_FEEDMINE_LIVE_SURFACES=1 -resultBundlePath "$RESULT" > "$LOG" 2>&1
+    else
+        xcodebuild test-without-building \
+            -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIGURATION" \
+            -destination "$DESTINATION" -derivedDataPath "$DERIVED" \
+            "${ONLY[@]}" -resultBundlePath "$RESULT" > "$LOG" 2>&1
+    fi
     STATUS=$?
     SECONDS_TAKEN=$(( $(date +%s) - STARTED ))
     printf '%s\tstatus=%s\tduration=%ss\tlog=%s\tresult=%s\n' \
