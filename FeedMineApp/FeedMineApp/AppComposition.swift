@@ -2963,7 +2963,7 @@ final class FeedAssociation {
         // One bounded memory of the stories a one-way walk skipped for pending media, shared by the first screen
         // and the live feed: a skip recorded before the reader's first store is ready must still be reachable by the
         // opportunity that runs after it, because that opportunity examines a different window.
-        let reoffer = PendingMediaReconsideration()
+        let reoffer = PendingMediaReconsideration(database: db)
         let fetcher = MediaHTTPFetcher(session: transport)
         // F06-G/PD-6: one derived tolerance feeds both the preparation window and the byte budget below. The media
         // layer used to be handed a fixed 5 s here while the window was computed elsewhere — two numbers for one

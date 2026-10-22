@@ -179,7 +179,8 @@ final class CanonicalSupplySchemaTests: XCTestCase {
                     INSERT INTO source_memberships VALUES (?, ?, 'direct', 1, 1);
                     """, arguments: [origin, source])
                 try db.execute(sql: """
-                    INSERT INTO selection_supply VALUES (?, ?, 1, 'observedFallback')
+                    INSERT INTO selection_supply (origin_record_id, origin_revision_id, sort_date, sort_date_basis)
+                    VALUES (?, ?, 1, 'observedFallback')
                     """, arguments: [origin, revision])
             }
             assertConstraint(database, sql: "UPDATE selection_supply SET sort_date_basis = 'modified'", kind: "CHECK")

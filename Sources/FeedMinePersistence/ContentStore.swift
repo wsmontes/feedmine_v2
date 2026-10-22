@@ -763,10 +763,26 @@ public struct ContentStore: Sendable {
         try db.execute(sql: """
             INSERT INTO selection_supply (origin_record_id, origin_revision_id, sort_date, sort_date_basis)
             VALUES (?, ?, ?, ?) ON CONFLICT(origin_record_id) DO UPDATE SET
+                -- A newer revision is a different story: the deferral belonged to the revision that was skipped.
+                media_deferred_edition_id = CASE
+                    WHEN selection_supply.origin_revision_id = excluded.origin_revision_id
+                    THEN selection_supply.media_deferred_edition_id ELSE NULL END,
+                media_deferred_at = CASE
+                    WHEN selection_supply.origin_revision_id = excluded.origin_revision_id
+                    THEN selection_supply.media_deferred_at ELSE NULL END,
+                media_offered_at = CASE
+                    WHEN selection_supply.origin_revision_id = excluded.origin_revision_id
+                    THEN selection_supply.media_offered_at ELSE NULL END,
                 origin_revision_id = excluded.origin_revision_id, sort_date = excluded.sort_date,
                 sort_date_basis = excluded.sort_date_basis
             """, arguments: [key(id.rawValue), key(revision.id.rawValue),
                 try PersistenceValueCoding.date(date, field: "sort_date"), revision.authoredAt == nil ? "observedFallback" : "authored"])
+        // A newer revision is a different story: whatever Edition deferred the old one is not deferring this one.
+        // The association is keyed by Edition/origin, so the revision guard has to delete, not overwrite a column.
+        try db.execute(sql: """
+            DELETE FROM selection_supply_media_deferrals
+            WHERE origin_record_id = ? AND origin_revision_id <> ?
+            """, arguments: [key(id.rawValue), key(revision.id.rawValue)])
     }
 }
 

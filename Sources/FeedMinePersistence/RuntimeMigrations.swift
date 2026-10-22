@@ -626,6 +626,58 @@ public enum RuntimeMigrations {
             try db.execute(sql: "ALTER TABLE published_cards ADD COLUMN media_identity TEXT")
             try db.execute(sql: "ALTER TABLE retired_published_cards ADD COLUMN media_identity TEXT")
         }
+        // PD-9/F06 (2026-10-21): a story the one-way walk passed while its media was still pending is a fact about
+        // the supply row, not about the lifetime of one in-memory queue. V1 stored that fact as columns on the supply
+        // row. It stays registered exactly as it was: it is applied history, and a shipped row keeps its past.
+        // Nullable on purpose, so existing rows read as "not deferred".
+        migrator.registerMigration("selection-supply-media-deferral-v1") { db in
+            try db.execute(sql: """
+                ALTER TABLE selection_supply ADD COLUMN media_deferred_edition_id TEXT;
+                ALTER TABLE selection_supply ADD COLUMN media_deferred_at REAL;
+                ALTER TABLE selection_supply ADD COLUMN media_offered_at REAL;
+                CREATE INDEX selection_supply_media_deferral
+                ON selection_supply (media_offered_at, media_deferred_at)
+                WHERE media_deferred_edition_id IS NOT NULL;
+                """)
+        }
+        // V2: one association per Edition and origin, plus the shared `turn_at` that orders admissions and offers.
+        // The single Edition column in V1 cannot hold two Editions' interest in the same story, so A -> B -> A lost
+        // A's deferral. This is additive: the table is created only when absent and every stored deferral is copied
+        // once with `INSERT OR IGNORE`. Nothing is dropped or rewritten; the V1 columns and their index remain as
+        // history, no longer read by the store.
+        //
+        // Compatibility: one never-shipped candidate build registered a table under the V1 identifier. The schema is
+        // therefore detected instead of trusted: a database from that build has no V1 columns, so the backfill is
+        // skipped and its existing table and rows are left untouched.
+        migrator.registerMigration("selection-supply-media-deferral-v2") { db in
+            if try db.tableExists("selection_supply_media_deferrals") == false {
+                try db.execute(sql: """
+                    CREATE TABLE selection_supply_media_deferrals (
+                        edition_id TEXT NOT NULL,
+                        origin_record_id TEXT NOT NULL REFERENCES selection_supply(origin_record_id) ON DELETE CASCADE,
+                        origin_revision_id TEXT NOT NULL REFERENCES origin_revisions(id),
+                        turn_at REAL NOT NULL,
+                        PRIMARY KEY (edition_id, origin_record_id)
+                    )
+                    """)
+                try db.execute(sql: """
+                    CREATE INDEX selection_supply_media_deferrals_turn
+                    ON selection_supply_media_deferrals (edition_id, turn_at, origin_record_id)
+                    """)
+            }
+            let hasLegacyColumns = try db.columns(in: "selection_supply").contains {
+                $0.name == "media_deferred_edition_id"
+            }
+            guard hasLegacyColumns else { return }
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO selection_supply_media_deferrals
+                    (edition_id, origin_record_id, origin_revision_id, turn_at)
+                SELECT media_deferred_edition_id, origin_record_id, origin_revision_id,
+                    COALESCE(media_offered_at, media_deferred_at, 0)
+                FROM selection_supply
+                WHERE media_deferred_edition_id IS NOT NULL
+                """)
+        }
         return migrator
     }
 
