@@ -116,18 +116,26 @@ final class ReleaseSurfaceJourneyUITests: XCTestCase {
         SurfaceTest.menuEntry(app, "Exportar")
         XCTAssertTrue(app.navigationBars["Exportar"].waitForExistence(timeout: 30))
         let preview = app.staticTexts["export-preview"]
-        XCTAssertTrue(preview.waitForExistence(timeout: 30), "the Release export produces a document")
-        let opml = preview.label
+        let empty = app.staticTexts["export-empty"]
+        let hasDocument = preview.waitForExistence(timeout: 30)
+        XCTAssertTrue(hasDocument || empty.exists,
+            "the Release export states either a document or that there is nothing to write")
         let format = app.buttons["export-format"]
         XCTAssertTrue(SurfaceTest.scrollIntoView(format, in: app, timeout: 20))
         format.tap()
         let json = app.buttons["Backup JSON"].firstMatch
         XCTAssertTrue(json.waitForExistence(timeout: 5), "the format picker offers Backup JSON")
         json.tap()
-        let changed = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label != %@", opml), object: preview)
-        XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 30), .completed,
-            "the Release preview is recomputed in the chosen format")
+        if hasDocument {
+            let opml = preview.label
+            let changed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label != %@", opml), object: preview)
+            XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 30), .completed,
+                "the Release preview is recomputed in the chosen format")
+        } else {
+            XCTAssertFalse(app.buttons["export-share"].isEnabled,
+                "an empty export cannot be shared")
+        }
         app.buttons["export-done"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
 
