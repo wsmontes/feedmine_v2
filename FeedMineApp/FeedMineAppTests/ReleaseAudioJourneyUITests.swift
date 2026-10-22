@@ -21,13 +21,27 @@ final class ReleaseAudioJourneyUITests: XCTestCase {
             "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
     }
 
-    private func waitForLabel(_ element: XCUIElement, _ label: String, timeout: TimeInterval) -> Bool {
+    /// The product's own `m:ss` / `h:mm:ss` clock, as integer seconds. Nil when the surface states something else.
+    private func clockSeconds(_ text: String) -> Int? {
+        let parts = text.split(separator: ":").map(String.init)
+        guard !parts.isEmpty, parts.count <= 3 else { return nil }
+        var seconds = 0
+        for part in parts {
+            guard let value = Int(part) else { return nil }
+            seconds = seconds * 60 + value
+        }
+        return seconds
+    }
+
+    /// Waits for the product's clock to show a strictly later second than `from`. The display advances once per
+    /// second, so one more second is the smallest real advance; the deadline covers network buffering.
+    private func waitForAdvance(_ clock: XCUIElement, from: Int, timeout: TimeInterval) -> Int? {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if element.label == label { return true }
-            Thread.sleep(forTimeInterval: 0.2)
+            if let value = clockSeconds(clock.label), value > from { return value }
+            Thread.sleep(forTimeInterval: 0.5)
         }
-        return element.label == label
+        return nil
     }
 
     @MainActor
@@ -92,21 +106,59 @@ final class ReleaseAudioJourneyUITests: XCTestCase {
             add(proof)
             return
         }
-        XCTAssertEqual(toggle.label, "Pausar", "the public audio card is really playing")
+        XCTAssertEqual(toggle.label, "Pausar", "the player states the episode is playing")
 
-        toggle.tap()
-        XCTAssertTrue(waitForLabel(toggle, "Tocar", timeout: 20), "the reader pauses the episode")
+        // The label is derived from `state.isPlaying`, which the adapter sets when it calls play(). Playback is
+        // proven by the product's own clock: it must advance, freeze while paused, and advance again after resume.
+        title.tap()
+        let full = app.otherElements["full-player"]
+        XCTAssertTrue(full.waitForExistence(timeout: 20), "the bar opens the full player")
+        let fullTitle = app.staticTexts["full-player-title"]
+        XCTAssertTrue(fullTitle.waitForExistence(timeout: 20))
         if !cardTitle.isEmpty {
-            XCTAssertEqual(title.label, cardTitle, "pausing does not change the occurrence")
+            XCTAssertEqual(fullTitle.label, cardTitle, "the full player names the same occurrence")
         }
-        toggle.tap()
-        XCTAssertTrue(waitForLabel(toggle, "Pausar", timeout: 20), "the reader resumes the same episode")
+        let clock = app.staticTexts["full-player-position"]
+        // The duration clock exists only after the item's length is known; a public MP3 can take a moment.
+        XCTAssertTrue(clock.waitForExistence(timeout: 30),
+            "the player states its position clock; without it time passing cannot be measured")
+
+        guard let playingFirst = clockSeconds(clock.label) else {
+            return XCTFail("the clock does not state m:ss: \(clock.label)")
+        }
+        guard let playingSecond = waitForAdvance(clock, from: playingFirst, timeout: 15) else {
+            return XCTFail("the clock did not advance while the player stated playing; a toggle label alone is "
+                + "not playback (clock \(clock.label))")
+        }
+
+        app.buttons["full-player-toggle"].tap()
+        // Let the player's own status callback settle, then two samples further apart than the one-second display:
+        // a paused item states the same second both times, with no tolerance applied.
+        Thread.sleep(forTimeInterval: 2)
+        guard let pausedFirst = clockSeconds(clock.label) else {
+            return XCTFail("the clock stopped stating m:ss after pause: \(clock.label)")
+        }
+        Thread.sleep(forTimeInterval: 3)
+        guard let pausedSecond = clockSeconds(clock.label) else {
+            return XCTFail("the clock stopped stating m:ss while paused: \(clock.label)")
+        }
+        XCTAssertEqual(pausedSecond, pausedFirst, "a paused item's clock does not advance")
+
+        app.buttons["full-player-toggle"].tap()
+        guard let resumed = waitForAdvance(clock, from: pausedSecond, timeout: 15) else {
+            return XCTFail("the clock did not advance after resume (clock \(clock.label))")
+        }
+
+        app.buttons["full-player-close"].tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
         if !cardTitle.isEmpty {
-            XCTAssertEqual(title.label, cardTitle, "resuming does not change the occurrence")
+            XCTAssertEqual(title.label, cardTitle, "closing the player keeps the same occurrence")
         }
 
         let proof = XCTAttachment(string: "release-audio card=\(card?.identifier ?? "unavailable") "
-            + "played=true paused=true resumed=true title=\(title.label)")
+            + "title=\(title.label) clock_playing=\(playingFirst)->\(playingSecond) "
+            + "clock_paused=\(pausedFirst)==\(pausedSecond) clock_resumed=\(resumed) "
+            + "mode=time-advance")
         proof.name = "release-audio-journey"
         proof.lifetime = .keepAlways
         add(proof)
