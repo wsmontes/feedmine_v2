@@ -58,15 +58,83 @@ final class ReleaseSurfaceJourneyUITests: XCTestCase {
         let countryID = country.identifier
         country.tap()
         XCTAssertTrue(SurfaceTest.waitForValue(country, differentFrom: countryBefore, timeout: 60))
+        let countryAfter = country.value as? String
+        app.buttons["countries-done"].tap()
+        XCTAssertTrue(app.navigationBars["Filtros"].waitForExistence(timeout: 30))
+        app.buttons["filter-done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
+
+        // Reopen the same level and read the same country again: the Release selection is durable.
+        app.buttons["filter-button"].tap()
+        XCTAssertTrue(app.navigationBars["Filtros"].waitForExistence(timeout: 30))
+        XCTAssertTrue(SurfaceTest.tapCountriesLink(app), "Países opens again in Release")
+        let reopened = app.switches[countryID]
+        XCTAssertTrue(reopened.waitForExistence(timeout: 60))
+        XCTAssertEqual(reopened.value as? String, countryAfter,
+            "the Release country selection is read back after reopening the filter sheet")
         app.buttons["countries-done"].tap()
         XCTAssertTrue(app.navigationBars["Filtros"].waitForExistence(timeout: 30))
         app.buttons["filter-done"].tap()
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
 
         let proof = XCTAttachment(string: "release-night=\(after ?? "nil") country=\(countryID) "
-            + "countryBefore=\(countryBefore ?? "nil")")
+            + "countryBefore=\(countryBefore ?? "nil") countryAfter=\(countryAfter ?? "nil")")
         proof.name = "release-surface-journey"
         proof.lifetime = .keepAlways
         add(proof)
+    }
+
+    /// The rest of the published surfaces in Release: every destination the menu offers is reachable, and the
+    /// sheets act (Salvos, Coleções, Exportar with a format change, Adicionar feed) without any fixture.
+    @MainActor
+    func testReleaseMenusAndToolsAct() throws {
+        let app = XCUIApplication()
+        app.launch()
+        if app.staticTexts["welcome-headline"].waitForExistence(timeout: 90) {
+            app.buttons["welcome-broad"].tap()
+        }
+        XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 180))
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 180))
+
+        SurfaceTest.openMenu(app)
+        for entry in ["Fontes", "Salvos", "Coleções de fontes", "Ajustes", "Exportar", "Adicionar feed"] {
+            XCTAssertTrue(app.buttons[entry].firstMatch.waitForExistence(timeout: 10),
+                "Release menu offers \(entry)")
+        }
+        app.buttons["Salvos"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Caixas de salvos"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["bookmarkBoxes.new"].exists)
+        app.buttons["bookmarkBoxes.done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
+
+        SurfaceTest.menuEntry(app, "Coleções de fontes")
+        XCTAssertTrue(app.navigationBars["Coleções de fontes"].waitForExistence(timeout: 30))
+        XCTAssertTrue(SurfaceTest.element(app, "collections-empty").waitForExistence(timeout: 20))
+        app.buttons["collections.done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
+
+        SurfaceTest.menuEntry(app, "Exportar")
+        XCTAssertTrue(app.navigationBars["Exportar"].waitForExistence(timeout: 30))
+        let preview = app.staticTexts["export-preview"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 30), "the Release export produces a document")
+        let opml = preview.label
+        let format = app.buttons["export-format"]
+        XCTAssertTrue(SurfaceTest.scrollIntoView(format, in: app, timeout: 20))
+        format.tap()
+        let json = app.buttons["Backup JSON"].firstMatch
+        XCTAssertTrue(json.waitForExistence(timeout: 5), "the format picker offers Backup JSON")
+        json.tap()
+        let changed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label != %@", opml), object: preview)
+        XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 30), .completed,
+            "the Release preview is recomputed in the chosen format")
+        app.buttons["export-done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
+
+        SurfaceTest.menuEntry(app, "Adicionar feed")
+        XCTAssertTrue(app.navigationBars["Adicionar fontes"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.textFields["add-feed-input"].exists)
+        app.buttons["add-feed-cancel"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
     }
 }

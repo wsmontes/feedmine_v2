@@ -42,6 +42,17 @@ final class PortabilityJourneyUITests: XCTestCase {
         add.tap()
         XCTAssertTrue(app.staticTexts["add-feed-result-added"].waitForExistence(timeout: 120),
             "the resolved feed is adopted, not only previewed")
+        // The same address submitted again is the already-selected case: the sheet must say so and must not
+        // report a second insertion. Adoption clears the field, so the reader enters the address again.
+        input.tap()
+        input.typeText("https://site.feedmine.test/")
+        app.buttons["add-feed-add"].tap()
+        let already = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] 'já estava'")).firstMatch
+        XCTAssertTrue(already.waitForExistence(timeout: 120),
+            "adding an already-selected source is reported, not silently dropped")
+        XCTAssertFalse(app.staticTexts["add-feed-result-added"].exists,
+            "the second submission does not claim another insertion")
         app.buttons["add-feed-cancel"].tap()
         let card = app.descendants(matching: .any)["card.open"].firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 120),

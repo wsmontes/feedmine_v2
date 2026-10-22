@@ -37,6 +37,7 @@ final class SettingsAndDiscoveryJourneyUITests: XCTestCase {
                 "\(identifier) changes its stored value")
         }
         let night = app.switches["settings-night-mode"].value as? String
+        let contentFiltersValue = app.switches["settings-content-filters"].value as? String
 
         // The content-filter page: a rule the reader adds is listed and its swipe removes it; the template
         // toggle is the other published control on that page.
@@ -77,7 +78,8 @@ final class SettingsAndDiscoveryJourneyUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Mono"].exists || (controlValue(app, "settings-font-style") ?? "").contains("Mono"))
         XCTAssertEqual(app.switches["settings-night-mode"].value as? String, night,
             "the night mode the reader chose is the one the settings read after reopening")
-        XCTAssertTrue(app.images["checkmark"].exists || app.switches.count > 0)
+        XCTAssertEqual(app.switches["settings-content-filters"].value as? String, contentFiltersValue,
+            "the content-filter master gate is the value the reader chose")
 
         let proof = XCTAttachment(string: "settings=type,palette,typography,prefetch,night,expiry,content-filters "
             + "rule-add-delete=true night=\(night ?? "nil")")

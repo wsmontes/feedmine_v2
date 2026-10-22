@@ -6,9 +6,11 @@
 #
 # Profiles:
 #   smoke    the short set of journeys that covers the reported controls (target: under five minutes after build)
-#   journeys every surface journey in the suite (pre-release coverage)
-#   release  the Release app and its own journey through FeedMineSurfaces (permanent scheme, no overrides)
-#   live     the opt-in reader/surface proof over the public catalogue and network
+#   journeys every deterministic Debug journey, including the reader's own class (pre-release coverage)
+#   release  the Release app and its no-fixture journeys through FeedMineSurfaces (permanent scheme)
+#   reader   the deterministic reader class alone (Debug, fixtures)
+#   seed     the opt-in seeded public-content journey (Debug, real catalogue/network)
+#   live     the opt-in reader/surface proof in Release over the public catalogue and network
 #
 # Exit status is non-zero when any journey fails, including a build failure. Build and simulator boot time are
 # reported separately; they are not hidden inside a journey's duration.
@@ -39,8 +41,11 @@ done
 case "$PROFILE" in
     smoke) JOURNEYS=(SourcesAndFilterJourneyUITests CuratedFeedJourneyUITests) ;;
     journeys) JOURNEYS=(SourcesAndFilterJourneyUITests CuratedFeedJourneyUITests CardActionJourneyUITests
-                        LibraryJourneyUITests SettingsAndDiscoveryJourneyUITests PortabilityJourneyUITests) ;;
+                        LibraryJourneyUITests SettingsAndDiscoveryJourneyUITests PortabilityJourneyUITests
+                        ReadingSurfaceUITests) ;;
     release) JOURNEYS=(ReleaseSurfaceJourneyUITests) ;;
+    reader) JOURNEYS=(ReadingSurfaceUITests) ;;
+    seed) JOURNEYS=(ReaderContentSeedJourneyUITests) ;;
     live) JOURNEYS=(ReadingSurfaceUITests) ;;
     *) printf 'unknown profile: %s\n' "$PROFILE" >&2; exit 2 ;;
 esac
@@ -56,12 +61,15 @@ CONFIGURATION="Debug"
 SCHEME="FeedMine"
 TARGET="FeedMineUITests"
 LIVE_FILTER=""
-if [ "$PROFILE" = "release" ]; then
+if [ "$PROFILE" = "release" ] || [ "$PROFILE" = "live" ]; then
     CONFIGURATION="Release"
     SCHEME="FeedMineSurfaces"
 fi
 if [ "$PROFILE" = "live" ]; then
     LIVE_FILTER="-only-testing:$TARGET/ReadingSurfaceUITests/testLiveReaderControlsOnTheRealCatalogueAndNetwork"
+fi
+if [ "$PROFILE" = "reader" ]; then
+    LIVE_FILTER="-skip-testing:$TARGET/ReadingSurfaceUITests/testLiveReaderControlsOnTheRealCatalogueAndNetwork"
 fi
 
 PROJECT="$ROOT/FeedMineApp/FeedMineApp.xcodeproj"
@@ -96,26 +104,38 @@ for JOURNEY in "${JOURNEYS[@]}"; do
     LOG="$OUT/$JOURNEY.log"
     rm -rf "$RESULT"
     STARTED=$(date +%s)
-    if [ "$PROFILE" = "live" ]; then
+    if [ "$PROFILE" = "live" ] || [ "$PROFILE" = "reader" ]; then
         ONLY=("$LIVE_FILTER")
-        xcrun simctl uninstall "${DESTINATION##*id=}" com.feedmine.development >/dev/null 2>&1 || true
     else
         ONLY=(-only-testing:"$TARGET/$JOURNEY")
     fi
-    if [ "$PROFILE" = "release" ]; then
+    SIM_UDID="${DESTINATION##*id=}"
+    if [ "$PROFILE" = "release" ] || [ "$PROFILE" = "live" ]; then
         # The Release app's identifier; the scheme builds it from scratch and the journey starts clean.
-        xcrun simctl uninstall "${DESTINATION##*id=}" com.feedmine.app >/dev/null 2>&1 || true
+        xcrun simctl uninstall "$SIM_UDID" com.feedmine.app >/dev/null 2>&1 || true
+    fi
+    if [ "$PROFILE" = "seed" ]; then
+        xcrun simctl uninstall "$SIM_UDID" com.feedmine.development >/dev/null 2>&1 || true
     fi
     if [ "$PROFILE" = "live" ]; then
         # The runner reads the opt-in from its own environment. `simctl launchctl setenv` is the simulator's
         # environment; it reaches the test runner before the app is launched (a build setting does not).
-        SIM_UDID="${DESTINATION##*id=}"
         xcrun simctl spawn "$SIM_UDID" launchctl setenv FEEDMINE_LIVE_SURFACES 1
         xcodebuild test-without-building \
             -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIGURATION" \
             -destination "$DESTINATION" -derivedDataPath "$DERIVED" \
             "${ONLY[@]}" -resultBundlePath "$RESULT" > "$LOG" 2>&1
         xcrun simctl spawn "$SIM_UDID" launchctl unsetenv FEEDMINE_LIVE_SURFACES || true
+    elif [ "$PROFILE" = "seed" ]; then
+        SEED="${FEEDMINE_CONTENT_SEED:-reader-surface-20261021}"
+        xcrun simctl spawn "$SIM_UDID" launchctl setenv FEEDMINE_REAL_CONTENT_SEEDED 1
+        xcrun simctl spawn "$SIM_UDID" launchctl setenv FEEDMINE_CONTENT_SEED "$SEED"
+        xcodebuild test-without-building \
+            -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIGURATION" \
+            -destination "$DESTINATION" -derivedDataPath "$DERIVED" \
+            "${ONLY[@]}" -resultBundlePath "$RESULT" > "$LOG" 2>&1
+        xcrun simctl spawn "$SIM_UDID" launchctl unsetenv FEEDMINE_REAL_CONTENT_SEEDED || true
+        xcrun simctl spawn "$SIM_UDID" launchctl unsetenv FEEDMINE_CONTENT_SEED || true
     else
         xcodebuild test-without-building \
             -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIGURATION" \

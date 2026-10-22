@@ -102,4 +102,29 @@ final class CuratedFeedJourneyUITests: XCTestCase {
             "opening the created feed returns to the reader")
         XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 30))
     }
+
+    /// B5: the published "Criar feed curado" entry must create a curated preset from its own composer and must
+    /// not activate it. The preset is then offered in the filter sheet.
+    @MainActor
+    func testCreateCuratedFromMenuCreatesButDoesNotActivate() throws {
+        let app = SurfaceTest.launchFixture()
+        SurfaceTest.menuEntry(app, "Criar feed curado")
+        XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForExistence(timeout: 30),
+            "the curated entry opens the composer, not the first-run welcome")
+        app.buttons["composer-start-broad"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 60),
+            "saving the composer returns to the feed")
+        XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 30))
+        XCTAssertFalse(app.buttons["lens-chip-preset"].exists,
+            "creating a curated feed must not activate it")
+
+        app.buttons["filter-button"].tap()
+        XCTAssertTrue(app.navigationBars["Filtros"].waitForExistence(timeout: 20))
+        let created = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", "Meu feed curado")).firstMatch
+        XCTAssertTrue(SurfaceTest.scrollIntoView(created, in: app, timeout: 20),
+            "the created curated feed is offered as a preset")
+        app.buttons["filter-done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20))
+    }
 }

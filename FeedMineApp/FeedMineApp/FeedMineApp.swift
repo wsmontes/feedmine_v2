@@ -87,6 +87,8 @@ struct FeedMineApp: App {
         case curatedHood
         case export
         case filters
+        /// V1's "Criar feed curado": the composer creates a preset without activating it.
+        case curatedComposer
         /// V1's "Add Feeds": the reader's own composer for a pasted link.
         case addFeed
         var id: String {
@@ -98,6 +100,7 @@ struct FeedMineApp: App {
             case .curatedHood: return "curatedHood"
             case .export: return "export"
             case .filters: return "filters"
+            case .curatedComposer: return "curatedComposer"
             case .addFeed: return "addFeed"
             }
         }
@@ -446,6 +449,8 @@ struct FeedMineApp: App {
                         }
                     case .curatedHood:
                         curatedHood
+                    case .curatedComposer:
+                        curatedComposerSheet
                     case .addFeed:
                         addFeedSheet
                     case .export:
@@ -652,7 +657,7 @@ struct FeedMineApp: App {
                     case .collections: present(.collections)
                     case .settings: present(.settings)
                     case .curatedOnboarding:
-                        showsOnboarding = true
+                        present(.curatedComposer)
                     case .curatedInspector:
                         present(.curatedHood)
                     case .curatedDeletion:
@@ -1485,6 +1490,29 @@ struct ReaderHost: UIViewControllerRepresentable {
             showsOnboarding = false
         } else {
             readerError = String(localized: "Não foi possível concluir o primeiro passo. Tente novamente.")
+        }
+    }
+
+    /// V1's "Criar feed curado": the same composer the first run uses, entered directly, saving a preset of
+    /// the reader's own without moving the reading. It is a sheet like the other tools, not the first-run cover.
+    @ViewBuilder private var curatedComposerSheet: some View {
+        let options = composition.onboardingOptions()
+        NavigationStack {
+            ReaderOnboardingView(
+                recipe: .neutral(languages: AppComposition.suggestedLanguages(from: options.languages),
+                    hasLanguageAnswer: true),
+                isFirstRun: false,
+                previewCards: [],
+                topics: options.topics, regions: options.regions, languages: options.languages,
+                onSave: { recipe in
+                    do {
+                        _ = try composition.saveCuratedFeed(recipe, named: String(localized: "Meu feed curado"))
+                        popSurface()
+                    } catch {
+                        readerError = String(localized: "Não foi possível criar o feed curado. Tente novamente.")
+                    }
+                },
+                onClose: { popSurface() })
         }
     }
 
