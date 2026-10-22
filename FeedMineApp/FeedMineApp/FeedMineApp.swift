@@ -233,11 +233,13 @@ struct FeedMineApp: App {
         case collectSources
         case saveSmartBookmark
         case deleteSmartFeed
+        case deleteCuratedFeed
         var id: String {
             switch self {
             case .collectSources: return "collectSources"
             case .saveSmartBookmark: return "saveSmartBookmark"
             case .deleteSmartFeed: return "deleteSmartFeed"
+            case .deleteCuratedFeed: return "deleteCuratedFeed"
             }
         }
         var title: String {
@@ -245,6 +247,48 @@ struct FeedMineApp: App {
             case .collectSources: return String(localized: "Reunir estas fontes")
             case .saveSmartBookmark: return String(localized: "Salvar como marcador inteligente")
             case .deleteSmartFeed: return String(localized: "Excluir marcador inteligente")
+            case .deleteCuratedFeed: return String(localized: "Excluir feed curado")
+            }
+        }
+    }
+
+    /// The filter sheet and the country levels it opens. The navigation state lives with the sheet's own
+    /// content: a push inside this host keeps the reader's draft and cannot be lost in a re-render of the
+    /// feed's body. The country level mirrors the source sheet's own `SourceRoute`.
+    private struct FilterSurfaceHost: View {
+        let composition: AppComposition
+        let store: SourceManagementStore?
+        let onDone: () -> Void
+        @State private var path: [SourceRoute] = []
+
+        var body: some View {
+            NavigationStack(path: $path) {
+                FilterSheetView(applying: composition.currentFilter,
+                    preset: composition.currentPreset,
+                    availableCriteria: ReaderFilterCriterion.enforceable,
+                    languages: composition.filterLanguages(),
+                    presets: composition.presetRows(),
+                    onApply: { filter, preset in
+                        try await composition.applyFilter(filter, preset: preset)
+                    },
+                    onActivate: { key in try await composition.activateSavedPreset(key) },
+                    onShowCountries: { path.append(.countries) },
+                    onDone: onDone)
+                    .navigationDestination(for: SourceRoute.self) { route in
+                        if let store {
+                            switch route {
+                            case .countries:
+                                CountriesListView(store: store,
+                                    onOpenNode: { path.append(.node($0)) },
+                                    onClose: { path.removeAll() })
+                            case .node(let node):
+                                NodeSourcesView(store: store, node: node,
+                                    onOpenNode: { path.append(.node($0)) })
+                            }
+                        } else {
+                            ProgressView("Abrindo o catálogo de fontes")
+                        }
+                    }
             }
         }
     }
@@ -406,18 +450,8 @@ struct FeedMineApp: App {
                     case .export:
                         exportSheet
                     case .filters:
-                        NavigationStack {
-                            FilterSheetView(applying: composition.currentFilter,
-                                preset: composition.currentPreset,
-                                availableCriteria: ReaderFilterCriterion.enforceable,
-                                languages: composition.filterLanguages(),
-                                presets: composition.presetRows(),
-                                onApply: { filter, preset in
-                                    try await composition.applyFilter(filter, preset: preset)
-                                },
-                                onActivate: { key in try await composition.activateSavedPreset(key) },
-                                onDone: { popSurface() })
-                        }
+                        FilterSurfaceHost(composition: composition, store: sourcesStore,
+                            onDone: { popSurface() })
                     case .bookmarkBoxes:
                         NavigationStack(path: $libraryPath) {
                             if let store = boxesStore {
@@ -527,7 +561,8 @@ struct FeedMineApp: App {
                 }
                 .alert(libraryPrompt?.title ?? "", isPresented: Binding(
                     get: { libraryPrompt != nil }, set: { if !$0 { libraryPrompt = nil } })) {
-                    if libraryPrompt == .deleteSmartFeed {
+                    if libraryPrompt == .deleteSmartFeed || libraryPrompt == .deleteCuratedFeed {
+                        Button("Cancelar", role: .cancel) { libraryPrompt = nil }
                         Button("Excluir", role: .destructive) {
                             Task { try? await composition.deleteCurrentPreset() }
                         }
@@ -555,7 +590,9 @@ struct FeedMineApp: App {
                         ? String(localized: "Uma coleção reúne as fontes do que você está lendo agora.")
                         : libraryPrompt == .saveSmartBookmark
                             ? String(localized: "A busca e os filtros atuais ficam guardados com este nome.")
-                            : String(localized: "O marcador inteligente guardado com este nome será removido."))
+                            : libraryPrompt == .deleteCuratedFeed
+                                ? String(localized: "O feed curado será removido. As fontes continuam selecionadas.")
+                                : String(localized: "O marcador inteligente guardado com este nome será removido."))
                 }
                 .alert("Não foi possível atualizar", isPresented: Binding(get: { readerError != nil }, set: { if !$0 { readerError = nil } })) {
                     Button("OK") { readerError = nil }
@@ -618,7 +655,7 @@ struct FeedMineApp: App {
                     case .curatedInspector:
                         present(.curatedHood)
                     case .curatedDeletion:
-                        readerError = String(localized: "Excluir este feed curado?")
+                        libraryPrompt = .deleteCuratedFeed
                     case .export, .collectionExport:
                         exportRequest = ReaderExportRequest(scope: .selection, format: .opml)
                         exportText = composition.exportPreview(exportRequest)
@@ -1471,8 +1508,15 @@ struct ReaderHost: UIViewControllerRepresentable {
                     guard let removal = chip.removal else { return }
                     Task {
                         do {
-                            try await composition.applyFilter(filter.removing(removal),
-                                preset: composition.currentPreset)
+                            // V1's preset chip removes the *preset*, not a filter criterion
+                            // (`TaxonomyChipBar`: `setActivePreset(.everything)`). The filter's own criteria
+                            // keep their own chips and stay applied.
+                            if removal == .preset {
+                                try await composition.applyFilter(filter, preset: .everything)
+                            } else {
+                                try await composition.applyFilter(filter.removing(removal),
+                                    preset: composition.currentPreset)
+                            }
                         } catch {
                             // R5: a raw error description is diagnostics, never the reader's copy. The failure
                             // states whether the selection was saved, so a confirmed-but-not-presented filter

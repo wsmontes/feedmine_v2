@@ -187,6 +187,9 @@ public struct FilterSheetView: View {
                             Spacer(minLength: 0)
                             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                         }
+                        // The row's whole width is the control. Without this, only the label's glyphs are
+                        // hit-testable and a tap at the row's centre lands in the Spacer and does nothing.
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("countries-link")

@@ -14,12 +14,7 @@ final class SourcesAndFilterJourneyUITests: XCTestCase {
 
         app.buttons["filter-button"].tap()
         XCTAssertTrue(app.navigationBars["Filtros"].waitForExistence(timeout: 20))
-        let link = app.buttons["countries-link"]
-        XCTAssertTrue(SurfaceTest.scrollIntoView(link, in: app, timeout: 20),
-            "the filter sheet offers Países")
-        link.tap()
-
-        XCTAssertTrue(app.navigationBars["Países"].waitForExistence(timeout: 20),
+        XCTAssertTrue(SurfaceTest.tapCountriesLink(app),
             "Países opens the country list instead of leaving the tap unanswered")
         let toggles = app.switches.matching(
             NSPredicate(format: "identifier BEGINSWITH 'country-toggle-' AND identifier != 'country-toggle-all'"))
@@ -42,9 +37,8 @@ final class SourcesAndFilterJourneyUITests: XCTestCase {
 
         app.buttons["filter-button"].tap()
         XCTAssertTrue(app.navigationBars["Filtros"].waitForExistence(timeout: 20))
-        XCTAssertTrue(SurfaceTest.scrollIntoView(app.buttons["countries-link"], in: app, timeout: 20))
-        app.buttons["countries-link"].tap()
-        XCTAssertTrue(app.navigationBars["Países"].waitForExistence(timeout: 20))
+        XCTAssertTrue(SurfaceTest.tapCountriesLink(app),
+            "Países opens again after the sheet is reopened")
         let reopened = app.switches["country-toggle-\(slug)"]
         XCTAssertTrue(reopened.waitForExistence(timeout: 20))
         XCTAssertEqual(reopened.value as? String, after,
@@ -97,30 +91,6 @@ final class SourcesAndFilterJourneyUITests: XCTestCase {
         add(proof)
     }
 
-    /// A filter criterion acts through the same transition and its own lens chip removes only that criterion.
-    /// This exercises mood (host-only coverage) and clear-all without inventing an effect.
-    @MainActor
-    func testMoodCriterionAppliesAndItsLensChipRemovesOnlyIt() throws {
-        let app = SurfaceTest.launchFixture()
-        app.buttons["filter-button"].tap()
-        XCTAssertTrue(app.navigationBars["Filtros"].waitForExistence(timeout: 20))
-
-        let mood = app.buttons["mood-fun"]
-        XCTAssertTrue(SurfaceTest.scrollIntoView(mood, in: app, timeout: 20), "Humor is offered")
-        mood.tap()
-        XCTAssertEqual(mood.value as? String, "selected", "the draft states the chosen mood")
-        app.buttons["filter-done"].tap()
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
-
-        let chip = app.buttons["lens-chip-mood"]
-        XCTAssertTrue(chip.waitForExistence(timeout: 20), "the applied mood is stated by the lens")
-        chip.tap()
-        XCTAssertTrue(SurfaceTest.waitForAbsence(chip, timeout: 30),
-            "the mood chip removes the mood criterion")
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20),
-            "the reader stays on the feed while the criterion is removed")
-    }
-
     /// `Reunir estas fontes` is offered only where the context has sources to collect (a committed search or a
     /// filter with two criteria). The collection it creates must open with the current sources as members.
     @MainActor
@@ -138,7 +108,10 @@ final class SourcesAndFilterJourneyUITests: XCTestCase {
         SurfaceTest.menuEntry(app, "Reunir estas fontes")
         let prompt = app.alerts["Reunir estas fontes"]
         XCTAssertTrue(prompt.waitForExistence(timeout: 10))
-        prompt.textFields.firstMatch.typeText(name)
+        let nameField = prompt.textFields.firstMatch
+        XCTAssertTrue(nameField.waitForExistence(timeout: 10))
+        nameField.tap()
+        nameField.typeText(name)
         prompt.buttons["Salvar"].tap()
 
         XCTAssertTrue(app.navigationBars["Coleções de fontes"].waitForExistence(timeout: 20),

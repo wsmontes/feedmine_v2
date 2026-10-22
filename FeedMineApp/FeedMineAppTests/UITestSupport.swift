@@ -82,6 +82,22 @@ enum SurfaceTest {
         return element.exists && element.isHittable
     }
 
+    /// Opens the filter sheet's country level. The sheet is a list: a tap issued while a scroll is still
+    /// settling is swallowed by the deceleration, so the visible row is tapped again (up to three times) until
+    /// the destination is really on screen. The navigation is the assertion; the retry is the reader's own
+    /// gesture, not a different action.
+    @MainActor
+    static func tapCountriesLink(_ app: XCUIApplication) -> Bool {
+        let link = app.buttons["countries-link"]
+        guard scrollIntoView(link, in: app, timeout: 20) else { return false }
+        for _ in 0..<3 {
+            Thread.sleep(forTimeInterval: 0.5)
+            link.tap()
+            if app.navigationBars["Países"].waitForExistence(timeout: 6) { return true }
+        }
+        return false
+    }
+
     /// `waitForExistence` cannot express absence: it returns at once while the element is still there.
     @MainActor
     static func waitForAbsence(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
