@@ -626,20 +626,19 @@ public enum RuntimeMigrations {
             try db.execute(sql: "ALTER TABLE published_cards ADD COLUMN media_identity TEXT")
             try db.execute(sql: "ALTER TABLE retired_published_cards ADD COLUMN media_identity TEXT")
         }
-        // D12: a story the one-way walk passed while its media was still pending is a fact about the supply row,
-        // not about the lifetime of one in-memory queue. These columns are current supply state (never published
-        // history): the Edition whose opportunity deferred it, the first deferral instant, and the last time it was
-        // offered to selection. The page read by an opportunity is bounded; the rows themselves are not evicted by
-        // that bound, so a relaunch and a page rotation still find every deferred story. Nullable on purpose:
-        // existing rows keep their exact past and read as "not deferred".
+        // D12: current-supply deferrals belong to each resumable Edition, not one volatile queue.
+        // This candidate-only migration has never shipped. History and supply bytes remain unchanged.
         migrator.registerMigration("selection-supply-media-deferral-v1") { db in
             try db.execute(sql: """
-                ALTER TABLE selection_supply ADD COLUMN media_deferred_edition_id TEXT;
-                ALTER TABLE selection_supply ADD COLUMN media_deferred_at REAL;
-                ALTER TABLE selection_supply ADD COLUMN media_offered_at REAL;
+                CREATE TABLE selection_supply_media_deferrals (
+                    edition_id TEXT NOT NULL,
+                    origin_record_id TEXT NOT NULL REFERENCES selection_supply(origin_record_id) ON DELETE CASCADE,
+                    origin_revision_id TEXT NOT NULL REFERENCES origin_revisions(id),
+                    turn_at REAL NOT NULL,
+                    PRIMARY KEY (edition_id, origin_record_id)
+                );
                 CREATE INDEX selection_supply_media_deferral
-                ON selection_supply (media_offered_at, media_deferred_at)
-                WHERE media_deferred_edition_id IS NOT NULL;
+                ON selection_supply_media_deferrals (edition_id, turn_at, origin_record_id);
                 """)
         }
         return migrator

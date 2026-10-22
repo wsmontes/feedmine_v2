@@ -17,7 +17,7 @@ import FeedMinePersistence
 /// placed; nothing here ranks, mixes or reserves a position.
 ///
 /// Bound, stated: `ceiling` entries per opportunity. That is a work page, never eligibility — the store rotates the
-/// page (never-offered first, then the oldest offer) so a row behind the page is offered by a later opportunity and
+/// page by the oldest admission/offer so continuous arrivals cannot starve an older revision. Every association
 /// survives a relaunch. A row leaves only when its skip is definitively settled: published, no longer in supply,
 /// superseded, filtered out, or decided with no presentation at all.
 public final class PendingMediaReconsideration: @unchecked Sendable {

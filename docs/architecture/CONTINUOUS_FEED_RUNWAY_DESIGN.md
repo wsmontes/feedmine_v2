@@ -111,6 +111,14 @@ Return progress and publication outcome separately. Advance cursor only after su
 
 > Repeated local supply work is orchestrated as separate bounded slices, never as an internal Selection refill loop.
 
+D12 (2026-10-21): `PendingMediaReconsideration` retains skipped-media eligibility through
+`MediaDeferralStore`, as a current-supply association per Edition/origin/revision. Its 32-entry
+page bounds work, not eligibility. Admission and offers share an indexed `turn_at` order;
+new arrivals cannot continually overtake older offers. Withdrawal cascades; revision replacement
+retires the old association. Editorial hold or an empty draft plan does not consume eligibility;
+only definitive resolution or actual publication does. Preparation reads the same page without
+rotating it, including after relaunch. Published history and the structural cursor stay unchanged.
+
 ## 8. Candidate cursor lifetime
 
 > CandidateSupplyCursor is bounded scan progress, not durable exposure history.

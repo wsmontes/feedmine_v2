@@ -1007,14 +1007,15 @@ extension LocalProductionSliceTests {
         try queue.remember([entry(2, editionB)])
         XCTAssertEqual(try queue.entries(for: editionB).map(\.originRevisionID),
             [LocalSliceFixture.revision(2).id])
-        XCTAssertEqual(try queue.entries(for: editionA).count, 3)
-        XCTAssertEqual(queue.count, 6)
+        XCTAssertTrue(try queue.pendingEntries(for: editionA, limit: 6).map(\.originRevisionID)
+            .contains(LocalSliceFixture.revision(2).id), "B does not consume A's association")
+        XCTAssertEqual(queue.count, 7)
 
         // Only a settled skip leaves; the rest of the page is untouched.
         queue.forget([entry(3, editionA)])
         XCTAssertFalse(try queue.entries(for: editionA).map(\.originRevisionID)
             .contains(LocalSliceFixture.revision(3).id))
-        XCTAssertEqual(queue.count, 5)
+        XCTAssertEqual(queue.count, 6)
     }
 
     /// PD-1 and expiry: a skip published by another owner, or superseded by a newer revision, is dropped.

@@ -28,12 +28,6 @@ final class PublicationRunwayStoreTests: XCTestCase {
                 return entry.replacingOccurrences(of: ", diversity_facts TEXT", with: "")
                     .replacingOccurrences(of: ", media_identity TEXT", with: "")
             }
-            // D12 added the durable deferral state to the existing supply row; its columns are asserted in
-            // `MediaDeferralStoreTests`, and the rest of the definition stays byte-compared.
-            if entry.hasPrefix("selection_supply:") {
-                return entry.replacingOccurrences(of:
-                    ", media_deferred_edition_id TEXT, media_deferred_at REAL, media_offered_at REAL", with: "")
-            }
             return entry
         })
     }
@@ -390,11 +384,22 @@ extension PublicationRunwayStoreTests {
             // so its exact final definition belongs among the expected additions.
             let revisionDefinition = try XCTUnwrap(schemaAfter.first { $0.hasPrefix("origin_revisions:") })
             let originIndex = "published_cards_origin_record_segment:CREATE INDEX published_cards_origin_record_segment\nON published_cards (origin_record_id, segment_id)"
-            let mediaDeferralIndex = """
-                selection_supply_media_deferral:CREATE INDEX selection_supply_media_deferral
-                ON selection_supply (media_offered_at, media_deferred_at)
-                WHERE media_deferred_edition_id IS NOT NULL
+            let mediaDeferralObjects: Set<String> = [
                 """
+                selection_supply_media_deferrals:CREATE TABLE selection_supply_media_deferrals (
+                    edition_id TEXT NOT NULL,
+                    origin_record_id TEXT NOT NULL REFERENCES selection_supply(origin_record_id) ON DELETE CASCADE,
+                    origin_revision_id TEXT NOT NULL REFERENCES origin_revisions(id),
+                    turn_at REAL NOT NULL,
+                    PRIMARY KEY (edition_id, origin_record_id)
+                )
+                """,
+                """
+                selection_supply_media_deferral:CREATE INDEX selection_supply_media_deferral
+                ON selection_supply_media_deferrals (edition_id, turn_at, origin_record_id)
+                """,
+                "sqlite_autoindex_selection_supply_media_deferrals_1:"
+            ]
             let authorityTable = """
                 acquisition_target_sources:CREATE TABLE acquisition_target_sources (
                     target_id TEXT NOT NULL,
@@ -526,12 +531,12 @@ extension PublicationRunwayStoreTests {
                 Set([originIndex, authorityTable, authorityIndex]).union(contextual)
                     .union(mediaRebuild).union(fingerprintObjects).union(identityObjects)
                     .union(savedAvailabilityObjects).union(legacyUpgradeObjects)
-                    .union([mediaDeferralIndex]))
+                    .union(mediaDeferralObjects))
             XCTAssertEqual(Self.normalizeRebuiltDefinitions(schemaAfter).subtracting(normalizedBefore),
                 Set([originIndex, originDefinition, revisionDefinition, authorityTable, authorityIndex]).union(contextual)
                     .union(mediaRebuild).union(fingerprintObjects).union(identityObjects)
                     .union(savedAvailabilityObjects).union(legacyUpgradeObjects)
-                    .union([mediaDeferralIndex]))
+                    .union(mediaDeferralObjects))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }
