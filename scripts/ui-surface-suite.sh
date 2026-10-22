@@ -7,7 +7,8 @@
 # Profiles:
 #   smoke    the short set of journeys that covers the reported controls (target: under five minutes after build)
 #   journeys every surface journey in the suite (pre-release coverage)
-#   release  the app-level unit suite in Release (the reader's Release parity is owned by the reader job)
+#   release  the Release app and its own journey through FeedMineSurfaces (permanent scheme, no overrides)
+#   live     the opt-in reader/surface proof over the public catalogue and network
 #
 # Exit status is non-zero when any journey fails, including a build failure. Build and simulator boot time are
 # reported separately; they are not hidden inside a journey's duration.
@@ -39,7 +40,8 @@ case "$PROFILE" in
     smoke) JOURNEYS=(SourcesAndFilterJourneyUITests CuratedFeedJourneyUITests) ;;
     journeys) JOURNEYS=(SourcesAndFilterJourneyUITests CuratedFeedJourneyUITests CardActionJourneyUITests
                         LibraryJourneyUITests SettingsAndDiscoveryJourneyUITests PortabilityJourneyUITests) ;;
-    release) JOURNEYS=(FeedMineAppTests) ;;
+    release) JOURNEYS=(ReleaseSurfaceJourneyUITests) ;;
+    live) JOURNEYS=(ReadingSurfaceUITests) ;;
     *) printf 'unknown profile: %s\n' "$PROFILE" >&2; exit 2 ;;
 esac
 
@@ -51,14 +53,18 @@ OUT="$(cd "$OUT" && pwd)"
 DERIVED="$(cd "$DERIVED" 2>/dev/null && pwd || (mkdir -p "$DERIVED" && cd "$DERIVED" && pwd))"
 
 CONFIGURATION="Debug"
+SCHEME="FeedMine"
 TARGET="FeedMineUITests"
+LIVE_FILTER=""
 if [ "$PROFILE" = "release" ]; then
     CONFIGURATION="Release"
-    TARGET="FeedMineAppTests"
+    SCHEME="FeedMineSurfaces"
+fi
+if [ "$PROFILE" = "live" ]; then
+    LIVE_FILTER="-only-testing:$TARGET/ReadingSurfaceUITests/testLiveReaderControlsOnTheRealCatalogueAndNetwork"
 fi
 
 PROJECT="$ROOT/FeedMineApp/FeedMineApp.xcodeproj"
-SCHEME="FeedMine"
 IDENTITY="$OUT/identity.txt"
 {
     printf 'head=%s\n' "$(git -C "$ROOT" rev-parse HEAD)"
@@ -90,15 +96,22 @@ for JOURNEY in "${JOURNEYS[@]}"; do
     LOG="$OUT/$JOURNEY.log"
     rm -rf "$RESULT"
     STARTED=$(date +%s)
-    if [ "$PROFILE" = "release" ]; then
-        ONLY=(-only-testing:"$TARGET")
+    if [ "$PROFILE" = "live" ]; then
+        ONLY=("$LIVE_FILTER")
+        xcrun simctl uninstall "${DESTINATION##*id=}" com.feedmine.development >/dev/null 2>&1 || true
     else
         ONLY=(-only-testing:"$TARGET/$JOURNEY")
     fi
+    if [ "$PROFILE" = "release" ]; then
+        # The Release app's identifier; the scheme builds it from scratch and the journey starts clean.
+        xcrun simctl uninstall "${DESTINATION##*id=}" com.feedmine.app >/dev/null 2>&1 || true
+    fi
+    LIVE_ENV=()
+    if [ "$PROFILE" = "live" ]; then LIVE_ENV=(TEST_RUNNER_FEEDMINE_LIVE_SURFACES=1); fi
     xcodebuild test-without-building \
         -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIGURATION" \
         -destination "$DESTINATION" -derivedDataPath "$DERIVED" \
-        "${ONLY[@]}" -resultBundlePath "$RESULT" > "$LOG" 2>&1
+        "${ONLY[@]}" "${LIVE_ENV[@]}" -resultBundlePath "$RESULT" > "$LOG" 2>&1
     STATUS=$?
     SECONDS_TAKEN=$(( $(date +%s) - STARTED ))
     printf '%s\tstatus=%s\tduration=%ss\tlog=%s\tresult=%s\n' \

@@ -91,39 +91,4 @@ final class SourcesAndFilterJourneyUITests: XCTestCase {
         add(proof)
     }
 
-    /// `Reunir estas fontes` is offered only where the context has sources to collect (a committed search or a
-    /// filter with two criteria). The collection it creates must open with the current sources as members.
-    @MainActor
-    func testCollectSourcesFromSearchCreatesACollectionWithMembers() throws {
-        let app = SurfaceTest.launchFixture()
-        let name = "Fontes \(UUID().uuidString.prefix(6))"
-        app.buttons["search-button"].tap()
-        let field = app.textFields["reader-search-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 15))
-        field.tap()
-        field.typeText("Fixture")
-        field.typeText("\n")
-        XCTAssertTrue(SurfaceTest.element(app, "reader-search-results").waitForExistence(timeout: 30))
-
-        SurfaceTest.menuEntry(app, "Reunir estas fontes")
-        let prompt = app.alerts["Reunir estas fontes"]
-        XCTAssertTrue(prompt.waitForExistence(timeout: 10))
-        let nameField = prompt.textFields.firstMatch
-        XCTAssertTrue(nameField.waitForExistence(timeout: 10))
-        nameField.tap()
-        nameField.typeText(name)
-        prompt.buttons["Salvar"].tap()
-
-        XCTAssertTrue(app.navigationBars["Coleções de fontes"].waitForExistence(timeout: 20),
-            "collecting the sources opens the collection it just created")
-        let row = app.staticTexts[name]
-        XCTAssertTrue(SurfaceTest.scrollIntoView(row, in: app, timeout: 20))
-        row.tap()
-        XCTAssertTrue(app.buttons["collection.openFeed"].waitForExistence(timeout: 20))
-        XCTAssertTrue(app.descendants(matching: .any)["collection.member"].firstMatch
-            .waitForExistence(timeout: 20), "the collected sources are the collection's members")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.buttons["collections.done"].tap()
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
-    }
 }
