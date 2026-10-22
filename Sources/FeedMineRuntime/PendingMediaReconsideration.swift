@@ -112,14 +112,15 @@ enum MediaSkippedSupply {
 
     /// The stories the one-way walk already passed whose media became ready since.
     ///
-    /// Ordering rule, and why it was chosen: the queue is offered longest-waiting first, and those candidates join
-    /// the window **after** the structural ones. The queue's only claim is that a skipped story may be selected at
-    /// all; where it lands is the editorial sequencing's decision (recency, diversity, PD-4), which orders the
-    /// window's candidates and does not read their array position. Appending rather than interleaving is what keeps
-    /// the structural window's own count and cursor the facts the opportunity reports: a re-offer can publish a card
-    /// or leave the queue, but it can never move the walk or take the position of a candidate the walk produced.
-    /// There is no quota and no mixing rule: the bound is the store's page, and everything ready in it is offered to
-    /// the one selection.
+    /// Ordering rule, and why it was chosen: the store page is offered longest-waiting first, and those candidates
+    /// are placed **before** the structural ones in the window (array position is not the decision: SelectionEngine
+    /// orders every candidate by its own total comparator, and it does not read array position). The queue's only
+    /// claim is that a skipped story may be selected at all; where it lands is the editorial sequencing's decision
+    /// (recency, diversity, PD-4). Keeping the reconsidered set in its own slot is what keeps the structural
+    /// window's own count and cursor the facts the opportunity reports: a re-offer can publish a card or leave the
+    /// queue, but it can never move the walk or take the position of a candidate the walk produced. There is no
+    /// quota and no mixing rule: the bound is the store's page, and everything ready in it is offered to the one
+    /// selection.
     static func reconsider(provider: CandidateProvider, plan: FeedPlan, editionID: FeedEditionID,
         structural: CandidateSupplyWindow, readiness: MediaReadiness?,
         reoffer: PendingMediaReconsideration?) throws -> Reconsidered {

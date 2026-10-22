@@ -28,7 +28,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
                 return entry.replacingOccurrences(of: ", diversity_facts TEXT", with: "")
                     .replacingOccurrences(of: ", media_identity TEXT", with: "")
             }
-            // D12 added the durable deferral state to the existing supply row; its columns are asserted in
+            // PD-9/F06 added the durable deferral state to the existing supply row; its columns are asserted in
             // `MediaDeferralStoreTests`, and the rest of the definition stays byte-compared.
             if entry.hasPrefix("selection_supply:") {
                 return entry.replacingOccurrences(of:

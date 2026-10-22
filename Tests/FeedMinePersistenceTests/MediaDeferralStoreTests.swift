@@ -173,9 +173,16 @@ final class MediaDeferralStoreTests: XCTestCase {
             try sql.execute(sql: "ALTER TABLE selection_supply DROP COLUMN media_offered_at")
             try sql.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'selection-supply-media-deferral-v2'")
         }
-        let reopened = MediaDeferralStore(database: try RuntimeDatabase(location: location))
+        let reopenedDB = try RuntimeDatabase(location: location)
+        let reopened = MediaDeferralStore(database: reopenedDB)
         XCTAssertEqual(try reopened.count(editionID: edition), 3,
             "a table-shaped v1 database must not lose or duplicate rows on the v2 migration")
+        XCTAssertEqual(Set(try reopened.page(editionID: edition, limit: 32, offerAt: nil)
+            .map(\.originRevisionID)), Set(records.map(\.originRevisionID)))
+        // The upgraded database has to stay writable: a canonical commit runs the supply upsert, which must not
+        // depend on the legacy columns that this shape never had.
+        _ = try admit(reopenedDB, edition: edition, n: 9)
+        XCTAssertEqual(try reopened.count(editionID: edition), 3)
         XCTAssertEqual(Set(try reopened.page(editionID: edition, limit: 32, offerAt: nil)
             .map(\.originRevisionID)), Set(records.map(\.originRevisionID)))
     }

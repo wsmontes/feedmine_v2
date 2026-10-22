@@ -267,6 +267,68 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(current?.window.anchor, start.window.anchor)
     }
 
+    /// PD-9/F06: the skip persisted by one opportunity must be the revision the production driver asks media to
+    /// prepare on a later opportunity, and readiness must then publish it without a new viewport. This is the seam
+    /// between the durable store and `nextEditorialRevisions`; the slice tests seeded readiness by hand and could
+    /// not see it.
+    func testRelaunchPreparationRequestsThePersistedSkipAndPublishesWhenReady() async throws {
+        let f = try fixture(seedLocal: true, registrations: false), readiness = MediaReadiness()
+        let requested = DriverMediaJournal()
+        let reoffer = PendingMediaReconsideration(database: f.database)
+        let driver = try FeedRunwayDriver(session: f.session, runway: f.runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            makeSegmentIdentity: { .init(segmentID: .init(), segmentSeed: 1, segmentCreatedAt: Date())! },
+            prepare: Self.prepared, readiness: readiness, reoffer: reoffer,
+            makeMediaOpportunity: {
+                MediaPreparationOpportunity(waitSeconds: 4, startedAt: 100) { revisions, _ in
+                    requested.append(revisions.map { $0.rawValue.uuidString }.joined(separator: ","))
+                }
+            }, onPublication: { receipt in f.publications.append(receipt) })
+        let restored = try await driver.restoreAndActivate(backwardCapacity: 1,
+            forwardCapacity: 4, resources: resources())
+        let initial = try XCTUnwrap(restored)
+        _ = try await driver.submitViewport(.init(anchor: initial.window.anchor), activity: .explicitTailApproach,
+            resources: resources())
+
+        let revision = try XCTUnwrap(ContentStore(database: f.database)
+            .candidateWindow(sourceID: nil, after: nil, examinedCapacity: 8).records.first?.originRevisionID)
+        let durable = try PendingMediaReconsideration(database: f.database)
+            .pendingEntries(for: f.edition, limit: 32)
+        XCTAssertEqual(durable.map(\.originRevisionID), [revision],
+            "the process-equivalent reread finds the skip on disk before any media work")
+
+        // A later opportunity must prepare that persisted revision through the production driver. The journal is
+        // the only readiness source here; readiness is not written by hand until after this assertion.
+        requested.reset()
+        var requestedRevision = false
+        for _ in 0..<4 where !requestedRevision {
+            // A later media/supply fact reopens the local walk; this is the opportunity the production driver
+            // would receive after a relaunch or a media transition.
+            await driver.noteMediaReadinessChanged()
+            _ = try await driver.drive(resources: resources())
+            let deadline = Date().addingTimeInterval(2)
+            while !requestedRevision, Date() < deadline {
+                requestedRevision = requested.values.joined().contains(revision.rawValue.uuidString)
+                if !requestedRevision { try await Task.sleep(for: .milliseconds(10)) }
+            }
+        }
+        XCTAssertTrue(requestedRevision, "the driver requests the persisted deferred revision for preparation")
+
+        readiness.record(revision, nil, textDeclared: true)
+        await driver.noteMediaReadinessChanged()
+        let deadline = Date().addingTimeInterval(5)
+        while f.publications.values.isEmpty, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let store = PublicationStore(database: f.database)
+        let published = f.publications.values.flatMap(\.cardIDs).compactMap {
+            try? store.card(id: $0)?.originRevisionID
+        }
+        XCTAssertTrue(published.contains(revision),
+            "the prepared skip becomes eligible and publishes without a new viewport")
+    }
+
     /// P02: two late facts that arrive together are one publisher pass: no duplicate card, no second loop.
     func testConcurrentLateFactsUseOneCausalPublisher() async throws {
         let f = try fixture(registrations: false), readiness = MediaReadiness()

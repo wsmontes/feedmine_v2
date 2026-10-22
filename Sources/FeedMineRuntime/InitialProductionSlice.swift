@@ -97,8 +97,9 @@ public struct InitialProductionSlice: Sendable {
         // window needs are its own candidates.
         let structural = try candidateProvider.candidates(for: request.plan,
             after: request.after, examinedCapacity: request.examinedCapacity)
-        // Same rule as the live walk: a story this walk skipped for pending media is re-offered here, after the
-        // structural candidates, and contributes nothing to what the walk reports as examined.
+        // Same rule as the live walk: a story this walk skipped for pending media is re-offered here, placed before
+        // the structural candidates in the array (SelectionEngine orders by its comparator) and contributing nothing
+        // to what the walk reports as examined.
         let reconsidered = try MediaSkippedSupply.reconsider(provider: candidateProvider, plan: request.plan,
             editionID: request.editionID, structural: structural, readiness: readiness, reoffer: reoffer)
         let window = reconsidered.candidates.isEmpty ? structural : CandidateSupplyWindow(

@@ -982,7 +982,7 @@ extension LocalProductionSliceTests {
         XCTAssertEqual(reoffer.count, 0, "the opportunity settled the skip")
     }
 
-    /// D12/PD-1: the durable skip page rotates instead of evicting, another Edition is never offered, and an
+    /// PD-9/F06, PD-1: the durable skip page rotates instead of evicting, another Edition is never offered, and an
     /// entry that can no longer be published (published elsewhere, superseded) leaves the memory.
     func testReofferMemoryRotatesItsBoundedPageAndDropsOnlySettledEntries() throws {
         let f = try fixture(initial: [LocalSliceFixture.revision(1)])

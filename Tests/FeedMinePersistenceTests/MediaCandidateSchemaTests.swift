@@ -168,7 +168,7 @@ final class MediaCandidateSchemaTests: XCTestCase {
                     }
                     if table == "feed_editions" { return column.0 != "context_identity" && column.0 != "context_key_json" }
                     if table == "published_cards" { return column.0 != "diversity_facts" && column.0 != "media_identity" }
-                    // D12 added durable deferral state to the existing supply row; it is asserted separately.
+                    // PD-9/F06 added durable deferral state to the existing supply row; it is asserted separately.
                     if table == "selection_supply" {
                         return !["media_deferred_edition_id", "media_deferred_at", "media_offered_at"]
                             .contains(column.0)

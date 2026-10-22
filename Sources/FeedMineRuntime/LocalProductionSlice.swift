@@ -104,8 +104,9 @@ public struct LocalProductionSlice: Sendable {
         let structural = try candidateProvider.candidates(for: request.plan,
             after: request.after, examinedCapacity: request.examinedCapacity,
             operation: request.operation, consult: "slice", trace: trace)
-        // What the one-way walk already passed and whose media became ready since. It joins the same selection,
-        // after the structural candidates, and the structural walk stays exactly where it was.
+        // What the one-way walk already passed and whose media became ready since. It is placed before the
+        // structural candidates in the array, but the array is not the order: SelectionEngine orders by its total
+        // comparator. The structural walk stays exactly where it was.
         let reconsidered = try MediaSkippedSupply.reconsider(provider: candidateProvider, plan: request.plan,
             editionID: request.editionID, structural: structural, readiness: readiness, reoffer: reoffer)
         let window = reconsidered.candidates.isEmpty ? structural : CandidateSupplyWindow(

@@ -844,12 +844,16 @@ public actor FeedRunwayDriver {
         }.map(\.originRevisionID)
         // A story the walk already passed while its media was pending is not in this structural window, but it is
         // still a candidate for the slice's reconsideration. Preparing it here is what gives a relaunch its chance:
-        // readiness is in-memory, so without this request the deferred story would never return to readiness. The
-        // page is bounded and read-only (the offer rotation belongs to `reconsider`), and preparation is not a
-        // publication decision — the slice still selects under exposure and policy.
+        // readiness is in-memory, so without this request the deferred story would never return to readiness.
+        //
+        // Read the store's whole ceiling page, not the structural capacity: the slice rotates exactly this page,
+        // so preparation and selection see the same rows and the next drive sees the rows behind them. Reading a
+        // smaller page would fix the same subset while the rotation moved the rest, and those stories would never
+        // be prepared. The read itself is read-only; the offer rotation still belongs to `reconsider`, and
+        // preparation is not a publication decision — the slice still selects under exposure and policy.
         if let reoffer {
             var seen = Set(revisions)
-            for entry in try reoffer.pendingEntries(for: editionID, limit: capacity) {
+            for entry in try reoffer.pendingEntries(for: editionID, limit: reoffer.ceiling) {
                 guard !facts.publishedOriginIDs.contains(entry.originRecordID),
                     seen.insert(entry.originRevisionID).inserted else { continue }
                 revisions.append(entry.originRevisionID)
