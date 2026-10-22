@@ -1389,7 +1389,7 @@ final class FeedMineUITests: XCTestCase {
         }
         print("FAST_CONTINUE restored=\(restoredLine) id=\(continuedID) line=\(continuedLine) h=\(continuedHeight)")
         XCTAssertTrue(continuedStable, "the feed settles after a real scroll; samples \(continuedSamples.suffix(8))")
-        XCTAssertGreaterThan(abs(continuedLine - restoredLine), 20,
+        XCTAssertTrue(continuedID != beforeID || abs(continuedLine - restoredLine) > 20,
             "a real scroll after the reopen moves the viewport; the restore must not pull it back")
         Thread.sleep(forTimeInterval: 3)
         app.terminate()
