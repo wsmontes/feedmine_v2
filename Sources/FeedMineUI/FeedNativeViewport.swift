@@ -53,7 +53,8 @@ struct NativeFeedViewport: ViewModifier {
         .init(offset: geometry.contentOffset.y + geometry.contentInsets.top,
             extent: geometry.contentSize.height,
             height: geometry.containerSize.height,
-            width: geometry.containerSize.width)
+            width: geometry.containerSize.width,
+            topInset: geometry.contentInsets.top)
     }
 
     func body(content: Content) -> some View {

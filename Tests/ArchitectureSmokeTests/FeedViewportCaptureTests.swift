@@ -139,6 +139,25 @@ final class FeedViewportCaptureTests: XCTestCase {
             progress: try XCTUnwrap(CardTopOffset(topDelta: 0, height: 200))))
     }
 
+    /// The capture line is the proof line the reader sees, not the scroll geometry line. The Release app measured
+    /// a 5.25 pt inset between `contentOffset + contentInsets.top` and `proof.offset`, and the durable point was
+    /// stored against the former: the reopen then landed 5.25 pt off the visual line. With the bias learned from a
+    /// resting proof, the recorded delta is the card's own `frame.minY`.
+    func testTheCaptureLineIsTheProofLineNotTheGeometryInsetLine() throws {
+        var capture = FeedVisualCapture()
+        let id = PublicationCardID()
+        // contentOffset 120 + inset 5: the card proof and the driver read the line at 120, not at 125.
+        _ = capture.observe(.init(offset: 125, extent: 1_000, height: 800, topInset: 5))
+        capture.observeCard(.init(cardID: id,
+            frame: .init(x: 0, y: -120, width: 400, height: 400), offset: 120, height: 800))
+        XCTAssertEqual(capture.presentedAnchor?.cardID, id)
+        XCTAssertEqual(capture.presentedAnchor?.progress?.topDelta, -120,
+            "the point is the card's frame on the content-origin line, not contentOffset+inset")
+        // A geometry-only scroll moves the content origin to 220 (offset 225 with the same inset).
+        _ = capture.observe(.init(offset: 225, extent: 1_000, height: 800, topInset: 5))
+        XCTAssertEqual(capture.presentedAnchor?.progress?.topDelta, -220)
+    }
+
     /// The frozen B05 rule — the first card whose top is at or below the line — names the **next** card when the
     /// reader stops inside one. The app's anchor must be the containing card with the delta; both measurements
     /// describe the same pixels only because the delta is part of the record.

@@ -1243,6 +1243,108 @@ final class FeedMineUITests: XCTestCase {
             "and the card they saved is drawn as saved")
     }
 
+    /// Release within-card continuity on the shipped catalogue. First launch is networked (real content); the
+    /// relaunch blocks the RSS network so the stored feed is the only content and no refresh race can change the
+    /// window. Both measurements are scoped to the feed's own scroll view and name the card containing the line.
+@MainActor
+func testReleaseForcedCloseKeepsTheCardLineOnTheShippedCatalogue() throws {
+    let app = XCUIApplication()
+    app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+    app.launch()
+    XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 90))
+    app.buttons["welcome-shape"].tap()
+    XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForExistence(timeout: 30))
+    let languages = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-language-'"))
+    if languages.firstMatch.waitForExistence(timeout: 10) {
+        let portuguese = languages.matching(NSPredicate(format: "label CONTAINS[c] 'Portuguese'")).firstMatch
+        if portuguese.exists { portuguese.tap() }
+    }
+    let places = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'composer-region-'"))
+    let composer = app.otherElements["onboarding"].scrollViews.firstMatch
+    var place: XCUIElement?
+    for _ in 0..<10 where place == nil {
+        _ = places.firstMatch.waitForExistence(timeout: 3)
+        if places.firstMatch.exists && places.firstMatch.isHittable { place = places.firstMatch }
+        if place == nil && composer.exists { composer.swipeUp() }
+    }
+    XCTAssertNotNil(place, "the shipped catalogue offers its places")
+    place!.tap()
+    let open = app.buttons["composer-open-feed"]
+    for _ in 0..<6 where !open.isHittable { composer.swipeUp() }
+    open.tap()
+    let scroll = app.scrollViews.firstMatch
+    XCTAssertTrue(scroll.waitForExistence(timeout: 180), "the first run ends in the feed")
+
+    let uuid = "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+    func cards(_ scroll: XCUIElement) -> [XCUIElement] {
+        scroll.descendants(matching: .any).matching(NSPredicate(format: "identifier MATCHES %@", uuid))
+            .allElementsBoundByIndex.filter { $0.frame.height > 40 }
+    }
+    func listing(_ scroll: XCUIElement) -> String {
+        cards(scroll).map { "\($0.identifier.prefix(8))@\(Int($0.frame.minY))/h\(Int($0.frame.height))" }
+            .joined(separator: ",")
+    }
+    XCTAssertTrue(cards(scroll).first != nil || app.buttons.matching(identifier: "card.bookmark").firstMatch.waitForExistence(timeout: 240))
+    let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
+    // A slow drag ending in a hold leaves no release momentum: the app reaches its own `.idle` rest, which is the
+    // state the durability boundary writes. A fast drag's last ~1.6 pt were still decelerating after the sampled
+    // window and were never recorded (checkpoint −343.67 against displayed −345.25).
+    start.press(forDuration: 0.1, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)),
+        withVelocity: .slow, thenHoldForDuration: 0.6)
+    func containing(_ scroll: XCUIElement) -> XCUIElement? {
+        let top = scroll.frame.minY
+        return cards(scroll).first { $0.frame.minY < top - 20 && $0.frame.maxY > top + 40 }
+    }
+    for _ in 0..<8 where containing(scroll) == nil { scroll.swipeUp() }
+    let card = try XCTUnwrap(containing(scroll),
+        "a card contains the viewport line; cards=\(listing(scroll))")
+    let identifier = card.identifier
+    let heightBefore = card.frame.height
+    var samples: [CGFloat] = []
+    var stable = false
+    for _ in 0..<40 {
+        Thread.sleep(forTimeInterval: 0.5)
+        samples.append(card.frame.minY - scroll.frame.minY)
+        // A rest is a span, not adjacent steps: five adjacent 0.4 pt steps are a 1.6 pt drift, and a sample taken
+        // during that drift is not the line the reader holds.
+        if samples.count >= 5, let low = samples.suffix(5).min(), let high = samples.suffix(5).max(),
+            high - low <= 0.5 {
+            stable = true; break
+        }
+    }
+    XCTAssertTrue(stable, "the feed settles; samples \(samples.suffix(8))")
+    let lineBefore = card.frame.minY - scroll.frame.minY
+    print("RELEASE_CARDS before id=\(identifier) line=\(lineBefore) h=\(heightBefore) scroll=\(scroll.frame) cards=\(listing(scroll))")
+
+    app.terminate()
+    Thread.sleep(forTimeInterval: 2)
+    app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1"
+    app.launch()
+    XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 90), "the feed returns")
+    let reopenedScroll = app.scrollViews.firstMatch
+    var afterSamples: [CGFloat] = []
+    var after: CGFloat = .nan
+    var heightAfter: CGFloat = .nan
+    var settled = false
+    for _ in 0..<40 {
+        Thread.sleep(forTimeInterval: 0.5)
+        let matches = cards(reopenedScroll).filter { $0.identifier == identifier }
+        guard let current = matches.first(where: { $0.frame.width > 300 }) ?? matches.first else { continue }
+        after = current.frame.minY - reopenedScroll.frame.minY
+        heightAfter = current.frame.height
+        afterSamples.append(after)
+        if afterSamples.count >= 5, let low = afterSamples.suffix(5).min(), let high = afterSamples.suffix(5).max(),
+            high - low <= 0.5 {
+            settled = true; break
+        }
+    }
+    print("RELEASE_CARDS after id=\(identifier) line=\(after) h=\(heightAfter) scroll=\(reopenedScroll.frame) cards=\(listing(reopenedScroll))")
+    XCTAssertTrue(settled, "the reopened feed settles; samples \(afterSamples.suffix(8)); cards=\(listing(reopenedScroll))")
+    XCTAssertEqual(heightAfter, heightBefore, accuracy: 1, "the card's measured height is unchanged")
+    XCTAssertEqual(after, lineBefore, accuracy: 1,
+        "the line inside the card is preserved across a forced close in Release")
+}
+
     /// The PO's headline criterion, in the half the V2 never measured: "**close and reopen the app: the feed must
     /// appear immediately**, from the ready content of the previous interaction … with no loading screen in between"
     /// (`1.0-checklist.md:3131-3132`, restated `:3220-3224`; the V1 harness failed its own run when a loading

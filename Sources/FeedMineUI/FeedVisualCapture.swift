@@ -8,16 +8,24 @@ import FeedMineRuntime
 // Small derived geometry only: no published window, presentation or durable identity owner.
 struct FeedVisualGeometry: Equatable {
     let offset: CGFloat
+    /// The scroll view's own top content inset. `offset` is `contentOffset + topInset`; the card proofs and the
+    /// B05 driver read the viewport at `contentOffset`, i.e. `offset - topInset`. The inset is live: it changed by
+    /// ~1.6 pt between two rests of the same Release run, so a captured constant bias drifts.
+    let topInset: CGFloat
     let extent: CGFloat
     let height: CGFloat
     let width: CGFloat
 
-    init(offset: CGFloat, extent: CGFloat, height: CGFloat, width: CGFloat = 0) {
+    init(offset: CGFloat, extent: CGFloat, height: CGFloat, width: CGFloat = 0, topInset: CGFloat = 0) {
         self.offset = offset
+        self.topInset = topInset
         self.extent = extent
         self.height = height
         self.width = width
     }
+
+    /// The line the card proofs and the acceptance driver read: the scroll view's content origin.
+    var line: CGFloat { offset - topInset }
 }
 
 struct FeedVisualEvent: Equatable {
@@ -290,7 +298,10 @@ struct FeedVisualCapture {
         #endif
         let previous = motion.geometry
         motion.geometry = next
-        guard let previous else { refreshPresentedTop(offset: next.offset, reach: next.height); return nil }
+        guard let previous else {
+            refreshPresentedTop(offset: next.line, reach: next.height)
+            return nil
+        }
         guard previous.extent == next.extent, previous.height == next.height, previous.width == next.width else {
             invalidateLayout()
             motion.geometry = next
@@ -300,7 +311,7 @@ struct FeedVisualCapture {
             // auto-corrige; esvaziá-la aqui fazia a escolha do topo recomeçar carta a carta e publicar posições
             // transitórias — medido em B05 (2026-10-14): o cursor durável **regrediu** para um card de cima e o
             // cold start desenhou outra tela.
-            refreshPresentedTop(offset: next.offset, reach: next.height)
+            refreshPresentedTop(offset: next.line, reach: next.height)
             return nil
         }
         if next.offset != previous.offset {
@@ -312,7 +323,7 @@ struct FeedVisualCapture {
                 motion.cardMotion = nil
             }
         }
-        refreshPresentedTop(offset: next.offset, reach: next.height)
+        refreshPresentedTop(offset: next.line, reach: next.height)
         return reconsider()
     }
 
@@ -375,7 +386,8 @@ struct FeedVisualCapture {
         // isso a carta verdadeira do topo é descartada pelo filtro (`top >= offset - 1` — a entrada velha herda uma
         // posição acima do viewport), a escolha cai numa carta mais funda e a posição publicada nomeia o que a tela
         // **não** mostra. Medido, e reproduzido no teste determinístico desta rodada: 8 onde a tela mostra 6.
-        if let previous = motion.cardContentTops[proof.cardID] {
+        let previous = motion.cardContentTops[proof.cardID]
+        if let previous {
             let shift = proof.offset - previous.offset
             let moved = contentTop - previous.top
             if abs(shift) > 0.5, abs(moved - shift) <= 0.5 {
@@ -386,26 +398,30 @@ struct FeedVisualCapture {
             }
         }
         motion.cardContentTops[proof.cardID] = (top: contentTop, height: proof.frame.height, offset: proof.offset)
-        let offset = motion.geometry?.offset ?? proof.offset
+        // The line is the scroll view's content origin (the card proof's own line, and the line the B05 driver
+        // reads), never `contentOffset + contentInsets.top`: the inset changed by ~1.6 pt between two rests of the
+        // same Release run, so a captured constant bias drifted and the durable point stayed ~1.6 pt above the
+        // displayed line.
+        let line = motion.geometry?.line ?? proof.offset
         let reach = motion.geometry?.height ?? proof.height
         // A carta que **é** a escolha pode ter sido remedida (altura) sem mudar a identidade: o delta relativo
         // acompanha a medição nova mesmo quando nenhuma outra carta entra acima da escolhida.
         if motion.presentedTop == proof.cardID {
-            motion.presentedTopOffset = CardTopOffset(topDelta: Double(contentTop - offset),
+            motion.presentedTopOffset = CardTopOffset(topDelta: Double(contentTop - line),
                 height: Double(proof.frame.height))
         }
         let choiceTop = motion.presentedTop.flatMap { motion.cardContentTops[$0]?.top }
         // A card enters above the choice (the old rule) **or** it contains the line and starts below the current
         // choice, in which case the containing-card rule makes it the boundary winner.
         let entersAbove = choiceTop.map { contentTop < $0 } ?? true
-        let containsLine = contentTop <= offset + CardTopOffset.tolerance
-            && contentTop + proof.frame.height >= offset - CardTopOffset.tolerance
-        if containsLine || (contentTop >= offset - 1 && entersAbove) {
-            refreshPresentedTop(offset: offset, reach: reach)
+        let containsLine = contentTop <= line + CardTopOffset.tolerance
+            && contentTop + proof.frame.height >= line - CardTopOffset.tolerance
+        if containsLine || (contentTop >= line - 1 && entersAbove) {
+            refreshPresentedTop(offset: line, reach: reach)
         } else if motion.presentedTop == proof.cardID, !containsLine {
             // The chosen card itself no longer reaches the line (a height change): the choice must be re-derived,
             // never kept on a stale measurement.
-            refreshPresentedTop(offset: offset, reach: reach)
+            refreshPresentedTop(offset: line, reach: reach)
         }
         if let old = motion.priorProof, old.cardID == proof.cardID {
             let stable = old.frame.size == proof.frame.size && old.height == proof.height &&
