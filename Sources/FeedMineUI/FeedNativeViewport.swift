@@ -42,6 +42,12 @@ struct NativeFeedViewport: ViewModifier {
         FeedPositionRequest.settle(&capture, store: store)
     }
 
+    /// Arms the restore target only when this capture belongs to the presentation that carries it.
+    private func armPresentationRestoration(_ position: PresentationAnchor? = nil) {
+        guard matchesScope else { return }
+        capture.armRestoration(position ?? presented?.restoredPosition)
+    }
+
     // Card bounds use the container viewport; visibleRect may also include safe-area insets.
     private func visualGeometry(_ geometry: ScrollGeometry) -> FeedVisualGeometry {
         .init(offset: geometry.contentOffset.y + geometry.contentInsets.top,
@@ -77,6 +83,9 @@ struct NativeFeedViewport: ViewModifier {
                 // Uma animação programática não é um gesto do leitor: enquanto ela corre, o desenho não está em
                 // repouso e nada do que ele mostrar no meio vira posição durável.
                 capture.motion.animating = phase == .animating
+                // A reader touching the feed owns the position now. The restore is cancelled, never postponed
+                // until the gesture ends: pushing the reader back would be a second, hidden navigation.
+                if phase == .tracking || phase == .interacting { capture.cancelRestoration() }
                 guard matchesScope else { return }
                 #if DEBUG
                 if FeedVisualCapture.tracesCapture {
@@ -178,8 +187,16 @@ struct NativeFeedViewport: ViewModifier {
             }
             .onChange(of: ObjectIdentifier(store), initial: true) { _, _ in
                 capture.renderOwner = ObjectIdentifier(store)
+                armPresentationRestoration()
+            }
+            // The relative point a restore must reproduce. `initial: true` covers the first presentation,
+            // i.e. the cold/warm restore this view was built for; a later projection of the same restore
+            // carries no `restoredPosition`, so a normal article return never re-arms it.
+            .onChange(of: presented?.restoredPosition, initial: true) { _, position in
+                armPresentationRestoration(position)
             }
             .onDisappear {
+                capture.cancelRestoration()
                 guard matchesScope else { return }
                 capture.interaction.end()
                 store.setReadingInteractionActive(false)

@@ -162,6 +162,13 @@ public struct FeedScreen: View {
                                     store.noteFirstScreenLayout(cardID: card.id,
                                         contentBottom: proof.frame.maxY, viewportHeight: proof.height)
                                     #if canImport(UIKit)
+                                    // The relative point of a restore is applied to the same frame proof the
+                                    // capture would otherwise treat as movement: the anchor card has landed, and
+                                    // the remaining delta is the difference between this line and the recorded one.
+                                    // The callback carrying the pre-correction geometry is stale by construction.
+                                    if capture.applyRestorationIfNeeded(proof) {
+                                        return
+                                    }
                                     if capture.nativeScrollOffset.observe(proof) {
                                         return
                                     }

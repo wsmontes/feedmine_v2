@@ -168,6 +168,9 @@ final class MediaCandidateSchemaTests: XCTestCase {
                     }
                     if table == "feed_editions" { return column.0 != "context_identity" && column.0 != "context_key_json" }
                     if table == "published_cards" { return column.0 != "diversity_facts" && column.0 != "media_identity" }
+                    if table == "session_checkpoint" || table == "context_checkpoints" {
+                        return column.0 != "anchor_top_delta" && column.0 != "anchor_height"
+                    }
                     return true
                 }.map { $0.1 }
             } }

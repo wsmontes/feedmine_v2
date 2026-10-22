@@ -85,6 +85,31 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertThrowsError(try sessions.saveCheckpoint(.init(editionID: e1.id, cardID: b.id,
             anchorPlacement: "center", updatedAt: Date(timeIntervalSince1970: 2))))
     }
+    /// Continuity extension: the relative point survives the singleton and the per-context row, and a row that
+    /// carries only one of the two values reads as absent (the card record still stands).
+    func testTheRelativePointRoundTripsBothCheckpointTables() throws {
+        let db = try StorageFixture.database(self), store = PublicationStore(database: db), sessions = SessionStore(database: db)
+        let edition = StorageFixture.edition(), card = StorageFixture.card()
+        try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [card]), cards: [card])
+        let record = SessionStore.CheckpointRecord(editionID: edition.id, cardID: card.id,
+            anchorPlacement: "top", updatedAt: Date(timeIntervalSince1970: 5),
+            topDelta: -159, cardHeight: 600)
+        try sessions.saveCheckpoint(record)
+        XCTAssertEqual(try sessions.checkpoint(), record)
+        let key = ContextKey(request: .main)
+        XCTAssertEqual(try sessions.checkpoint(for: key), record)
+        try sessions.activateContext(key)
+        XCTAssertEqual(try sessions.checkpoint(), record, "a troca de contexto reinstala o mesmo ponto relativo")
+        // An incomplete pair is not a relative point; the row still names the reader's card.
+        try db.write { db in
+            try db.execute(sql: "UPDATE context_checkpoints SET anchor_height = NULL")
+        }
+        let incomplete = try XCTUnwrap(try sessions.checkpoint(for: key))
+        XCTAssertNil(incomplete.cardHeight)
+        XCTAssertEqual(incomplete.topDelta, -159)
+        XCTAssertEqual(incomplete.cardID, card.id)
+    }
+
     func testContextSwitchArchivesAndRestoresEachCheckpoint() throws {
         let db = try StorageFixture.database(self), store = PublicationStore(database: db), sessions = SessionStore(database: db)
         let main = StorageFixture.edition(), source = SourceID(), r = main.editorialRevision

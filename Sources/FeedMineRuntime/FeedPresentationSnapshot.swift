@@ -40,10 +40,15 @@ public enum PresentationAnchorPlacement: String, Hashable, Sendable {
 public struct PresentationAnchor: Hashable, Sendable {
     public let cardID: PublicationCardID
     public let placement: PresentationAnchorPlacement
+    /// Where the viewport's top line falls relative to this card's top edge, when the app measured it.
+    /// Nil is every existing call site: a record of card + placement only.
+    public let progress: CardTopOffset?
 
-    public init(cardID: PublicationCardID, placement: PresentationAnchorPlacement) {
+    public init(cardID: PublicationCardID, placement: PresentationAnchorPlacement,
+        progress: CardTopOffset? = nil) {
         self.cardID = cardID
         self.placement = placement
+        self.progress = progress
     }
 }
 
@@ -116,6 +121,11 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
     /// window's anchor is the reader's own position. A surface may state the unavailable position honestly; the
     /// substitute is not the reader's card, and no exact resume can be claimed for it.
     public let unavailablePositionCardID: PublicationCardID?
+    /// The one-shot relative point a restore must reproduce on top of the window's anchor card. It is
+    /// present only on a presentation freshly projected from a checkpoint's exact position: the surface
+    /// aligns the anchor card and then moves the remaining delta. Nil on every other projection, so a
+    /// normal article return or a warm re-projection never re-arms the correction.
+    public let restoredPosition: PresentationAnchor?
 
     init(restoredPublication: RestoredPublication, provenance: FeedProjectionProvenance) {
         self.init(contextKey: restoredPublication.edition.contextKey,
@@ -129,13 +139,15 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
 
     init(contextKey: ContextKey, editionID: FeedEditionID, window: FeedWindowSnapshot,
         provenance: FeedProjectionProvenance, unavailableImageCardIDs: Set<PublicationCardID> = [],
-        unavailablePositionCardID: PublicationCardID? = nil) {
+        unavailablePositionCardID: PublicationCardID? = nil,
+        restoredPosition: PresentationAnchor? = nil) {
         self.contextKey = contextKey
         self.editionID = editionID
         self.window = window
         self.provenance = provenance
         self.unavailableImageCardIDs = unavailableImageCardIDs
         self.unavailablePositionCardID = unavailablePositionCardID
+        self.restoredPosition = restoredPosition
     }
 }
 

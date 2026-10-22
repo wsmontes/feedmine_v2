@@ -24,11 +24,18 @@ public struct SessionStore: Sendable {
         public let cardID: PublicationCardID
         public let anchorPlacement: String
         public let updatedAt: Date
-        public init(editionID: FeedEditionID, cardID: PublicationCardID, anchorPlacement: String, updatedAt: Date) {
+        /// The optional continuity extension: the viewport line inside `cardID`. Both nil on every row written
+        /// before the columns existed, and the record means exactly what it always meant.
+        public let topDelta: Double?
+        public let cardHeight: Double?
+        public init(editionID: FeedEditionID, cardID: PublicationCardID, anchorPlacement: String, updatedAt: Date,
+            topDelta: Double? = nil, cardHeight: Double? = nil) {
             self.editionID = editionID
             self.cardID = cardID
             self.anchorPlacement = anchorPlacement
             self.updatedAt = updatedAt
+            self.topDelta = topDelta
+            self.cardHeight = cardHeight
         }
     }
 
@@ -40,12 +47,16 @@ public struct SessionStore: Sendable {
             do { time = try PersistenceValueCoding.date(checkpoint.updatedAt, field: "updated_at") }
             catch { throw SessionStoreError.invalidRepresentation("updated_at") }
             try db.execute(sql: """
-                INSERT INTO session_checkpoint (singleton_id, edition_id, card_id, anchor_placement, updated_at)
-                VALUES (1, ?, ?, ?, ?)
+                INSERT INTO session_checkpoint
+                    (singleton_id, edition_id, card_id, anchor_placement, updated_at, anchor_top_delta, anchor_height)
+                VALUES (1, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(singleton_id) DO UPDATE SET edition_id = excluded.edition_id,
-                    card_id = excluded.card_id, anchor_placement = excluded.anchor_placement, updated_at = excluded.updated_at
+                    card_id = excluded.card_id, anchor_placement = excluded.anchor_placement,
+                    updated_at = excluded.updated_at, anchor_top_delta = excluded.anchor_top_delta,
+                    anchor_height = excluded.anchor_height
                 """, arguments: [PersistenceValueCoding.uuid(checkpoint.editionID.rawValue),
-                    PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time])
+                    PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time,
+                    checkpoint.topDelta, checkpoint.cardHeight])
             try Self.persistContext(checkpoint, in: db)
             try PublicationStore.markSeen(editionID: checkpoint.editionID, cardID: checkpoint.cardID, in: db)
         }
@@ -62,10 +73,12 @@ public struct SessionStore: Sendable {
             throw SessionStoreError.checkpointAlreadyExists
         }
         try db.execute(sql: """
-            INSERT INTO session_checkpoint (singleton_id, edition_id, card_id, anchor_placement, updated_at)
-            VALUES (1, ?, ?, ?, ?)
+            INSERT INTO session_checkpoint
+                (singleton_id, edition_id, card_id, anchor_placement, updated_at, anchor_top_delta, anchor_height)
+            VALUES (1, ?, ?, ?, ?, ?, ?)
             """, arguments: [PersistenceValueCoding.uuid(checkpoint.editionID.rawValue),
-                PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time])
+                PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement, time,
+                checkpoint.topDelta, checkpoint.cardHeight])
         try persistContext(checkpoint, in: db)
         try PublicationStore.markSeen(editionID: checkpoint.editionID, cardID: checkpoint.cardID, in: db)
     }
@@ -95,8 +108,11 @@ public struct SessionStore: Sendable {
         guard ["top", "center"].contains(placement) else {
             throw SessionStoreError.corruption("checkpoint placement")
         }
+        // Historical schemas may lack the two columns; absent means nil, never a runtime failure.
+        let topDelta = row.columnNames.contains("anchor_top_delta") ? try fields.optionalReal("anchor_top_delta") : nil
+        let cardHeight = row.columnNames.contains("anchor_height") ? try fields.optionalReal("anchor_height") : nil
         return CheckpointRecord(editionID: edition, cardID: card, anchorPlacement: placement,
-            updatedAt: try fields.date("updated_at"))
+            updatedAt: try fields.date("updated_at"), topDelta: topDelta, cardHeight: cardHeight)
     }
 
     /// Selects the saved position for a logical context *identity* (T6: the whole key — surface, preset,
@@ -111,9 +127,14 @@ public struct SessionStore: Sendable {
             if let row = try Row.fetchOne(db, sql: "SELECT * FROM context_checkpoints WHERE context_identity = ?",
                 arguments: [key.canonicalIdentity]) {
                 let saved = try Self.decode(row, in: db)
-                try db.execute(sql: "INSERT INTO session_checkpoint VALUES (1, ?, ?, ?, ?)", arguments: [
+                try db.execute(sql: """
+                    INSERT INTO session_checkpoint
+                        (singleton_id, edition_id, card_id, anchor_placement, updated_at, anchor_top_delta, anchor_height)
+                    VALUES (1, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [
                     PersistenceValueCoding.uuid(saved.editionID.rawValue), PersistenceValueCoding.uuid(saved.cardID.rawValue),
-                    saved.anchorPlacement, saved.updatedAt.timeIntervalSince1970])
+                    saved.anchorPlacement, saved.updatedAt.timeIntervalSince1970,
+                    saved.topDelta, saved.cardHeight])
             }
         }
     }
@@ -168,18 +189,20 @@ public struct SessionStore: Sendable {
         // `context_key` text is still written for one release so an older build can read this database.
         // A row without an identity cannot be filed: it is skipped rather than merged into another context.
         try db.execute(sql: """
-            INSERT INTO context_checkpoints(context_identity, context_key, context_key_json, edition_id, card_id, anchor_placement, updated_at)
+            INSERT INTO context_checkpoints(context_identity, context_key, context_key_json, edition_id, card_id, anchor_placement, updated_at, anchor_top_delta, anchor_height)
             SELECT e.context_identity,
                 CASE e.context_kind WHEN 'main' THEN 'main' WHEN 'source' THEN 'source:' || e.context_source_id
                     WHEN 'search' THEN 'search:' || e.context_search_query END,
-                e.context_key_json, e.id, ?, ?, ? FROM feed_editions e
+                e.context_key_json, e.id, ?, ?, ?, ?, ? FROM feed_editions e
             WHERE e.id = ? AND e.context_identity <> ''
             ON CONFLICT(context_identity) DO UPDATE SET context_key = excluded.context_key,
                 context_key_json = excluded.context_key_json, edition_id = excluded.edition_id,
                 card_id = excluded.card_id, anchor_placement = excluded.anchor_placement,
-                updated_at = excluded.updated_at
+                updated_at = excluded.updated_at, anchor_top_delta = excluded.anchor_top_delta,
+                anchor_height = excluded.anchor_height
             """, arguments: [PersistenceValueCoding.uuid(checkpoint.cardID.rawValue), checkpoint.anchorPlacement,
-                checkpoint.updatedAt.timeIntervalSince1970, PersistenceValueCoding.uuid(checkpoint.editionID.rawValue)])
+                checkpoint.updatedAt.timeIntervalSince1970, checkpoint.topDelta, checkpoint.cardHeight,
+                PersistenceValueCoding.uuid(checkpoint.editionID.rawValue)])
     }
 
     /// A context's saved position, read with the same rule as the singleton: the card is the reader's position and

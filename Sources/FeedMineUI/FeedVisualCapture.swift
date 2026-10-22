@@ -62,14 +62,17 @@ final class FeedVisualMotion {
     /// viewport, e foi isso que fez a primeira versão publicar seis posições distintas num único repouso (medido em
     /// B05, 2026-10-14: o cursor terminou num card que não era o do topo da tela).
     var presentedTop: PublicationCardID?
-    /// A borda superior de cada carta **no conteúdo** (`frame.minY + offset`), que não se move quando o leitor rola.
+    /// Onde a linha superior do viewport cai **dentro** da carta escolhida, com a altura medida dela. É o dado que
+    /// a borda do card sozinha não carrega: sem ele uma restauração prende a borda ao topo e move o texto.
+    var presentedTopOffset: CardTopOffset?
+    /// A borda superior de cada carta **no conteúdo** (`frame.minY + offset`), a altura medida e o offset da medida.
     /// É a base da escolha acima; podada ao redor do viewport, porque uma carta a mais de uma tela de distância
     /// nunca é o topo e volta a reportar quando se aproxima.
     ///
     /// O **offset em que ela foi medida** anda junto porque os dois números juntos distinguem o que moveu a carta:
     /// numa rolagem só o offset anda; num inserto/retirada de conteúdo **acima** dela os dois andam o mesmo tanto —
     /// e é esse segundo caso que envelhece as entradas das cartas que não voltaram a reportar.
-    var cardContentTops: [PublicationCardID: (top: CGFloat, offset: CGFloat)] = [:]
+    var cardContentTops: [PublicationCardID: (top: CGFloat, height: CGFloat, offset: CGFloat)] = [:]
     /// Uma animação programática (não um gesto do leitor) está em curso: nada do que o desenho mostrar enquanto ela
     /// durar é uma posição em repouso.
     var animating = false
@@ -78,7 +81,9 @@ final class FeedVisualMotion {
     /// uma posição nova) e perder a posição em que o leitor parou (a mesma posição muda de valor quando o desenho
     /// passa ao repouso).
     var publishedPresentedTop: PublicationCardID?
+    var publishedPresentedOffset: CardTopOffset?
     var acknowledgedPresentedTop: PublicationCardID?
+    var acknowledgedPresentedOffset: CardTopOffset?
     // Diagnóstico apenas: um vetor não verificado nunca é autoridade de direção nem veto global.
     var velocityUnverified = false
     #if DEBUG
@@ -104,6 +109,17 @@ struct FeedVisualCapture {
     /// The one-shot token that started `pendingJump`. A preparation requested by the binding's echo (`false`) may
     /// apply its prepared value locally, but only the caller that meant a jump may establish the position.
     var pendingJumpExplicit = false
+    /// The relative point a restore must reproduce after `scrollPosition(id:)` aligns the anchor card. Armed only
+    /// from a presentation that carried `restoredPosition`; cancelled by a real reader gesture and never re-armed
+    /// by a later projection of the same restore.
+    var restoration: FeedRestoration?
+    /// One native write at most. A second application would fight a SwiftUI realignment instead of proving it.
+    var restorationApplied = false
+
+    struct FeedRestoration: Equatable, Sendable {
+        let cardID: PublicationCardID
+        let offset: CardTopOffset
+    }
     #if DEBUG
     /// Traço de diagnóstico do capture, **desligado por padrão** (ordem do arquiteto): liga com
     /// `FEEDMINE_TRACE_CAPTURE=1`. A medição de posição precisa dele; a operação normal não paga o custo — uma
@@ -146,7 +162,9 @@ struct FeedVisualCapture {
     /// borda superior está dentro do viewport, preso à borda de cima. É a posição que o host publica e grava — nunca
     /// pixels, e nunca o card em que o leitor *está* (esse não determina o viewport).
     var presentedAnchor: PresentationAnchor? {
-        motion.presentedTop.map { PresentationAnchor(cardID: $0, placement: .top) }
+        motion.presentedTop.map {
+            PresentationAnchor(cardID: $0, placement: .top, progress: motion.presentedTopOffset)
+        }
     }
 
     /// O repouso semântico do próprio desenho: nenhum gesto em curso, nenhum hold emprestado, nenhuma animação
@@ -165,14 +183,84 @@ struct FeedVisualCapture {
     /// não é uma posição nova, e uma submissão por quadro custaria um salto de ator por quadro no caminho de
     /// renderização (o mesmo custo que a lista deixou de pagar por avanço, 2026-10-14).
     func reportPresentedPosition(to host: @MainActor (PresentationAnchor, Bool) -> Void) {
-        guard let anchor = presentedAnchor else { return }
+        // A restauração ainda não convergiu: o que o desenho mostra é a posição de passagem, não uma
+        // posição que o leitor segura. Nada dela pode virar durável.
+        guard restoration == nil, let anchor = presentedAnchor else { return }
         let atRest = isRenderingAtRest
-        if motion.publishedPresentedTop == anchor.cardID,
-            !atRest || motion.acknowledgedPresentedTop == anchor.cardID { return }
+        let point = anchor.progress
+        if motion.publishedPresentedTop == anchor.cardID {
+            // Movement inside the same card is not a new position to the host: the latest point is remembered for
+            // the rest, and only a rest that has not been acknowledged yet submits. No per-frame actor hop.
+            let restPending = atRest && (motion.acknowledgedPresentedTop != anchor.cardID
+                || !Self.samePoint(motion.acknowledgedPresentedOffset, point))
+            if !restPending {
+                motion.publishedPresentedOffset = point
+                return
+            }
+        }
         motion.publishedPresentedTop = anchor.cardID
-        if atRest { motion.acknowledgedPresentedTop = anchor.cardID }
+        motion.publishedPresentedOffset = point
+        if atRest {
+            motion.acknowledgedPresentedTop = anchor.cardID
+            motion.acknowledgedPresentedOffset = point
+        }
         host(anchor, atRest)
     }
+
+    private static func samePoint(_ lhs: CardTopOffset?, _ rhs: CardTopOffset?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): return true
+        case let (lhs?, rhs?):
+            return abs(lhs.topDelta - rhs.topDelta) <= CardTopOffset.measurementTolerance
+                && abs(lhs.height - rhs.height) <= CardTopOffset.measurementTolerance
+        default: return false
+        }
+    }
+
+    /// Arms the one-shot correction only for the relative point the presentation actually carries. A projection
+    /// without it never moves the native offset on its own.
+    mutating func armRestoration(_ anchor: PresentationAnchor?) {
+        guard let anchor, let progress = anchor.progress else { return }
+        restoration = FeedRestoration(cardID: anchor.cardID, offset: progress)
+        restorationApplied = false
+    }
+
+    /// A real reader intention cancels the restore instead of postponing it until the gesture ends — pushing the
+    /// reader back after they moved would be a second, hidden navigation.
+    mutating func cancelRestoration() {
+        restoration = nil
+        restorationApplied = false
+    }
+
+    #if canImport(UIKit)
+    /// Applies the remaining delta once the anchor card has reached the line `scrollPosition(id:)` aligns to.
+    /// Returns true when a native write happened; the callback carrying this proof is then stale by construction.
+    @discardableResult
+    mutating func applyRestorationIfNeeded(_ proof: FeedVisualCardGeometry) -> Bool {
+        guard let target = restoration, target.cardID == proof.cardID else { return false }
+        if restorationApplied {
+            let (expected, _) = target.offset.restoredTopDelta(forMeasuredHeight: proof.frame.height)
+            if abs(proof.frame.minY - expected) <= CardTopOffset.measurementTolerance {
+                restoration = nil
+                restorationApplied = false
+            }
+            return false
+        }
+        // The anchor card is at the top only once SwiftUI's own alignment has landed. Measuring the delta against
+        // any other line would add the card's distance from the top to the reader's position.
+        guard abs(proof.frame.minY) <= CardTopOffset.tolerance else { return false }
+        let (expected, _) = target.offset.restoredTopDelta(forMeasuredHeight: proof.frame.height)
+        let delta = proof.frame.minY - expected
+        guard abs(delta) > CardTopOffset.measurementTolerance, nativeScrollOffset.applyRestoration(delta) else {
+            if abs(delta) <= CardTopOffset.measurementTolerance {
+                restoration = nil
+            }
+            return false
+        }
+        restorationApplied = true
+        return true
+    }
+    #endif
 
     func invalidateLayout() {
         motion.geometry = nil
@@ -228,18 +316,38 @@ struct FeedVisualCapture {
         return reconsider()
     }
 
-    /// O card em que o **viewport começa**, decidido em coordenadas de conteúdo: o de menor borda superior entre os
-    /// que começam dentro do viewport (a mesma regra da aceitação, com a mesma tolerância de um ponto). A escolha
-    /// depende só do conteúdo acumulado e do offset atual, então repetir o mesmo estado devolve o mesmo card — é
-    /// isso que impede um repouso de publicar seis posições diferentes.
+    /// O card em que o **viewport começa** e a linha superior do viewport **dentro dele**, decididos juntos em
+    /// coordenadas de conteúdo.
+    ///
+    /// A escolha é a carta que **contém** a linha do topo (a de maior borda superior entre as que contêm, então a
+    /// fronteira `top == offset` vence); quando a linha cai no espaçamento entre cartas, é a primeira carta abaixo
+    /// dela. É a identidade que uma restauração consegue honrar junto com o delta — a regra anterior ("primeira
+    /// carta a começar dentro do viewport") nomeava a carta **seguinte** sempre que o leitor parava dentro de uma,
+    /// e prendê-la ao topo movia o texto em até uma altura de carta. A escolha depende só do conteúdo acumulado e
+    /// do offset atual, então repetir o mesmo estado devolve o mesmo par — é isso que impede um repouso de publicar
+    /// seis posições diferentes.
     private func refreshPresentedTop(offset: CGFloat, reach: CGFloat) {
         if motion.cardContentTops.count > 64 {
             // Uma carta a mais de um viewport acima do leitor nunca é o topo, e volta a reportar ao se aproximar.
-            motion.cardContentTops = motion.cardContentTops.filter { $0.value.top >= offset - reach }
+            motion.cardContentTops = motion.cardContentTops.filter { $0.value.top + $0.value.height >= offset - reach }
         }
-        motion.presentedTop = motion.cardContentTops
-            .filter { $0.value.top >= offset - 1 }
-            .min { $0.value.top < $1.value.top }?.key
+        let tolerance = CardTopOffset.tolerance
+        let chosen: (key: PublicationCardID, entry: (top: CGFloat, height: CGFloat, offset: CGFloat))?
+        if let boundary = motion.cardContentTops
+            .filter({ $0.value.top <= offset + tolerance
+                && $0.value.top + $0.value.height >= offset - tolerance })
+            .max(by: { $0.value.top < $1.value.top }) {
+            chosen = (boundary.key, boundary.value)
+        } else {
+            chosen = motion.cardContentTops
+                .filter { $0.value.top >= offset - tolerance }
+                .min { $0.value.top < $1.value.top }
+                .map { ($0.key, $0.value) }
+        }
+        motion.presentedTop = chosen?.key
+        motion.presentedTopOffset = chosen.flatMap { choice in
+            CardTopOffset(topDelta: Double(choice.entry.top - offset), height: Double(choice.entry.height))
+        }
     }
 
     func observeCard(_ proof: FeedVisualCardGeometry, isLast: Bool = false) -> FeedVisualEvent? {
@@ -272,16 +380,33 @@ struct FeedVisualCapture {
             let moved = contentTop - previous.top
             if abs(shift) > 0.5, abs(moved - shift) <= 0.5 {
                 motion.cardContentTops = motion.cardContentTops.mapValues {
-                    (top: $0.top + shift, offset: $0.offset + shift)
+                    (top: $0.top + shift, height: $0.height, offset: $0.offset + shift)
                 }
                 refreshPresentedTop(offset: proof.offset, reach: motion.geometry?.height ?? proof.height)
             }
         }
-        motion.cardContentTops[proof.cardID] = (top: contentTop, offset: proof.offset)
+        motion.cardContentTops[proof.cardID] = (top: contentTop, height: proof.frame.height, offset: proof.offset)
         let offset = motion.geometry?.offset ?? proof.offset
         let reach = motion.geometry?.height ?? proof.height
-        let aboveTheChoice = motion.presentedTop.flatMap { motion.cardContentTops[$0] }.map { contentTop < $0.top } ?? true
-        if contentTop >= offset - 1, aboveTheChoice { refreshPresentedTop(offset: offset, reach: reach) }
+        // A carta que **é** a escolha pode ter sido remedida (altura) sem mudar a identidade: o delta relativo
+        // acompanha a medição nova mesmo quando nenhuma outra carta entra acima da escolhida.
+        if motion.presentedTop == proof.cardID {
+            motion.presentedTopOffset = CardTopOffset(topDelta: Double(contentTop - offset),
+                height: Double(proof.frame.height))
+        }
+        let choiceTop = motion.presentedTop.flatMap { motion.cardContentTops[$0]?.top }
+        // A card enters above the choice (the old rule) **or** it contains the line and starts below the current
+        // choice, in which case the containing-card rule makes it the boundary winner.
+        let entersAbove = choiceTop.map { contentTop < $0 } ?? true
+        let containsLine = contentTop <= offset + CardTopOffset.tolerance
+            && contentTop + proof.frame.height >= offset - CardTopOffset.tolerance
+        if containsLine || (contentTop >= offset - 1 && entersAbove) {
+            refreshPresentedTop(offset: offset, reach: reach)
+        } else if motion.presentedTop == proof.cardID, !containsLine {
+            // The chosen card itself no longer reaches the line (a height change): the choice must be re-derived,
+            // never kept on a stale measurement.
+            refreshPresentedTop(offset: offset, reach: reach)
+        }
         if let old = motion.priorProof, old.cardID == proof.cardID {
             let stable = old.frame.size == proof.frame.size && old.height == proof.height &&
                 abs((old.frame.minY + old.offset) - (proof.frame.minY + proof.offset)) <= 0.5

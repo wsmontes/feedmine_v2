@@ -47,9 +47,13 @@ public struct FeedWindowAnchor: Hashable, Sendable {
 public struct SessionCursor: Hashable, Sendable {
     public let editionID: FeedEditionID
     public let anchor: FeedWindowAnchor
+    /// Where the viewport's top line falls relative to the anchor card, when the app measured it.
+    /// Nil is every legacy record: card + placement only, with the existing approximate restore.
+    public let progress: CardTopOffset?
 
-    public init(editionID: FeedEditionID, anchor: FeedWindowAnchor) {
+    public init(editionID: FeedEditionID, anchor: FeedWindowAnchor, progress: CardTopOffset? = nil) {
         self.editionID = editionID
         self.anchor = anchor
+        self.progress = progress
     }
 }

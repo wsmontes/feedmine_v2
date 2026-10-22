@@ -63,7 +63,15 @@ public actor FeedSession {
     private var lastRenderedViewportOrdinal: UInt64 = 0
     /// What this association last made durable: the anchor the record holds and when it was written. It is the
     /// debounce's whole state — one rule, one owner, no timer and no second clock (PO 2026-10-14).
-    private var durablePosition: (anchor: FeedWindowAnchor, at: Date)?
+    private var durablePosition: (position: RecordedPosition, at: Date)?
+
+    /// What one durable statement names: the card/placement a restore aligns, plus the relative point when the
+    /// rendering measured one. Equality of both fields is what "already durable" means; a new rest inside the same
+    /// card at a different point is a real change, sub-half-point noise is not.
+    private struct RecordedPosition: Equatable, Sendable {
+        let anchor: FeedWindowAnchor
+        let progress: CardTopOffset?
+    }
     /// Where the app says the reader's **rendered** viewport starts (see `notePresentedPosition(_:atRest:)`): the
     /// card the screen begins at, not the card the reader's observation anchors on. Memory-local until a rest makes
     /// it durable, and never a second presentation: it names one card and one placement, and a card the admitted
@@ -616,10 +624,24 @@ public actor FeedSession {
             // be redrawn, the window opens on the closest render-ready card and says which position it stands for.
             let durable = restored.cursor.anchor.cardID
             let substituted = durable != window.anchor.cardID && unavailable.contains(durable) ? durable : nil
+            // The relative point is attached only when the projection draws the checkpoint's own card at the top.
+            // A substitute (anchor excluded/unavailable) has no relative point: the original point belongs to a
+            // card this restore is not drawing, and applying it to the neighbour would invent a position.
+            let restoredPosition: PresentationAnchor?
+            switch restored.position {
+            case .exact(let card) where card == window.anchor.cardID
+                && window.anchor.placement == .top && substituted == nil:
+                restoredPosition = restored.cursor.progress.map {
+                    PresentationAnchor(cardID: card, placement: .top, progress: $0)
+                }
+            default:
+                restoredPosition = nil
+            }
             let snapshot = FeedPresentationSnapshot(contextKey: restored.edition.contextKey,
                 editionID: restored.edition.id, window: window,
                 provenance: .init(sequenceID: sequenceID, position: next),
-                unavailableImageCardIDs: unavailable, unavailablePositionCardID: substituted)
+                unavailableImageCardIDs: unavailable, unavailablePositionCardID: substituted,
+                restoredPosition: restoredPosition)
             return FeedCheckpointProjection(
                 state: FeedSessionState(editorialRevisionID: restored.edition.editorialRevision.id,
                     presentation: snapshot, bounds: bounds),
@@ -728,12 +750,13 @@ public actor FeedSession {
     public func checkpointCurrentPosition(at date: Date) throws -> Bool {
         guard let current = state else { return false }
         if restoredSubstitution != nil { return false }
-        let anchor = recordedPosition(of: current)
+        let position = recordedPosition(of: current)
         try publicationHistory.saveCursor(
-            SessionCursor(editionID: current.presentation.editionID, anchor: anchor), updatedAt: date)
+            SessionCursor(editionID: current.presentation.editionID, anchor: position.anchor,
+                progress: position.progress), updatedAt: date)
         // A milestone is a durable write of the same record: it also moves the debounce's own clock, so the
         // window that follows it measures from what the reader actually last made durable.
-        durablePosition = (anchor, date)
+        durablePosition = (position, date)
         return true
     }
 
@@ -820,9 +843,10 @@ public actor FeedSession {
         if let substitution = restoredSubstitution {
             return .keptUnavailablePosition(cardID: substitution.durable)
         }
-        let anchor = recordedPosition(of: current)
+        let position = recordedPosition(of: current)
+        let anchor = position.anchor
         if let durable = durablePosition {
-            if durable.anchor == anchor { return .alreadyDurable }
+            if durable.position == position { return .alreadyDurable }
             let elapsed = date.timeIntervalSince(durable.at)
             if !settled, elapsed < Self.settledPositionDebounceWindow {
                 return .withinWindow(remaining: Self.settledPositionDebounceWindow - elapsed)
@@ -836,8 +860,9 @@ public actor FeedSession {
             contextKey: current.bounds.contextKey)
         if let stands { return .keptExactRecord(cardID: stands) }
         try publicationHistory.saveCursor(
-            SessionCursor(editionID: current.presentation.editionID, anchor: anchor), updatedAt: date)
-        durablePosition = (anchor, date)
+            SessionCursor(editionID: current.presentation.editionID, anchor: anchor,
+                progress: position.progress), updatedAt: date)
+        durablePosition = (position, date)
         return .written(cardID: anchor.cardID, placement: Self.presentationPlacement(of: anchor.placement))
     }
 
@@ -872,11 +897,17 @@ public actor FeedSession {
     /// fact (another context, another Edition, a card the window trimmed) falls back to the window's own anchor
     /// instead of writing a position nobody can restore. Both boundaries state the position through this one
     /// mapping, so they can never disagree about what "the reader's position" is.
-    private func recordedPosition(of current: FeedSessionState) -> FeedWindowAnchor {
-        guard let presentedTop = presentedPosition?.cardID,
-            current.presentation.window.items.contains(where: { $0.id == presentedTop })
-        else { return Self.durableAnchor(of: current.presentation.window.anchor) }
-        return FeedWindowAnchor(cardID: presentedTop, placement: .top)
+    private func recordedPosition(of current: FeedSessionState) -> RecordedPosition {
+        guard let presented = presentedPosition,
+            current.presentation.window.items.contains(where: { $0.id == presented.cardID })
+        else {
+            return RecordedPosition(anchor: Self.durableAnchor(of: current.presentation.window.anchor),
+                progress: nil)
+        }
+        // A `.top` statement is the one a restore can align; the relative point only means something there.
+        let progress = presented.placement == .top ? presented.progress : nil
+        return RecordedPosition(anchor: FeedWindowAnchor(cardID: presented.cardID, placement: .top),
+            progress: progress)
     }
 
     /// The durable form of a presentation anchor: card and placement, nothing else. Used when the app states no

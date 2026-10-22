@@ -134,13 +134,23 @@ enum PublicationPersistenceMapping {
 
     static func checkpoint(_ cursor: SessionCursor, updatedAt: Date) -> SessionStore.CheckpointRecord {
         .init(editionID: cursor.editionID, cardID: cursor.anchor.cardID,
-            anchorPlacement: cursor.anchor.placement.rawValue, updatedAt: updatedAt)
+            anchorPlacement: cursor.anchor.placement.rawValue, updatedAt: updatedAt,
+            topDelta: cursor.progress?.topDelta, cardHeight: cursor.progress?.height)
     }
 
     static func cursor(_ record: SessionStore.CheckpointRecord) throws -> SessionCursor {
         guard record.updatedAt.timeIntervalSince1970.isFinite, let placement = AnchorPlacement(rawValue: record.anchorPlacement) else {
             throw PublicationPersistenceMappingError.invalidPersistedCheckpoint
         }
-        return SessionCursor(editionID: record.editionID, anchor: FeedWindowAnchor(cardID: record.cardID, placement: placement))
+        // Validation lives in Swift, not in a SQLite CHECK the migration cannot add: both values must be
+        // present, finite and a positive height, or the extension is ignored and the card record stands.
+        let progress: CardTopOffset?
+        if let topDelta = record.topDelta, let height = record.cardHeight {
+            progress = CardTopOffset(topDelta: topDelta, height: height)
+        } else {
+            progress = nil
+        }
+        return SessionCursor(editionID: record.editionID,
+            anchor: FeedWindowAnchor(cardID: record.cardID, placement: placement), progress: progress)
     }
 }

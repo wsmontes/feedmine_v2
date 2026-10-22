@@ -176,23 +176,31 @@ public struct PublicationHistory: Sendable {
     /// - a card this database never held is stated, and lands on the Edition's first surviving card.
     private func resolved(_ stored: SessionCursor) throws -> (SessionCursor, RestoredPosition) {
         let placement = stored.anchor.placement
-        func cursor(edition: FeedEditionID, card: PublicationCardID) -> SessionCursor {
-            SessionCursor(editionID: edition, anchor: FeedWindowAnchor(cardID: card, placement: placement))
+        func cursor(edition: FeedEditionID, card: PublicationCardID,
+            progress: CardTopOffset?) -> SessionCursor {
+            SessionCursor(editionID: edition, anchor: FeedWindowAnchor(cardID: card, placement: placement),
+                progress: progress)
         }
         if let located = try publicationStore.location(ofCard: stored.anchor.cardID) {
             if located.isLive {
-                return (cursor(edition: located.editionID, card: located.cardID), .exact(located.cardID))
+                // The relative point belongs to this exact card; it is carried only with `.exact`.
+                return (cursor(edition: located.editionID, card: located.cardID, progress: stored.progress),
+                    .exact(located.cardID))
             }
             if let surviving = try publicationStore.survivingCard(inEdition: located.editionID,
                 beforeSegment: located.segmentOrdinal, cardOrdinal: located.cardOrdinal) {
-                return (cursor(edition: located.editionID, card: surviving),
+                // A different card has no relative point: applying the original delta to the neighbour would
+                // name a position the reader never held. The checkpoint keeps its own value; this restore is
+                // approximate and states it.
+                return (cursor(edition: located.editionID, card: surviving, progress: nil),
                     .nearestNeighbour(withdrawn: located.cardID, landedOn: surviving))
             }
         }
         guard let surviving = try publicationStore.firstCard(inEdition: stored.editionID) else {
             throw PublicationHistoryError.missingEdition
         }
-        return (cursor(edition: stored.editionID, card: surviving), .unknownCard(landedOn: surviving))
+        return (cursor(edition: stored.editionID, card: surviving, progress: nil),
+            .unknownCard(landedOn: surviving))
     }
 
     /// P10/R17: the facts the publication froze for this Edition, newest first. The editorial context reads history,

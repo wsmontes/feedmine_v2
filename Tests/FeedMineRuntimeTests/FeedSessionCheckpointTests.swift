@@ -568,6 +568,50 @@ final class FeedSessionCheckpointTests: XCTestCase {
         }
     }
 
+    /// Continuity: the relative point the rendering states is what a later restore reproduces on the same card.
+    func testThePresentedRelativePointRoundTripsAndReopens() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let progress = try XCTUnwrap(CardTopOffset(topDelta: -159, height: 600))
+            do {
+                let database = try RuntimeDatabase(location: location)
+                let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+                _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+                let written = try await session.notePresentedPosition(
+                    PresentationAnchor(cardID: cards[3].id, placement: .top, progress: progress), atRest: true)
+                XCTAssertEqual(written, .written(cardID: cards[3].id, placement: .top))
+                let record = try XCTUnwrap(SessionStore(database: database).checkpoint())
+                XCTAssertEqual(record.cardID, cards[3].id)
+                XCTAssertEqual(record.topDelta, -159)
+                XCTAssertEqual(record.cardHeight, 600)
+            }
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            let restored = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            XCTAssertEqual(restored?.window.anchor, PresentationAnchor(cardID: cards[3].id, placement: .top))
+            XCTAssertEqual(restored?.restoredPosition, PresentationAnchor(cardID: cards[3].id,
+                placement: .top, progress: progress), "o ponto relativo viaja com o snapshot da restauração")
+        }
+    }
+
+    /// A stale rendering fact never carries a point for the fallback anchor: the card is outside the admitted
+    /// window, so the record names the window anchor and has no relative point.
+    func testAStalePresentedCardNeverCarriesARelativePoint() async throws {
+        try await withLocation { location in
+            let (_, cards) = try persist(location: location)
+            let database = try RuntimeDatabase(location: location)
+            let session = FeedSession(publicationHistory: PublicationHistory(database: database))
+            _ = try await session.admitPresentation(.restore(.init(backwardCapacity: 2, forwardCapacity: 2)))
+            let progress = try XCTUnwrap(CardTopOffset(topDelta: -159, height: 600))
+            _ = try await session.notePresentedPosition(
+                PresentationAnchor(cardID: cards[9].id, placement: .top, progress: progress), atRest: true)
+            let record = try XCTUnwrap(SessionStore(database: database).checkpoint())
+            XCTAssertEqual(record.cardID, cards[4].id)
+            XCTAssertNil(record.topDelta)
+            XCTAssertNil(record.cardHeight)
+        }
+    }
+
     /// O milestone grava a mesma posição que o repouso, pelo mesmo mapeamento: com o card do topo relatado, o
     /// registro nomeia o topo; sem ele, a âncora da janela (o comportamento de antes).
     func testAMilestoneStatesThePresentedTopWhenTheAppHasOne() async throws {

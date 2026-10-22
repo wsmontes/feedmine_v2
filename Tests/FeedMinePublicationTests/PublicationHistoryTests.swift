@@ -113,6 +113,52 @@ final class PublicationHistoryTests: XCTestCase {
         }
     }
 
+    /// Continuity extension: an exact card carries the relative point through storage and back. The same
+    /// record rewritten without it (legacy shape) still restores the same card.
+    func testTheRelativePointRoundTripsOnTheExactCard() throws {
+        try withDatabase { location, database in
+            let edition = RestoreFixture.edition()
+            let cards = try (0..<6).map { try RestoreFixture.card(index: $0) }
+            try persist(edition, cards: cards, database: database)
+            let progress = try XCTUnwrap(CardTopOffset(topDelta: -159, height: 600))
+            let cursor = SessionCursor(editionID: edition.id,
+                anchor: FeedWindowAnchor(cardID: cards[4].id, placement: .top), progress: progress)
+            try PublicationHistory(database: database).saveCursor(cursor, updatedAt: Date(timeIntervalSince1970: 700.5))
+            let restored = try XCTUnwrap(PublicationHistory(database: try RuntimeDatabase(location: location))
+                .restore(backwardCapacity: 1, forwardCapacity: 1))
+            XCTAssertEqual(restored.cursor.anchor, cursor.anchor)
+            XCTAssertEqual(restored.cursor.progress, progress)
+            XCTAssertEqual(restored.position, .exact(cards[4].id))
+            // Legacy shape: a record with no extension keeps meaning exactly the card.
+            try SessionStore(database: database).saveCheckpoint(PublicationPersistenceMapping.checkpoint(
+                SessionCursor(editionID: edition.id, anchor: cursor.anchor), updatedAt: Date(timeIntervalSince1970: 701)))
+            XCTAssertNil(try PublicationHistory(database: database)
+                .restore(backwardCapacity: 1, forwardCapacity: 1)?.cursor.progress)
+        }
+    }
+
+    /// Validation is in Swift, not a SQLite CHECK: a row that carries only one value, a non-positive height or
+    /// a delta below the card is not a relative point. The card record still stands, exactly as before.
+    func testAnInvalidRelativePointReadsAsAbsent() throws {
+        try withDatabase { _, database in
+            let edition = RestoreFixture.edition()
+            let cards = try (0..<6).map { try RestoreFixture.card(index: $0) }
+            try persist(edition, cards: cards, database: database)
+            let sessions = SessionStore(database: database)
+            let base = SessionStore.CheckpointRecord(editionID: edition.id, cardID: cards[4].id,
+                anchorPlacement: "top", updatedAt: Date(timeIntervalSince1970: 700.5))
+            let cases: [(Double?, Double?)] = [(-100, nil), (nil, 600), (-100, 0), (-601.5, 600)]
+            for (topDelta, height) in cases {
+                try sessions.saveCheckpoint(.init(editionID: base.editionID, cardID: base.cardID,
+                    anchorPlacement: base.anchorPlacement, updatedAt: base.updatedAt,
+                    topDelta: topDelta, cardHeight: height))
+                let cursor = try XCTUnwrap(PublicationHistory(database: database).savedCursor())
+                XCTAssertNil(cursor.progress, "topDelta=\(String(describing: topDelta)) height=\(String(describing: height))")
+                XCTAssertEqual(cursor.anchor.cardID, cards[4].id)
+            }
+        }
+    }
+
     func testRestoredPublicationRejectsContradictorySemanticValues() throws {
         let edition = RestoreFixture.edition()
         let cards = try (0..<2).map { try RestoreFixture.card(index: $0) }

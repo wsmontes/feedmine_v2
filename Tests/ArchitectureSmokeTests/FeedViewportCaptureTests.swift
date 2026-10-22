@@ -102,40 +102,60 @@ final class FeedViewportCaptureTests: XCTestCase {
             frame: CGRect(x: 0, y: 100, width: 600, height: 400), offset: 150, height: 400)))
     }
 
-    /// PO 2026-10-14: a captura relata **onde o viewport começa** — o primeiro card cuja borda superior está dentro
-    /// do viewport —, e não (só) o card em que o leitor está: é esse card do topo que a durabilidade grava, porque é
-    /// ele que uma restauração reproduz exatamente. A escolha é feita em **coordenadas de conteúdo**, invariantes à
-    /// rolagem: comparar bordas medidas no viewport, em passadas diferentes do layout, foi o defeito medido em B05
-    /// (2026-10-14) — seis posições distintas num único repouso, e o cursor terminando num card que não era o topo.
-    func testPresentedTopIsTheFirstCardStartingInsideTheViewport() {
+    /// The capture states **where the viewport starts** and **how far into its card that line falls**: the card
+    /// containing the line (the boundary card wins at `top == offset`), or the first card below it when the line
+    /// sits in the spacing. Card + signed delta is the pair a restore reproduces; the previous rule ("the first
+    /// card that starts inside the viewport") named the next card whenever the reader stopped inside one, and
+    /// pinning that card to the top moved the text by the remaining delta (B05 post-77 failure).
+    func testPresentedTopIsTheCardContainingTheViewportLineWithItsRelativePoint() throws {
         var capture = FeedVisualCapture()
-        let above = PublicationCardID(), top = PublicationCardID(), below = PublicationCardID()
-        // Conteúdo: cada carta ocupa 400 de altura, e o viewport começa no conteúdo 120.
-        _ = capture.observe(.init(offset: 120, extent: 2_000, height: 800))
-        capture.observeCard(.init(cardID: above,
+        let a = PublicationCardID(), b = PublicationCardID(), c = PublicationCardID()
+        // Content: c/200 pt cards, contiguous: A [0,200), B [200,400), C [400,600). The line starts at 120.
+        _ = capture.observe(.init(offset: 120, extent: 1_000, height: 800))
+        capture.observeCard(.init(cardID: a,
             frame: .init(x: 0, y: -120, width: 400, height: 200), offset: 120, height: 800))
-        XCTAssertNil(capture.presentedAnchor, "uma carta que começa acima da borda não é o card do topo")
-        capture.observeCard(.init(cardID: top,
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: a, placement: .top,
+            progress: try XCTUnwrap(CardTopOffset(topDelta: -120, height: 200))),
+            "uma carta que começa acima da linha e contém a linha é o topo")
+        capture.observeCard(.init(cardID: b,
+            frame: .init(x: 0, y: 80, width: 400, height: 200), offset: 120, height: 800))
+        XCTAssertEqual(capture.presentedAnchor?.cardID, a, "cartas abaixo nunca substituem a escolha")
+        capture.observeCard(.init(cardID: c,
             frame: .init(x: 0, y: 280, width: 400, height: 200), offset: 120, height: 800))
-        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: top, placement: .top))
-        capture.observeCard(.init(cardID: below,
-            frame: .init(x: 0, y: 680, width: 400, height: 200), offset: 120, height: 800))
-        XCTAssertEqual(capture.presentedAnchor?.cardID, top, "cartas abaixo nunca substituem o topo")
-        // Rolar não move o conteúdo: a escolha passa a ser a próxima carta que começa dentro do viewport.
-        _ = capture.observe(.init(offset: 600, extent: 2_000, height: 800))
-        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: below, placement: .top))
-        // Uma mudança de geometria — a janela ganha cartas, ou o layout muda — **não** esvazia a base: as
-        // coordenadas de conteúdo das cartas já medidas continuam válidas, e cada carta corrige a sua própria
-        // entrada quando o layout a desloca.
-        _ = capture.observe(.init(offset: 600, extent: 2_100, height: 800))
-        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: below, placement: .top))
-        // E uma carta que o layout subiu para dentro do viewport passa a ser a escolha: a sua própria entrada
-        // corrigida é o que a base usa, sem ninguém precisar esvaziá-la.
-        capture.observeCard(.init(cardID: top,
-            frame: .init(x: 0, y: 10, width: 400, height: 200), offset: 600, height: 800))
-        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: top, placement: .top))
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: a, placement: .top,
+            progress: try XCTUnwrap(CardTopOffset(topDelta: -120, height: 200))))
+        // Scroll: the line at content 250 sits 50 pt inside B. The old rule named C.
+        _ = capture.observe(.init(offset: 250, extent: 1_000, height: 800))
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: b, placement: .top,
+            progress: try XCTUnwrap(CardTopOffset(topDelta: -50, height: 200))))
+        // A geometry extension does not empty the content base: the same pair stands.
+        _ = capture.observe(.init(offset: 250, extent: 1_100, height: 800))
+        XCTAssertEqual(capture.presentedAnchor?.cardID, b, "a extensão da janela não muda a linha")
+        XCTAssertEqual(capture.presentedAnchor?.progress?.topDelta, -50)
+        // A card re-measured onto the line is the boundary winner; its own corrected entry is what the base uses.
+        capture.observeCard(.init(cardID: a,
+            frame: .init(x: 0, y: 0, width: 400, height: 200), offset: 250, height: 800))
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: a, placement: .top,
+            progress: try XCTUnwrap(CardTopOffset(topDelta: 0, height: 200))))
     }
 
+    /// The frozen B05 rule — the first card whose top is at or below the line — names the **next** card when the
+    /// reader stops inside one. The app's anchor must be the containing card with the delta; both measurements
+    /// describe the same pixels only because the delta is part of the record.
+    func testStoppedInsideACardTheNextCardIsNotTheAnchor() throws {
+        var capture = FeedVisualCapture()
+        let n = PublicationCardID(), next = PublicationCardID()
+        _ = capture.observe(.init(offset: 300, extent: 1_000, height: 800))
+        capture.observeCard(.init(cardID: n,
+            frame: .init(x: 0, y: -159, width: 400, height: 600), offset: 300, height: 800))
+        capture.observeCard(.init(cardID: next,
+            frame: .init(x: 0, y: 457, width: 400, height: 600), offset: 300, height: 800))
+        XCTAssertEqual(capture.presentedAnchor?.cardID, n)
+        XCTAssertEqual(capture.presentedAnchor?.progress?.topDelta, -159)
+        // The driver's own rule on the same proofs: first frame.minY >= -1.
+        let driver = [n: -159.0, next: 457.0].filter { $0.value >= -1 }.min { $0.value < $1.value }?.key
+        XCTAssertEqual(driver, next, "the frozen driver names the next card on this geometry")
+    }
 
     /// **Teste decisivo da sonda de 2026-10-14** (lead): uma janela cuja **cabeça cresce acima da escolha**, com a
     /// carta acima que **não** volta a reportar — e o `gap` que isso produz.
@@ -144,7 +164,7 @@ final class FeedViewportCaptureTests: XCTestCase {
     /// mais funda (posição 8) sim, e a geometria muda de forma (a extensão cresceu com o inserto). O filtro do
     /// topo (`top >= offset - 1`) descarta a entrada **velha** da verdadeira carta do topo — ela parece acima do
     /// viewport —, e a escolha cai na carta mais funda: 8 onde a tela mostra 6, duas cartas fora.
-    func testWindowHeadThatGrowsAboveTheChoiceMustNotMoveThePresentedTop() {
+    func testWindowHeadThatGrowsAboveTheChoiceMustNotMoveThePresentedTop() throws {
         var capture = FeedVisualCapture()
         // Layout 1: a leitora no topo da carta A (posição 6), com B e C abaixo. Cada linha ocupa 190 pt.
         _ = capture.observe(.init(offset: 0, extent: 1_000, height: 800))
@@ -153,14 +173,16 @@ final class FeedViewportCaptureTests: XCTestCase {
         capture.observeCard(.init(cardID: a, frame: .init(x: 0, y: 0, width: 400, height: 190), offset: 0, height: 800))
         capture.observeCard(.init(cardID: b, frame: .init(x: 0, y: 190, width: 400, height: 190), offset: 0, height: 800))
         capture.observeCard(.init(cardID: c, frame: .init(x: 0, y: 380, width: 400, height: 190), offset: 0, height: 800))
-        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: a, placement: .top),
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: a, placement: .top,
+            progress: try XCTUnwrap(CardTopOffset(topDelta: 0, height: 190))),
             "a verdade: o viewport começa na carta A")
         // Layout 2: a cabeça cresce 380 pt (duas linhas acima de A). O desenho mantém a leitora no lugar, então o
         // offset do conteúdo vai a 380 e as coordenadas de **todas** as cartas abaixo do inserto andam 380.
         // `above` e `a` **não** voltam a reportar; `c` reporta (a coordenada dela e o offset andaram juntos).
         _ = capture.observe(.init(offset: 380, extent: 1_380, height: 800))
         capture.observeCard(.init(cardID: c, frame: .init(x: 0, y: 380, width: 400, height: 190), offset: 380, height: 800))
-        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: a, placement: .top),
+        XCTAssertEqual(capture.presentedAnchor, PresentationAnchor(cardID: a, placement: .top,
+            progress: try XCTUnwrap(CardTopOffset(topDelta: 0, height: 190))),
             "a carta do topo continua sendo A: uma carta que não voltou a ser medida não pode virar a escolha só porque o inserto acima dela envelheceu a coordenada guardada")
     }
 

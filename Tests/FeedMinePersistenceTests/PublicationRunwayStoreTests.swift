@@ -14,7 +14,9 @@ final class PublicationRunwayStoreTests: XCTestCase {
             // reader_preferences gained columns in T6 and T8, and media_candidates was rebuilt in T9 (a card
             // can carry a playable payload as well as its visual), so their definitions are the ones that
             // changed alongside the migration that did it.
-            for name in ["context_checkpoints", "feed_editions", "reader_preferences"]
+            // `session_checkpoint` gained the two additive continuity columns (2026-10-21): its definition is
+            // compared by the column assertions in the persistence tests, never by SQL text.
+            for name in ["context_checkpoints", "feed_editions", "reader_preferences", "session_checkpoint"]
                 where entry.hasPrefix(name + ":") { return name }
             // T9 rebuilt media_candidates (a card can carry a playable payload as well as its visual). A rebuilt
             // table keeps its constraint index only under a new internal name, and its definition is compared
@@ -62,7 +64,8 @@ final class PublicationRunwayStoreTests: XCTestCase {
         // columns, and its SQL text is not part of this comparison.
         let checkpoints = try XCTUnwrap(schema.first { $0.hasPrefix("context_checkpoints:") })
         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('context_checkpoints') ORDER BY cid"),
-            ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement", "updated_at"])
+            ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement",
+             "updated_at", "anchor_top_delta", "anchor_height"])
         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('feed_editions') ORDER BY cid").suffix(2),
             ["context_identity", "context_key_json"])
         for table in ["published_cards", "retired_published_cards"] {
@@ -264,7 +267,7 @@ final class PublicationRunwayStoreTests: XCTestCase {
                 "reader-curated-recipe-revision-v1","reader-playback-positions-v1",
                  "content-fingerprint-generation-v2","reader-source-identity-v1","saved-media-availability-v1",
                  "publication-editorial-diversity-v1","reader-legacy-upgrade-receipt-v1",
-                 "publication-media-identity-v1"])
+                 "publication-media-identity-v1", "continuity-relative-position-v1"])
         }
     }
 

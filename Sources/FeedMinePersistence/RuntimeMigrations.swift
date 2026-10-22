@@ -626,6 +626,18 @@ public enum RuntimeMigrations {
             try db.execute(sql: "ALTER TABLE published_cards ADD COLUMN media_identity TEXT")
             try db.execute(sql: "ALTER TABLE retired_published_cards ADD COLUMN media_identity TEXT")
         }
+        // Continuity (2026-10-21): a checkpoint now also carries where the viewport's top line falls inside the
+        // named card, and the card's measured height. Additive and metadata-only: every existing row keeps its
+        // card + placement and reads both new columns as NULL, i.e. the exact legacy behaviour. No row is
+        // rewritten. Validation is in Swift (`CardTopOffset`), because SQLite cannot add a CHECK by ALTER.
+        // Supported direction is new-app/old-DB; an older binary writes positionally and is not guaranteed
+        // against this schema.
+        migrator.registerMigration("continuity-relative-position-v1") { db in
+            try db.execute(sql: "ALTER TABLE session_checkpoint ADD COLUMN anchor_top_delta REAL")
+            try db.execute(sql: "ALTER TABLE session_checkpoint ADD COLUMN anchor_height REAL")
+            try db.execute(sql: "ALTER TABLE context_checkpoints ADD COLUMN anchor_top_delta REAL")
+            try db.execute(sql: "ALTER TABLE context_checkpoints ADD COLUMN anchor_height REAL")
+        }
         return migrator
     }
 

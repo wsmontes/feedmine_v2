@@ -148,6 +148,16 @@ final class FeedNativeScrollOffset {
         #endif
         return true
     }
+    /// One-shot restore: move the native viewport by the remaining delta once the anchor card has been
+    /// aligned. A reader gesture owns the offset; it is never postponed and never pushed back after.
+    @discardableResult
+    func applyRestoration(_ delta: CGFloat) -> Bool {
+        guard delta.isFinite, abs(delta) > 0.5, !nativeGestureActive, let scrollView else { return false }
+        let before = scrollView.contentOffset.y
+        adjust(by: delta)
+        return abs(scrollView.contentOffset.y - before) > 0.01
+    }
+
     private func adjust(by delta: CGFloat) {
         guard let scrollView, delta.isFinite else { return }
         let offset = scrollView.contentOffset

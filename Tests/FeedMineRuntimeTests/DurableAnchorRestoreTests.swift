@@ -111,8 +111,10 @@ final class DurableAnchorRestoreTests: XCTestCase {
             let cards = try makeCards(10, prefix: "C")
             try publish(edition, cards: cards, in: store)
             let history = PublicationHistory(database: database)
+            let progress = try XCTUnwrap(CardTopOffset(topDelta: -120, height: 500))
             try history.saveCursor(SessionCursor(editionID: edition.id,
-                anchor: FeedWindowAnchor(cardID: cards[4].id, placement: .top)), updatedAt: savedAt)
+                anchor: FeedWindowAnchor(cardID: cards[4].id, placement: .top), progress: progress),
+                updatedAt: savedAt)
 
             let bounded = try XCTUnwrap(history.restore(backwardCapacity: 2, forwardCapacity: 2))
             XCTAssertEqual(bounded.position, .exact(cards[4].id))
@@ -129,6 +131,8 @@ final class DurableAnchorRestoreTests: XCTestCase {
                 forwardCapacity: 2, keepsAdmittedHead: true)))
             XCTAssertEqual(restored?.window.anchor, PresentationAnchor(cardID: cards[4].id, placement: .top))
             XCTAssertEqual(restored?.editionID, edition.id)
+            XCTAssertEqual(restored?.restoredPosition, PresentationAnchor(cardID: cards[4].id,
+                placement: .top, progress: progress), "a restauração exata carrega o ponto relativo")
         }
     }
 
