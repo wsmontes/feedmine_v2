@@ -1419,9 +1419,12 @@ final class FeedMineUITests: XCTestCase {
                 continuedStable = true; break
             }
         }
-        print("FAST_CONTINUE restored=\(restoredLine) id=\(continuedID) line=\(continuedLine) h=\(continuedHeight)")
+        print("FAST_CONTINUE restored=\(restoredLine) id=\(continuedID) line=\(continuedLine) h=\(continuedHeight) attempts=\(continueAttempts)")
         XCTAssertTrue(continuedStable, "the feed settles after a real scroll; samples \(continuedSamples.suffix(8))")
-        XCTAssertTrue(continuedID != beforeID || abs(continuedLine - restoredLine) > 20,
+        // The visual fact is the line, not the identity: a different card at the same line is not a meaningful
+        // scroll, and the fallback direction could otherwise look like a new point after a bounce. Require the
+        // viewport line itself to have moved.
+        XCTAssertGreaterThan(abs(continuedLine - restoredLine), 20,
             "a real scroll after the reopen moves the viewport; the restore must not pull it back")
         Thread.sleep(forTimeInterval: 3)
         app.terminate()
