@@ -1287,18 +1287,12 @@ final class FeedMineUITests: XCTestCase {
         }
         func containing(_ scroll: XCUIElement, minHeight: CGFloat = 0) -> XCUIElement? {
             let top = scroll.frame.minY
-            // The app's boundary rule: among the cards that contain the line, the one with the greatest top is
-            // the presented anchor. The accessibility tree can carry an older sibling with a similar frame; picking
-            // the first element in tree order measured a card the app never published (2026-10-22: durable
-            // 9CC4020F at -110.52 vs test 52C31222 at -117.25, then a 1420 pt reopen miss).
-            return cards(scroll)
-                .filter {
-                    // The app's containment predicate (`refreshPresentedTop`): a card whose top is on the line
-                    // is still its boundary card. The old 20/40 pt margins excluded exactly that case.
-                    $0.frame.height >= minHeight
-                        && $0.frame.minY <= top + 1 && $0.frame.maxY >= top - 1
-                }
-                .max { $0.frame.minY < $1.frame.minY }
+            // The permanent regression's own contract: the selected card must have a meaningful point inside the
+            // viewport (20 pt below its top, 40 pt above its bottom). A card whose top lies on the line is a
+            // separate boundary case, not a replacement for this one.
+            return cards(scroll).first {
+                $0.frame.height >= minHeight && $0.frame.minY < top - 20 && $0.frame.maxY > top + 40
+            }
         }
         XCTAssertTrue(cards(scroll).first != nil || app.buttons.matching(identifier: "card.bookmark").firstMatch.waitForExistence(timeout: 240))
         let cover = app.descendants(matching: .any)["feed-loading-surface"]
@@ -1335,7 +1329,20 @@ final class FeedMineUITests: XCTestCase {
             && beforeFrame.width > 0 && beforeFrame.height > 0, "the card frame is real before terminate")
         let beforeHeight = beforeFrame.height
         let line = beforeFrame.minY - beforeScrollFrame.minY
-        print("FAST_PRE id=\(beforeID) h=\(beforeHeight) line=\(line) wall=\(Date().timeIntervalSince1970) scroll=\(beforeScrollFrame)")
+        let lineTop = beforeScrollFrame.minY
+        let candidates = cards(scroll).filter { $0.frame.minY <= lineTop && $0.frame.maxY >= lineTop }
+        for candidate in candidates {
+            let frame = candidate.frame
+            let children = candidate.descendants(matching: .any).allElementsBoundByIndex
+                .filter(\.isHittable).prefix(3)
+                .map { "\($0.elementType.rawValue):\($0.identifier)" }
+            print("FAST_CANDIDATE id=\(candidate.identifier) frame=\(frame) h=\(frame.height) hittable=\(candidate.isHittable) hittableChildren=\(children)")
+        }
+        print("FAST_PRE id=\(beforeID) h=\(beforeHeight) line=\(line) wall=\(Date().timeIntervalSince1970) scroll=\(beforeScrollFrame) selectedHittable=\(card.isHittable)")
+        let beforeShot = XCTAttachment(screenshot: app.screenshot())
+        beforeShot.name = "fastdrag-before-\(beforeID)-line-\(line)-h-\(beforeHeight)"
+        beforeShot.lifetime = .keepAlways
+        add(beforeShot)
         app.terminate()
         Thread.sleep(forTimeInterval: 2)
         app.launchEnvironment.removeValue(forKey: "FEEDMINE_ONBOARDING")
@@ -1374,6 +1381,11 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertEqual(afterHeight, beforeHeight, accuracy: 1, "the card's measured height is unchanged")
         XCTAssertEqual(after, line, accuracy: 1,
             "the fast drag's line inside the card is preserved across a forced close, at the same height")
+
+        let afterShot = XCTAttachment(screenshot: app.screenshot())
+        afterShot.name = "fastdrag-after-\(beforeID)-line-\(after)-h-\(afterHeight)"
+        afterShot.lifetime = .keepAlways
+        add(afterShot)
 
         // The reopened restore is a substitution, not ownership. A real scroll after it must move the viewport
         // and stay moved, and the point the reader stops at must be what another close restores.
