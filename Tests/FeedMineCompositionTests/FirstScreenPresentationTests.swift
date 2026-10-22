@@ -157,35 +157,33 @@ final class FirstScreenPresentationTests: XCTestCase {
     /// The recorded D4 run exposed one 166 pt card at 9.9 s with the work badge still `.preparing`; the bound had
     /// elapsed at ~5 s and turned the first card into a "first screen". While work is pending/preparing the
     /// preparation keeps its real progress; idle/terminal work still ends the wait with what exists.
-    func testTheBoundedWaitDoesNotExposeAPipelineThatIsStillPreparing() {
+    /// The measured tolerance is a **stall** bound, not a total budget: a new card or a lower layout resets it, so
+    /// the abundant first screen keeps filling (the D4 run: one card at 5 s, ten at 11.8 s). An available card whose
+    /// layout stops changing for the whole tolerance is exposed with the work badge instead of an opaque cover that
+    /// can outlive the launch. These assertions are the F1 regression: 026 returned `.preparation` at the bound.
+    func testTheStallBoundEndsThePreparationWithRealCards() {
         XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
             cardCount: 1, coverage: nil, work: preparing, waited: .milliseconds(4_999), maximumWait: .seconds(5),
             alreadyExposed: false), .preparation)
         XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
             cardCount: 1, coverage: nil, work: preparing, waited: .seconds(5), maximumWait: .seconds(5),
-            alreadyExposed: false), .preparation,
-            "a card measured while the pipeline is still preparing is not the first screen")
+            alreadyExposed: false), .reading,
+            "no layout progress for the measured tolerance: show the card, not an endless preparation")
         XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
             cardCount: 1, coverage: nil, work: preparing, waited: .seconds(30), maximumWait: .seconds(5),
-            alreadyExposed: false), .preparation,
-            "the honest preparation keeps its real progress while the pipeline is running")
+            alreadyExposed: false), .reading)
+        XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
+            cardCount: 1, coverage: nil, work: preparing, waited: .seconds(600), maximumWait: .seconds(5),
+            alreadyExposed: false), .reading,
+            "a stalled .preparing can never hold the reader forever")
 
-        // No work behind the wait: the bounded exit still happens, so a launch cannot sit in preparation forever.
+        // No work behind the wait: the bounded exit still happens.
         XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
             cardCount: 1, coverage: nil, work: .idle, waited: .seconds(5), maximumWait: .seconds(5),
             alreadyExposed: false), .reading)
         XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
             cardCount: 1, coverage: nil, work: .deferred, waited: .seconds(12.5), maximumWait: .seconds(12.5),
             alreadyExposed: false), .reading)
-
-        // A long `.preparing` is still the pipeline's fact, not the gate's clock: the gate does not invent a second
-        // deadline and expose a card the pipeline is still filling. The hold ends when the same work reports idle or
-        // terminal; the bootstrap's acquisition is the bounded work (`ColdFeedBootstrap.run` awaits it, each pull has
-        // its transport timeout). An acquisition that never returns would hold the preparation: that is a pipeline
-        // defect, stated as a residual risk, not hidden by a magic gate threshold.
-        XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
-            cardCount: 1, coverage: nil, work: preparing, waited: .seconds(600), maximumWait: .seconds(5),
-            alreadyExposed: false), .preparation)
         XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
             cardCount: 1, coverage: nil, work: .endOfContent, waited: .seconds(600), maximumWait: .seconds(5),
             alreadyExposed: false), .reading)

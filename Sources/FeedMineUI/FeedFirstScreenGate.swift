@@ -96,7 +96,8 @@ public enum FeedFirstScreenGate {
     /// 5. the measured layout covers the viewport → `reading`;
     /// 6. the offer ended → `reading` (the end block is drawn after the last card, so the reader sees what exists);
     /// 7. the transport failed → `reading` (what exists is shown; the work badge states the failure);
-    /// 8. the bounded maximum wait elapsed → `reading` (never an infinite preparation);
+    /// 8. the layout made no progress for the run's measured tolerance → `reading` (what exists is shown;
+    ///    never an infinite preparation);
     /// 9. otherwise → `preparation`.
     ///
     /// `preparationShown` is the fact that keeps a relaunch honest: when the window is already there on the first
@@ -122,15 +123,12 @@ public enum FeedFirstScreenGate {
             break
         }
         if waited >= maximumWait {
-            // The bound ends the **unquestioned** wait, not an honest preparation while the pipeline is actually
-            // running. A first card at 9.9 s with the work still `.preparing` (the measured D4 run: one 166 pt card
-            // of a 718 pt viewport) must not be exposed as the first screen. `.preparing` carries the real
-            // PreparationProgress and its own bounded timeouts; when it settles to idle/terminal the cases above
-            // end the wait with what exists.
-            switch work {
-            case .pending, .preparing: return .preparation
-            case .idle, .unavailable, .deferred, .endOfContent, .unreachable, .failed: return .reading
-            }
+            // `waited` is measured from the **last layout progress**, not from the preparation's start. A normal
+            // first screen keeps producing cards (the D4 run: one card at 5 s, ten at 11.8 s), and each new card
+            // resets the clock; the abundant case therefore reaches coverage without exposing one card. A held or
+            // stalled pipeline has no new card for the measured tolerance: show what exists. The reader gets the
+            // real cards and the work badge instead of an opaque cover that can outlive the launch.
+            return .reading
         }
         return .preparation
     }

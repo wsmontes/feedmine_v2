@@ -396,16 +396,27 @@ struct FeedMineApp: App {
                             .onChange(of: association.store.isSearching) { _, _ in
                                 reportFirstScreenSurface(of: association)
                             }
-                            // The bounded maximum wait: the run's own tolerance for one operation (the number its
-                            // media window and byte budget already read) is how long a preparation may outlast the
-                            // content it already has. It is the last exit, not the intended one.
+                            // The measured tolerance is a **stall** bound: the clock is reset by every new card or
+                            // lower layout. The loop waits the remainder of the current stall; a normal first
+                            // screen keeps producing cards (one at 5 s, ten at 11.8 s), so it reaches coverage
+                            // without exposing a single card. A held/trickle pipeline that stops producing ends
+                            // here with the real cards on screen, never behind an opaque cover forever.
                             .task(id: association.store.firstScreenSurface) {
                                 guard association.store.firstScreenSurface == .preparation else { return }
-                                let remaining = composition.firstScreenWait - association.store.firstScreenWaited
-                                if remaining > .zero { try? await Task.sleep(for: remaining) }
-                                guard !Task.isCancelled else { return }
-                                association.store.expireFirstScreenWait()
-                                reportFirstScreenSurface(of: association)
+                                while !Task.isCancelled,
+                                    association.store.firstScreenSurface == .preparation {
+                                    let remaining = composition.firstScreenWait
+                                        - association.store.firstScreenWaited
+                                    if remaining > .zero { try? await Task.sleep(for: remaining) }
+                                    guard !Task.isCancelled,
+                                        association.store.firstScreenSurface == .preparation else { return }
+                                    guard association.store.firstScreenWaited >= composition.firstScreenWait else {
+                                        continue // a card arrived during the sleep and reset the stall clock
+                                    }
+                                    association.store.expireFirstScreenWait()
+                                    reportFirstScreenSurface(of: association)
+                                    return
+                                }
                             }
                             .task(id: association.store.state.presentation?.window) {
                                 recordWindowFacts(of: association)

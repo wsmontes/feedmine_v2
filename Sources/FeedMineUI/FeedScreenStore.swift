@@ -330,8 +330,8 @@ public final class FeedScreenStore {
     /// **measurement** — not a new card — settles it.
     public var firstScreenReading: Bool { firstScreen.reading }
 
-    /// How long the cards have been waiting behind the preparation surface. The host reads it to wait out the
-    /// remainder of the run's bound.
+    /// How long the layout has been without progress. The host reads it to wait out the remainder of the run's
+    /// measured tolerance; a new card resets it.
     public var firstScreenWaited: Duration { firstScreen.hold.waited }
 
     /// The host's own inputs for the decision, stated when the screen appears and whenever its window becomes empty
@@ -458,7 +458,8 @@ final class FeedFirstScreenHold {
     /// Once the decision is made the record is closed: a long read must not pay for a measurement nothing asks about.
     private var frozen = false
 
-    /// How long the cards have been waiting behind the preparation surface, on the process clock.
+    /// How long the layout has been without progress: the last new card or higher bottom reset it. This is the
+    /// stall the gate is allowed to wait out, not the total time the preparation has been on screen.
     var waited: Duration {
         guard let startedAt else { return .zero }
         return .seconds(max(0, ProcessInfo.processInfo.systemUptime - startedAt))
@@ -479,9 +480,14 @@ final class FeedFirstScreenHold {
     /// height and every spacing above it are already part of the value.
     func record(cardID: PublicationCardID, contentBottom: CGFloat, viewportHeight: CGFloat) {
         guard !frozen, viewportHeight.isFinite, viewportHeight > 0, contentBottom.isFinite else { return }
+        let previousBottom = contentBottoms.values.max() ?? 0
+        let isNewCard = contentBottoms[cardID] == nil
         self.viewportHeight = viewportHeight
         contentBottoms[cardID] = contentBottom
-        if startedAt == nil { startedAt = ProcessInfo.processInfo.systemUptime }
+        // Progress is a new card or a layout that reaches lower; a card that shrinks does not buy more hold time.
+        if startedAt == nil || isNewCard || contentBottom > previousBottom {
+            startedAt = ProcessInfo.processInfo.systemUptime
+        }
     }
 
     /// Stop recording: the transition is decided and the first exposure is stated.
