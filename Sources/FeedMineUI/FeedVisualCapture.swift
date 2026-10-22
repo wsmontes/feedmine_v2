@@ -124,9 +124,15 @@ struct FeedVisualCapture {
     var restoration: FeedRestoration?
     /// The projection whose restore point this capture already adopted. A restore target is adopted **once per
     /// projection identity**, synchronously on the first geometry/proof that can report a position — not later from
-    /// an `onChange`, which fires after the first card proof has already published a transient position. The same
-    /// projection re-delivered (a remount, an unchanged snapshot) never re-arms a target a gesture cancelled.
+    /// an `onChange`, which fires after the first card proof has already published a transient position.
     private var restorationSequence: UUID?
+    /// A restore the reader (or an accepted destination, or a non-gesture scroll) already took the position from is
+    /// **retired for this capture**. A later projection can carry a new `sequenceID` and the same restored point
+    /// after a window advance; re-arming it would suppress the position the reader now holds and make the next
+    /// close restore an older card (measured 2026-10-22: the durable row stopped at 9CC4020F -110.52 while the
+    /// drawn card was 52C31222 -117.25, and the reopen missed by 1420 pt). Only a new capture (store/edition/context
+    /// reset, or `onDisappear`) starts a new restore.
+    private var restorationRetired = false
 
     struct FeedRestoration: Equatable, Sendable {
         let cardID: PublicationCardID
@@ -231,9 +237,10 @@ struct FeedVisualCapture {
 
     /// Adopts the restore point a presentation carries, before anything this pass can publish. A presentation
     /// without a restore point claims nothing: the restore projections that carry one are the only ones this
-    /// capture ever arms from, and the same projection never re-arms a point a gesture cancelled.
+    /// capture ever arms from, and once a reader intention cancelled the substitution no projection — the same or
+    /// a later sequence identity — arms it again for this capture.
     mutating func adoptRestoration(_ position: PresentationAnchor?, sequenceID: UUID?) {
-        guard let position, position.progress != nil, let sequenceID,
+        guard !restorationRetired, let position, position.progress != nil, let sequenceID,
             restorationSequence != sequenceID else { return }
         restorationSequence = sequenceID
         armRestoration(position)
@@ -247,9 +254,11 @@ struct FeedVisualCapture {
     }
 
     /// A real reader intention cancels the restore instead of postponing it until the gesture ends — pushing the
-    /// reader back after they moved would be a second, hidden navigation.
+    /// reader back after they moved would be a second, hidden navigation. The cancellation is retired for the
+    /// capture: a later projection (even with a new sequence identity) may not resurrect the same substitution.
     mutating func cancelRestoration() {
         restoration = nil
+        restorationRetired = true
     }
 
     #if canImport(UIKit)

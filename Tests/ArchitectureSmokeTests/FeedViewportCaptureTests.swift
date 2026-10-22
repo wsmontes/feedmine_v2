@@ -1056,4 +1056,29 @@ final class FeedViewportCaptureTests: XCTestCase {
         XCTAssertTrue(suppressed.isEmpty, "a layout echo is not an intention and keeps the restore armed")
     }
 
+    /// A reader intention retires the launch substitution for the capture. A later projection with a new sequence
+    /// identity is how a window advance arrives; if it resurrects the same restore, publication is suppressed
+    /// again and the next close restores an older card (measured 2026-10-22). The observable fact is publication:
+    /// the cancelled restore must not swallow the position the reader now holds.
+    func testACancelledRestoreCannotResurrectOnANewSequence() throws {
+        let ids = (0..<2).map { _ in PublicationCardID() }
+        var capture = FeedVisualCapture()
+        _ = capture.observe(.init(offset: 120, extent: 1_000, height: 800))
+        capture.observeCard(.init(cardID: ids[0],
+            frame: .init(x: 0, y: -120, width: 400, height: 200), offset: 120, height: 800))
+        let point = try XCTUnwrap(CardTopOffset(topDelta: -266.333, height: 508.5))
+        let restored = PresentationAnchor(cardID: ids[1], placement: .top, progress: point)
+        var published: [PresentationAnchor] = []
+
+        capture.adoptRestoration(restored, sequenceID: UUID())
+        capture.reportPresentedPosition { anchor, _ in published.append(anchor) }
+        XCTAssertTrue(published.isEmpty, "the adopted restore suppresses publication")
+
+        capture.cancelRestoration()
+        capture.adoptRestoration(restored, sequenceID: UUID())
+        capture.reportPresentedPosition { anchor, _ in published.append(anchor) }
+        XCTAssertEqual(published.map(\.cardID), [ids[0]],
+            "a new sequence cannot resurrect a cancelled restore")
+    }
+
 }
