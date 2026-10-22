@@ -142,7 +142,12 @@ final class FeedVisibleExperienceUITests: XCTestCase {
         // torna a medição repetível: o diretório padrão guarda o primeiro passo concluído por uma corrida
         // anterior, e uma medição de primeira tela precisa de um leitor de primeira abertura.
         let namespace = UUID().uuidString
+        #if DEBUG
+        // Debug keeps the D11 unique-directory pattern. Release does not read this variable at all
+        // (`AppComposition` guards it with `#if DEBUG`); the Release proof uses a dedicated fresh simulator and
+        // the app's default product container, with the real onboarding.
         app.launchEnvironment = ["FEEDMINE_RUNTIME_NAMESPACE": namespace]
+        #endif
         let started = Date()
         app.launch()
         completeOnboardingIfPresented(app)
@@ -150,28 +155,37 @@ final class FeedVisibleExperienceUITests: XCTestCase {
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 240),
             "o feed do catálogo publicado precisa chegar à tela (onboarding: \(app.buttons.allElementsBoundByIndex.map(\.label)))")
-        waitForExposure(app, name: "published-first-screen")
+        waitForExposure(app, scroll: scroll, name: "published-first-screen")
         let first = sampleFirstScreen(app, scroll: scroll, since: started)
-        let record = try launchRecord(app, name: "published-first-screen")
+        // `feed-launch-record` exists only in DEBUG. In Release (the shipped app) the same first exposure is
+        // measured from the native accessibility frames already on screen: the viewport and the card frames.
+        let recordElement = app.descendants(matching: .any)["feed-launch-record"]
+        let recordAvailable = recordElement.waitForExistence(timeout: 5)
+        let record = recordAvailable ? try launchRecord(app, name: "published-first-screen") : nil
 
         let epsilonPoints = 1.0
         var violations: [String] = []
         if first.loadingSurface { violations.append("feed-loading-surface is on screen with the feed") }
         if first.launchProgress { violations.append("feed-launch-progress is on screen with the feed") }
         if first.emptySurface { violations.append("feed-empty-state is on screen with the feed") }
-        if record.cards < 1 { violations.append("the app's record never carried cards") }
-        guard let contentBottom = record.contentBottom, let viewportHeight = record.viewportHeight else {
-            XCTFail("published-first-screen: o registro do app não capturou o primeiro layout com cartas: \(record)")
-            return
-        }
+        let cards = record?.cards ?? first.totalCardFrames
+        let contentBottom = record?.contentBottom ?? Double(first.contentBottom)
+        let viewportHeight = record?.viewportHeight ?? Double(first.viewport.height)
+        if cards < 1 { violations.append("the first presented layout never carried cards") }
         if contentBottom < viewportHeight - epsilonPoints {
             violations.append("o primeiro conteúdo apresentado termina em \(compact(contentBottom)) pt de um "
                 + "viewport de \(compact(viewportHeight)) pt: \(compact(viewportHeight - contentBottom)) pt vazios")
         }
         attach(app, name: "published-first-screen",
-            json: jsonLine(["namespace": namespace, "cards": record.cards, "content_bottom": contentBottom,
-                "viewport_height": viewportHeight, "render_ready": record.renderReadyCards,
-                "launch_record": record.raw, "violations": violations]))
+            json: jsonLine(["namespace": recordAvailable ? namespace : "fresh-device-default-container",
+                "measurement": recordAvailable ? "app-record" : "native-AX",
+                "cards": cards, "content_bottom": contentBottom,
+                "viewport_height": viewportHeight, "render_ready": record?.renderReadyCards ?? -1,
+                "threshold_points": viewportHeight,
+                "threshold_basis": recordAvailable
+                    ? "app record viewport_height (proof.height)" :
+                    "AX ScrollView height; the app proof.height is smaller by the bottom inset",
+                "launch_record": record?.raw ?? "", "violations": violations]))
         XCTAssertTrue(violations.isEmpty, "published-first-screen: " + violations.joined(separator: " | "))
     }
 
@@ -205,7 +219,7 @@ final class FeedVisibleExperienceUITests: XCTestCase {
         XCTAssertTrue(scroll.waitForExistence(timeout: 240),
             "'Todos os idiomas' precisa chegar à superfície de leitura, não a 'Escolher fontes' "
                 + "(onboarding: \(app.buttons.allElementsBoundByIndex.map(\.label)))")
-        waitForExposure(app, name: "all-languages-first-screen")
+        waitForExposure(app, scroll: scroll, name: "all-languages-first-screen")
         let first = sampleFirstScreen(app, scroll: scroll, since: started)
         let record = try launchRecord(app, name: "all-languages-first-screen")
 
@@ -460,6 +474,8 @@ final class FeedVisibleExperienceUITests: XCTestCase {
         let window: CGRect
         let viewport: CGRect
         let totalCardFrames: Int
+        /// The bottom of the lowest card frame, in viewport coordinates. `0` when no card frame exists.
+        let contentBottom: CGFloat
         let fullyVisibleCards: Int
         let tallestCardHeight: CGFloat
         let loadingSurface: Bool
@@ -484,6 +500,7 @@ final class FeedVisibleExperienceUITests: XCTestCase {
         let tolerance = viewport.insetBy(dx: -1, dy: -1)
         let fullyVisible = frames.filter { tolerance.contains($0) }
         let tallest = fullyVisible.map(\.height).max() ?? 0
+        let contentBottom = frames.map(\.maxY).max().map { $0 - viewport.minY } ?? 0
         let placeholders = [
             "Descobrindo histórias para você…",
             "Ainda não encontramos histórias para você.",
@@ -494,6 +511,7 @@ final class FeedVisibleExperienceUITests: XCTestCase {
             window: window,
             viewport: viewport,
             totalCardFrames: frames.count,
+            contentBottom: contentBottom,
             fullyVisibleCards: fullyVisible.count,
             tallestCardHeight: tallest,
             loadingSurface: app.descendants(matching: .any)["feed-loading-surface"].exists,
@@ -525,12 +543,21 @@ final class FeedVisibleExperienceUITests: XCTestCase {
     /// app's own record already froze the first exposure it must be compared with, so waiting (bounded) for the
     /// surface to leave is what "exposure" means; a gate that never lifts still fails the geometry and the surface
     /// presence below.
-    private func waitForExposure(_ app: XCUIApplication, name: String, timeout: TimeInterval = 120) {
+    private func waitForExposure(_ app: XCUIApplication, scroll: XCUIElement, name: String,
+        timeout: TimeInterval = 120) {
         let surface = app.descendants(matching: .any)["feed-loading-surface"]
-        guard surface.exists else { return }
-        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: surface)
-        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: timeout), .completed,
-            "\(name): a superfície de preparação não saiu em \(Int(timeout)) s")
+        if surface.exists {
+            let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: surface)
+            XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: timeout), .completed,
+                "\(name): a superfície de preparação não saiu em \(Int(timeout)) s")
+        }
+        // The first **interactive** feed: the cover is gone and the scroll accepts a touch. This is not a wait for
+        // content to cover the viewport; one card is the minimum that makes the surface the feed, not a blank hold.
+        let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: scroll)
+        XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: timeout), .completed,
+            "\(name): o feed não ficou interativo em \(Int(timeout)) s")
+        let card = app.descendants(matching: .any).matching(Self.cardIdentifier).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: timeout), "\(name): o feed interativo não apresentou uma carta")
     }
 
     /// The record is an invisible text the app publishes (`feed-launch-record`). With `waitForCards` the read waits
