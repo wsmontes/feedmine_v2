@@ -1,4 +1,5 @@
 import SwiftUI
+import SafariServices
 import UniformTypeIdentifiers
 import FeedMineUI
 import FeedMineDomain
@@ -729,6 +730,17 @@ struct FeedMineApp: App {
 enum LegacyUpgradeNoticePresenter {
     private static var current: NoticeWindow?
 
+    /// The one platform act: raising the alert in the notice's own window. UIKit raises no error and calls no
+    /// completion for a presentation it refuses, so the act reports its outcome on the next turn of the runloop —
+    /// the first moment at which the presented controller is really the alert or really nothing. A test replaces
+    /// it to exercise the refusal, which a working screen cannot stage; production uses the default below.
+    static var presentAlert: @MainActor (UIViewController, UIAlertController,
+        @MainActor @escaping (Bool) -> Void) -> Void = {
+        host, alert, done in
+        host.present(alert, animated: true)
+        Task { @MainActor in done(host.presentedViewController === alert) }
+    }
+
     static func present(title: String, message: String, onAcknowledge: @escaping () -> Void) {
         guard current == nil else { return }
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
@@ -737,27 +749,52 @@ enum LegacyUpgradeNoticePresenter {
         else { return }
         let window = NoticeWindow(windowScene: scene)
         window.windowLevel = .alert + 1
-        window.rootViewController = NoticeHost { [weak window] in
-            window?.isHidden = true
-            current = nil
-            onAcknowledge()
-        }
+        let host = NoticeHost(
+            onAcknowledge: { [weak window] in
+                window?.isHidden = true
+                current = nil
+                onAcknowledge()
+            },
+            onRefusal: { [weak window] in
+                // A window at alert level that never raised its alert is a transparent full-screen shell: it takes
+                // every touch in the app, the reader's own controls included. If the alert could not be raised the
+                // window must go. The notice is not recorded — only the reader's acknowledgement writes the
+                // receipt — so it stays owed and is offered again on the next launch.
+                window?.isHidden = true
+                current = nil
+            })
+        window.rootViewController = host
         window.frame = scene.coordinateSpace.bounds
         window.isHidden = false
         current = window
-        (window.rootViewController as? NoticeHost)?.showNotice(title: title, message: message)
+        host.showNotice(title: title, message: message)
     }
 
-    final class NoticeWindow: UIWindow {}
+    /// Takes the notice down without recording it. This is the one dismissal route: the reader's own
+    /// acknowledgement above and a test that has to leave the scene as it found it both go through it.
+    static func dismiss() {
+        current?.isHidden = true
+        current = nil
+    }
+
+    /// The notice is informational: its alert accepts clicks while this window is not key (measured), and the
+    /// reader's presenter takes the key window's topmost controller. Keeping the notice out of key ownership
+    /// makes it impossible for the reader to be presented inside a window that later hides.
+    final class NoticeWindow: UIWindow {
+        override var canBecomeKey: Bool { false }
+    }
 
     /// The window's content: a transparent host that raises one alert and reports the reader's own
-    /// acknowledgement. Nothing here decides *when* the notice is owed; the app's receipt state does.
+    /// acknowledgement. Nothing here decides *when* the notice is owed; the app's receipt state does. A refused
+    /// alert is reported, never assumed: the host is the only owner of the window that could block the app.
     final class NoticeHost: UIViewController {
         private let onAcknowledge: () -> Void
+        private let onRefusal: () -> Void
         private var presented = false
 
-        init(onAcknowledge: @escaping () -> Void) {
+        init(onAcknowledge: @escaping () -> Void, onRefusal: @escaping () -> Void = {}) {
             self.onAcknowledge = onAcknowledge
+            self.onRefusal = onRefusal
             super.init(nibName: nil, bundle: nil)
         }
 
@@ -775,7 +812,11 @@ enum LegacyUpgradeNoticePresenter {
             alert.addAction(UIAlertAction(title: String(localized: "Entendi"), style: .cancel) { [weak self] _ in
                 self?.onAcknowledge()
             })
-            present(alert, animated: true)
+            LegacyUpgradeNoticePresenter.presentAlert(self, alert) { [weak self] isUp in
+                guard let self, !isUp else { return }
+                self.presented = false
+                self.onRefusal()
+            }
         }
     }
 }
@@ -857,8 +898,9 @@ struct ReaderHost: UIViewControllerRepresentable {
             }
 
             /// The topmost surface the app has up: the reader is presented over it, and it is what the reader
-            /// returns to.
-            private static func topmost() -> UIViewController? {
+            /// returns to. The site presentation is made from it too: SFSafariViewController is presented
+            /// modally, as Apple requires, never embedded.
+            static func topmost() -> UIViewController? {
                 let windows = UIApplication.shared.connectedScenes
                     .compactMap { $0 as? UIWindowScene }
                     .flatMap(\.windows)
@@ -869,7 +911,7 @@ struct ReaderHost: UIViewControllerRepresentable {
         }
 
         @MainActor
-        final class Coordinator {
+        final class Coordinator: NSObject, SFSafariViewControllerDelegate {
             /// The reader's content and what its chrome reports: both are refreshed by every render of the host,
             /// never kept as the values the coordinator happened to be built with.
             private var reader: (ReaderPage, @escaping () -> Void) -> AnyView
@@ -884,13 +926,32 @@ struct ReaderHost: UIViewControllerRepresentable {
             private var isUp = false
             /// An attempt is being made, and its report is still owed: one at a time, whatever re-renders.
             private var isAttempting = false
+            /// The site page is its own modal presentation. Apple requires SFSafariViewController to be
+            /// presented, never embedded in another controller's hierarchy; the text page's hosting controller
+            /// cannot host it. The site therefore covers the reader's text page and ends the reader when its own
+            /// close control reports back — the product's "site replaces the text; closing returns to the feed".
+            private var site: SFSafariViewController?
+            private var siteURL: URL?
+            /// The site is on its way out. A host render while Safari dismisses must not raise it again: the
+            /// app state still says `.site` until the dismissal completes and `onFinish` pops it.
+            private var siteFinishing = false
+            /// The one platform act that raises the site page. It is a seam for the same reason as `Presentation`:
+            /// a test can see the modal presentation and its presenter without a Safari view service. Production
+            /// presents with the platform's own modal presentation, as Apple requires.
+            typealias SiteAct = (SFSafariViewController, URL, UIViewController) -> Void
+            private let raiseSite: SiteAct
 
             init(platform: Presentation,
                 reader: @escaping (ReaderPage, @escaping () -> Void) -> AnyView,
-                onFinish: @escaping () -> Void) {
+                onFinish: @escaping () -> Void,
+                raiseSite: @escaping SiteAct = { safari, _, presenter in
+                    presenter.present(safari, animated: true)
+                }) {
                 self.platform = platform
                 self.reader = reader
                 self.onFinish = onFinish
+                self.raiseSite = raiseSite
+                super.init()
             }
 
             /// The closures the reader's own chrome reports to, kept current by the host's own render.
@@ -909,6 +970,18 @@ struct ReaderHost: UIViewControllerRepresentable {
                     dismissReader()
                     return
                 }
+                switch page {
+                case .site(let url):
+                    showSite(url)
+                case .local:
+                    showLocal(page)
+                }
+            }
+
+            /// The text page: the reader's own hosting controller, presented full screen.
+            private func showLocal(_ page: ReaderPage) {
+                // The local page and the site never coexist: a page the chrome asks for replaces the one up.
+                dismissSite()
                 let content = reader(page) { [weak self] in self?.onFinish() }
                 if let controller = presented {
                     // The reader that is up draws the page the app has now. Presenting again for a new page
@@ -935,6 +1008,42 @@ struct ReaderHost: UIViewControllerRepresentable {
                 open(controller, page: page, tries: Self.presentationAttempts)
             }
 
+            /// The site page: SFSafariViewController presented modally with the default style, as Apple
+            /// requires, from the surface that asked for the reader. It is not a child of the reader's hosting
+            /// controller and the text page is taken down while it is up — the site replaces the text. Its own
+            /// close control reports through the delegate; finishing ends the reader and returns to the surface
+            /// that opened it. Playback lives in the composition, so audio and system controls continue.
+            private func showSite(_ url: URL) {
+                guard !siteFinishing else { return }
+                if site != nil, siteURL == url { return }
+                dismissSite()
+                // Presenting from the reader that is already up keeps the two presentations sequential: UIKit
+                // refuses a present made while a dismissal is in flight, so the text page is not taken down
+                // first. It stays underneath, invisible under Safari; the reader's own dismissal happens after
+                // Safari reports its close, through `onFinish` → `dismissReader`.
+                guard let presenter = presented ?? WindowReaderPresentation.topmost() else { return }
+                let configuration = SFSafariViewController.Configuration()
+                configuration.entersReaderIfAvailable = false
+                let controller = SFSafariViewController(url: url, configuration: configuration)
+                controller.delegate = self
+                controller.dismissButtonStyle = .close
+                controller.preferredControlTintColor = .tintColor
+                site = controller
+                siteURL = url
+                raiseSite(controller, url, presenter)
+            }
+
+            private func dismissSite() {
+                guard let controller = site else {
+                    siteFinishing = false
+                    return
+                }
+                site = nil
+                siteURL = nil
+                siteFinishing = false
+                controller.dismiss(animated: false)
+            }
+
             /// The reader goes down when the app's state says it is no longer up, and the platform is asked to
             /// take it down: the dismissal is never inferred from the controller's own state, which reports no
             /// `presentingViewController` for a presentation that was refused.
@@ -942,9 +1051,28 @@ struct ReaderHost: UIViewControllerRepresentable {
                 shown = nil
                 isUp = false
                 isAttempting = false
+                dismissSite()
                 guard let controller = presented else { return }
                 presented = nil
                 platform.dismiss(controller)
+            }
+
+            /// Safari's own close control: the reader asked to leave the site. Safari dismisses itself after the
+            /// delegate returns; the reader state is cleared only after that dismissal completes, so the host
+            /// never asks a dismissing presentation to take its presenter down at the same time.
+            nonisolated func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
+                MainActor.assumeIsolated {
+                    guard site === controller else { return }
+                    siteFinishing = true
+                    let finish = onFinish
+                    controller.dismiss(animated: true) { [weak self] in
+                        guard let self else { return }
+                        self.site = nil
+                        self.siteURL = nil
+                        self.siteFinishing = false
+                        finish()
+                    }
+                }
             }
 
             /// The reader is presented from the surface the app has on top, so it covers whatever asked for it
@@ -983,15 +1111,15 @@ struct ReaderHost: UIViewControllerRepresentable {
     }
 
     /// T9: the article the reader opened, with the playback bar kept visible inside it (V1's own reader).
-    /// U-reading: the same presentation carries the local reading surface, so a card's text and a card's site are
-    /// one place to come back from — the surface that asked for them survives either way.
+    /// U-reading: the local reading surface. The site is not content of this page: SFSafariViewController must be
+    /// presented modally (Apple's contract), so `ReaderHost` presents it as its own modal and this page never
+    /// embeds it.
     @ViewBuilder private func readerBody(_ page: ReaderPage, close: @escaping () -> Void) -> some View {
         VStack(spacing: 0) {
             switch page {
-            case .site(let url):
-                // SafariServices owns the reader's close control, so its finish comes back here: the host owns the
-                // presentation, and the state it was presented from is what goes away.
-                InAppBrowser(url: url, onFinish: close)
+            case .site:
+                // Unreachable: the host draws only the local page and presents the site itself.
+                EmptyView()
             case .local(let content):
                 let openSite: (() -> Void)? = content.siteURL.map { url in { pushReader(.site(url)) } }
                 FeedReadingSurface(content: content, appearance: composition.currentAppearance(),

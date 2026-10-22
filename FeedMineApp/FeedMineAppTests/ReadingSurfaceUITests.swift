@@ -24,6 +24,26 @@ final class ReadingSurfaceUITests: XCTestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@", identifier)).firstMatch
     }
 
+    /// Safari's chrome belongs to SafariViewService: its element can be queried while its tap does not reach the
+    /// X. The fallback is the X's own frame, so it follows the device's geometry instead of a screen constant.
+    private func tapSafariClose(_ app: XCUIApplication, _ close: XCUIElement?) {
+        guard let close else { return }
+        // The frame is read while Safari is still up: after its close is tapped the service element is gone and
+        // a late frame query is an XCTest error, not a measurement.
+        let frame = close.frame
+        close.tap()
+        guard app.buttons["URL"].exists else { return }
+        guard frame.width > 0, frame.height > 0 else {
+            let tree = XCTAttachment(string: "close-frame=\(frame)")
+            tree.name = "safari-close-frame"
+            tree.lifetime = .keepAlways
+            add(tree)
+            return
+        }
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
+    }
+
     /// The site reader is `SFSafariViewController`, and its dismissal control is labelled in the device's own
     /// language. Measured on 2026-10-20 from `docs/reviews/evidence/2026-10-18-ui-suite/run-final3.log`: on this
     /// pt-BR device the tree exposes `Fechar`, `URL`, `PageFormatMenuButton`, `BackButton` while the site is open —
@@ -36,9 +56,14 @@ final class ReadingSurfaceUITests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             for label in labels {
-                for candidate in [app.buttons[label], safari.buttons[label]] where candidate.exists {
-                    return candidate
-                }
+                // The site is a modal SFSafariViewController now. The local reader's own close is also labelled
+                // "Fechar" (identifier `reading.close`) and is still in the app's tree under Safari; tapping that
+                // one leaves Safari up, which is exactly the RR-1 confusion. The site's chrome is looked for in
+                // Safari's own process first, then in the app's tree excluding the local close.
+                if safari.buttons[label].exists { return safari.buttons[label] }
+                let site = app.buttons.matching(NSPredicate(
+                    format: "label == %@ AND identifier != %@", label, "reading.close")).firstMatch
+                if site.exists { return site }
             }
             Thread.sleep(forTimeInterval: 0.5)
         } while Date() < deadline
@@ -47,13 +72,18 @@ final class ReadingSurfaceUITests: XCTestCase {
 
     /// A run whose only supply is the app's own local fixtures: the development feeds served in process, so there
     /// is no network, no server, no clock — and no add-feed sheet in the way of reaching an article.
-    private func launched(shape: String, blocked: Bool = false, largeText: Bool = false) -> XCUIApplication {
+    private func launched(shape: String, blocked: Bool = false, largeText: Bool = false,
+        media: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_USE_DEVELOPMENT_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_LOCAL_FEEDS"] = "1"
         app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["FEEDMINE_FIXTURE_TEXT"] = shape
+        // A real silent episode through the real adapter: the periodic time observer writes
+        // `MediaPlaybackAdapter.state` every 0.5 s, and the host reads that state while the reader is up. It is
+        // the deterministic version of the churn a live feed produces while a reader is reading.
+        if media { app.launchEnvironment["FEEDMINE_MEDIA_SIMULATION"] = "1" }
         // The closed HTTPS proxy the app itself installs: real connections fail, the fixture still answers.
         if blocked { app.launchEnvironment["FEEDMINE_BLOCK_RSS_NETWORK"] = "1" }
         if largeText {
@@ -242,6 +272,88 @@ final class ReadingSurfaceUITests: XCTestCase {
         attach(app, "reading-offline")
     }
 
+    /// The owner's report, made measurable: "ao abrir conteúdo, fechar/abrir no site ficam inoperantes". The reader
+    /// is presented by `ReaderHost`, and its host view is re-rendered whenever the app's body changes — a feed
+    /// advance or a playback tick. A control the reader is already pressing must still act after that render.
+    ///
+    /// A press that spans a render is not an exotic gesture: a deliberate press lasts longer than one frame. With
+    /// the simulated episode playing, `MediaPlaybackAdapter` publishes a new position every 0.5 s, so this press
+    /// spans at least two host renders. The no-churn case below is the control for the press itself.
+    func testACloseThatSpansAHostRenderStillClosesTheReader() throws {
+        let app = launched(shape: "body", media: true)
+        defer { app.terminate() }
+        guard openTheFirstCard(app) != nil else { return XCTFail("no card to open") }
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 25),
+            "the stored body opens the local reading surface")
+        XCTAssertTrue(app.otherElements["mini-player"].waitForExistence(timeout: 20),
+            "the reader carries the live playback bar, which is the render source under test")
+
+        let close = byIdentifier(app, "reading.close")
+        XCTAssertTrue(close.isHittable, "the close control is on screen")
+        close.press(forDuration: 1.2)
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForNonExistence(timeout: 10),
+            "a close pressed while the host re-renders must still end the reader")
+    }
+
+    /// The control for the test above: the same press without any render in flight. If this failed too, the press
+    /// duration would be the problem and the churn test would prove nothing.
+    func testAClosePressWithoutChurnClosesTheReader() throws {
+        let app = launched(shape: "body")
+        defer { app.terminate() }
+        guard openTheFirstCard(app) != nil else { return XCTFail("no card to open") }
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 25))
+
+        let close = byIdentifier(app, "reading.close")
+        close.press(forDuration: 1.2)
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForNonExistence(timeout: 10),
+            "a press on the close control ends the reader")
+    }
+
+    /// The same rule for the other control the owner named: "abrir no site" must act while the host re-renders.
+    func testAnOpenSiteThatSpansAHostRenderStillOpensTheSite() throws {
+        let app = launched(shape: "body", media: true)
+        defer { app.terminate() }
+        guard openTheFirstCard(app) != nil else { return XCTFail("no card to open") }
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 25))
+        XCTAssertTrue(app.otherElements["mini-player"].waitForExistence(timeout: 20))
+
+        let openSite = byIdentifier(app, "reading.open-site")
+        XCTAssertTrue(openSite.isHittable)
+        openSite.press(forDuration: 1.2)
+        // RR-1: the local reader's own close is also labelled "Fechar", so a close control being present is not
+        // proof the site opened. The page that was up must be gone and the site's own address must be the one the
+        // card carries; a no-op open-site leaves `reading.body` on screen and no address.
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForNonExistence(timeout: 20),
+            "the site replaces the text page")
+        XCTAssertTrue(waitForAddress(app, showing: "example.test", within: 20),
+            "the site the reader asked for is the card's own address, not the reader's close control")
+        attach(app, "reader-open-site-under-churn")
+    }
+
+
+    /// The press in the two tests above must really span a host render, otherwise it proves nothing about churn.
+    /// While the simulated episode plays, the adapter writes a new position every 0.5 s; a 1.2 s press on the
+    /// mini-player's own toggle must both act (its label flips) and span at least two of those renders (its
+    /// progress value moves).
+    func testAControlPressSpansPlaybackRenders() throws {
+        let app = launched(shape: "body", media: true)
+        defer { app.terminate() }
+        guard openTheFirstCard(app) != nil else { return XCTFail("no card to open") }
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 25))
+        let toggle = app.buttons["mini-player-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 20))
+        let progress = byIdentifier(app, "mini-player-progress")
+        let before = progress.value as? String
+        let labelBefore = toggle.label
+
+        toggle.press(forDuration: 1.2)
+
+        XCTAssertNotEqual(toggle.label, labelBefore, "the pressed control acted")
+        XCTAssertNotNil(before, "the bar reports its position while playing")
+        XCTAssertNotEqual(progress.value as? String, before, "a playback render happened during the press")
+        attach(app, "reader-control-press-spanning-renders")
+    }
+
     func testTheLocalReaderHonoursALargeAccessibilityTextSize() throws {
         let app = launched(shape: "body", largeText: true)
         guard openTheFirstCard(app) != nil else { return XCTFail("no card to open") }
@@ -307,10 +419,133 @@ final class ReadingSurfaceUITests: XCTestCase {
             "the address the reader opened is the article's own, the one the card carries")
         attach(app, "reading-explicit-site")
 
-        siteReaderClose(app)?.tap()
+        // The remote SafariViewService control can be found without its tap reaching the X; a stored body's own
+        // close is also "Fechar". The address bar is the site-only witness and the X's frame is the fallback.
+        tapSafariClose(app, siteReaderClose(app))
         XCTAssertTrue(byIdentifier(app, "reading.body").waitForNonExistence(timeout: 20),
             "closing the site ends the reader: the text does not come back as a surface of its own")
         XCTAssertTrue(waitForAVisibleCard(app, within: 20), "and the feed the reader was opened from is back")
         attach(app, "reading-back-in-the-feed")
+    }
+
+    // The Release/live proof: the reader's controls on a real feed over the real network, in the permanent
+    // `FeedMineSurfaces` scheme (Release app + UI tests). It needs network and a fresh app container, so it is
+    // kept apart from the deterministic journeys above, which use only the app's own fixtures.
+    //
+    // Seed: the app's own Add Feed flow with https://blog.codinghorror.com/ (its page declares
+    // https://blog.codinghorror.com/rss/, which carries content:encoded), so the article opens on the local
+    // surface and its own HTTPS address is the site. The attachments record the feed, the card identity/label
+    // and the site address for replay.
+    //
+    //   xcrun simctl uninstall <sim> com.feedmine.app
+    //   xcodebuild test -project … -scheme FeedMineSurfaces -configuration Release \
+    //     -destination 'platform=iOS Simulator,id=<sim>' -derivedDataPath <abs> \
+    //     -only-testing:FeedMineUITests/ReadingSurfaceUITests/testLiveReaderControlsOnTheRealCatalogueAndNetwork
+    func testLiveReaderControlsOnTheRealCatalogueAndNetwork() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        defer { app.terminate() }
+
+        let menu = app.buttons["more-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 180), "the reader's shell is up")
+        menu.tap()
+        let addFeed = app.buttons.matching(NSPredicate(format: "label IN {'Adicionar feed', 'Add feed'}")).firstMatch
+        XCTAssertTrue(addFeed.waitForExistence(timeout: 20), "the menu offers adding a feed")
+        addFeed.tap()
+        let field = app.textFields["add-feed-input"]
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "the add-feed sheet is up")
+        field.tap()
+        field.typeText("https://blog.codinghorror.com/")
+        app.buttons["add-feed-add"].tap()
+        let added = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", "add-feed-result-added")).firstMatch
+        if !added.waitForExistence(timeout: 120) {
+            let error = app.staticTexts["add-feed-error"]
+            let failure = XCTAttachment(string: "add-feed-error=\(error.exists ? error.label : "-")")
+            failure.name = "live-add-feed-error"
+            failure.lifetime = .keepAlways
+            add(failure)
+            XCTFail("the real site's feed was discovered, stored and selected")
+        }
+        attach(app, "live-add-feed")
+        app.buttons["add-feed-cancel"].tap()
+
+        // The added source's own card, not whichever supply answers first: the live discovery may also publish.
+        func codingHorrorCard(within seconds: TimeInterval) -> XCUIElement? {
+            let deadline = Date().addingTimeInterval(seconds)
+            while Date() < deadline {
+                let cards = app.descendants(matching: .any).matching(Self.cardIdentifier).allElementsBoundByIndex
+                    .filter { $0.exists && $0.frame.height > 40 }
+                for card in cards {
+                    if card.label.localizedCaseInsensitiveContains("coding horror") { return card }
+                    if card.staticTexts.allElementsBoundByIndex
+                        .contains(where: { $0.label.localizedCaseInsensitiveContains("coding horror") }) {
+                        return card
+                    }
+                }
+                Thread.sleep(forTimeInterval: 1.0)
+            }
+            return nil
+        }
+
+        func openCard(_ card: XCUIElement) {
+            let control = card.buttons["card.open"]
+            if control.exists && control.isHittable { control.tap() } else { card.tap() }
+        }
+
+        guard let first = codingHorrorCard(within: 240) else {
+            return XCTFail("the feed added publishes a Coding Horror card")
+        }
+        let seed = XCTAttachment(string:
+            "feed=https://blog.codinghorror.com/rss/ via https://blog.codinghorror.com/; card=\(first.identifier); label=\(first.label)")
+        seed.name = "live-seed"
+        seed.lifetime = .keepAlways
+        add(seed)
+        attach(app, "live-feed")
+
+        // 1. The local reader from content:encoded, and its close.
+        openCard(first)
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 60),
+            "the article opens on the local reading surface")
+        XCTAssertGreaterThan(byIdentifier(app, "reading.body").label.count, 100)
+        attach(app, "live-local-reader")
+        byIdentifier(app, "reading.close").tap()
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForNonExistence(timeout: 30),
+            "close returns to the feed")
+        XCTAssertTrue(waitForAVisibleCard(app, within: 60), "the feed is back")
+
+        // 2. Two open/close cycles while the live session is acquiring.
+        for cycle in 1...2 {
+            guard let card = codingHorrorCard(within: 90) else { return XCTFail("cycle \(cycle): no card") }
+            openCard(card)
+            XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 60),
+                "cycle \(cycle): the reader opens")
+            byIdentifier(app, "reading.close").tap()
+            XCTAssertTrue(byIdentifier(app, "reading.body").waitForNonExistence(timeout: 30),
+                "cycle \(cycle): close acts while the session is acquiring")
+        }
+
+        // 3. The explicit site request and Safari's own control on the real HTTPS page.
+        guard let card = codingHorrorCard(within: 90) else { return XCTFail("no card for the site path") }
+        openCard(card)
+        XCTAssertTrue(byIdentifier(app, "reading.body").waitForExistence(timeout: 60))
+        byIdentifier(app, "reading.open-site").tap()
+        guard let close = siteReaderClose(app, timeout: 40) else {
+            return XCTFail("the site's own close control is reachable")
+        }
+        attach(app, "live-site-reader")
+        let address = app.buttons["URL"].firstMatch
+        if address.exists {
+            let site = XCTAttachment(string: "address=\(String(describing: address.value))")
+            site.name = "live-site-address"
+            site.lifetime = .keepAlways
+            add(site)
+        }
+        XCTAssertTrue(address.exists || app.webViews.firstMatch.exists,
+            "the real page is in the app's reader")
+        tapSafariClose(app, close)
+        XCTAssertTrue(waitForAVisibleCard(app, within: 60), "Safari's close returns to the feed")
+        attach(app, "live-back-in-feed")
     }
 }

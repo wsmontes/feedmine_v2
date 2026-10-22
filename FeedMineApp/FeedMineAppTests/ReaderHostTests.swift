@@ -14,11 +14,13 @@
 // closures the host was built with instead of the ones the app has now.
 import XCTest
 import SwiftUI
+import SafariServices
 import FeedMineUI
 @testable import FeedMine
 
 private typealias Host = FeedMineApp.ReaderHost
 private typealias Page = FeedMineApp.ReaderPage
+private typealias Notice = FeedMineApp.LegacyUpgradeNoticePresenter
 
 @MainActor
 final class ReaderHostTests: XCTestCase {
@@ -71,9 +73,18 @@ final class ReaderHostTests: XCTestCase {
         }
     }
 
-    private func coordinator(_ platform: PlatformDouble, _ recorder: Recorder) -> Host.Coordinator {
+    /// The site's platform act, replaced: the site is a modal presentation of its own, so the test records what
+    /// was raised and from which controller without a Safari view service.
+    @MainActor
+    private final class SiteRecorder {
+        var raised: [(safari: SFSafariViewController, url: URL, presenter: UIViewController)] = []
+    }
+
+    private func coordinator(_ platform: PlatformDouble, _ recorder: Recorder,
+        _ sites: SiteRecorder = SiteRecorder()) -> Host.Coordinator {
         Host.Coordinator(platform: platform, reader: reader(recorder),
-            onFinish: { recorder.finishes += 1 })
+            onFinish: { recorder.finishes += 1 },
+            raiseSite: { safari, url, presenter in sites.raised.append((safari, url, presenter)) })
     }
 
     /// The host presents on its own turn of the main actor, so a run that has just asked for a page waits for the
@@ -92,7 +103,7 @@ final class ReaderHostTests: XCTestCase {
         let platform = PlatformDouble(refusals: 1)
         let coordinator = coordinator(platform, Recorder())
 
-        coordinator.show(.site(Self.url))
+        coordinator.show(.local(Self.content))
         await waitUntil { platform.up != nil }
 
         XCTAssertGreaterThanOrEqual(platform.attempts.count, 1, "the platform was asked to present the reader")
@@ -114,7 +125,7 @@ final class ReaderHostTests: XCTestCase {
         await waitUntil { platform.up != nil }
         guard let first = platform.up else { return XCTFail("the reader went up") }
 
-        coordinator.show(.site(Self.url))
+        coordinator.show(.local(Self.otherContent))
         await waitUntil { recorder.pages.count == 2 }
         // The turn a second presentation would have taken, so "it was not presented" is observed rather than
         // assumed from the order of the statements above.
@@ -135,7 +146,7 @@ final class ReaderHostTests: XCTestCase {
         let recorder = Recorder()
         let coordinator = coordinator(platform, recorder)
 
-        coordinator.show(.site(Self.url))
+        coordinator.show(.local(Self.content))
         await waitUntil { platform.up != nil }
 
         recorder.close?()
@@ -154,16 +165,40 @@ final class ReaderHostTests: XCTestCase {
         let platform = PlatformDouble()
         let first = Recorder()
         let coordinator = coordinator(platform, first)
-        coordinator.show(.site(Self.url))
+        coordinator.show(.local(Self.content))
         await waitUntil { first.close != nil }
 
         let second = Recorder()
         coordinator.refresh(reader: reader(second), onFinish: { second.finishes += 1 })
-        coordinator.show(.site(Self.url))
+        coordinator.show(.local(Self.otherContent))
 
         XCTAssertNotNil(second.close, "the reader drawn now is built by the closures the host has now")
         second.close?()
         XCTAssertEqual(second.finishes, 1, "and its close reports to the app as it is now")
+    }
+
+
+    /// The site is not content of the reader's hosting page: Apple requires SFSafariViewController to be presented
+    /// modally, so the host raises it from the reader that is already up and the text page is not asked to draw
+    /// it. A second hosting presentation is not made.
+    func testTheSitePageIsPresentedModallyAndIsNotDrawnByTheReaderPage() async {
+        let platform = PlatformDouble()
+        let recorder = Recorder()
+        let sites = SiteRecorder()
+        let coordinator = coordinator(platform, recorder, sites)
+
+        coordinator.show(.local(Self.content))
+        await waitUntil { platform.up != nil }
+        guard let readerController = platform.up else { return XCTFail("the reader went up") }
+
+        coordinator.show(.site(Self.url))
+        await waitUntil { sites.raised.count == 1 }
+
+        XCTAssertEqual(sites.raised.first?.url, Self.url, "the site the chrome asked for is what is raised")
+        XCTAssertTrue(sites.raised.first?.presenter === readerController,
+            "and it is presented from the reader that is up, so the two presentations are sequential")
+        XCTAssertEqual(recorder.pages.count, 1, "the site is not drawn by the reader's hosting page")
+        XCTAssertEqual(platform.attempts.count, 1, "and no second hosting presentation was made")
     }
 
     /// Only a surface that really has the reader is asked to take it down. A controller whose presentation was
@@ -205,6 +240,76 @@ final class ReaderHostTests: XCTestCase {
         headline: "A stored body", publishedAt: nil,
         text: "Parágrafo 1: o texto que a fonte publicou para este artigo.",
         siteURL: URL(string: "https://example.test/article"), isPartial: true)
+
+    private static let otherContent = FeedReadingContent(origin: .sourceBody, sourceName: "BBC",
+        headline: "Another stored body", publishedAt: nil,
+        text: "Parágrafo 2: outro texto que a fonte publicou.",
+        siteURL: URL(string: "https://example.test/other"), isPartial: true)
+}
+
+/// D7-A: the notice's own window is the one app surface above a full-screen reader. A refused alert leaves that
+/// window as an invisible, full-screen shell that takes every touch in the app — the reader's own close and site
+/// controls included. The platform act is doubled for the refusal, exactly as the reader's presentation is: a
+/// working screen cannot stage it.
+@MainActor
+final class NoticeWindowTests: XCTestCase {
+    private func alertLevelWindows() -> [UIWindow] {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .filter { $0.windowLevel == .alert + 1 && !$0.isHidden }
+    }
+
+    private func waitUntil(_ condition: @escaping () -> Bool, seconds: TimeInterval = 2) async {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if condition() { return }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// A presentation the platform refuses raises no error and calls no completion. The window it was going to
+    /// show must not survive that refusal: leaving it visible is leaving the whole app inert.
+    func testARefusedAlertLeavesNoWindowToTakeEveryTouch() async {
+        Notice.dismiss()
+        var attempts = 0
+        let original = Notice.presentAlert
+        defer {
+            Notice.presentAlert = original
+            Notice.dismiss()
+        }
+        Notice.presentAlert = { _, _, done in
+            attempts += 1
+            XCTAssertTrue(Thread.isMainThread, "the platform act runs on the main actor")
+            done(false)
+        }
+
+        Notice.present(title: "Da versão anterior", message: "Importados") {}
+        await waitUntil { self.alertLevelWindows().isEmpty }
+
+        XCTAssertTrue(alertLevelWindows().isEmpty,
+            "a visible alert-level window with no alert takes every touch in the app")
+
+        // The refused window is gone and the presenter is free again: the next notice really gets a new window
+        // and a new platform act. A stale `current` would make a second notice a silent no-op in production.
+        Notice.present(title: "Da versão anterior", message: "Importados") {}
+        await waitUntil { attempts == 2 }
+        XCTAssertEqual(attempts, 2, "a second notice is attempted after the refused one")
+        XCTAssertTrue(alertLevelWindows().isEmpty, "and its refusal is taken down too")
+    }
+
+    /// The composition on the platform in use: the alert is really up in the notice's own window, and that window
+    /// never takes key status away from the app's own window.
+    func testTheNoticeAlertIsReallyRaisedInItsOwnWindow() async {
+        defer { Notice.dismiss() }
+        Notice.present(title: "Da versão anterior", message: "Importados") {}
+        await waitUntil { !self.alertLevelWindows().isEmpty }
+        guard let window = alertLevelWindows().last else {
+            return XCTFail("the notice window was raised")
+        }
+        XCTAssertNotNil(window.rootViewController?.presentedViewController as? UIAlertController,
+            "the visible notice window is showing its alert, not an empty shell")
+        XCTAssertFalse(window.isKeyWindow, "the notice does not take key away from the app")
+    }
 }
 
 /// A surface that reports the controller it has up, as UIKit's own property does: the state a real window can
