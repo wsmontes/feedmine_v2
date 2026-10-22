@@ -177,6 +177,21 @@ final class FirstScreenPresentationTests: XCTestCase {
         XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
             cardCount: 1, coverage: nil, work: .deferred, waited: .seconds(12.5), maximumWait: .seconds(12.5),
             alreadyExposed: false), .reading)
+
+        // A long `.preparing` is still the pipeline's fact, not the gate's clock: the gate does not invent a second
+        // deadline and expose a card the pipeline is still filling. The hold ends when the same work reports idle or
+        // terminal; the bootstrap's acquisition is the bounded work (`ColdFeedBootstrap.run` awaits it, each pull has
+        // its transport timeout). An acquisition that never returns would hold the preparation: that is a pipeline
+        // defect, stated as a residual risk, not hidden by a magic gate threshold.
+        XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
+            cardCount: 1, coverage: nil, work: preparing, waited: .seconds(600), maximumWait: .seconds(5),
+            alreadyExposed: false), .preparation)
+        XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
+            cardCount: 1, coverage: nil, work: .endOfContent, waited: .seconds(600), maximumWait: .seconds(5),
+            alreadyExposed: false), .reading)
+        XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
+            cardCount: 1, coverage: nil, work: .failed(message: "X"), waited: .seconds(600), maximumWait: .seconds(5),
+            alreadyExposed: false), .reading)
     }
 
     /// Nothing to lay out: the surface is the app's existing loading/failure surface — a surface with the work
