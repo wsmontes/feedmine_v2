@@ -107,6 +107,8 @@ Explicit presentation policy chooses textOnly or local image before preparation.
 
 Return progress and publication outcome separately. Advance cursor only after successful publication or an explicitly successful zero-selected slice; preparation/storage failure retains previous progress for retry/reconsideration at a later semantic opportunity. No inner refill, retry, candidate-collection resolution, “while short”, “until N” or multi-window while loop. Scheduler yields between slices for cancellation/resource fairness.
 
+PD-9/F06 (2026-10-21; not the owner's D12, which is image ageing): `PendingMediaReconsideration` retains skipped-media eligibility in `MediaDeferralStore`, as one current-supply association per Edition/origin/revision. The 32-entry page bounds work per opportunity, never eligibility: rows are rotated by `turn_at`, so continuous arrivals cannot overtake older offers, and every association survives a relaunch. Withdrawal cascades; revision replacement retires the association. Editorial hold or an empty draft plan does not consume eligibility; only definitive resolution or actual publication does. Migration v1 added nullable columns to `selection_supply`; v2 adds the association table, additively completes any of those legacy columns missing in the table-shaped candidate, and copies the stored column state once, so a database from either candidate shape keeps every deferral it already holds.
+
 > Selection receives one finite CandidateSupplyWindow and never drives the walk.
 
 > Repeated local supply work is orchestrated as separate bounded slices, never as an internal Selection refill loop.

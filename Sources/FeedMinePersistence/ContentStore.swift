@@ -767,6 +767,12 @@ public struct ContentStore: Sendable {
                 sort_date_basis = excluded.sort_date_basis
             """, arguments: [key(id.rawValue), key(revision.id.rawValue),
                 try PersistenceValueCoding.date(date, field: "sort_date"), revision.authoredAt == nil ? "observedFallback" : "authored"])
+        // A newer revision is a different story: whatever Edition deferred the old one is not deferring this one.
+        // The association is keyed by Edition/origin, so the revision guard has to delete, not overwrite a column.
+        try db.execute(sql: """
+            DELETE FROM selection_supply_media_deferrals
+            WHERE origin_record_id = ? AND origin_revision_id <> ?
+            """, arguments: [key(id.rawValue), key(revision.id.rawValue)])
     }
 }
 
