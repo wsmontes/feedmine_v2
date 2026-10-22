@@ -121,7 +121,17 @@ public enum FeedFirstScreenGate {
         case .idle, .pending, .preparing, .unavailable, .deferred:
             break
         }
-        if waited >= maximumWait { return .reading }
+        if waited >= maximumWait {
+            // The bound ends the **unquestioned** wait, not an honest preparation while the pipeline is actually
+            // running. A first card at 9.9 s with the work still `.preparing` (the measured D4 run: one 166 pt card
+            // of a 718 pt viewport) must not be exposed as the first screen. `.preparing` carries the real
+            // PreparationProgress and its own bounded timeouts; when it settles to idle/terminal the cases above
+            // end the wait with what exists.
+            switch work {
+            case .pending, .preparing: return .preparation
+            case .idle, .unavailable, .deferred, .endOfContent, .unreachable, .failed: return .reading
+            }
+        }
         return .preparation
     }
 }

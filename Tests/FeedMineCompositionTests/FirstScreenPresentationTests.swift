@@ -153,24 +153,29 @@ final class FirstScreenPresentationTests: XCTestCase {
         }
     }
 
-    /// The bounded maximum wait is the last exit: at the bound the preparation ends and the reader gets what
-    /// exists, whatever is still pending. Just before it, the hold is still legitimate.
-    func testTheBoundedMaximumWaitAlwaysEndsThePreparation() {
+    /// The bounded wait ends the **unquestioned** wait, not an honest preparation while the pipeline is running.
+    /// The recorded D4 run exposed one 166 pt card at 9.9 s with the work badge still `.preparing`; the bound had
+    /// elapsed at ~5 s and turned the first card into a "first screen". While work is pending/preparing the
+    /// preparation keeps its real progress; idle/terminal work still ends the wait with what exists.
+    func testTheBoundedWaitDoesNotExposeAPipelineThatIsStillPreparing() {
         XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
             cardCount: 1, coverage: nil, work: preparing, waited: .milliseconds(4_999), maximumWait: .seconds(5),
             alreadyExposed: false), .preparation)
         XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
             cardCount: 1, coverage: nil, work: preparing, waited: .seconds(5), maximumWait: .seconds(5),
-            alreadyExposed: false), .reading,
-            "the wait is bounded; a launch can never sit in preparation forever")
+            alreadyExposed: false), .preparation,
+            "a card measured while the pipeline is still preparing is not the first screen")
+        XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
+            cardCount: 1, coverage: nil, work: preparing, waited: .seconds(30), maximumWait: .seconds(5),
+            alreadyExposed: false), .preparation,
+            "the honest preparation keeps its real progress while the pipeline is running")
 
-        // The bound is the run's measured tolerance, not a constant of the gate: a run that measured 12.5 s holds
-        // for 12.5 s and not for 5.
+        // No work behind the wait: the bounded exit still happens, so a launch cannot sit in preparation forever.
         XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
-            cardCount: 1, coverage: nil, work: preparing, waited: .seconds(12.4), maximumWait: .seconds(12.5),
-            alreadyExposed: false), .preparation)
+            cardCount: 1, coverage: nil, work: .idle, waited: .seconds(5), maximumWait: .seconds(5),
+            alreadyExposed: false), .reading)
         XCTAssertEqual(FeedFirstScreenGate.surface(hasSources: true, isSearching: false, preparationShown: true,
-            cardCount: 1, coverage: nil, work: preparing, waited: .seconds(12.5), maximumWait: .seconds(12.5),
+            cardCount: 1, coverage: nil, work: .deferred, waited: .seconds(12.5), maximumWait: .seconds(12.5),
             alreadyExposed: false), .reading)
     }
 
