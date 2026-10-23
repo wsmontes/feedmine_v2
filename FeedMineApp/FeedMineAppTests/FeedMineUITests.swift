@@ -3314,7 +3314,10 @@ final class FeedMineUITests: XCTestCase {
             .matching(NSPredicate(format: "identifier == %@", symbol)).firstMatch
         for _ in 0..<4 {
             menu.tap()
-            if entry.waitForExistence(timeout: 5) { return true }
+            if entry.waitForExistence(timeout: 5) {
+                entry.tap()
+                return true
+            }
             if menu.exists { menu.tap() }
             Thread.sleep(forTimeInterval: 1)
         }
