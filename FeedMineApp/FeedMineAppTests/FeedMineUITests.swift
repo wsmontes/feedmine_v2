@@ -3210,52 +3210,33 @@ final class FeedMineUITests: XCTestCase {
         // preparation surface until the feed it belongs to has content. On the old screen that is exactly the
         // reachability the regression is about, so the wait is on hittability, bounded.
         XCTAssertTrue(waitHittable(menu, timeout: 180), "the reader's chrome is usable")
-        // Sources → the countries level → Algeria → its only source. The product's own surface, no injection.
-        // The menu's rows are PopUpButtons here, so the entry is resolved by identifier across element types; the
-        // reader's own gesture is retried when a first open arrives before the destinations are installed.
-        let sourcesEntry = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == %@", "antenna.radiowaves.left.and.right")).firstMatch
-        var openedSources = false
+        // The exact pinned feed, added through the product's own Add Feed sheet. Its four items are French and none
+        // is eligible for this Portuguese/Brazil profile, so the single selected source is the empty context the
+        // regression is about. The sheet's controls are identifiers, not labels.
+        let frenchFeed = "https://enriqueiglesias.forumactif.org/feed"
+        // The reader menu's rows are PopUpButtons here, so the entry is resolved by identifier across element types;
+        // the reader's own gesture is retried when a first open arrives before the destinations are installed.
+        let addFeedEntry = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", "plus.circle")).firstMatch
+        var openedAddFeed = false
         for _ in 0..<4 {
             menu.tap()
-            if sourcesEntry.waitForExistence(timeout: 5) { openedSources = true; break }
+            if addFeedEntry.waitForExistence(timeout: 5) { openedAddFeed = true; break }
             if menu.exists { menu.tap() }
             Thread.sleep(forTimeInterval: 1)
         }
-        XCTAssertTrue(openedSources, "the menu offers the source surface")
-        sourcesEntry.tap()
-        let countries = app.buttons["sources-open-countries"]
-        XCTAssertTrue(reveal(app, countries), "the source surface offers its choices")
-        countries.tap()
-        let algeria = app.buttons["country-algeria"]
-        XCTAssertTrue(reveal(app, algeria), "the countries list offers Algeria")
-        algeria.tap()
-        // The exact frozen-corpus feed: 4 French items, zero eligible for this Portuguese/Brazil profile. The
-        // catalogue key is the switch's identifier, so the fixture is pinned rather than "whichever row is first".
-        let frenchFeed = "https://enriqueiglesias.forumactif.org/feed"
-        let sourceToggle = app.switches["node-source-toggle-\(frenchFeed)"]
-        // A country's sources sit under its topic leaves (the catalogue nests them), so the walk descends the
-        // node's own children until the pinned switch is in the tree — bounded, the same route the benchmark
-        // driver uses.
-        var foundPinned = false
-        for _ in 0..<8 {
-            if reveal(app, sourceToggle) { foundPinned = true; break }
-            let child = app.buttons.matching(NSPredicate(
-                format: "identifier BEGINSWITH 'node-child-'")).firstMatch
-            guard child.waitForExistence(timeout: 8) else { break }
-            child.tap()
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        XCTAssertTrue(foundPinned, "Algeria's pinned corpus source is offered")
-        sourceToggle.tap()
-        Thread.sleep(forTimeInterval: 1)
-        for _ in 0..<8 where !app.buttons["sources-done"].exists {
-            let back = app.navigationBars.buttons.firstMatch
-            guard back.exists, back.isHittable else { break }
-            back.tap()
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        app.buttons["sources-done"].tap()
+        XCTAssertTrue(openedAddFeed, "the menu offers adding a feed")
+        addFeedEntry.tap()
+        let field = app.textFields["add-feed-input"]
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "the add-feed sheet is up")
+        field.tap()
+        field.typeText(frenchFeed)
+        let add = app.buttons["add-feed-add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        add.tap()
+        let added = element(app, "add-feed-result-added")
+        XCTAssertTrue(added.waitForExistence(timeout: 180), "the product resolved the pinned feed")
+        app.buttons["add-feed-cancel"].tap()
         // The single selected source becomes the reading context. It has no eligible item for this reader: the
         // loading surface is what is drawn and **no card** is presented. Only that state makes the escape
         // meaningful; a test that ran with content would not be the regression.
