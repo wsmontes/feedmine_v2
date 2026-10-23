@@ -971,6 +971,29 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         shot("audio-resumed")
     }
 
+    /// Plain reader liveness: one source context, a few ordinary swipes, and the
+    /// reader's chrome must remain. Deliberately no `visibleMatchingCards` or
+    /// per-card `staticTexts` enumeration; this is the control that distinguishes
+    /// a product feed-layout stall from the 049 test-side AX-query amplification.
+    func test06PlainSwipeLiveness() throws {
+        let app = try launch()
+        guard ensureSource(app, containing: ["egypt independent", "egyptindependent"],
+            feed: Self.egyptFeed) != nil else {
+            return XCTFail("the public Egypt Independent feed publishes a card")
+        }
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 30), "the feed scroll view is present")
+        for _ in 0..<3 {
+            scroll.swipeUp()
+            XCTAssertTrue(app.buttons["more-menu"].firstMatch.waitForExistence(timeout: 30),
+                "the reader chrome remains responsive after a plain swipe")
+            XCTAssertTrue(app.scrollViews.firstMatch.exists,
+                "the feed remains the reader's surface after a plain swipe")
+        }
+        scroll.swipeDown()
+        XCTAssertTrue(app.buttons["more-menu"].exists, "the reader chrome remains after the return swipe")
+    }
+
     // MARK: - Appearance controls
 
     /// A menu picker's option can surface as a button, a menu item or a plain text depending on the SwiftUI
