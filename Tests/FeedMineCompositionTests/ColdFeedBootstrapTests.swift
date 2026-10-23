@@ -624,24 +624,26 @@ final class ColdFeedBootstrapTests: XCTestCase {
         catch { XCTAssertEqual(error as? ColdFeedBootstrapError, .sessionAlreadyInstalled) }
         XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.journal.values.filter { $0 == "prepare" }.count, 1)
     }
-    func testSourceFetchPublishesWhenSecondWindowHasUnrelatedRows() async throws {
-        let f = try fixture(sourceContext: true), id = identity(), db = f.database
+    func testSecondNonexhaustedMissStopsWithSecondProgressAndOrderedResults() async throws {
+        let f = try fixture(sourceContext: true, filter: ReaderFilter(languages: ["en"])), id = identity(), db = f.database
         let http = ColdHTTPFixture(onStart: {
-            do { try Self.seed(db, source: SourceID(), count: 2, time: 100) }
+            do { try Self.seed(db, source: f.source, count: 2, time: 100, language: "pt-BR") }
             catch { XCTFail("Seed failed: \(error)") }
         })
         addTeardownBlock { http.remove() }
         let acquisition = try snapshot(db, [registration(f.target, source: f.source, http: http)])
         let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
-            acquisition: acquisition, coordinator: acquisition.makeCoordinator(), prepare: { Self.prepared($0) })
+            acquisition: acquisition, coordinator: acquisition.makeCoordinator(), prepare: { _ in
+                XCTFail("Second bounded window contains no matching source"); throw Failure.preparation
+            })
         let outcome = try await bootstrap.run(identity: id, resources: resources(local: 1), backwardCapacity: 0, forwardCapacity: 1)
-        guard case .published(let snapshot) = outcome else {
-            return XCTFail("Expected the fetched source item to publish, got \(outcome)")
+        guard case .noPublicationAfterAcquisition(let progress, let results) = outcome else {
+            return XCTFail("Expected second-attempt progress without further work, got \(outcome)")
         }
+        XCTAssertEqual(progress.examinedCount, 1); XCTAssertFalse(progress.exhausted); XCTAssertNotNil(progress.nextCursor)
+        XCTAssertEqual(results.map(\.targetID), [f.target.id]); XCTAssertTrue(results[0].selectableSupplyChanged)
         XCTAssertEqual(http.calls, 1); XCTAssertEqual(try canonical(f).count, 3)
-        XCTAssertEqual(snapshot.window.items.first?.sourceID, f.source,
-            "the source item publishes despite newer unrelated rows")
-        try await assertPublished(f, identity: id, snapshot: snapshot)
+        try assertAbsent(f, identity: id)
     }
     func testColdWindowsShareOneMediaDeadlineAndTheNextOpportunityRenewsIt() async throws {
         let f = try fixture(), id = identity()
