@@ -254,7 +254,8 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         var opened = false
         for _ in 0..<4 {
             let menu = app.buttons["more-menu"]
-            guard menu.waitForExistence(timeout: 20) else { break }
+            // The header can still be settling after the first-run transition; a tap at {-1,-1} opens nothing.
+            guard menu.waitForExistence(timeout: 20), waitUntil(20, { menu.isHittable }) else { break }
             menu.tap()
             // The reader menu's rows are PopUpButtons to XCUITest on this OS, so the entry is resolved by
             // identifier across element types (the same rule the context chip follows).

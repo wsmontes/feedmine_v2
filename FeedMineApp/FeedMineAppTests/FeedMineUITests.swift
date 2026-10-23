@@ -3207,12 +3207,19 @@ final class FeedMineUITests: XCTestCase {
         let menu = app.buttons["more-menu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 240), "the reader reaches the feed's chrome")
         // Sources → the countries level → Algeria → its only source. The product's own surface, no injection.
-        menu.tap()
-        // The reader menu's rows are PopUpButtons to XCUITest on this OS; resolve the entry by identifier across
-        // element types instead of assuming Button.
+        // The header can still be settling after the first-run transition (a tap at {-1,-1} opens nothing), and the
+        // menu's rows are PopUpButtons here, so the entry is resolved by identifier across element types.
         let sourcesEntry = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == %@", "antenna.radiowaves.left.and.right")).firstMatch
-        XCTAssertTrue(sourcesEntry.waitForExistence(timeout: 10), "the menu offers the source surface")
+        var openedSources = false
+        for _ in 0..<20 {
+            if menu.isHittable {
+                menu.tap()
+                if sourcesEntry.waitForExistence(timeout: 3) { openedSources = true; break }
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertTrue(openedSources, "the menu offers the source surface")
         sourcesEntry.tap()
         let countries = app.buttons["sources-open-countries"]
         XCTAssertTrue(reveal(app, countries), "the source surface offers its choices")
