@@ -1099,6 +1099,26 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         return false
     }
 
+    /// A palette-family picker opens a native menu. Prefer the menu item; the underlying
+    /// picker row is also a button and must not consume the option tap.
+    @discardableResult
+    private func choosePaletteOption(_ app: XCUIApplication, _ label: String) -> Bool {
+        let predicate = NSPredicate(format: "label ==[cd] %@", label)
+        let menuItem = app.menuItems.matching(predicate).firstMatch
+        if menuItem.waitForExistence(timeout: 4) {
+            menuItem.tap()
+            return true
+        }
+        let buttons = app.buttons.matching(predicate).allElementsBoundByIndex.filter {
+            $0.identifier != "settings-palette-family"
+        }
+        if let button = buttons.first {
+            button.tap()
+            return true
+        }
+        return false
+    }
+
     @discardableResult
     private func setTypeScale(_ app: XCUIApplication, _ label: String, required: Bool = true) -> String {
         SurfaceTest.menuEntry(app, "Ajustes")
@@ -1126,15 +1146,20 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         SurfaceTest.menuEntry(app, "Ajustes")
         XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 30))
         let clock = app.switches["settings-circadian-palette"]
-        // A disabled palette-family picker is a picker that cannot run the experiment. The row's
-        // inner switch is the actual control; tap it and assert the stored value really changes.
-        if (clock.value as? String) != "1" {
-            let control = clock.switches.firstMatch
+        // A disabled palette-family picker is a picker that cannot run the experiment. Exercise the
+        // actual inner switch 0 -> 1 and assert the stored value; no row-centre assumption.
+        let control = clock.switches.firstMatch
+        if (clock.value as? String) == "1" {
             (control.exists ? control : clock).tap()
-            let deadline = Date().addingTimeInterval(20)
-            while Date() < deadline, (clock.value as? String) != "1" {
+            let offDeadline = Date().addingTimeInterval(20)
+            while Date() < offDeadline, (clock.value as? String) != "0" {
                 Thread.sleep(forTimeInterval: 0.2)
             }
+        }
+        (control.exists ? control : clock).tap()
+        let onDeadline = Date().addingTimeInterval(20)
+        while Date() < onDeadline, (clock.value as? String) != "1" {
+            Thread.sleep(forTimeInterval: 0.2)
         }
         XCTAssertEqual(clock.value as? String, "1",
             "the adaptive palette switch actually turns on")
@@ -1143,13 +1168,13 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         let raw = picker.value as? String
         let original = (raw?.isEmpty == false) ? raw! : "Terra quente"
         picker.tap()
-        let selected = chooseOption(app, label)
+        let selected = choosePaletteOption(app, label)
         if !selected, required {
             XCTFail("the palette option \(label) is offered and selected")
         }
         if !selected, let current = picker.value as? String {
             record("palette-option-miss", "wanted=\(label) current=\(current)")
-            _ = chooseOption(app, paletteLabel(current))
+            _ = choosePaletteOption(app, paletteLabel(current))
         }
         // A menu left open over the sheet consumes the Concluir tap. Let the normal UI dismiss it.
         let predicate = NSPredicate(format: "label ==[cd] %@", label)
@@ -1167,8 +1192,13 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
             let dismissDeadline = Date().addingTimeInterval(5)
             while Date() < dismissDeadline, optionVisible() { Thread.sleep(forTimeInterval: 0.2) }
         }
-        let applied = byIdentifier(app, "settings-palette-family").value as? String ?? ""
-        XCTAssertEqual(paletteLabel(applied), label,
+        // The picker's `value` is empty under this SwiftUI presentation; the selected
+        // label is the supported applied state. The pixel oracle below remains the effect check.
+        let appliedLabels = [picker.label] + picker.staticTexts.allElementsBoundByIndex.map(\.label)
+        let applied = appliedLabels.first(where: {
+            $0.localizedCaseInsensitiveContains(label) || paletteLabel($0) == label
+        }) ?? ""
+        XCTAssertFalse(applied.isEmpty,
             "the selected palette family is actually applied")
         record("palette-setting", "wanted=\(label) before=\(original) after=\(applied)")
         app.buttons["settings-done"].tap()
