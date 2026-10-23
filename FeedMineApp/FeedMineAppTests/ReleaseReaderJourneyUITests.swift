@@ -269,6 +269,17 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         return match(app, containing: needles)
     }
 
+    /// One bounded child-label predicate per card. The card wrapper's own accessibility
+    /// label is empty under `.accessibilityElement(children: .contain)`; the source name
+    /// is a child Text. A predicate query avoids the per-card child enumeration that timed out.
+    private func cardNamesSource(_ card: XCUIElement, _ needles: [String]) -> Bool {
+        guard !needles.isEmpty else { return false }
+        let predicate = NSCompoundPredicate(orPredicateWithSubpredicates: needles.map {
+            NSPredicate(format: "label CONTAINS[cd] %@", $0)
+        })
+        return card.staticTexts.matching(predicate).firstMatch.exists
+    }
+
     private func match(_ app: XCUIApplication, containing needles: [String],
         requireHittable: Bool = true) -> XCUIElement? {
         let window = app.windows.firstMatch.frame
@@ -281,7 +292,7 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
                 let center = CGPoint(x: frame.midX, y: frame.midY)
                 guard frame.width > 1, frame.height > 1, window.contains(center) else { continue }
             }
-            if needles.contains(where: { card.label.range(of: $0, options: .caseInsensitive) != nil }) {
+            if cardNamesSource(card, needles) {
                 return card
             }
         }
@@ -295,9 +306,9 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         let window = app.windows.firstMatch.frame
         return app.descendants(matching: .any).matching(Self.cardIdentifier).allElementsBoundByIndex.filter { card in
             guard card.exists, card.frame.height > 40, card.frame.intersects(window) else { return false }
-            // One aggregated label + one control query per card. The per-card `staticTexts` enumeration made the
-            // accessibility query time out on a large source context.
-            guard needles.contains(where: { card.label.range(of: $0, options: .caseInsensitive) != nil }) else {
+            // One bounded child-label predicate + one control query per card. The full child
+            // enumeration timed out, and the wrapper label is empty under .contain.
+            guard cardNamesSource(card, needles) else {
                 return false
             }
             let open = card.buttons["card.open"].firstMatch
