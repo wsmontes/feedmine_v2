@@ -292,6 +292,27 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         record("b05-precondition-source:\(sourceID)", to: phases)
         record("b05-precondition-source-name:\(sourceName)", to: phases)
         record("b05-precondition-source-selected:\(String(describing: toggle.value))", to: phases)
+        // A **second** individual source, so the selection is not the single-source state: the product then keeps
+        // the main context when the sheet closes (`toggleSource` selects `.source` only for exactly one feed), and
+        // A is main without depending on the source context's own publication. The rows are lazy; bounded scroll.
+        var secondName = "none"
+        for _ in 0..<6 {
+            let candidates = app.switches
+                .matching(NSPredicate(format: "identifier BEGINSWITH 'node-source-toggle-'"))
+                .allElementsBoundByIndex
+            if let other = candidates.first(where: {
+                $0.exists && $0.identifier != toggle.identifier && $0.isHittable
+            }) {
+                secondName = other.label
+                other.tap()
+                Thread.sleep(forTimeInterval: 1)
+                break
+            }
+            let list = app.tables.firstMatch
+            if list.exists { list.swipeUp() } else { app.swipeUp() }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        record("b05-precondition-second-source:\(secondName)", to: phases)
         closeSourcesSheet(app)
         _ = waitUntil(20) { !app.buttons["sources-done"].exists }
         _ = waitUntil(120) { presentedCard(app) != nil }
