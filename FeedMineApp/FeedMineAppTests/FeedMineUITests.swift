@@ -3210,8 +3210,19 @@ final class FeedMineUITests: XCTestCase {
         // preparation surface until the feed it belongs to has content. On the old screen that is exactly the
         // reachability the regression is about, so the wait is on hittability, bounded.
         XCTAssertTrue(waitHittable(menu, timeout: 180), "the reader's chrome is usable")
-        // The exact pinned feed, added through the product's own Add Feed sheet. Its four items are French and none
-        // is eligible for this Portuguese/Brazil profile, so the single selected source is the empty context the
+        // Deterministic ineligibility without a network trick: the reader's own language filter is set to
+        // Portuguese. The pinned feed is French, so its source context has no item to draw even though the feed
+        // itself resolves — the same product criterion that hid it in the measured run.
+        app.buttons["filter-button"].tap()
+        let portugueseRow = app.buttons["language-pt"]
+        XCTAssertTrue(reveal(app, portugueseRow), "the filter lists Portuguese")
+        if portugueseRow.value as? String != "selected" { portugueseRow.tap() }
+        XCTAssertEqual(portugueseRow.value as? String, "selected", "the filter selects Portuguese")
+        app.buttons["filter-done"].tap()
+        XCTAssertTrue(menu.waitForExistence(timeout: 60), "the feed returns after the filter")
+        XCTAssertTrue(waitHittable(menu, timeout: 60), "the chrome is usable after the filter")
+        // The exact pinned feed, added through the product's own Add Feed sheet. Its four items are French and
+        // filtered out for this Portuguese/Brazil reader, so the single selected source is the empty context the
         // regression is about. The sheet's controls are identifiers, not labels.
         let frenchFeed = "https://enriqueiglesias.forumactif.org/feed"
         // The reader menu's rows are PopUpButtons here, so the entry is resolved by identifier across element types;
