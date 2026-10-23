@@ -205,7 +205,7 @@ struct FeedNativeScrollProbe: UIViewRepresentable {
             NSLog("FEEDMINE_LIVENESS probe scroll=%@ frame=%@ bounds=%@ contentSize=%@ inset=%@ enabled=%d offset=%.2f pan=%ld",
                 String(describing: ObjectIdentifier(scroll)), NSStringFromCGRect(scroll.frame),
                 NSStringFromCGRect(scroll.bounds), NSStringFromCGSize(scroll.contentSize),
-                NSStringFromUIEdgeInsets(scroll.contentInset), scroll.isScrollEnabled ? 1 : 0,
+                String(describing: scroll.contentInset), scroll.isScrollEnabled ? 1 : 0,
                 scroll.contentOffset.y, scroll.panGestureRecognizer.state.rawValue)
         }
     }
