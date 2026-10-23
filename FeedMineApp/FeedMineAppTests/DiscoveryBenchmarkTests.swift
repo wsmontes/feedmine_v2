@@ -210,6 +210,123 @@ final class DiscoveryBenchmarkTests: XCTestCase {
             .sorted { $0.frame.minY < $1.frame.minY }
     }
 
+    /// Returns to the main context through the product's own control. The identity witness is
+    /// `reader-context-label`: present only while a source (or search) context is shown.
+    private func returnToMainContext(_ app: XCUIApplication) -> Bool {
+        let chip = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", "reader-contexts")).firstMatch
+        let label = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", "reader-context-label")).firstMatch
+        if !label.exists { return true }
+        guard chip.waitForExistence(timeout: 60), waitUntil(60, { chip.isHittable }) else { return false }
+        chip.tap()
+        guard waitUntil(10, { !contextMenuItems(app).isEmpty }),
+            let main = contextMenuItems(app).first else { return false }
+        main.tap()
+        return waitUntil(30) { !label.exists }
+    }
+
+    /// B05's declared input — **two real reading contexts** — established through the product's own surfaces and
+    /// reported as facts, before A is named or measured. The benchmark's reader starts with no selected source
+    /// (`reader_preferences.source_keys` empty), which is the product's honest empty selection; `reader-contexts`
+    /// then lists only the main context. The reader's own act creates the second one: the overflow menu's Sources
+    /// sheet, and one individual catalogue source enabled by its own row. Nothing is injected: the catalogue, the
+    /// sheet, the selection and the context rebuild are the product's.
+    @discardableResult
+    private func prepareB05Contexts(_ app: XCUIApplication, phases: URL?) -> Bool {
+        // The overflow menu's entries carry the SF Symbol as their identifier (ReaderNavigation.standard), so the
+        // Sources entry is language-independent. A first open can precede installed destinations: same gesture.
+        var opened = false
+        for _ in 0..<4 {
+            let menu = app.buttons["more-menu"]
+            guard menu.waitForExistence(timeout: 20) else { break }
+            menu.tap()
+            let entry = app.buttons["antenna.radiowaves.left.and.right"].firstMatch
+            if entry.waitForExistence(timeout: 5) {
+                entry.tap()
+                opened = true
+                break
+            }
+            if menu.exists { menu.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard opened, reveal(app, app.buttons["sources-open-countries"]) else {
+            record("b05-precondition:not-opened", to: phases)
+            return false
+        }
+        let enabled = app.staticTexts["sources-enabled-count"]
+        let before = enabled.exists ? enabled.label : "none"
+        app.buttons["sources-open-countries"].tap()
+        // The route the product's own source journey proves (FeedMineUITests): the countries list, one country,
+        // then down its subtree until an individual source's own toggle is really in the tree. Toggles are
+        // switches to XCUITest; the row buttons and the toggle are separate controls, so nothing is enabled by
+        // accident at a level above.
+        let countryRow = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH 'country-' AND identifier != 'country-toggle-all'")).firstMatch
+        guard reveal(app, countryRow), countryRow.isHittable else {
+            record("b05-precondition:no-country", to: phases)
+            closeSourcesSheet(app)
+            return false
+        }
+        countryRow.tap()
+        var toggle: XCUIElement?
+        for _ in 0..<5 {
+            let sourceToggle = app.switches.matching(NSPredicate(
+                format: "identifier BEGINSWITH 'node-source-toggle-'")).firstMatch
+            if sourceToggle.waitForExistence(timeout: 8) { toggle = sourceToggle; break }
+            let child = app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH 'node-child-'")).firstMatch
+            guard child.waitForExistence(timeout: 8) else { break }
+            child.tap()
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        guard let toggle else {
+            record("b05-precondition:no-source", to: phases)
+            closeSourcesSheet(app)
+            return false
+        }
+        let sourceName = toggle.label
+        let sourceID = String(toggle.identifier.dropFirst("node-source-toggle-".count))
+        toggle.tap()
+        Thread.sleep(forTimeInterval: 1)
+        record("b05-precondition-source:\(sourceID)", to: phases)
+        record("b05-precondition-source-name:\(sourceName)", to: phases)
+        record("b05-precondition-source-selected:\(String(describing: toggle.value))", to: phases)
+        closeSourcesSheet(app)
+        _ = waitUntil(20) { !app.buttons["sources-done"].exists }
+        _ = waitUntil(120) { presentedCard(app) != nil }
+        // One selected source becomes the reading context; A is the main context, so return explicitly and wait
+        // for the production the anchor is then measured on.
+        let returned = returnToMainContext(app)
+        _ = waitUntil(120) { presentedCard(app) != nil }
+        record("b05-precondition-main:\(returned)", to: phases)
+        return returned
+    }
+
+    /// Scrolls a list until the control is really reachable. The sheets' rows are lazy, so existence alone does
+    /// not mean the reader's own row is on screen.
+    private func reveal(_ app: XCUIApplication, _ element: XCUIElement, attempts: Int = 10) -> Bool {
+        for _ in 0..<attempts {
+            if element.exists && element.isHittable { return true }
+            let list = app.tables.firstMatch
+            if list.exists { list.swipeUp() } else { app.swipeUp() }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return element.exists && element.isHittable
+    }
+
+    /// Leaves the source surface without changing anything else: back to its root, then its own Done control.
+    private func closeSourcesSheet(_ app: XCUIApplication) {
+        for _ in 0..<8 where !app.buttons["sources-done"].exists {
+            let back = app.navigationBars.buttons.firstMatch
+            guard back.exists, back.isHittable else { break }
+            back.tap()
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        let done = app.buttons["sources-done"]
+        if done.exists && done.isHittable { done.tap() }
+    }
+
     /// The scene B04 measures: an invitation block that is on screen **above** the reader's card, plus that
     /// card's identity and frame. The block above the reader is the case an anchor-only check cannot see: when the
     /// block's own form changes (answering makes it shorter), everything under it moves, and the anchor is under it
@@ -692,6 +809,14 @@ final class DiscoveryBenchmarkTests: XCTestCase {
             phases: phases)
         let feed = app.scrollViews.firstMatch
 
+        // B05's declared input is **two real reading contexts**. They are established by the reader's own act —
+        // the product's Sources sheet, one individual catalogue source — before A is named, so A's publication and
+        // anchor are measured on the final main feed. The benchmark's reader otherwise starts with no selected
+        // source (source_keys empty), and a main-only menu is that honest state, not a product defect.
+        let contextsPrepared = prepareB05Contexts(app, phases: phases)
+        record("b05-precondition:\(contextsPrepared ? "true" : "false")", to: phases)
+        _ = waitUntil(120) { presentedCard(app) != nil }
+
         // A card the reader saves, and the anchor they are reading. The card is **named first**, and its own
         // control is then asked for **inside it**: `card.bookmark` is the same identifier on every card, so a
         // `firstMatch` over the drawn list cannot tell one card from another (see the note on `presentedCard`), and
@@ -809,6 +934,9 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         // present and applied to the restored card; the clause was timing-dependent, not the product. The reopen
         // now says what it is — a run testing something else — exactly as the app's own comment invites, and as the
         // offline relaunch below already did. The persistence requirements are unchanged.
+        // The reopen clause is judged on the named card; the visible UUIDs at both sides of the kill are recorded
+        // beside it, so a false read can be compared with the card the reader was actually on rather than waived.
+        record("b05-reopen-visible-before:\(presentedIdentifiers(app).joined(separator: ","))", to: phases)
         app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "1"
         app.terminate()
         Thread.sleep(forTimeInterval: 2)
@@ -825,6 +953,7 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         let anchorAfterReopen = presentedCard(app)?.identifier
         record("b05-reopen-preserves-anchor:\(anchorAfterReopen != nil && anchorAfterReopen == anchorBefore)",
             to: phases)
+        record("b05-reopen-visible-after:\(presentedIdentifiers(app).joined(separator: ","))", to: phases)
         record("b05-reopen-keeps-saved:\(app.buttons.matching(identifier: "card.bookmark").allElementsBoundByIndex.contains { $0.value as? String == "bookmarked" })",
             to: phases)
 
