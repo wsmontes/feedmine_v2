@@ -3190,6 +3190,16 @@ final class FeedMineUITests: XCTestCase {
         for _ in 0..<8 where !(place.exists && place.isHittable) { composer.swipeUp() }
         XCTAssertTrue(place.exists && place.isHittable, "the first run offers the reader's place")
         if !place.isSelected { place.tap() }
+        // The fixture profile must really be configured, or "ineligible for this reader" would be an assumption:
+        // Portuguese selected, English not, Brazil selected.
+        XCTAssertTrue(portuguese.exists
+            && (portuguese.isSelected || portuguese.value as? String == "1"),
+            "the fixture profile declares Portuguese")
+        if english.exists {
+            XCTAssertFalse(english.isSelected || english.value as? String == "1",
+                "English is not part of the fixture profile")
+        }
+        XCTAssertTrue(place.isSelected, "the fixture profile declares Brazil")
         let open = app.buttons["composer-open-feed"]
         for _ in 0..<6 where !open.isHittable { composer.swipeUp() }
         XCTAssertTrue(open.isHittable, "the first run's own action starts the feed")
@@ -3207,17 +3217,11 @@ final class FeedMineUITests: XCTestCase {
         let algeria = app.buttons["country-algeria"]
         XCTAssertTrue(reveal(app, algeria), "the countries list offers Algeria")
         algeria.tap()
-        var source: XCUIElement?
-        for _ in 0..<6 {
-            let toggle = app.switches.matching(NSPredicate(
-                format: "identifier BEGINSWITH 'node-source-toggle-'")).firstMatch
-            if toggle.waitForExistence(timeout: 8) { source = toggle; break }
-            let child = app.buttons.matching(NSPredicate(
-                format: "identifier BEGINSWITH 'node-child-'")).firstMatch
-            guard child.waitForExistence(timeout: 8) else { break }
-            child.tap()
-        }
-        let sourceToggle = try XCTUnwrap(source, "Algeria leads to its source")
+        // The exact frozen-corpus feed: 4 French items, zero eligible for this Portuguese/Brazil profile. The
+        // catalogue key is the switch's identifier, so the fixture is pinned rather than "whichever row is first".
+        let frenchFeed = "https://enriqueiglesias.forumactif.org/feed"
+        let sourceToggle = app.switches["node-source-toggle-\(frenchFeed)"]
+        XCTAssertTrue(reveal(app, sourceToggle), "Algeria's pinned corpus source is offered")
         sourceToggle.tap()
         Thread.sleep(forTimeInterval: 1)
         for _ in 0..<8 where !app.buttons["sources-done"].exists {
@@ -3227,8 +3231,20 @@ final class FeedMineUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.5)
         }
         app.buttons["sources-done"].tap()
-        // The single selected source becomes the reading context; it has no eligible item for this reader, and
-        // the shell must still be the reader's surface.
+        // The single selected source becomes the reading context. It has no eligible item for this reader: the
+        // loading surface is what is drawn and **no card** is presented. Only that state makes the escape
+        // meaningful; a test that ran with content would not be the regression.
+        let loading = element(app, "feed-loading-surface")
+        XCTAssertTrue(loading.waitForExistence(timeout: 45),
+            "the source context is preparing with no eligible item")
+        Thread.sleep(forTimeInterval: 2)
+        let cards = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@",
+                "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"))
+            .allElementsBoundByIndex
+            .filter { $0.exists && $0.frame.height > 40 && $0.frame.intersects(app.windows.firstMatch.frame) }
+        XCTAssertEqual(cards.count, 0, "no card is presented for this ineligible source")
+        // The shell must still be the reader's surface.
         let chip = element(app, "reader-contexts")
         XCTAssertTrue(chip.waitForExistence(timeout: 30),
             "the context control is mounted while the source context has no item")
