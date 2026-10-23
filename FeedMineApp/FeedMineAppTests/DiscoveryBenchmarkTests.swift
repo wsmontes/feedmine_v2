@@ -256,7 +256,10 @@ final class DiscoveryBenchmarkTests: XCTestCase {
             let menu = app.buttons["more-menu"]
             guard menu.waitForExistence(timeout: 20) else { break }
             menu.tap()
-            let entry = app.buttons["antenna.radiowaves.left.and.right"].firstMatch
+            // The reader menu's rows are PopUpButtons to XCUITest on this OS, so the entry is resolved by
+            // identifier across element types (the same rule the context chip follows).
+            let entry = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "identifier == %@", "antenna.radiowaves.left.and.right")).firstMatch
             if entry.waitForExistence(timeout: 5) {
                 entry.tap()
                 opened = true

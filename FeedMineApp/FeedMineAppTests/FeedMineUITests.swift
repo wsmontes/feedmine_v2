@@ -3208,7 +3208,10 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(menu.waitForExistence(timeout: 240), "the reader reaches the feed's chrome")
         // Sources → the countries level → Algeria → its only source. The product's own surface, no injection.
         menu.tap()
-        let sourcesEntry = app.buttons["antenna.radiowaves.left.and.right"].firstMatch
+        // The reader menu's rows are PopUpButtons to XCUITest on this OS; resolve the entry by identifier across
+        // element types instead of assuming Button.
+        let sourcesEntry = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", "antenna.radiowaves.left.and.right")).firstMatch
         XCTAssertTrue(sourcesEntry.waitForExistence(timeout: 10), "the menu offers the source surface")
         sourcesEntry.tap()
         let countries = app.buttons["sources-open-countries"]
