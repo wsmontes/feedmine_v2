@@ -983,8 +983,14 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 30), "the feed scroll view is present")
         let window = app.windows.firstMatch.frame
-        let card = app.descendants(matching: .any).matching(Self.cardIdentifier).firstMatch
-        XCTAssertTrue(card.waitForExistence(timeout: 60), "the source feed presents a card")
+        // One bounded card-identifier query selects a card that is really in the window.
+        // No staticTexts enumeration is used to choose or match it.
+        let cards = app.descendants(matching: .any).matching(Self.cardIdentifier).allElementsBoundByIndex
+        guard let card = cards.first(where: {
+            $0.exists && $0.frame.height > 40 && $0.frame.intersects(window)
+        }) else {
+            return XCTFail("the source feed presents a visible card")
+        }
         let uuid = card.identifier
         let before = card.frame
         XCTAssertTrue(before.height > 40 && before.intersects(window),
