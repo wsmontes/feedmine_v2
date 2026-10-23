@@ -470,6 +470,11 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         let center = CGPoint(x: frame.midX, y: frame.midY)
         XCTAssertTrue(frame.width > 1 && frame.height > 1 && window.contains(center),
             "the opening control is inside the visible window before the tap")
+        let hittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isHittable == true"), object: control)
+        _ = XCTWaiter.wait(for: [hittable], timeout: 10)
+        XCTAssertTrue(control.isHittable,
+            "the opening control is actually hittable before the tap")
         control.tap()
     }
 
