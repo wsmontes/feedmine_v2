@@ -982,24 +982,27 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
             "the active source context is Egypt Independent")
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 30), "the feed scroll view is present")
-        let window = app.windows.firstMatch.frame
-        // One bounded card-identifier query selects a card that is really in the window.
+        let viewport = scroll.frame
+        // One bounded card-identifier query selects a card whose center is inside the
+        // feed viewport, not merely intersecting the window below the header.
         // No staticTexts enumeration is used to choose or match it.
         let cards = app.descendants(matching: .any).matching(Self.cardIdentifier).allElementsBoundByIndex
         guard let card = cards.first(where: {
-            $0.exists && $0.frame.height > 40 && $0.frame.intersects(window)
+            guard $0.exists, $0.frame.height > 40 else { return false }
+            return viewport.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY))
         }) else {
-            return XCTFail("the source feed presents a visible card")
+            return XCTFail("the source feed presents a card inside the viewport")
         }
         let uuid = card.identifier
         let before = card.frame
-        XCTAssertTrue(before.height > 40 && before.intersects(window),
-            "the bound card is visible in the window before the swipe")
+        XCTAssertTrue(viewport.contains(CGPoint(x: before.midX, y: before.midY)),
+            "the bound card is visible inside the feed viewport before the swipe")
         shot("plain-before")
         scroll.swipeUp()
         let after = byIdentifier(app, uuid)
-        let afterVisible = after.exists && after.frame.intersects(window)
-        record("plain-liveness", "uuid=\(uuid) before=\(before) "
+        let afterVisible = after.exists
+            && viewport.contains(CGPoint(x: after.frame.midX, y: after.frame.midY))
+        record("plain-liveness", "uuid=\(uuid) viewport=\(viewport) before=\(before) "
             + "after=\(after.exists ? "\(after.frame)" : "gone") visible=\(afterVisible)")
         if afterVisible {
             XCTAssertGreaterThan(abs(before.minY - after.frame.minY), 20,
