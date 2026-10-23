@@ -3234,7 +3234,19 @@ final class FeedMineUITests: XCTestCase {
         // catalogue key is the switch's identifier, so the fixture is pinned rather than "whichever row is first".
         let frenchFeed = "https://enriqueiglesias.forumactif.org/feed"
         let sourceToggle = app.switches["node-source-toggle-\(frenchFeed)"]
-        XCTAssertTrue(reveal(app, sourceToggle), "Algeria's pinned corpus source is offered")
+        // A country's sources sit under its topic leaves (the catalogue nests them), so the walk descends the
+        // node's own children until the pinned switch is in the tree — bounded, the same route the benchmark
+        // driver uses.
+        var foundPinned = false
+        for _ in 0..<8 {
+            if reveal(app, sourceToggle) { foundPinned = true; break }
+            let child = app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH 'node-child-'")).firstMatch
+            guard child.waitForExistence(timeout: 8) else { break }
+            child.tap()
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertTrue(foundPinned, "Algeria's pinned corpus source is offered")
         sourceToggle.tap()
         Thread.sleep(forTimeInterval: 1)
         for _ in 0..<8 where !app.buttons["sources-done"].exists {
