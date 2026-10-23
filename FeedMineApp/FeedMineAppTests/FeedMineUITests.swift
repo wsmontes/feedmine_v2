@@ -3216,8 +3216,18 @@ final class FeedMineUITests: XCTestCase {
         // Deterministic ineligibility without a network trick: the reader's own language filter is Portuguese.
         // The pinned feed is French, so its source context has no item to draw even though the feed resolves —
         // the same product criterion that left the measured source context empty.
+        // The chrome is only truly usable once the main feed's preparation cover has lifted, and the cover lifts
+        // when the feed has content — on the old screen the header is behind it. The fixture first exercises that
+        // ordinary reading state, so the filter and source steps are not racing the first-screen gate.
+        let firstCard = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier MATCHES %@",
+                "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")).firstMatch
+        guard firstCard.waitForExistence(timeout: 240) else {
+            XCTFail("the reader's feed presents a card before the source fixture"); return
+        }
+        Thread.sleep(forTimeInterval: 2)
         let filterButton = app.buttons["filter-button"]
-        guard waitUsable(filterButton, app, timeout: 30) else {
+        guard filterButton.isHittable else {
             XCTFail("the filter control is usable"); return
         }
         filterButton.tap()
