@@ -347,17 +347,16 @@ final class FeedPresentationHandoffTests: XCTestCase {
     }
     func testLocalWorkRemainingDoesNotMeanExhaustion() async throws {
         let f = try fixture(), state = try await warm(f)
-        let coldFixture = try fixture(history: 0, context: .init(request: .source(SourceID())))
-        let unrelatedSource = SourceID()
-        let unrelatedTarget = try AcquisitionTargetAuthority(database: coldFixture.database).register(
-            id: AcquisitionTargetID(),connectorKind: .syndication,authorizedSources: [unrelatedSource])
-        let observations = (0..<3).map { index in
-            AcquisitionObservation(objectIdentity: .init(connectorKind: .syndication, namespace: "local", value: "unrelated-\(index)", role: .object),
-                versionIdentity: nil, precedence: .makeCurrent, availability: .available, headline: "Unrelated", summary: nil,
-                bodyText: nil, authoredAt: nil, modifiedAt: nil, observedAt: Date(timeIntervalSince1970: Double(index)), language: nil,
-                primaryLink: nil, searchProjection: nil, providerID: nil, memberships: [.init(sourceID: unrelatedSource, kind: .direct)], mediaCandidates: [])!
-        }
-        _ = try AdmissionPolicy(database: coldFixture.database).admit(.init(targetID: unrelatedTarget.id, targetGeneration: 1,
+        let source = SourceID()
+        let coldFixture = try fixture(history: 0, context: .init(request: .source(source),
+            filter: ReaderFilter(languages: ["en"])))
+        // Supply belongs to the selected source, but the reader's language filter excludes it: the
+        // source-scoped window has real examined work, so the walk cannot call the source exhausted.
+        let observations = [AcquisitionObservation(objectIdentity: .init(connectorKind: .syndication, namespace: "local", value: "filtered-0", role: .object),
+            versionIdentity: nil, precedence: .makeCurrent, availability: .available, headline: "Filtered local", summary: nil,
+            bodyText: nil, authoredAt: nil, modifiedAt: nil, observedAt: Date(timeIntervalSince1970: 1), language: "pt-BR",
+            primaryLink: nil, searchProjection: nil, providerID: nil, memberships: [.init(sourceID: source, kind: .direct)], mediaCandidates: [])!]
+        _ = try AdmissionPolicy(database: coldFixture.database).admit(.init(targetID: coldFixture.target.id, targetGeneration: 1,
             expectedCheckpointRevision: 0, observations: observations, nextCheckpoint: nil)!)
         let outcome = try await cold(coldFixture, local: 1)
         guard case .localWorkRemaining(let progress) = outcome else { return XCTFail("Expected actual bounded local miss") }

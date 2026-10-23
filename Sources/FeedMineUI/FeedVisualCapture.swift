@@ -273,8 +273,8 @@ struct FeedVisualCapture {
     /// and asks for the opposite one (measured ±1.400 to ±6.800 pt alternations), and a stale proof carries a
     /// content top from a layout that has already moved. A fresh anchor proof is the **only** writer: the launch
     /// layout adjusts the content offset after the first correction and the anchor reports again when it moves
-    /// (measured 2026-10-22: an 80 pt native shift followed by a fresh proof of the same content top). A cached
-    /// top paired with a geometry-only pass is deliberately not a third path — it would write against a layout
+    /// (measured 2026-10-22: an 80 pt native shift followed by a fresh proof of the same content top). Reusing an
+    /// earlier top for a geometry-only pass is deliberately not a third path — it would write against a layout
     /// the anchor no longer describes, and it can fire on the geometry pass that precedes a real gesture.
     /// Returns true when a native write happened; the callback carrying this proof is then stale by construction.
     @discardableResult
