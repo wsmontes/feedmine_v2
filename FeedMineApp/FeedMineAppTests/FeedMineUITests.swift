@@ -3206,18 +3206,21 @@ final class FeedMineUITests: XCTestCase {
         open.tap()
         let menu = app.buttons["more-menu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 240), "the reader reaches the feed's chrome")
+        // The chrome must be *usable*, not merely present: after the first-run transition it can exist behind the
+        // preparation surface until the feed it belongs to has content. On the old screen that is exactly the
+        // reachability the regression is about, so the wait is on hittability, bounded.
+        XCTAssertTrue(waitHittable(menu, timeout: 180), "the reader's chrome is usable")
         // Sources → the countries level → Algeria → its only source. The product's own surface, no injection.
-        // The header can still be settling after the first-run transition (a tap at {-1,-1} opens nothing), and the
-        // menu's rows are PopUpButtons here, so the entry is resolved by identifier across element types.
+        // The menu's rows are PopUpButtons here, so the entry is resolved by identifier across element types; the
+        // reader's own gesture is retried when a first open arrives before the destinations are installed.
         let sourcesEntry = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == %@", "antenna.radiowaves.left.and.right")).firstMatch
         var openedSources = false
-        for _ in 0..<20 {
-            if menu.isHittable {
-                menu.tap()
-                if sourcesEntry.waitForExistence(timeout: 3) { openedSources = true; break }
-            }
-            Thread.sleep(forTimeInterval: 0.5)
+        for _ in 0..<4 {
+            menu.tap()
+            if sourcesEntry.waitForExistence(timeout: 5) { openedSources = true; break }
+            if menu.exists { menu.tap() }
+            Thread.sleep(forTimeInterval: 1)
         }
         XCTAssertTrue(openedSources, "the menu offers the source surface")
         sourcesEntry.tap()
@@ -3266,6 +3269,17 @@ final class FeedMineUITests: XCTestCase {
         XCTAssertTrue(waitForAbsence(element(app, "reader-context-label"), timeout: 30),
             "the reader returns to the main context without waiting for content")
         XCTAssertTrue(element(app, "reader-contexts").isHittable, "and the control remains available")
+    }
+
+    /// Waits until a control can really be used, not merely exists.
+    @MainActor
+    private func waitHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if element.exists && element.isHittable { return true }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return element.exists && element.isHittable
     }
 
     /// Scrolls a lazy list until the control is really reachable.
