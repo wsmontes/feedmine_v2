@@ -251,7 +251,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
     nonisolated private static func prepared(_ selection: SelectionResult, ids: [PublicationCardID]? = nil) -> LocalPreparedPublication {
         .init(inputs: selection.orderedCandidates.map {
             .init(origin: .init(originRecordID: $0.originRecordID, originRevisionID: $0.originRevisionID,
-                sourceID: nil, providerID: $0.providerID, sourceDisplayName: "Cold source", providerDisplayName: nil),
+                sourceID: $0.sourceIDs.first, providerID: $0.providerID, sourceDisplayName: "Cold source", providerDisplayName: nil),
                 contentEntityID: nil, contentClusterID: nil, primaryAction: .localContentDetail, presentation: .textOnly)
         }, cardIDs: ids ?? selection.orderedCandidates.map { _ in PublicationCardID() })
     }
@@ -379,23 +379,26 @@ final class ColdFeedBootstrapTests: XCTestCase {
         try assertAbsent(f, identity: id)
     }
 
-    /// The preserved real-container failure: the selected source owns no local supply,
-    /// but unrelated global supply fills the structural page. The source's own local-first
-    /// walk can never progress, so the cold bootstrap must reach acquisition instead of
-    /// returning `.localWorkRemaining` forever.
-    func testSourceWithNoLocalSupplyAcquiresDespiteUnrelatedGlobalSupply() async throws {
-        let f = try fixture(sourceContext: true), id = identity()
-        // The fixture observes remote items at 1970-01-01 00:00:50; seed the unrelated
-        // local rows older than that so the fetched source item is the newest supply.
-        try Self.seed(f.database, source: SourceID(), count: 3, time: 1)
-        let outcome = try await run(f, identity: id, local: 1)
-        guard case .published(let snapshot) = outcome else {
-            return XCTFail("Expected acquisition to publish, got \(outcome)")
+    /// The preserved real-container failure, in both meaningful global orderings: the
+    /// selected source owns no initial supply, so acquisition must run; after the fetch,
+    /// the first-publication window must select the source's new item even when unrelated
+    /// global rows are newer (time 100) or older (time 1) than the remote observation (50).
+    /// The published card must carry the selected source identity, not just a count.
+    func testSourceContextPublishesAfterAcquisitionWithUnrelatedSupplyNewerOrOlder() async throws {
+        for unrelatedTime in [1.0, 100.0] {
+            let f = try fixture(sourceContext: true), id = identity()
+            try Self.seed(f.database, source: SourceID(), count: 3, time: unrelatedTime)
+            let outcome = try await run(f, identity: id, local: 1)
+            guard case .published(let snapshot) = outcome else {
+                return XCTFail("unrelatedTime \(unrelatedTime): expected publication, got \(outcome)")
+            }
+            XCTAssertEqual(f.http.calls, 1, "unrelatedTime \(unrelatedTime)")
+            XCTAssertEqual(f.journal.values.filter { $0 == "prepare" }.count, 1)
+            XCTAssertEqual(snapshot.window.items.count, 1)
+            XCTAssertEqual(snapshot.window.items.first?.sourceID, f.source,
+                "unrelatedTime \(unrelatedTime): the published card must belong to the selected source")
+            try await assertPublished(f, identity: id, snapshot: snapshot)
         }
-        XCTAssertEqual(f.http.calls, 1)
-        XCTAssertEqual(f.journal.values.filter { $0 == "prepare" }.count, 1)
-        XCTAssertEqual(snapshot.window.items.count, 1)
-        try await assertPublished(f, identity: id, snapshot: snapshot)
     }
     func testC4EmptyAndNoEligibleTargetIsUnavailable() async throws {
         let f = try fixture(registrations: false), id = identity()
@@ -621,7 +624,7 @@ final class ColdFeedBootstrapTests: XCTestCase {
         catch { XCTAssertEqual(error as? ColdFeedBootstrapError, .sessionAlreadyInstalled) }
         XCTAssertEqual(f.http.calls, 1); XCTAssertEqual(f.journal.values.filter { $0 == "prepare" }.count, 1)
     }
-    func testSecondNonexhaustedMissStopsWithSecondProgressAndOrderedResults() async throws {
+    func testSourceFetchPublishesWhenSecondWindowHasUnrelatedRows() async throws {
         let f = try fixture(sourceContext: true), id = identity(), db = f.database
         let http = ColdHTTPFixture(onStart: {
             do { try Self.seed(db, source: SourceID(), count: 2, time: 100) }
@@ -630,17 +633,15 @@ final class ColdFeedBootstrapTests: XCTestCase {
         addTeardownBlock { http.remove() }
         let acquisition = try snapshot(db, [registration(f.target, source: f.source, http: http)])
         let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
-            acquisition: acquisition, coordinator: acquisition.makeCoordinator(), prepare: { _ in
-                XCTFail("Second bounded window contains no matching source"); throw Failure.preparation
-            })
+            acquisition: acquisition, coordinator: acquisition.makeCoordinator(), prepare: { Self.prepared($0) })
         let outcome = try await bootstrap.run(identity: id, resources: resources(local: 1), backwardCapacity: 0, forwardCapacity: 1)
-        guard case .noPublicationAfterAcquisition(let progress, let results) = outcome else {
-            return XCTFail("Expected second-attempt progress without further work")
+        guard case .published(let snapshot) = outcome else {
+            return XCTFail("Expected the fetched source item to publish, got \(outcome)")
         }
-        XCTAssertEqual(progress.examinedCount, 1); XCTAssertFalse(progress.exhausted); XCTAssertNotNil(progress.nextCursor)
-        XCTAssertEqual(results.map(\.targetID), [f.target.id]); XCTAssertTrue(results[0].selectableSupplyChanged)
         XCTAssertEqual(http.calls, 1); XCTAssertEqual(try canonical(f).count, 3)
-        try assertAbsent(f, identity: id)
+        XCTAssertEqual(snapshot.window.items.first?.sourceID, f.source,
+            "the source item publishes despite newer unrelated rows")
+        try await assertPublished(f, identity: id, snapshot: snapshot)
     }
     func testColdWindowsShareOneMediaDeadlineAndTheNextOpportunityRenewsIt() async throws {
         let f = try fixture(), id = identity()

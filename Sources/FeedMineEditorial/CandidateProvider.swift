@@ -42,22 +42,17 @@ public struct CandidateProvider: Sendable {
 
     public init(contentStore: ContentStore) { self.contentStore = contentStore }
 
-    /// Whether the context's own source owns any canonical local supply. Main and
-    /// search contexts answer true: local-first remains their documented rule.
-    public func hasLocalSupply(sourceID: SourceID) throws -> Bool {
-        try contentStore.hasSupply(sourceID: sourceID)
-    }
-
     /// Uses only the plan context. Editorial policy versions are not executed in 3C.
     public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?, examinedCapacity: Int,
-        operation: FeedReplenishmentOperationID? = nil, consult: String = "slice",
+        sourceScoped: Bool = false, operation: FeedReplenishmentOperationID? = nil, consult: String = "slice",
         trace: ReplenishmentTrace? = nil) throws -> CandidateSupplyWindow {
         try candidates(for: plan, after: cursor, examinedCapacity: examinedCapacity, originIDs: nil,
-            operation: operation, consult: consult, trace: trace)
+            sourceScoped: sourceScoped, operation: operation, consult: consult, trace: trace)
     }
 
     public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?,
-        examinedCapacity: Int, originIDs: [OriginRecordID]?, operation: FeedReplenishmentOperationID? = nil,
+        examinedCapacity: Int, originIDs: [OriginRecordID]?, sourceScoped: Bool = false,
+        operation: FeedReplenishmentOperationID? = nil,
         consult: String = "slice", trace: ReplenishmentTrace? = nil) throws -> CandidateSupplyWindow {
         let sourceID: SourceID?
         switch plan.context.request {
@@ -65,9 +60,17 @@ public struct CandidateProvider: Sendable {
         case .source(let id): sourceID = id
         case .search: sourceID = nil
         }
-        let window = try contentStore.candidateWindow(sourceID: sourceID,
-            after: cursor.map { ContentStore.CandidateCursor(sortDate: $0.sortDate, originRecordID: $0.originRecordID) },
-            examinedCapacity: examinedCapacity, originIDs: originIDs)
+        let contentCursor = cursor.map {
+            ContentStore.CandidateCursor(sortDate: $0.sortDate, originRecordID: $0.originRecordID)
+        }
+        let window: ContentStore.CandidateWindow
+        if sourceScoped, let sourceID, originIDs == nil {
+            window = try contentStore.sourceCandidateWindow(sourceID: sourceID,
+                after: contentCursor, examinedCapacity: examinedCapacity)
+        } else {
+            window = try contentStore.candidateWindow(sourceID: sourceID,
+                after: contentCursor, examinedCapacity: examinedCapacity, originIDs: originIDs)
+        }
         // T6: the supply is where a filter is enforced (plan:147 — never on already-drawn cards). Only the
         // criteria this build can answer are consulted, and a missing fact never satisfies one.
         let eligibility = ReaderFilterEligibility(filter: plan.context.key.filter)

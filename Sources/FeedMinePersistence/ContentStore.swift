@@ -76,29 +76,33 @@ public struct ContentStore: Sendable {
         public let exhausted: Bool
     }
 
-    /// Whether this source owns any canonical local supply at all. A Source context may
-    /// use this to decide whether its local-first walk can ever produce a candidate:
-    /// the bounded structural window is global, so a full page of unrelated supply is
-    /// not local work for this source. It reads one indexed existence probe and moves
-    /// no cursor, publication or reader state.
-    public func hasSupply(sourceID: SourceID) throws -> Bool {
-        try database.read { db in
-            try Bool.fetchOne(db, sql: """
-                SELECT EXISTS(
-                    SELECT 1 FROM source_memberships m
-                    JOIN selection_supply s ON s.origin_record_id = m.origin_record_id
-                    WHERE m.source_id = ?
-                )
-                """, arguments: [Self.key(sourceID.rawValue)]) == true
-        }
-    }
-
     public func candidateWindow(sourceID: SourceID?, after cursor: CandidateCursor?, examinedCapacity: Int) throws -> CandidateWindow {
         try candidateWindow(sourceID: sourceID, after: cursor, examinedCapacity: examinedCapacity, originIDs: nil)
     }
 
+    /// The first-publication window for a **Source** context. Unlike the global
+    /// `candidateWindow` contract (which returns a global structural page and filters
+    /// membership after the bound), this query puts the membership predicate inside
+    /// the bounded SQL, so the returned rows, `examinedCount`, cursor and exhaustion
+    /// are the source's own. A source with no supply is exhausted; a fetched source
+    /// item is visible even when unrelated global rows sort ahead of it. The query
+    /// still walks the `selection_supply` date index and probes membership per row —
+    /// it is a scan with an indexed membership probe, not a source-indexed lookup;
+    /// no schema index is added. Main and Search keep the global window.
+    public func sourceCandidateWindow(sourceID: SourceID, after cursor: CandidateCursor?,
+        examinedCapacity: Int) throws -> CandidateWindow {
+        try candidateWindow(sourceID: sourceID, after: cursor, examinedCapacity: examinedCapacity,
+            originIDs: nil, scopedToSource: true)
+    }
+
     public func candidateWindow(sourceID: SourceID?, after cursor: CandidateCursor?,
         examinedCapacity: Int, originIDs: [OriginRecordID]?) throws -> CandidateWindow {
+        try candidateWindow(sourceID: sourceID, after: cursor, examinedCapacity: examinedCapacity,
+            originIDs: originIDs, scopedToSource: false)
+    }
+
+    private func candidateWindow(sourceID: SourceID?, after cursor: CandidateCursor?,
+        examinedCapacity: Int, originIDs: [OriginRecordID]?, scopedToSource: Bool) throws -> CandidateWindow {
         guard examinedCapacity > 0 else { throw ContentStoreError.invalidCapacity }
         return try database.read { db in
             try Self.coding {
@@ -118,6 +122,10 @@ public struct ContentStore: Sendable {
                     let date = try PersistenceValueCoding.date(cursor.sortDate, field: "cursor.sort_date")
                     conditions.append("(sort_date, origin_record_id) < (?, ?)")
                     arguments += [date, Self.key(cursor.originRecordID.rawValue)]
+                }
+                if scopedToSource, let sourceID {
+                    conditions.append("EXISTS (SELECT 1 FROM source_memberships m WHERE m.origin_record_id = selection_supply.origin_record_id AND m.source_id = ?)")
+                    arguments.append(Self.key(sourceID.rawValue))
                 }
                 arguments.append(examinedCapacity)
                 let filter = conditions.isEmpty ? "" : " WHERE " + conditions.joined(separator: " AND ")

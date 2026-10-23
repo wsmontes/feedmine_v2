@@ -97,15 +97,27 @@ final class ContentStoreCandidateWindowTests: XCTestCase {
         }
     }
 
-    func testHasSupplyIsScopedToItsOwnMembershipAndIgnoresOtherSources() throws {
+    func testSourceScopedWindowExaminesOnlyThatSourcesSupply() throws {
         try withDatabase { _, store in
             let requested = SourceID()
-            try insert(1, into: store, source: requested)
-            try insert(2, into: store, source: source)
-            XCTAssertTrue(try store.hasSupply(sourceID: requested))
-            XCTAssertTrue(try store.hasSupply(sourceID: source))
-            XCTAssertFalse(try store.hasSupply(sourceID: SourceID()),
-                "unrelated supply is not local work for this source")
+            // Six unrelated rows sort ahead of the requested source's two rows.
+            for n in 1...6 {
+                try insert(n, into: store, date: time.addingTimeInterval(Double(n)), source: source)
+            }
+            try insert(11, into: store, date: time.addingTimeInterval(-10), source: requested)
+            try insert(12, into: store, date: time.addingTimeInterval(-20), source: requested)
+            let result = try store.sourceCandidateWindow(sourceID: requested, after: nil, examinedCapacity: 3)
+            XCTAssertEqual(result.records.map(\.originRecordID), [origin(11), origin(12)],
+                "the window is bounded by the source's own supply, not the global page")
+            XCTAssertEqual(result.examinedCount, 2)
+            XCTAssertTrue(result.exhausted)
+            XCTAssertEqual(result.nextCursor, ContentStore.CandidateCursor(
+                sortDate: time.addingTimeInterval(-20), originRecordID: origin(12)))
+            let empty = try store.sourceCandidateWindow(sourceID: SourceID(), after: nil, examinedCapacity: 3)
+            XCTAssertEqual(empty.records, [])
+            XCTAssertEqual(empty.examinedCount, 0)
+            XCTAssertNil(empty.nextCursor)
+            XCTAssertTrue(empty.exhausted, "a source with no supply is exhausted even when others have rows")
         }
     }
 

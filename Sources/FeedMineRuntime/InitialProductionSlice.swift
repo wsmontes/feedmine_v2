@@ -75,20 +75,19 @@ public struct InitialProductionSlice: Sendable {
         }
     }
 
-    /// Whether this context's own source owns any canonical local supply. Main and
-    /// search contexts answer true; a Source context answers false only when the
-    /// selected source has no supply at all, which is the one case in which its
-    /// local-first walk can never make progress.
-    public func hasLocalSupply(for context: FeedContext) throws -> Bool {
-        guard case .source(let sourceID) = context.request else { return true }
-        return try candidateProvider.hasLocalSupply(sourceID: sourceID)
+    /// The first publication of a Source context is bounded by that source's own
+    /// supply, not by unrelated global rows. Main and Search keep the global window.
+    private func firstWindow(for request: Request) throws -> CandidateSupplyWindow {
+        let sourceScoped: Bool
+        if case .source = request.plan.context.request { sourceScoped = true } else { sourceScoped = false }
+        return try candidateProvider.candidates(for: request.plan, after: request.after,
+            examinedCapacity: request.examinedCapacity, sourceScoped: sourceScoped)
     }
 
     /// The next bounded structural window, including unresolved revisions so preparation can
     /// work on them. Composition supplies resources; Runtime retains ownership of supply lookup.
     public func revisionsToPrepare(for request: Request) throws -> [OriginRevisionID] {
-        let window = try candidateProvider.candidates(for: request.plan,
-            after: request.after, examinedCapacity: request.examinedCapacity)
+        let window = try firstWindow(for: request)
         switch request.policy.eligibility {
         case .structuralOnly: return window.candidates.map(\.originRevisionID)
         case .selectedSources(let selected):
@@ -104,8 +103,7 @@ public struct InitialProductionSlice: Sendable {
         }
         // The structural walk this attempt advances; the first Edition publishes nothing yet, so the only facts the
         // window needs are its own candidates.
-        let structural = try candidateProvider.candidates(for: request.plan,
-            after: request.after, examinedCapacity: request.examinedCapacity)
+        let structural = try firstWindow(for: request)
         // Same rule as the live walk: a story this walk skipped for pending media is re-offered here, placed before
         // the structural candidates in the array (SelectionEngine orders by its comparator) and contributing nothing
         // to what the walk reports as examined.
