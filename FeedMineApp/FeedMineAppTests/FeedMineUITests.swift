@@ -3212,7 +3212,7 @@ final class FeedMineUITests: XCTestCase {
         // The chrome must be *usable*, not merely present: after the first-run transition it can exist behind the
         // preparation surface until the feed it belongs to has content. On the old screen that is exactly the
         // reachability the regression is about, so the wait is on hittability, bounded.
-        XCTAssertTrue(waitHittable(menu, timeout: 180), "the reader's chrome is usable")
+        XCTAssertTrue(waitUsable(menu, app, timeout: 180), "the reader's chrome is usable")
         // Deterministic ineligibility without a network trick: the reader's own language filter is Portuguese.
         // The pinned feed is French, so its source context has no item to draw even though the feed resolves —
         // the same product criterion that left the measured source context empty.
@@ -3226,7 +3226,7 @@ final class FeedMineUITests: XCTestCase {
             XCTFail("the filter selects Portuguese"); return
         }
         app.buttons["filter-done"].tap()
-        guard menu.waitForExistence(timeout: 60), waitHittable(menu, timeout: 60) else {
+        guard menu.waitForExistence(timeout: 60), waitUsable(menu, app, timeout: 60) else {
             XCTFail("the feed's chrome returns after the filter"); return
         }
         // The exact pinned feed at its proven catalogue placement. The node ids are the shipped catalogue's own
@@ -3324,15 +3324,23 @@ final class FeedMineUITests: XCTestCase {
         return false
     }
 
-    /// Waits until a control can really be used, not merely exists.
+    /// Waits until a control can really be used, not merely exists. The check is the project's own frame-in-window
+    /// rule rather than `isHittable`: during the rebuild that follows a filter, XCUITest raised "Failed to determine
+    /// hittability" for a control whose snapshot was in flight.
     @MainActor
-    private func waitHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+    private func waitUsable(_ element: XCUIElement, _ app: XCUIApplication,
+        timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if element.exists && element.isHittable { return true }
+            if element.exists {
+                let frame = element.frame
+                let window = app.windows.firstMatch.frame
+                if frame.width > 1, frame.height > 1,
+                    window.contains(CGPoint(x: frame.midX, y: frame.midY)) { return true }
+            }
             Thread.sleep(forTimeInterval: 0.5)
         }
-        return element.exists && element.isHittable
+        return element.exists
     }
 
     /// Scrolls a lazy list until the control is really reachable.
