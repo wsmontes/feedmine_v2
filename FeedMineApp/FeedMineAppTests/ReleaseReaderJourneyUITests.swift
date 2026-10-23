@@ -730,9 +730,10 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
     /// text-size setting is measured (it is the card scale in the approved vocabulary) instead of being presumed.
     func test04AppearanceControlsRenderOnTheLocalSurface() throws {
         let app = try launch()
-        // The baseline this experiment measures is the product's own medium text size. It is set explicitly so a
-        // previous interrupted run cannot make "regular" mean a different scale.
+        // The baseline this experiment measures is the product's own medium text size and its day period. Both are
+        // set explicitly so a previous interrupted run cannot make "regular" mean a different scale or period.
         _ = setTypeScale(app, "Médio")
+        setNightMode(app, on: false)
         guard ensureSource(app, containing: ["egypt independent", "egyptindependent"], feed: Self.egyptFeed) != nil else {
             return XCTFail("the public Egypt Independent feed publishes a card")
         }
@@ -801,8 +802,11 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         XCTAssertTrue(body.waitForExistence(timeout: 60))
         let paletteShot = XCUIScreen.main.screenshot()
         let palettePixel = averageRGB(paletteShot.image, nx: 0.94, ny: 0.55)
+        let windowFrame = app.windows.firstMatch.frame
+        let surfaceRect = CGRect(x: 0, y: 100, width: windowFrame.width,
+            height: max(1, windowFrame.height - 160))
         let accentDifference = differingPixels(regularShot.image, paletteShot.image,
-            rect: originFrame, window: app.windows.firstMatch.frame)
+            rect: surfaceRect, window: windowFrame)
         record("appearance-palette", "family=Monocromático bg=\(format(palettePixel)) "
             + "regular_bg=\(format(regularPixel)) origin_frame=\(originFrame) "
             + "accent_pixels_changed=\(accentDifference)")
