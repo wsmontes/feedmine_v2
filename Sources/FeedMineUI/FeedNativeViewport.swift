@@ -9,6 +9,9 @@ import FeedMineDomain
 struct NativeFeedViewport: ViewModifier {
     @Binding var capture: FeedVisualCapture
     let store: FeedScreenStore
+    /// TEMPORARY liveness diagnostic: release the card-id scroll anchor after the launch
+    /// restore window. Not shippable; remove with the experiment.
+    @State private var scrollPositionReleased = false
 
     /// A apresentação que a posição **segue**: a janela segurada enquanto um gesto está em curso, e a publicada
     /// fora dele — a mesma leitura que a lista fazia antes do desacoplamento, agora lida **dentro** do modificador
@@ -72,7 +75,8 @@ struct NativeFeedViewport: ViewModifier {
             // `Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.testNativeHostedLayoutPreservesPositionWithoutInventingReading`
             // (440 -> 369) quando a âncora explícita foi tentada.
             .scrollPosition(id: Binding(get: {
-                capture.positionID ?? presented?.window.anchor.cardID
+                guard !scrollPositionReleased else { return nil }
+                return capture.positionID ?? presented?.window.anchor.cardID
             }, set: { id in
                 guard matchesScope, let id, let presented,
                     presented.window.items.contains(where: { $0.id == id }) else { return }
@@ -229,6 +233,12 @@ struct NativeFeedViewport: ViewModifier {
                 capture = FeedVisualCapture()
                 capture.renderOwner = ObjectIdentifier(store)
                 store.setReadingInteractionActive(false)
+            }
+            // TEMPORARY liveness diagnostic: the launch restore owns the anchor for a
+            // bounded window; the reader drag under test happens after it. Not shippable.
+            .task {
+                try? await Task.sleep(for: .seconds(2))
+                scrollPositionReleased = true
             }
     }
 }
