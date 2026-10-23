@@ -999,7 +999,8 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
             "the bound card is visible inside the feed viewport before the swipe")
         shot("plain-before")
         // A real drag inside the feed viewport, not only the XCUIElement swipe helper.
-        let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+        // Start on the feed's blank left margin so the variable is the card surface itself.
+        let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5))
         let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
         start.press(forDuration: 0.1, thenDragTo: end)
         let after = byIdentifier(app, uuid)
