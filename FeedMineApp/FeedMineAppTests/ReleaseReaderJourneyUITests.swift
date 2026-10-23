@@ -819,6 +819,20 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         byIdentifier(app, "reading.close").tap()
         XCTAssertTrue(SurfaceTest.waitForAbsence(body, timeout: 30))
 
+        // Night mode can only be observed against a day period. The clock drives the period while adaptive
+        // palette is on, so pin the day period, measure it, then turn night mode on and measure the same card.
+        setNightMode(app, on: false)
+        setFollowsClock(app, on: false)
+        guard sameCard(app, uuid) != nil else {
+            return XCTFail("the same card \(uuid) remains in the feed for the day baseline")
+        }
+        open(app, uuid)
+        XCTAssertTrue(body.waitForExistence(timeout: 60))
+        let dayShot = XCUIScreen.main.screenshot()
+        let dayPixel = averageRGB(dayShot.image, nx: 0.94, ny: 0.55)
+        byIdentifier(app, "reading.close").tap()
+        XCTAssertTrue(SurfaceTest.waitForAbsence(body, timeout: 30))
+
         setNightMode(app, on: true)
         guard let cardNight = sameCard(app, uuid) else {
             return XCTFail("the same card \(uuid) remains in the feed after night mode")
@@ -829,16 +843,17 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         let nightShot = XCUIScreen.main.screenshot()
         let nightPixel = averageRGB(nightShot.image, nx: 0.94, ny: 0.55)
         let nightBodyHeight = body.frame.height
-        record("appearance-night", "bg=\(format(nightPixel)) body_h=\(nightBodyHeight) "
-            + "regular_bg=\(format(regularPixel)) pixel_delta=\(pixelDistance(regularPixel, nightPixel))")
+        record("appearance-night", "day_bg=\(format(dayPixel)) night_bg=\(format(nightPixel)) "
+            + "body_h=\(nightBodyHeight) pixel_delta=\(pixelDistance(dayPixel, nightPixel))")
         shot("appearance-night")
-        XCTAssertGreaterThan(pixelDistance(regularPixel, nightPixel), 2,
+        XCTAssertGreaterThan(pixelDistance(dayPixel, nightPixel), 2,
             "night mode changes the page the reading surface really draws")
         byIdentifier(app, "reading.close").tap()
         XCTAssertTrue(SurfaceTest.waitForAbsence(body, timeout: 30))
 
         // Restore the owned preferences.
         setNightMode(app, on: false)
+        setFollowsClock(app, on: true)
         _ = setPalette(app, originalPalette, required: false)
         _ = setTypeScale(app, "Médio", required: false)
         record("appearance-restored", "type=Médio palette=\(originalPalette) night=off")
@@ -1045,6 +1060,25 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         case "monochrome", "monocromático": "Monocromático"
         default: value
         }
+    }
+
+    private func setFollowsClock(_ app: XCUIApplication, on: Bool) {
+        SurfaceTest.menuEntry(app, "Ajustes")
+        XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 30))
+        let clock = app.switches["settings-circadian-palette"]
+        XCTAssertTrue(SurfaceTest.scrollIntoView(clock, in: app, timeout: 20))
+        let expected = on ? "1" : "0"
+        if (clock.value as? String) != expected {
+            let control = clock.switches.firstMatch
+            (control.exists ? control : clock).tap()
+            let deadline = Date().addingTimeInterval(20)
+            while Date() < deadline, (clock.value as? String) != expected {
+                Thread.sleep(forTimeInterval: 0.2)
+            }
+        }
+        record("clock-setting", "followsClock=\(on) value=\(clock.value ?? "-")")
+        app.buttons["settings-done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
     }
 
     private func setNightMode(_ app: XCUIApplication, on: Bool) {
