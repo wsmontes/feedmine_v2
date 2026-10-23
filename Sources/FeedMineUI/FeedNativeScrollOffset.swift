@@ -192,24 +192,9 @@ struct FeedNativeScrollProbe: UIViewRepresentable {
         private func resolveScrollView() {
             var ancestor = superview
             while let view = ancestor {
-                if let scroll = view as? UIScrollView {
-                    access.scrollView = scroll
-                    log(scroll)
-                    return
-                }
+                if let scroll = view as? UIScrollView { access.scrollView = scroll; return }
                 ancestor = view.superview
             }
-        }
-        /// TEMPORARY Release liveness diagnostic. Logging only.
-        private func log(_ scroll: UIScrollView) {
-            let minOffset = -scroll.adjustedContentInset.top
-            let maxOffset = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
-            NSLog("FEEDMINE_LIVENESS probe scroll=%@ frame=%@ bounds=%@ contentSize=%@ inset=%@ adjusted=%@ min=%.2f max=%.2f start=%.2f enabled=%d offset=%.2f pan=%ld",
-                String(describing: ObjectIdentifier(scroll)), String(describing: scroll.frame),
-                String(describing: scroll.bounds), String(describing: scroll.contentSize),
-                String(describing: scroll.contentInset), String(describing: scroll.adjustedContentInset),
-                minOffset, maxOffset, scroll.contentOffset.y, scroll.isScrollEnabled ? 1 : 0,
-                scroll.contentOffset.y, scroll.panGestureRecognizer.state.rawValue)
         }
     }
 }

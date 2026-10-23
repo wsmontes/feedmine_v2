@@ -1,7 +1,4 @@
 import SwiftUI
-#if canImport(UIKit)
-import UIKit
-#endif
 #if DEBUG
 import OSLog
 #endif
@@ -52,26 +49,6 @@ struct NativeFeedViewport: ViewModifier {
         capture.adoptRestoration(resolved, sequenceID: presented?.provenance.sequenceID)
     }
 
-    #if canImport(UIKit)
-    /// TEMPORARY Release liveness diagnostic. Logging only; no state writes.
-    private func logNativeScroll(_ phase: ScrollPhase) {
-        guard let scroll = capture.nativeScrollOffset.scrollView else {
-            NSLog("FEEDMINE_LIVENESS phase=%@ scroll=nil", String(describing: phase))
-            return
-        }
-        let minOffset = -scroll.adjustedContentInset.top
-        let maxOffset = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
-        NSLog("FEEDMINE_LIVENESS phase=%@ scroll=%@ frame=%@ bounds=%@ contentSize=%@ inset=%@ adjusted=%@ min=%.2f max=%.2f start=%.2f enabled=%d tracking=%d dragging=%d offset=%.2f pan=%ld",
-            String(describing: phase), String(describing: ObjectIdentifier(scroll)),
-            String(describing: scroll.frame), String(describing: scroll.bounds),
-            String(describing: scroll.contentSize), String(describing: scroll.contentInset),
-            String(describing: scroll.adjustedContentInset), minOffset, maxOffset,
-            scroll.contentOffset.y, scroll.isScrollEnabled ? 1 : 0,
-            scroll.isTracking ? 1 : 0, scroll.isDragging ? 1 : 0,
-            scroll.contentOffset.y, scroll.panGestureRecognizer.state.rawValue)
-    }
-    #endif
-
     // Card bounds use the container viewport; visibleRect may also include safe-area insets.
     private func visualGeometry(_ geometry: ScrollGeometry) -> FeedVisualGeometry {
         .init(offset: geometry.contentOffset.y + geometry.contentInsets.top,
@@ -102,9 +79,6 @@ struct NativeFeedViewport: ViewModifier {
                 observePosition(id, presented: presented)
             }))
             .onScrollPhaseChange { oldPhase, phase, context in
-                #if canImport(UIKit)
-                logNativeScroll(phase)
-                #endif
                 capture.adoptRestoration(store.state.presentation?.restoredPosition,
                     sequenceID: store.state.presentation?.provenance.sequenceID)
                 #if DEBUG
