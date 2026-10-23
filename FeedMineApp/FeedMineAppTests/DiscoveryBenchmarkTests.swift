@@ -189,6 +189,17 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         return onScreenCard(app, card)
     }
 
+    /// Polls a condition until it holds or the bound expires. The bound is stated by the caller; there is no
+    /// unconditional sleep in the protocol — a wait exists to let the product's own decision be observed.
+    private func waitUntil(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return condition()
+    }
+
     /// The scene B04 measures: an invitation block that is on screen **above** the reader's card, plus that
     /// card's identity and frame. The block above the reader is the case an anchor-only check cannot see: when the
     /// block's own form changes (answering makes it shorter), everything under it moves, and the anchor is under it
@@ -450,9 +461,39 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         let feed = app.scrollViews.firstMatch
 
         // 1. The anchor and the admitted order, as the reader sees them.
-        guard let anchor = presentedCard(app) else {
-            return XCTFail("the feed presented no anchored card")
+        //
+        // D4 holds the laid-out cards out of the accessibility tree behind the preparation cover until the
+        // measured layout reaches the viewport bottom (or the product's own captured wait expires; bootstrap 5 s,
+        // then the run's measured tolerance). B04 measures the **reading** surface: querying right after the
+        // onboarding tap measures the cover, not the feed. Measured, run `20261023T192530Z`: the card was published
+        // and admitted 1.30 s before the driver's query, the cover was still up, and the driver aborted.
+        //
+        // So the driver waits for the cover's own element to be gone and for `presentedCard` — bounded by that
+        // product readiness, not by a new threshold and not by an unconditional sleep. The elapsed wait is
+        // recorded after the card is found, so a run where the first card really is late still shows it; a card
+        // that never arrives still fails the driver (no B04 fact is recorded before it, so the gate cannot turn
+        // that failure into a quiet pass).
+        let readinessStarted = Date()
+        let readinessDeadline = readinessStarted.addingTimeInterval(30)
+        let cover = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", "feed-loading-surface")).firstMatch
+        var readyCard: XCUIElement?
+        var readinessFailure = "the first-screen cover never lifted within the product's readiness bound"
+        while Date() < readinessDeadline {
+            if !cover.exists {
+                if let card = presentedCard(app) {
+                    readyCard = card
+                    break
+                }
+                readinessFailure = "the cover lifted but no card was presented within the readiness bound"
+            }
+            Thread.sleep(forTimeInterval: 0.5)
         }
+        guard let anchor = readyCard else {
+            return XCTFail(readinessFailure)
+        }
+        record("b04-readiness-seconds:"
+            + String(format: "%.1f", Date().timeIntervalSince(readinessStarted)), to: phases)
         let anchorBefore = anchor.frame
         let anchorID = anchor.identifier
         let orderBefore = presentedIdentifiers(app)
@@ -664,24 +705,88 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         record("b05-saved:\(bookmark.value as? String == "bookmarked")", to: phases)
         record("b05-anchor-before:\(anchorBefore)", to: phases)
 
-        // A → B → A: another context and back. The reader's own feed must be the same one they left.
-        // The reader's own overflow menu, as the header offers it.
-        let menu = app.buttons["more-menu"]
-        if menu.waitForExistence(timeout: 15) { menu.tap() }
-        if app.buttons["Salvos"].waitForExistence(timeout: 10) {
-            app.buttons["Salvos"].tap()
-            Thread.sleep(forTimeInterval: 3)
-            record("b05-context-b-reached:true", to: phases)
-            if app.buttons["reader-contexts"].waitForExistence(timeout: 10) {
-                app.buttons["reader-contexts"].tap()
-                Thread.sleep(forTimeInterval: 1.5)
-                if app.buttons["Feedmine, · "].exists { app.buttons["Feedmine, · "].tap() }
+        // A → B → A: another reading context and back, through the product's own context control. The original
+        // branch walked `more-menu` → `Salvos`, a label the product has never had (the frozen log shows ten seconds
+        // of failed existence checks), so the test never left A and `b05-return-preserves-anchor` was vacuously
+        // true. This is the actual control (`FeedMineApp.contextChip`): its menu states the main context and one
+        // entry per source the reader selected. A missing control, or a menu with no second context, is recorded
+        // as a **failure** — never skipped.
+        // The chip is a SwiftUI `Menu`: XCUITest sees a pop-up button, so it is resolved by identifier across
+        // types (the same rule the other context tests state). The **identity** of the context is
+        // `reader-context-label` — absent while the main context is shown, present and naming the source when the
+        // reader is on one. The chip's own label also carries the work short-description ("Feedmine, · …"), so it
+        // is evidence, not the witness.
+        let contextChip = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", "reader-contexts")).firstMatch
+        let contextLabel = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", "reader-context-label")).firstMatch
+        let contextA = contextChip.exists ? contextChip.label : ""
+        record("b05-context-a:\(contextA)", to: phases)
+        record("b05-context-a-is-main:\(!contextLabel.exists)", to: phases)
+        // What the control offered. `not-offered` is the failure the clause must state when the product has no
+        // second context for this reader; `false` is a second context offered but not reached.
+        var contextOutcome = "not-offered"
+        var reachedB = false
+        var returned = false
+        var bName = ""
+        if contextChip.waitForExistence(timeout: 15), waitUntil(10, { contextChip.isHittable }) {
+            contextChip.tap()
+            let principal = app.buttons["Principal"]
+            if principal.waitForExistence(timeout: 10) {
+                // The menu's source entries share the popover's own column and follow "Principal"; the feed's
+                // controls underneath are not mistaken for one.
+                let entries = app.buttons.allElementsBoundByIndex.filter { element in
+                    element.exists && element.isHittable && !element.label.isEmpty
+                        && element.label != "Principal" && element.label != "Mostrar tudo"
+                        && abs(element.frame.minX - principal.frame.minX) < 4
+                        && element.frame.minY > principal.frame.minY + 1
+                        && element.frame.height > 20
+                }.sorted { $0.frame.minY < $1.frame.minY }
+                record("b05-context-entries:\(entries.count)", to: phases)
+                if let source = entries.first {
+                    contextOutcome = "false"
+                    bName = source.label
+                    source.tap()
+                    // "Changed" is the product's own context label naming the source — the witness the context
+                    // surface offers the reader — not a count of taps.
+                    reachedB = waitUntil(30) {
+                        contextChip.exists && contextLabel.exists
+                            && contextLabel.label.range(of: bName, options: .caseInsensitive) != nil
+                    }
+                    if reachedB {
+                        record("b05-context-b:\(bName)", to: phases)
+                        record("b05-context-b-label:\(contextLabel.label)", to: phases)
+                        // Back to A: the menu always states the main context as "Principal". The source context
+                        // publishes its own feed and may draw its preparation surface first, where the reader's
+                        // header is not mounted; the chip's return is awaited (bounded) rather than tapped blind.
+                        if waitUntil(60, { contextChip.exists && contextChip.isHittable }) {
+                            contextChip.tap()
+                            if app.buttons["Principal"].waitForExistence(timeout: 10) {
+                                app.buttons["Principal"].tap()
+                                returned = waitUntil(30) { !contextLabel.exists }
+                            }
+                        }
+                        record("b05-context-return-label:\(contextLabel.exists ? contextLabel.label : "none")",
+                            to: phases)
+                    }
+                }
             }
-            Thread.sleep(forTimeInterval: 4)
         }
-        let anchorAfterReturn = presentedCard(app)?.identifier
-        record("b05-return-preserves-anchor:\(anchorAfterReturn != nil && anchorAfterReturn == anchorBefore)",
-            to: phases)
+        record("b05-context-b-reached:\(reachedB ? "true" : contextOutcome)", to: phases)
+        record("b05-context-return-reached:\(returned)", to: phases)
+        // The returned-to-A anchor is only measurable after B was really reached: a comparison taken without
+        // leaving A says nothing and must not read as a pass.
+        let walkedTheContexts = reachedB && returned
+        if walkedTheContexts {
+            // The main context republishes from local state. Give the reading surface its own bounded moment
+            // before reading the anchor, and never substitute another card.
+            _ = waitUntil(30) { presentedCard(app) != nil }
+            let anchorAfterReturn = presentedCard(app)?.identifier
+            record("b05-return-preserves-anchor:\(anchorAfterReturn != nil && anchorAfterReturn == anchorBefore)",
+                to: phases)
+        } else {
+            record("b05-return-preserves-anchor:not-measured", to: phases)
+        }
 
         // Suspend and reopen: the same reader, the same place, the same saved story.
         //
@@ -731,6 +836,12 @@ final class DiscoveryBenchmarkTests: XCTestCase {
             offlineShot.name = "b05-offline"
             offlineShot.lifetime = .keepAlways
             add(offlineShot)
+        }
+        // The rest of the protocol still ran and is recorded above; the failure is stated last so a run that
+        // could not leave A is not mistaken for one that did. The oracle reads the same facts.
+        if !walkedTheContexts {
+            XCTFail("B05 did not walk A → B → A: the product's context control offered no second context "
+                + "(b05-context-entries states what the menu held; A was '\(contextA)')")
         }
         _ = feed
     }

@@ -4249,6 +4249,119 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(totals["written"], "66")
     }
 
+    /// A trace belongs to the **run**, not to one process: the reopen gates read what the first launch wrote, and a
+    /// relaunch is the normal case (suspend/reopen, offline reopen). Measured failure, `20261023T193301Z`: the first
+    /// write of each process called `createFile(contents: nil)`, which truncates the existing file, so the first
+    /// launch's `position_checkpoint` was erased by the reopen while the app's database still held it — B05 read
+    /// "no durable position" from an instrument that had deleted the evidence. This case replays a relaunch: the
+    /// old segment must survive and the new line must follow it, in order.
+    func testTheTraceRetainsThePreviousLaunchAndAppendsTheNext() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let first = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 10)
+        first.record("position_checkpoint", ["anchor": "EA0E34C1", "placement": "top"])
+        first.flushAndWait()
+
+        // The reopen: a new RunwayTrace over the same directory, as a second process would build.
+        let second = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 10)
+        second.record("host_started", ["launch": "2"])
+        second.flushAndWait()
+
+        let url = directory.appendingPathComponent("trace.jsonl")
+        let records = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map { line in
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        }
+        XCTAssertEqual(records.count, 2, "the reopen appends to the run's file instead of replacing it")
+        XCTAssertEqual(records[0]["event"] as? String, "position_checkpoint",
+            "the first launch's segment is still the first line")
+        XCTAssertEqual((records[0]["fields"] as? [String: String])?["anchor"], "EA0E34C1",
+            "the durable position the reopen gates read survived the relaunch")
+        XCTAssertEqual(records[1]["event"] as? String, "host_started", "and the new launch follows it")
+    }
+
+    /// Fresh-file semantics are unchanged: a directory with no trace gets one, with exactly the lines this trace
+    /// recorded — the append path may not depend on a file having existed before.
+    func testAFreshTraceCreatesItsFileFromNothing() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("trace.jsonl").path),
+            "the case starts with no trace, in a directory that does not exist either")
+        let trace = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 10)
+        trace.record("admitted", ["anchor": "A1"])
+        trace.flushAndWait()
+        let records = try String(contentsOf: directory.appendingPathComponent("trace.jsonl"), encoding: .utf8)
+            .split(separator: "\n")
+        XCTAssertEqual(records.count, 1)
+        let record = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(records[0].utf8)) as? [String: Any])
+        XCTAssertEqual(record["event"] as? String, "admitted")
+    }
+
+    /// A process killed mid-write (`app.terminate()` in B05) can leave the last line unterminated. The relaunch
+    /// must not glue its first event onto that partial JSON: the oracle reads the file line by line, so the merged
+    /// line would be discarded and with it the new event — the same silent evidence loss the append fix exists to
+    /// remove. The partial line also spends one line of the file budget.
+    func testARelaunchAfterATornWriteStartsANewLine() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let first = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 10)
+        first.record("position_checkpoint", ["anchor": "EA0E34C1"])
+        first.flushAndWait()
+
+        let url = directory.appendingPathComponent("trace.jsonl")
+        let written = try Data(contentsOf: url)
+        XCTAssertGreaterThan(written.count, 8)
+        // What a write cut short leaves behind: the newline and the end of the JSON are gone.
+        try Data(written.dropLast(8)).write(to: url)
+
+        let second = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 10)
+        second.record("host_started", ["launch": "2"])
+        second.flushAndWait()
+
+        let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+        XCTAssertEqual(lines.count, 2, "the torn tail and the new event are two lines, not one")
+        let event = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(lines[1].utf8)) as? [String: Any])
+        XCTAssertEqual(event["event"] as? String, "host_started",
+            "the new event is readable on its own line")
+    }
+
+    /// The budget and the reserve are properties of the **file**: a relaunch that re-opened with a full budget
+    /// would append another 64.000 lines (or, at a test-sized ceiling, another whole budget) on every start, and
+    /// `finite disk use across process restarts` would be a property of how often the app was reopened. This case
+    /// seeds an 80-line file under a 100-line ceiling, then re-opens it: context may no longer spend past the
+    /// cumulative two-thirds reserve, and the journey stops at the same ceiling — with the loss stated.
+    func testTheCeilingAndReserveFollowTheFileAcrossARelaunch() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let first = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 100)
+        for index in 0..<80 { first.record("advance", ["index": String(index)]) }
+        first.flushAndWait()
+
+        // 80 of 100 lines already spent; the reserve is 66, i.e. the file is already past it.
+        let second = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 100)
+        second.record("frames", ["index": "relaunch"])
+        for index in 80..<120 { second.record("advance", ["index": String(index)]) }
+        second.flushAndWait()
+
+        let url = directory.appendingPathComponent("trace.jsonl")
+        let records = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map { line in
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        }
+        let advances = records.filter { $0["event"] as? String == "advance" }
+        XCTAssertEqual(advances.count, 100, "the ceiling is the file's 100 lines: the relaunch spent the last 20")
+        XCTAssertEqual(Set(advances.compactMap { ($0["fields"] as? [String: String])?["index"] }),
+            Set((0..<100).map(String.init)), "the first launch's 80 advances are still there, in order")
+        XCTAssertEqual(records.filter { $0["event"] as? String == "frames" }.count, 0,
+            "the reserve is cumulative too: context was already past two thirds of the file when it re-opened")
+        let truncated = records.filter { $0["event"] as? String == "trace_truncated" }
+        XCTAssertEqual(truncated.compactMap { ($0["fields"] as? [String: String])?["reason"] },
+            ["context_budget", "line_ceiling", "flush_total"],
+            "the relaunch states what it refused, by cause, and the totals at flush")
+        XCTAssertEqual((truncated.last?["fields"] as? [String: String])?["written"], "100",
+            "the event budget counts what the file already held")
+        XCTAssertLessThanOrEqual(records.count, 109,
+            "the trace is bounded by its ceiling plus its bounded announcements, across restarts")
+    }
+
     /// Codex's review, finding 2: an invitation is only true for a source the app **went and found** in this
     /// association. A source the reader chose is not discovery, and a pool built for an earlier profile does not
     /// answer for the one being read now.

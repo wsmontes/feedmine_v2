@@ -19,6 +19,10 @@ import FeedMineDomain
 import FeedMineRuntime
 
 /// Append-only evidence of what the feed actually did, with the clock that observed it.
+///
+/// The file outlives the process: a relaunch **appends** to the segment the previous launch wrote (the reopen gates
+/// read it), and the line budget is a property of the file, not of a start — the count is seeded from what is
+/// already there, so restarts cannot multiply it.
 final class RunwayTrace: @unchecked Sendable {
     /// B03 walks 1.800 advances **and** records every examined candidate's readiness: the ceiling has to hold a
     /// thirty-minute trace, or the gate would fail for lack of evidence rather than for lack of content.
@@ -68,7 +72,17 @@ final class RunwayTrace: @unchecked Sendable {
     private let contextCeiling: Int
     private let writer = DispatchQueue(label: "feedmine.runway-trace", qos: .utility)
     private var pending: [Data] = []
+    /// Lines already in the file when this process opened it, plus the ones this process wrote. The ceiling is a
+    /// property of the **file**, not of a process: a relaunch with a fresh budget would append another 64.000 lines
+    /// to the same trace on every start. Seeded once in `init`, before the first `record` can read it.
     private var lines = 0
+    /// Every line this trace has written, announcements included. The event budget above does not count a
+    /// truncation notice, and a notice is still disk; this counter is what keeps the whole file (not only its
+    /// events) bounded across restarts.
+    private var fileLines = 0
+    /// The previous process left a line unterminated: the first write must start a new one instead of gluing the
+    /// two. Owned by the writer queue after `init` seeds it.
+    private var needsLeadingNewline = false
     private var notices = 0
     /// Keys whose transition was already recorded.
     private var seen: Set<String> = []
@@ -92,6 +106,36 @@ final class RunwayTrace: @unchecked Sendable {
         // A small ceiling still reserves at least one line, otherwise a test-sized budget would have no journey
         // guarantee at all. Context saturates first; the journey always has the rest.
         contextCeiling = max(1, Int(Double(ceiling) * Self.contextShare))
+        // A trace belongs to a run, and a run outlives a process: the reopen gates read the segment the first
+        // launch wrote, so a relaunch appends to the file instead of replacing it. The budget follows the file too
+        // — the count is taken here, once, before any `record` consults it, so the ceiling, the context reserve
+        // and the loss announcements stay per file across restarts. Reading is streaming and bounded; at the
+        // measured 249 bytes/line the full 64.000-line trace is ~16 MB scanned once at startup.
+        let existing = Self.existingContent(at: url)
+        lines = existing.lines
+        fileLines = existing.lines
+        needsLeadingNewline = existing.tornTail
+    }
+
+    /// What the file already holds, read once in a streaming pass: the lines it carries and whether the last one
+    /// was cut short. A process killed mid-write (`terminate`) can leave an unterminated tail; counting only `\n`
+    /// would then glue the next launch's first line onto that partial JSON, and the oracle — which reads line by
+    /// line — would lose both. The tail counts as a used line, and the first write starts on a fresh one.
+    private static func existingContent(at url: URL) -> (lines: Int, tornTail: Bool) {
+        guard let stream = InputStream(url: url) else { return (0, false) }
+        stream.open()
+        defer { stream.close() }
+        var count = 0
+        var lastByte: UInt8?
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            let read = stream.read(&buffer, maxLength: buffer.count)
+            guard read > 0 else { break }
+            for index in 0..<read where buffer[index] == 0x0A { count += 1 }
+            lastByte = buffer[read - 1]
+        }
+        let torn = lastByte.map { $0 != 0x0A } ?? false
+        return (torn ? count + 1 : count, torn)
     }
 
     /// One event. `fields` are strings: the caller states what it knows, and the trace stays a document a script
@@ -119,6 +163,7 @@ final class RunwayTrace: @unchecked Sendable {
             return
         }
         lines += 1
+        fileLines += 1
         lock.unlock()
         let monotonic = ProcessInfo.processInfo.systemUptime
         guard let data = try? JSONEncoder().encode(Line(at: date.timeIntervalSince1970, mono: monotonic,
@@ -158,7 +203,9 @@ final class RunwayTrace: @unchecked Sendable {
         let unreported = droppedByCeiling + droppedByContext + droppedByEncoding + droppedByWrite - reportedDrops
         var batch = pending
         pending.removeAll(keepingCapacity: true)
-        if unreported > 0, let data = truncationLine(reason: "flush_total") {
+        if unreported > 0, fileLines < ceiling + Self.truncationNoticeCeiling + 1,
+            let data = truncationLine(reason: "flush_total") {
+            fileLines += 1
             reportedDrops += unreported
             batch.append(data)
         }
@@ -178,11 +225,18 @@ final class RunwayTrace: @unchecked Sendable {
     /// the file stays in order: everything recorded before the first drop reaches the disk with the announcement.
     private func notice(_ reason: String, at date: Date) {
         lock.lock()
-        guard notices < Self.truncationNoticeCeiling, let data = truncationLine(reason: reason) else {
+        // The announcement is written even though the event budget is exhausted, so it needs its own hard bound:
+        // `truncationNoticeCeiling` notices per process, and the whole file never passes
+        // `ceiling + truncationNoticeCeiling + 1` lines, however many times the app is relaunched. At the cap the
+        // announcements already in the file stand for the loss; the counters keep counting it.
+        guard notices < Self.truncationNoticeCeiling,
+            fileLines < ceiling + Self.truncationNoticeCeiling + 1,
+            let data = truncationLine(reason: reason) else {
             lock.unlock()
             return
         }
         notices += 1
+        fileLines += 1
         reportedDrops = droppedByCeiling + droppedByContext + droppedByEncoding + droppedByWrite
         pending.append(data)
         let batch = pending
@@ -227,7 +281,12 @@ final class RunwayTrace: @unchecked Sendable {
             if self.handle == nil {
                 try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                     withIntermediateDirectories: true)
-                FileManager.default.createFile(atPath: url.path, contents: nil)
+                // `createFile(contents: nil)` **truncates** an existing file (measured), and this is the first write
+                // of each process: the reopen gates read what the previous launch wrote, so a relaunch must append,
+                // not replace. Create only when there is nothing to append to.
+                if !FileManager.default.fileExists(atPath: url.path) {
+                    FileManager.default.createFile(atPath: url.path, contents: nil)
+                }
                 self.handle = try? FileHandle(forWritingTo: url)
             }
             guard let handle = self.handle else {
@@ -238,8 +297,14 @@ final class RunwayTrace: @unchecked Sendable {
                 return
             }
             _ = try? handle.seekToEnd()
-            do { try handle.write(contentsOf: payload) }
-            catch { self.countLostBatch(batch.count) }
+            // A tail cut short by the previous process is not a line the oracle can read: start this batch on a
+            // line of its own. The newline is only spent once the write lands, so a failed first write retries it.
+            var outbound = payload
+            if self.needsLeadingNewline { outbound.insert(0x0A, at: 0) }
+            do {
+                try handle.write(contentsOf: outbound)
+                self.needsLeadingNewline = false
+            } catch { self.countLostBatch(batch.count) }
         }
     }
 }
