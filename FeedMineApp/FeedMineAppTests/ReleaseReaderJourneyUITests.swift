@@ -971,6 +971,43 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         shot("audio-resumed")
     }
 
+    /// Bounded plain-swipe liveness on the populated Egypt source context. One source-label
+    /// query confirms the scope, one direct card UUID query binds a card that is **visible in
+    /// the window**, and one direct UUID query after the swipe measures the actual line
+    /// movement in either direction. No `visibleMatchingCards`, no `ensureSource`, no per-card
+    /// `staticTexts` enumeration. The existing menu helper supplies the observable open/close.
+    func test06PlainSwipeLiveness() throws {
+        let app = try launch()
+        XCTAssertTrue(app.staticTexts["Egypt Independent"].firstMatch.waitForExistence(timeout: 60),
+            "the active source context is Egypt Independent")
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 30), "the feed scroll view is present")
+        let window = app.windows.firstMatch.frame
+        let card = app.descendants(matching: .any).matching(Self.cardIdentifier).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 60), "the source feed presents a card")
+        let uuid = card.identifier
+        let before = card.frame
+        XCTAssertTrue(before.height > 40 && before.intersects(window),
+            "the bound card is visible in the window before the swipe")
+        shot("plain-before")
+        scroll.swipeUp()
+        let after = byIdentifier(app, uuid)
+        let afterVisible = after.exists && after.frame.intersects(window)
+        record("plain-liveness", "uuid=\(uuid) before=\(before) "
+            + "after=\(after.exists ? "\(after.frame)" : "gone") visible=\(afterVisible)")
+        if afterVisible {
+            XCTAssertGreaterThan(abs(before.minY - after.frame.minY), 20,
+                "one plain swipe moves the visible card line by more than 20 pt")
+        }
+        shot("plain-after")
+        SurfaceTest.menuEntry(app, "Ajustes")
+        XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 30),
+            "the reader menu opens")
+        app.buttons["settings-done"].tap()
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30),
+            "the feed returns after the menu closes")
+    }
+
     // MARK: - Appearance controls
 
     /// A menu picker's option can surface as a button, a menu item or a plain text depending on the SwiftUI
