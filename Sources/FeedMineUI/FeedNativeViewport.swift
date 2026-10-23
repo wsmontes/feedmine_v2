@@ -61,8 +61,8 @@ struct NativeFeedViewport: ViewModifier {
         }
         NSLog("FEEDMINE_LIVENESS phase=%@ scroll=%@ frame=%@ bounds=%@ contentSize=%@ inset=%@ enabled=%d tracking=%d dragging=%d offset=%.2f pan=%ld",
             String(describing: phase), String(describing: ObjectIdentifier(scroll)),
-            NSStringFromCGRect(scroll.frame), NSStringFromCGRect(scroll.bounds),
-            NSStringFromCGSize(scroll.contentSize), String(describing: scroll.contentInset),
+            String(describing: scroll.frame), String(describing: scroll.bounds),
+            String(describing: scroll.contentSize), String(describing: scroll.contentInset),
             scroll.isScrollEnabled ? 1 : 0, scroll.isTracking ? 1 : 0, scroll.isDragging ? 1 : 0,
             scroll.contentOffset.y, scroll.panGestureRecognizer.state.rawValue)
     }
