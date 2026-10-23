@@ -9,9 +9,6 @@ import FeedMineDomain
 struct NativeFeedViewport: ViewModifier {
     @Binding var capture: FeedVisualCapture
     let store: FeedScreenStore
-    /// TEMPORARY liveness diagnostic: release the card-id scroll anchor after the launch
-    /// restore window. Not shippable; remove with the experiment.
-    @State private var scrollPositionReleased = false
 
     /// A apresentação que a posição **segue**: a janela segurada enquanto um gesto está em curso, e a publicada
     /// fora dele — a mesma leitura que a lista fazia antes do desacoplamento, agora lida **dentro** do modificador
@@ -52,26 +49,6 @@ struct NativeFeedViewport: ViewModifier {
         capture.adoptRestoration(resolved, sequenceID: presented?.provenance.sequenceID)
     }
 
-    /// TEMPORARY liveness diagnostic. Kept out of the view body so the already
-    /// type-check-heavy modifier chain is unchanged. Not shippable.
-    private func releaseScrollPositionAfterRestoreWindow() {
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            scrollPositionReleased = true
-        }
-    }
-
-    private func scrollPositionBinding(presented: FeedPresentationSnapshot?) -> Binding<PublicationCardID?> {
-        Binding(get: {
-            guard !scrollPositionReleased else { return nil }
-            return capture.positionID ?? presented?.window.anchor.cardID
-        }, set: { id in
-            guard matchesScope, let id, let snapshot = self.presented,
-                snapshot.window.items.contains(where: { $0.id == id }) else { return }
-            observePosition(id, presented: snapshot)
-        })
-    }
-
     // Card bounds use the container viewport; visibleRect may also include safe-area insets.
     private func visualGeometry(_ geometry: ScrollGeometry) -> FeedVisualGeometry {
         .init(offset: geometry.contentOffset.y + geometry.contentInsets.top,
@@ -94,7 +71,13 @@ struct NativeFeedViewport: ViewModifier {
             // re-alinha o card identificado a cada mutação de janela, e a posição visível do leitor anda — medido em
             // `Tests/ArchitectureSmokeTests/FeedViewportCaptureTests.testNativeHostedLayoutPreservesPositionWithoutInventingReading`
             // (440 -> 369) quando a âncora explícita foi tentada.
-            .scrollPosition(id: scrollPositionBinding(presented: presented))
+            .scrollPosition(id: Binding(get: {
+                capture.positionID ?? presented?.window.anchor.cardID
+            }, set: { id in
+                guard matchesScope, let id, let presented,
+                    presented.window.items.contains(where: { $0.id == id }) else { return }
+                observePosition(id, presented: presented)
+            }))
             .onScrollPhaseChange { oldPhase, phase, context in
                 capture.adoptRestoration(store.state.presentation?.restoredPosition,
                     sequenceID: store.state.presentation?.provenance.sequenceID)
@@ -246,7 +229,6 @@ struct NativeFeedViewport: ViewModifier {
                 capture = FeedVisualCapture()
                 capture.renderOwner = ObjectIdentifier(store)
                 store.setReadingInteractionActive(false)
-                releaseScrollPositionAfterRestoreWindow()
             }
     }
 }
