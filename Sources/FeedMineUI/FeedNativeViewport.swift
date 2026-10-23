@@ -52,6 +52,15 @@ struct NativeFeedViewport: ViewModifier {
         capture.adoptRestoration(resolved, sequenceID: presented?.provenance.sequenceID)
     }
 
+    /// TEMPORARY liveness diagnostic. Kept out of the view body so the already
+    /// type-check-heavy modifier chain is unchanged. Not shippable.
+    private func releaseScrollPositionAfterRestoreWindow() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            scrollPositionReleased = true
+        }
+    }
+
     // Card bounds use the container viewport; visibleRect may also include safe-area insets.
     private func visualGeometry(_ geometry: ScrollGeometry) -> FeedVisualGeometry {
         .init(offset: geometry.contentOffset.y + geometry.contentInsets.top,
@@ -233,12 +242,7 @@ struct NativeFeedViewport: ViewModifier {
                 capture = FeedVisualCapture()
                 capture.renderOwner = ObjectIdentifier(store)
                 store.setReadingInteractionActive(false)
-                // TEMPORARY liveness diagnostic: the launch restore owns the anchor for a
-                // bounded window; the reader drag under test happens after it. Not shippable.
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(2))
-                    scrollPositionReleased = true
-                }
+                releaseScrollPositionAfterRestoreWindow()
             }
     }
 }
