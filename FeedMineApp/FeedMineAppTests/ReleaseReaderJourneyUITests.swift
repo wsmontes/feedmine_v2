@@ -807,7 +807,10 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
             height: max(1, windowFrame.height - 160))
         let accentDifference = differingPixels(regularShot.image, paletteShot.image,
             rect: surfaceRect, window: windowFrame)
-        record("appearance-palette", "family=Monocromático bg=\(format(palettePixel)) "
+        let regularHash = SHA256.hash(data: regularShot.pngRepresentation).map { String(format: "%02x", $0) }.joined()
+        let paletteHash = SHA256.hash(data: paletteShot.pngRepresentation).map { String(format: "%02x", $0) }.joined()
+        record("appearance-palette", "family=Monocromático regular_sha=\(regularHash) "
+            + "palette_sha=\(paletteHash) bg=\(format(palettePixel)) "
             + "regular_bg=\(format(regularPixel)) origin_frame=\(originFrame) "
             + "accent_pixels_changed=\(accentDifference)")
         XCTAssertGreaterThan(accentDifference, 20,
@@ -1105,33 +1108,34 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
     /// tint (which belongs to the period).
     private func differingPixels(_ a: UIImage, _ b: UIImage, rect: CGRect, window: CGRect,
         threshold: Int = 12) -> Int {
-        guard let cgA = a.cgImage, let cgB = b.cgImage, window.width > 0, window.height > 0 else { return 0 }
+        guard let cgA = a.cgImage, let cgB = b.cgImage,
+            let dataA = cgA.dataProvider?.data as Data?, let dataB = cgB.dataProvider?.data as Data?,
+            window.width > 0, window.height > 0 else { return 0 }
         let width = cgA.width, height = cgA.height
-        guard cgB.width == width, cgB.height == height else { return 0 }
-        func bytes(_ cg: CGImage) -> [UInt8]? {
-            var buffer = [UInt8](repeating: 0, count: width * height * 4)
-            guard let context = CGContext(data: &buffer, width: width, height: height,
-                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-            context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return buffer
-        }
-        guard let aBytes = bytes(cgA), let bBytes = bytes(cgB) else { return 0 }
+        guard cgB.width == width, cgB.height == height,
+            cgA.bitsPerPixel == cgB.bitsPerPixel, cgA.bytesPerRow == cgB.bytesPerRow else { return 0 }
+        let bpp = max(1, cgA.bitsPerPixel / 8)
+        let row = cgA.bytesPerRow
         let sx = CGFloat(width) / window.width
         let sy = CGFloat(height) / window.height
         let x0 = max(0, Int(rect.minX * sx)), x1 = min(width - 1, Int(rect.maxX * sx))
         let y0 = max(0, Int(rect.minY * sy)), y1 = min(height - 1, Int(rect.maxY * sy))
         guard x0 < x1, y0 < y1 else { return 0 }
         var changed = 0
-        for y in y0...y1 {
-            let row = height - 1 - y
-            for x in x0...x1 {
-                let index = (row * width + x) * 4
-                var delta = 0
-                for channel in 0..<3 {
-                    delta = max(delta, abs(Int(aBytes[index + channel]) - Int(bBytes[index + channel])))
+        dataA.withUnsafeBytes { (bytesA: UnsafeRawBufferPointer) in
+            dataB.withUnsafeBytes { (bytesB: UnsafeRawBufferPointer) in
+                for y in y0...y1 {
+                    let rowOffset = y * row
+                    for x in x0...x1 {
+                        let index = rowOffset + x * bpp
+                        guard index + 2 < bytesA.count, index + 2 < bytesB.count else { continue }
+                        var delta = 0
+                        for channel in 0..<3 {
+                            delta = max(delta, abs(Int(bytesA[index + channel]) - Int(bytesB[index + channel])))
+                        }
+                        if delta > threshold { changed += 1 }
+                    }
                 }
-                if delta > threshold { changed += 1 }
             }
         }
         return changed
