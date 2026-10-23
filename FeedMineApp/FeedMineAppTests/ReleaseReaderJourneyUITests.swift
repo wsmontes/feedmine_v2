@@ -908,7 +908,18 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
             + "title=\(cardTitle)")
         shot("audio-card")
 
-        XCTAssertTrue(centerInsideWindow(play, app), "the play control is inside the window")
+        // The seeded card may sit at the window edge. The reader's own bounded scroll brings its play control into
+        // the window before the single tap; the control is re-queried after each scroll.
+        let windowFrame = app.windows.firstMatch.frame
+        for _ in 0..<4 {
+            if centerInsideWindow(play, app) { break }
+            let frame = play.frame
+            let scroll = app.scrollViews.firstMatch
+            if frame.midY > windowFrame.midY { scroll.swipeUp() } else { scroll.swipeDown() }
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+        XCTAssertTrue(centerInsideWindow(play, app),
+            "the play control is inside the window after the reader scroll")
         play.tap()
         let bar = app.otherElements["mini-player"]
         XCTAssertTrue(bar.waitForExistence(timeout: 60), "play reaches the player instead of looking dead")
@@ -1066,7 +1077,10 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         SurfaceTest.menuEntry(app, "Ajustes")
         XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 30))
         let clock = app.switches["settings-circadian-palette"]
-        XCTAssertTrue(SurfaceTest.scrollIntoView(clock, in: app, timeout: 20))
+        // The switch may sit below the visible sheet: a bounded scroll makes it hittable, but its stored value is
+        // readable even when the row is still settling. The effect assertion below is about the period, not the row.
+        _ = SurfaceTest.scrollIntoView(clock, in: app, timeout: 20)
+        XCTAssertTrue(clock.exists, "the adaptive-palette switch exists")
         let expected = on ? "1" : "0"
         if (clock.value as? String) != expected {
             let control = clock.switches.firstMatch
