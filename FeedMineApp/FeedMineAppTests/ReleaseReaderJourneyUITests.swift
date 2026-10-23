@@ -175,11 +175,42 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
 
     /// Adds the public feed through the product's own add-feed sheet, then waits for its card. The sheet's
     /// resolution, selection and acquisition are the product's; nothing is injected.
+    /// The product's own source-context control: `reader-contexts` lists the selected sources, and choosing one
+    /// makes that source the reading context. A newly added source's publication is source-scoped, so the main
+    /// context (which may hold an older edition from many sources) is not where its cards appear.
+    private func selectSourceContext(_ app: XCUIApplication, containing needles: [String]) -> Bool {
+        let label = byIdentifier(app, "reader-context-label")
+        if label.exists, needles.contains(where: { label.label.range(of: $0, options: .caseInsensitive) != nil }) {
+            return true
+        }
+        guard waitForMenu(app) else { return false }
+        let contexts = app.buttons["reader-contexts"]
+        guard centerInsideWindow(contexts, app) else { return false }
+        contexts.tap()
+        let predicate = NSCompoundPredicate(orPredicateWithSubpredicates: needles.map {
+            NSPredicate(format: "label CONTAINS[cd] %@", $0)
+        })
+        let item = app.buttons.matching(predicate).firstMatch
+        guard item.waitForExistence(timeout: 10) else { return false }
+        item.tap()
+        let deadline = Date().addingTimeInterval(90)
+        while Date() < deadline {
+            if label.exists, needles.contains(where: { label.label.range(of: $0, options: .caseInsensitive) != nil }) {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return false
+    }
+
     private func ensureSource(_ app: XCUIApplication, containing needles: [String],
         feed: String, timeout: TimeInterval = 240) -> XCUIElement? {
-        if let card = sourceCard(app, containing: needles, timeout: 25) { return card }
-        scrollFeedToTop(app)
-        if let card = sourceCard(app, containing: needles, timeout: 25) { return card }
+        var existing = sourceCard(app, containing: needles, timeout: 25)
+        if existing == nil {
+            scrollFeedToTop(app)
+            existing = sourceCard(app, containing: needles, timeout: 25)
+        }
+        if existing == nil {
         XCTAssertTrue(waitForMenu(app), "the reader menu is reachable before adding a source")
         SurfaceTest.menuEntry(app, "Adicionar feed")
         XCTAssertTrue(app.navigationBars["Adicionar fontes"].waitForExistence(timeout: 30),
@@ -213,6 +244,9 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         app.buttons["add-feed-cancel"].tap()
         _ = waitForMenu(app)
         _ = dismissGate(app)
+        }
+        let switched = selectSourceContext(app, containing: needles)
+        record("source-context", "needles=\(needles.joined(separator: ",")) switched=\(switched)")
         scrollFeedToTop(app)
         return sourceCard(app, containing: needles, timeout: timeout)
     }
