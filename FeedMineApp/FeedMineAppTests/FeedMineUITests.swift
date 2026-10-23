@@ -3216,9 +3216,16 @@ final class FeedMineUITests: XCTestCase {
         // Deterministic ineligibility without a network trick: the reader's own language filter is Portuguese.
         // The pinned feed is French, so its source context has no item to draw even though the feed resolves —
         // the same product criterion that left the measured source context empty.
-        app.buttons["filter-button"].tap()
+        let filterButton = app.buttons["filter-button"]
+        guard waitUsable(filterButton, app, timeout: 30) else {
+            XCTFail("the filter control is usable"); return
+        }
+        filterButton.tap()
+        guard app.buttons["filter-done"].waitForExistence(timeout: 20) else {
+            XCTFail("the filter sheet is up"); return
+        }
         let portugueseRow = app.buttons["language-pt"]
-        guard reveal(app, portugueseRow) else {
+        guard reveal(app, portugueseRow, attempts: 20) else {
             XCTFail("the filter lists Portuguese"); return
         }
         if portugueseRow.value as? String != "selected" { portugueseRow.tap() }
