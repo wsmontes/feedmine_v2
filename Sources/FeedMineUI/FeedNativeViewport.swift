@@ -233,12 +233,12 @@ struct NativeFeedViewport: ViewModifier {
                 capture = FeedVisualCapture()
                 capture.renderOwner = ObjectIdentifier(store)
                 store.setReadingInteractionActive(false)
-            }
-            // TEMPORARY liveness diagnostic: the launch restore owns the anchor for a
-            // bounded window; the reader drag under test happens after it. Not shippable.
-            .task {
-                try? await Task.sleep(for: .seconds(2))
-                scrollPositionReleased = true
+                // TEMPORARY liveness diagnostic: the launch restore owns the anchor for a
+                // bounded window; the reader drag under test happens after it. Not shippable.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(2))
+                    scrollPositionReleased = true
+                }
             }
     }
 }
