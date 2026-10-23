@@ -59,11 +59,15 @@ struct NativeFeedViewport: ViewModifier {
             NSLog("FEEDMINE_LIVENESS phase=%@ scroll=nil", String(describing: phase))
             return
         }
-        NSLog("FEEDMINE_LIVENESS phase=%@ scroll=%@ frame=%@ bounds=%@ contentSize=%@ inset=%@ enabled=%d tracking=%d dragging=%d offset=%.2f pan=%ld",
+        let minOffset = -scroll.adjustedContentInset.top
+        let maxOffset = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+        NSLog("FEEDMINE_LIVENESS phase=%@ scroll=%@ frame=%@ bounds=%@ contentSize=%@ inset=%@ adjusted=%@ min=%.2f max=%.2f start=%.2f enabled=%d tracking=%d dragging=%d offset=%.2f pan=%ld",
             String(describing: phase), String(describing: ObjectIdentifier(scroll)),
             String(describing: scroll.frame), String(describing: scroll.bounds),
             String(describing: scroll.contentSize), String(describing: scroll.contentInset),
-            scroll.isScrollEnabled ? 1 : 0, scroll.isTracking ? 1 : 0, scroll.isDragging ? 1 : 0,
+            String(describing: scroll.adjustedContentInset), minOffset, maxOffset,
+            scroll.contentOffset.y, scroll.isScrollEnabled ? 1 : 0,
+            scroll.isTracking ? 1 : 0, scroll.isDragging ? 1 : 0,
             scroll.contentOffset.y, scroll.panGestureRecognizer.state.rawValue)
     }
     #endif
