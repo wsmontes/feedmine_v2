@@ -19,13 +19,41 @@
 // never a frozen headline, and print the card UUID/title/label actually used so a red run is replayable.
 
 import XCTest
+import CryptoKit
 #if canImport(UIKit)
 import UIKit
 #endif
 
+/// A tiny deterministic PRNG (SplitMix64). It exists so the seed selects the public occurrence instead of only
+/// appearing in a log line; no framework and no dependency.
+private struct SeededRandom {
+    private var state: UInt64
+
+    init(seed: String) {
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in seed.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100000001b3
+        }
+        state = hash == 0 ? 0x9e3779b97f4a7c15 : hash
+    }
+
+    mutating func next() -> UInt64 {
+        state = state &+ 0x9e3779b97f4a7c15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xbf58476d1ce4e5b9
+        z = (z ^ (z >> 27)) &* 0x94d049bb133111eb
+        return z ^ (z >> 31)
+    }
+
+    mutating func index(count: Int) -> Int {
+        count > 0 ? Int(next() % UInt64(count)) : 0
+    }
+}
+
 @MainActor
 final class ReleaseReaderJourneyUITests: XCTestCase {
-    private static let seed = "20261022"
+    private static let seed = ProcessInfo.processInfo.environment["FEEDMINE_CONTENT_SEED"] ?? "20261022"
     private static let euronewsFeed = "https://pt.euronews.com/rss"
     private static let egyptFeed = "https://www.egyptindependent.com/feed/"
     private static let adriftFeed = "https://rss.art19.com/adrift"
@@ -226,6 +254,102 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         return nil
     }
 
+    /// Visible cards matching the stratum's source, with a usable opening control (and a play control when the
+    /// stratum is audio). Used only to enumerate candidates for a seeded pick.
+    private func visibleMatchingCards(_ app: XCUIApplication, containing needles: [String],
+        requirePlay: Bool) -> [XCUIElement] {
+        let window = app.windows.firstMatch.frame
+        return app.descendants(matching: .any).matching(Self.cardIdentifier).allElementsBoundByIndex.filter { card in
+            guard card.exists, card.frame.height > 40, card.frame.intersects(window) else { return false }
+            let open = card.buttons["card.open"].firstMatch
+            guard open.exists, centerInsideWindow(open, app) else { return false }
+            if requirePlay {
+                let play = card.buttons["card.play"].firstMatch
+                guard play.exists, centerInsideWindow(play, app) else { return false }
+            }
+            let names = [card.label] + card.staticTexts.allElementsBoundByIndex.map(\.label)
+            return names.contains { name in
+                needles.contains { name.range(of: $0, options: .caseInsensitive) != nil }
+            }
+        }
+    }
+
+    /// Bounded enumeration from the reader's current position — the position where `ensureSource` actually found
+    /// the stratum card. Starting at the top would miss Adrift, whose card can sit far down the sequence, and the
+    /// two-empty-screen stop is applied only after the first matching candidate exists. The sort makes the candidate
+    /// list independent of scroll order; the seed selects the index within it.
+    private func candidateUUIDs(_ app: XCUIApplication, containing needles: [String],
+        requirePlay: Bool, screensScanned: inout Int) -> [String] {
+        var seen = Set<String>()
+        var emptyScreens = 0
+        for screen in 0..<5 {
+            let before = seen.count
+            for card in visibleMatchingCards(app, containing: needles, requirePlay: requirePlay) {
+                seen.insert(card.identifier)
+            }
+            screensScanned = screen + 1
+            if !seen.isEmpty {
+                emptyScreens = seen.count == before ? emptyScreens + 1 : 0
+                if emptyScreens >= 2 { break }
+            }
+            let scroll = app.scrollViews.firstMatch
+            if scroll.exists { scroll.swipeUp() } else { break }
+        }
+        return seen.sorted()
+    }
+
+    /// Reacquisition is bounded: first around the current position (rewound by the number of screens the candidate
+    /// scan advanced), then a top-down fallback. No whole-feed linear search is added.
+    private func bringIntoView(_ app: XCUIApplication, _ uuid: String, rewind screens: Int = 0) -> XCUIElement? {
+        func visible() -> XCUIElement? {
+            let card = cardWithUUID(app, uuid)
+            return card.exists && centerInsideWindow(card, app) ? card : nil
+        }
+        let scroll = app.scrollViews.firstMatch
+        for _ in 0..<min(screens, 5) {
+            if scroll.exists { scroll.swipeDown() }
+        }
+        if let card = visible() { return card }
+        for _ in 0..<8 {
+            if scroll.exists { scroll.swipeUp() } else { break }
+            if let card = visible() { return card }
+        }
+        scrollFeedToTop(app)
+        for _ in 0..<20 {
+            if let card = visible() { return card }
+            if scroll.exists { scroll.swipeUp() } else { break }
+        }
+        return nil
+    }
+
+    /// The mission's reproducible random pick: seed -> index over the actual available matching cards, bounded to
+    /// the visible screens of the real feed. The record carries seed, candidate count, index, UUID, feed and title.
+    private func pickCard(_ app: XCUIApplication, containing needles: [String], requirePlay: Bool = false,
+        feed: String, label: String) -> XCUIElement? {
+        var screensScanned = 0
+        let candidates = candidateUUIDs(app, containing: needles, requirePlay: requirePlay,
+            screensScanned: &screensScanned)
+        guard !candidates.isEmpty else {
+            record("\(label)-sample-empty", "seed=\(Self.seed) feed=\(feed) candidates=0")
+            return nil
+        }
+        var random = SeededRandom(seed: Self.seed + "|\(label)|" + feed)
+        let index = random.index(count: candidates.count)
+        let uuid = candidates[index]
+        guard let card = bringIntoView(app, uuid, rewind: screensScanned) else {
+            record("\(label)-sample-missing", "seed=\(Self.seed) candidates=\(candidates.count) "
+                + "index=\(index) uuid=\(uuid) feed=\(feed)")
+            return nil
+        }
+        let title = card.staticTexts["card.title"].firstMatch.label
+        let digest = SHA256.hash(data: Data(candidates.joined(separator: ",").utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        record("\(label)-sample", "seed=\(Self.seed) candidates=\(candidates.count) index=\(index) "
+            + "uuid=\(uuid) feed=\(feed) title=\(title) candidates_sha256=\(digest) "
+            + "item_url=not-exposed-by-card body_hash=not-observed-in-app")
+        return card
+    }
+
     private func cardWithUUID(_ app: XCUIApplication, _ uuid: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@", uuid)).firstMatch
     }
@@ -346,8 +470,12 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
     /// Short teaser → the site. A single tap, the platform's close, and the exact same card line back in the feed.
     func test01ShortTeaserOpensSiteAndClosesToTheSameCard() throws {
         let app = try launch()
-        guard let card = ensureSource(app, containing: ["euronews"], feed: Self.euronewsFeed) else {
+        guard ensureSource(app, containing: ["euronews"], feed: Self.euronewsFeed) != nil else {
             return XCTFail("the public Euronews feed publishes a card")
+        }
+        guard let card = pickCard(app, containing: ["euronews"], feed: Self.euronewsFeed,
+            label: "short") else {
+            return XCTFail("the seeded pick selects an available Euronews card")
         }
         let uuid = card.identifier
         guard let before = settledFrame(app, uuid) else {
@@ -393,8 +521,12 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
     /// same card line; the body is the source's own text, longer than a teaser.
     func test02LongBodyOpensLocallyAndBothExitsReturnToTheSameCard() throws {
         let app = try launch()
-        guard let card = ensureSource(app, containing: ["egypt independent", "egyptindependent"], feed: Self.egyptFeed) else {
+        guard ensureSource(app, containing: ["egypt independent", "egyptindependent"], feed: Self.egyptFeed) != nil else {
             return XCTFail("the public Egypt Independent feed publishes a card")
+        }
+        guard let card = pickCard(app, containing: ["egypt independent", "egyptindependent"],
+            feed: Self.egyptFeed, label: "long") else {
+            return XCTFail("the seeded pick selects an available Egypt Independent card")
         }
         let uuid = card.identifier
         guard let before = settledFrame(app, uuid) else {
@@ -464,8 +596,12 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
     /// back after a process relaunch.
     func test03SavedCardIsFoundReadBackAndReopensAfterRelaunch() throws {
         let app = try launch()
-        guard let card = ensureSource(app, containing: ["egypt independent", "egyptindependent"], feed: Self.egyptFeed) else {
+        guard ensureSource(app, containing: ["egypt independent", "egyptindependent"], feed: Self.egyptFeed) != nil else {
             return XCTFail("the public Egypt Independent feed publishes a card")
+        }
+        guard let card = pickCard(app, containing: ["egypt independent", "egyptindependent"],
+            feed: Self.egyptFeed, label: "saved") else {
+            return XCTFail("the seeded pick selects an available Egypt Independent card")
         }
         let uuid = card.identifier
         let title = card.staticTexts["card.title"].firstMatch.label
@@ -513,15 +649,30 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         let reopened = byIdentifier(app, "saved-article-\(uuid)")
         XCTAssertTrue(reopened.waitForExistence(timeout: 40),
             "the saved card is read back after the app process restarts")
-        record("saved-relaunch", "row=saved-article-\(uuid) present=true value=\(savedValue ?? "-")")
+        record("saved-relaunch", "row=saved-article-\(uuid) present=true")
         shot("saved-relaunch")
 
-        // Leave the library as it was found: remove the bookmark from the feed's own control.
+        // The read-back is the content, not only the row's presence: open the restored row and read its body.
+        reopened.tap()
+        let relaunchBody = byIdentifier(app, "reading.body")
+        XCTAssertTrue(relaunchBody.waitForExistence(timeout: 90),
+            "the saved occurrence reopens from the relaunched library")
+        let relaunchCharacters = relaunchBody.label.count
+        XCTAssertGreaterThan(relaunchCharacters, 1_000,
+            "the reopened saved occurrence carries its substantial body")
+        record("saved-relaunch-body", "row=saved-article-\(uuid) body_chars=\(relaunchCharacters)")
+        shot("saved-relaunch-body")
+        byIdentifier(app, "reading.close").tap()
+        XCTAssertTrue(SurfaceTest.waitForAbsence(relaunchBody, timeout: 30))
+
+        // Leave the library as it was found: read the current bookmark value from the feed, then remove it.
         app.navigationBars["Salvos"].buttons.firstMatch.tap()
         if app.buttons["bookmarkBoxes.done"].exists { app.buttons["bookmarkBoxes.done"].tap() }
         if let feedCard = sourceCard(app, containing: ["egypt independent", "egyptindependent"], timeout: 60) {
             let remove = feedCard.buttons["card.bookmark"].firstMatch
-            if remove.exists, remove.value as? String == "bookmarked" {
+            if remove.exists {
+                XCTAssertEqual(remove.value as? String, "bookmarked",
+                    "the bookmark is still stored after the relaunch")
                 remove.tap()
                 _ = SurfaceTest.waitForValue(remove, differentFrom: "bookmarked", timeout: 20)
             }
@@ -538,18 +689,26 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         // The baseline this experiment measures is the product's own medium text size. It is set explicitly so a
         // previous interrupted run cannot make "regular" mean a different scale.
         _ = setTypeScale(app, "Médio")
-        guard let card = ensureSource(app, containing: ["egypt independent", "egyptindependent"], feed: Self.egyptFeed) else {
+        guard ensureSource(app, containing: ["egypt independent", "egyptindependent"], feed: Self.egyptFeed) != nil else {
             return XCTFail("the public Egypt Independent feed publishes a card")
         }
+        guard let card = pickCard(app, containing: ["egypt independent", "egyptindependent"],
+            feed: Self.egyptFeed, label: "appearance") else {
+            return XCTFail("the seeded pick selects an available Egypt Independent card")
+        }
         let uuid = card.identifier
-        let before = card.frame
+        guard let mediumFrame = settledFrame(app, uuid) else {
+            return XCTFail("the medium card settles at a measurable frame")
+        }
         open(app, uuid)
         let body = byIdentifier(app, "reading.body")
         XCTAssertTrue(body.waitForExistence(timeout: 90))
         let regularBodyHeight = body.frame.height
+        let originFrame = byIdentifier(app, "reading.origin").frame
+        XCTAssertGreaterThan(originFrame.width, 10, "the accent-bearing origin label has a measurable frame")
         let regularShot = XCUIScreen.main.screenshot()
         let regularPixel = averageRGB(regularShot.image, nx: 0.94, ny: 0.55)
-        record("appearance-regular", "card=\(uuid) body_h=\(regularBodyHeight) "
+        record("appearance-regular", "card=\(uuid) frame=\(mediumFrame) body_h=\(regularBodyHeight) "
             + "bg=\(format(regularPixel))")
         shot("appearance-regular")
         byIdentifier(app, "reading.close").tap()
@@ -562,6 +721,8 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         }
         XCTAssertEqual(cardLarge.identifier, uuid, "the large variant reopens the same occurrence")
         let largeFrame = cardLarge.frame
+        XCTAssertGreaterThan(largeFrame.height, mediumFrame.height + 1,
+            "the product's Grande text size grows the card (medium \(mediumFrame.height) -> \(largeFrame.height))")
         open(app, uuid)
         XCTAssertTrue(body.waitForExistence(timeout: 60))
         let largeBodyHeight = body.frame.height
@@ -569,7 +730,8 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         let largePixel = averageRGB(largeShot.image, nx: 0.94, ny: 0.55)
         record("appearance-type-large", "setting=Grande body_h=\(largeBodyHeight) "
             + "regular_body_h=\(regularBodyHeight) delta=\(largeBodyHeight - regularBodyHeight) "
-            + "bg=\(format(largePixel)) card_frame=\(largeFrame)")
+            + "card_medium=\(mediumFrame.height) card_large=\(largeFrame.height) "
+            + "card_delta=\(largeFrame.height - mediumFrame.height) bg=\(format(largePixel))")
         shot("appearance-type-large")
         // Continuity *within* the stable large variant: close and return to the same card line.
         byIdentifier(app, "reading.close").tap()
@@ -595,8 +757,13 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         XCTAssertTrue(body.waitForExistence(timeout: 60))
         let paletteShot = XCUIScreen.main.screenshot()
         let palettePixel = averageRGB(paletteShot.image, nx: 0.94, ny: 0.55)
+        let accentDifference = differingPixels(regularShot.image, paletteShot.image,
+            rect: originFrame, window: app.windows.firstMatch.frame)
         record("appearance-palette", "family=Monocromático bg=\(format(palettePixel)) "
-            + "regular_bg=\(format(regularPixel))")
+            + "regular_bg=\(format(regularPixel)) origin_frame=\(originFrame) "
+            + "accent_pixels_changed=\(accentDifference)")
+        XCTAssertGreaterThan(accentDifference, 20,
+            "the palette family changes the accent actually drawn on the reading surface")
         shot("appearance-palette")
         byIdentifier(app, "reading.close").tap()
         XCTAssertTrue(SurfaceTest.waitForAbsence(body, timeout: 30))
@@ -657,18 +824,17 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
     /// advances again on resume, and every surface names the same occurrence.
     func test05RealAudioEpisodePlaysPausesAndResumes() throws {
         let app = try launch()
-        guard let anyCard = ensureSource(app, containing: ["adrift", "art19"], feed: Self.adriftFeed) else {
+        guard ensureSource(app, containing: ["adrift", "art19"], feed: Self.adriftFeed) != nil else {
             return XCTFail("the public Adrift feed publishes a card")
         }
-        let play = anyCard.buttons["card.play"].firstMatch
-        guard play.waitForExistence(timeout: 20) else {
-            throw XCTSkip("the Adrift card in this run is not presented as audio; no playback is claimed")
+        guard let card = pickCard(app, containing: ["adrift", "art19"], requirePlay: true,
+            feed: Self.adriftFeed, label: "audio") else {
+            throw XCTSkip("the Adrift feed presents no playable card in this run; no playback is claimed")
         }
-        let playFrame = play.frame
-        let card = app.descendants(matching: .any).matching(Self.cardIdentifier)
-            .allElementsBoundByIndex.first { $0.frame.contains(playFrame) }
-        let cardTitle = card?.staticTexts["card.title"].label ?? ""
-        record("audio-seed", "seed=\(Self.seed) feed=\(Self.adriftFeed) card=\(card?.identifier ?? "-") "
+        let play = card.buttons["card.play"].firstMatch
+        XCTAssertTrue(play.waitForExistence(timeout: 20), "the seeded card presents its play control")
+        let cardTitle = card.staticTexts["card.title"].label
+        record("audio-seed", "seed=\(Self.seed) feed=\(Self.adriftFeed) card=\(card.identifier) "
             + "title=\(cardTitle)")
         shot("audio-card")
 
@@ -688,7 +854,8 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         if error.exists {
             record("audio-refused", "title=\(title.label) reason=\(error.label)")
             shot("audio-refused")
-            return
+            // A product refusal is an observable failure of this journey, never a silent pass.
+            return XCTFail("the product could not play the episode: \(error.label)")
         }
         XCTAssertEqual(toggle.label, "Pausar")
 
@@ -879,6 +1046,43 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
     private func pixelDistance(_ a: (Double, Double, Double)?, _ b: (Double, Double, Double)?) -> Double {
         guard let a, let b else { return 0 }
         return abs(a.0 - b.0) + abs(a.1 - b.1) + abs(a.2 - b.2)
+    }
+
+    /// Counts pixels that differ beyond `threshold` in the given window-space rect. Both screenshots come from the
+    /// same device and size; the rect is mapped to image pixels. Used for the accent-bearing label, not the page
+    /// tint (which belongs to the period).
+    private func differingPixels(_ a: UIImage, _ b: UIImage, rect: CGRect, window: CGRect,
+        threshold: Int = 12) -> Int {
+        guard let cgA = a.cgImage, let cgB = b.cgImage, window.width > 0, window.height > 0 else { return 0 }
+        let width = cgA.width, height = cgA.height
+        guard cgB.width == width, cgB.height == height else { return 0 }
+        func bytes(_ cg: CGImage) -> [UInt8]? {
+            var buffer = [UInt8](repeating: 0, count: width * height * 4)
+            guard let context = CGContext(data: &buffer, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return buffer
+        }
+        guard let aBytes = bytes(cgA), let bBytes = bytes(cgB) else { return 0 }
+        let sx = CGFloat(width) / window.width
+        let sy = CGFloat(height) / window.height
+        let x0 = max(0, Int(rect.minX * sx)), x1 = min(width - 1, Int(rect.maxX * sx))
+        let y0 = max(0, Int(rect.minY * sy)), y1 = min(height - 1, Int(rect.maxY * sy))
+        guard x0 < x1, y0 < y1 else { return 0 }
+        var changed = 0
+        for y in y0...y1 {
+            let row = height - 1 - y
+            for x in x0...x1 {
+                let index = (row * width + x) * 4
+                var delta = 0
+                for channel in 0..<3 {
+                    delta = max(delta, abs(Int(aBytes[index + channel]) - Int(bBytes[index + channel])))
+                }
+                if delta > threshold { changed += 1 }
+            }
+        }
+        return changed
     }
 
     private func format(_ value: (Double, Double, Double)?) -> String {
