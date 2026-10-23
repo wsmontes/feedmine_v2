@@ -239,6 +239,13 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         "A": "https://feeds.feedburner.com/ArchdailyBR",
         "B": "https://feed.20k.org",
     ]
+    /// The immutable child chain from the route's root to the pinned source's own node, from the frozen catalogue
+    /// (the shipped catalogue carries the same ids): A Brazil → Arts & Culture → Architecture & Design;
+    /// B Technology & Science → Acoustics & Sound.
+    private static let benchmarkRouteChildren: [String: [Int64]] = [
+        "A": [2_856_612_499, 1_315_780_082],
+        "B": [3_733_829_431],
+    ]
 
     /// B05's declared input — **two real reading contexts** — established through the product's own surfaces and
     /// reported as facts, before A is named or measured. The benchmark's reader starts with no selected source
@@ -307,6 +314,19 @@ final class DiscoveryBenchmarkTests: XCTestCase {
             record("b05-precondition:no-route", to: phases)
             closeSourcesSheet(app)
             return false
+        }
+        // The frozen chain, one explicit node at a time. No first-child heuristic: the ids are the catalogue's own
+        // (verified against bench/corpus/catalog.sqlite and the shipped catalogue), and a missing node fails here
+        // with its id rather than silently taking another branch.
+        for id in Self.benchmarkRouteChildren[runProfile] ?? [] {
+            let child = app.buttons["node-child-\(id)"]
+            guard reveal(app, child), child.isHittable else {
+                record("b05-precondition:no-node:\(id)", to: phases)
+                closeSourcesSheet(app)
+                return false
+            }
+            child.tap()
+            Thread.sleep(forTimeInterval: 0.5)
         }
         // The exact source this profile can publish, pinned by its catalogue key. The node's rows are lazy, so the
         // switch is brought into view; if the route did not reach a node that holds it, the step fails with the
@@ -864,6 +884,11 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         let contextsPrepared = prepareB05Contexts(app, phases: phases, profile: profileData,
             runProfile: runProfile)
         record("b05-precondition:\(contextsPrepared ? "true" : "false")", to: phases)
+        // Without the declared two-context input, saving and the A→B→A leg would measure a protocol that was never
+        // established — the failure that made the previous A profile read continuity facts for an empty menu.
+        guard contextsPrepared else {
+            return XCTFail("B05 declared two-context input not established")
+        }
         _ = waitUntil(120) { presentedCard(app) != nil }
 
         // A card the reader saves, and the anchor they are reading. The card is **named first**, and its own
