@@ -428,6 +428,27 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         return nil
     }
 
+    /// Test precondition: the actual opening control, not only its center, must be hittable
+    /// before the before-frame is captured. A partly clipped card remains valid; only the
+    /// control is brought into a hittable position and allowed to settle.
+    private func prepareOpenControl(_ app: XCUIApplication, _ uuid: String) {
+        guard let card = sameCard(app, uuid, timeout: 30) else {
+            return XCTFail("the card \(uuid) is available before preparing its control")
+        }
+        let window = app.windows.firstMatch.frame
+        let control = card.buttons["card.open"].firstMatch
+        XCTAssertTrue(control.waitForExistence(timeout: 10), "the card states its opening control")
+        for _ in 0..<4 {
+            if control.isHittable { break }
+            let frame = control.frame
+            if frame.midY < window.midY { app.swipeDown() } else { app.swipeUp() }
+            Thread.sleep(forTimeInterval: 0.6)
+        }
+        XCTAssertTrue(control.isHittable,
+            "the actual opening control is hittable before the line is captured")
+        Thread.sleep(forTimeInterval: 0.8)
+    }
+
     /// One tap on the occurrence's own opening control, re-queried immediately before the tap: the feed admits
     /// new cards while a journey runs, and an element captured a moment earlier can be stale (its activation point
     /// stops being computable). The element query is live, so this is still one reader gesture on the card.
@@ -526,6 +547,7 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
             return XCTFail("the seeded pick selects an available Euronews card")
         }
         let uuid = card.identifier
+        prepareOpenControl(app, uuid)
         guard let before = settledFrame(app, uuid) else {
             return XCTFail("the card settles at a measurable reading point")
         }
