@@ -42,6 +42,12 @@ public struct CandidateProvider: Sendable {
 
     public init(contentStore: ContentStore) { self.contentStore = contentStore }
 
+    /// Whether the context's own source owns any canonical local supply. Main and
+    /// search contexts answer true: local-first remains their documented rule.
+    public func hasLocalSupply(sourceID: SourceID) throws -> Bool {
+        try contentStore.hasSupply(sourceID: sourceID)
+    }
+
     /// Uses only the plan context. Editorial policy versions are not executed in 3C.
     public func candidates(for plan: FeedPlan, after cursor: CandidateSupplyCursor?, examinedCapacity: Int,
         operation: FeedReplenishmentOperationID? = nil, consult: String = "slice",

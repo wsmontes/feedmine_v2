@@ -123,11 +123,13 @@ final class ColdFeedBootstrapTests: XCTestCase {
             now: { Date(timeIntervalSince1970: 50) })
     }
     private func fixture(sourceContext: Bool = false, search: Bool = false, registrations: Bool = true,
-        items: Int = 1, status: Int = 200, error: URLError? = nil, laterError: URLError? = nil, paused: Bool = false) throws -> Fixture {
+        items: Int = 1, status: Int = 200, error: URLError? = nil, laterError: URLError? = nil, paused: Bool = false,
+        filter: ReaderFilter = .unrestricted) throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let db = try RuntimeDatabase(location: .init(directory: root)), source = SourceID()
-        let context = FeedContext(request: search ? .search(SearchContext(query: "cold")!) : sourceContext ? .source(source) : .main)
+        let context = FeedContext(request: search ? .search(SearchContext(query: "cold")!) : sourceContext ? .source(source) : .main,
+            filter: filter)
         let v = PolicyVersion(rawValue: 1)
         let r = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key, catalogGeneration: .init(rawValue: 1),
             userSelectionVersion: v, eligibilityPolicyVersion: v, scoringPolicyVersion: v, sequencingPolicyVersion: v,
@@ -266,11 +268,12 @@ final class ColdFeedBootstrapTests: XCTestCase {
         try await owner(f).run(identity: identity, resources: resources(local: local, targets: targets),
             backwardCapacity: 0, forwardCapacity: forward)
     }
-    nonisolated private static func seed(_ db: RuntimeDatabase, source: SourceID, count: Int = 1, time: Double = 100) throws {
+    nonisolated private static func seed(_ db: RuntimeDatabase, source: SourceID, count: Int = 1, time: Double = 100,
+        language: String? = nil) throws {
         for n in 0..<count {
             let record = OriginRecordID(), revision = OriginRevision(id: OriginRevisionID(), originRecordID: record,
                 externalVersionIdentity: nil, headline: "Local \(n)", summary: nil, bodyText: nil, authoredAt: nil,
-                modifiedAt: nil, observedAt: Date(timeIntervalSince1970: time + Double(n)), language: nil,
+                modifiedAt: nil, observedAt: Date(timeIntervalSince1970: time + Double(n)), language: language,
                 primaryLink: nil, searchProjection: nil, providerID: nil)
             try ContentStore(database: db).commitCanonicalChange(.init(recordID: record,
                 externalObjectIdentity: .init(connectorKind: .syndication, namespace: "local", value: record.rawValue.uuidString, role: .object),
@@ -359,8 +362,10 @@ final class ColdFeedBootstrapTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(moved.window.items.count, installed.window.items.count)
     }
     func testC3NonexhaustedLocalMissForbidsHTTPAndEligibility() async throws {
-        let f = try fixture(sourceContext: true), id = identity()
-        try Self.seed(f.database, source: SourceID(), count: 3)
+        let f = try fixture(sourceContext: true, filter: ReaderFilter(languages: ["en"])), id = identity()
+        // Supply belongs to the selected source, but the reader's filter excludes it:
+        // the local walk has real work and must not fetch yet.
+        try Self.seed(f.database, source: f.source, count: 1, language: "pt-BR")
         // Materialize valid configuration, then explicitly advance authority so lookup would throw.
         let invalid = f.acquisition
         _ = try AcquisitionTargetAuthority(database: f.database).reconfigure(id: f.target.id,
@@ -372,6 +377,25 @@ final class ColdFeedBootstrapTests: XCTestCase {
         XCTAssertFalse(progress.exhausted); XCTAssertEqual(progress.examinedCount, 1); XCTAssertNotNil(progress.nextCursor)
         XCTAssertEqual(f.http.calls, 0); XCTAssertTrue(f.journal.values.isEmpty)
         try assertAbsent(f, identity: id)
+    }
+
+    /// The preserved real-container failure: the selected source owns no local supply,
+    /// but unrelated global supply fills the structural page. The source's own local-first
+    /// walk can never progress, so the cold bootstrap must reach acquisition instead of
+    /// returning `.localWorkRemaining` forever.
+    func testSourceWithNoLocalSupplyAcquiresDespiteUnrelatedGlobalSupply() async throws {
+        let f = try fixture(sourceContext: true), id = identity()
+        // The fixture observes remote items at 1970-01-01 00:00:50; seed the unrelated
+        // local rows older than that so the fetched source item is the newest supply.
+        try Self.seed(f.database, source: SourceID(), count: 3, time: 1)
+        let outcome = try await run(f, identity: id, local: 1)
+        guard case .published(let snapshot) = outcome else {
+            return XCTFail("Expected acquisition to publish, got \(outcome)")
+        }
+        XCTAssertEqual(f.http.calls, 1)
+        XCTAssertEqual(f.journal.values.filter { $0 == "prepare" }.count, 1)
+        XCTAssertEqual(snapshot.window.items.count, 1)
+        try await assertPublished(f, identity: id, snapshot: snapshot)
     }
     func testC4EmptyAndNoEligibleTargetIsUnavailable() async throws {
         let f = try fixture(registrations: false), id = identity()

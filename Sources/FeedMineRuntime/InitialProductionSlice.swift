@@ -75,6 +75,15 @@ public struct InitialProductionSlice: Sendable {
         }
     }
 
+    /// Whether this context's own source owns any canonical local supply. Main and
+    /// search contexts answer true; a Source context answers false only when the
+    /// selected source has no supply at all, which is the one case in which its
+    /// local-first walk can never make progress.
+    public func hasLocalSupply(for context: FeedContext) throws -> Bool {
+        guard case .source(let sourceID) = context.request else { return true }
+        return try candidateProvider.hasLocalSupply(sourceID: sourceID)
+    }
+
     /// The next bounded structural window, including unresolved revisions so preparation can
     /// work on them. Composition supplies resources; Runtime retains ownership of supply lookup.
     public func revisionsToPrepare(for request: Request) throws -> [OriginRevisionID] {

@@ -172,7 +172,20 @@ public struct ColdFeedBootstrap: Sendable {
             keepsAdmittedHead: keepsAdmittedHead, mediaOpportunity: mediaOpportunity) {
         case .published(let snapshot): return .published(snapshot)
         case .notYet(let progress):
-            guard progress.exhausted else { return .localWorkRemaining(progress) }
+            if !progress.exhausted {
+                // A Source context's local-first walk is bounded by its own supply. The
+                // structural page is global, so a full page of unrelated supply reports
+                // nonexhausted even when the selected source owns nothing: that page is
+                // never local work this context can publish. Acquisition is the next fact
+                // then; Main and Search keep the documented local-first rule.
+                let sourceHasNoLocalSupply: Bool
+                if case .source = plan.context.request {
+                    sourceHasNoLocalSupply = try initialProductionSlice.hasLocalSupply(for: plan.context) == false
+                } else {
+                    sourceHasNoLocalSupply = false
+                }
+                guard sourceHasNoLocalSupply else { return .localWorkRemaining(progress) }
+            }
             firstProgress = progress
         }
 

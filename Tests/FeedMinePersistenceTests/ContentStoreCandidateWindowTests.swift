@@ -97,6 +97,18 @@ final class ContentStoreCandidateWindowTests: XCTestCase {
         }
     }
 
+    func testHasSupplyIsScopedToItsOwnMembershipAndIgnoresOtherSources() throws {
+        try withDatabase { _, store in
+            let requested = SourceID()
+            try insert(1, into: store, source: requested)
+            try insert(2, into: store, source: source)
+            XCTAssertTrue(try store.hasSupply(sourceID: requested))
+            XCTAssertTrue(try store.hasSupply(sourceID: source))
+            XCTAssertFalse(try store.hasSupply(sourceID: SourceID()),
+                "unrelated supply is not local work for this source")
+        }
+    }
+
     func testSourceFilteringAfterBoundDoesNotRefillAndEmptyWindowsProgress() throws {
         try withDatabase { _, store in
             let requested = SourceID()

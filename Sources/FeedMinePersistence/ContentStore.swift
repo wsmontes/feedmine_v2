@@ -76,6 +76,23 @@ public struct ContentStore: Sendable {
         public let exhausted: Bool
     }
 
+    /// Whether this source owns any canonical local supply at all. A Source context may
+    /// use this to decide whether its local-first walk can ever produce a candidate:
+    /// the bounded structural window is global, so a full page of unrelated supply is
+    /// not local work for this source. It reads one indexed existence probe and moves
+    /// no cursor, publication or reader state.
+    public func hasSupply(sourceID: SourceID) throws -> Bool {
+        try database.read { db in
+            try Bool.fetchOne(db, sql: """
+                SELECT EXISTS(
+                    SELECT 1 FROM source_memberships m
+                    JOIN selection_supply s ON s.origin_record_id = m.origin_record_id
+                    WHERE m.source_id = ?
+                )
+                """, arguments: [Self.key(sourceID.rawValue)]) == true
+        }
+    }
+
     public func candidateWindow(sourceID: SourceID?, after cursor: CandidateCursor?, examinedCapacity: Int) throws -> CandidateWindow {
         try candidateWindow(sourceID: sourceID, after: cursor, examinedCapacity: examinedCapacity, originIDs: nil)
     }
