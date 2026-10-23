@@ -999,20 +999,22 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
             "the bound card is visible inside the feed viewport before the swipe")
         shot("plain-before")
         // A real drag inside the feed viewport, not only the XCUIElement swipe helper.
-        // Purely vertical on the right blank margin: no card surface and no horizontal component.
-        let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.75))
-        let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.25))
+        // Purely vertical on the right blank margin; downward from the restored bottom
+        // so the gesture has legal scroll runway toward the top.
+        let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.25))
+        let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.75))
         start.press(forDuration: 0.1, thenDragTo: end)
         let after = byIdentifier(app, uuid)
         let afterVisible = after.exists
             && viewport.contains(CGPoint(x: after.frame.midX, y: after.frame.midY))
         record("plain-liveness", "uuid=\(uuid) viewport=\(viewport) before=\(before) "
             + "after=\(after.exists ? "\(after.frame)" : "gone") visible=\(afterVisible)")
-        if afterVisible {
-            XCTAssertGreaterThan(abs(before.minY - after.frame.minY), 20,
-                "one plain swipe moves the visible card line by more than 20 pt")
-        }
         shot("plain-after")
+        guard after.exists else {
+            return XCTFail("the bound card remains addressable after the scroll")
+        }
+        XCTAssertGreaterThan(abs(before.minY - after.frame.minY), 20,
+            "one native drag moves the bound card line by more than 20 pt")
         SurfaceTest.menuEntry(app, "Ajustes")
         XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 30),
             "the reader menu opens")
