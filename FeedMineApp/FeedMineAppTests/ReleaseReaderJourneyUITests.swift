@@ -1126,15 +1126,18 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         SurfaceTest.menuEntry(app, "Ajustes")
         XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 30))
         let clock = app.switches["settings-circadian-palette"]
-        // A disabled palette-family picker is a picker that cannot run the experiment. The switch states its
-        // own value; when it is not already on, one tap enables it.
+        // A disabled palette-family picker is a picker that cannot run the experiment. The row's
+        // inner switch is the actual control; tap it and assert the stored value really changes.
         if (clock.value as? String) != "1" {
-            clock.tap()
-            let deadline = Date().addingTimeInterval(15)
+            let control = clock.switches.firstMatch
+            (control.exists ? control : clock).tap()
+            let deadline = Date().addingTimeInterval(20)
             while Date() < deadline, (clock.value as? String) != "1" {
                 Thread.sleep(forTimeInterval: 0.2)
             }
         }
+        XCTAssertEqual(clock.value as? String, "1",
+            "the adaptive palette switch actually turns on")
         let picker = byIdentifier(app, "settings-palette-family")
         XCTAssertTrue(SurfaceTest.scrollIntoView(picker, in: app, timeout: 20))
         let raw = picker.value as? String
@@ -1148,10 +1151,29 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
             record("palette-option-miss", "wanted=\(label) current=\(current)")
             _ = chooseOption(app, paletteLabel(current))
         }
-        record("palette-setting", "wanted=\(label) before=\(original) "
-            + "after=\(byIdentifier(app, "settings-palette-family").value ?? "-")")
+        // A menu left open over the sheet consumes the Concluir tap. Let the normal UI dismiss it.
+        let predicate = NSPredicate(format: "label ==[cd] %@", label)
+        func optionVisible() -> Bool {
+            let candidates = app.buttons.matching(predicate).allElementsBoundByIndex
+                + app.menuItems.matching(predicate).allElementsBoundByIndex
+            return candidates.contains {
+                $0.exists && $0.identifier != "settings-palette-family"
+            }
+        }
+        let menuDeadline = Date().addingTimeInterval(5)
+        while Date() < menuDeadline, optionVisible() { Thread.sleep(forTimeInterval: 0.2) }
+        if optionVisible() {
+            app.navigationBars["Ajustes"].tap()
+            let dismissDeadline = Date().addingTimeInterval(5)
+            while Date() < dismissDeadline, optionVisible() { Thread.sleep(forTimeInterval: 0.2) }
+        }
+        let applied = byIdentifier(app, "settings-palette-family").value as? String ?? ""
+        XCTAssertEqual(paletteLabel(applied), label,
+            "the selected palette family is actually applied")
+        record("palette-setting", "wanted=\(label) before=\(original) after=\(applied)")
         app.buttons["settings-done"].tap()
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30))
+        XCTAssertTrue(app.navigationBars["Ajustes"].waitForNonExistence(timeout: 30),
+            "the Ajustes settings sheet is gone before feed capture")
         return paletteLabel(original)
     }
 
