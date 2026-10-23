@@ -57,6 +57,9 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
     private static let euronewsFeed = "https://pt.euronews.com/rss"
     private static let egyptFeed = "https://www.egyptindependent.com/feed/"
     private static let adriftFeed = "https://rss.art19.com/adrift"
+    /// Whether the last seeded pick had at least one real candidate (distinguishes an absent stratum from a
+    /// harness reacquisition failure; only the former may skip).
+    private var lastSampleHadCandidates = false
 
     private static var cardIdentifier: NSPredicate {
         NSPredicate(format: "identifier MATCHES %@",
@@ -329,6 +332,7 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         var screensScanned = 0
         let candidates = candidateUUIDs(app, containing: needles, requirePlay: requirePlay,
             screensScanned: &screensScanned)
+        lastSampleHadCandidates = !candidates.isEmpty
         guard !candidates.isEmpty else {
             record("\(label)-sample-empty", "seed=\(Self.seed) feed=\(feed) candidates=0")
             return nil
@@ -607,7 +611,13 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         let title = card.staticTexts["card.title"].firstMatch.label
         let bookmark = card.buttons["card.bookmark"].firstMatch
         XCTAssertTrue(bookmark.exists, "the card states its own save control")
-        if bookmark.value as? String == "bookmarked" { bookmark.tap() }
+        if bookmark.value as? String == "bookmarked" {
+            bookmark.tap()
+            XCTAssertTrue(SurfaceTest.waitForValue(bookmark, differentFrom: "bookmarked", timeout: 20),
+                "the existing bookmark is removed before the save step")
+        }
+        XCTAssertEqual(bookmark.value as? String, "not bookmarked",
+            "the save step starts from an unbookmarked card")
         let before = bookmark.value as? String
         bookmark.tap()
         XCTAssertTrue(SurfaceTest.waitForValue(bookmark, differentFrom: before, timeout: 20),
@@ -668,11 +678,11 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         // Leave the library as it was found: read the current bookmark value from the feed, then remove it.
         app.navigationBars["Salvos"].buttons.firstMatch.tap()
         if app.buttons["bookmarkBoxes.done"].exists { app.buttons["bookmarkBoxes.done"].tap() }
-        if let feedCard = sourceCard(app, containing: ["egypt independent", "egyptindependent"], timeout: 60) {
+        if let feedCard = sameCard(app, uuid, timeout: 90) {
             let remove = feedCard.buttons["card.bookmark"].firstMatch
             if remove.exists {
                 XCTAssertEqual(remove.value as? String, "bookmarked",
-                    "the bookmark is still stored after the relaunch")
+                    "the saved occurrence is still bookmarked after the relaunch")
                 remove.tap()
                 _ = SurfaceTest.waitForValue(remove, differentFrom: "bookmarked", timeout: 20)
             }
@@ -829,6 +839,10 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         }
         guard let card = pickCard(app, containing: ["adrift", "art19"], requirePlay: true,
             feed: Self.adriftFeed, label: "audio") else {
+            if lastSampleHadCandidates {
+                return XCTFail("a playable Adrift candidate existed but the seeded pick could not be reacquired; "
+                    + "see audio-sample-missing")
+            }
             throw XCTSkip("the Adrift feed presents no playable card in this run; no playback is claimed")
         }
         let play = card.buttons["card.play"].firstMatch
