@@ -3160,4 +3160,106 @@ final class FeedMineUITests: XCTestCase {
         add(attachment)
         app.buttons["filter-done"].tap()
     }
+
+    /// The reader's way out of a source context that has **no eligible item yet**. Measured dead end
+    /// (`bench/run/20261023T220407Z`): a single selected source drew a full-screen "Finding stories for you…"
+    /// with no header, no context control and no way back for more than seven minutes. The shell (context chip,
+    /// sources, saved, filters, menu) must stay mounted while the content is loading or empty, and Main must be
+    /// reachable without waiting for any card. The source is deterministic: Algeria's only feed is French, so it
+    /// cannot publish for this Portuguese/Brazil reader.
+    @MainActor
+    func testAnEmptySourceContextKeepsTheContextControl() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
+        app.launchEnvironment["FEEDMINE_SKIP_ONBOARDING"] = "0"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["welcome-headline"].waitForExistence(timeout: 90),
+            "the reader meets the app")
+        app.buttons["welcome-shape"].tap()
+        XCTAssertTrue(app.staticTexts["composer-subtitle"].waitForExistence(timeout: 30))
+        let english = app.buttons["composer-language-en"]
+        if english.exists, english.isSelected || english.value as? String == "1" { english.tap() }
+        let portuguese = app.buttons["composer-language-pt"]
+        if portuguese.exists, !(portuguese.isSelected || portuguese.value as? String == "1") {
+            portuguese.tap()
+        }
+        let composer = app.otherElements["onboarding"].scrollViews.firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 20))
+        let place = app.buttons["composer-region-90_countries/brazil"]
+        for _ in 0..<8 where !(place.exists && place.isHittable) { composer.swipeUp() }
+        XCTAssertTrue(place.exists && place.isHittable, "the first run offers the reader's place")
+        if !place.isSelected { place.tap() }
+        let open = app.buttons["composer-open-feed"]
+        for _ in 0..<6 where !open.isHittable { composer.swipeUp() }
+        XCTAssertTrue(open.isHittable, "the first run's own action starts the feed")
+        open.tap()
+        let menu = app.buttons["more-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 240), "the reader reaches the feed's chrome")
+        // Sources → the countries level → Algeria → its only source. The product's own surface, no injection.
+        menu.tap()
+        let sourcesEntry = app.buttons["antenna.radiowaves.left.and.right"].firstMatch
+        XCTAssertTrue(sourcesEntry.waitForExistence(timeout: 10), "the menu offers the source surface")
+        sourcesEntry.tap()
+        let countries = app.buttons["sources-open-countries"]
+        XCTAssertTrue(reveal(app, countries), "the source surface offers its choices")
+        countries.tap()
+        let algeria = app.buttons["country-algeria"]
+        XCTAssertTrue(reveal(app, algeria), "the countries list offers Algeria")
+        algeria.tap()
+        var source: XCUIElement?
+        for _ in 0..<6 {
+            let toggle = app.switches.matching(NSPredicate(
+                format: "identifier BEGINSWITH 'node-source-toggle-'")).firstMatch
+            if toggle.waitForExistence(timeout: 8) { source = toggle; break }
+            let child = app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH 'node-child-'")).firstMatch
+            guard child.waitForExistence(timeout: 8) else { break }
+            child.tap()
+        }
+        let sourceToggle = try XCTUnwrap(source, "Algeria leads to its source")
+        sourceToggle.tap()
+        Thread.sleep(forTimeInterval: 1)
+        for _ in 0..<8 where !app.buttons["sources-done"].exists {
+            let back = app.navigationBars.buttons.firstMatch
+            guard back.exists, back.isHittable else { break }
+            back.tap()
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        app.buttons["sources-done"].tap()
+        // The single selected source becomes the reading context; it has no eligible item for this reader, and
+        // the shell must still be the reader's surface.
+        let chip = element(app, "reader-contexts")
+        XCTAssertTrue(chip.waitForExistence(timeout: 30),
+            "the context control is mounted while the source context has no item")
+        XCTAssertTrue(chip.isHittable, "and it is usable without waiting for content")
+        chip.tap()
+        let entries = contextMenuEntries(app)
+        XCTAssertFalse(entries.isEmpty, "the context menu offers the way back to Main")
+        entries[0].tap()
+        XCTAssertTrue(waitForAbsence(element(app, "reader-context-label"), timeout: 30),
+            "the reader returns to the main context without waiting for content")
+        XCTAssertTrue(element(app, "reader-contexts").isHittable, "and the control remains available")
+    }
+
+    /// Scrolls a lazy list until the control is really reachable.
+    @MainActor
+    private func reveal(_ app: XCUIApplication, _ element: XCUIElement, attempts: Int = 10) -> Bool {
+        for _ in 0..<attempts {
+            if element.exists && element.isHittable { return true }
+            let list = app.tables.firstMatch
+            if list.exists { list.swipeUp() } else { app.swipeUp() }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return element.exists && element.isHittable
+    }
+
+    /// The rows of the product's context menu: buttons without an identifier (every app control carries one),
+    /// main first — the same language-independent rule the benchmark driver states.
+    @MainActor
+    private func contextMenuEntries(_ app: XCUIApplication) -> [XCUIElement] {
+        app.buttons.allElementsBoundByIndex
+            .filter { $0.exists && $0.isHittable && $0.identifier.isEmpty && !$0.label.isEmpty }
+            .sorted { $0.frame.minY < $1.frame.minY }
+    }
 }

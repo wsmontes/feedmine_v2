@@ -66,24 +66,35 @@ public struct FeedScreen: View {
         } else if store.isSearching || !store.renderedItems.isEmpty {
             ReaderShell(store: store, appearance: appearance, status: { statusChip },
                 lens: { if let lens { lens } }) {
+                // The cover and its accessibility hiding are scoped to the **feed content**, never to the shell:
+                // the reader's own header (context chip, sources, saved, filters, menu) stays usable while the
+                // preparation cover is up, which is the surface's stated intent and the only way out of a context
+                // that is still preparing.
                 feedBody
-            }
-            // While the cover is up, the laid-out cards are not on screen: they are measured, not shown, and
-            // the accessibility tree must say the same thing the pixels do.
-            .accessibilityHidden(drawsPreparationCover)
-            // D4: the transition from preparation to reading is held by the **measured layout**, not by the
-            // arrival of a first card. The cards are laid out here (that is what measurement needs) and the
-            // preparation surface stays over them until they reach the viewport bottom. The judge is
-            // `FeedFirstScreenGate`; nothing about publication, admission or the cards changes.
-            .overlay {
-                if drawsPreparationCover {
-                    preparationSurface
-                        .transition(.opacity)
-                }
+                    // While the cover is up, the laid-out cards are not on screen: they are measured, not shown,
+                    // and the accessibility tree must say the same thing the pixels do.
+                    .accessibilityHidden(drawsPreparationCover)
+                    // D4: the transition from preparation to reading is held by the **measured layout**, not by
+                    // the arrival of a first card. The cards are laid out here (that is what measurement needs)
+                    // and the preparation surface stays over them until they reach the viewport bottom. The judge
+                    // is `FeedFirstScreenGate`; nothing about publication, admission or the cards changes.
+                    .overlay {
+                        if drawsPreparationCover {
+                            preparationSurface
+                                .transition(.opacity)
+                        }
+                    }
             }
         } else {
-            FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
-                onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() })
+            // A source context that has no published item yet is a **reading surface**, not a dead end: without
+            // the shell it drew a full-screen "Finding stories for you…" with no header, no context control and
+            // no way back to Main or to the sources (measured 2026-10-23: more than seven minutes, no control).
+            // The same chrome is mounted over the loading content; the content stays the work surface it was.
+            ReaderShell(store: store, appearance: appearance, status: { statusChip },
+                lens: { if let lens { lens } }) {
+                FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
+                    onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() })
+            }
         }
     }
 

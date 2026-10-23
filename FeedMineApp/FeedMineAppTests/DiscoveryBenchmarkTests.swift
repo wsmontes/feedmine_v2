@@ -226,14 +226,23 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         return waitUntil(30) { !label.exists }
     }
 
+    /// Frozen-corpus routes: the section nodes whose first drilled source can publish for a section-scoped
+    /// profile. The ids are the benchmark catalogue's own (`bench/corpus/catalog.sqlite`); `04-technology-science`
+    /// leads to "Twenty Thousand Hertz", whose 9 items are all eligible for profile B. A region profile uses its
+    /// own country node instead (`90_countries/brazil` → "São Paulo nas Alturas", 6/6 items eligible for A).
+    private static let benchmarkSectionNodes: [String: Int64] = [
+        "04-technology-science": 3_192_345_324,
+        "01-news-current-affairs": 1_681_750_652,
+    ]
+
     /// B05's declared input — **two real reading contexts** — established through the product's own surfaces and
     /// reported as facts, before A is named or measured. The benchmark's reader starts with no selected source
     /// (`reader_preferences.source_keys` empty), which is the product's honest empty selection; `reader-contexts`
     /// then lists only the main context. The reader's own act creates the second one: the overflow menu's Sources
-    /// sheet, and one individual catalogue source enabled by its own row. Nothing is injected: the catalogue, the
-    /// sheet, the selection and the context rebuild are the product's.
+    /// sheet and one **profile-compatible** catalogue source. The route is chosen from the frozen corpus, not
+    /// from display order: profile A's region node, or the section node its interests name. Nothing is injected.
     @discardableResult
-    private func prepareB05Contexts(_ app: XCUIApplication, phases: URL?) -> Bool {
+    private func prepareB05Contexts(_ app: XCUIApplication, phases: URL?, profile: Profile) -> Bool {
         // The overflow menu's entries carry the SF Symbol as their identifier (ReaderNavigation.standard), so the
         // Sources entry is language-independent. A first open can precede installed destinations: same gesture.
         var opened = false
@@ -250,27 +259,49 @@ final class DiscoveryBenchmarkTests: XCTestCase {
             if menu.exists { menu.tap() }
             Thread.sleep(forTimeInterval: 1)
         }
-        guard opened, reveal(app, app.buttons["sources-open-countries"]) else {
+        guard opened else {
             record("b05-precondition:not-opened", to: phases)
             return false
         }
-        let enabled = app.staticTexts["sources-enabled-count"]
-        let before = enabled.exists ? enabled.label : "none"
-        app.buttons["sources-open-countries"].tap()
-        // The route the product's own source journey proves (FeedMineUITests): the countries list, one country,
-        // then down its subtree until an individual source's own toggle is really in the tree. Toggles are
-        // switches to XCUITest; the row buttons and the toggle are separate controls, so nothing is enabled by
-        // accident at a level above.
-        let countryRow = app.buttons.matching(NSPredicate(
-            format: "identifier BEGINSWITH 'country-' AND identifier != 'country-toggle-all'")).firstMatch
-        guard reveal(app, countryRow), countryRow.isHittable else {
-            record("b05-precondition:no-country", to: phases)
+        // Route: a region-scoped profile opens its own country; a section-scoped profile opens the first section
+        // its interests name. Both nodes lead, by the catalogue's own order, to a source that can publish here.
+        let countrySlug = profile.region?.split(separator: "/").last.map(String.init)
+        let section = profile.interests.lazy.compactMap { key in
+            Self.benchmarkSectionNodes[key].map { (key, $0) }
+        }.first
+        if let countrySlug {
+            guard reveal(app, app.buttons["sources-open-countries"]) else {
+                record("b05-precondition:no-countries-link", to: phases)
+                closeSourcesSheet(app)
+                return false
+            }
+            app.buttons["sources-open-countries"].tap()
+            let row = app.buttons["country-\(countrySlug)"]
+            guard reveal(app, row), row.isHittable else {
+                record("b05-precondition:no-country:\(countrySlug)", to: phases)
+                closeSourcesSheet(app)
+                return false
+            }
+            record("b05-precondition-route:country/\(countrySlug)", to: phases)
+            row.tap()
+        } else if let section {
+            let row = app.buttons["node-child-\(section.1)"]
+            guard reveal(app, row), row.isHittable else {
+                record("b05-precondition:no-section:\(section.0)", to: phases)
+                closeSourcesSheet(app)
+                return false
+            }
+            record("b05-precondition-route:section/\(section.0)", to: phases)
+            row.tap()
+        } else {
+            record("b05-precondition:no-route", to: phases)
             closeSourcesSheet(app)
             return false
         }
-        countryRow.tap()
+        // Down the node's own subtree until an individual source's own toggle is in the tree. Toggles are
+        // switches to XCUITest; the row buttons and the toggle are separate controls.
         var toggle: XCUIElement?
-        for _ in 0..<5 {
+        for _ in 0..<6 {
             let sourceToggle = app.switches.matching(NSPredicate(
                 format: "identifier BEGINSWITH 'node-source-toggle-'")).firstMatch
             if sourceToggle.waitForExistence(timeout: 8) { toggle = sourceToggle; break }
@@ -292,35 +323,15 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         record("b05-precondition-source:\(sourceID)", to: phases)
         record("b05-precondition-source-name:\(sourceName)", to: phases)
         record("b05-precondition-source-selected:\(String(describing: toggle.value))", to: phases)
-        // A **second** individual source, so the selection is not the single-source state: the product then keeps
-        // the main context when the sheet closes (`toggleSource` selects `.source` only for exactly one feed), and
-        // A is main without depending on the source context's own publication. The rows are lazy; bounded scroll.
-        var secondName = "none"
-        for _ in 0..<6 {
-            let candidates = app.switches
-                .matching(NSPredicate(format: "identifier BEGINSWITH 'node-source-toggle-'"))
-                .allElementsBoundByIndex
-            if let other = candidates.first(where: {
-                $0.exists && $0.identifier != toggle.identifier && $0.isHittable
-            }) {
-                secondName = other.label
-                other.tap()
-                Thread.sleep(forTimeInterval: 1)
-                break
-            }
-            let list = app.tables.firstMatch
-            if list.exists { list.swipeUp() } else { app.swipeUp() }
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        record("b05-precondition-second-source:\(secondName)", to: phases)
         closeSourcesSheet(app)
         _ = waitUntil(20) { !app.buttons["sources-done"].exists }
-        _ = waitUntil(120) { presentedCard(app) != nil }
-        // One selected source becomes the reading context; A is the main context, so return explicitly and wait
-        // for the production the anchor is then measured on.
+        // Return **immediately**, before waiting for any card: one selected source makes it the reading context,
+        // and the shell (mounted even while that context has no item) is what offers the way back. Waiting for the
+        // source's content first is what made the driver mistake an empty context for a missing control.
         let returned = returnToMainContext(app)
-        _ = waitUntil(120) { presentedCard(app) != nil }
         record("b05-precondition-main:\(returned)", to: phases)
+        // Only now wait for A's own publication; the anchor is measured on the final main feed.
+        _ = waitUntil(120) { presentedCard(app) != nil }
         return returned
     }
 
@@ -826,15 +837,16 @@ final class DiscoveryBenchmarkTests: XCTestCase {
     func testB05ContextsReopenOfflineAndSaved() throws {
         let (corpus, namespace, phases, runProfile) = try runIdentity()
         let app = launch(namespace)
-        try walkTheFirstRunJourney(app, profile: try profile(runProfile, in: corpus), name: runProfile,
-            phases: phases)
+        let profileData = try profile(runProfile, in: corpus)
+        try walkTheFirstRunJourney(app, profile: profileData, name: runProfile, phases: phases)
         let feed = app.scrollViews.firstMatch
 
         // B05's declared input is **two real reading contexts**. They are established by the reader's own act —
-        // the product's Sources sheet, one individual catalogue source — before A is named, so A's publication and
-        // anchor are measured on the final main feed. The benchmark's reader otherwise starts with no selected
-        // source (source_keys empty), and a main-only menu is that honest state, not a product defect.
-        let contextsPrepared = prepareB05Contexts(app, phases: phases)
+        // the product's Sources sheet, one **profile-compatible** catalogue source chosen from the frozen corpus —
+        // before A is named, so A's publication and anchor are measured on the final main feed. The benchmark's
+        // reader otherwise starts with no selected source (source_keys empty), and a main-only menu is that honest
+        // state, not a product defect.
+        let contextsPrepared = prepareB05Contexts(app, phases: phases, profile: profileData)
         record("b05-precondition:\(contextsPrepared ? "true" : "false")", to: phases)
         _ = waitUntil(120) { presentedCard(app) != nil }
 
@@ -913,6 +925,10 @@ final class DiscoveryBenchmarkTests: XCTestCase {
                     if reachedB {
                         record("b05-context-b:\(bName)", to: phases)
                         record("b05-context-b-label:\(contextLabel.label)", to: phases)
+                        // Identity is the criterion; the card is the bounded proof that B is a real reading
+                        // context for this profile too, not merely a label the driver selected.
+                        let bCard = waitUntil(120) { presentedCard(app) != nil }
+                        record("b05-context-b-card:\(bCard)", to: phases)
                         // Back to A: the menu's first entry is the main context. The source context publishes its
                         // own feed and may draw its preparation surface first, where the reader's header is not
                         // mounted; the chip's return is awaited (bounded) rather than tapped blind.
