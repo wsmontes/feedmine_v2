@@ -998,23 +998,36 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         XCTAssertTrue(viewport.contains(CGPoint(x: before.midX, y: before.midY)),
             "the bound card is visible inside the feed viewport before the swipe")
         shot("plain-before")
-        // A real drag inside the feed viewport, not only the XCUIElement swipe helper.
-        // Purely vertical on the right blank margin; downward from the restored bottom
-        // so the gesture has legal scroll runway toward the top.
-        let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.25))
-        let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.75))
-        start.press(forDuration: 0.1, thenDragTo: end)
-        let after = byIdentifier(app, uuid)
-        let afterVisible = after.exists
-            && viewport.contains(CGPoint(x: after.frame.midX, y: after.frame.midY))
-        record("plain-liveness", "uuid=\(uuid) viewport=\(viewport) before=\(before) "
-            + "after=\(after.exists ? "\(after.frame)" : "gone") visible=\(afterVisible)")
+        // At most two opposed normal user drags on the same vertical right margin:
+        // down first, then the opposite direction only when down meets an edge/end.
+        // The final assertion accepts only actual card movement, never a zero pass.
+        func drag(from startY: CGFloat, to endY: CGFloat) {
+            let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: startY))
+            let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: endY))
+            start.press(forDuration: 0.1, thenDragTo: end)
+        }
+        func measured(_ after: XCUIElement) -> CGFloat {
+            after.exists ? abs(before.minY - after.frame.minY) : 0
+        }
+        drag(from: 0.25, to: 0.75)
+        var after = byIdentifier(app, uuid)
+        var movement = measured(after)
+        record("plain-liveness", "direction=down viewport=\(viewport) before=\(before) "
+            + "after=\(after.exists ? "\(after.frame)" : "gone") movement=\(movement)")
+        if movement <= 20 {
+            shot("plain-edge")
+            drag(from: 0.75, to: 0.25)
+            after = byIdentifier(app, uuid)
+            movement = measured(after)
+            record("plain-liveness", "direction=up viewport=\(viewport) before=\(before) "
+                + "after=\(after.exists ? "\(after.frame)" : "gone") movement=\(movement)")
+        }
         shot("plain-after")
         guard after.exists else {
-            return XCTFail("the bound card remains addressable after the scroll")
+            return XCTFail("the bound card remains addressable after the opposed drags")
         }
-        XCTAssertGreaterThan(abs(before.minY - after.frame.minY), 20,
-            "one native drag moves the bound card line by more than 20 pt")
+        XCTAssertGreaterThan(movement, 20,
+            "at least one legal-direction drag moves the bound card line by more than 20 pt")
         SurfaceTest.menuEntry(app, "Ajustes")
         XCTAssertTrue(app.navigationBars["Ajustes"].waitForExistence(timeout: 30),
             "the reader menu opens")
