@@ -1009,13 +1009,18 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         shot("audio-resumed")
     }
 
-    /// Bounded plain-swipe liveness on the populated Egypt source context. One source-label
-    /// query confirms the scope, one direct card UUID query binds a card that is **visible in
-    /// the window**, and one direct UUID query after the swipe measures the actual line
-    /// movement in either direction. No `visibleMatchingCards`, no `ensureSource`, no per-card
-    /// `staticTexts` enumeration. The existing menu helper supplies the observable open/close.
+    /// Bounded plain-swipe liveness on the populated Egypt source context. A bounded
+    /// `ensureSource` switches the persisted last context (for example the audio source from
+    /// test05) to Egypt; one direct card UUID query binds a card that is **visible in the
+    /// window**, and one direct UUID query after the drag measures the actual line movement in
+    /// either direction. No `visibleMatchingCards` and no per-card `staticTexts` enumeration.
+    /// The existing menu helper supplies the observable open/close.
     func test06PlainSwipeLiveness() throws {
         let app = try launch()
+        guard ensureSource(app, containing: ["egypt independent", "egyptindependent"],
+            feed: Self.egyptFeed) != nil else {
+            return XCTFail("the public Egypt Independent feed publishes a card")
+        }
         XCTAssertTrue(app.staticTexts["Egypt Independent"].firstMatch.waitForExistence(timeout: 60),
             "the active source context is Egypt Independent")
         let scroll = app.scrollViews.firstMatch
