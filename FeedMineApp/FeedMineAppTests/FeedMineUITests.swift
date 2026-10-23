@@ -3169,6 +3169,9 @@ final class FeedMineUITests: XCTestCase {
     /// cannot publish for this Portuguese/Brazil reader.
     @MainActor
     func testAnEmptySourceContextKeepsTheContextControl() throws {
+        // One failure is the finding: a setup step that cannot be reached must not decay into a chain of
+        // timeouts and irrelevant taps.
+        continueAfterFailure = false
         let app = XCUIApplication()
         app.launchEnvironment["FEEDMINE_RUNTIME_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["FEEDMINE_ONBOARDING"] = "1"
@@ -3210,69 +3213,112 @@ final class FeedMineUITests: XCTestCase {
         // preparation surface until the feed it belongs to has content. On the old screen that is exactly the
         // reachability the regression is about, so the wait is on hittability, bounded.
         XCTAssertTrue(waitHittable(menu, timeout: 180), "the reader's chrome is usable")
-        // Deterministic ineligibility without a network trick: the reader's own language filter is set to
-        // Portuguese. The pinned feed is French, so its source context has no item to draw even though the feed
-        // itself resolves — the same product criterion that hid it in the measured run.
+        // Deterministic ineligibility without a network trick: the reader's own language filter is Portuguese.
+        // The pinned feed is French, so its source context has no item to draw even though the feed resolves —
+        // the same product criterion that left the measured source context empty.
         app.buttons["filter-button"].tap()
         let portugueseRow = app.buttons["language-pt"]
-        XCTAssertTrue(reveal(app, portugueseRow), "the filter lists Portuguese")
-        if portugueseRow.value as? String != "selected" { portugueseRow.tap() }
-        XCTAssertEqual(portugueseRow.value as? String, "selected", "the filter selects Portuguese")
-        app.buttons["filter-done"].tap()
-        XCTAssertTrue(menu.waitForExistence(timeout: 60), "the feed returns after the filter")
-        XCTAssertTrue(waitHittable(menu, timeout: 60), "the chrome is usable after the filter")
-        // The exact pinned feed, added through the product's own Add Feed sheet. Its four items are French and
-        // filtered out for this Portuguese/Brazil reader, so the single selected source is the empty context the
-        // regression is about. The sheet's controls are identifiers, not labels.
-        let frenchFeed = "https://enriqueiglesias.forumactif.org/feed"
-        // The reader menu's rows are PopUpButtons here, so the entry is resolved by identifier across element types;
-        // the reader's own gesture is retried when a first open arrives before the destinations are installed.
-        let addFeedEntry = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == %@", "plus.circle")).firstMatch
-        var openedAddFeed = false
-        for _ in 0..<4 {
-            menu.tap()
-            if addFeedEntry.waitForExistence(timeout: 5) { openedAddFeed = true; break }
-            if menu.exists { menu.tap() }
-            Thread.sleep(forTimeInterval: 1)
+        guard reveal(app, portugueseRow) else {
+            XCTFail("the filter lists Portuguese"); return
         }
-        XCTAssertTrue(openedAddFeed, "the menu offers adding a feed")
-        addFeedEntry.tap()
-        let field = app.textFields["add-feed-input"]
-        XCTAssertTrue(field.waitForExistence(timeout: 20), "the add-feed sheet is up")
-        field.tap()
-        field.typeText(frenchFeed)
-        let add = app.buttons["add-feed-add"]
-        XCTAssertTrue(add.waitForExistence(timeout: 10))
-        add.tap()
-        let added = element(app, "add-feed-result-added")
-        XCTAssertTrue(added.waitForExistence(timeout: 180), "the product resolved the pinned feed")
-        app.buttons["add-feed-cancel"].tap()
+        if portugueseRow.value as? String != "selected" { portugueseRow.tap() }
+        guard portugueseRow.value as? String == "selected" else {
+            XCTFail("the filter selects Portuguese"); return
+        }
+        app.buttons["filter-done"].tap()
+        guard menu.waitForExistence(timeout: 60), waitHittable(menu, timeout: 60) else {
+            XCTFail("the feed's chrome returns after the filter"); return
+        }
+        // The exact pinned feed at its proven catalogue placement. The node ids are the shipped catalogue's own
+        // (`FeedMineApp/.../Resources/catalog.sqlite` and the frozen corpus agree): Algeria → Entertainment →
+        // Celebrity & Gossip → the feed key. No display-order heuristic, no label variant.
+        let frenchFeed = "https://enriqueiglesias.forumactif.org/feed"
+        guard openReaderMenuEntry(app, menu, symbol: "antenna.radiowaves.left.and.right") else {
+            XCTFail("the menu offers the source surface"); return
+        }
+        let countries = app.buttons["sources-open-countries"]
+        guard reveal(app, countries) else { XCTFail("the source surface offers its choices"); return }
+        countries.tap()
+        let algeria = app.buttons["country-algeria"]
+        guard reveal(app, algeria) else { XCTFail("the countries list offers Algeria"); return }
+        algeria.tap()
+        let entertainment = app.buttons["node-child-3142363754"]
+        guard reveal(app, entertainment) else { XCTFail("Algeria offers Entertainment"); return }
+        entertainment.tap()
+        let celebrity = app.buttons["node-child-2932038721"]
+        guard reveal(app, celebrity) else { XCTFail("Entertainment offers Celebrity & Gossip"); return }
+        celebrity.tap()
+        let sourceToggle = app.switches["node-source-toggle-\(frenchFeed)"]
+        guard reveal(app, sourceToggle) else {
+            XCTFail("the pinned French feed is offered"); return
+        }
+        sourceToggle.tap()
+        Thread.sleep(forTimeInterval: 1)
+        for _ in 0..<8 where !app.buttons["sources-done"].exists {
+            let back = app.navigationBars.buttons.firstMatch
+            guard back.exists, back.isHittable else { break }
+            back.tap()
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        guard app.buttons["sources-done"].exists, app.buttons["sources-done"].isHittable else {
+            XCTFail("the source sheet returns to its Done control"); return
+        }
+        app.buttons["sources-done"].tap()
         // The single selected source becomes the reading context. It has no eligible item for this reader: the
         // loading surface is what is drawn and **no card** is presented. Only that state makes the escape
         // meaningful; a test that ran with content would not be the regression.
         let loading = element(app, "feed-loading-surface")
-        XCTAssertTrue(loading.waitForExistence(timeout: 45),
-            "the source context is preparing with no eligible item")
+        guard loading.waitForExistence(timeout: 45) else {
+            XCTFail("the source context is preparing with no eligible item"); return
+        }
         Thread.sleep(forTimeInterval: 2)
         let cards = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier MATCHES %@",
                 "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"))
             .allElementsBoundByIndex
             .filter { $0.exists && $0.frame.height > 40 && $0.frame.intersects(app.windows.firstMatch.frame) }
-        XCTAssertEqual(cards.count, 0, "no card is presented for this ineligible source")
-        // The shell must still be the reader's surface.
+        guard cards.isEmpty else {
+            XCTFail("no card is presented for this ineligible source"); return
+        }
+        // The shell must still be the reader's surface. On the old screen this is the failing assertion: the
+        // context control is absent and the reader has no way back.
         let chip = element(app, "reader-contexts")
-        XCTAssertTrue(chip.waitForExistence(timeout: 30),
-            "the context control is mounted while the source context has no item")
-        XCTAssertTrue(chip.isHittable, "and it is usable without waiting for content")
+        guard chip.waitForExistence(timeout: 30) else {
+            XCTFail("the context control is mounted while the source context has no item"); return
+        }
+        let identity = element(app, "reader-context-label")
+        guard identity.exists, identity.label.contains("enrique iglesias") else {
+            XCTFail("the source context states its own identity: \(identity.exists ? identity.label : "absent")")
+            return
+        }
+        guard chip.isHittable else {
+            XCTFail("the context control is usable without waiting for content"); return
+        }
         chip.tap()
         let entries = contextMenuEntries(app)
-        XCTAssertFalse(entries.isEmpty, "the context menu offers the way back to Main")
+        guard !entries.isEmpty else { XCTFail("the context menu offers the way back to Main"); return }
         entries[0].tap()
-        XCTAssertTrue(waitForAbsence(element(app, "reader-context-label"), timeout: 30),
-            "the reader returns to the main context without waiting for content")
-        XCTAssertTrue(element(app, "reader-contexts").isHittable, "and the control remains available")
+        guard waitForAbsence(element(app, "reader-context-label"), timeout: 30) else {
+            XCTFail("the reader returns to the main context without waiting for content"); return
+        }
+        guard element(app, "reader-contexts").isHittable else {
+            XCTFail("the control remains available after returning"); return
+        }
+    }
+
+    /// Opens the reader's overflow menu and its entry by identifier across element types, retrying the reader's
+    /// own gesture when the first open arrives before the destinations are installed.
+    @MainActor
+    private func openReaderMenuEntry(_ app: XCUIApplication, _ menu: XCUIElement, symbol: String) -> Bool {
+        let entry = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", symbol)).firstMatch
+        for _ in 0..<4 {
+            menu.tap()
+            if entry.waitForExistence(timeout: 5) { return true }
+            if menu.exists { menu.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return false
     }
 
     /// Waits until a control can really be used, not merely exists.
