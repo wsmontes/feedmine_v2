@@ -200,6 +200,16 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         return condition()
     }
 
+    /// The product's context-menu entries, in the order the menu declares them: the main context first, then one
+    /// entry per selected source. A SwiftUI `Menu` exposes its items as buttons with **no identifier** and a
+    /// localized label, so neither an identifier nor a literal string can name them; every app control on this
+    /// surface carries an identifier, which is what separates the menu's own rows from the feed underneath.
+    private func contextMenuItems(_ app: XCUIApplication) -> [XCUIElement] {
+        app.buttons.allElementsBoundByIndex
+            .filter { $0.exists && $0.isHittable && $0.identifier.isEmpty && !$0.label.isEmpty }
+            .sorted { $0.frame.minY < $1.frame.minY }
+    }
+
     /// The scene B04 measures: an invitation block that is on screen **above** the reader's card, plus that
     /// card's identity and frame. The block above the reader is the case an anchor-only check cannot see: when the
     /// block's own form changes (answering makes it shorter), everything under it moves, and the anchor is under it
@@ -731,19 +741,20 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         var bName = ""
         if contextChip.waitForExistence(timeout: 15), waitUntil(10, { contextChip.isHittable }) {
             contextChip.tap()
-            let principal = app.buttons["Principal"]
-            if principal.waitForExistence(timeout: 10) {
-                // The menu's source entries share the popover's own column and follow "Principal"; the feed's
-                // controls underneath are not mistaken for one.
-                let entries = app.buttons.allElementsBoundByIndex.filter { element in
-                    element.exists && element.isHittable && !element.label.isEmpty
-                        && element.label != "Principal" && element.label != "Mostrar tudo"
-                        && abs(element.frame.minX - principal.frame.minX) < 4
-                        && element.frame.minY > principal.frame.minY + 1
-                        && element.frame.height > 20
-                }.sorted { $0.frame.minY < $1.frame.minY }
-                record("b05-context-entries:\(entries.count)", to: phases)
-                if let source = entries.first {
+            // The menu is open when its own entries exist. A SwiftUI `Menu` exposes items as buttons with **no
+            // identifier** (every control of this surface carries one), and the main-context copy is a localized
+            // string — `Button("Principal")` renders as "Main" in an English UI — so the entry is identified by
+            // the menu's declared order, never by text. Measured failure, run 20261023T213928Z: the tree held
+            // `Button, label: 'Main'` while the driver waited for an identifier "Principal", so the menu looked
+            // absent and both profiles recorded not-offered.
+            if waitUntil(10, { !contextMenuItems(app).isEmpty }) {
+                let items = contextMenuItems(app)
+                record("b05-context-menu-items:\(items.count)", to: phases)
+                record("b05-context-main-label:\(items.first?.label ?? "none")", to: phases)
+                // The product declares the main context first and one entry per selected source after it.
+                let sources = Array(items.dropFirst())
+                record("b05-context-source-entries:\(sources.count)", to: phases)
+                if let source = sources.first {
                     contextOutcome = "false"
                     bName = source.label
                     source.tap()
@@ -756,13 +767,14 @@ final class DiscoveryBenchmarkTests: XCTestCase {
                     if reachedB {
                         record("b05-context-b:\(bName)", to: phases)
                         record("b05-context-b-label:\(contextLabel.label)", to: phases)
-                        // Back to A: the menu always states the main context as "Principal". The source context
-                        // publishes its own feed and may draw its preparation surface first, where the reader's
-                        // header is not mounted; the chip's return is awaited (bounded) rather than tapped blind.
+                        // Back to A: the menu's first entry is the main context. The source context publishes its
+                        // own feed and may draw its preparation surface first, where the reader's header is not
+                        // mounted; the chip's return is awaited (bounded) rather than tapped blind.
                         if waitUntil(60, { contextChip.exists && contextChip.isHittable }) {
                             contextChip.tap()
-                            if app.buttons["Principal"].waitForExistence(timeout: 10) {
-                                app.buttons["Principal"].tap()
+                            if waitUntil(10, { !contextMenuItems(app).isEmpty }),
+                                let back = contextMenuItems(app).first {
+                                back.tap()
                                 returned = waitUntil(30) { !contextLabel.exists }
                             }
                         }
