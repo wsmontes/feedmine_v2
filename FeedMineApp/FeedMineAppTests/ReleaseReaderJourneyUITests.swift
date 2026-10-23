@@ -281,10 +281,7 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
                 let center = CGPoint(x: frame.midX, y: frame.midY)
                 guard frame.width > 1, frame.height > 1, window.contains(center) else { continue }
             }
-            let names = [card.label] + card.staticTexts.allElementsBoundByIndex.map(\.label)
-            if names.contains(where: { name in
-                needles.contains { name.range(of: $0, options: .caseInsensitive) != nil }
-            }) {
+            if needles.contains(where: { card.label.range(of: $0, options: .caseInsensitive) != nil }) {
                 return card
             }
         }
@@ -298,16 +295,18 @@ final class ReleaseReaderJourneyUITests: XCTestCase {
         let window = app.windows.firstMatch.frame
         return app.descendants(matching: .any).matching(Self.cardIdentifier).allElementsBoundByIndex.filter { card in
             guard card.exists, card.frame.height > 40, card.frame.intersects(window) else { return false }
+            // One aggregated label + one control query per card. The per-card `staticTexts` enumeration made the
+            // accessibility query time out on a large source context.
+            guard needles.contains(where: { card.label.range(of: $0, options: .caseInsensitive) != nil }) else {
+                return false
+            }
             let open = card.buttons["card.open"].firstMatch
             guard open.exists, centerInsideWindow(open, app) else { return false }
             if requirePlay {
                 let play = card.buttons["card.play"].firstMatch
                 guard play.exists, centerInsideWindow(play, app) else { return false }
             }
-            let names = [card.label] + card.staticTexts.allElementsBoundByIndex.map(\.label)
-            return names.contains { name in
-                needles.contains { name.range(of: $0, options: .caseInsensitive) != nil }
-            }
+            return true
         }
     }
 
