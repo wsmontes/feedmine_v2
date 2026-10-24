@@ -506,6 +506,73 @@ final class FilterConfirmationBoundaryTests: XCTestCase {
         await root.association?.close()
     }
 
+    /// The production lens model must describe the presented association, not the confirmed key, while the
+    /// replacement is held; after the handoff it follows the new selection.
+    func testLensSelectionDescribesThePriorFeedUntilTheHandoff() async throws {
+        let (root, session, _) = try await launched()
+        FixtureTransport.holdingAll.withLock { $0 = true }
+        FixtureTransport.allEntered.withLock { $0 = 0 }
+        defer { FixtureTransport.releaseAll() }
+        try await Task.sleep(for: .milliseconds(150))
+        let prior = session.contextKey
+        let filter = ReaderFilter(languages: ["pt"], mood: .fun)
+        let confirmed = readerKey(root: root, filter: filter)
+        let failures = Mutex(0)
+        try await root.applyFilterFromSheet(filter, preset: .everything) {
+            failures.withLock { $0 += 1 }
+        }
+        let enteredDeadline = Date().addingTimeInterval(10)
+        while Date() < enteredDeadline, FixtureTransport.allEntered.withLock({ $0 }) == 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(FixtureTransport.allEntered.withLock { $0 }, 0)
+        let pending = root.filterSelectionForLens()
+        XCTAssertTrue(pending.isPending)
+        XCTAssertEqual(pending.filter, prior.filter, "the lens states the prior feed's criteria")
+        XCTAssertEqual(pending.preset, prior.preset, "the lens states the prior preset")
+        XCTAssertNotEqual(pending.filter, confirmed.filter)
+
+        FixtureTransport.releaseAll()
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline, root.association?.contextKey != confirmed {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(failures.withLock { $0 }, 0)
+        let presented = root.filterSelectionForLens()
+        XCTAssertFalse(presented.isPending)
+        XCTAssertEqual(presented.filter, confirmed.filter)
+        XCTAssertEqual(presented.preset, confirmed.preset)
+        await root.association?.close()
+    }
+
+    /// A held onApply: isApplying is visible, duplicate apply is refused, and an edit attempted during the
+    /// commit is rejected by the existing store owner (not silently applied and then reset).
+    func testHeldApplyExposesPendingAndRejectsLaterEdits() async throws {
+        let (stream, continuation) = AsyncStream<Void>.makeStream()
+        let store = ReaderFilterStore(onApply: { _, _ in
+            var iterator = stream.makeAsyncIterator()
+            _ = await iterator.next()
+        })
+        store.select(mood: .fun)
+        let applyTask = Task { try await store.apply() }
+        let startedDeadline = Date().addingTimeInterval(2)
+        while Date() < startedDeadline, !store.isApplying { await Task.yield() }
+        XCTAssertTrue(store.isApplying, "the existing pending state is visible during the durable write")
+        let draftBefore = store.draft
+        store.select(mood: .serious)
+        XCTAssertEqual(store.draft, draftBefore, "a later edit is rejected while the commit is pending")
+        let duplicate = try await store.apply()
+        XCTAssertFalse(duplicate, "a duplicate apply does not start a second writer")
+        XCTAssertTrue(store.isApplying)
+
+        continuation.yield(())
+        continuation.finish()
+        try await applyTask.value
+        XCTAssertFalse(store.isApplying)
+        XCTAssertEqual(store.applied.mood, .fun, "the captured confirmation is the durable one")
+        XCTAssertEqual(store.draft.mood, .fun)
+    }
+
     private func readerKey(root: AppComposition, filter: ReaderFilter) -> ContextKey {
         ContextKey(request: root.currentContextKey.request, preset: .everything, filter: filter,
             searchScope: root.currentContextKey.searchScope)

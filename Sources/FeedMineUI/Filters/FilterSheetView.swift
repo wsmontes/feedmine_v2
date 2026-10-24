@@ -294,6 +294,7 @@ public struct FilterSheetView: View {
                 }
             }
         }
+        .disabled(store.isApplying)
         #if os(iOS)
         .listStyle(.insetGrouped)
         #else
@@ -334,6 +335,7 @@ public struct FilterSheetView: View {
                 .accessibilityIdentifier("filter-done")
             }
         }
+        .interactiveDismissDisabled(store.isApplying)
         .alert(String(localized: "Filtro"), isPresented: Binding(
             get: { applyFailure != nil }, set: { if !$0 { applyFailure = nil } })) {
             Button("OK") { applyFailure = nil }

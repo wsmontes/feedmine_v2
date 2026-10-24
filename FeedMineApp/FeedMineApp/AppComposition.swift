@@ -1071,6 +1071,21 @@ final class AppComposition {
         try await activateConfirmedFilter()
     }
 
+    /// NF-03: the selection the reader's screen actually presents. While a confirmed key is still activating,
+    /// the association is the prior feed; the lens and the status slot must state that prior selection, not the
+    /// confirmed-but-not-presented one.
+    var isFilterHandoffPending: Bool {
+        guard let association else { return false }
+        return association.contextKey != applied(currentContextKey)
+    }
+
+    func filterSelectionForLens() -> (filter: ReaderFilter, preset: ReaderPresetID, isPending: Bool) {
+        if let association, isFilterHandoffPending {
+            return (association.contextKey.filter, association.contextKey.preset, true)
+        }
+        return (currentFilter, currentPreset, false)
+    }
+
     /// What an explicit transition applies: a *pending* expiry is resolved here and nowhere else, so a clock
     /// never changes the reader's active presentation (`filterExpiry` is the record, `resolvedFilter` the
     /// decision).

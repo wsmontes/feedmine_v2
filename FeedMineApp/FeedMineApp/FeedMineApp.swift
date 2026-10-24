@@ -1795,15 +1795,16 @@ struct ReaderHost: UIViewControllerRepresentable {
     /// T6: the lens states the criteria that are actually applied and removes exactly one per tap; hiding it is
     /// a presentation choice that lasts until the selection changes again.
     @ViewBuilder private var filterLens: some View {
-        let filter = composition.currentFilter
-        let chips = ReaderFilterLens.chips(filter: filter, preset: composition.currentPreset,
+        let selection = composition.filterSelectionForLens()
+        let filter = selection.filter
+        let chips = ReaderFilterLens.chips(filter: filter, preset: selection.preset,
             presetName: nil, searchQuery: nil,
             languageNames: Dictionary(uniqueKeysWithValues: composition.filterLanguages()
                 .map { ($0.languageCode, $0.displayName) }))
         if hiddenLensSignature != signature(of: filter, chips) {
-            ReaderFilterLens(chips: chips,
+            ReaderFilterLens(chips: chips, isInteractive: !selection.isPending,
                 onRemove: { chip in
-                    guard let removal = chip.removal else { return }
+                    guard !selection.isPending, let removal = chip.removal else { return }
                     Task {
                         do {
                             // V1's preset chip removes the *preset*, not a filter criterion
@@ -1884,6 +1885,14 @@ struct ReaderHost: UIViewControllerRepresentable {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .accessibilityIdentifier("reader-context-label")
+                } else if composition.isFilterHandoffPending {
+                    Text(verbatim: String(localized: "· Feed anterior"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("reader-context-prior")
+                        .accessibilityLabel(Text(verbatim: String(localized:
+                            "Feed anterior; a nova seleção está sendo apresentada")))
                 } else if association.active {
                     Text(verbatim: "· \(association.store.state.work.shortDescription)")
                         .font(.caption2)

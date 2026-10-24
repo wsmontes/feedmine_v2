@@ -87,13 +87,34 @@ public final class ReaderFilterStore {
 
     // MARK: - Editing (forwarding to the draft, so the sheet owns no state of its own)
 
-    public func toggleLanguage(_ code: String) { draft.toggleLanguage(code) }
-    public func select(contentType: ReaderContentType) { draft.select(contentType: contentType) }
-    public func select(mood: ReaderMood) { draft.select(mood: mood) }
-    public func select(preset: ReaderPresetID) { draft.select(preset: preset) }
-    public func select(regionIDs: Set<String>) { draft.select(regionIDs: regionIDs) }
-    public func select(taxonomyNodeIDs: Set<String>) { draft.select(taxonomyNodeIDs: taxonomyNodeIDs) }
-    public func clearAll() { draft.clearAll() }
+    public func toggleLanguage(_ code: String) {
+        guard !isApplying else { return }
+        draft.toggleLanguage(code)
+    }
+    public func select(contentType: ReaderContentType) {
+        guard !isApplying else { return }
+        draft.select(contentType: contentType)
+    }
+    public func select(mood value: ReaderMood) {
+        guard !isApplying else { return }
+        draft.select(mood: value)
+    }
+    public func select(preset value: ReaderPresetID) {
+        guard !isApplying else { return }
+        draft.select(preset: value)
+    }
+    public func select(regionIDs values: Set<String>) {
+        guard !isApplying else { return }
+        draft.select(regionIDs: values)
+    }
+    public func select(taxonomyNodeIDs values: Set<String>) {
+        guard !isApplying else { return }
+        draft.select(taxonomyNodeIDs: values)
+    }
+    public func clearAll() {
+        guard !isApplying else { return }
+        draft.clearAll()
+    }
 
     /// Discards the edits and hydrates again from the *currently applied* selection, which is also what clears
     /// a stale draft (the draft's own baseline may be older than the applied one).

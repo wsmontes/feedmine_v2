@@ -40,13 +40,18 @@ public struct ReaderFilterLens: View {
     public let appearance: ReaderAppearance
     public let onRemove: (ReaderFilterChip) -> Void
     public let onDismiss: () -> Void
+    /// False while a confirmed selection is still being presented: the chips describe the prior feed and
+    /// must not mutate the confirmed intent.
+    public let isInteractive: Bool
 
     public init(chips: [ReaderFilterChip], appearance: ReaderAppearance = .standard,
+        isInteractive: Bool = true,
         onRemove: @escaping (ReaderFilterChip) -> Void, onDismiss: @escaping () -> Void = {}) {
         self.chips = chips
         self.appearance = appearance
         self.onRemove = onRemove
         self.onDismiss = onDismiss
+        self.isInteractive = isInteractive
     }
 
     public var body: some View {
@@ -79,6 +84,7 @@ public struct ReaderFilterLens: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("reader-filter-lens")
             // V1 hid the bar with a swipe; the same gesture here reports the dismissal, it does not decide it.
+            .allowsHitTesting(isInteractive)
             .gesture(DragGesture(minimumDistance: 16)
                 .onEnded { value in
                     if abs(value.translation.height) > 12 || abs(value.translation.width) > 24 { onDismiss() }
