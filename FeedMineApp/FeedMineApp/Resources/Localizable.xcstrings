@@ -3091,7 +3091,7 @@
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "A web aberta,\narrumada por "
+            "value": "A internet aberta,\norganizada por "
           }
         }
       }
@@ -3459,6 +3459,12 @@
             "state": "translated",
             "value": "not bookmarked"
           }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "não salvo"
+          }
         }
       }
     },
@@ -3468,6 +3474,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "not selected"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "não selecionado"
           }
         }
       }
@@ -3570,6 +3582,556 @@
           "stringUnit": {
             "state": "translated",
             "value": "… and %lld more"
+          }
+        }
+      }
+    },
+    "A alteração foi salva, mas não foi possível atualizar a seleção exibida.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The change was saved, but the selection on screen couldn’t be updated."
+          }
+        }
+      }
+    },
+    "A busca foi salva, mas não pôde ser aberta": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The search was saved, but it couldn’t be opened"
+          }
+        }
+      }
+    },
+    "A seleção foi salva, mas não foi possível atualizar as fontes exibidas.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selection was saved, but the sources on screen couldn’t be updated."
+          }
+        }
+      }
+    },
+    "Ampliar fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expand sources"
+          }
+        }
+      }
+    },
+    "As sugestões aparecem de quando em quando, depois de um artigo. Esconder não apaga as respostas que você já deu nem muda o seu feed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggestions appear now and then, after an article. Hiding them doesn’t erase the answers you already gave or change your feed."
+          }
+        }
+      }
+    },
+    "Buscando…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Searching…"
+          }
+        }
+      }
+    },
+    "Buscar em": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search in"
+          }
+        }
+      }
+    },
+    "Carregar mais": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load more"
+          }
+        }
+      }
+    },
+    "Carregar mais fontes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load more sources"
+          }
+        }
+      }
+    },
+    "Conteúdo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content"
+          }
+        }
+      }
+    },
+    "Da versão anterior": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "From the previous version"
+          }
+        }
+      }
+    },
+    "Digite pelo menos um termo para buscar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type at least one term to search"
+          }
+        }
+      }
+    },
+    "Digite um termo para buscar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type a term to search"
+          }
+        }
+      }
+    },
+    "Disponível offline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available offline"
+          }
+        }
+      }
+    },
+    "Encontramos dados da versão anterior, mas este formato de biblioteca não pode ser lido por esta versão. Nada foi alterado no arquivo original.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We found data from the previous version, but this version can’t read this library format. Nothing in the original file was changed."
+          }
+        }
+      }
+    },
+    "Entendi": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Got it"
+          }
+        }
+      }
+    },
+    "Esta carta não declara uma fonte": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This card doesn’t name a source"
+          }
+        }
+      }
+    },
+    "Esta fonte não está no seu feed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This source isn’t in your feed"
+          }
+        }
+      }
+    },
+    "Explore outros assuntos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explore other subjects"
+          }
+        }
+      }
+    },
+    "Falha ao atualizar o feed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t update the feed"
+          }
+        }
+      }
+    },
+    "Feed anterior; a nova seleção está sendo apresentada": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous feed; the new selection is being presented"
+          }
+        }
+      }
+    },
+    "Filtro": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filter"
+          }
+        }
+      }
+    },
+    "Meu feed curado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My curated feed"
+          }
+        }
+      }
+    },
+    "Mostrar sugestões do FeedMine": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show FeedMine suggestions"
+          }
+        }
+      }
+    },
+    "Mídia indisponível": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Media unavailable"
+          }
+        }
+      }
+    },
+    "Mídia pendente": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Media pending"
+          }
+        }
+      }
+    },
+    "Nenhum resultado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No results"
+          }
+        }
+      }
+    },
+    "Não foi possível abrir esta carta": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t open this card"
+          }
+        }
+      }
+    },
+    "Não foi possível abrir este feed. Tente novamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t open this feed. Try again."
+          }
+        }
+      }
+    },
+    "Não foi possível aplicar o filtro agora.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t apply the filter right now."
+          }
+        }
+      }
+    },
+    "Não foi possível buscar agora": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t search right now"
+          }
+        }
+      }
+    },
+    "Não foi possível compartilhar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t share"
+          }
+        }
+      }
+    },
+    "Não foi possível concluir o primeiro passo. Tente novamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t finish the first step. Try again."
+          }
+        }
+      }
+    },
+    "Não foi possível copiar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t copy"
+          }
+        }
+      }
+    },
+    "Não foi possível criar o feed curado. Tente novamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t create the curated feed. Try again."
+          }
+        }
+      }
+    },
+    "Não foi possível preparar a mídia salva": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t prepare the saved media"
+          }
+        }
+      }
+    },
+    "Não foi possível salvar a busca": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t save the search"
+          }
+        }
+      }
+    },
+    "Não foi possível salvar o filtro. O feed anterior continua como estava.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t save the filter. The previous feed stays as it was."
+          }
+        }
+      }
+    },
+    "Não foi possível salvar o filtro. Tente novamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t save the filter. Try again."
+          }
+        }
+      }
+    },
+    "Não foi possível salvar suas respostas. Tente novamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t save your answers. Try again."
+          }
+        }
+      }
+    },
+    "Não foi possível trocar o escopo da busca": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t change the search scope"
+          }
+        }
+      }
+    },
+    "Não foi possível voltar ao feed anterior": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t go back to the previous feed"
+          }
+        }
+      }
+    },
+    "O feed curado será removido. As fontes continuam selecionadas.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The curated feed will be removed. Its sources stay selected."
+          }
+        }
+      }
+    },
+    "O filtro foi salvo, mas ainda não foi aplicado. Você pode tentar novamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The filter was saved, but it wasn’t applied yet. You can try again."
+          }
+        }
+      }
+    },
+    "O filtro foi salvo, mas o feed não pôde ser atualizado agora. Tente novamente.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The filter was saved, but the feed couldn’t be updated right now. Try again."
+          }
+        }
+      }
+    },
+    "Parte dos resultados não pôde ser lida": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Part of the results couldn’t be read"
+          }
+        }
+      }
+    },
+    "Salvar feed curado": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save curated feed"
+          }
+        }
+      }
+    },
+    "Sem espaço para a mídia": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No space for the media"
+          }
+        }
+      }
+    },
+    "Sem espaço para preparar a mídia salva": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No space to prepare the saved media"
+          }
+        }
+      }
+    },
+    "Somente texto": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text only"
+          }
+        }
+      }
+    },
+    "Sugestões no feed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggestions in the feed"
+          }
+        }
+      }
+    },
+    "Tocar episódio": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play episode"
+          }
+        }
+      }
+    },
+    "Você chegou ao fim das histórias disponíveis para sua seleção.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You’ve reached the end of the stories available for your selection."
+          }
+        }
+      }
+    },
+    "Voltar ao início": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to the top"
+          }
+        }
+      }
+    },
+    "· Feed anterior": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· Previous feed"
           }
         }
       }
