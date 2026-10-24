@@ -86,3 +86,23 @@ banco grava minúsculas. Normalizado, o resultado é o da tabela.
 O que o leitor vê hoje: nos salvos há rótulo por linha (`Mídia indisponível`, `Mídia pendente`);
 no feed, não. Uma carta cuja imagem foi cortada pelo prazo é indistinguível de uma fonte que
 não declara imagem.
+
+## Apêndice — três tolerâncias de preparação, medidas
+
+Mesmo cenário (Debug, contêiner limpo, English, catálogo publicado, 3 minutos), variando apenas
+a tolerância da preparação de mídia:
+
+| Tolerância | Publicadas | Com imagem | Imagem declarada | `ready-image` | `deadline` |
+|---|---|---|---|---|---|
+| ~5 s (vigente) | 941 | 303 (32,2%) | 558 | 276 | 280 (50,2%) |
+| 20 s | 1.000 | 400 (40,0%) | 566 | 391 | 173 (30,6%) |
+| 60 s | 1.058 | 435 (41,1%) | 525 | 431 | 48 (9,1%) |
+
+Primeira carta: 6,1 s (20 s) e 1,9 s (60 s) no Debug; o Release mede 1,13 s. A cobertura achata
+entre 20 s e 60 s; o que continua caindo é o corte por prazo.
+
+**Nada foi alterado no produto.** Forçar 20 s na execução inteira equivale a mudar o piso da
+derivação, e `MediaWaitDerivationTests` fixa PD-6/F06-G dizendo que a janela de mídia "nunca é uma
+fração do timeout do transporte". A edição foi revertida antes de qualquer commit; a escolha entre
+subir a tolerância declarada, pôr piso na derivação (com emenda à decisão) ou aumentar os fatores
+da derivação está com o PM.
