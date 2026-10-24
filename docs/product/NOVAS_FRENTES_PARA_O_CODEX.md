@@ -4,8 +4,8 @@
 **Iniciado em:** 2026-10-23  
 **Dono da priorização:** produto/arquitetura FeedMine  
 **Contribuidores esperados:** Codex, revisores independentes e testes em dispositivo  
-**Escopo inicial:** relato de uso da build 55 do TestFlight, investigação do runtime e **paridade global de produto V1→V2** (UI, design, descoberta editorial, leitura e mídia)  
-**Próxima revisão:** pelo Codex, após identificar a build 55 e auditar as frentes transversais NF-07–NF-12 contra a V1 e a V2 reais
+**Escopo:** relato da build 55, continuidade do runtime, **paridade V1→V2** e **visão de FeedMine como interface multimídia contínua da internet aberta**  
+**Próxima revisão:** pelo Codex, após identificar a build 55, auditar NF-07–NF-12 e investigar/contradizer NF-13–NF-16, inclusive políticas reais de terceiros
 
 > Este arquivo é um **backlog investigativo corrigível**, não um oráculo, uma ordem de implementar todas as sugestões nem uma revisão que substitua as decisões vigentes. O Codex deve **corrigir este próprio documento** quando código, medições ou testes contradisserem suas hipóteses; não deve apenas concordar com ele. Novas frentes podem ser acrescentadas sem reescrever a história. A prioridade é a experiência de uso real.
 
@@ -45,7 +45,20 @@ O Codex deve converter cada hipótese em confirmado, parcialmente confirmado ou 
 
 **Patrimônio V1:** `wsmontes/feedmine-dev`, sua árvore `docs/superpowers/specs/` e `docs/superpowers/plans/`, além de código em `feedmine/Views/`, `feedmine/Services/` e `feedmine/Models/`. O repositório V2 contém `docs/v1-study/` e especificações F01–F27, já documentando várias diferenças. **Essas fontes são material obrigatório de revisão, não ordens para portar mecanicamente bugs, duplicações e timers antigos.**
 
-**Lacuna-chave nova:** vídeo/YouTube nunca apareceu ao leitor na build 55; podcast tem a comparação desfavorável com a V1; artigos eram mais agradáveis de abrir/fechar na V1; e a V2 ainda não transmite uma linguagem de design suficientemente consistente. Não confundir presença de classes e badges com funcionalidade real de descoberta, publicação e consumo.
+**Lacuna-chave:** vídeo/YouTube não apareceu ao leitor na build 55; podcast tem comparação desfavorável com a V1; artigos eram mais agradáveis de abrir/fechar na V1; e a V2 ainda não transmite uma linguagem de design suficientemente consistente. **Visão ampliada em 23/10:** vídeo inline→flutuante, leitura simultânea, podcast em áudio prioritário e futura web rádio, sem substituir a página original dos publicadores. Não confundir presença de classes e badges com funcionalidade real de descoberta, publicação e consumo.
+
+## 0.2. Novo norte de produto: interface multimídia contínua da internet aberta
+
+**[DIREÇÃO EXPLÍCITA DO DONO, 2026-10-23]** FeedMine não deve ser apenas um leitor de resumos ou uma fila de links. É uma **interface multimídia de feed infinito** para conteúdos vivos da internet aberta. A pessoa pode consumir diferentes formatos de maneira concomitante: assistir a vídeo, ouvir um podcast/rádio e continuar descobrindo ou lendo páginas. O trabalho de descoberta e preparação existe para sustentar essa liberdade, não para reconstruir ou substituir a experiência dos publicadores.
+
+- **Vídeo:** um vídeo iniciado conscientemente no card deve poder continuar em uma janela flutuante **visível** quando o card sai da viewport. A pessoa continua rolando, abre outros cards ou artigos e pode voltar ao vídeo sem reiniciar, quando a plataforma e a fonte permitirem.
+- **Áudio:** quando a pessoa inicia um podcast durante a exibição de vídeo, o vídeo deve preferencialmente permanecer visível **mudo** e o podcast assumir a função de áudio principal. A futura web rádio obedece à mesma coordenação. Não presumir que várias fontes sonoras devam tocar simultaneamente por padrão.
+- **Web original primeiro:** tocar artigo/blog abre **por padrão a página real do publicador**, com seus recursos, links, apresentação e publicidade; leitura simplificada/sem distrações é **uma escolha explícita do usuário**, não a transformação automática de todo conteúdo. Preservar origem e monetização, sem afirmar que toda renderização de RSS offline equivale a scraping.
+- **Navegação separada da reprodução:** abrir/fechar artigos, trocar filtros, navegar no feed e voltar de uma folha não deve destruir uma reprodução já iniciada. Sempre oferecer controles óbvios para pausar, silenciar, fechar e escolher o áudio, com comportamento honesto quando a fonte não permitir coexistência.
+- **Tudo subordinado à fluidez:** a reprodução não pode reintroduzir I/O, decoder ou trabalho de rede no gesto de scroll, nem iniciar automaticamente múltiplos players remotos num feed com milhares de cards.
+- **Plataformas e direitos importam:** implementar somente as modalidades e combinações permitidas por YouTube/iOS/publicadores. Quando uma interação não puder ser oferecida, comunicar a limitação e usar alternativa fiel (abrir a fonte, pausar ou manter o áudio), sem burlá-la.
+
+Esta visão **altera a prioridade e o contrato de abertura**, mas **não certifica** que YouTube PiP, vídeo sobre artigos nem vídeo+música sejam factíveis em toda origem ou hardware. As NF-13–NF-16 são provas e decisões pendentes.
 
 ## 1. Princípios e limites que todas as frentes devem preservar
 
@@ -61,7 +74,9 @@ O Codex deve converter cada hipótese em confirmado, parcialmente confirmado ou 
 10. **UI responsiva em qualquer superfície:** evento de interface recebe reconhecimento síncrono e barato; eventual comando de domínio assíncrono não ocupa o MainActor nem bloqueia o gesto. Dar feedback de *em processamento*, *salvo*, *ativado* ou *falhou* conforme evidência verdadeira, sem spinner obrigatório universal, sem tela de espera que destrua o contexto.
 11. **Paridade de experiência V1→V2:** trazer os comportamentos úteis (visual, navegação, fontes, podcasts, vídeo) sem ressuscitar arquiteturas concorrentes; uma mudança de tecnologia precisa justificar qualquer perda de UX.
 12. **Variedade é multidimensional e audiovisual:** prover descoberta por provedor, assunto, geografia, idioma, gênero, tipo de mídia, temporalidade e fontes desconhecidas, preservando relevância e controles explícitos, desde que haja oferta elegível.
-13. **Hierarquia documental:** este backlog é subordinado a `docs/product/PRODUCT_NORTH_STAR.md`, `docs/product/PRODUCT_DECISIONS_2026-10-09.md`, `docs/architecture/PRODUCT_INVARIANTS.md`, decisões posteriores aplicáveis e especificações de release.
+13. **Coexistência com um só dono por modalidade:** cards são apresentação descartável; reprodução iniciada é sessão durável enquanto o usuário quiser e a origem permitir. Coordenar áudio/vídeo no host e composição existentes, não recriar players por célula.
+14. **Conteúdo de origem como primeiro destino:** preferir navegação real do publicador e preservar anúncios/links/identidade; abstrações locais são alternativas explícitas, fallback offline ou material de preview corretamente identificado.
+15. **Hierarquia documental:** este backlog é subordinado a `docs/product/PRODUCT_NORTH_STAR.md`, `docs/product/PRODUCT_DECISIONS_2026-10-09.md`, `docs/architecture/PRODUCT_INVARIANTS.md`, decisões posteriores aplicáveis e especificações de release.
 
 ## 2. Mapa de frentes
 
@@ -78,9 +93,13 @@ O Codex deve converter cada hipótese em confirmado, parcialmente confirmado ou 
 | NF-09 | **P1** | Variedade editorial e de formatos com conhecimento V1 + código aberto Twitter/X | **Nova**; estudo comparativo com replay |
 | NF-10 | **P1** | Abrir artigos/blogs e voltar com gesto natural, preservando o feed | **Nova**; comparar reader da V1 com o host V2 |
 | NF-11 | **P1** | Podcasts: descoberta, reprodução, controles, continuidade e retorno | **Nova**; paridade funcional com V1 |
-| NF-12 | **P1** | YouTube/vídeos: não aparecem no TestFlight; cadeia completa e jornada de teste | **Nova**; diagnóstico de disponibilidade + consumo |
+| NF-12 | **P1** | YouTube/vídeos: não aparecem no TestFlight; cadeia completa e jornada de teste | Aberta; diagnóstico de disponibilidade + consumo |
+| NF-13 | **P1, prova técnica** | Vídeo iniciado no card → janela flutuante persistente → retorno inline | **Nova**; elegibilidade iOS/YouTube e protótipo real |
+| NF-14 | **P1, contrato de experiência** | Podcast/rádio como áudio principal; vídeo pode permanecer mudo e visível | **Nova**; arbitragem entre modalidades sem dois owners |
+| NF-15 | **P0 de direção / P1 de execução** | Artigos e blogs abrem o site original por padrão; modo leitura é opt-in | **Nova**; rever política de FeedReadingDecision e leitor |
+| NF-16 | **Direção transversal** | Multimídia contínua: conteúdo vivo, navegação e playback independentes | **Nova**; decisões de produto e teste integrado |
 
-**Ordenação de execução sugerida:** NF-05/NF-01 em conjunto; estabelecer NF-07 como contrato e auditar primeiro NF-03; em seguida NF-04, NF-10/NF-12 (jornadas visíveis ausentes), NF-08 (auditoria de design), NF-02/NF-09 (corpus e algoritmos) e NF-11 (paridade de áudio). Isso **não** congela a priorização: comparar o custo, impacto e riscos reais antes de alocar workers. O Codex pode propor outra ordem com evidência.
+**Ordenação de execução sugerida:** NF-05/NF-01 em conjunto; estabelecer NF-07 como contrato e auditar primeiro NF-03; em seguida NF-04, NF-10/NF-12 (jornadas visíveis ausentes), NF-08 (auditoria de design), NF-02/NF-09 (corpus e algoritmos) e NF-11/NF-13–NF-16 (multimídia, navegação e áudio). Isso **não** congela a priorização: comparar o custo, impacto e riscos reais antes de alocar workers. O Codex pode propor outra ordem com evidência.
 
 ## NF-01 — Continuidade real: aquisição e preparação antes da cauda
 
@@ -243,11 +262,13 @@ Esse caminho estabelece dependência de **resposta visual** na reconstrução co
 |---|---|---|---|---|---|---|
 | 2026-10-23 | NF-01…NF-06 | Código de referência `3eee193`; relato TestFlight 55 | Diagnóstico inicial, **não** validação 55 | Ver seções acima | Pesquisa/hipóteses; nenhum patch de runtime | ABERTO |
 | 2026-10-23 | NF-07…NF-12 | `feedmine-dev/main`, documentos V1 e V2; referência 54 | Mandato expandido pelo dono; **sem prova de paridade em aparelho** | Seções novas + inventário V1/V2 | Criar matriz transversal e contraditório; nenhum patch de runtime | ABERTO |
+| 2026-10-23 | NF-13…NF-16 | V1 ArticleReaderView + V2 Reader/Media 54; documentação Apple/YouTube | Nova visão de produto; **viabilidade parcial, não comprovada integralmente** | Seções novas e regras de cada plataforma | Prototipar e validar antes de assumir PiP/overlays | ABERTO |
 
 ### Histórico de revisões
 
 - **2026-10-23 — v0.1:** primeira versão. Consolidado o relato da build 55, as evidências lidas da build 54, alternativas técnicas e perguntas adversariais. Criado espaço explícito para refutação pelo Codex.
-- **2026-10-23 — v0.2:** ampliado de incidentes de build para auditoria transversal de produto; regra universal de feedback imediato, design/glass da V1, variedade e pesquisas Twitter/X, leitor por gesto, paridade de podcasts e descoberta/consumo YouTube. Acrescentadas NF-07–NF-12 com evidências de V1 e limites de prova da V2.
+- **2026-10-23 — v0.2:** ampliado de incidentes de build para auditoria transversal de produto; regra universal de feedback imediato, design/glass da V1, variedade e pesquisas Twitter/X, leitor por gesto, paridade de podcasts e descoberta/consumo YouTube.
+- **2026-10-23 — v0.3:** novo norte de interface multimídia contínua; vídeo inline→flutuante, coordenação com podcast/rádio, leitura do publicador original por padrão e modo leitura opt-in. NF-13–NF-16 com limites de YouTube/iOS e provas físicas, sem patches de runtime. Acrescentadas NF-07–NF-12 com evidências de V1 e limites de prova da V2.
 - **Próxima entrada:** Codex: proveniência da 55 e revisão/refutação das frentes, com referências.
 
 ## 4. Leituras e artefatos que devem prevalecer
@@ -339,7 +360,7 @@ Esse caminho estabelece dependência de **resposta visual** na reconstrução co
 
 **Status Codex:** NOVA FRENTE DE PESQUISA; ALGORITMOS TWITTER/X AINDA NÃO REVISADOS LINHA A LINHA.
 
-## NF-10 — Abrir e fechar artigos/blogs com UX da V1
+## NF-10 — Abrir e fechar artigos/blogs com UX da V1 (ver nova decisão NF-15)
 
 **[DISPOSITIVO / DIREÇÃO]** A V1 abre artigo/blog numa superfície acima do feed que a pessoa pode dispensar deslizando, naturalmente; o fluxo atual da V2 é percebido como pior.
 
@@ -351,7 +372,7 @@ Esse caminho estabelece dependência de **resposta visual** na reconstrução co
 
 **[PROVA]** Card de blog real → abrir sem tela intermediária → ler/navegar → fechar por gesto **e** por controle → mesmo card/posição/estado da superfície que iniciou. Repetir para reader interno, site indisponível, site com mídia e artigo aberto a partir de uma lista salva. Se swipe-down exigir arranjo especial, testar conflitos com scroll vertical da página.
 
-**Status Codex:** PARIDADE COMPORTAMENTAL NÃO COMPROVADA NA V2; TESTAR NO APARELHO.
+**Status Codex:** PARIDADE COMPORTAMENTAL NÃO COMPROVADA NA V2; TESTAR NO APARELHO. **NF-15 substitui a premissa de leitura local automática para artigo com URL válida; o Codex deve revisar F14/U-reading, sem descartar acesso offline a dados legítimos.**
 
 ## NF-11 — Podcasts: experiência completa, da descoberta à retomada
 
@@ -365,7 +386,7 @@ Esse caminho estabelece dependência de **resposta visual** na reconstrução co
 
 **[PROVA]** Jornada real com episódio e URL verificáveis, mais fixture offline para o card; play → navegar pelo feed → abrir artigo → background/interrupção → retomar → relançar e recuperar episódio/posição. Capturar `NOT_RUN` explicitamente em casos sem aparelho ou sem sessão válida. Não baixar episódio completo só para admitir card; o play é uma ação explícita.
 
-**Status Codex:** COMPONENTES PRESENTES; PARIDADE V1 E LIFECYCLE SEM PROVA NA BUILD 55.
+**Status Codex:** COMPONENTES PRESENTES; PARIDADE V1 E LIFECYCLE SEM PROVA NA BUILD 55. **NF-14 complementa com coordenação explícita de áudio em multimídia (vídeo/podcast/rádio).**
 
 ## NF-12 — YouTube/vídeo deve existir na experiência, não apenas em enums e badges
 
@@ -384,7 +405,7 @@ Esse caminho estabelece dependência de **resposta visual** na reconstrução co
 
 **[PROVA OBRIGATÓRIA]** Fixture determinística com episódios de vídeo de canais reais e feed Atom, seguida de sessão física/Release com pelo menos um vídeo **efetivamente visível, clicável e consumível**, saída/retorno corretos, sem degradação de scroll nem oferta marcada erroneamente como esgotada. Definir separadamente caso de YouTube indisponível por conectividade/fonte. Fazer teste com seleção ampla e também com filtro de mídia; conteúdo de teste não deve ser uma carta fake que só comprova o badge.
 
-**Status Codex:** AUSÊNCIA OBSERVADA NA BUILD 55; CAUSA NÃO DIAGNOSTICADA.
+**Status Codex:** AUSÊNCIA OBSERVADA NA BUILD 55; CAUSA NÃO DIAGNOSTICADA. **NF-13 complementa com o experimento de playback inline→flutuante, sujeito aos termos do YouTube.**
 
 ## 5. Método de auditoria V1→V2 para as novas frentes
 
@@ -398,8 +419,89 @@ O Codex deve usar esta **matriz preenchível** (uma linha por jornada, não por 
 | Blog → swipe-down → mesmo feed | ArticleReaderView + spec 2026-07-01 | InAppBrowser + ReaderPage host + F14 | RELATO: EXPERIÊNCIA PIOR | container/gesto/reader | NF-10 |
 | Podcast → background → retomada | AudioPlayerManager + MiniPlayerBar | MediaPlaybackAdapter + Mini/Full + F15 | A TESTAR | descoberta / player / posição / lifecycle | NF-11 |
 | YouTube Atom → card → vídeo | FeedItem URL/thumbnail; descoberta adiada | MediaCandidate.video + badge | NÃO APARECEU | catálogo→rede→parser→editorial→UI→consumo | NF-12 |
+| Vídeo inline → fora da viewport → flutuante → retorno | Revisar estudo alegado pela V1; nenhum spec de PiP identificado nesta leitura | Card isAudio + identifiesVideo; nenhum player YouTube verificado | NÃO TESTADO | ciclo de vida do player / YouTube e iOS | NF-13 |
+| Vídeo mudo + podcast audível + artigo/scroll | V1 AudioPlayerManager / mini-player | MediaPlaybackAdapter / host | NÃO TESTADO | prioridades de áudio / superfície | NF-14/NF-16 |
+| Artigo abre site original por padrão | V1 ArticleReaderView WKWebView | FeedReadingDecision prioriza local em certos casos | REGRA NOVA | decisão de leitura | NF-15 |
 
 **Regras da matriz:** marcar `V1: código`, `V1: spec`, `V1: medido` separadamente; registrar **data + SHA** para ambos os repos e **build física**; mostrar por que o caminho final é melhor, igual ou inferior. Componentes presentes nunca bastam para PASS. Decisão V1→V2 anterior não é imutável quando o aparelho revela regressão, mas sua substituição deve ser fundamentada e registrada. Não criar mais de uma fonte da verdade de runtime para viabilizar a auditoria.
+
+
+
+## NF-13 — Vídeo no card que acompanha o leitor em janela flutuante
+
+**[DIREÇÃO DO DONO]** A pessoa dá play em um vídeo no card. Enquanto ele está à vista, o vídeo ocupa o card como numa página web. Ao rolar até o card sair da viewport, **o mesmo vídeo** segue num miniplayer flutuante; pode continuar vendo outras cartas, abrir um blog e retornar. Ao voltar ao card, o player pode voltar à posição inline, sem perder o tempo de reprodução.
+
+**[FATOS DE PLATAFORMA, confirmados em fontes primárias em 2026-10-23]**
+
+- YouTube: [IFrame Player API](https://developers.google.com/youtube/iframe_api_reference) permite player incorporado, `playsinline=1`, `playVideo/pauseVideo/mute/unMute`; [parâmetros](https://developers.google.com/youtube/player_parameters). **Não é um arquivo AVPlayer que possamos baixar/decodificar arbitrariamente.**
+- YouTube: [Required Minimum Functionality](https://developers.google.com/youtube/terms/required-minimum-functionality) exige viewport **mínimo 200×200**, controles suficientemente legíveis, Referer/identidade do cliente num WebView, sem cobrir qualquer parte do player/controles, e proíbe autoplay fora da visibilidade elegível ou múltiplos players YouTube simultaneamente em autoplay. O mínimo de 200×200 significa que um “mini-player 16:9” de 180×101 **não** cumpre essa regra; testar ergonomia real no iPhone.
+- YouTube: [Developer Policies](https://developers.google.com/youtube/terms/developer-policies), [compliance guide](https://developers.google.com/youtube/terms/developer-policies-guide) proíbem player escondido/em background fora da tela vista, separação de faixas e modificação de anúncios. **Um player flutuante verdadeiramente visível dentro do FeedMine é uma hipótese de uso incorporado a verificar; PiP do sistema para YouTube não está automaticamente autorizado/garantido.** Não tratar “minimizado, mas rodando em outro lugar” como permitido.
+- Apple: [AVKit/PiP](https://developer.apple.com/documentation/avkit/adopting-picture-in-picture-in-a-standard-player) é mecanismo real para vídeo que o app controla via AVPlayer; **isso não transforma um iframe YouTube num AVPlayer**. [WKWebView](https://developer.apple.com/documentation/webkit/wkwebview) é host permitido para embed e precisa ser testado no dispositivo.
+- Apple: [SFSafariViewController](https://developer.apple.com/documentation/safariservices/sfsafariviewcontroller/) **não pode ser escondido/obscurecido** por overlays arbitrários. Assim o miniplayer acima de artigos não será automaticamente viável com o leitor externo atual, mesmo se funcionar no feed.
+
+**[ALTERNATIVA ARQUITETURAL CANDIDATA]** Video player é uma **sessão com identidade própria no host** (mídia escolhida, estado/tempo, origem, volume, término), não uma `WKWebView` filha de uma célula `LazyVStack` que é desmontada com scroll. O card publicado mantém conteúdo/geometry imutáveis e apenas oferece o *slot* inline e o comando de play. O host pode alternar **apresentação** da mesma sessão entre o slot inline e a área flutuante. Verificar primeiro se reparenting/mudança de constraints de WKWebView interrompe o iframe; possivelmente é melhor manter instância única em camada estável e alterar apenas sua posição, sem recriar view nem iniciar segunda sessão. Evitar dois players simultâneos/duplicação de áudio por mudança de layout.
+
+**[UX A DECIDIR]** Transição pela visibilidade comprovada da viewport (evento, sem polling periódico); modo flutuante somente se houve play **voluntário**; não cobrir botões, legendas, menus ou anúncios; arrastar/recolher/fechar com gestos acessíveis e dimensões conformes; silenciar/retomar áudio; política de interação quando abre artigo, filtro ou sheet; o vídeo continua quando a tela está bloqueada? **YouTube: não presumir que sim.** Não aceitar reprodução sem player visível conforme política. Fluxo mantém âncora e a fluidez do feed.
+
+**[PROVA BLOQUEANTE]** Protótipo com player YouTube **oficial** e iPhone físico: origem/referrer corretos, primeiro play inline, saída da viewport e dock visível, preservação de tempo e stream, retorno ao slot, troca de rota e artigo real aberto em reader compatível, controles/anúncios intactos, reconexão e vídeo sem embed permitido. Medir frames, GPU, memória, rede, bateria e interações. **Não** declarar PASS apenas porque um MP4 próprio funciona no AVKit PiP. Pedir revisão de compliance a YouTube caso a modalidade flutuante gere ambiguidade.
+
+**[DOCUMENTO A RECUPERAR]** O dono recorda estudo anterior sobre **vídeo dentro do card**. Esta rodada verificou specs V1 (`docs/superpowers/specs/`), estudo `2026-07-08-national-podcast-youtube-discovery-design.md` e código de cards, mas **ainda não encontrou um documento específico comprovando player YouTube inline**. Codex deve buscar em `feedmine-dev` branches, histórico, outros documentos e PRs e registrar o link/SHA real; **não inventar que já está pronto**.
+
+**Status Codex:** REQUISITO DE UX + VIABILIDADE TÉCNICA PARCIAL; PROVA DE YOUTUBE FLUTUANTE PENDENTE.
+
+## NF-14 — Áudio prioritário e coexistência de vídeo, podcast e rádio
+
+**[DIREÇÃO]** Ao tocar podcast enquanto vê vídeo, o podcast começa a tocar e **o vídeo continua visível e mudo**. O usuário pode continuar rolando e abrir artigos. Mais tarde, o mesmo princípio deve funcionar com web rádio.
+
+**[SUPORTE CONFIRMADO E LIMITES]**
+
+- [YouTube IFrame API](https://developers.google.com/youtube/iframe_api_reference) documenta `mute()`, `unMute()`, `isMuted()`: silenciar o **player oficial** é diferente de extrair ou manipular a faixa de áudio.
+- Apple `AVAudioSession` tem [mixWithOthers](https://developer.apple.com/documentation/avfaudio/avaudiosession/categoryoptions-swift.struct/mixwithothers) e regras de [duckOthers](https://developer.apple.com/documentation/avfaudio/avaudiosession/categoryoptions-swift.struct/duckothers), mas essas opções descrevem mistura/interrupção de **sessões de áudio**, não garantem que duas fontes distintas no mesmo app se misturem como queremos. Não usar ducking contínuo inadequado para simular prioridade de podcast.
+- V2 `FeedMineApp/FeedMineApp/MediaPlaybackAdapter.swift` tem AVPlayer e sessão `.playback`/`.spokenAudio`; áudio de vídeo YouTube via WebKit é outro mecanismo, a validar em hardware.
+- Regras do YouTube proíbem separação/extração de faixas e background escondido, não um controle de mute documentado em si. **Se coexistência exigir burlar player ou mantê-lo escondido, essa modalidade não será implementada assim.**
+
+**[POLÍTICA PROPOSTA PARA DECISÃO]** **Uma fonte sonora principal de cada vez**, coexistindo com **até um vídeo visível**. Vídeo com som → o usuário inicia podcast → pedir ao player YouTube mute por API; iniciar podcast; o vídeo continua reproduzindo imagem **se permitido e visível**. Podcast → rádio: rádio substitui áudio principal e podcast pausa (ou vice-versa), com escolha explícita. Ao parar podcast, o vídeo **permanece mudo até o usuário pedir som**, evitando explosão súbita de volume. Ao pedir unmute com podcast tocando, oferecer transição clara de áudio principal (por exemplo, pausar podcast) em vez de mixar vozes sem consentimento. Registrar preferência somente se for pedido pelo usuário; não inferir intenção por autoplay.
+
+**[OWNER]** A composição/host atual coordena intenção/seleção entre modalidades. `MediaPlaybackAdapter` continua owner de áudio nativo; vídeo web mantém sua própria instância técnica quando necessário; um único contrato mínimo de foco de áudio coordena ambos. **Não** criar três schedulers ou states paralelos. Separar `displayPosition` de `playbackSession`, sem transformar `PresentationCard` em objeto mutável de mídia.
+
+**[PROVA]** Vídeo com áudio → tocar podcast (vídeo visivelmente continua, som de YouTube cessa, podcast audível) → abrir blog original → rolar → pausar podcast → nenhum unmute surpresa → retomar vídeo com som explicitamente. Interrupção telefônica, Bluetooth, AirPlay, fones desconectados, baixo consumo e rede restrita; vídeo incompatível pode pausar com aviso. Validar com player YouTube real e com stream próprio separadamente.
+
+**Status Codex:** POLÍTICA DE PRODUTO PROPOSTA; TESTES DE COEXISTÊNCIA WEBKIT+AVFOUNDATION NÃO EXECUTADOS.
+
+## NF-15 — Web original como default; modo leitura simplificado por escolha
+
+**[DIREÇÃO EXPLÍCITA DO DONO]** O FeedMine apresenta a **página original viva**: editor, layout, navegação, publicidade, mídias, links e eventuais assinaturas/paywalls pertencem ao publicador. O app não existe para remover publicidade por padrão nem entregar automaticamente uma cópia “limpa” do artigo; pode oferecer “Modo leitura” como opção acionada **pelo usuário**. Resumos/teasers são instrumentos de descoberta, não substitutos obrigatórios do acesso ao site.
+
+**[ACHADO MATERIAL NO CÓDIGO V2 REFERÊNCIA 54]** `Sources/FeedMineUI/Reader/FeedReadingDecision.swift` escolhe `.local` **automaticamente** quando o feed forneceu `body` com texto, ou `summary` com ao menos **3.000 caracteres**; só escolhe `.site(URL)` no caminho de resumo curto com URL ou de ausência de texto local. `FeedMineApp/FeedMineApp/FeedMineApp.swift` usa esse destino em `composition.onReading` e abre `FeedReadingSurface` ou `InAppBrowser`. **Isto diverge do novo norte de produto para artigos com URL válida.** Importante: estes fluxos são primariamente texto que a fonte já forneceu em RSS/Atom, não evidência de scraping do site e remoção de anúncios. `ReadablePublicationText.swift` converte marcação em texto; não qualificar como violação legal automaticamente.
+
+**[ALTERNATIVA DE CONTRATO]**
+
+1. **Toque primário em artigo/link com site válido → site original no leitor interno.** Conteúdo do publicador permanece a fonte; não inventar versão total da história.
+2. Ação explícita **“Modo leitura”**, se houver tecnologia e permissões adequadas; pode oferecer abertura no Safari/Reader quando possível. `SFSafariViewController` oferece controle nativo de Reader conforme plataforma; `config.entersReaderIfAvailable=false` no código atual **não** ativa automaticamente o modo Reader. `WKWebView` não oferece por si um Reader idêntico, exige avaliação separada se escolhido para permitir miniplayer persistente.
+3. Preservar texto/resumo que a própria fonte enviou e conteúdo pessoal/offline já armazenado. **Sem URL disponível ou rede offline** pode haver *fallback identificado*: “Texto publicado pela fonte”/“Resumo fornecido pela fonte”, sem fingir página original, sem confundir com extração.
+4. Não bloquear anúncios, scripts e navegação do publicador como padrão. Segurança e privacidade continuam aplicáveis (links maliciosos, permissões, transparência de dados, consentimento); respeitar escolhas do usuário e plataforma.
+5. Custos atuais de “extraction/clean reading” precisam ser medidos: o que o runtime efetivamente busca, como é acionado, quanto custa e quem usa? Não manter uma etapa cara para renderização de artigos por padrão, mas **não apagar código ou dados** sem identificar contratos legítimos, indexação, biblioteca e offline.
+6. Revisar `docs/product/F14_READER_LINK_NAVIGATION_UX_PRD.md`, `FeedReadingDecision`, `FeedReadingSurface`, `U-reading` e a decisão `U2` de `SFSafariViewController`, **sem** assumir que preservar site força uma tecnologia específica. A V1 `feedmine/Views/ArticleReaderView.swift` usava `WKWebView` direto + folha descartável, sem extrair a página.
+
+**[CONFLITO DE PRODUTO A RESOLVER]** Abrir `SFSafariViewController` como modal pode impedir exibir miniplayer sobre o artigo (ver NF-13). Se migrar a apresentação do site para `WKWebView` a fim de coexistir com vídeo, documentar quais capacidades do SafariServices foram perdidas (Reader, cookies, security UI, consentimento, links) e como atender os requisitos sem esconder a página do publicador ou adicionar um browser inseguro.
+
+**[PROVA]** Artigo com full RSS body + URL válida → tap deve abrir site real, não texto local; resumo de >3.000 caracteres + URL → site; site offline ou ausente → alternativa local explicitamente identificada; acionamento de modo leitor apenas sob pedido; anúncios e mídia web aparecem conforme site; swipe para voltar preserva o feed; vídeo flutuante sobre artigo somente se player e reader permitirem. Registrar erros HTTP e bloqueios em vez de atribuir falha ao site ou fazer fallback enganoso.
+
+**Status Codex:** CONFLITO DE POLÍTICA DE LEITURA CONFIRMADO NO CÓDIGO 54; PROPOSTA DE PRODUTO NOVA; BUILD 55 A VERIFICAR.
+
+## NF-16 — Visão integrada: feed infinito como hub de multimídia viva
+
+**[NORTE, não feature isolada]** A principal unidade do FeedMine não é a tela de leitura nem o player: é a **sessão de descoberta e consumo**. A pessoa continua dentro da internet aberta, não dentro de uma cópia estática feita pelo app. Texto web, áudio, podcast, vídeo, futuras rádios e exploração podem se sobrepor em uma experiência fluida quando a origem permitir.
+
+**[JORNADA EXPLORATÓRIA REAL]** Abrir FeedMine → descobrir vídeo YouTube → tocar inline → continuar rolando com vídeo visível em dock → abrir blog original em sheet sem perder vídeo/âncora → voltar → tocar podcast → podcast audível e vídeo mudo, ainda visível → continuar rolando → alternar áudio principal → fechar mídia e continuar de onde estava. Rádio web entra depois no papel de áudio principal. Não confundir potencial de coexistência com exigência de **três áudios simultâneos**: a proposta mantém **uma fonte sonora principal por vez**.
+
+**[DESENHO ARQUITETURAL A VALIDAR]** Publicação e scroll continuam independentes. Interação explícita cria ou ativa sessão de reprodução no host; o renderer não é owner de rede nem AVPlayer nem WKWebView de longa duração. Um comando responde na UI imediatamente (NF-07); a composição coordena media focus e apresentação do conteúdo sem mutation retroativa de edição publicada; os players preservam as próprias fronteiras de tecnologia e plataforma. **Implementar passo a passo** e evitar criar uma segunda app architecture apenas para mídia.
+
+**[ORDEM DE PROVAS]** A) usuário consegue acessar um vídeo do catálogo com origem real (NF-12); B) play YouTube inline e contrato de retorno (NF-13); C) continuidade visível após saída do card, sem reload e sob termos (NF-13); D) artigo original + vídeo visível com apresentação permitida (NF-10/NF-15); E) podcast audível com vídeo mudo (NF-11/NF-14); F) rádio web como terceira modalidade — **futura**, após A–E. Avaliar iPhone pequeno, iPad, Accessibility, performance/energia e integridade publicitária. Sem garantia artificial de background do iOS.
+
+**[INSTRUÇÃO AO CODEX]** Corrigir qualquer ideia aqui que contradiga API, política, uso real ou invariantes. Se o YouTube não permitir algum modo, separar a restrição do desejo editorial; propor fallback fiel e perguntar apenas quando houver decisão de produto sem prova suficiente. Não afirmar “PiP do YouTube funciona” a partir de teste de AVKit com MP4 próprio.
+
+**Status Codex:** DIREÇÃO APROVADA PELO DONO; EXECUÇÃO E VIABILIDADE DE CADA MODALIDADE AINDA ABERTAS.
 
 
 ---
