@@ -98,7 +98,8 @@ public struct CandidateProvider: Sendable {
                 topics: CandidateTopicEvidence(record.declaredSubjects),
                 language: record.language, providerID: record.providerID, sourceIDs: Set(record.sourceIDs),
                 primaryMediaLocator: record.primaryMediaLocator, primaryLink: record.primaryLink,
-                declaredBody: record.declaredBody, bodyObserved: record.bodyObserved)
+                declaredBody: record.declaredBody, bodyObserved: record.bodyObserved,
+                mediaKind: record.mediaKind)
         }.filter { eligibility.admits($0) }
         if case .search(let search) = plan.context.request {
             switch search.semantics {

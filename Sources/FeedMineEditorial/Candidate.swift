@@ -204,13 +204,17 @@ public struct Candidate: Hashable, Sendable {
     public let bodyObserved: Bool
     /// Article URL the card opens (review F10).
     public let primaryLink: URL?
+    /// Payload kind from canonical playback media. nil is unspecified (manual/old facts); `.none` is a known
+    /// admitted absence. A cover image never determines this value.
+    public let mediaKind: EditorialMediaKind?
 
     public init(originRecordID: OriginRecordID, originRevisionID: OriginRevisionID,
         headline: String?, summary: String?, timestamp: CandidateTimestamp,
         temporal: CandidateTemporalEvidence? = nil,
         topics: CandidateTopicEvidence = .absent,
         language: String?, providerID: ProviderID?, sourceIDs: Set<SourceID> = [], primaryMediaLocator: String? = nil,
-        primaryLink: URL? = nil, declaredBody: String? = nil, bodyObserved: Bool = false) {
+        primaryLink: URL? = nil, declaredBody: String? = nil, bodyObserved: Bool = false,
+        mediaKind: EditorialMediaKind? = nil) {
         self.originRecordID = originRecordID
         self.originRevisionID = originRevisionID
         self.headline = headline
@@ -238,5 +242,6 @@ public struct Candidate: Hashable, Sendable {
         self.primaryLink = primaryLink
         self.declaredBody = declaredBody
         self.bodyObserved = bodyObserved || declaredBody != nil
+        self.mediaKind = mediaKind
     }
 }

@@ -67,6 +67,18 @@ public struct ContentStore: Sendable {
         /// non-material text. nil is absence of evidence: no Source's taxonomy, no catalogue placement,
         /// no title and no classifier ever fills this.
         public let declaredSubjects: StoryDeclaredSubjects?
+        /// Payload kind from canonical playback media. nil is unspecified; `.none` is a known admitted absence.
+        /// A cardVisual image cover is never the type.
+        public let mediaKind: EditorialMediaKind?
+
+        func withMediaKind(_ mediaKind: EditorialMediaKind?) -> CandidateRecord {
+            CandidateRecord(originRecordID: originRecordID, originRevisionID: originRevisionID,
+                sortDate: sortDate, sortDateBasis: sortDateBasis, headline: headline, summary: summary,
+                declaredBody: declaredBody, bodyObserved: bodyObserved, authoredAt: authoredAt,
+                modifiedAt: modifiedAt, observedAt: observedAt, language: language, providerID: providerID,
+                sourceIDs: sourceIDs, primaryMediaLocator: primaryMediaLocator, primaryLink: primaryLink,
+                declaredSubjects: declaredSubjects, mediaKind: mediaKind)
+        }
     }
 
     public struct CandidateWindow: Hashable, Sendable {
@@ -204,12 +216,59 @@ public struct ContentStore: Sendable {
                             """,
                             arguments: [Self.key(revision.rawValue)]),
                         primaryLink: try p.optionalString("primary_link").flatMap { URL(string: $0) },
-                        declaredSubjects: try Self.declaredSubjects(from: p.optionalString("declared_subject_text"))))
+                        declaredSubjects: try Self.declaredSubjects(from: p.optionalString("declared_subject_text")),
+                        mediaKind: nil))
+                }
+                // ONE playback-collection read for the whole window. The per-revision mediaCandidates contract
+                // stays untouched; a known admitted collection with no playback is `.none`, while a manual/old
+                // candidate that never passed this read remains nil.
+                let mediaKinds = try Self.playbackMediaKinds(for: records.map(\.originRevisionID), in: db)
+                records = records.map {
+                    $0.withMediaKind(mediaKinds[$0.originRevisionID] ?? EditorialMediaKind.none)
                 }
                 return CandidateWindow(records: records, examinedCount: rows.count,
                     nextCursor: nextCursor, exhausted: rows.count < examinedCapacity)
             }
         }
+    }
+
+    /// ONE playback-collection read for a window. `media_candidates` is immutable after canonical admission, so
+    /// the absence of a playback row is a known `.none` for the admitted revisions in the window. A cardVisual
+    /// image is not playback and never determines the kind. The query validates the stored role/class and rejects
+    /// a duplicate or non-playback class instead of loosening the collection checks.
+    private static func playbackMediaKinds(for revisions: [OriginRevisionID],
+        in db: Database) throws -> [OriginRevisionID: EditorialMediaKind] {
+        guard !revisions.isEmpty else { return [:] }
+        let keys = Set(revisions.map { Self.key($0.rawValue) }).sorted()
+        let data = try JSONSerialization.data(withJSONObject: keys, options: [])
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw ContentStoreError.corruption("playback media keys")
+        }
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT origin_revision_id, media_class
+            FROM media_candidates
+            WHERE role = 'playback' AND origin_revision_id IN (SELECT value FROM json_each(?))
+            ORDER BY origin_revision_id, ordinal
+            """, arguments: [json])
+        var result: [OriginRevisionID: EditorialMediaKind] = [:]
+        for row in rows {
+            let f = ContentFields(row)
+            let revision = OriginRevisionID(rawValue: try f.uuid("origin_revision_id"))
+            guard let mediaClass = MediaCandidateClass(rawValue: try f.string("media_class")) else {
+                throw ContentStoreError.corruption("playback media class")
+            }
+            let kind: EditorialMediaKind
+            switch mediaClass {
+            case .audio: kind = .audio
+            case .video: kind = .video
+            case .image: throw ContentStoreError.corruption("playback media class")
+            }
+            guard result[revision] == nil else {
+                throw ContentStoreError.corruption("duplicate playback media")
+            }
+            result[revision] = kind
+        }
+        return result
     }
 
     public enum CurrentRevisionExpectation: Equatable, Sendable {

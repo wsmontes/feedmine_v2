@@ -7,10 +7,12 @@ import FeedMinePersistence
 final class CandidateProviderTests: XCTestCase {
     private let time = Date(timeIntervalSince1970: 1_700_000_000)
 
-    private func withProvider(_ body: (ContentStore, CandidateProvider) throws -> Void) throws {
+    private func withProvider(sqlTrace: (@Sendable (String) -> Void)? = nil,
+        _ body: (ContentStore, CandidateProvider) throws -> Void) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let database = try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root))
+        let database = try RuntimeDatabase(location: RuntimeDatabaseLocation(directory: root),
+            sqlTrace: sqlTrace)
         let store = ContentStore(database: database)
         try body(store, CandidateProvider(contentStore: store))
     }
@@ -30,14 +32,16 @@ final class CandidateProviderTests: XCTestCase {
     private func insert(_ number: Int, source: SourceID, into store: ContentStore,
         authored: Date? = nil, modified: Date? = nil, observed: Date? = nil, headline: String? = "", summary: String? = nil,
         language: String? = nil, provider: ProviderID? = nil,
-        nonMaterialText: String = "not a candidate field") throws -> OriginRevision {
+        nonMaterialText: String = "not a candidate field",
+        media: (OriginRevisionID) -> [MediaCandidate] = { _ in [] }) throws -> OriginRevision {
         let revision = OriginRevision(id: OriginRevisionID(), originRecordID: origin(number), externalVersionIdentity: nil,
             headline: headline, summary: summary, bodyText: "not a candidate field", authoredAt: authored,
             modifiedAt: modified, observedAt: observed ?? time, language: language,
             primaryLink: URL(string: "https://example.test/item")!, searchProjection: nonMaterialText, providerID: provider)
         try store.commitCanonicalChange(ContentStore.CanonicalChange(recordID: origin(number),
             externalObjectIdentity: ExternalIdentity(connectorKind: ConnectorKind(rawValue: "test"),
-                namespace: "objects", value: String(number), role: .object), revision: revision, mediaCandidates: [],
+                namespace: "objects", value: String(number), role: .object), revision: revision,
+            mediaCandidates: media(revision.id),
             availability: .available, observedAt: time, expectedCurrent: .none, currentUpdate: .useSuppliedRevision,
             membershipMutations: [.upsert(sourceID: source, kind: .direct, observedAt: time)]))
         return revision
@@ -97,11 +101,13 @@ final class CandidateProviderTests: XCTestCase {
                 Candidate(originRecordID: origin(1), originRevisionID: v1.id, headline: nil, summary: "summary é",
                     timestamp: CandidateTimestamp(value: authored, kind: .authored),
                     temporal: CandidateTemporalEvidence(observedAt: observed, acceptedAuthoredAt: authored),
-                    language: "pt-BR", providerID: attribution, sourceIDs: [a], primaryLink: URL(string: "https://example.test/item")!),
+                    language: "pt-BR", providerID: attribution, sourceIDs: [a], primaryLink: URL(string: "https://example.test/item")!,
+                    mediaKind: EditorialMediaKind.none),
                 Candidate(originRecordID: origin(2), originRevisionID: v2.id, headline: "", summary: "",
                     timestamp: CandidateTimestamp(value: time, kind: .observed),
                     temporal: CandidateTemporalEvidence(observedAt: time),
-                    language: nil, providerID: nil, sourceIDs: [b], primaryLink: URL(string: "https://example.test/item")!)])
+                    language: nil, providerID: nil, sourceIDs: [b], primaryLink: URL(string: "https://example.test/item")!,
+                    mediaKind: EditorialMediaKind.none)])
             XCTAssertEqual(result.examinedCount, 2)
             XCTAssertEqual(result.nextCursor, CandidateSupplyCursor(sortDate: time, originRecordID: origin(2)))
             XCTAssertTrue(result.exhausted)
@@ -845,4 +851,77 @@ final class CandidateProviderTests: XCTestCase {
         XCTAssertEqual(candidate.topics.equivalence,.declaredLabelOnly)
     }
 
+    private func media(_ revision: OriginRevisionID, role: MediaCandidateRole,
+        mediaClass: MediaCandidateClass, mime: String) -> MediaCandidate {
+        MediaCandidate(id: MediaCandidateID(), originRevisionID: revision, role: role, mediaClass: mediaClass,
+            remoteURL: URL(string: role == .playback
+                ? "https://example.test/payload" : "https://example.test/cover")!,
+            declaredMimeType: mime,
+            declaredPixelWidth: mediaClass == .image ? 100 : nil,
+            declaredPixelHeight: mediaClass == .image ? 100 : nil)!
+    }
+
+    /// The provider propagates the payload kind from canonical playback media. A cover image never becomes
+    /// the type, and an admitted empty collection is a known `.none`, distinct from an unspecified candidate.
+    /// The SQL trace counts one playback batch per window, never one query per candidate.
+    func testPayloadMediaKindMapsAudioVideoAndNoneInOneBatchPerWindow() throws {
+        let sql = SQLRecorder()
+        try withProvider(sqlTrace: { sql.record($0) }) { store, provider in
+            let source = SourceID()
+            let audio = try insert(1, source: source, into: store, media: { id in [
+                media(id, role: .playback, mediaClass: .audio, mime: "audio/mpeg"),
+                media(id, role: .cardVisual, mediaClass: .image, mime: "image/jpeg")] })
+            let video = try insert(2, source: source, into: store, media: { id in [
+                media(id, role: .playback, mediaClass: .video, mime: "video/mp4"),
+                media(id, role: .cardVisual, mediaClass: .image, mime: "image/jpeg")] })
+            let imageOnly = try insert(3, source: source, into: store, media: { id in [
+                media(id, role: .cardVisual, mediaClass: .image, mime: "image/png")] })
+            let empty = try insert(4, source: source, into: store, media: { _ in [] })
+            let plan = try plan(.main)
+            let window = try provider.candidates(for: plan, after: nil, examinedCapacity: 4)
+            let candidates = Dictionary(uniqueKeysWithValues: window.candidates.map { ($0.originRecordID, $0) })
+            XCTAssertEqual(candidates[audio.originRecordID]?.mediaKind, .audio)
+            XCTAssertEqual(candidates[video.originRecordID]?.mediaKind, .video)
+            XCTAssertEqual(candidates[imageOnly.originRecordID]?.mediaKind, EditorialMediaKind.none)
+            XCTAssertEqual(candidates[empty.originRecordID]?.mediaKind, EditorialMediaKind.none)
+            let afterProvider = sql.values.filter {
+                $0.contains("media_candidates") && $0.contains("role = 'playback'") && $0.contains("json_each")
+            }.count
+            XCTAssertEqual(afterProvider, 1, "one playback media batch for the whole window, not N+1")
+
+            let records = try store.candidateWindow(sourceID: nil, after: nil, examinedCapacity: 4).records
+            let recordsBy = Dictionary(uniqueKeysWithValues: records.map { ($0.originRecordID, $0) })
+            XCTAssertEqual(recordsBy[audio.originRecordID]?.mediaKind, .audio)
+            XCTAssertEqual(recordsBy[video.originRecordID]?.mediaKind, .video)
+            XCTAssertEqual(recordsBy[imageOnly.originRecordID]?.mediaKind, EditorialMediaKind.none)
+            XCTAssertEqual(recordsBy[empty.originRecordID]?.mediaKind, EditorialMediaKind.none)
+            let afterSecondWindow = sql.values.filter {
+                $0.contains("media_candidates") && $0.contains("role = 'playback'") && $0.contains("json_each")
+            }.count
+            XCTAssertEqual(afterSecondWindow, 2, "one added playback batch per window")
+        }
+    }
+
+    func testUnspecifiedCandidateMediaKindRemainsUnknown() {
+        let candidate = Candidate(originRecordID: origin(99), originRevisionID: OriginRevisionID(),
+            headline: "Manual", summary: nil,
+            timestamp: CandidateTimestamp(value: time, kind: .observed), language: nil, providerID: nil)
+        XCTAssertNil(candidate.mediaKind)
+    }
+
+}
+
+private final class SQLRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String] = []
+
+    func record(_ sql: String) {
+        lock.lock(); defer { lock.unlock() }
+        recorded.append(sql)
+    }
+
+    var values: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return recorded
+    }
 }

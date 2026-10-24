@@ -106,16 +106,19 @@ public final class RuntimeDatabase: Sendable {
 
     public convenience init(
         location: RuntimeDatabaseLocation,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        sqlTrace: (@Sendable (String) -> Void)? = nil
     ) throws {
-        try self.init(location: location, migrator: RuntimeMigrations.current, fileManager: fileManager)
+        try self.init(location: location, migrator: RuntimeMigrations.current,
+            fileManager: fileManager, sqlTrace: sqlTrace)
     }
 
     /// Internal injection supports migration tests without exposing GRDB to consumers.
     init(
         location: RuntimeDatabaseLocation,
         migrator: DatabaseMigrator,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        sqlTrace: (@Sendable (String) -> Void)? = nil
     ) throws {
         // The **exact** spelling wins whenever it can exist: on a case-sensitive volume (the iPhone's) `Feedmine`
         // and `FeedMine` are genuinely distinct directories, and V2's store must never be opened inside V1's
@@ -139,6 +142,13 @@ public final class RuntimeDatabase: Sendable {
         var configuration = Configuration()
         // GRDB applies this to writer and reader connections. No duplicate PRAGMA setup.
         configuration.foreignKeysEnabled = true
+        // Explicit optional observer for tests that need to prove query counts; nil in product paths and no
+        // effect on results or scheduling.
+        if let sqlTrace {
+            configuration.prepareDatabase { db in
+                db.trace { event in sqlTrace(event.expandedDescription) }
+            }
+        }
         // DatabasePool's default persistent journal mode establishes WAL.
         // Reader count and busy behavior use GRDB defaults, not product tuning.
         do {
