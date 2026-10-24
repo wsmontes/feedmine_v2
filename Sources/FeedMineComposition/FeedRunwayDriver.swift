@@ -421,6 +421,9 @@ public actor FeedRunwayDriver {
     }
 
     private func executeAcquisition(_ intent: RunwayAcquisitionIntent, resources: FeedRunwayDriverResources) async throws -> Bool {
+        // NF-05: the one measurement this opportunity owns. It is read only for an owned round that produces a
+        // durable card; a joining/deferred/unavailable opportunity contributes nothing.
+        let startedAt = monotonicNow()
         let targets = try acquisition.eligibleTargets(for: plan.context)
         let start = try await acquisitionCycle.start(intent, eligibleTargets: targets,
             resources: resources.acquisition, preferUnattempted: selectedSourceCoverage != nil,
@@ -443,6 +446,7 @@ public actor FeedRunwayDriver {
             // and its completion (including a fatal error) is observed by the next opportunity.
             for await result in round.results {
                 guard result.selectableSupplyChanged else { continue }
+                await runway.recordReplenishmentLatency(monotonicNow().seconds - startedAt.seconds)
                 settledAcquisition = nil
                 observeBackgroundRound(round.completion, scope: intent.scope)
                 return true

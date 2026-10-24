@@ -620,6 +620,41 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(result?.window.items.count,1)
         try await assertLegitimateSecondTarget(f, seededLocal: false)
     }
+    /// NF-05/NF-01: the runway must measure the **network** replenishment path, not only local slices. A slow but
+    /// successful connector is suspended while the driver clock advances; the first durable result must contribute
+    /// its demand→useful-card latency to the same runway input. The decision consequence is the policy: with 32
+    /// ready cards and a measured p95 of ~95 s at 1 card/s, the reserve is insufficient. Current code records only
+    /// the local p95 and calls it healthy.
+    func testSlowNetworkReplenishmentEntersTheRunwayLatency() async throws {
+        let f = try fixture(seedLocal: true, paused: true)
+        let initial = try await restore(f)
+        let task = Task { try await self.tail(f, initial) }
+        var started = f.http.started.makeAsyncIterator()
+        guard await started.next() != nil else { return XCTFail("the network acquisition never started") }
+        // The local slice has published; the network acquisition is the only pending path. Suspend it for ~95
+        // driver-clock seconds, then release the real response.
+        f.clock.jump(to: 100)
+        f.http.release()
+        _ = try await task.value
+        let snapshot = await f.runway.snapshot()
+        let p95 = try XCTUnwrap(snapshot.replenishment.p95Seconds,
+            "the runway has no replenishment latency after a successful network acquisition")
+        XCTAssertGreaterThanOrEqual(p95, 90,
+            "the runway p95 must include the network demand→card path, not only local slices")
+        let evaluation = RunwayPolicy.evaluate(
+            facts: RunwayFacts(consumption: ConsumptionFacts(cardsPerSecond: 1, forwardIntent: true,
+                explicitTailApproach: false)!,
+                replenishment: ReplenishmentFacts(p95Seconds: p95)!,
+                readyAmount: .exact(32), previouslyPressured: false, localSliceInFlight: false,
+                unknownBootstrapAvailable: false),
+            inputs: RunwayPolicyInputs(safetyFactor: 1, releaseMarginSeconds: 0)!,
+            resources: RunwayResourceFacts(localWorkAllowed: true, examinedCandidateCapacity: 8,
+                readyProbeBound: 8, readyProbeCeiling: 64, forwardAdvanceProbeBound: 64)!)
+        guard case .pressured = evaluation.coverage else {
+            return XCTFail("a slow network path must make 32 ready cards insufficient: \(evaluation)")
+        }
+    }
+
     func test03NoCheckpointNoColdEdition() async throws {
         let f = try fixture(checkpoint:false),before = try PublicationStore(database:f.database).segments(editionID:f.edition)
         let result = try await f.driver.restoreAndActivate(backwardCapacity:0,forwardCapacity:1,resources:resources())

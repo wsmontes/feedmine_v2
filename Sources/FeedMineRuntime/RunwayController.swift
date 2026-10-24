@@ -520,6 +520,17 @@ public actor RunwayController {
         guard time > intent.startedAt else { throw RunwayControllerError.invalidCompletionTime }
     }
 
+    /// NF-05/NF-01: the replenishment estimate must include the path the reader actually waits on when the
+    /// continuation needs the network. The driver measures one owned acquisition round from the demand it starts
+    /// to the first durable card it produces; this is the same bounded, positive-success sample the local slices
+    /// contribute. A slow-but-successful network therefore raises the existing P95 instead of hiding behind the
+    /// local-only samples.
+    public func recordReplenishmentLatency(_ seconds: Double) {
+        guard seconds.isFinite, seconds > 0 else { return }
+        latencySamples.append(seconds)
+        if latencySamples.count > configuration.replenishmentSampleLimit { latencySamples.removeFirst() }
+    }
+
     public func completeLocalSlice(_ intent: RunwayLocalSliceIntent, outcome: LocalProductionSliceOutcome,
         at completedAt: RunwayMonotonicTime) throws {
         try validateCompletion(intent, at: completedAt)
