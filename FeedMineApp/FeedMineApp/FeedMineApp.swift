@@ -1870,6 +1870,12 @@ struct ReaderHost: UIViewControllerRepresentable {
             }
         }
         .accessibilityIdentifier("reader-contexts")
+        // A replacement owns the session: the control states that it is busy and is not offered as actionable,
+        // instead of accepting a tap the composition cannot start.
+        .disabled(composition.contextSwitchInProgress)
+        .accessibilityValue(composition.contextSwitchInProgress
+            ? Text("Mudando de contexto")
+            : Text(verbatim: ""))
     }
 
     private var activeContextLabel: String? {

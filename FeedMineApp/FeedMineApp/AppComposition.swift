@@ -16,6 +16,10 @@ import FeedMineUI
 import FeedMineComposition
 import FeedMineSyndication
 
+/// A context choice that arrives while a replacement owns the session cannot start. It is refused so a caller
+/// never mistakes a silent drop for an accepted selection; the control is disabled while the replacement runs.
+enum ReaderContextSwitchError: Error, Equatable { case inProgress }
+
 /// R15: a search submission states which half succeeded. A failure before the durable write is not saved; a failure
 /// after it is saved but not presented, and the reader can retry without duplicating anything.
 enum ReaderSearchFailure: Error, Equatable {
@@ -46,6 +50,10 @@ final class AppComposition {
         #endif
     }
     private var replacingSession = false
+    /// True exactly while a context/source transition owns the reader's session. The context control reads this
+    /// to present itself as busy and disabled: a tap offered while a replacement runs cannot start, and the
+    /// product must not promise an action it will ignore.
+    var contextSwitchInProgress: Bool { replacingSession }
     /// The owner's decision of 2026-10-17 (item G): while the app is **active and visible**, the same
     /// `foreground()` path is offered as a drive opportunity once every ≥ 10 s. `inactive()`/`background()` stop it;
     /// it never runs in the background and adds no second pipeline.
@@ -966,7 +974,7 @@ final class AppComposition {
         if case .source(let sourceID) = request, !feeds.contains(where: { $0.sourceID == sourceID }) {
             throw ReaderPreferencesError.invalidSelection
         }
-        guard !replacingSession else { return }
+        guard !replacingSession else { throw ReaderContextSwitchError.inProgress }
         if request == currentContext, association != nil,
             currentContextKey.filter.isUnrestricted, currentContextKey.preset == .everything { return }
         replacingSession = true

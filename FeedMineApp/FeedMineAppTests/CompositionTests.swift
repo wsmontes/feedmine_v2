@@ -1193,6 +1193,69 @@ final class CompositionTests: XCTestCase {
         await root.association?.close()
     }
 
+    /// A context request that arrives while a replacement is still running cannot start. The composition states
+    /// that truthfully (`contextSwitchInProgress`) so the control is presented as busy and disabled, and it refuses
+    /// the request instead of silently accepting it. This unit proves only that contract: the attribution of the
+    /// 235621Z benchmark tap to the `replacingSession` guard remains a hypothesis, never a reproduction claim.
+    func testAContextRequestDuringAReplacementIsRefusedAsBusy() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        XCTAssertNil(root.startupFailure)
+        let science = try XCTUnwrap(TrustedFeed.development.first { $0.principal == "bbc-science" })
+        XCTAssertTrue(root.feeds.contains { $0.sourceID == science.sourceID },
+            "the source is part of this reader's selection")
+        XCTAssertFalse(root.contextSwitchInProgress, "an idle reader is not replacing anything")
+        let previous = try XCTUnwrap(root.association)
+
+        // The science feed's answer is held, so the source transition stays inside its launch: the same window a
+        // reader's tap can land in while the header is already usable.
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        defer { FixtureTransport.releaseScience() }
+        let finished = Mutex(false)
+        let transition = Task {
+            defer { finished.withLock { $0 = true } }
+            try await root.selectContext(.source(science.sourceID))
+        }
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline, !(root.contextSwitchInProgress
+            && root.currentContextKey.request == .source(science.sourceID)) { await Task.yield() }
+        XCTAssertTrue(root.contextSwitchInProgress, "a running replacement states its own readiness")
+        XCTAssertEqual(root.currentContextKey.request, .source(science.sourceID),
+            "the in-flight transition committed the destination it was asked for")
+        XCTAssertFalse(finished.withLock { $0 }, "the first transition is still in flight")
+
+        // The control is disabled while busy; a request that still arrives is refused, never silently accepted.
+        do {
+            try await root.selectContext(.main)
+            XCTFail("a context request during a replacement is refused as busy")
+        } catch {
+            XCTAssertEqual(error as? ReaderContextSwitchError, .inProgress)
+        }
+        XCTAssertTrue(root.contextSwitchInProgress, "the refusal did not disturb the running replacement")
+        XCTAssertEqual(root.currentContextKey.request, .source(science.sourceID),
+            "the refused request did not replace the in-flight destination")
+
+        FixtureTransport.releaseScience()
+        _ = try? await transition.value
+        XCTAssertFalse(root.contextSwitchInProgress, "readiness clears when the replacement finishes")
+
+        // The live association is the one the accepted replacement built, and the previous one is inactive.
+        let sourceLive = try XCTUnwrap(root.association)
+        XCTAssertEqual(sourceLive.contextKey, root.currentContextKey)
+        XCTAssertEqual(root.currentContextKey.request, .source(science.sourceID))
+        XCTAssertFalse(previous.active, "the replaced association is inactive")
+
+        // Once the replacement finished, the control is actionable again and the reader's choice is honoured.
+        try await root.selectContext(.main)
+        XCTAssertEqual(root.currentContextKey.request, .main)
+        let mainLive = try XCTUnwrap(root.association)
+        XCTAssertEqual(mainLive.contextKey, root.currentContextKey)
+        XCTAssertFalse(sourceLive.active, "the previous source association is inactive")
+        await mainLive.close()
+    }
+
     /// P08/E07: opening a search result goes through the destination its authority named. A source destination
     /// moves the reader to that source's context, not to a copy of the list.
     func testOpeningASourceSearchResultSelectsThatSourceContext() async throws {
