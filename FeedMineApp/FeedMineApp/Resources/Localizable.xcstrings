@@ -4185,6 +4185,36 @@
           }
         }
       }
+    },
+    "Importados da versão anterior: caixas %lld, fontes %lld, coleções %lld.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imported from the previous version: boxes %lld, sources %lld, collections %lld."
+          }
+        }
+      }
+    },
+    "Ainda inacessíveis nesta versão: artigos salvos %lld, marcadores inteligentes %lld, feeds curados %lld.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Still inaccessible in this version: saved articles %lld, smart feeds %lld, curated feeds %lld."
+          }
+        }
+      }
+    },
+    "Eles permanecem no arquivo original da versão anterior.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "They stay in the previous version’s original file."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

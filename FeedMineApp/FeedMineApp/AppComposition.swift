@@ -1254,13 +1254,11 @@ final class AppComposition {
         func count(_ category: String) -> Int {
             notice.skips.filter { $0.category == category }.reduce(0) { $0 + $1.count }
         }
-        return String(localized: """
-            Importados da versão anterior: caixas \(notice.importedBoxes), fontes \(notice.importedSources), \
-            coleções \(notice.importedCollections).
-            Ainda inacessíveis nesta versão: artigos salvos \(notice.inaccessibleSavedArticles), \
-            marcadores inteligentes \(count("smartFeeds")), feeds curados \(count("curatedFeeds")).
-            Eles permanecem no arquivo original da versão anterior.
-            """)
+        return [
+            String(localized: "Importados da versão anterior: caixas \(notice.importedBoxes), fontes \(notice.importedSources), coleções \(notice.importedCollections)."),
+            String(localized: "Ainda inacessíveis nesta versão: artigos salvos \(notice.inaccessibleSavedArticles), marcadores inteligentes \(count("smartFeeds")), feeds curados \(count("curatedFeeds"))."),
+            String(localized: "Eles permanecem no arquivo original da versão anterior."),
+        ].joined(separator: "\n")
     }
 
     /// The reader's own sources — a pasted link, an imported file — as entries a session can be built from.
