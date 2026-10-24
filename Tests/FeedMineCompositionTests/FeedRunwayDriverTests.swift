@@ -24,6 +24,37 @@ private final class DriverMediaJournal: @unchecked Sendable {
     var values: [String] { lock.withLock { entries } }
 }
 
+private final class PrepareGate: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var entered = false
+    private var released = false
+    private var enteredHandler: (() -> Void)?
+
+    func onEntered(_ handler: @escaping () -> Void) {
+        condition.lock()
+        if entered { condition.unlock(); handler(); return }
+        enteredHandler = handler
+        condition.unlock()
+    }
+
+    func wait() {
+        condition.lock()
+        entered = true
+        let handler = enteredHandler
+        enteredHandler = nil
+        condition.broadcast()
+        condition.unlock()
+        handler?()
+        condition.lock()
+        while !released { condition.wait() }
+        condition.unlock()
+    }
+
+    func release() {
+        condition.lock(); released = true; condition.broadcast(); condition.unlock()
+    }
+}
+
 @MainActor
 final class FeedRunwayDriverTests: XCTestCase {
     private enum Failure: Error, Equatable { case preparation }
@@ -620,27 +651,42 @@ final class FeedRunwayDriverTests: XCTestCase {
         XCTAssertEqual(result?.window.items.count,1)
         try await assertLegitimateSecondTarget(f, seededLocal: false)
     }
-    /// NF-05/NF-01: the runway must measure the **network** replenishment path, not only local slices. A slow but
-    /// successful connector is suspended while the driver clock advances; the first durable result must contribute
-    /// its demand→useful-card latency to the same runway input. The decision consequence is the policy: with 32
-    /// ready cards and a measured p95 of ~95 s at 1 card/s, the reserve is insufficient. Current code records only
-    /// the local p95 and calls it healthy.
-    func testSlowNetworkReplenishmentEntersTheRunwayLatency() async throws {
-        let f = try fixture(seedLocal: true, paused: true)
-        let initial = try await restore(f)
-        let task = Task { try await self.tail(f, initial) }
-        var started = f.http.started.makeAsyncIterator()
-        guard await started.next() != nil else { return XCTFail("the network acquisition never started") }
-        // The local slice has published; the network acquisition is the only pending path. Suspend it for ~95
-        // driver-clock seconds, then release the real response.
+    /// NF-05/NF-01: the measured interval runs from the owner's demand to the **first publication receipt** of the
+    /// network card, not to the earlier durable selectable offer. The network item's preparation is held after its
+    /// durable result; the driver clock advances while the reader still waits. The receipt must name the network
+    /// item, and the policy must become pressured at 32 ready cards. f9cd0ee (offer-only) fails this test.
+    func testNetworkReplenishmentLatencyEndsAtThePublishedReceipt() async throws {
+        let f = try fixture(seedLocal: true, paused: false)
+        let gate = PrepareGate()
+        let driver = try FeedRunwayDriver(session: f.session, runway: f.runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { f.clock.next() },
+            makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 2,
+                segmentCreatedAt: Date(timeIntervalSince1970: 6))! },
+            prepare: { selection in
+                if selection.orderedCandidates.contains(where: { $0.headline == "Remote" }) { gate.wait() }
+                return Self.prepared(selection)
+            }, onPublication: { receipt in f.publications.append(receipt) })
+        let restored = try await driver.restoreAndActivate(backwardCapacity: 1, forwardCapacity: 4,
+            resources: resources())
+        let initial = try XCTUnwrap(restored)
+        let task = Task { try await driver.submitViewport(.init(anchor: initial.window.anchor),
+            activity: .explicitTailApproach, resources: self.resources()) }
+        let entered = expectation(description: "the network item reaches preparation")
+        gate.onEntered { entered.fulfill() }
+        await fulfillment(of: [entered], timeout: 5)
+        // The durable offer already arrived; the reader still has no published card. Advance the runway clock while
+        // the publication is held, then release it.
         f.clock.jump(to: 100)
-        f.http.release()
+        gate.release()
         _ = try await task.value
+        let receipt = try XCTUnwrap(f.publications.values.last, "the network publication must produce a receipt")
+        XCTAssertTrue(receipt.cardIDs.contains { !f.cards.contains($0) },
+            "the receipt must name the new network card, not only the durable selectable offer")
         let snapshot = await f.runway.snapshot()
-        let p95 = try XCTUnwrap(snapshot.replenishment.p95Seconds,
-            "the runway has no replenishment latency after a successful network acquisition")
+        let p95 = try XCTUnwrap(snapshot.replenishment.p95Seconds)
         XCTAssertGreaterThanOrEqual(p95, 90,
-            "the runway p95 must include the network demand→card path, not only local slices")
+            "the runway sample must end at the publication receipt, including preparation/publication")
         let evaluation = RunwayPolicy.evaluate(
             facts: RunwayFacts(consumption: ConsumptionFacts(cardsPerSecond: 1, forwardIntent: true,
                 explicitTailApproach: false)!,
@@ -651,8 +697,50 @@ final class FeedRunwayDriverTests: XCTestCase {
             resources: RunwayResourceFacts(localWorkAllowed: true, examinedCandidateCapacity: 8,
                 readyProbeBound: 8, readyProbeCeiling: 64, forwardAdvanceProbeBound: 64)!)
         guard case .pressured = evaluation.coverage else {
-            return XCTFail("a slow network path must make 32 ready cards insufficient: \(evaluation)")
+            return XCTFail("a late publication must make 32 ready cards insufficient: \(evaluation)")
         }
+    }
+
+    /// The network request is suspended in scope A; the reader moves to scope B before the durable offer arrives.
+    /// The late offer/publication must not enter B's controller.
+    func testRetiredAcquisitionLatencyDoesNotEnterANewScope() async throws {
+        let f = try fixture(seedLocal: true, paused: true)
+        let driver = f.driver
+        let restored = try await driver.restoreAndActivate(backwardCapacity: 1, forwardCapacity: 4,
+            resources: resources())
+        let initial = try XCTUnwrap(restored)
+        let task = Task { try await driver.submitViewport(.init(anchor: initial.window.anchor),
+            activity: .explicitTailApproach, resources: self.resources()) }
+        var started = f.http.started.makeAsyncIterator()
+        guard await started.next() != nil else { return XCTFail("the network request never started") }
+        let newScope = RunwayScope(editionID: FeedEditionID(), contextKey: .init(request: .main),
+            editorialRevisionID: EditorialRevisionID())
+        await f.runway.activate(newScope)
+        f.clock.jump(to: 100)
+        f.http.release()
+        _ = try? await task.value
+        let snapshot = await f.runway.snapshot()
+        XCTAssertEqual(snapshot.scope, newScope)
+        XCTAssertNil(snapshot.replenishment.p95Seconds,
+            "a result started in the retired scope cannot become the new scope's replenishment latency")
+    }
+
+    /// No successful publication means no sample; an empty acquisition must not invent a latency.
+    func testEmptyAcquisitionDoesNotRecordReplenishmentLatency() async throws {
+        let f = try fixture(registrations: false)
+        let initial = try await restore(f)
+        _ = try await tail(f, initial)
+        let snapshot = await f.runway.snapshot()
+        XCTAssertNil(snapshot.replenishment.p95Seconds)
+    }
+
+    /// A cancelled preparation publishes nothing; no success sample may be invented.
+    func testCancelledPreparationDoesNotRecordReplenishmentLatency() async throws {
+        let f = try fixture(seedLocal: true, paused: false, cancelPrepare: true)
+        let initial = try await restore(f)
+        _ = try? await tail(f, initial)
+        let snapshot = await f.runway.snapshot()
+        XCTAssertNil(snapshot.replenishment.p95Seconds)
     }
 
     func test03NoCheckpointNoColdEdition() async throws {

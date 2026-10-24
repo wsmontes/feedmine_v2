@@ -108,6 +108,10 @@ public actor FeedRunwayDriver {
     /// It is read once — where the reader's whole situation is drawn — and carries no lifetime of its own:
     /// the next drain clears it, and any newer observation or supply change moves the runway past it.
     private var settledAcquisition: RunwayAcquisitionCycleOutcome?
+    /// The demand→publication interval this driver is waiting to close. It is armed only for an owned acquisition
+    /// round, starts at the owner's demand timestamp, and is consumed by the first publication receipt. It is not
+    /// a timer and not a second scheduler: it is one pending measurement per causal drain.
+    private var pendingReplenishmentMeasurement: (scope: RunwayScope, startedAt: RunwayMonotonicTime)?
     /// R06: a round whose durable supply already reached publication while the rest of the plan was still running.
     private var backgroundRound: Task<[AcquisitionExecutionResult], Error>?
     private var backgroundRoundSettled = false
@@ -188,6 +192,16 @@ public actor FeedRunwayDriver {
         // P02: the fact is durable now; a reader with no gesture must still receive what it unlocked.
         lateFactScope = scope
         scheduleLateOpportunity()
+    }
+
+    /// Closes the one pending NF-05 interval at the first publication receipt. A publication from a retired scope
+    /// is rejected by the controller's guard; the pending fact is consumed either way.
+    private func recordReplenishmentPublication(_ receipt: PublicationReceipt) async {
+        guard let pending = pendingReplenishmentMeasurement else { return }
+        pendingReplenishmentMeasurement = nil
+        guard receipt.editionID == pending.scope.editionID else { return }
+        let seconds = monotonicNow().seconds - pending.startedAt.seconds
+        await runway.recordReplenishmentLatency(seconds, scope: pending.scope)
     }
 
     /// P02: a per-result supply notification from a still-running acquisition round. The round notifies the runway
@@ -421,9 +435,6 @@ public actor FeedRunwayDriver {
     }
 
     private func executeAcquisition(_ intent: RunwayAcquisitionIntent, resources: FeedRunwayDriverResources) async throws -> Bool {
-        // NF-05: the one measurement this opportunity owns. It is read only for an owned round that produces a
-        // durable card; a joining/deferred/unavailable opportunity contributes nothing.
-        let startedAt = monotonicNow()
         let targets = try acquisition.eligibleTargets(for: plan.context)
         let start = try await acquisitionCycle.start(intent, eligibleTargets: targets,
             resources: resources.acquisition, preferUnattempted: selectedSourceCoverage != nil,
@@ -440,17 +451,22 @@ public actor FeedRunwayDriver {
             // notification. This drain states no execution of its own.
             return false
         case .round(let round):
+            // NF-05: arm the **demand→first publication** interval before the round starts delivering. The start
+            // is the owner's demand time, not this execution slot; the end is a publication receipt, not a durable
+            // selectable offer. A round that produces no selectable result disarms without a sample.
+            pendingReplenishmentMeasurement = (scope: intent.scope,
+                startedAt: await runway.acquisitionDemandStartedAt(for: intent) ?? monotonicNow())
             // R06: each durable result is a fact the moment it is admitted. The first supply change returns to the
             // publication loop **without waiting for the rest of the round**, so a fast source publishes while a
             // slow one is still pending. The round keeps running: its remaining results still notify the runway,
             // and its completion (including a fatal error) is observed by the next opportunity.
             for await result in round.results {
                 guard result.selectableSupplyChanged else { continue }
-                await runway.recordReplenishmentLatency(monotonicNow().seconds - startedAt.seconds)
                 settledAcquisition = nil
                 observeBackgroundRound(round.completion, scope: intent.scope)
                 return true
             }
+            pendingReplenishmentMeasurement = nil
             let results = try await round.completion.value
             settledAcquisition = .executed(results)
             return results.contains { $0.selectableSupplyChanged }
@@ -802,7 +818,10 @@ public actor FeedRunwayDriver {
                     // accepted, with scope and time already checked by it. Reporting it is not installing it: the
                     // host owns the admitted list, and the window that follows is its own `publishedGrowth`
                     // admission, which preserves the anchor and appends only already-published cards.
-                    if case .published(_, let receipt) = outcome { await onPublication?(receipt) }
+                    if case .published(_, let receipt) = outcome {
+                        await recordReplenishmentPublication(receipt)
+                        await onPublication?(receipt)
+                    }
                 } catch {
                     try await runway.failLocalSlice(intent, failure: error is CancellationError ? .cancelled : .failed, at: monotonicNow())
                     throw error
@@ -900,6 +919,7 @@ public actor FeedRunwayDriver {
     }
 
     public func deactivate() async {
+        pendingReplenishmentMeasurement = nil
         // R06/R14: retirement stops publication and the runway, not the network work already authorized. A pull in
         // flight still admits its durable supply (the cycle's contract); its late notification is ignored by the
         // cleared scope and its completion is not observed as this driver's opportunity anymore.

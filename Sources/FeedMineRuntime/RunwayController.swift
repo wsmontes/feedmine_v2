@@ -216,10 +216,15 @@ public actor RunwayController {
     private var previouslyPressured = false
     private var outstandingAcquisitionIntent: RunwayAcquisitionIntent?
     private var lastAcknowledgedAcquisitionIntent: RunwayAcquisitionIntent?
+    /// When the current demand was created by the owner. The intent does not carry a time (its identity is the
+    /// semantic demand), so the driver reads this before the round starts and measures the reader's real wait from
+    /// here, not from its later execution slot.
+    private var acquisitionDemandStartedAt: RunwayMonotonicTime?
 
     private func invalidateAcquisitionDemand() {
         outstandingAcquisitionIntent = nil
         lastAcknowledgedAcquisitionIntent = nil
+        acquisitionDemandStartedAt = nil
     }
 
     private var localSupplyExhausted: Bool {
@@ -232,6 +237,13 @@ public actor RunwayController {
         }
         outstandingAcquisitionIntent = nil
         lastAcknowledgedAcquisitionIntent = intent
+    }
+
+    /// The moment the owner created the demand this intent names. It survives the acknowledgement (the driver reads
+    /// it after the cycle starts) but is cleared by invalidation/deactivation, so a new scope never inherits it.
+    public func acquisitionDemandStartedAt(for intent: RunwayAcquisitionIntent) -> RunwayMonotonicTime? {
+        guard intent == outstandingAcquisitionIntent || intent == lastAcknowledgedAcquisitionIntent else { return nil }
+        return acquisitionDemandStartedAt
     }
 
     /// The network demand the reader's own continuation already justifies.
@@ -316,6 +328,7 @@ public actor RunwayController {
         consecutiveLocalFailures = 0
         lastCoverage = nil
         previouslyPressured = false
+        acquisitionDemandStartedAt = nil
     }
 
     public func markConsumptionInactive() {
@@ -384,6 +397,7 @@ public actor RunwayController {
         if let intent = acquisitionIntentIfEligible(coverage: evaluation.coverage) {
             guard intent != outstandingAcquisitionIntent, intent != lastAcknowledgedAcquisitionIntent else { return .none }
             outstandingAcquisitionIntent = intent
+            acquisitionDemandStartedAt = now
             if let trace {
                 trace.record(ReplenishmentEvent.requested, Self.requestFields(intent, coverage: evaluation.coverage,
                     ready: readyAhead.amount))
@@ -525,7 +539,10 @@ public actor RunwayController {
     /// to the first durable card it produces; this is the same bounded, positive-success sample the local slices
     /// contribute. A slow-but-successful network therefore raises the existing P95 instead of hiding behind the
     /// local-only samples.
-    public func recordReplenishmentLatency(_ seconds: Double) {
+    public func recordReplenishmentLatency(_ seconds: Double, scope: RunwayScope) {
+        // A result that arrives after the reader changed context belongs to the retired scope, not to the new
+        // controller. Local slices already enforce this; the network sample must too.
+        guard scope == self.scope else { return }
         guard seconds.isFinite, seconds > 0 else { return }
         latencySamples.append(seconds)
         if latencySamples.count > configuration.replenishmentSampleLimit { latencySamples.removeFirst() }

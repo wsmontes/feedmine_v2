@@ -378,6 +378,8 @@ final class RunwayControllerTests: XCTestCase {
         let decision = try await sut.reconsider(resources: resources(), at: time(400))
         guard case .requestAcquisition(let intent) = decision else { return XCTFail("Learned demand survived: \(decision)") }
         XCTAssertEqual(intent.demand.pressure, .coverageDeficit(requiredCards: 20))
+        let demandStart = await sut.acquisitionDemandStartedAt(for: intent)
+        XCTAssertEqual(demandStart, time(400), "the sample must start at the owner's demand, not the execution slot")
         let decided = await sut.snapshot()
         XCTAssertEqual(decided.lastCoverage, .pressured(requiredCards: 20))
     }
