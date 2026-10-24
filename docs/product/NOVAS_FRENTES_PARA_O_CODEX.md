@@ -218,6 +218,71 @@ Antes de criar uma tecnologia nova, procurar se a V1 já resolveu a **jornada** 
 
 **Status Codex:** PENDENTE DE CONTRADITÓRIO.
 
+### Direção vigente e execução NF-02/NF-01 — handoff de 24/out/2026
+
+**Autoridade:** [`coordination/HANDOFF-2026-10-24-codex.md`](../../coordination/HANDOFF-2026-10-24-codex.md),
+`d6ef2452`, e [`DIRECTIVA-2026-10-24-shuffle-e-volume.md`](../../coordination/DIRECTIVA-2026-10-24-shuffle-e-volume.md),
+`a7a95787`, substituem a ordem operacional anterior. A build interna de referência é **1.0 (56)**,
+fonte `1fe0afaf811637307fcbc2dd73d1d5085028dc94`, tag `ios/1.0-build.56-1fe0afaf`, branch
+`release/build-56`. Disponibilidade VALID/IN_BETA_TESTING comunicada no handoff; este registro não
+representa uma nova consulta à Apple. Entregas já verificadas dessa rodada não serão reimplementadas.
+A próxima build depende de **nova autorização do dono**, depois da medição e da implementação revisável.
+
+**Decisão do coordenador:** preservar integralmente a imagem declarada e a suspensão existente de
+pendentes. Aumentar a oferta declarada não demonstra estoque pronto. A sequência será: medir as
+quatro camadas na mesma execução; implementar uma v6 explícita; medir o resultado; só depois
+escolher a profundidade de estoque a partir dos dados. Nenhuma mudança de prazo/tolerância de mídia
+faz parte desta frente. v2–v5 e edições já publicadas conservam sua política e sua ordem.
+
+**Plano de implementação no owner existente (Swift/GRDB, sem novo motor):**
+
+- [ ] Aceitar a base única de oferta elegível com imagem declarada → `ready-image` por revisão →
+  ativos em `Media/sha256` → cartas publicadas com imagem. Capturar banco/traço/ativos coerentes,
+  UUIDs normalizados e hashes do par público; contar gaps de imagem e adjacências PD-4. A jornada
+  pública em simulador novo já terminou 1/0; seus números ainda aguardam análise, portanto não são
+  apresentados como conclusão. Referência operacional: `jobs/continuity-fix/evidence/product-four-layers-20261024T222606Z/`.
+- [ ] Levar `EditorialMediaKind?` (`audio`, `video`, `none`) de `ContentStore.CandidateRecord` a
+  `Candidate`/`CandidateProvider` com **uma consulta em bloco por janela** de revisões. Playback
+  determina tipo; uma capa não transforma áudio em notícia. Uma coleção canônica admitida e vazia
+  é `none`, como já documenta `ContentStore.mediaCandidates`; revisão ausente é distinta. Não criar
+  marcador/migração de captura. `nil` continua desconhecido em candidatos não informados e fatos antigos.
+- [ ] Acrescentar ao `SelectionDiversityContext` a entrada de posições publicadas para v6, mantendo
+  o inicializador e o comparador v5. `PublicationStore`/`PublicationHistory` leem uma vez as posições
+  da edição ativa, inclusive fatos `nil`; a v6 não herda o limite 16 nem comprime lacunas. Custo O(P)
+  por oportunidade, a medir; sem cache, timer ou registro paralelo. O sufixo não visto arquivado
+  por `succeedTail` não é passado anterior e fica fora desse histórico.
+- [ ] Criar comportamento explícito de sequenciamento **6** em `EditorialPolicy`, `SelectionEngine`
+  e no mapeamento de `FeedAssociation`. Em cada posição: aplicar PD-4; entre os compatíveis,
+  maximizar lexicograficamente a distância até a ocorrência anterior mais próxima de **tipo →
+  assuntos declarados → fonte**. Atualizar as posições após cada escolha do segmento. Desempate
+  determinístico por peso, recência e IDs. Uma dimensão desconhecida não recebe novidade infinita;
+  decidir a comparabilidade sobre o conjunto elegível da escolha para conservar ordem consistente.
+  Fontes/assuntos múltiplos usam a ocorrência mais próxima de qualquer chave. Contexto de fonte
+  única isenta só PD-4; diversidade de tipo/tema ainda atua. Não se promete ótimo global de uma
+  permutação futura: o requisito executável é a maior distância disponível em cada escolha.
+- [ ] Congelar tipo opcional em `EditorialDiversityFact` a partir da identidade realmente publicada,
+  em `PublicationPreparation`, somente no comportamento novo. JSON antigo sem campo lê `nil`;
+  não reescrever fatos/cartas antigos nem alterar `LocalPreparedPublication.inputs × cardIDs`.
+- [ ] Provar RED/GREEN de repetição evitável, atualização dentro do segmento e fronteira entre
+  segmentos; história além de 16 com lacunas; metadados desconhecidos; fonte única; sobreposição
+  de múltiplas fontes/temas; pesos; prontidão pendente; JSON antigo; restauração v2–v5/versão futura.
+  Rastrear a consulta em bloco e medir custo em edição maior. Comparar v5/v6 sobre a mesma oferta
+  preparada capturada (replay diagnóstico, sem fabricar publicação no banco) e repetir a jornada
+  pública para a fila realmente publicada. Aceitação: PD-4 = 0 adjacências e nenhuma carta sem a
+  imagem declarada; mínima de tipo deixa de ser 1 onde há alternativa compatível pronta.
+- [ ] Escolher a profundidade de oferta à frente do cursor por estoque pronto/consumo medidos,
+  dentro dos owners e orçamentos existentes. Não elevar capacidade/piso por palpite nem contabilizar
+  downloads pendentes como reserva. Registrar antes/depois e limites aqui antes de pedir nova build.
+
+**Integração de empacotamento:** a branch de produto ainda tinha manifesto `c2c0…` para catálogo
+`e6da…`, enquanto seu SQLite era `1825…`. O coordenador reaplicou o commit de release já entregue
+`1fe0afaf` como `55c097ab` (somente o descritor), alinhando-o ao staging `build/catalog-bootstrap`:
+SQLite `1825fdae1d68fc5f6c22f1c1574d9930b8e6e88947f841519c12a9d1554d01b8`, manifesto
+`4cc9cba6a85497d22aba3ef05fbca99b56d2c30616b5642307ec6b53ea8ea4de`.
+O bundle Debug foi verificado com esse par antes da jornada. Não é mudança de dataset/runtime,
+nem nova build TestFlight. A medição usa o Debug da árvore de produto (metadado de build 55),
+não o binário distribuído 56. Prova física continua **NOT_RUN**.
+
 ## NF-03 — Concluído dos filtros: caso discriminante da regra global NF-07
 
 **[DISPOSITIVO]** O botão de confirmação demora a agir. **Este é apenas um caso da exigência global NF-07; não basta corrigir o botão Concluído e declarar a experiência responsiva.**
