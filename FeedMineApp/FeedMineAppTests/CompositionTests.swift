@@ -1612,7 +1612,8 @@ final class CompositionTests: XCTestCase {
             mediaKey: "sha256:" + String(repeating: "0", count: 64))
         try PublicationStore(database: association.database).toggleBookmark(cardID: card.id,
             in: ReaderBookmarkList.defaultID, at: Date())
-        XCTAssertEqual(association.savedArticles().map(\.id), [card.id])
+        let savedIDs = try association.savedArticles().map(\.id)
+        XCTAssertEqual(savedIDs, [card.id])
 
         try trigger(["""
             CREATE TRIGGER refuse_saved_media_availability
@@ -1622,7 +1623,8 @@ final class CompositionTests: XCTestCase {
         association.retrySavedMedia(card.id)
         let firstSettled = await Self.waitUntil(5) { association.savedMediaRevision > 0 }
         XCTAssertTrue(firstSettled, "a preparação recusada chega à superfície")
-        XCTAssertEqual(association.savedArticles().first?.availability, .failed,
+        let savedFirst = try association.savedArticles().first
+        XCTAssertEqual(savedFirst?.availability, .failed,
             "a linha não continua mostrando o pending que a escrita recusada não gravou")
         XCTAssertEqual(association.store.toast?.text, "Não foi possível preparar a mídia salva")
         XCTAssertNil(try SavedMediaAvailabilityStore(database: association.database)
@@ -1633,7 +1635,8 @@ final class CompositionTests: XCTestCase {
         association.retrySavedMedia(card.id)
         let secondSettled = await Self.waitUntil(5) { association.savedMediaRevision > 1 }
         XCTAssertTrue(secondSettled, "a tentativa seguinte também chega à superfície")
-        XCTAssertEqual(association.savedArticles().first?.availability, .failed,
+        let settledFirst = try association.savedArticles().first
+        XCTAssertEqual(settledFirst?.availability, .failed,
             "a ocorrência declara mídia e nenhum candidato é preparável: a falha é durável")
         XCTAssertEqual(try SavedMediaAvailabilityStore(database: association.database)
             .availability(cardID: card.id)?.availability, .failed,
@@ -2047,7 +2050,8 @@ final class CompositionTests: XCTestCase {
         let second = root(directory: directory)
         await second.launch()
         let reopened = try XCTUnwrap(second.association)
-        XCTAssertTrue(reopened.savedArticles().map(\.id).contains(card.id),
+        let reopenedIDs = try reopened.savedArticles().map(\.id)
+        XCTAssertTrue(reopenedIDs.contains(card.id),
             "o salvo sobrevive ao encerramento e à limpeza de cache, mesmo offline")
         XCTAssertTrue(try PublicationStore(database: reopened.database).bookmarkedCardIDs().contains(card.id))
         await reopened.close()
@@ -3708,7 +3712,7 @@ final class CompositionTests: XCTestCase {
             (try? publication.card(id: item.id))?.primaryActionKind == "externalURL"
         }, "a real published card must carry an external action")
         try publication.toggleBookmark(cardID: linked.id, at: Date())
-        let saved = association.savedArticles()
+        let saved = try association.savedArticles()
         XCTAssertEqual(saved.map(\.id), [linked.id])
         XCTAssertEqual(saved.first?.title, linked.title)
         XCTAssertEqual(saved.first?.source, linked.sourceDisplayName)
@@ -3720,7 +3724,8 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(opened?.absoluteString, record.primaryActionReference)
         // Removing the bookmark removes the row.
         try publication.toggleBookmark(cardID: linked.id, at: Date())
-        XCTAssertTrue(association.savedArticles().isEmpty)
+        let emptyRead = try association.savedArticles()
+        XCTAssertTrue(emptyRead.isEmpty)
         await association.close()
     }
 

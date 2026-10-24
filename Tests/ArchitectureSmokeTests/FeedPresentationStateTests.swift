@@ -202,4 +202,17 @@ final class FeedPresentationStateTests: XCTestCase {
         XCTAssertEqual(available.reporting(.idle).presentation, published)
         XCTAssertNil(preparing.presentation)
     }
+
+    /// PM-006 A: a failed attempt is stated once when the reader has cards; the persistent failure state belongs to
+    /// a feed with nothing to read — the measured defect was a badge over a feed that kept working, with no action.
+    func testAFailedAttemptIsNotAFailedFeedWhenCardsArePresent() {
+        XCTAssertEqual(FeedFailurePresentation.after(hasCards: true, connectionFailed: false),
+            .notice("Falha ao atualizar o feed"))
+        XCTAssertEqual(FeedFailurePresentation.after(hasCards: true, connectionFailed: true),
+            .notice("Sem conexão"))
+        XCTAssertEqual(FeedFailurePresentation.after(hasCards: false, connectionFailed: false),
+            .state(.failed(message: "Falha ao atualizar o feed")))
+        XCTAssertEqual(FeedFailurePresentation.after(hasCards: false, connectionFailed: true),
+            .state(.unreachable))
+    }
 }

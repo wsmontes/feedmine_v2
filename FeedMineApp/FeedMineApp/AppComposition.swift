@@ -2706,16 +2706,29 @@ final class FeedAssociation {
 
     /// U2: bounded read of the existing bookmark authority for the app host. No second bookmark
     /// store, no schema change: ids come from `bookmarkedCardIDs()` and each row from `card(id:)`.
-    func savedArticles(limit: Int = 200) -> [FeedSavedArticle] {
-        savedArticles(inBox: nil, limit: limit)
+    ///
+    /// The read throws: a database that cannot be read is not an empty library, and the surface has to be able to
+    /// say so (`readSavedArticles` is the app's entry point). Rows that individually fail to decode are still
+    /// skipped — one broken row must not hide the reader's other saved articles.
+    func savedArticles(limit: Int = 200) throws -> [FeedSavedArticle] {
+        try savedArticles(inBox: nil, limit: limit)
+    }
+
+    /// What the saved surface shows: the articles, or the fact that the read failed.
+    func readSavedArticles(inBox listID: String? = nil, limit: Int = 200) -> FeedSavedArticlesRead {
+        do { return .articles(try savedArticles(inBox: listID, limit: limit)) }
+        catch {
+            Self.log("saved read failed \(String(describing: error))")
+            return .failed
+        }
     }
 
     /// T8: one box's saved articles, or every box when no box is named. Ordering is V1's: newest first, with a
     /// stable tie-break so two rows never swap places between launches.
-    func savedArticles(inBox listID: String?, limit: Int = 200) -> [FeedSavedArticle] {
-        guard let publication = try? PublicationStore(database: database),
-            let ids = try? (listID.map { (try? ReaderLibraryStore(database: database).bookmarkedCardIDs(inList: $0)) }
-                ?? publication.bookmarkedCardIDs()) ?? [] else { return [] }
+    func savedArticles(inBox listID: String?, limit: Int = 200) throws -> [FeedSavedArticle] {
+        let publication = try PublicationStore(database: database)
+        let ids = try listID.map { try ReaderLibraryStore(database: database).bookmarkedCardIDs(inList: $0) }
+            ?? publication.bookmarkedCardIDs()
         // One read for every row's persisted availability; the row states what the owner recorded, never a guess
         // made while drawing. A card without a row (written before this build reached it) claims nothing as
         // available: `media_key IS NULL` is a published fact, everything else is pending.
@@ -4359,11 +4372,17 @@ final class FeedAssociation {
             return
         }
         // PO/R3: a connection failure is stated as such — and only when the transport proved one.
-        let work: FeedPresentationState.Work = Self.isConnectionFailure(error)
-            ? .unreachable
-            : .failed(message: String(localized: "Falha ao atualizar o feed"))
-        do { try install(store.state.reporting(work)) }
-        catch { Self.log("failure reporting rejected \(String(describing: error))") }
+        // PM-006 A: a failed attempt is not a failed feed. When the reader already has cards, the reason is said
+        // once and the state, the cards, their order and the anchor stay exactly as they were; the persistent
+        // failure state belongs to a feed with nothing to read.
+        let hasCards = !(store.state.presentation?.window.items.isEmpty ?? true)
+        switch FeedFailurePresentation.after(hasCards: hasCards, connectionFailed: Self.isConnectionFailure(error)) {
+        case .notice(let statement):
+            store.showToast(text: statement, systemImage: "exclamationmark.triangle")
+        case .state(let work):
+            do { try install(store.state.reporting(work)) }
+            catch { Self.log("failure reporting rejected \(String(describing: error))") }
+        }
     }
 
     /// A transport failure is the only evidence that justifies telling the reader the app could not

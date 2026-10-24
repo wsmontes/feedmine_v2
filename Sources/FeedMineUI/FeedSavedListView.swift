@@ -36,22 +36,58 @@ public struct FeedSavedArticle: Identifiable, Hashable, Sendable {
     }
 }
 
+/// What the saved surface received from the composition. A read that failed is **not** an empty library: the
+/// reader who saved articles must not be told they have none because the database could not be read.
+public enum FeedSavedArticlesRead: Hashable, Sendable {
+    case articles([FeedSavedArticle])
+    case failed
+
+    public var articles: [FeedSavedArticle] {
+        if case .articles(let read) = self { return read }
+        return []
+    }
+
+    public var failed: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+}
+
 @MainActor
 public struct FeedSavedListView: View {
     private let articles: [FeedSavedArticle]
+    private let readFailure: Bool
     private let onOpen: (PublicationCardID) -> Void
     private let onRetry: (PublicationCardID) -> Void
 
     public init(articles: [FeedSavedArticle], onOpen: @escaping (PublicationCardID) -> Void,
         onRetry: @escaping (PublicationCardID) -> Void = { _ in }) {
         self.articles = articles
+        readFailure = false
+        self.onOpen = onOpen
+        self.onRetry = onRetry
+    }
+
+    /// The surface states a failed read instead of drawing the empty library: "nothing saved" and "we could not
+    /// read what you saved" are different facts and only one of them is the reader's.
+    public init(read: FeedSavedArticlesRead, onOpen: @escaping (PublicationCardID) -> Void,
+        onRetry: @escaping (PublicationCardID) -> Void = { _ in }) {
+        articles = read.articles
+        readFailure = read.failed
         self.onOpen = onOpen
         self.onRetry = onRetry
     }
 
     public var body: some View {
         Group {
-            if articles.isEmpty {
+            if readFailure {
+                ContentUnavailableView {
+                    Label(String(localized: "Não foi possível ler os artigos salvos"),
+                        systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(String(localized: "Nada foi alterado. Abra os salvos novamente para tentar de novo."))
+                }
+            } else if articles.isEmpty {
                 ContentUnavailableView {
                     Label("Nenhum artigo salvo", systemImage: "bookmark")
                 } description: {

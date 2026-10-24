@@ -4135,6 +4135,26 @@
           }
         }
       }
+    },
+    "Não foi possível ler os artigos salvos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t read your saved articles"
+          }
+        }
+      }
+    },
+    "Nada foi alterado. Abra os salvos novamente para tentar de novo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing was changed. Open your saved articles again to retry."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

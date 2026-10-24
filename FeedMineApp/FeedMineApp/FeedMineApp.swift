@@ -539,7 +539,7 @@ struct FeedMineApp: App {
                                     .navigationDestination(for: LibraryRoute.self) { route in
                                         let _ = composition.association?.savedMediaRevision
                                         FeedSavedListView(
-                                            articles: composition.association?.savedArticles(inBox: Self.boxID(route)) ?? [],
+                                            read: composition.association?.readSavedArticles(inBox: Self.boxID(route)) ?? .failed,
                                             onOpen: { cardID in composition.association?.openSaved(cardID) },
                                             onRetry: { cardID in composition.association?.retrySavedMedia(cardID) })
                                             .task { composition.association?.resumeSavedMedia() }
@@ -592,7 +592,7 @@ struct FeedMineApp: App {
                     switch destination {
                     case .saved:
                         let _ = composition.association?.savedMediaRevision
-                        FeedSavedListView(articles: composition.association?.savedArticles() ?? [],
+                        FeedSavedListView(read: composition.association?.readSavedArticles() ?? .failed,
                             onOpen: { cardID in composition.association?.openSaved(cardID) },
                             onRetry: { cardID in composition.association?.retrySavedMedia(cardID) })
                             .task { composition.association?.resumeSavedMedia() }
