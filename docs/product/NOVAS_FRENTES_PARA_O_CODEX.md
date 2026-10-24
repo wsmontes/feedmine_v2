@@ -4,8 +4,8 @@
 **Iniciado em:** 2026-10-23  
 **Dono da priorização:** produto/arquitetura FeedMine  
 **Contribuidores esperados:** Codex, revisores independentes e testes em dispositivo  
-**Escopo inicial:** relato de uso da build 55 do TestFlight e investigação de código da linha da build 54  
-**Próxima revisão:** pelo Codex, após identificar o commit efetivamente distribuído na build 55
+**Escopo inicial:** relato de uso da build 55 do TestFlight, investigação do runtime e **paridade global de produto V1→V2** (UI, design, descoberta editorial, leitura e mídia)  
+**Próxima revisão:** pelo Codex, após identificar a build 55 e auditar as frentes transversais NF-07–NF-12 contra a V1 e a V2 reais
 
 > Este arquivo é um **backlog investigativo corrigível**, não um oráculo, uma ordem de implementar todas as sugestões nem uma revisão que substitua as decisões vigentes. O Codex deve **corrigir este próprio documento** quando código, medições ou testes contradisserem suas hipóteses; não deve apenas concordar com ele. Novas frentes podem ser acrescentadas sem reescrever a história. A prioridade é a experiência de uso real.
 
@@ -37,6 +37,16 @@ Esse conjunto é um relato de produto, **não** uma medição instrumentada nem 
 
 O Codex deve converter cada hipótese em confirmado, parcialmente confirmado ou refutado **in situ**. Ao mudar uma conclusão, preservar uma entrada curta no histórico de revisões, não manter duas verdades paralelas.
 
+## 0.1. Ampliação de mandato — revisão de 2026-10-23
+
+**Nova direção explícita do dono:** os sintomas da build 55 são exemplos, não os limites do diagnóstico. O Codex deve investigar o **produto inteiro**, inclusive superfícies que ainda não foram exercitadas no TestFlight. O padrão é comparar jornadas reais da V1 e V2, consultar as especificações/experimentos da V1, ler o código das duas versões, entender as decisões atuais e devolver propostas corrigíveis no documento.
+
+**Nova regra transversal (proposta de produto a testar):** toda interação visível — toque, mudança de controle, navegação, arraste, confirmação, play/pause, bookmark, salvar, importar, aplicar filtros, buscar, abrir artigo — **precisa responder visualmente no próprio ciclo de interação**, independentemente de trabalho de disco/rede/seleção/preparação. Operações longas devem ser comandadas assincronamente pelo owner competente, com espera e estado de resultado honestos quando fizerem sentido. **Não** mostrar tela modal de espera para toda ação, nem usar animação de “sucesso” antes de commit durável. Local e UI podem atualizar estado visual sincronicamente; não é necessário criar `Task` artificial para toda mutação trivial. Veja NF-07 (autoridade transversal) e NF-03 (caso de regressão nos filtros).
+
+**Patrimônio V1:** `wsmontes/feedmine-dev`, sua árvore `docs/superpowers/specs/` e `docs/superpowers/plans/`, além de código em `feedmine/Views/`, `feedmine/Services/` e `feedmine/Models/`. O repositório V2 contém `docs/v1-study/` e especificações F01–F27, já documentando várias diferenças. **Essas fontes são material obrigatório de revisão, não ordens para portar mecanicamente bugs, duplicações e timers antigos.**
+
+**Lacuna-chave nova:** vídeo/YouTube nunca apareceu ao leitor na build 55; podcast tem a comparação desfavorável com a V1; artigos eram mais agradáveis de abrir/fechar na V1; e a V2 ainda não transmite uma linguagem de design suficientemente consistente. Não confundir presença de classes e badges com funcionalidade real de descoberta, publicação e consumo.
+
 ## 1. Princípios e limites que todas as frentes devem preservar
 
 1. **Feed contínuo:** oferta disponível e capacidade suficiente não podem resultar em uma cauda artificial que depende de o usuário alcançar o fim para continuar.
@@ -48,7 +58,10 @@ O Codex deve converter cada hipótese em confirmado, parcialmente confirmado ou 
 7. **Sem camadas por reflexo:** preferir os owners existentes (`FeedSession`, `RunwayController`, `FeedRunwayDriver`, `AcquisitionCoordinator`, `SelectionEngine`, `FeedAssociation`). Não somar cache, scheduler, timer, retry, geração ou state machine sem provar por que os atuais não atendem.
 8. **Evidência acima de verde cosmético:** respeitar os gates B01–B06 e `bench/` congelado; testes unitários aprovados não substituem jornada no aparelho nem provam ausência de fim artificial.
 9. **Limites iOS:** trabalho no foreground pode ser proativo; background depende de oportunidades concedidas pelo SO. Não prometer aquisição permanente em background.
-10. **Hierarquia documental:** este backlog é subordinado a `docs/product/PRODUCT_NORTH_STAR.md`, `docs/product/PRODUCT_DECISIONS_2026-10-09.md`, `docs/architecture/PRODUCT_INVARIANTS.md`, decisões posteriores aplicáveis e especificações de release.
+10. **UI responsiva em qualquer superfície:** evento de interface recebe reconhecimento síncrono e barato; eventual comando de domínio assíncrono não ocupa o MainActor nem bloqueia o gesto. Dar feedback de *em processamento*, *salvo*, *ativado* ou *falhou* conforme evidência verdadeira, sem spinner obrigatório universal, sem tela de espera que destrua o contexto.
+11. **Paridade de experiência V1→V2:** trazer os comportamentos úteis (visual, navegação, fontes, podcasts, vídeo) sem ressuscitar arquiteturas concorrentes; uma mudança de tecnologia precisa justificar qualquer perda de UX.
+12. **Variedade é multidimensional e audiovisual:** prover descoberta por provedor, assunto, geografia, idioma, gênero, tipo de mídia, temporalidade e fontes desconhecidas, preservando relevância e controles explícitos, desde que haja oferta elegível.
+13. **Hierarquia documental:** este backlog é subordinado a `docs/product/PRODUCT_NORTH_STAR.md`, `docs/product/PRODUCT_DECISIONS_2026-10-09.md`, `docs/architecture/PRODUCT_INVARIANTS.md`, decisões posteriores aplicáveis e especificações de release.
 
 ## 2. Mapa de frentes
 
@@ -60,8 +73,14 @@ O Codex deve converter cada hipótese em confirmado, parcialmente confirmado ou 
 | NF-04 | **P1** | Espera e fim do feed têm mensagens ambíguas | Semântica e apresentação divergentes no código 54; 55 pendente |
 | NF-05 | **P0, habilitadora de NF-01** | Métrica de reposição não representa toda a jornada | Hipótese estrutural, requer instrumentação |
 | NF-06 | **P2, exploratória** | Aproveitamento de rede, cache HTTP e prioridade de trabalho | Inventariar antes de alterar |
+| NF-07 | **P0, transversal** | Toda superfície reconhece comandos imediatamente; trabalho longo é assíncrono | **Nova**; varrer o app inteiro |
+| NF-08 | **P1, transversal** | Identidade visual/glass da V1, botões, componentes e design system da V2 | **Nova**; auditoria V1/V2 |
+| NF-09 | **P1** | Variedade editorial e de formatos com conhecimento V1 + código aberto Twitter/X | **Nova**; estudo comparativo com replay |
+| NF-10 | **P1** | Abrir artigos/blogs e voltar com gesto natural, preservando o feed | **Nova**; comparar reader da V1 com o host V2 |
+| NF-11 | **P1** | Podcasts: descoberta, reprodução, controles, continuidade e retorno | **Nova**; paridade funcional com V1 |
+| NF-12 | **P1** | YouTube/vídeos: não aparecem no TestFlight; cadeia completa e jornada de teste | **Nova**; diagnóstico de disponibilidade + consumo |
 
-**Ordenação de execução sugerida:** NF-05/NF-01 em conjunto; NF-03 e NF-04; NF-02 com corpus real. O Codex pode propor outra ordem baseada em evidência, registrando por quê.
+**Ordenação de execução sugerida:** NF-05/NF-01 em conjunto; estabelecer NF-07 como contrato e auditar primeiro NF-03; em seguida NF-04, NF-10/NF-12 (jornadas visíveis ausentes), NF-08 (auditoria de design), NF-02/NF-09 (corpus e algoritmos) e NF-11 (paridade de áudio). Isso **não** congela a priorização: comparar o custo, impacto e riscos reais antes de alocar workers. O Codex pode propor outra ordem com evidência.
 
 ## NF-01 — Continuidade real: aquisição e preparação antes da cauda
 
@@ -130,9 +149,9 @@ O Codex deve converter cada hipótese em confirmado, parcialmente confirmado ou 
 
 **Status Codex:** PENDENTE DE CONTRADITÓRIO.
 
-## NF-03 — Concluído dos filtros deve reconhecer o toque imediatamente
+## NF-03 — Concluído dos filtros: caso discriminante da regra global NF-07
 
-**[DISPOSITIVO]** O botão de confirmação demora a agir.
+**[DISPOSITIVO]** O botão de confirmação demora a agir. **Este é apenas um caso da exigência global NF-07; não basta corrigir o botão Concluído e declarar a experiência responsiva.**
 
 **[CÓDIGO-54] Encadeamento observado:**
 
@@ -223,10 +242,12 @@ Esse caminho estabelece dependência de **resposta visual** na reconstrução co
 | Data | Frente | Commit/build investigado | Veredito | Evidência (arquivo:linha, teste/trace) | Mudança proposta ou realizada | Estado |
 |---|---|---|---|---|---|---|
 | 2026-10-23 | NF-01…NF-06 | Código de referência `3eee193`; relato TestFlight 55 | Diagnóstico inicial, **não** validação 55 | Ver seções acima | Pesquisa/hipóteses; nenhum patch de runtime | ABERTO |
+| 2026-10-23 | NF-07…NF-12 | `feedmine-dev/main`, documentos V1 e V2; referência 54 | Mandato expandido pelo dono; **sem prova de paridade em aparelho** | Seções novas + inventário V1/V2 | Criar matriz transversal e contraditório; nenhum patch de runtime | ABERTO |
 
 ### Histórico de revisões
 
 - **2026-10-23 — v0.1:** primeira versão. Consolidado o relato da build 55, as evidências lidas da build 54, alternativas técnicas e perguntas adversariais. Criado espaço explícito para refutação pelo Codex.
+- **2026-10-23 — v0.2:** ampliado de incidentes de build para auditoria transversal de produto; regra universal de feedback imediato, design/glass da V1, variedade e pesquisas Twitter/X, leitor por gesto, paridade de podcasts e descoberta/consumo YouTube. Acrescentadas NF-07–NF-12 com evidências de V1 e limites de prova da V2.
 - **Próxima entrada:** Codex: proveniência da 55 e revisão/refutação das frentes, com referências.
 
 ## 4. Leituras e artefatos que devem prevalecer
@@ -242,6 +263,144 @@ Esse caminho estabelece dependência de **resposta visual** na reconstrução co
 - `docs/product/DISCOVERY_ACCEPTANCE_BENCHMARK.md`, `docs/evidence/ACCEPTANCE_RECORD.md` e `bench/` — consultar sem editar a régua congelada.
 
 **Referências técnicas para verificar, não copiar cegamente:** buffering preditivo (ex.: AVPlayer), fairness/Deficit Round Robin, diversificação MMR, observabilidade com Instruments/OSSignposter e princípios de status visível do Nielsen Norman Group. Sua aplicabilidade **não equivale a prova** no FeedMine; buscar documentação primária e comparar custos e restrições antes de implementar.
+
+
+
+## NF-07 — Contrato transversal de resposta imediata para TODA interação
+
+**[REQUISITO DO DONO]** Nenhuma interação de UI pode esperar processamento para **reconhecer** a ação. Toda operação potencialmente lenta é comandada para execução assíncrona, fora do caminho síncrono do gesto; a interface acompanha estados reais e usa uma apresentação de processamento **quando necessária**. A NF-03 é apenas um sintoma.
+
+**[PESQUISA EXTERNA]** Apple, *Explore concurrency in SwiftUI* (WWDC25): callbacks de ação SwiftUI são síncronos para mudanças visuais imediatas; manter lógica pesada separada. Apple, *Improving app responsiveness*: `Task` criado na View pode herdar `MainActor`, portanto `Task { ... }` não prova que computação pesada saiu da thread principal. Fontes: <https://developer.apple.com/videos/play/wwdc2025/266/> e <https://developer.apple.com/documentation/xcode/improving-app-responsiveness>.
+
+**[ALTERNATIVA DE CONTRATO, sujeito a correção do Codex]**
+
+1. **Evento → resposta visível síncrona:** estado de pressionado/selecionado, abertura da folha, foco, feedback háptico apropriado ou estado “salvando”, conforme semântica da ação.
+2. **Comando → owner existente:** UI emite intenção/valor identificável; disco, banco, rede, aquisição, reconstrução, parsing e processamento executam sem bloquear renderização ou gestures, respeitando isolamento de Swift/Swift 6. Não basta envolver trabalho pesado `@MainActor` em `Task`.
+3. **Resultado diferenciado:** reconhecer toque ≠ declarar operação concluída; `pending`, `committed`, `presented`, `failed` só aparecem onde são necessários e verdadeiros. Persistência crítica falhou → não mostrar confirmação de sucesso.
+4. **Espera contextual:** indicador discreto na superfície para operação que permite interação contínua; tela de progresso somente quando realmente inevitável; nunca prender o leitor num spinner sem cancelamento/saída quando houver alternativa segura. Em processamento lento, mostrar *o que* está acontecendo; não inventar porcentagem.
+5. **Sobreposição e obsolescência:** taps repetidos, navegação durante processamento, A→B→A, cancelamento e retorno de background têm semântica definida; resultados superados não assumem o contexto novo.
+6. **Geometria estável:** feedback, banners, placeholders e barras de espera não deslocam a âncora do feed nem bloqueiam controles já presentes.
+7. **Acessibilidade:** VoiceOver anuncia estados relevantes; Dynamic Type, Reduce Motion, alto contraste, hit targets e `accessibilityIdentifier` não são prejudicados.
+
+**[AUDITORIA EXIGIDA]** Criar matriz por **superfície + interação** (não apenas por View), incluindo: primeiro uso, feed, header e menus, abrir card, artigos e retorno, filtro, busca, presets, biblioteca, bookmark, coleções, fontes, ajustes/toggles, importar/exportar, compartilhar, podcast, vídeo, erros/retry e navegação entre abas/sheets. Para cada gesto: `evento → resposta visível imediata → comando/owner → sinal de processamento → commit/efeito → erro/cancelamento → retorno`. Distinguir ações reversíveis e irreversíveis, e preferência durável de alteração de apresentação.
+
+**[CÓDIGO A CONSULTAR]** `FeedMineApp/FeedMineApp/FeedMineApp.swift`, `AppComposition.swift`, `Sources/FeedMineUI/Reader/*`, `Filters/*`, `Settings/*`, `Bookmarks/*`, `Collections/*`, `Sources/*`, `Cards/*`, `Sources/FeedMineUI/Feedback/*`. No código 54, NF-03 apresenta um `await replaceSession()` no caminho de confirmação visual.
+
+**[PROVA]** Testes por ação injetando I/O **suspenso** no owner relevante e verificando que o feedback visual e a navegação permitida ocorrem antes da liberação; depois liberar e verificar sucesso/fracasso correto. Instrumentar toque→primeiro frame útil no aparelho e detectar bloqueios `MainActor`; teste de ausência de salto/scroll, VoiceOver e dupla interação. Não passar o teste apenas com ambiente local tão rápido que esconda a dependência.
+
+**[REJEITAR]** “Resolver” com um overlay modal em todos os taps, um `Task` que continua pesado no MainActor, otimização artificial do banco ou confirmação otimista de escrita durável não concluída.
+
+**Status Codex:** NOVA FRENTE TRANSVERSAL; NÃO AUDITADA.
+
+## NF-08 — Identidade visual V1→V2, glass e biblioteca coerente de controles
+
+**[DISPOSITIVO / DIREÇÃO DO DONO]** A V1 transmitia linguagem *glass*; a V2 não entrega a mesma impressão e seus botões parecem inconsistentes ou fora de padrão.
+
+**[FATOS DE CÓDIGO/DOCUMENTO, não um julgamento de aparência final]**
+
+- V1: `feedmine/Views/FeedScreen.swift` usa `.ultraThinMaterial` no mini-player, header e controles de busca; `feedmine/Views/ArticleReaderView.swift` usa material translúcido no chrome; `FeedItemCardView.swift` usa material em controles sobre imagem.
+- V1: `feedmine/Services/DesignTokens.swift` tem cores OKLCH, papéis semânticos e tokens de componentes. A V1 documenta identidade visual em `docs/superpowers/specs/2026-07-04-circadian-design-system.md` e design de cards em `2026-07-04-moment-card-design.md`.
+- V2: `Sources/FeedMineUI/FeedDesignTokens.swift` já é **única autoridade de tokens**; `Reader/ReaderHeader.swift` já reproduz botão circular 44×44 e `.ultraThinMaterial`; `Media/MiniPlayerBar.swift` também usa material. Logo, **não** afirmar que não existe vidro, nem criar um segundo DesignTokens.
+- O próprio comentário dos tokens V2 rejeita a oscilação automática de raio, tipografia e geometria por relógio da V1. **Não** portar indiscriminadamente o `CircadianEngine`: sua aparência pode inspirar valores/paletas, mas a transição temporal não pode destruir composição publicada, acessibilidade ou scroll.
+- `docs/v1-study/UI_TRANSFER_MATRIX.md`, `05-ui-app-quality.md`, `V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md` e `docs/product/F17_LOCALIZATION_APPEARANCE_ACCESSIBILITY_UX_PRD.md` já documentam contratos e diferenças; a matriz precisa ser atualizada por comportamento real.
+
+**[INVESTIGAR]** Construir inventário visual V1/V2 por superfície, capturas lado a lado com **mesmo cenário** (não snapshots antigos sem contexto): header, botões primários/secundários/destrutivos, icons, menus, filtros, busca, chips, cards e controles de mídia, sheets, alertas, seleção, loading, lista vazia, configurações, onboarding, bibliotecas, leitor de artigo e mini-player. Anotar materiais, elevação, gradientes, sombras, bordas, cantos, hit targets, espaçamento, densidade, hierarquia tipográfica, haptics, estados pressed/disabled/progress/success/fail, transições e consistência.
+
+**[ALTERNATIVA]** Consolidar papéis de componente **dentro** dos tokens V2 existentes e reutilizar estilos coerentes entre superfícies. Manter distinção de conteúdo e chrome; material/glass preferencialmente em navegação e controles, não atrás de texto cuja legibilidade cairia. Reavaliar se glass puramente cosmético compete com estabilidade, desempenho e percepção de mídia.
+
+**[PLATAFORMA]** V1 usa materiais SwiftUI disponíveis no alvo iOS 18. O *Liquid Glass* do iOS 26 é uma evolução da plataforma, **não** sinônimo obrigatório do glass da V1 nem API que se possa aplicar sem disponibilidade/target/teste. Se optar por suporte específico a iOS 26, usar feature availability e comportamento compatível para iOS 18/19. Consultar HIG/SwiftUI atuais, Reduce Transparency, Reduce Motion e VoiceOver.
+
+**[PROVA]** Série de jornadas no aparelho e capturas comparáveis, checagem de acessibilidade/alto contraste/Dynamic Type, identificação de botões sem feedback e hit targets inadequados. Verificar custo de animações e blur nos frames. Critério não é “ficou mais transparente”: é clareza, consistência, ação óbvia, estética intencional e ausência de regressão de scroll.
+
+**Status Codex:** NOVA FRENTE; PARIDADE VISUAL NÃO COMPROVADA.
+
+## NF-09 — Ciência editorial da V1 + lições concretas do código aberto Twitter/X
+
+**[DIREÇÃO DO DONO]** Diversidade não é só alternância de fontes. Recuperar anos de tentativa/erro da V1 sobre mistura de interesses, notícias/evergreen, geografia, idioma, origem editorial, formatos, podcasts e vídeos; aprender com pipelines de produção abertos, sem importar objetivo de engajamento ou arquitetura de servidor.
+
+**[FONTES V1 OBRIGATÓRIAS]**
+
+- `feedmine/Services/FeedStore.swift`: `interleaveImpl`, `interleaveByTypeCategoryImpl`, `spreadForFreshnessImpl`, `frontLoadUniqueProvidersImpl`, versão real desses símbolos a confirmar.
+- `feedmine/Services/EditorialSequencer.swift`, `Reservoir.swift`, `CuratedPreferenceEngine.swift`, `FeedRecipeResolver.swift`, `PresetScorer.swift` e facetas do catálogo.
+- `docs/product/2026-10-17-interleave-v1-parity-direction.md`: direção vigente para diversidade multidimensional *antes* da publicação, sem reembaralhar histórico.
+- `docs/v1-study/04-catalog-editorial.md`, `V1_HIDDEN_GEMS_PRODUCT_MINING_2026-10-10.md` (G04) e `docs/reviews/R1_EDITORIAL_DIAGNOSIS.md`: separar sucesso antigo, documentação de intenção e hipóteses novas.
+
+**[FONTES EXTERNAS VERIFICADAS, para estudo de código em profundidade]**
+
+1. <https://github.com/twitter/the-algorithm/blob/main/home-mixer/README.md> — pipeline histórico *candidate generation → feature hydration → scoring/ranking → filtering/heuristics → mixing → serving*, incluindo *author diversity*, *content balance*, deduplicação e itens já vistos. Há também `product-mixer/`. É fonte arquitetural, não especificação do FeedMine.
+2. <https://github.com/xai-org/x-algorithm> — implementação pública posterior da família X; `home-mixer/` e `candidate-pipeline/` separam retrieval, hidratação, filtros, ranking, blending; `vm-ranker/` descreve reranking com **determinantal point process** para reduzir similaridade entre vizinhos. O README descreve módulos e objetivos; **o Codex deve ler o código dos módulos relevantes antes de fazer alegações de algoritmo ou propor adaptação**.
+3. Respeitar licenças e proveniência; **reaproveitar princípios, não copiar código** sem análise de licença, dependências, custo e compatibilidade com um app local-first.
+
+**[QUESTÕES DE PESQUISA]** O que as fontes abertas ensinam sobre separar *candidate supply*, elegibilidade, ranking e diversidade? Como evitar que poucos provedores dominem o feed mesmo quando a oferta chega assimetricamente? Como balancear formatos/assuntos sem apagar preferências, rotular assuntos inventados ou introduzir um modelo opaco de engajamento? Como aplicar reranking que não degrada novidade, qualidade e explicabilidade? A sequência publicada permanece fixa? Qual estado de exposição é mínimo e já existe?
+
+**[ANTÍ-PADRÕES]** Importar um pesado modelo de embeddings por reflexo; contar tap, salvar ou abertura como “voto” implícito (contrato F02); regular o feed por métricas artificiais que forçam monotonia; confundir descoberta de conteúdo de fora da rede com trilha dependente de perfis sociais; observar apenas fonte ID sem provedor/editoria/idioma/mídia.
+
+**[PROVA]** Mesmo corpus real da V1/V2, com alternativas e ausência delas, comparar origens, assuntos, geografia, tipo de mídia, temporalidade, redundância visual, frescor, starvation e preferências. Medir da aquisição até o publicado, para distinguir pobreza da oferta de erro de sequenciamento. O teste editorial só é persuasivo se houver leitura exploratória sem roteiro; não transformar um escore numérico em proxy de boa descoberta.
+
+**Status Codex:** NOVA FRENTE DE PESQUISA; ALGORITMOS TWITTER/X AINDA NÃO REVISADOS LINHA A LINHA.
+
+## NF-10 — Abrir e fechar artigos/blogs com UX da V1
+
+**[DISPOSITIVO / DIREÇÃO]** A V1 abre artigo/blog numa superfície acima do feed que a pessoa pode dispensar deslizando, naturalmente; o fluxo atual da V2 é percebido como pior.
+
+**[V1 — código e especificação]** `wsmontes/feedmine-dev/feedmine/Views/ArticleReaderView.swift` usa `WKWebView` com progresso, fechamento explícito, ação externa de Safari e material translúcido. `feedmine/Views/FeedScreen.swift` apresenta `.sheet(item: $articleItem)`. Contrato do documento V1 `docs/superpowers/specs/2026-07-01-in-app-reader-design.md`: **toque no card → sheet com conteúdo web real → deslizar para baixo e voltar ao feed**, sem tela intermediária.
+
+**[V2 — código da referência 54]** `FeedMineApp/FeedMineApp/InAppBrowser.swift` usa `SFSafariViewController`; `FeedMineApp.swift` mantém uma pilha tipada de superfícies e a lógica `pushReader`/`finishReader`; `Sources/FeedMineUI/Reader/FeedReadingSurface.swift` oferece leitura local, com abertura opcional do site. A F14 (`docs/product/F14_READER_LINK_NAVIGATION_UX_PRD.md`) registra explicitamente troca de WKWebView por SafariServices como **decisão anterior aceita**, mas **não** como prova de jornada de abrir/deslizar/voltar.
+
+**[INVESTIGAR ANTES DE DECIDIR]** Comparar a apresentação real das duas versões: swipe-down interativo, close/voltar, conteúdo carregando, progresso, gestos dentro de WebView, links aninhados, Safari externo, share, erro/paywall, cookies/segurança e retorno com âncora e filtros intactos. Separar **tecnologia do navegador** da **experiência do container**: `SFSafariViewController` não é, por si, justificativa para perder um gesto natural. Reavaliar a decisão U2/F14 com evidência e impacto técnico se for preciso alterá-la, sem decidir automaticamente “voltar ao WKWebView”.
+
+**[PROVA]** Card de blog real → abrir sem tela intermediária → ler/navegar → fechar por gesto **e** por controle → mesmo card/posição/estado da superfície que iniciou. Repetir para reader interno, site indisponível, site com mídia e artigo aberto a partir de uma lista salva. Se swipe-down exigir arranjo especial, testar conflitos com scroll vertical da página.
+
+**Status Codex:** PARIDADE COMPORTAMENTAL NÃO COMPROVADA NA V2; TESTAR NO APARELHO.
+
+## NF-11 — Podcasts: experiência completa, da descoberta à retomada
+
+**[DIREÇÃO DO DONO]** A V1 entrega uma experiência de podcast mais avançada que a percebida na V2.
+
+**[FATOS V1]** `feedmine/Services/AudioPlayerManager.swift` emprega `AVPlayer`, sessão de áudio, posição salva, interrupções/rotas e comandos de mídia; `feedmine/Views/MiniPlayerBar.swift` traz mini/full player, seek ±15 segundos e scrub. A V1 também tem pesquisa de fontes de podcasts em `docs/superpowers/specs/2026-07-08-national-podcast-youtube-discovery-design.md`, que relata um experimento Bolívia bem-sucedido para podcasts **naquela árvore e cenário** (não prova cobertura global atual).
+
+**[FATOS V2-54]** `Sources/FeedMineUI/Media/MiniPlayerBar.swift` já oferece mini/full player e controles; `FeedMineApp/FeedMineApp/MediaPlaybackAdapter.swift` implementa ponte de playback; `docs/product/F15_PODCAST_PLAYBACK_CONTINUITY_UX_PRD.md` registra cobertura parcial e **NOT_RUN** para jornada UX15 integral. Logo, não afirmar que podcast foi inteiramente omitido nem que há paridade.
+
+**[AUDITORIA DE PONTA A PONTA]** Quais feeds realmente geram episódios elegíveis? Enclosure/URL/identidade/artwork são preservados? Card expõe controle de play na geometria pronta? Mini-player abre sem interromper scroll? Play/pause/scrub/±15, estado de buffering, erros de URL, AirPlay/controles remotos, troca de fone, interrupção, background, relançamento e retomada de episódio/posição funcionam? A interface guarda consistência entre bar e player expandido? A navegação artigo→feed interfere no áudio?
+
+**[PROVA]** Jornada real com episódio e URL verificáveis, mais fixture offline para o card; play → navegar pelo feed → abrir artigo → background/interrupção → retomar → relançar e recuperar episódio/posição. Capturar `NOT_RUN` explicitamente em casos sem aparelho ou sem sessão válida. Não baixar episódio completo só para admitir card; o play é uma ação explícita.
+
+**Status Codex:** COMPONENTES PRESENTES; PARIDADE V1 E LIFECYCLE SEM PROVA NA BUILD 55.
+
+## NF-12 — YouTube/vídeo deve existir na experiência, não apenas em enums e badges
+
+**[DISPOSITIVO]** Não apareceram vídeos na V2 do TestFlight para testar. **Isso é um defeito de experiência a investigar, mesmo que o parser ou um badge sejam perfeitos.**
+
+**[FATOS E LIMITES]**
+
+- V1: `feedmine/Models/FeedItem.swift` reconhece URLs YouTube `watch`, `youtu.be`, `shorts`, extrai ID validando domínio e compõe miniatura; `feedmine/Views/FeedItemCardView.swift` distingue badge Video. Isso **não** prova que o player estivesse embutido ou que toda aquisição encontrasse vídeos.
+- Estudo V1 `docs/superpowers/specs/2026-07-08-national-podcast-youtube-discovery-design.md`: `youtube.com/feeds/videos.xml?channel_id=...` é Atom válido; descoberta de canal foi implementada mecanicamente, mas **adiada** após um experimento com retorno zero de canais bolivianos sob filtro de nacionalidade estrito. O texto aponta problema do *seed* de descoberta, não ausência de suporte do YouTube como protocolo. A saída de zero daquele cenário não deve ser extrapolada para todos os países.
+- V2 referência 54: `Sources/FeedMineDomain/MediaCandidate.swift` tem `.video`; `Sources/FeedMineUI/Cards/MediaIdentityBadge.swift` tem label “Vídeo”; `Sources/FeedMineUI/Cards/FeedItemCardView.swift` usa `card.identifiesVideo` para badge. **Um badge possível não é prova** de alimentação real, publicação, player ou presença no feed.
+- `docs/product/F15_PODCAST_PLAYBACK_CONTINUITY_UX_PRD.md` é áudio; **não** deduzir suporte a YouTube desta spec.
+
+**[MAPEAR A CADEIA INTEIRA]** (1) fontes YouTube conhecidas no catálogo compilado; (2) URL de feed Atom de canal válido; (3) feed selecionado/descoberto pelo contexto; (4) fetch HTTP com resultados; (5) tradução Atom → origem/revisão/link/media candidate; (6) elegibilidade e filtros de conteúdo/mídia; (7) candidato ready e seleção editorial; (8) card publicado com título/canal/miniatura/badge adequados; (9) destino de consumo verdadeiro — abrir YouTube in-app, externo ou player autorizado — com saída/retorno coerentes; (10) controle e observabilidade. Identificar **a primeira fronteira onde a oferta some**.
+
+**[ALTERNATIVAS A ESTUDAR]** Usar feeds Atom públicos de canais previamente conhecidos (sem chave), descoberta ancorada nas fontes já catalogadas e mapeamento seguro `channel_id` ↔ URL. Examinar limitações de rede, disponibilidade de miniaturas, ToS, embed/webview e direitos; não iniciar autoplay, não adivinhar IDs, não fazer scraping frágil como dependência obrigatória. Decidir contrato de visualização pela experiência e condições permitidas, não simplesmente tratar vídeo como imagem ou podcast.
+
+**[PROVA OBRIGATÓRIA]** Fixture determinística com episódios de vídeo de canais reais e feed Atom, seguida de sessão física/Release com pelo menos um vídeo **efetivamente visível, clicável e consumível**, saída/retorno corretos, sem degradação de scroll nem oferta marcada erroneamente como esgotada. Definir separadamente caso de YouTube indisponível por conectividade/fonte. Fazer teste com seleção ampla e também com filtro de mídia; conteúdo de teste não deve ser uma carta fake que só comprova o badge.
+
+**Status Codex:** AUSÊNCIA OBSERVADA NA BUILD 55; CAUSA NÃO DIAGNOSTICADA.
+
+## 5. Método de auditoria V1→V2 para as novas frentes
+
+O Codex deve usar esta **matriz preenchível** (uma linha por jornada, não por existência de classe) e expandi-la sem duplicar `UI_TRANSFER_MATRIX.md`:
+
+| Jornada | Fonte/contrato V1 | Código/UX V2 atual | Teste físico 55 | Lacuna atribuída a | Veredito/próxima ação |
+|---|---|---|---|---|---|
+| Qualquer toque com I/O suspenso | V1 e Apple SwiftUI | Auditar comandos nas superfícies V2 | NÃO MEDIDO | owner do gesto / MainActor / espera do backend | NF-07 |
+| Controles/glass/consistência | DesignTokens, circadian design, views V1 | FeedDesignTokens, ReaderHeader, cada superfície | RELATO: INCONSISTENTE | design system / implementação | NF-08 |
+| Sequência de fontes/formatos | Interleave, EditorialSequencer, Reservoir, estudos V1 | SelectionEngine, SourceAlternation, descoberta | RELATO: VARIEDADE RUIM | oferta / elegibilidade / sequenciamento | NF-02/NF-09 |
+| Blog → swipe-down → mesmo feed | ArticleReaderView + spec 2026-07-01 | InAppBrowser + ReaderPage host + F14 | RELATO: EXPERIÊNCIA PIOR | container/gesto/reader | NF-10 |
+| Podcast → background → retomada | AudioPlayerManager + MiniPlayerBar | MediaPlaybackAdapter + Mini/Full + F15 | A TESTAR | descoberta / player / posição / lifecycle | NF-11 |
+| YouTube Atom → card → vídeo | FeedItem URL/thumbnail; descoberta adiada | MediaCandidate.video + badge | NÃO APARECEU | catálogo→rede→parser→editorial→UI→consumo | NF-12 |
+
+**Regras da matriz:** marcar `V1: código`, `V1: spec`, `V1: medido` separadamente; registrar **data + SHA** para ambos os repos e **build física**; mostrar por que o caminho final é melhor, igual ou inferior. Componentes presentes nunca bastam para PASS. Decisão V1→V2 anterior não é imutável quando o aparelho revela regressão, mas sua substituição deve ser fundamentada e registrada. Não criar mais de uma fonte da verdade de runtime para viabilizar a auditoria.
+
 
 ---
 
