@@ -472,7 +472,7 @@ final class FeedRunwayDriverTests: XCTestCase {
 
     /// P02 setup: a local occurrence admitted after the first drain, with no media candidate of its own.
     nonisolated private static func admitLateLocal(_ database: RuntimeDatabase, target: AcquisitionTargetID,
-        source: SourceID, observedAt: TimeInterval = 4) throws -> OriginRevisionID {
+        source: SourceID, observedAt: TimeInterval = 4, expectedCheckpointRevision: UInt64 = 0) throws -> OriginRevisionID {
         let observation = AcquisitionObservation(
             objectIdentity: .init(connectorKind: .syndication, namespace: "late", value: UUID().uuidString, role: .object),
             versionIdentity: nil, precedence: .makeCurrent, availability: .available, headline: "late", summary: nil,
@@ -480,10 +480,10 @@ final class FeedRunwayDriverTests: XCTestCase {
             language: nil, primaryLink: nil, searchProjection: nil, providerID: nil,
             memberships: [.init(sourceID: source, kind: .direct)], mediaCandidates: [])!
         _ = try AdmissionPolicy(database: database).admit(.init(targetID: target, targetGeneration: 1,
-            expectedCheckpointRevision: 0, observations: [observation], nextCheckpoint: nil)!)
+            expectedCheckpointRevision: expectedCheckpointRevision, observations: [observation], nextCheckpoint: nil)!)
         let records = try ContentStore(database: database).candidateWindow(sourceID: nil, after: nil,
             examinedCapacity: 8).records
-        return try XCTUnwrap(records.first?.originRevisionID)
+        return try XCTUnwrap(records.first { $0.headline == "late" } ?? records.first).originRevisionID
     }
 
     /// Admits one local story and returns the deferral record a relaunch would have persisted for it.
@@ -656,7 +656,7 @@ final class FeedRunwayDriverTests: XCTestCase {
     /// durable result; the driver clock advances while the reader still waits. The receipt must name the network
     /// item, and the policy must become pressured at 32 ready cards. f9cd0ee (offer-only) fails this test.
     func testNetworkReplenishmentLatencyEndsAtThePublishedReceipt() async throws {
-        let f = try fixture(seedLocal: true, paused: false)
+        let f = try fixture(seedLocal: true, paused: true)
         let gate = PrepareGate()
         let driver = try FeedRunwayDriver(session: f.session, runway: f.runway, plan: f.plan, policy: f.policy,
             acquisition: f.acquisition, coordinator: f.coordinator,
@@ -672,12 +672,16 @@ final class FeedRunwayDriverTests: XCTestCase {
         let initial = try XCTUnwrap(restored)
         let task = Task { try await driver.submitViewport(.init(anchor: initial.window.anchor),
             activity: .explicitTailApproach, resources: self.resources()) }
+        var request = f.http.started.makeAsyncIterator()
+        guard await request.next() != nil else { return XCTFail("the network request never started") }
+        // The HTTP is held to ~100; the durable offer then waits at preparation. Both delays must be inside the
+        // measured demand->publication interval.
+        f.clock.jump(to: 100)
+        f.http.release()
         let entered = expectation(description: "the network item reaches preparation")
         gate.onEntered { entered.fulfill() }
         await fulfillment(of: [entered], timeout: 5)
-        // The durable offer already arrived; the reader still has no published card. Advance the runway clock while
-        // the publication is held, then release it.
-        f.clock.jump(to: 100)
+        f.clock.jump(to: 300)
         gate.release()
         _ = try await task.value
         let receipt = try XCTUnwrap(f.publications.values.last, "the network publication must produce a receipt")
@@ -685,10 +689,12 @@ final class FeedRunwayDriverTests: XCTestCase {
         let cards = try receipt.cardIDs.compactMap { try store.card(id: $0) }
         XCTAssertTrue(cards.contains { $0.title == "Remote" },
             "the receipt must name the network item's content, not only the durable selectable offer")
+        XCTAssertEqual(receipt.editionID, f.edition,
+            "the publication that closes the measurement must belong to the demanded edition")
         let snapshot = await f.runway.snapshot()
         let p95 = try XCTUnwrap(snapshot.replenishment.p95Seconds)
-        XCTAssertGreaterThanOrEqual(p95, 90,
-            "the runway sample must end at the publication receipt, including preparation/publication")
+        XCTAssertGreaterThanOrEqual(p95, 250,
+            "the sample must span the held HTTP (~100) and the held preparation (~200), not only one part")
         let evaluation = RunwayPolicy.evaluate(
             facts: RunwayFacts(consumption: ConsumptionFacts(cardsPerSecond: 1, forwardIntent: true,
                 explicitTailApproach: false)!,
@@ -743,6 +749,60 @@ final class FeedRunwayDriverTests: XCTestCase {
         _ = try? await tail(f, initial)
         let snapshot = await f.runway.snapshot()
         XCTAssertNil(snapshot.replenishment.p95Seconds)
+    }
+
+    /// A cancelled network chain must not be closed by an unrelated later local publication.
+    func testCancelledNetworkChainIsNotClosedByALaterPublication() async throws {
+        let f = try fixture(seedLocal: true, paused: false)
+        let readiness = MediaReadiness()
+        let driver = try FeedRunwayDriver(session: f.session, runway: f.runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { f.clock.next() },
+            makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 2,
+                segmentCreatedAt: Date(timeIntervalSince1970: 6))! },
+            prepare: { selection in
+                if selection.orderedCandidates.contains(where: { $0.headline == "Remote" }) { throw CancellationError() }
+                return Self.prepared(selection)
+            }, readiness: readiness,
+            onPublication: { receipt in f.publications.append(receipt) })
+        let restored = try await driver.restoreAndActivate(backwardCapacity: 1, forwardCapacity: 4,
+            resources: resources())
+        let initial = try XCTUnwrap(restored)
+        _ = try? await driver.submitViewport(.init(anchor: initial.window.anchor),
+            activity: .explicitTailApproach, resources: self.resources())
+        let afterCancelled = f.publications.values.count
+        // Move the clock far past the cancelled demand; a later legitimate local publication must not close it.
+        f.clock.jump(to: 300)
+        let checkpoint = try XCTUnwrap(AcquisitionTargetAuthority(database: f.database).target(id: f.target.id))
+            .checkpointRevision
+        let revision = try Self.admitLateLocal(f.database, target: f.target.id, source: f.source,
+            expectedCheckpointRevision: checkpoint)
+        readiness.record(revision, nil, textDeclared: true)
+        await driver.noteMediaReadinessChanged()
+        let deadline = Date().addingTimeInterval(5)
+        while f.publications.values.count <= afterCancelled, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertGreaterThan(f.publications.values.count, afterCancelled, "the later local publication is real")
+        let snapshot = await f.runway.snapshot()
+        XCTAssertLessThan(snapshot.replenishment.p95Seconds ?? 0, 100,
+            "a later publication must not close the cancelled network chain with its old start")
+    }
+
+    /// A later round in the same scope must not replace the earlier unsatisfied demand's start; another scope
+    /// replaces it because the retired scope's measurement is gone.
+    func testANewRoundKeepsTheEarliestSameScopeDemandStart() {
+        let scope = RunwayScope(editionID: FeedEditionID(), contextKey: .init(request: .main),
+            editorialRevisionID: EditorialRevisionID())
+        let other = RunwayScope(editionID: FeedEditionID(), contextKey: .init(request: .main),
+            editorialRevisionID: EditorialRevisionID())
+        let first = RunwayMonotonicTime(seconds: 10)!, later = RunwayMonotonicTime(seconds: 20)!
+        let start = FeedRunwayDriver.nextReplenishmentMeasurement(nil, scope: scope, startedAt: first)
+        let sameScope = FeedRunwayDriver.nextReplenishmentMeasurement(start, scope: scope, startedAt: later)
+        XCTAssertEqual(sameScope.startedAt, first, "a new round cannot rewind the pending demand's start")
+        let changed = FeedRunwayDriver.nextReplenishmentMeasurement(start, scope: other, startedAt: later)
+        XCTAssertEqual(changed.scope, other)
+        XCTAssertEqual(changed.startedAt, later, "a retired scope does not carry its start into the new scope")
     }
 
     func test03NoCheckpointNoColdEdition() async throws {

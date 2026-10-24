@@ -434,7 +434,20 @@ public actor FeedRunwayDriver {
         return try await drive(resources: resources)
     }
 
+    /// NF-05: one bounded measurement per causal drain. A later round in the same scope must not replace the
+    /// earlier unsatisfied demand's start; a different scope replaces it (the old scope is retired).
+    static func nextReplenishmentMeasurement(
+        _ existing: (scope: RunwayScope, startedAt: RunwayMonotonicTime)?,
+        scope: RunwayScope, startedAt: RunwayMonotonicTime
+    ) -> (scope: RunwayScope, startedAt: RunwayMonotonicTime) {
+        guard let existing, existing.scope == scope else { return (scope, startedAt) }
+        return existing.startedAt.seconds <= startedAt.seconds ? existing : (scope, startedAt)
+    }
+
     private func executeAcquisition(_ intent: RunwayAcquisitionIntent, resources: FeedRunwayDriverResources) async throws -> Bool {
+        // Read the owner's demand timestamp **before** the awaiting start; a callback during planning/transport
+        // may invalidate the demand, and a post-await read would then fall back to a later execution slot.
+        let demandStartedAt = await runway.acquisitionDemandStartedAt(for: intent) ?? monotonicNow()
         let targets = try acquisition.eligibleTargets(for: plan.context)
         let start = try await acquisitionCycle.start(intent, eligibleTargets: targets,
             resources: resources.acquisition, preferUnattempted: selectedSourceCoverage != nil,
@@ -454,8 +467,8 @@ public actor FeedRunwayDriver {
             // NF-05: arm the **demand→first publication** interval before the round starts delivering. The start
             // is the owner's demand time, not this execution slot; the end is a publication receipt, not a durable
             // selectable offer. A round that produces no selectable result disarms without a sample.
-            pendingReplenishmentMeasurement = (scope: intent.scope,
-                startedAt: await runway.acquisitionDemandStartedAt(for: intent) ?? monotonicNow())
+            pendingReplenishmentMeasurement = Self.nextReplenishmentMeasurement(
+                pendingReplenishmentMeasurement, scope: intent.scope, startedAt: demandStartedAt)
             // R06: each durable result is a fact the moment it is admitted. The first supply change returns to the
             // publication loop **without waiting for the rest of the round**, so a fast source publishes while a
             // slow one is still pending. The round keeps running: its remaining results still notify the runway,
@@ -823,6 +836,7 @@ public actor FeedRunwayDriver {
                         await onPublication?(receipt)
                     }
                 } catch {
+                    pendingReplenishmentMeasurement = nil
                     try await runway.failLocalSlice(intent, failure: error is CancellationError ? .cancelled : .failed, at: monotonicNow())
                     throw error
                 }
