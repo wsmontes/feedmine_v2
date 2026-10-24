@@ -1,7 +1,8 @@
 // File: FeedItemRowView.swift
 // Module: FeedMineUI
 // Owns: the compact row layout, copied from V1 `Views/FeedItemRowView.swift`.
-// Does not own: gestures, menus, downloads or decoding. `FeedItemView` owns the row's interactions.
+// Does not own: gestures, menus, downloads or decoding. `FeedItemView` owns the row's interactions and
+// injects the one control the row may draw (`onPlay`).
 
 import SwiftUI
 import FeedMineRuntime
@@ -10,11 +11,21 @@ public struct FeedItemRowView: View, Equatable {
     public let card: PresentationCard
     public let appearance: ReaderAppearance
     public let isRead: Bool
+    /// The row's explicit play action, when the host can execute it. Nil for a card that is not audio, or whose
+    /// playable payload is unavailable: the row then promises nothing (D2 never offers play for video).
+    public let onPlay: (() -> Void)?
 
-    public init(card: PresentationCard, appearance: ReaderAppearance, isRead: Bool = false) {
+    nonisolated public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.card == rhs.card && lhs.appearance == rhs.appearance && lhs.isRead == rhs.isRead
+            && (lhs.onPlay == nil) == (rhs.onPlay == nil)
+    }
+
+    public init(card: PresentationCard, appearance: ReaderAppearance, isRead: Bool = false,
+        onPlay: (() -> Void)? = nil) {
         self.card = card
         self.appearance = appearance
         self.isRead = isRead
+        self.onPlay = onPlay
     }
 
     private var isAudio: Bool { card.playsAudio }
@@ -57,6 +68,22 @@ public struct FeedItemRowView: View, Equatable {
                         .lineLimit(1)
                     if card.playsAudio || card.identifiesVideo {
                         MediaIdentityBadge(identity: card.mediaIdentity)
+                    }
+                    // D1 in the row layout: regular width (iPad/landscape) must offer the same explicit play
+                    // action the card layout does, on the same card, with the same control. Without it the row's
+                    // only gesture opened the article and the episode was unreachable below the bar's gate.
+                    if let onPlay {
+                        Button(action: onPlay) {
+                            Label(String(localized: "Tocar"), systemImage: "play.fill")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .padding(.horizontal, 10)
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("card.play")
+                        .accessibilityLabel(String(localized: "Tocar episódio"))
                     }
                     Text(verbatim: "·").font(.caption2).foregroundStyle(.tertiary)
                     Text(verbatim: FeedItemCardView.formatted(card.timestamp?.value))

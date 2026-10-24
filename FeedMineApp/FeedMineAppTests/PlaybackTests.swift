@@ -339,12 +339,82 @@ final class PlaybackTests: XCTestCase {
         adapter.positions = Positions()
         defer { adapter.teardown() }
         try await adapter.play(try episode())
-        await adapter.reportUnavailable("Sem nada para tocar")
+        await adapter.reportUnavailable("Sem nada para tocar", item: nil)
         let error = try XCTUnwrap(adapter.state.error)
 
         try await Task.sleep(for: .milliseconds(800))
         XCTAssertEqual(adapter.state.error, error, "the reason the reader was given must stay stated")
         XCTAssertFalse(adapter.state.isPlaying)
+    }
+
+    /// F15 R4: a first play that cannot happen keeps the occurrence and states the reason. The bar is gated on
+    /// `state.item != nil`, so the reference is what makes the refusal visible at all; nothing is claimed playing.
+    func testAFirstRefusalKeepsTheOccurrenceAndTheReason() async throws {
+        let adapter = MediaPlaybackAdapter()
+        adapter.positions = Positions()
+        defer { adapter.teardown() }
+        let item = try episode(title: "Episódio indisponível")
+        let reason = String(localized: "Não foi possível tocar esta mídia")
+
+        await adapter.reportUnavailable(reason, item: item)
+        XCTAssertEqual(adapter.state.item, item, "the refused occurrence stays the bar's reference")
+        XCTAssertEqual(adapter.state.error, reason)
+        XCTAssertFalse(adapter.state.isPlaying)
+        XCTAssertNil(adapter.currentPlayerItem, "nothing was installed for a payload the player refused")
+    }
+
+    /// A refusal never replaces the episode that is already installed: the reader keeps hearing it, and only the
+    /// reason is stated.
+    func testARefusalWhileSomethingIsInstalledKeepsTheCurrentEpisode() async throws {
+        let adapter = MediaPlaybackAdapter()
+        adapter.positions = Positions()
+        defer { adapter.teardown() }
+        let playing = try episode(title: "Bom")
+        let refused = try episode(title: "Recusado")
+        try await adapter.play(playing)
+
+        await adapter.reportUnavailable("Não foi possível tocar este card", item: refused)
+        XCTAssertEqual(adapter.state.item?.cardID, playing.cardID)
+        XCTAssertNotNil(adapter.state.error)
+        XCTAssertNotNil(adapter.currentPlayerItem)
+    }
+
+    /// A terminal item cannot be resumed: the reader's play intent creates a fresh item at the position they had,
+    /// keeps the stated reason until playback really happens, and never claims `isPlaying` on the retry itself.
+    func testATerminalFailureIsRetriedWithAFreshItemAndTheReasonStaysUntilItPlays() async throws {
+        let adapter = MediaPlaybackAdapter()
+        adapter.positions = Positions()
+        defer { adapter.teardown() }
+        let item = try episode(seconds: 30)
+        try await adapter.play(item)
+        await adapter.seek(to: 7)
+        let failedItem = try XCTUnwrap(adapter.currentPlayerItem)
+
+        // The status observation's own path (an item's status cannot be forced from outside AVFoundation).
+        adapter.reportItemFailure(nil)
+        let reason = try XCTUnwrap(adapter.state.error)
+        XCTAssertFalse(adapter.state.isPlaying, "a failure is not a pause the bar may draw as playing")
+        XCTAssertEqual(adapter.currentPlayerItem, failedItem, "the failed item stays installed for the reference")
+
+        await adapter.resume()
+        XCTAssertNotIdentical(adapter.currentPlayerItem, failedItem,
+            "the retry creates a fresh AVPlayerItem instead of resuming a terminal one")
+        // The retry may prove playback before `resume()` returns; what it may never do is clear the reason while
+        // nothing plays. The old path cleared it and claimed `isPlaying` on the terminal item.
+        if adapter.state.error == nil {
+            XCTAssertTrue(adapter.state.isPlaying,
+                "the reason is cleared only after the player reports playback")
+        } else {
+            XCTAssertEqual(adapter.state.error, reason,
+                "the reason stays stated until the retry proves playback")
+            XCTAssertFalse(adapter.state.isPlaying, "a retry does not claim playing before the player says so")
+        }
+
+        let playing = await wait { adapter.state.isPlaying && adapter.state.error == nil }
+        XCTAssertTrue(playing, "the retry plays, and only then clears the reason; state: \(adapter.state)")
+        let resumed = await wait { adapter.state.position >= 6 }
+        XCTAssertTrue(resumed,
+            "the retry keeps the reader where they were; at \(adapter.state.position)")
     }
 
     /// Teardown takes the item and the lock screen's dictionary with it: the app's player outlives every surface,

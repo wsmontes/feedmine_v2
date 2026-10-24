@@ -48,7 +48,17 @@ public struct MiniPlayerBar: View {
                         .font(.subheadline)
                         .lineLimit(1)
                         .accessibilityIdentifier("mini-player-title")
-                    progress
+                    // F15 R4: a refusal is stated in words, not only by the warning glyph — the bar names the
+                    // item that could not play and stays the destination to the full player's own reason.
+                    if let error = state.error {
+                        Text(verbatim: error)
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("mini-player-error")
+                    } else {
+                        progress
+                    }
                 }
                 // The row fills the bar: opening the player is the whole bar's own gesture (V1's), and the
                 // bar's element then measures the height the bar reserves.

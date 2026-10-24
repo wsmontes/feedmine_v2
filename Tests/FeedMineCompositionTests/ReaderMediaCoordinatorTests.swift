@@ -19,6 +19,7 @@ final class ReaderMediaCoordinatorTests: XCTestCase {
         private(set) var pauses = 0, resumes = 0, stops = 0
         private(set) var skips: [TimeInterval] = []
         private(set) var seeks: [TimeInterval] = []
+        private(set) var refusals: [(message: String, item: ReaderMediaItem?)] = []
         var refuses = false
 
         func play(_ item: ReaderMediaItem) async throws {
@@ -41,7 +42,12 @@ final class ReaderMediaCoordinatorTests: XCTestCase {
 
         func seek(to seconds: TimeInterval) async { seeks.append(seconds) }
 
-        func reportUnavailable(_ message: String) async { state = state.failing(message) }
+        func reportUnavailable(_ message: String, item: ReaderMediaItem?) async {
+            refusals.append((message, item))
+            state = state.item == nil && item != nil
+                ? ReaderMediaState(item: item, isPlaying: false, position: 0, duration: nil, error: message)
+                : state.failing(message)
+        }
 
         func stop() async {
             stops += 1
@@ -116,6 +122,39 @@ final class ReaderMediaCoordinatorTests: XCTestCase {
         let other = ReaderMediaCoordinator(database: try published([playable]), player: refusing)
         await other.toggle(cardID: playable.id)
         XCTAssertNotNil(other.state.error)
+    }
+
+    /// F15 R4: a card that carries a playable locator but which the player refuses keeps its reference, so the
+    /// surface can name what could not play. The host also receives the reason, for the card that has nothing
+    /// playable at all and therefore no bar to attach to.
+    func testARefusedPayloadKeepsItsReferenceAndReturnsTheReason() async throws {
+        let playable = card("mediaPlayback", "https://cdn.example/ep.mp3")
+        let refusing = FakePlayer()
+        refusing.refuses = true
+        let coordinator = ReaderMediaCoordinator(database: try published([playable]), player: refusing)
+
+        let outcome = await coordinator.toggle(cardID: playable.id)
+        guard case .unavailable(let message) = outcome else {
+            return XCTFail("a refusal is returned to the host, got \(outcome)")
+        }
+        XCTAssertFalse(message.isEmpty)
+        let refusal = try XCTUnwrap(refusing.refusals.last)
+        XCTAssertEqual(refusal.message, message)
+        XCTAssertEqual(refusal.item?.cardID, playable.id,
+            "the refused occurrence is handed to the player as the bar's reference")
+        XCTAssertEqual(refusal.item?.url, URL(string: "https://cdn.example/ep.mp3"))
+        XCTAssertEqual(coordinator.state.item?.cardID, playable.id)
+        XCTAssertEqual(coordinator.state.error, message)
+
+        // A card with no payload at all states the reason with nothing to reference.
+        let article = card("externalURL", "https://example.com/artigo")
+        let empty = FakePlayer()
+        let noPayload = ReaderMediaCoordinator(database: try published([article]), player: empty)
+        guard case .unavailable = await noPayload.toggle(cardID: article.id) else {
+            return XCTFail("a card without a payload is refused and reported")
+        }
+        XCTAssertEqual(empty.refusals.last?.item, nil, "there is no occurrence to name")
+        XCTAssertNotNil(noPayload.state.error)
     }
 
     /// The intents the surfaces issue reach the player, and progress is a value the bar can draw.
