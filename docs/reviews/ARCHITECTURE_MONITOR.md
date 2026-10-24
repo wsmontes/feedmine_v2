@@ -57,7 +57,7 @@ git fetch origin main monitor/architecture codex/feedmine-next-internal codex/di
 git log -1 --format='%H %cI %s' origin/codex/feedmine-next-internal
 git log --oneline 3c5bdc11..origin/codex/feedmine-next-internal
 git diff --stat 3c5bdc11..origin/codex/feedmine-next-internal
-git diff -- bench/EVALUATOR.sha256 3eee1935 3c5bdc11 # revisar manualmente também o driver B05
+git diff 3eee1935 3c5bdc11 -- bench/EVALUATOR.sha256 FeedMineApp/FeedMineAppTests/DiscoveryBenchmarkTests.swift # auditar B05
 git diff --check 3c5bdc11..origin/codex/feedmine-next-internal
 # No checkout do candidato, após verificar espaço livre sem bypass do guard:
 swift build
