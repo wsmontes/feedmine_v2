@@ -286,7 +286,15 @@ Esse caminho estabelece dependência de **resposta visual** na reconstrução co
 
 **Teste discriminante:** rede lenta mas bem-sucedida, rede com resposta vazia, fonte suspensa, dados já locais, alta velocidade de scroll, leitor parado, retorno de background; separar **tempo até novas cartas úteis** de tempo bruto de requisição. Acompanhar frames/energia e pressão de armazenamento.
 
-**Status Codex:** HIPÓTESE FORTE; SEM PROVA CAUSAL NA BUILD 55.
+**Status Codex:** **PARCIAL — medição local truncada comprovada e corrigida no fixture; a primeira oportunidade de rede ainda não é antecipada e a admissão UI não foi medida.**
+
+**[VALIDADO EM FIXTURE, 2026-10-24, HEAD `22041a06` + `f9cd0ee`]** O caminho observado é `RunwayController.acquisitionIntentIfEligible` (só depois de `localSupplyExhausted`, `RunwayController.swift:225-258`), o `FeedRunwayDriver.executeAcquisition` e a publicação/admissão existentes. O `RunwayPolicy` usava apenas `latencySamples` de fatias locais publicadas (`RunwayController.swift:545-549`); uma aquisição de rede lenta não entrava no p95.
+
+- **RED real:** `FeedRunwayDriverTests.testSlowNetworkReplenishmentEntersTheRunwayLatency` (fixture existente, HTTP suspenso, clock avançado, sem UI) viu `p95 = 1.0 s` e `RunwayPolicy` **healthy** com 32 cartas, enquanto o caminho de rede levava ~95 s.
+- **Mudança mínima:** `FeedRunwayDriver.executeAcquisition` mede do início da demanda até o **primeiro resultado durável** da rodada que ele possui e `RunwayController.recordReplenishmentLatency` o acrescenta à **mesma** amostra limitada; o p95, o threshold e o piso 32 existentes não mudaram. Não há timer, fila, segunda política ou estado novo.
+- **GREEN:** o mesmo teste vê p95 ≥ 90 s e a política fica **pressured** com 32 cartas; as regressões `FeedRunwayDriverTests|RunwayPolicyTests|RunwayControllerTests|RunwayAcquisitionCycleTests` ficaram **115/115**.
+- **Alternativas:** aumentar o piso 32 (não modela a latência e custa oferta), criar um segundo orçamento/timer de rede (duplica owner) e medir só o HTTP bruto (não é e2e) foram rejeitadas. A amostra é do resultado durável do owner, não do request cru.
+- **Limite/residual:** a **primeira** aquisição de rede de uma sessão ainda é autorizada pelo p95 local, porque a amostra de rede só existe depois de a primeira rodada concluir; a admissão/publicação UI completa e a antecipação da primeira necessidade permanecem NF-01. O teste é de fixture/simulador, não dispositivo físico.
 
 ## NF-06 — Trabalhos complementares sem novos subsistemas
 
@@ -313,6 +321,7 @@ Esse caminho estabelece dependência de **resposta visual** na reconstrução co
 | 2026-10-23 | NF-01…NF-06 | Código de referência `3eee193`; relato TestFlight 55 | Diagnóstico inicial, **não** validação 55 | Ver seções acima | Pesquisa/hipóteses; nenhum patch de runtime | ABERTO |
 | 2026-10-23 | NF-07…NF-12 | `feedmine-dev/main`, documentos V1 e V2; referência 54 | Mandato expandido pelo dono; **sem prova de paridade em aparelho** | Seções novas + inventário V1/V2 | Criar matriz transversal e contraditório; nenhum patch de runtime | ABERTO |
 | 2026-10-23 | NF-13…NF-16 | V1 ArticleReaderView + V2 Reader/Media 54; documentação Apple/YouTube | Nova visão de produto; **viabilidade parcial, não comprovada integralmente** | Seções novas e regras de cada plataforma | Prototipar e validar antes de assumir PiP/overlays | ABERTO |
+| 2026-10-24 | NF-05/NF-01 | `22041a06` + `f9cd0ee` | **PARCIAL**: p95 local truncava o caminho de rede; e2e durável agora entra no mesmo p95 (RED/GREEN em fixture) | `RunwayController.swift:545-549` + `FeedRunwayDriver.executeAcquisition`; teste `testSlowNetworkReplenishmentEntersTheRunwayLatency`; 115/115 | Medição no owner existente; sem novo estado/timer/piso | ABERTO — primeira rede/antecipação e e2e UI |
 
 ### Histórico de revisões
 
@@ -321,6 +330,7 @@ Esse caminho estabelece dependência de **resposta visual** na reconstrução co
 - **2026-10-23 — v0.3:** registro preliminar da multimídia contínua (a expressão “novo norte” nesta versão estava errada), vídeo inline→flutuante, coordenação com podcast/rádio, leitura do publicador original e modo leitura opt-in; sem patches de runtime.
 - **2026-10-23 — v0.4:** retificação explícita: **não é mudança de rumo**. Revisados `feedmine-dev` V1 @ `b5c2f59c55ba`, documentação de arquitetura entregue para a V2 e specs V2. Tabela de rastreabilidade mostra visão original → refinamento atual → implementação/prova faltante; separa rádio/podcast de rádio web ao vivo e overlay/miniatura de player YouTube inline. Corrigidas expressões que tratavam a visão multimídia como pivô. Acrescentadas NF-07–NF-12 com evidências de V1 e limites de prova da V2.
 - **2026-10-23 — v0.5 (Codex):** mapeada a build 55 com confirmação Apple e Sources tree; comparados caminhos prioritários com `3eee193`; integrado o guia de main preservando ambos os históricos. Iniciada NF-05/NF-01 com prova discriminante; relato físico segue válido e B06 NOT_RUN.
+- **2026-10-24 — v0.6 (Codex, `f9cd0ee`):** NF-05/NF-01 em fixture: o p95 de reposição era só local (RED 1.0 s, política healthy com 32); a rodada de aquisição agora mede demanda→primeiro resultado durável e entra na mesma amostra (GREEN p95 ≥90 s, pressured; 115/115). Piso 32 e política preservados. Residual: a primeira aquisição de rede ainda usa o p95 local; admissão UI/físico NOT_RUN.
 
 ## 4. Leituras e artefatos que devem prevalecer
 
