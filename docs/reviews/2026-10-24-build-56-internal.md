@@ -33,7 +33,8 @@ Escopo: build 56 como **validação interna**, não como candidato de produção
 
 ## Limitações declaradas
 
-- **Imagens**: nesta instalação, 573 cartas publicadas e **0 com imagem**; nenhum arquivo de mídia foi materializado, apesar de 7.900 revisões do supply com candidato de imagem e 568 adiamentos. É bloqueador do candidato de produção; o build 56 não o resolve.
+- **Imagens (corrigido em 24/out, depois de uma medição errada)**: numa instalação limpa do build 56 — Release, catálogo publicado, 3 minutos de feed —, **307 de 883 cartas publicadas têm imagem (34,8%)** e 193 ativos foram gravados. A medição anterior ("0 de 573") veio de um contêiner reaproveitado entre reinstalações e **não se reproduz**; ela foi retirada como bloqueador.
+  O defeito real, medido com o build de Debug (que compila a testemunha de mídia) em 4.145 assentamentos: **636 `ready-image`**, **1.942 `transient-failed` por `deadline`**, 1.560 sem imagem declarada, 7 `too-small`. Ou seja, a preparação funciona e é interrompida pelo prazo em cerca de três de cada quatro tentativas com imagem declarada.
 - **Idioma**: o gate é por sistema de escrita. Texto em alfabeto latino de língua diferente (espanhol em canal `en`) continua passando; distinguir exige identificador de idioma, que esta rodada não adiciona.
 - **Dispositivo físico**: nenhuma validação em iPhone. B06 segue NOT_RUN; nada aqui deve ser lido como aprovação física.
 - **Vídeo**: superfície própria não demonstrada nesta rodada.
