@@ -192,6 +192,20 @@ O teste de rajada também afirma: última posição entregue = posição do repo
 (high-water real sobrevive); toda carta vista está no ledger de exposição; e o repouso é gravado no
 checkpoint do contexto na posição desenhada.
 
+### Fence de conclusão do teste de coalescência (2026-10-24)
+
+O teste `testCoalescingPreservesCapturedConsumptionTiming` esperava `pendingViewportIngressCount == 0`, que é o
+resumo do ingresso, não a conclusão do consumidor. `consumeViewportIngress` retira o fato antes de aguardar a
+medição do viewport/driver; o último fato pode estar em voo com o resumo vazio. Foi exatamente o instante
+observado no AppUnits global de `e940`: `viewport forwarded`/`opportunity sent` imediatamente antes da asserção
+de linha 1874 e taxa `0` contra `0.5`. O teste passa a esperar o dono existente
+(`viewportDrain == nil && viewportIngress.isEmpty`) por um accessor **DEBUG-only** derivado do drain; não há
+estado, fila, geração, timer ou cálculo de tempo novo. A taxa esperada `0.5`, os escopos e o comportamento de
+produção não mudam; `Sources/FeedMineComposition/FeedRunwayDriver.swift` permanece `b2a2fb4d…` e o bloco DEBUG
+não compila em Release. Prova: RED global armazenado `AppUnits e940` 189/1 (linha 1874); focal pós-fence 1/0
+(`runs/continuity-fix-1792859621956762000`). O full 189 não foi repetido neste escopo; B05/Release não foram
+afetados nem reivindicados por esta prova.
+
 ### Registro R01
 
 SHA inicial: `062711eb` | vermelho: tabela de mutações acima | alteração: resumo finito + consumidor único + instante de captura + revogação no background | verde: tabela acima | jornada protegida: captura não aguarda produtor; rajada limitada; avanço/repouso/exposição preservados; background não produz fora da tela | pendências: R02 e seguintes | SHA final: registrado no commit `fix(ui): bound viewport ingress without losing semantic facts`.
