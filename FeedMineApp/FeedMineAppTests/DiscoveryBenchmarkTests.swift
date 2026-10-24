@@ -956,37 +956,13 @@ final class DiscoveryBenchmarkTests: XCTestCase {
                 if let source = sources.first {
                     contextOutcome = "false"
                     bName = source.label
-                    // A switch requested while the previous session replacement is still launching is **silently
-                    // dropped** by the product: `selectContext` returns at its `replacingSession` guard, so no
-                    // checkpoint, no new session and the old context keeps running. Measured in
-                    // 20261023T235621Z: the tap after the return-to-Main produced exactly that (transport kept the
-                    // main 30-source cadence; the trace had no source edition). The reader's own gesture is retried
-                    // once, after the menu is dismissed and the header is usable again; evidence records how many
-                    // attempts the switch needed.
-                    var attempts = 0
-                    var row = source
-                    while attempts < 2 {
-                        attempts += 1
-                        row.tap()
-                        // "Changed" is the product's own context label naming the source — the witness the
-                        // context surface offers the reader — not a count of taps.
-                        reachedB = waitUntil(30) {
-                            contextLabel.exists
-                                && contextLabel.label.range(of: bName, options: .caseInsensitive) != nil
-                        }
-                        if reachedB || attempts == 2 { break }
-                        // Dismiss a menu that the dropped tap may have left open (the status bar is a safe edge),
-                        // then wait for the header to be usable again — that also covers the launch completing.
-                        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02)).tap()
-                        guard waitUntil(60, { contextChip.exists && contextChip.isHittable }) else { break }
-                        contextChip.tap()
-                        guard waitUntil(10, { !contextMenuItems(app).isEmpty }),
-                            let again = contextMenuItems(app).first(where: {
-                                $0.label.range(of: bName, options: .caseInsensitive) != nil
-                            }) else { break }
-                        row = again
+                    source.tap()
+                    // "Changed" is the product's own context label naming the source — the witness the context
+                    // surface offers the reader — not a count of taps.
+                    reachedB = waitUntil(30) {
+                        contextChip.exists && contextLabel.exists
+                            && contextLabel.label.range(of: bName, options: .caseInsensitive) != nil
                     }
-                    record("b05-context-attempts:\(attempts)", to: phases)
                     if reachedB {
                         record("b05-context-b:\(bName)", to: phases)
                         record("b05-context-b-label:\(contextLabel.label)", to: phases)
