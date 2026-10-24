@@ -1582,7 +1582,7 @@ final class CompositionTests: XCTestCase {
         association.store.setSearchScope(.sources)
 
         let surfaced = await Self.waitUntil(5) {
-            association.store.toast?.text == "Não foi possível salvar a busca"
+            association.store.toast?.text == String(localized: "Não foi possível salvar a busca")
         }
         XCTAssertTrue(surfaced, "a recusa da escrita durável é visível ao leitor")
         XCTAssertEqual(root.currentContextKey, before, "o contexto não muda sem confirmação durável")
@@ -1626,7 +1626,7 @@ final class CompositionTests: XCTestCase {
         let savedFirst = try association.savedArticles().first
         XCTAssertEqual(savedFirst?.availability, .failed,
             "a linha não continua mostrando o pending que a escrita recusada não gravou")
-        XCTAssertEqual(association.store.toast?.text, "Não foi possível preparar a mídia salva")
+        XCTAssertEqual(association.store.toast?.text, String(localized: "Não foi possível preparar a mídia salva"))
         XCTAssertNil(try SavedMediaAvailabilityStore(database: association.database)
             .availability(cardID: card.id), "nenhuma linha durável foi prometida")
         try dropTriggers(["refuse_saved_media_availability"], in: directory)
