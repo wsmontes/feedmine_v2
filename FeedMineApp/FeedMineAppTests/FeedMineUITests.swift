@@ -3321,10 +3321,17 @@ final class FeedMineUITests: XCTestCase {
             XCTFail("the source context states its own identity: \(identity.exists ? identity.label : "absent")")
             return
         }
+        // The product states a running replacement by disabling the chip and setting its busy value. Sample once,
+        // before the bounded wait: an already-enabled chip means the transition finished first (not observed),
+        // which is never a failure and never a reason to retry the tap.
+        let initialEnabled = chip.isEnabled
+        let initialValue = (chip.value as? String) ?? ""
+        print("EMPTY_SOURCE_CONTEXT_INITIAL enabled=\(initialEnabled) value=\(initialValue)")
         guard waitUntilReady(chip, timeout: 30) else {
             XCTFail("the context control is enabled and hittable without waiting for content: " +
                 "enabled=\(chip.isEnabled) hittable=\(chip.isHittable)"); return
         }
+        print("EMPTY_SOURCE_CONTEXT_READY value=\((chip.value as? String) ?? "")")
         chip.tap()
         let entries = contextMenuEntries(app)
         guard !entries.isEmpty else { XCTFail("the context menu offers the way back to Main"); return }

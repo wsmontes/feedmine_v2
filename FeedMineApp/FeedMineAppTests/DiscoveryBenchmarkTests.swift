@@ -210,6 +210,18 @@ final class DiscoveryBenchmarkTests: XCTestCase {
             .sorted { $0.frame.minY < $1.frame.minY }
     }
 
+    /// Samples the context control once, before its bounded ready wait. A control the product actually presented
+    /// disabled **with** its busy value is evidence; an already-enabled control only means the replacement finished
+    /// before the driver looked (`busy-observed:false`), which is never a failure and never a reason to retry.
+    private func observeContextReadiness(_ element: XCUIElement, phase: String, to phases: URL?) {
+        let exists = element.exists
+        let enabled = exists && element.isEnabled
+        let value = exists ? ((element.value as? String) ?? "") : "absent"
+        record("\(phase)-initial-enabled:\(enabled)", to: phases)
+        record("\(phase)-initial-value:\(value)", to: phases)
+        record("\(phase)-busy-observed:\(exists && !enabled && !value.isEmpty)", to: phases)
+    }
+
     /// Returns to the main context through the product's own control. The identity witness is
     /// `reader-context-label`: present only while a source (or search) context is shown.
     private func returnToMainContext(_ app: XCUIApplication, phases: URL? = nil) -> Bool {
@@ -221,8 +233,10 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         guard chip.waitForExistence(timeout: 60) else { return false }
         // The control states its own readiness: while a replacement owns the session it is disabled. Wait
         // (bounded) for enabled **and** hittable, record what was observed, then take one tap — never retry it.
+        observeContextReadiness(chip, phase: "b05-context-return", to: phases)
         let ready = waitUntil(60, { chip.exists && chip.isEnabled && chip.isHittable })
         record("b05-context-return-chip-ready:\(ready)", to: phases)
+        record("b05-context-return-ready-value:\((chip.value as? String) ?? "")", to: phases)
         guard ready else { return false }
         chip.tap()
         guard waitUntil(10, { !contextMenuItems(app).isEmpty }),
@@ -943,9 +957,12 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         var reachedB = false
         var returned = false
         var bName = ""
-        let chipReady = contextChip.waitForExistence(timeout: 15)
+        let chipExists = contextChip.waitForExistence(timeout: 15)
+        if chipExists { observeContextReadiness(contextChip, phase: "b05-context-b", to: phases) }
+        let chipReady = chipExists
             && waitUntil(30, { contextChip.exists && contextChip.isEnabled && contextChip.isHittable })
         record("b05-context-chip-ready:\(chipReady)", to: phases)
+        record("b05-context-b-ready-value:\((contextChip.value as? String) ?? "")", to: phases)
         if chipReady {
             contextChip.tap()
             // The menu is open when its own entries exist. A SwiftUI `Menu` exposes items as buttons with **no
@@ -981,10 +998,13 @@ final class DiscoveryBenchmarkTests: XCTestCase {
                         // Back to A: the menu's first entry is the main context. The source context publishes its
                         // own feed and may draw its preparation surface first, where the reader's header is not
                         // mounted; the chip's return is awaited (bounded) rather than tapped blind.
+                        observeContextReadiness(contextChip, phase: "b05-context-b-return", to: phases)
                         let returnReady = waitUntil(60, {
                             contextChip.exists && contextChip.isEnabled && contextChip.isHittable
                         })
                         record("b05-context-return-chip-ready:\(returnReady)", to: phases)
+                        record("b05-context-b-return-ready-value:\((contextChip.value as? String) ?? "")",
+                            to: phases)
                         if returnReady {
                             contextChip.tap()
                             if waitUntil(10, { !contextMenuItems(app).isEmpty }),
