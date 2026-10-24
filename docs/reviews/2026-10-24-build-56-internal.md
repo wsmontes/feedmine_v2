@@ -38,3 +38,22 @@ Escopo: build 56 como **validação interna**, não como candidato de produção
 - **Dispositivo físico**: nenhuma validação em iPhone. B06 segue NOT_RUN; nada aqui deve ser lido como aprovação física.
 - **Vídeo**: superfície própria não demonstrada nesta rodada.
 - **Distribuição externa**: não solicitada e não feita.
+
+## Apêndice — o catálogo do build 56 é o mesmo dado que as evidências anteriores
+
+O preflight exige um staging de bootstrap verificado, que este worktree não tinha. O
+`build/catalog-bootstrap` existia no checkout principal; minha primeira busca olhou só os
+worktrees, então regenerei o staging com o compilador V1 fixado por SHA-256 em vez de copiá-lo.
+O resultado, comparado arquivo a arquivo com o catálogo que vinha sendo usado:
+
+| Medida | Antigo (`e6da170e…`) | Novo (`1825fdae…`) |
+|---|---|---|
+| `catalog_source` | 77.443 | 77.443 |
+| `catalog_node` | 6.450 | 6.450 |
+| `catalog_placement` | 77.443 | 77.443 |
+| Hash de conteúdo sobre `(key, language, media_kind, quality_score, title, request_url)` | `a0dfbeff2fc58c10e32ba708b67b2311` | `a0dfbeff2fc58c10e32ba708b67b2311` |
+| `catalog_version` | 1792180662394189 | 1792868795281916 |
+
+Conteúdo idêntico; só o selo de compilação difere, que é o que o próprio bootstrap declara
+esperar. Portanto build 56 embarca o mesmo conjunto de fontes sobre o qual B01–B05 e as
+medições de 77.443 fontes foram tomadas — não um dataset novo.
