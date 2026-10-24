@@ -21,12 +21,21 @@ Consequências diretas:
 
 Composição: 936 áudio, 488 sem mídia, 1 vídeo.
 
-Diagnóstico de oferta, da mesma rodada: **7.900 revisões com candidato de imagem no supply contra 573 cartas publicadas**. A oferta sobrava; a fila passava por cima dela. Portanto o problema não é falta de imagem preparada — é a fila não usar o que existe.
+Diagnóstico de oferta, da mesma rodada, com o cuidado de separar três coisas diferentes:
+
+- **oferta declarada**: 6.515 revisões com candidato de imagem e 1.147 declarando mime de imagem, num supply de 10.175 revisões elegíveis;
+- **estoque preparado**: nas execuções medidas, 276 a 636 revisões chegaram a `ready-image` e 186 a 276 ativos foram gravados em `Media/sha256` — muito menos que a oferta declarada;
+- **publicadas**: 941 a 1.058 cartas, das quais 303 a 435 com imagem.
+
+Portanto **não** está provado que "sobra imagem preparada e a fila passa por cima". O que está provado é que (a) a oferta declarada supera em muito o publicado e (b) o estoque preparado é uma fração dele. O mecanismo de suspensão já existe e funciona antes do ranking (`SelectionEngine`, `readyEligible` filtra por `readiness.readyRevisionIDs`): carta pendente não consome posição. A pergunta aberta é, então, **profundidade de estoque pronto**, não um mecanismo ausente.
+
+Antes de atribuir o gargalo, o Codex deve medir, na mesma execução: oferta declarada, `ready-image` do traço, ativos em disco e cartas publicadas com imagem — separando download pendente de estoque pronto.
 
 ## Onde está o código (levantado pelo OMP antes de passar a direção)
 
 - `Sources/FeedMineEditorial/SourceAlternation.swift` — PD-4 e as versões de sequenciamento `apply` (v2), `applyBySupplyShare` (v3), `applyByWeightedSupplyShare` (v4). Edições antigas são restauradas com a própria revisão: **não alterar v2–v4**.
-- `Sources/FeedMineEditorial/SelectionDiversity.swift` — `SelectionDiversityContext` / `SelectionDiversityDimension` com `.source`, `.provider`, `.subjects`. Já descarta uma dimensão desconhecida por qualquer candidato, e produz `repetitionKey` usado só como desempate depois do peso.
+- `Sources/FeedMineEditorial/SelectionDiversity.swift` — `SelectionDiversityContext` / `SelectionDiversityDimension` com `.source`, `.provider`, `.subjects`. **Já em uso na v5**, mas apenas como desempate suave (`repetitionKey` é comparado depois do peso e antes da recência), e o conjunto de dimensões é decidido por grupo de mesma relevância. Falta a dimensão de **tipo de mídia** e falta tratar distância como exigência, não como desempate.
+- `Sources/FeedMineEditorial/SelectionEngine.swift` — duas coisas já existem e **não** devem ser reimplementadas: a suspensão de candidatos pendentes antes do ranking (`readyEligible`, filtro por `readiness.readyRevisionIDs`) e o caminho de diversidade restrito à versão 5 (`diversityContext` só vale quando `sequencingPolicyVersion == 5`).
 - `Sources/FeedMineEditorial/Candidate.swift` — **não existe tipo de mídia** no candidato; só `primaryMediaLocator`.
 - `Sources/FeedMinePersistence/ContentStore.swift` — classes de mídia (`role`, `mediaClass`, `remoteURL`) existem por revisão; `CandidateRecord` não as carrega.
 - `FeedMineApp/FeedMineApp/AppComposition.swift:2967-2975` — a identidade da revisão carrega `sequencingPolicyVersion`; v5 = `shapedSequencing`. Mudança de comportamento exige **versão nova**.
@@ -36,7 +45,7 @@ Diagnóstico de oferta, da mesma rodada: **7.900 revisões com candidato de imag
 1. Levar o tipo de mídia até quem decide a ordem, com **uma leitura em bloco por janela** (nunca uma consulta por candidato), como `mediaKind` opcional no `Candidate` — desconhecido nunca restringe.
 2. Congelar o tipo nas `EditorialDiversityFact` de publicação e acrescentar a dimensão ao comparador.
 3. Nova **v6** de sequenciamento: maximizar a distância mínima a ocorrências anteriores de tipo, depois tema, depois fonte, com PD-4 (sem fonte adjacente repetida) ainda como restrição dura; candidato que não pode entrar sem violar PD-4 é retido, nunca publicado adjacente.
-4. Volume: garantir que a janela examinada e a oferta preparada fiquem à frente do cursor em profundidade suficiente para a carta incompleta ceder o lugar. Medir com o traço de preparação (`media_preparation_settled`, `ready-image`, `deadline`) e com a fila publicada.
+4. Volume: a suspensão já existe (candidato pendente não consome posição), então o trabalho é **profundidade de estoque pronto à frente do cursor** — medir primeiro oferta declarada × `ready-image` × ativos × publicadas na mesma execução, e só então mexer em capacidade de exame/preparação. Sem essa separação, aumentar volume pode apenas aumentar downloads pendentes.
 
 ## Restrições invioláveis
 
