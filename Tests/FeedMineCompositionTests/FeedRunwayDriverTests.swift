@@ -681,8 +681,10 @@ final class FeedRunwayDriverTests: XCTestCase {
         gate.release()
         _ = try await task.value
         let receipt = try XCTUnwrap(f.publications.values.last, "the network publication must produce a receipt")
-        XCTAssertTrue(receipt.cardIDs.contains { !f.cards.contains($0) },
-            "the receipt must name the new network card, not only the durable selectable offer")
+        let store = PublicationStore(database: f.database)
+        let cards = try receipt.cardIDs.compactMap { try store.card(id: $0) }
+        XCTAssertTrue(cards.contains { $0.title == "Remote" },
+            "the receipt must name the network item's content, not only the durable selectable offer")
         let snapshot = await f.runway.snapshot()
         let p95 = try XCTUnwrap(snapshot.replenishment.p95Seconds)
         XCTAssertGreaterThanOrEqual(p95, 90,
