@@ -17,6 +17,9 @@ struct FeedMineApp: App {
     /// no placeholder routes for T6–T11 work.
     @State private var savedPath: [ReaderDestination] = []
     @State private var readerError: String?
+    /// A filter selection that was durably saved but not presented. The retry uses the existing activation
+    /// owner; the alert is above the feed, not behind the closed sheet.
+    @State private var filterActivationFailure = false
     /// The lens hidden by a swipe, keyed by the selection it was hidden for: a new selection shows it again.
     @State private var hiddenLensSignature: String?
     /// D7-A: whether the reader still owes an acknowledgement for a V1 upgrade. Set once when the surface
@@ -314,7 +317,7 @@ struct FeedMineApp: App {
         let composition: AppComposition
         let store: SourceManagementStore?
         let onDone: () -> Void
-        let onActivationFailure: (String) -> Void
+        let onActivationFailure: () -> Void
         @State private var path: [SourceRoute] = []
 
         var body: some View {
@@ -326,8 +329,7 @@ struct FeedMineApp: App {
                     presets: composition.presetRows(),
                     onApply: { filter, preset in
                         try await composition.applyFilterFromSheet(filter, preset: preset) {
-                            onActivationFailure(String(localized:
-                                "O filtro foi salvo, mas ainda não foi aplicado. Abra os filtros e confirme novamente."))
+                            onActivationFailure()
                         }
                     },
                     onActivate: { key in try await composition.activateSavedPreset(key) },
@@ -526,7 +528,7 @@ struct FeedMineApp: App {
                     case .filters:
                         FilterSurfaceHost(composition: composition, store: sourcesStore,
                             onDone: { popSurface() },
-                            onActivationFailure: { readerError = $0 })
+                            onActivationFailure: { filterActivationFailure = true })
                     case .bookmarkBoxes:
                         NavigationStack(path: $libraryPath) {
                             if let store = boxesStore {
@@ -672,6 +674,22 @@ struct FeedMineApp: App {
                 .alert("Não foi possível atualizar", isPresented: Binding(get: { readerError != nil }, set: { if !$0 { readerError = nil } })) {
                     Button("OK") { readerError = nil }
                 } message: { Text(readerError ?? "") }
+                .alert("Filtro salvo", isPresented: $filterActivationFailure) {
+                    Button("Tentar novamente") {
+                        Task {
+                            do {
+                                try await composition.activateConfirmedFilter()
+                                filterActivationFailure = false
+                            } catch {
+                                filterActivationFailure = true
+                            }
+                        }
+                    }
+                    Button("OK", role: .cancel) { filterActivationFailure = false }
+                } message: {
+                    Text(verbatim: String(localized:
+                        "O filtro foi salvo, mas ainda não foi aplicado. Você pode tentar novamente."))
+                }
             }
             // D7-A: the first open after a V1 upgrade states what was carried and what this build still
             // cannot open. Dismissing it records the presentation; the receipt keeps the counts.

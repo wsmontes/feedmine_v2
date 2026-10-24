@@ -20,6 +20,12 @@ import FeedMinePublication
 final class FixtureTransport: URLProtocol, @unchecked Sendable {
     static let rejecting = Mutex(false)
     static let holdingScience = Mutex(false)
+    /// Counts science requests that actually entered the held gate. A test uses this handshake instead of a
+    /// fixed sleep to know the activation reached the relevant Network boundary.
+    static let scienceEntered = Mutex(0)
+    /// Holds every request, for an activation whose launch may have nothing to ask the science endpoint.
+    static let holdingAll = Mutex(false)
+    static let allEntered = Mutex(0)
     /// U-reading: every request this transport answered. A test can therefore state that opening a card's reading
     /// makes none at all — which is what separates an explicit request for the site from the feed's own work.
     static let requests = Mutex<[String]>([])
@@ -35,6 +41,12 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
         let loaders = held.take()
         loaders.forEach { $0.respond() }
     }
+
+    static func releaseAll(failing: Bool = false) {
+        holdingAll.withLock { $0 = false }
+        let loaders = held.take()
+        loaders.forEach { $0.respond(fail: failing) }
+    }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -42,7 +54,13 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
             return
         }
+        if Self.holdingAll.withLock({ $0 }) {
+            Self.allEntered.withLock { $0 += 1 }
+            Self.held.append(self)
+            return
+        }
         if Self.holdingScience.withLock({ $0 }), request.url?.path.contains("science") == true {
+            Self.scienceEntered.withLock { $0 += 1 }
             Self.held.append(self)
             return
         }
@@ -79,7 +97,11 @@ final class FixtureTransport: URLProtocol, @unchecked Sendable {
         return ("application/rss+xml", Data(body.utf8))
     }
 
-    private func respond() {
+    private func respond(fail: Bool = false) {
+        if fail {
+            client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+            return
+        }
         FixtureTransport.requests.withLock { $0.append(request.url?.absoluteString ?? "") }
         // The shape is the default (`shortSummary`) unless a test set another one, and the default payload is the
         // exact document this transport always served.

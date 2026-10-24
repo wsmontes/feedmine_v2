@@ -1004,6 +1004,16 @@ final class AppComposition {
     /// get rebuilt. A persistence failure therefore leaves the previous key, the previous expiry and the live
     /// session exactly as they were; a failure after confirmation is reported as such and can be retried, because
     /// the selection it names is already durable.
+    /// T6: the expiry record for a selection applied now. The four-hour rule covers the overlay criteria
+    /// (region, taxonomy, language, type, mood); content exclusions are outside it, so a filter that only
+    /// excludes keeps no deadline.
+    func filterExpiry(renewing filter: ReaderFilter, at now: Date) -> ReaderFilterExpiry {
+        let overlayIsSet = !(filter.regionIDs.isEmpty && filter.taxonomyNodeIDs.isEmpty
+            && filter.languages.isEmpty && filter.contentType == .all && filter.mood == .all)
+        let enabled = preferences.flatMap { try? $0.load() }?.filterExpiry.isEnabled ?? true
+        return ReaderFilterExpiry(isEnabled: enabled, startsAt: overlayIsSet ? now : nil)
+    }
+
     /// NF-03: the durable half of a filter transition, on the existing preferences store and its GRDB pool.
     /// The SQLite read/write runs off the MainActor; the caller awaits the real durable commit (and shows its
     /// pending state), never a timer or a cosmetic delay. Returns false when the selection is already applied.
@@ -2219,11 +2229,24 @@ final class AppComposition {
             }()
             if preserve {
                 // NF-03: launch the replacement while the previous association is still the reader's screen.
-                let next = try await association(contextKey: currentContextKey)
+                let intended = currentContextKey
+                // A newer confirmation makes this attempt obsolete: it may neither install nor report a failure
+                // that belongs to the older selection.
+                let superseded = { [self] in
+                    self.pendingRebuild || self.applied(self.currentContextKey) != self.applied(intended)
+                }
+                let next: FeedAssociation
+                do {
+                    next = try await association(contextKey: intended)
+                } catch {
+                    if superseded() { continue }
+                    throw error
+                }
                 do {
                     try await next.launch()
                 } catch {
                     await next.close()
+                    if superseded() { continue }
                     throw error
                 }
                 // A newer confirmation changed the key while this launch was in flight: it must not install.
@@ -2237,6 +2260,7 @@ final class AppComposition {
                         _ = try await retired.session.checkpointCurrentPosition(at: Date())
                     } catch {
                         await next.close()
+                        if superseded() { continue }
                         throw error
                     }
                     await retired.close()

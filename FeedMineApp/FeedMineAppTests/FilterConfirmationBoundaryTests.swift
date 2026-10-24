@@ -1,6 +1,7 @@
 import XCTest
 import Foundation
 import Synchronization
+import GRDB
 import FeedMineDomain
 import FeedMinePersistence
 import FeedMineUI
@@ -209,8 +210,14 @@ final class FilterConfirmationBoundaryTests: XCTestCase {
     /// for the held launch. On the old path this assertion fails because `applyFilter` awaits `next.launch`.
     func testSheetCallbackReturnsAfterDurableCommitBeforeSuspendedActivationReleases() async throws {
         let (root, session, directory) = try await launched()
-        FixtureTransport.holdingScience.withLock { $0 = true }
-        defer { FixtureTransport.releaseScience() }
+        FixtureTransport.holdingAll.withLock { $0 = true }
+        FixtureTransport.allEntered.withLock { $0 = 0 }
+        defer { FixtureTransport.releaseAll() }
+        // Quiet window: no unrelated in-flight request may be mistaken for the replacement launch.
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(FixtureTransport.allEntered.withLock { $0 }, 0,
+            "the gate is quiet before the activation starts")
+        let priorFilter = session.contextKey.filter
         let filter = ReaderFilter(languages: ["pt"], mood: .fun)
         let confirmed = readerKey(root: root, filter: filter)
         let finished = Mutex(false)
@@ -229,13 +236,22 @@ final class FilterConfirmationBoundaryTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertTrue(durable, "the durable selection is written before the callback returns")
-        try await Task.sleep(for: .milliseconds(300))
+        // Wait for the actual held Network boundary, not a fixed sleep: the activation must have entered it.
+        let enteredDeadline = Date().addingTimeInterval(10)
+        while Date() < enteredDeadline,
+            FixtureTransport.allEntered.withLock({ $0 }) == 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(FixtureTransport.allEntered.withLock { $0 }, 0,
+            "the suspended activation really reached the Network request gate")
         XCTAssertTrue(finished.withLock { $0 },
             "Done must not wait for the acquisition/launch it can no longer help")
         XCTAssertTrue(root.association === session,
             "the previous feed stays the reader's screen until the replacement is valid")
+        XCTAssertEqual(root.association?.contextKey.filter, priorFilter,
+            "the previous feed is identified as prior, not as the confirmed new filter")
 
-        FixtureTransport.releaseScience()
+        FixtureTransport.releaseAll()
         try await callback.value
         let activationDeadline = Date().addingTimeInterval(10)
         while Date() < activationDeadline {
@@ -243,6 +259,250 @@ final class FilterConfirmationBoundaryTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertEqual(root.association?.contextKey, confirmed)
+        await root.association?.close()
+    }
+
+    /// NF-03: the durable write is off the MainActor. A held SQLite writer must not freeze a MainActor probe,
+    /// and the real stored selection appears only after the writer is released.
+    func testConfirmationKeepsMainActorResponsiveWhileTheSQLiteWriterIsHeld() async throws {
+        let (root, _, directory) = try await launched()
+        let db = try XCTUnwrap(root.association?.database)
+        let filter = ReaderFilter(mood: .fun)
+        let confirmed = readerKey(root: root, filter: filter)
+
+        let holdStarted = Mutex(false)
+        let releaseHold = Mutex(false)
+        let holder = Task {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    try? db.write { _ in
+                        holdStarted.withLock { $0 = true }
+                        while !releaseHold.withLock({ $0 }) { Thread.sleep(forTimeInterval: 0.01) }
+                    }
+                    continuation.resume()
+                }
+            }
+        }
+        let startedDeadline = Date().addingTimeInterval(5)
+        while Date() < startedDeadline, !holdStarted.withLock({ $0 }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(holdStarted.withLock { $0 }, "the SQLite writer is actually held")
+
+        let finished = Mutex(false)
+        let started = Mutex(false)
+        let confirm = Task { @MainActor in
+            defer { finished.withLock { $0 = true } }
+            started.withLock { $0 = true }
+            _ = try await root.confirmFilter(filter, preset: .everything)
+        }
+        // Safety release so an old synchronous MainActor write fails the probe instead of deadlocking the suite.
+        let safety = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            releaseHold.withLock { $0 = true }
+        }
+        defer { safety.cancel(); releaseHold.withLock { $0 = true } }
+        // The task sets `started` immediately before entering confirmFilter; observing it means the write was
+        // attempted and the task is now suspended on the held writer (or already finished on an old sync path).
+        while !started.withLock({ $0 }) { await Task.yield() }
+        var ticks = 0
+        for _ in 0..<6 where !finished.withLock({ $0 }) {
+            ticks += 1
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        XCTAssertGreaterThan(ticks, 0, "the MainActor kept running while SQLite was held")
+        XCTAssertFalse(finished.withLock { $0 }, "the confirmation is still awaiting the real durable commit")
+        XCTAssertNotEqual(try ReaderPreferencesStore(database: db).load()?.activeContextKey, confirmed,
+            "nothing is declared saved while the writer is held")
+
+        releaseHold.withLock { $0 = true }
+        try await confirm.value
+        await holder.value
+        XCTAssertEqual(try persisted(directory).activeContextKey, confirmed)
+        await root.association?.close()
+    }
+
+    /// NF-03: A-held → B → A. Activation of A is blocked on the network; B and then A are confirmed. Only the
+    /// final A may install, no stale failure may reach the reader, and the durable key is A.
+    func testHeldAActivationThenBThenALeavesTheLatestSelectionAndAssociation() async throws {
+        let (root, _, directory) = try await launched()
+        FixtureTransport.holdingAll.withLock { $0 = true }
+        FixtureTransport.allEntered.withLock { $0 = 0 }
+        defer { FixtureTransport.releaseAll() }
+        let a = ReaderFilter(mood: .fun)
+        let b = ReaderFilter(mood: .serious)
+        let aKey = readerKey(root: root, filter: a)
+        let bKey = readerKey(root: root, filter: b)
+        let failures = Mutex(0)
+
+        let firstA = Task { @MainActor in
+            try await root.applyFilterFromSheet(a, preset: .everything) {
+                failures.withLock { $0 += 1 }
+            }
+        }
+        let enteredDeadline = Date().addingTimeInterval(10)
+        while Date() < enteredDeadline,
+            FixtureTransport.allEntered.withLock({ $0 }) == 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(FixtureTransport.allEntered.withLock { $0 }, 0)
+
+        let thenB = Task { @MainActor in
+            try await root.applyFilterFromSheet(b, preset: .everything) {
+                failures.withLock { $0 += 1 }
+            }
+        }
+        try await thenB.value
+        XCTAssertEqual(try persisted(directory).activeContextKey, bKey)
+        let lastA = Task { @MainActor in
+            try await root.applyFilterFromSheet(a, preset: .everything) {
+                failures.withLock { $0 += 1 }
+            }
+        }
+        try await lastA.value
+        XCTAssertEqual(try persisted(directory).activeContextKey, aKey)
+
+        FixtureTransport.releaseAll()
+        try await firstA.value
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline, root.association?.contextKey != aKey {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(root.association?.contextKey, aKey,
+            "the final persisted A is the association on screen")
+        XCTAssertEqual(try persisted(directory).activeContextKey, aKey)
+        XCTAssertEqual(failures.withLock { $0 }, 0,
+            "a superseded activation is not reported as a reader-visible failure")
+        await root.association?.close()
+    }
+
+    /// The sheet store's write refusal: the applied selection, draft and isApplying all survive, so the sheet
+    /// stays with the reader's edits and no success is declared.
+    func testFilterStoreRefusalKeepsDraftAppliedAndNotApplying() async throws {
+        enum Refusal: Error { case write }
+        let store = ReaderFilterStore(onApply: { _, _ in throw Refusal.write })
+        store.select(mood: .fun)
+        do {
+            _ = try await store.apply()
+            XCTFail("a refused onApply must be reported")
+        } catch {}
+        XCTAssertEqual(store.applied, .unrestricted, "the applied selection is unchanged")
+        XCTAssertTrue(store.isDirty, "the draft still carries the reader's edit")
+        XCTAssertFalse(store.isApplying)
+    }
+
+    /// Post-commit failure is saved-but-not-presented; the existing activation owner retries successfully after
+    /// the real checkpoint refusal is removed. The callback returns before that activation finishes.
+    func testPostCommitFailureIsRetriedByTheExistingActivationOwner() async throws {
+        let (root, session, directory) = try await launched()
+        try install(["""
+            CREATE TRIGGER filter_boundary_reject_checkpoint_insert
+            BEFORE INSERT ON session_checkpoint
+            BEGIN SELECT RAISE(ABORT, 'filter boundary: checkpoint write refused'); END;
+            """, """
+            CREATE TRIGGER filter_boundary_reject_checkpoint_update
+            BEFORE UPDATE ON session_checkpoint
+            BEGIN SELECT RAISE(ABORT, 'filter boundary: checkpoint write refused'); END;
+            """], in: directory)
+        FixtureTransport.holdingAll.withLock { $0 = true }
+        FixtureTransport.allEntered.withLock { $0 = 0 }
+        defer { FixtureTransport.releaseAll() }
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(FixtureTransport.allEntered.withLock { $0 }, 0)
+        let filter = ReaderFilter(languages: ["pt"], mood: .fun)
+        let confirmed = readerKey(root: root, filter: filter)
+        let failures = Mutex(0)
+        try await root.applyFilterFromSheet(filter, preset: .everything) {
+            failures.withLock { $0 += 1 }
+        }
+        XCTAssertEqual(try persisted(directory).activeContextKey, confirmed,
+            "the selection is durable even when presentation fails")
+        XCTAssertTrue(root.association === session, "the previous feed stays")
+
+        let enteredDeadline = Date().addingTimeInterval(10)
+        while Date() < enteredDeadline, FixtureTransport.allEntered.withLock({ $0 }) == 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(FixtureTransport.allEntered.withLock { $0 }, 0)
+        // Release the launch successfully while the checkpoint trigger is still installed: the failure happens
+        // at the real durable checkpoint, not at the transport.
+        FixtureTransport.releaseAll()
+        let failureDeadline = Date().addingTimeInterval(10)
+        while Date() < failureDeadline, failures.withLock({ $0 }) == 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(failures.withLock { $0 }, 1, "the host is told saved-but-not-presented")
+        XCTAssertTrue(root.association === session)
+
+        try install(["DROP TRIGGER filter_boundary_reject_checkpoint_insert",
+            "DROP TRIGGER filter_boundary_reject_checkpoint_update"], in: directory)
+        try await root.activateConfirmedFilter()
+        XCTAssertEqual(root.association?.contextKey, confirmed)
+        XCTAssertFalse(root.association === session)
+        await root.association?.close()
+    }
+
+    /// A-held → B → A where the held A launch reaches a real checkpoint refusal: the obsolete attempt must not
+    /// consume the pending latest. Both the retry attempt counter and the later recovery prove the latest key was
+    /// rebuilt, and the only error reported belongs to the current saved-not-presented selection.
+    func testHeldAFailureAfterBAndALeavesNoObsoleteErrorAndInstallsLatest() async throws {
+        let (root, session, directory) = try await launched()
+        try install(["""
+            CREATE TRIGGER nf03_reject_checkpoint_insert
+            BEFORE INSERT ON session_checkpoint
+            BEGIN SELECT RAISE(ABORT, 'nf03 checkpoint refused'); END;
+            """, """
+            CREATE TRIGGER nf03_reject_checkpoint_update
+            BEFORE UPDATE ON session_checkpoint
+            BEGIN SELECT RAISE(ABORT, 'nf03 checkpoint refused'); END;
+            """], in: directory)
+        let constructionsBefore = root.sessionConstructions
+        FixtureTransport.holdingAll.withLock { $0 = true }
+        FixtureTransport.allEntered.withLock { $0 = 0 }
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(FixtureTransport.allEntered.withLock { $0 }, 0)
+        let a = ReaderFilter(mood: .fun)
+        let b = ReaderFilter(mood: .serious)
+        let aKey = readerKey(root: root, filter: a)
+        let failures = Mutex(0)
+
+        let firstA = Task { @MainActor in
+            try await root.applyFilterFromSheet(a, preset: .everything) {
+                failures.withLock { $0 += 1 }
+            }
+        }
+        let enteredDeadline = Date().addingTimeInterval(10)
+        while Date() < enteredDeadline, FixtureTransport.allEntered.withLock({ $0 }) == 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(FixtureTransport.allEntered.withLock { $0 }, 0)
+
+        try await root.applyFilterFromSheet(b, preset: .everything) {
+            failures.withLock { $0 += 1 }
+        }
+        try await root.applyFilterFromSheet(a, preset: .everything) {
+            failures.withLock { $0 += 1 }
+        }
+        // The held launch finishes successfully; the refusal is the real checkpoint write.
+        FixtureTransport.releaseAll()
+        try await firstA.value
+        defer { FixtureTransport.releaseAll() }
+
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline, failures.withLock({ $0 }) == 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(failures.withLock { $0 }, 1,
+            "the current saved-not-presented selection is reported once")
+        XCTAssertTrue(root.association === session, "no obsolete association installed")
+        XCTAssertEqual(try persisted(directory).activeContextKey, aKey)
+        XCTAssertGreaterThanOrEqual(root.sessionConstructions - constructionsBefore, 2,
+            "the latest A was constructed again after the obsolete first A failed")
+
+        try install(["DROP TRIGGER nf03_reject_checkpoint_insert",
+            "DROP TRIGGER nf03_reject_checkpoint_update"], in: directory)
+        try await root.activateConfirmedFilter()
+        XCTAssertEqual(root.association?.contextKey, aKey)
         await root.association?.close()
     }
 

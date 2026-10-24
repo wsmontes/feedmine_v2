@@ -246,6 +246,29 @@ Esse caminho estabelece dependência de **resposta visual** na reconstrução co
 
 **Status Codex:** ENCADEAMENTO DE ESPERA CONFIRMADO POR LEITURA NA BUILD 55 (`3c5bdc11`): `AppComposition.swift:1007–1030` persiste e aguarda `replaceSession:2183–2207`/`next.launch`; `FilterSheetView.swift:316–317` aguarda `store.apply()` antes de `onDone()`. Atribuição causal ao relato físico e a prova discriminante com I/O suspenso ainda **NOT_RUN**; não há patch NF-03. A prova no owner do app e a validação iOS aguardam capacidade de disco.
 
+**Decisão de implementação NF-03 (2026-10-24, branch `codex/feedmine-nf03`, base `2d430c5e`):**
+diagnóstico confirmado no encadeamento acima. Alternativas consideradas: (a) fechar a folha e deixar `applyFilter`
+inteiro em background sem separar o compromisso durável — rejeitada porque o leitor não saberia se salvou e a
+falha de gravação ficaria invisível; (b) segundo scheduler/registry de ativações — rejeitada por duplicar o owner;
+(c) escolhida: separar no owner existente `AppComposition` a confirmação durável (`confirmFilter`, SQLite no pool
+GRDB fora do MainActor) da apresentação (`activateConfirmedFilter`, via `replaceSession` com handoff preservado
+apenas para filtro). A folha usa `applyFilterFromSheet`, que retorna após a gravação e deixa a ativação no owner
+existente; `isApplying` já existente mostra o pending e bloqueia toque duplicado. O feed anterior permanece a tela
+até a nova associação ser válida; a confirmação mais recente vence pelo `ContextKey`/`pendingRebuild` existentes.
+Busca mantém a ordem documentada (página unificada antes do `next.launch`). Limites: prova de UI/dispositivo e
+falha de ativação pós-commit são separadas; nenhum PASS global NF-07 é alegado.
+
+**Prova NF-03 (2026-10-24, branch `codex/feedmine-nf03`):** RED comportamental com a fixture do próprio
+target: a callback de produção fechava a folha só depois de `next.launch`; o gate HTTP real foi observado antes
+de liberar e a asserção "Done must not wait" falhou (`surface-nf03-strong-red-1792855568546990000`, 1 teste/1
+falha). GREEN final: `surface-nf03-final-test6-1792855748257424000` — 10/10, incluindo callback com
+gate HTTP-entered, SQLite writer realmente suspenso com probe de MainActor + safety release, recusa de escrita
+mantendo draft/applied/sessão, falha pós-commit com retry pelo owner existente, A-held→B→A com checkpoint
+recusado (contador de construções ≥2) e recuperação após remover o trigger. O alerta "Filtro salvo" oferece
+"Tentar novamente" chamando `activateConfirmedFilter`; falha obsoleta é descartada pelo `pendingRebuild`/chave
+atual, e a falha da seleção atual é honesta. Não há prova de UI/dispositivo (NOT_RUN), nem PASS global NF-07;
+rede comum que apenas não publica não é tratada como exceção. `filterExpiry(renewing:at:)` foi preservado.
+
 **Preparação NF-03 (2026-10-24; nenhuma correção declarada):** caminho 55 confirmado `AppComposition.swift:1007-1030` → `replaceSession` `:2183-2207` → `next.launch()`, com `FilterSheetView.swift:316` aguardando `await store.apply()` antes de `onDone`. Próximo discriminante obrigatório: HTTP de launch suspenso **após** a persistência; feedback/fechamento visíveis antes de liberar; falha de gravação mantém a folha com erro recuperável; A→B→A prova a última seleção e nenhuma publicação superada. Requer teste de falha real no owner AppComposition e build iOS; bloqueado pelo orçamento atual. Não iniciar a produção NF-03 sem esse teste.
 
 ## NF-04 — A cauda deve comunicar o trabalho verdadeiro
