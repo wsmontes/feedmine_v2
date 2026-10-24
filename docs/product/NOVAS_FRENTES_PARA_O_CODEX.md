@@ -281,6 +281,24 @@ mutação P2 (restaurar só o throw antigo) falhou o mesmo A→B→A com `sessio
 (`surface-nf03-p2-red-1792856940828667000`) e o restore byte-exact passou
 (`surface-nf03-p2-green-1792857021957633000`). A UI/dispositivo continua NOT_RUN; não é PASS global NF-07.
 
+**Fence de instalação e completude do chip (2026-10-24, fonte/testes no commit seguinte):** no ramo preservado,
+a confirmação pode commitar durante o `await` do checkpoint da associação antiga; a verificação anterior ao
+checkpoint ficava obsoleta. Agora, **depois** do checkpoint durável, a chave é revalidada e a associação válida é
+atribuída sem nenhum `await` entre a guarda e a atribuição; a antiga capturada só é fechada **depois** dessa
+atribuição. Uma confirmação que chega depois da atribuição encontra legitimamente a nova associação como
+prévia e o laço existente instala a mais recente. O fechamento antigo usa o owner existente (`driver.deactivate`,
+`media.retire`, `coordinator.settleInFlight`) e pode aguardar trabalho real. Prova: um `execute` real do
+`AcquisitionCoordinator` da associação antiga fica preso no `FixtureTransport`; o teste observa
+`retired.active == false` e, no mesmo instante, exige que a associação instalada já seja a confirmada
+(`surface-nf03-fence3-1792857917522507000`). A mutação que volta a fechar antes de instalar falha a mesma prova
+(`surface-nf03-fence-red-1792857969852405000`); o restore byte-exact e a classe final passam 13/13
+(`surface-nf03-final13-1792858039141556000`). Limite honesto: não há gate existente que suspenda o checkpoint
+de forma independente do lançamento; a revalidação pós-checkpoint é garantida pela guarda sem `await` no código
+e pelo teste A→B→A existente, não por uma prova de instante separada. O chip de contexto agora mostra
+"Feed anterior" antes de qualquer rótulo de fonte/busca (mesmo slot fixo), e a lente pendente combina o gate de
+ponteiro com `.disabled`, expondo `isEnabled == false` à acessibilidade. UI/dispositivo seguem NOT_RUN; não é
+PASS global NF-07.
+
 **Preparação NF-03 (2026-10-24; nenhuma correção declarada):** caminho 55 confirmado `AppComposition.swift:1007-1030` → `replaceSession` `:2183-2207` → `next.launch()`, com `FilterSheetView.swift:316` aguardando `await store.apply()` antes de `onDone`. Próximo discriminante obrigatório: HTTP de launch suspenso **após** a persistência; feedback/fechamento visíveis antes de liberar; falha de gravação mantém a folha com erro recuperável; A→B→A prova a última seleção e nenhuma publicação superada. Requer teste de falha real no owner AppComposition e build iOS; bloqueado pelo orçamento atual. Não iniciar a produção NF-03 sem esse teste.
 
 ## NF-04 — A cauda deve comunicar o trabalho verdadeiro
