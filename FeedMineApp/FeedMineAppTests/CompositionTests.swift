@@ -5103,19 +5103,20 @@ final class CompositionTests: XCTestCase {
 
 /// §5.3/PD-6: the media window is a **per-operation** limit derived from facts the run measures, never a fraction
 /// of the transport's timeout. The derivation is the precedent, so it is pinned here: unmeasured states the run's
-/// bootstrap, measured follows the runway's own tolerance for one request, and the transport timeout stays what it
-/// is — an operational ceiling, which is the one thing PD-6 rule 4 allows it to be.
+/// declared tolerance (12 s since PM-018; 5 s before it, when three arms measured 32,2% / 40,0% / 41,1% of published
+/// cards carrying an image at ~5 s / 20 s / 60 s), measured follows the runway's own tolerance for one request, and
+/// the transport timeout stays what it is — an operational ceiling, which is what PD-6 rule 4 allows it to be.
 final class MediaWaitDerivationTests: XCTestCase {
     private let inputs = RunwayPolicyInputs(safetyFactor: 1.2, releaseMarginSeconds: 2)!
 
     func testUnmeasuredStatesTheBootstrapAndIsStillBoundedByTheTransportCeiling() {
-        // The 5 s is the run's declared tolerance, not `timeoutIntervalForRequest / 4` (≈15 s with the 60 s default).
-        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: nil, inputs: inputs, transportCeiling: 60), 5)
+        // The 12 s is the run's declared tolerance (PM-018), not `timeoutIntervalForRequest / 4`.
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: nil, inputs: inputs, transportCeiling: 60), 12)
         XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: nil, inputs: inputs, transportCeiling: 3), 3)
     }
 
     func testMeasuredFollowsTheRunsOwnToleranceSoAFasterSourceWaitsLess() {
-        // p95 = 2 s → 2 × 1,2 + 2 = 4,4 s. A slower replenishment earns a longer window; a fast one does not pay for it.
+        // p95 = 2 s → 2 × 1,2 + 2 = 4,4 s: the derivation has **no** floor, so a fast source waits less.
         XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 2, inputs: inputs, transportCeiling: 60),
             4.4, accuracy: 1e-9)
         XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 4, inputs: inputs, transportCeiling: 60),
@@ -5126,14 +5127,14 @@ final class MediaWaitDerivationTests: XCTestCase {
 
     func testUnusableMeasurementsFallBackRatherThanPoisonTheDeadline() {
         for bad in [0.0, -1, Double.nan, Double.infinity] {
-            XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: bad, inputs: inputs, transportCeiling: 60), 5,
+            XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: bad, inputs: inputs, transportCeiling: 60), 12,
                 "\(bad) is not a measurement, so the bootstrap applies")
         }
         // A ceiling a misconfigured transport cannot provide leaves the derived value bounded by the bootstrap
         // rather than producing a deadline in the past.
         XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 2, inputs: inputs, transportCeiling: 0),
             4.4, accuracy: 1e-9)
-        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 600, inputs: inputs, transportCeiling: -1), 5)
+        XCTAssertEqual(FeedAssociation.mediaWaitSeconds(p95Replenishment: 600, inputs: inputs, transportCeiling: -1), 12)
     }
 }
 

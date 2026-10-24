@@ -3329,7 +3329,12 @@ final class FeedAssociation {
     /// `nonisolated` on purpose: it is a default argument of `mediaWaitSeconds` below, and a default argument is
     /// evaluated where the function is called — a main-actor-isolated value there is a compile error ("main
     /// actor-isolated default value in a nonisolated context", measured).
-    nonisolated static let mediaWaitBootstrapSeconds = 5.0
+    /// The tolerance the run states before it has measured one. Raised from 5 s to 12 s by product decision
+    /// (PM-018, 2026-10-24) after three arms measured in the same scenario: at ~5 s, 32,2% of published cards
+    /// carried an image and 50,2% of declared-image attempts died as `deadline`; at 20 s, 40,0% and 30,6%. The
+    /// decision took the conservative raise and explicitly rejected flooring the derivation, which PD-6/F06-G
+    /// forbids — so this value is only what an unmeasured run declares, never a floor for the measured one.
+    nonisolated static let mediaWaitBootstrapSeconds = 12.0
 
     nonisolated static func mediaWaitSeconds(p95Replenishment: Double?, inputs: RunwayPolicyInputs,
         transportCeiling: Double, bootstrap: Double = FeedAssociation.mediaWaitBootstrapSeconds) -> Double {
