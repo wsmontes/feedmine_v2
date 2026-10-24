@@ -209,17 +209,22 @@ final class FeedScreenRenderingTests: XCTestCase {
         }
     }
 
+    /// The shell is mounted over the no-item loading surface (the empty-source escape: header and context control
+    /// must stay usable while a source has nothing to show), so the pending screen carries the shell's own work
+    /// badge in addition to the factual preparation line. The Vision OCR in `renderedText` reads the badge's
+    /// glyph as a leading bullet; the text after it is the product's own.
     func testU9InitialPendingRendersOnlyFactualPreparation() throws {
         let store = FeedScreenStore { _, _ in XCTFail("Automatic work") }
         try store.install(FeedPresentationHandoff.report(.pending, into: store.state))
         let text = try renderedText(FeedScreen(store: store).frame(height: 900))
-        XCTAssertEqual(text, ["Descobrindo histórias para você..."])
+        XCTAssertEqual(text, ["• Buscando novidades", "Descobrindo histórias para você..."])
     }
 
     func testU10AllNonPresentationFactsRemainDistinctAndNonterminal() throws {
         let cases: [(FeedPresentationState.Work, [String], [String])] = [
             (.idle, ["Descobrindo histórias para você..."], ["Descobrindo histórias para você..."]),
-            (.pending, ["Descobrindo histórias para você..."], ["Descobrindo histórias para você..."]),
+            (.pending, ["• Buscando novidades", "Descobrindo histórias para você..."],
+                ["Descobrindo histórias para você..."]),
             (.unavailable, ["Ainda não encontramos histórias para você.", "Tentar novamente", "Ajustar interesses"],
                 ["Ainda não encontramos histórias para você."]),
             (.unreachable, ["Não foi possível conectar.", "Não conseguimos buscar novas histórias agora.", "Tentar novamente"],
@@ -227,7 +232,8 @@ final class FeedScreenRenderingTests: XCTestCase {
             (.deferred, ["Procurando mais novidades...", "Ainda não encontramos conteúdo suficiente. Vamos tentar novamente em instantes."],
                 ["Procurando mais novidades...", "Ainda não encontramos conteúdo suficiente. Vamos tentar novamente em instantes."]),
             (.failed(message: "Falha recebida da composição"),
-                ["Falha recebida da composição"], ["Falha recebida da composição"])
+                ["A Falha recebida da composição", "Falha recebida da composição"],
+                ["Falha recebida da composição"])
         ]
         for (work, expectedScreen, expectedView) in cases {
             let store = FeedScreenStore { _, _ in XCTFail("Automatic work") }
