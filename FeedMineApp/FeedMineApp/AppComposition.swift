@@ -130,7 +130,7 @@ final class AppComposition {
     /// The host executes the wait (it owns the clock); `FeedFirstScreenGate` judges the expiry along with the
     /// measured layout.
     var firstScreenWait: Duration {
-        .seconds(association?.preparationWaitSeconds ?? FeedAssociation.mediaWaitBootstrapSeconds)
+        .seconds(association?.preparationWaitSeconds ?? FeedAssociation.preparationWaitBootstrapSeconds)
     }
     private var selectionVersion: UInt64 = 2
     private(set) var sourceOptions: [FeedSourceOption] = []
@@ -3335,6 +3335,12 @@ final class FeedAssociation {
     /// decision took the conservative raise and explicitly rejected flooring the derivation, which PD-6/F06-G
     /// forbids — so this value is only what an unmeasured run declares, never a floor for the measured one.
     nonisolated static let mediaWaitBootstrapSeconds = 12.0
+
+    /// What the first screen holds before an association exists to measure its own tolerance. Kept at the value it
+    /// had before PM-018 raised the media tolerance: the product decision was about how long one *media*
+    /// preparation may take, and the cover's bound is not that decision. Once the association exists, the hold
+    /// reads `preparationWaitSeconds`, which is the run's own measured tolerance — the D4 coupling, untouched.
+    nonisolated static let preparationWaitBootstrapSeconds = 5.0
 
     nonisolated static func mediaWaitSeconds(p95Replenishment: Double?, inputs: RunwayPolicyInputs,
         transportCeiling: Double, bootstrap: Double = FeedAssociation.mediaWaitBootstrapSeconds) -> Double {
