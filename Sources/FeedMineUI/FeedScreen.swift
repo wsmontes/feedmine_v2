@@ -124,7 +124,12 @@ public struct FeedScreen: View {
         if let customStatusChip { customStatusChip } else { FeedWorkBadge(work: store.work) }
     }
 
-    private var workFeedback: some View { FeedWorkFeedback(work: store.work) }
+    /// The floating capsule is the only statement of work when there is nothing to read. Once cards are on
+    /// screen the header chip states the same fact, so a second capsule only covers what the reader is reading —
+    /// measured on the simulator: "Looking for news" sat on top of the fourth card while the feed was filling.
+    @ViewBuilder private var workFeedback: some View {
+        if store.renderedItems.isEmpty { FeedWorkFeedback(work: store.work) }
+    }
 
     @ViewBuilder private var feedBody: some View {
         // A lista desenha **conteúdo**: os itens que a loja publica (mudam quando a janela muda) e, durante um
