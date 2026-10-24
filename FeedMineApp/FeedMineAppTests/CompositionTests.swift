@@ -1256,6 +1256,47 @@ final class CompositionTests: XCTestCase {
         await mainLive.close()
     }
 
+    /// The replacement guard must not silently swallow a source toggle either. While a replacement owns the
+    /// session the toggle is refused with the same busy error, the selection and the committed destination stay
+    /// as they were, and after completion the same toggle runs.
+    func testASourceToggleDuringAReplacementIsRefusedAsBusy() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        XCTAssertNil(root.startupFailure)
+        let science = try XCTUnwrap(TrustedFeed.development.first { $0.principal == "bbc-science" })
+        let other = try XCTUnwrap(TrustedFeed.development.first { $0.sourceID != science.sourceID })
+        let selectionBefore = root.feeds.map(\.sourceID).sorted()
+
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        defer { FixtureTransport.releaseScience() }
+        let transition = Task { try await root.selectContext(.source(science.sourceID)) }
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline, !(root.contextSwitchInProgress
+            && root.currentContextKey.request == .source(science.sourceID)) { await Task.yield() }
+        XCTAssertTrue(root.contextSwitchInProgress, "a running replacement states its own readiness")
+
+        do {
+            try await root.toggleSource(other.sourceID)
+            XCTFail("a source toggle during a replacement is refused as busy")
+        } catch {
+            XCTAssertEqual(error as? ReaderContextSwitchError, .inProgress)
+        }
+        XCTAssertEqual(root.feeds.map(\.sourceID).sorted(), selectionBefore,
+            "the refused toggle did not change the reader's selection")
+        XCTAssertEqual(root.currentContextKey.request, .source(science.sourceID),
+            "the refused toggle did not disturb the in-flight destination")
+
+        FixtureTransport.releaseScience()
+        _ = try? await transition.value
+        XCTAssertFalse(root.contextSwitchInProgress, "readiness clears when the replacement finishes")
+
+        // Enabled after completion: the same toggle now runs instead of refusing.
+        try await root.toggleSource(other.sourceID)
+        await root.association?.close()
+    }
+
     /// P08/E07: opening a search result goes through the destination its authority named. A source destination
     /// moves the reader to that source's context, not to a copy of the list.
     func testOpeningASourceSearchResultSelectsThatSourceContext() async throws {

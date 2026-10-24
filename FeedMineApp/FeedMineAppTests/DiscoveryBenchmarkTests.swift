@@ -206,19 +206,24 @@ final class DiscoveryBenchmarkTests: XCTestCase {
     /// surface carries an identifier, which is what separates the menu's own rows from the feed underneath.
     private func contextMenuItems(_ app: XCUIApplication) -> [XCUIElement] {
         app.buttons.allElementsBoundByIndex
-            .filter { $0.exists && $0.isHittable && $0.identifier.isEmpty && !$0.label.isEmpty }
+            .filter { $0.exists && $0.isEnabled && $0.isHittable && $0.identifier.isEmpty && !$0.label.isEmpty }
             .sorted { $0.frame.minY < $1.frame.minY }
     }
 
     /// Returns to the main context through the product's own control. The identity witness is
     /// `reader-context-label`: present only while a source (or search) context is shown.
-    private func returnToMainContext(_ app: XCUIApplication) -> Bool {
+    private func returnToMainContext(_ app: XCUIApplication, phases: URL? = nil) -> Bool {
         let chip = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == %@", "reader-contexts")).firstMatch
         let label = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == %@", "reader-context-label")).firstMatch
         if !label.exists { return true }
-        guard chip.waitForExistence(timeout: 60), waitUntil(60, { chip.isHittable }) else { return false }
+        guard chip.waitForExistence(timeout: 60) else { return false }
+        // The control states its own readiness: while a replacement owns the session it is disabled. Wait
+        // (bounded) for enabled **and** hittable, record what was observed, then take one tap — never retry it.
+        let ready = waitUntil(60, { chip.exists && chip.isEnabled && chip.isHittable })
+        record("b05-context-return-chip-ready:\(ready)", to: phases)
+        guard ready else { return false }
         chip.tap()
         guard waitUntil(10, { !contextMenuItems(app).isEmpty }),
             let main = contextMenuItems(app).first else { return false }
@@ -363,7 +368,7 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         // Return **immediately**, before waiting for any card: one selected source makes it the reading context,
         // and the shell (mounted even while that context has no item) is what offers the way back. Waiting for the
         // source's content first is what made the driver mistake an empty context for a missing control.
-        let returned = returnToMainContext(app)
+        let returned = returnToMainContext(app, phases: phases)
         record("b05-precondition-main:\(returned)", to: phases)
         // Only now wait for A's own publication; the anchor is measured on the final main feed.
         _ = waitUntil(120) { presentedCard(app) != nil }
@@ -938,7 +943,10 @@ final class DiscoveryBenchmarkTests: XCTestCase {
         var reachedB = false
         var returned = false
         var bName = ""
-        if contextChip.waitForExistence(timeout: 15), waitUntil(10, { contextChip.isHittable }) {
+        let chipReady = contextChip.waitForExistence(timeout: 15)
+            && waitUntil(30, { contextChip.exists && contextChip.isEnabled && contextChip.isHittable })
+        record("b05-context-chip-ready:\(chipReady)", to: phases)
+        if chipReady {
             contextChip.tap()
             // The menu is open when its own entries exist. A SwiftUI `Menu` exposes items as buttons with **no
             // identifier** (every control of this surface carries one), and the main-context copy is a localized
@@ -973,7 +981,11 @@ final class DiscoveryBenchmarkTests: XCTestCase {
                         // Back to A: the menu's first entry is the main context. The source context publishes its
                         // own feed and may draw its preparation surface first, where the reader's header is not
                         // mounted; the chip's return is awaited (bounded) rather than tapped blind.
-                        if waitUntil(60, { contextChip.exists && contextChip.isHittable }) {
+                        let returnReady = waitUntil(60, {
+                            contextChip.exists && contextChip.isEnabled && contextChip.isHittable
+                        })
+                        record("b05-context-return-chip-ready:\(returnReady)", to: phases)
+                        if returnReady {
                             contextChip.tap()
                             if waitUntil(10, { !contextMenuItems(app).isEmpty }),
                                 let back = contextMenuItems(app).first {

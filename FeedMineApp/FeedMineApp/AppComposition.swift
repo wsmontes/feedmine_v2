@@ -933,7 +933,7 @@ final class AppComposition {
     }
 
     func toggleSource(_ sourceID: SourceID) async throws {
-        guard !replacingSession else { return }
+        guard !replacingSession else { throw ReaderContextSwitchError.inProgress }
         replacingSession = true
         defer { replacingSession = false }
         guard let choice = sourceChoices[sourceID], let preferences else { throw ReaderPreferencesError.invalidSelection }

@@ -2694,6 +2694,19 @@ final class FeedMineUITests: XCTestCase {
         return XCTWaiter().wait(for: [gone], timeout: timeout) == .completed
     }
 
+    /// Waits (bounded) for a control the reader is about to use to be **enabled and hittable**. The product
+    /// states a running replacement by disabling the context chip; existence or hittability alone would let a
+    /// tap land on a control the handler must refuse.
+    @MainActor
+    private func waitUntilReady(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if element.exists && element.isEnabled && element.isHittable { return true }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        return element.exists && element.isEnabled && element.isHittable
+    }
+
     /// The card's own element contains the card, so a hit test at its centre lands on what is inside it; the
     /// reader's own long press therefore goes through that centre. It is still a real press on the card they
     /// saw, and the card's menu is what answers it.
@@ -3308,8 +3321,9 @@ final class FeedMineUITests: XCTestCase {
             XCTFail("the source context states its own identity: \(identity.exists ? identity.label : "absent")")
             return
         }
-        guard chip.isHittable else {
-            XCTFail("the context control is usable without waiting for content"); return
+        guard waitUntilReady(chip, timeout: 30) else {
+            XCTFail("the context control is enabled and hittable without waiting for content: " +
+                "enabled=\(chip.isEnabled) hittable=\(chip.isHittable)"); return
         }
         chip.tap()
         let entries = contextMenuEntries(app)
@@ -3318,8 +3332,10 @@ final class FeedMineUITests: XCTestCase {
         guard waitForAbsence(element(app, "reader-context-label"), timeout: 30) else {
             XCTFail("the reader returns to the main context without waiting for content"); return
         }
-        guard element(app, "reader-contexts").isHittable else {
-            XCTFail("the control remains available after returning"); return
+        let returnedChip = element(app, "reader-contexts")
+        guard waitUntilReady(returnedChip, timeout: 30) else {
+            XCTFail("the control is enabled and hittable after returning: " +
+                "enabled=\(returnedChip.isEnabled) hittable=\(returnedChip.isHittable)"); return
         }
     }
 
@@ -3377,7 +3393,7 @@ final class FeedMineUITests: XCTestCase {
     @MainActor
     private func contextMenuEntries(_ app: XCUIApplication) -> [XCUIElement] {
         app.buttons.allElementsBoundByIndex
-            .filter { $0.exists && $0.isHittable && $0.identifier.isEmpty && !$0.label.isEmpty }
+            .filter { $0.exists && $0.isEnabled && $0.isHittable && $0.identifier.isEmpty && !$0.label.isEmpty }
             .sorted { $0.frame.minY < $1.frame.minY }
     }
 }

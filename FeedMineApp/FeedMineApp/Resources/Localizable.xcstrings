@@ -2348,6 +2348,16 @@
         }
       }
     },
+    "Mudando de contexto": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changing context"
+          }
+        }
+      }
+    },
     "Não foi possível mudar de contexto agora.": {
       "localizations": {
         "en": {
