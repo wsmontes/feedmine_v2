@@ -236,11 +236,26 @@ faz parte desta frente. v2–v5 e edições já publicadas conservam sua políti
 
 **Plano de implementação no owner existente (Swift/GRDB, sem novo motor):**
 
-- [ ] Aceitar a base única de oferta elegível com imagem declarada → `ready-image` por revisão →
+- [x] Aceitar a base única de oferta estrutural com imagem declarada → `ready-image` por revisão →
   ativos em `Media/sha256` → cartas publicadas com imagem. Capturar banco/traço/ativos coerentes,
-  UUIDs normalizados e hashes do par público; contar gaps de imagem e adjacências PD-4. A jornada
-  pública em simulador novo já terminou 1/0; seus números ainda aguardam análise, portanto não são
-  apresentados como conclusão. Referência operacional: `jobs/continuity-fix/evidence/product-four-layers-20261024T222606Z/`.
+  UUIDs normalizados e hashes do par público; contar gaps de imagem e adjacências PD-4. Base aceita:
+  execução `stock-english-before-v6`, contêiner novo, somente English, 180,011 s após abrir o feed,
+  rede pública. A captura inclui a preparação anterior durante o onboarding (traço total 262 s),
+  portanto não é uma medição de latência de 180 s desde o lançamento. Em 4.036 revisões de supply
+  estrutural: **2.488** com imagem declarada, **66** revisões que chegaram a `ready-image`, **51**
+  arquivos/12.011.211 bytes e **64 cartas com imagem em 629 publicadas** (49 chaves distintas,
+  todas presentes). 64 das 66 revisões prontas publicadas; duas ainda não publicadas na captura.
+  Zero carta com imagem declarada publicada sem ela; zero adjacência com fonte compartilhada.
+  Tipo: 498 áudio/131 sem payload, mínima 1, média 1,955. Fonte: 41 IDs, mínima 2, média 16,804.
+  Assuntos ausentes em 536 cartas; distâncias dos fatos presentes não medem diversidade semântica
+  desse restante. Evidência: `jobs/continuity-fix/evidence/stock-english-before-v6/analysis.json`,
+  `run.json`, `snapshot-manifest.json`, `analysis-materialization.json` e captura visual/AX. SQL
+  independente confirmou 629/64 e zero gap. O supply é estrutural, não chamado de elegibilidade
+  do perfil sem prova adicional. Não confundir revisões prontas, arquivos deduplicados e cartas.
+  A primeira jornada automática (1/0) publicou apenas uma carta de áudio com capa e não serve à
+  comparação de shuffle: seu teste tocou English já selecionado, desmarcando-o antes de tocar
+  Spanish. Correção do analisador e originais preservados em `product-four-layers-20261024T222606Z/`.
+  Nenhum número das duas execuções foi agregado.
 - [ ] Levar `EditorialMediaKind?` (`audio`, `video`, `none`) de `ContentStore.CandidateRecord` a
   `Candidate`/`CandidateProvider` com **uma consulta em bloco por janela** de revisões. Playback
   determina tipo; uma capa não transforma áudio em notícia. Uma coleção canônica admitida e vazia
@@ -255,8 +270,11 @@ faz parte desta frente. v2–v5 e edições já publicadas conservam sua políti
   e no mapeamento de `FeedAssociation`. Em cada posição: aplicar PD-4; entre os compatíveis,
   maximizar lexicograficamente a distância até a ocorrência anterior mais próxima de **tipo →
   assuntos declarados → fonte**. Atualizar as posições após cada escolha do segmento. Desempate
-  determinístico por peso, recência e IDs. Uma dimensão desconhecida não recebe novidade infinita;
-  decidir a comparabilidade sobre o conjunto elegível da escolha para conservar ordem consistente.
+  determinístico por peso, recência e IDs. Uma dimensão desconhecida não recebe novidade infinita.
+  A v6 usa eliminação por dimensão sobre o conjunto da escolha: conserva os conhecidos de maior
+  distância e os desconhecidos neutros, prosseguindo à dimensão seguinte. Assim um desconhecido
+  não desliga a comparação entre os conhecidos nem cria comparador par a par não transitivo;
+  a regra v5 de comparabilidade permanece intacta.
   Fontes/assuntos múltiplos usam a ocorrência mais próxima de qualquer chave. Contexto de fonte
   única isenta só PD-4; diversidade de tipo/tema ainda atua. Não se promete ótimo global de uma
   permutação futura: o requisito executável é a maior distância disponível em cada escolha.
