@@ -264,10 +264,12 @@ de liberar e a asserção "Done must not wait" falhou (`surface-nf03-strong-red-
 falha). GREEN final: `surface-nf03-final-test6-1792855748257424000` — 10/10, incluindo callback com
 gate HTTP-entered, SQLite writer realmente suspenso com probe de MainActor + safety release, recusa de escrita
 mantendo draft/applied/sessão, falha pós-commit com retry pelo owner existente, A-held→B→A com checkpoint
-recusado (contador de construções ≥2) e recuperação após remover o trigger. O alerta "Filtro salvo" oferece
-"Tentar novamente" chamando `activateConfirmedFilter`; falha obsoleta é descartada pelo `pendingRebuild`/chave
-atual, e a falha da seleção atual é honesta. Não há prova de UI/dispositivo (NOT_RUN), nem PASS global NF-07;
-rede comum que apenas não publica não é tratada como exceção. `filterExpiry(renewing:at:)` foi preservado.
+recusado (contador de construções ≥2) e recuperação após remover o trigger. Regressão focada:
+`CompositionTests` 118/118 em `surface-nf03-composition-1792855901850148000` (inclui busca, contextos e
+presets). O alerta "Filtro salvo" oferece "Tentar novamente" chamando `activateConfirmedFilter`; falha obsoleta
+é descartada pelo `pendingRebuild`/chave atual, e a falha da seleção atual é honesta. Commit de fonte/testes:
+`4fdea9d8`. Não há prova de UI/dispositivo (NOT_RUN), nem PASS global NF-07; rede comum que apenas não publica
+não é tratada como exceção. `filterExpiry(renewing:at:)` foi preservado.
 
 **Preparação NF-03 (2026-10-24; nenhuma correção declarada):** caminho 55 confirmado `AppComposition.swift:1007-1030` → `replaceSession` `:2183-2207` → `next.launch()`, com `FilterSheetView.swift:316` aguardando `await store.apply()` antes de `onDone`. Próximo discriminante obrigatório: HTTP de launch suspenso **após** a persistência; feedback/fechamento visíveis antes de liberar; falha de gravação mantém a folha com erro recuperável; A→B→A prova a última seleção e nenhuma publicação superada. Requer teste de falha real no owner AppComposition e build iOS; bloqueado pelo orçamento atual. Não iniciar a produção NF-03 sem esse teste.
 
