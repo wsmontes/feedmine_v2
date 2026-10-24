@@ -314,6 +314,7 @@ struct FeedMineApp: App {
         let composition: AppComposition
         let store: SourceManagementStore?
         let onDone: () -> Void
+        let onActivationFailure: (String) -> Void
         @State private var path: [SourceRoute] = []
 
         var body: some View {
@@ -324,7 +325,10 @@ struct FeedMineApp: App {
                     languages: composition.filterLanguages(),
                     presets: composition.presetRows(),
                     onApply: { filter, preset in
-                        try await composition.applyFilter(filter, preset: preset)
+                        try await composition.applyFilterFromSheet(filter, preset: preset) {
+                            onActivationFailure(String(localized:
+                                "O filtro foi salvo, mas ainda não foi aplicado. Abra os filtros e confirme novamente."))
+                        }
                     },
                     onActivate: { key in try await composition.activateSavedPreset(key) },
                     onShowCountries: { path.append(.countries) },
@@ -521,7 +525,8 @@ struct FeedMineApp: App {
                         exportSheet
                     case .filters:
                         FilterSurfaceHost(composition: composition, store: sourcesStore,
-                            onDone: { popSurface() })
+                            onDone: { popSurface() },
+                            onActivationFailure: { readerError = $0 })
                     case .bookmarkBoxes:
                         NavigationStack(path: $libraryPath) {
                             if let store = boxesStore {

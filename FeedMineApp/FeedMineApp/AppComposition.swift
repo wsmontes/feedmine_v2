@@ -1004,36 +1004,61 @@ final class AppComposition {
     /// get rebuilt. A persistence failure therefore leaves the previous key, the previous expiry and the live
     /// session exactly as they were; a failure after confirmation is reported as such and can be retried, because
     /// the selection it names is already durable.
-    func applyFilter(_ filter: ReaderFilter, preset: ReaderPresetID) async throws {
+    /// NF-03: the durable half of a filter transition, on the existing preferences store and its GRDB pool.
+    /// The SQLite read/write runs off the MainActor; the caller awaits the real durable commit (and shows its
+    /// pending state), never a timer or a cosmetic delay. Returns false when the selection is already applied.
+    @discardableResult
+    func confirmFilter(_ filter: ReaderFilter, preset: ReaderPresetID) async throws -> Bool {
         let key = ContextKey(request: currentContextKey.request, preset: preset, filter: filter,
             searchScope: currentContextKey.searchScope)
-        // A confirmed selection whose presentation failed is retried: the live session is not the applied key.
-        guard key != currentContextKey || association?.contextKey != applied(key) else { return }
-        // A new overlay selection starts the window again; a selection without overlay criteria has none.
-        let expiry = filterExpiry(renewing: filter, at: Date())
+        guard key != currentContextKey || association?.contextKey != applied(key) else { return false }
+        guard let store = preferences else {
+            throw ReaderFilterFailure.persistenceFailed(detail: "missing preferences")
+        }
+        let now = Date()
+        let overlayIsSet = !(filter.regionIDs.isEmpty && filter.taxonomyNodeIDs.isEmpty
+            && filter.languages.isEmpty && filter.contentType == .all && filter.mood == .all)
         do {
-            guard let preferences else { throw ReaderPreferencesError.missingPreferences }
-            _ = try preferences.setFilterSelection(key, expiry: expiry)
+            _ = try await Task.detached(priority: .userInitiated) { () throws -> ReaderPreferencesStore.Record in
+                let enabled = (try? store.load()?.filterExpiry.isEnabled) ?? true
+                let expiry = ReaderFilterExpiry(isEnabled: enabled, startsAt: overlayIsSet ? now : nil)
+                return try store.setFilterSelection(key, expiry: expiry)
+            }.value
         } catch {
             throw ReaderFilterFailure.persistenceFailed(detail: String(describing: error))
         }
         currentContextKey = key
+        return true
+    }
+
+    /// NF-03: the presentation half. It uses the existing transition owner and preserves the reader's previous
+    /// feed until a replacement for the latest confirmed key has launched.
+    func activateConfirmedFilter() async throws {
         do {
-            try await replaceSession()
+            try await replaceSession(preservingReaderDuringFilter: true)
         } catch {
-            // The selection is durable and stays identified; the feed was not rebuilt around it.
             throw ReaderFilterFailure.presentationFailed(detail: String(describing: error))
         }
     }
 
-    /// T6: the expiry record for a selection applied now. V1's four-hour rule covers the overlay criteria
-    /// (region, taxonomy, language, type, mood); content exclusions are outside it, so a filter that only
-    /// excludes keeps no deadline.
-    func filterExpiry(renewing filter: ReaderFilter, at now: Date) -> ReaderFilterExpiry {
-        let overlayIsSet = !(filter.regionIDs.isEmpty && filter.taxonomyNodeIDs.isEmpty
-            && filter.languages.isEmpty && filter.contentType == .all && filter.mood == .all)
-        let enabled = preferences.flatMap { try? $0.load() }?.filterExpiry.isEnabled ?? true
-        return ReaderFilterExpiry(isEnabled: enabled, startsAt: overlayIsSet ? now : nil)
+    /// The production callback behind the filter sheet's Done. It returns after the durable half; the session
+    /// rebuild continues in the existing owner and reports a saved-but-not-presented failure to the host.
+    func applyFilterFromSheet(_ filter: ReaderFilter, preset: ReaderPresetID,
+        onActivationFailure: @escaping @MainActor () -> Void) async throws {
+        guard try await confirmFilter(filter, preset: preset) else { return }
+        Task { @MainActor in
+            do {
+                try await activateConfirmedFilter()
+            } catch {
+                onActivationFailure()
+            }
+        }
+    }
+
+    /// The complete transition for callers that genuinely await both halves.
+    func applyFilter(_ filter: ReaderFilter, preset: ReaderPresetID) async throws {
+        guard try await confirmFilter(filter, preset: preset) else { return }
+        try await activateConfirmedFilter()
     }
 
     /// What an explicit transition applies: a *pending* expiry is resolved here and nowhere else, so a clock
@@ -2180,30 +2205,64 @@ final class AppComposition {
         try? await replaceSession()
     }
 
-    func replaceSession() async throws {
+    func replaceSession(preservingReaderDuringFilter: Bool = false) async throws {
         guard !replacingSession else { pendingRebuild = true; return }
         replacingSession = true
         defer { replacingSession = false }
         repeat {
             pendingRebuild = false
-            let retired = association
-            // Retire the old session only once its last position is durable: a checkpoint refusal leaves the
-            // reader's coherent session in place instead of a transition that shows nothing.
-            if let retired {
-                _ = try await retired.session.checkpointCurrentPosition(at: Date())
-                await retired.close()
+            // Search keeps its documented order: the unified page starts before the feed launch.
+            let preserve: Bool = {
+                guard preservingReaderDuringFilter else { return false }
+                if case .search = currentContextKey.request { return false }
+                return true
+            }()
+            if preserve {
+                // NF-03: launch the replacement while the previous association is still the reader's screen.
+                let next = try await association(contextKey: currentContextKey)
+                do {
+                    try await next.launch()
+                } catch {
+                    await next.close()
+                    throw error
+                }
+                // A newer confirmation changed the key while this launch was in flight: it must not install.
+                guard next.contextKey == applied(currentContextKey) else {
+                    await next.close()
+                    continue
+                }
+                let retired = association
+                if let retired {
+                    do {
+                        _ = try await retired.session.checkpointCurrentPosition(at: Date())
+                    } catch {
+                        await next.close()
+                        throw error
+                    }
+                    await retired.close()
+                }
+                association = next
+                startupFailure = nil
+            } else {
+                let retired = association
+                // Retire the old session only once its last position is durable: a checkpoint refusal leaves the
+                // reader's coherent session in place instead of a transition that shows nothing.
+                if let retired {
+                    _ = try await retired.session.checkpointCurrentPosition(at: Date())
+                    await retired.close()
+                }
+                association = nil
+                let next = try await association(contextKey: currentContextKey)
+                association = next
+                startupFailure = nil
+                // P1: a search context is a surface, not a feed window. Start the unified page as soon as the store
+                // exists, before the feed launch (which can wait on acquisition for tens of seconds); otherwise the
+                // reader stares at the launch surface while the results are already available.
+                if case .search(let search) = currentContextKey.request {
+                    await startUnifiedSearch(search.query)
+                }
+                try await next.launch()
             }
-            association = nil
-            let next = try await association(contextKey: currentContextKey)
-            association = next
-            startupFailure = nil
-            // P1: a search context is a surface, not a feed window. Start the unified page as soon as the store
-            // exists, before the feed launch (which can wait on acquisition for tens of seconds); otherwise the
-            // reader stares at the launch surface while the results are already available.
-            if case .search(let search) = currentContextKey.request {
-                await startUnifiedSearch(search.query)
-            }
-            try await next.launch()
         } while pendingRebuild
     }
 }

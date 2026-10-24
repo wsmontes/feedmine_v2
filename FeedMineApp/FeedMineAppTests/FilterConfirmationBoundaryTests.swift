@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import Synchronization
 import FeedMineDomain
 import FeedMinePersistence
 import FeedMineUI
@@ -200,6 +201,49 @@ final class FilterConfirmationBoundaryTests: XCTestCase {
         XCTAssertEqual(presented.contextKey.filter.languages, ["pt"])
         XCTAssertEqual(presented.contextKey.filter.mood, .fun)
         await presented.close()
+    }
+
+    // MARK: - (e) NF-03 RED/GREEN: the sheet callback returns after the durable write
+
+    /// The production callback behind Done must return once the selection and expiry are durable, without waiting
+    /// for the held launch. On the old path this assertion fails because `applyFilter` awaits `next.launch`.
+    func testSheetCallbackReturnsAfterDurableCommitBeforeSuspendedActivationReleases() async throws {
+        let (root, session, directory) = try await launched()
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        defer { FixtureTransport.releaseScience() }
+        let filter = ReaderFilter(languages: ["pt"], mood: .fun)
+        let confirmed = readerKey(root: root, filter: filter)
+        let finished = Mutex(false)
+        let callback = Task { @MainActor in
+            defer { finished.withLock { $0 = true } }
+            try await root.applyFilterFromSheet(filter, preset: .everything) {}
+        }
+
+        let deadline = Date().addingTimeInterval(5)
+        var durable = false
+        while Date() < deadline {
+            if (try? persisted(directory).activeContextKey) == confirmed {
+                durable = true
+                break
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(durable, "the durable selection is written before the callback returns")
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(finished.withLock { $0 },
+            "Done must not wait for the acquisition/launch it can no longer help")
+        XCTAssertTrue(root.association === session,
+            "the previous feed stays the reader's screen until the replacement is valid")
+
+        FixtureTransport.releaseScience()
+        try await callback.value
+        let activationDeadline = Date().addingTimeInterval(10)
+        while Date() < activationDeadline {
+            if root.association?.contextKey == confirmed { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(root.association?.contextKey, confirmed)
+        await root.association?.close()
     }
 
     private func readerKey(root: AppComposition, filter: ReaderFilter) -> ContextKey {

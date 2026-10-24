@@ -109,6 +109,7 @@ public final class ReaderFilterStore {
     /// so the reader can retry.
     @discardableResult
     public func apply() async throws -> Bool {
+        guard !isApplying else { return false }
         guard draft.isDirty else { return false }
         guard !isStale else { throw ReaderFilterStoreError.staleDraft }
         let filter = draft.applied

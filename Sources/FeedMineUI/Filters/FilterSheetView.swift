@@ -310,18 +310,27 @@ public struct FilterSheetView: View {
                 // V1: the sheet going away is the apply. The host's `onApply` persists the identity and
                 // activates its context; the sheet closes only after that succeeded, and a failure keeps the
                 // draft (and the sheet) so the reader can retry — with the failure's own sentence on screen.
-                Button(String(localized: "Concluído")) {
+                Button {
+                    guard !store.isApplying else { return }
                     Task {
                         do {
-                            _ = try await store.apply()
-                            onDone()
+                            let applied = try await store.apply()
+                            // A duplicate tap that found the first apply in flight must not close the sheet.
+                            if applied || !store.isDirty { onDone() }
                         } catch let failure as ReaderFilterFailure {
                             applyFailure = failure.readerMessage
                         } catch {
                             applyFailure = String(localized: "Não foi possível salvar o filtro. Tente novamente.")
                         }
                     }
+                } label: {
+                    if store.isApplying {
+                        ProgressView()
+                    } else {
+                        Text(verbatim: String(localized: "Concluído"))
+                    }
                 }
+                .disabled(store.isApplying)
                 .accessibilityIdentifier("filter-done")
             }
         }
