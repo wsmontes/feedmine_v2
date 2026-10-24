@@ -1863,7 +1863,10 @@ final class CompositionTests: XCTestCase {
             "o segundo fato é coalescido enquanto o consumidor está suspenso")
 
         FixtureTransport.releaseScience()
-        _ = await Self.waitUntil(10) { association.pendingViewportIngressCount == 0 }
+        // The empty ingress summary is not completion: the consumer removes a fact before awaiting the viewport
+        // measurement. Wait for the existing owner drain to release ownership; the rate is then the captured one.
+        _ = await Self.waitUntil(10) { association.viewportDrainIdle }
+        XCTAssertTrue(association.viewportDrainIdle, "the single consumer must finish before the measurement is read")
         XCTAssertEqual(association.pendingViewportIngressCount, 0)
 
         // The advance from the reader's first position to the second is one card, and the two facts were captured

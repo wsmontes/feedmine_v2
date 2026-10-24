@@ -3781,6 +3781,14 @@ final class FeedAssociation {
     /// What a test can read while the consumer is suspended (R01): the bounded pending summary, never the burst.
     var pendingViewportIngressCount: Int { viewportIngress.count }
 
+    #if DEBUG
+    /// R01 completion fence: the single consumer has released ownership and no queued fact remains. Derived from
+    /// the existing drain task and the ingress summary; no new state and no separate timing calculation. The empty
+    /// summary alone is not completion: `consumeViewportIngress` removes a fact before awaiting the viewport/driver
+    /// measurement, so the last fact can still be in flight.
+    var viewportDrainIdle: Bool { viewportDrain == nil && viewportIngress.isEmpty }
+    #endif
+
     // MARK: - Prepared bookmark installation (R02)
 
     /// The durable set the reader confirmed: the last set installed from a read whose base was current, or the one a
