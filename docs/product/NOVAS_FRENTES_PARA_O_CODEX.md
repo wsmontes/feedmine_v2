@@ -292,7 +292,8 @@ prévia e o laço existente instala a mais recente. O fechamento antigo usa o ow
 `retired.active == false` e, no mesmo instante, exige que a associação instalada já seja a confirmada
 (`surface-nf03-fence3-1792857917522507000`). A mutação que volta a fechar antes de instalar falha a mesma prova
 (`surface-nf03-fence-red-1792857969852405000`); o restore byte-exact e a classe final passam 13/13
-(`surface-nf03-final13-1792858039141556000`). Limite honesto: não há gate existente que suspenda o checkpoint
+(`surface-nf03-final13b-1792858227339835000`), com asserção de que `activeExecutions()` não está vazio antes
+da aposentadoria. Limite honesto: não há gate existente que suspenda o checkpoint
 de forma independente do lançamento; a revalidação pós-checkpoint é garantida pela guarda sem `await` no código
 e pelo teste A→B→A existente, não por uma prova de instante separada. O chip de contexto agora mostra
 "Feed anterior" antes de qualquer rótulo de fonte/busca (mesmo slot fixo), e a lente pendente combina o gate de
