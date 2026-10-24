@@ -530,6 +530,9 @@ final class FilterConfirmationBoundaryTests: XCTestCase {
         }
         XCTAssertGreaterThan(FixtureTransport.allEntered.withLock { $0 }, 0,
             "the old session really has a request in flight")
+        let oldExecutions = await old.coordinator.activeExecutions()
+        XCTAssertFalse(oldExecutions.isEmpty,
+            "the old association has authorized work for settleInFlight to await")
         // New requests answer normally from here; the held old one stays at the gate for the retirement.
         FixtureTransport.holdingAll.withLock { $0 = false }
 
