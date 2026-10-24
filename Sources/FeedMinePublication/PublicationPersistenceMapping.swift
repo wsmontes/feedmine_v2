@@ -66,7 +66,9 @@ enum PublicationPersistenceMapping {
             timestampValue: card.timestamp?.value, timestampKind: card.timestamp?.kind.rawValue,
             mediaKey: media?.key.rawValue, mediaPixelWidth: media?.pixelWidth, mediaPixelHeight: media?.pixelHeight, mediaMimeType: media?.mimeType,
             renderLayout: card.renderContract.layout.rawValue, renderMediaAspectRatio: card.renderContract.mediaAspectRatio,
-            primaryActionKind: actionKind, primaryActionReference: actionReference)
+            primaryActionKind: actionKind, primaryActionReference: actionReference,
+            mediaIdentity: card.mediaIdentity?.rawValue,
+            diversity: card.diversity)
     }
 
     static func card(_ record: PublicationStore.CardRecord) throws -> PublishedCard {
@@ -107,13 +109,24 @@ enum PublicationPersistenceMapping {
             action = kind == "externalURL" ? .externalURL(url) : .mediaPlayback(url)
         default: throw PublicationPersistenceMappingError.invalidPersistedCard
         }
+        let mediaIdentity: PublishedMediaIdentity?
+        if let rawIdentity = record.mediaIdentity {
+            guard let identity = PublishedMediaIdentity(rawValue: rawIdentity) else {
+                throw PublicationPersistenceMappingError.invalidPersistedCard
+            }
+            mediaIdentity = identity
+        } else {
+            // Written before the column existed: unknown, and never reconstructed from the action kind.
+            mediaIdentity = nil
+        }
         guard let card = PublishedCard(id: record.id,
             origin: PublishedOrigin(originRecordID: record.originRecordID, originRevisionID: record.originRevisionID,
                 sourceID: record.sourceID, providerID: record.providerID,
                 sourceDisplayName: record.sourceDisplayName, providerDisplayName: record.providerDisplayName),
             contentEntityID: record.contentEntityID, contentClusterID: record.contentClusterID,
             text: PublishedText(title: record.title, primaryText: record.primaryText), timestamp: timestamp,
-            media: media, renderContract: contract, primaryAction: action) else {
+            media: media, renderContract: contract, primaryAction: action,
+            mediaIdentity: mediaIdentity, diversity: record.diversity) else {
             throw PublicationPersistenceMappingError.invalidPersistedCard
         }
         return card

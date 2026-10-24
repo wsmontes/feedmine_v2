@@ -87,14 +87,15 @@ public enum FeedPresentationHandoff {
     public static func submitViewport(_ observation: ViewportObservation, activity: RunwayActivity,
         resources: FeedRunwayDriverResources, driver: FeedRunwayDriver,
         into state: FeedPresentationState, evidence: RenderedViewportEvidence? = nil,
+        sampledAt: RunwayMonotonicTime? = nil,
         onCommitted: (@Sendable (FeedPresentationSnapshot) async -> Void)? = nil) async throws -> FeedPresentationState {
         let snapshot: FeedPresentationSnapshot?
         if let evidence {
             snapshot = try await driver.submitViewport(evidence, activity: activity,
-                resources: resources, onCommitted: onCommitted)
+                resources: resources, sampledAt: sampledAt, onCommitted: onCommitted)
         } else {
             snapshot = try await driver.submitViewport(observation, activity: activity,
-                resources: resources, onCommitted: onCommitted)
+                resources: resources, sampledAt: sampledAt, onCommitted: onCommitted)
         }
         return try receive(snapshot: snapshot, into: state)
     }

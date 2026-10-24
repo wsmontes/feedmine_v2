@@ -9,6 +9,10 @@
 // text stated ("Resumo fornecido pela fonte" for a summary), partial content never presented as the article, and
 // "Abrir no site" in the header *and* at the end. It honours Dynamic Type (the module's tokens are Dynamic Type
 // styles, never fixed point sizes) and allows text selection; it reads nothing and fetches nothing.
+//
+// The note about completeness (review, 2026-10-17) states only what the app knows — the source supplied this text,
+// and its completeness was not confirmed — and names the site only when the card carries an address the surface can
+// offer. It never asserts a truncated text or an article available on the site: neither is established here.
 import SwiftUI
 
 public struct FeedReadingSurface: View {
@@ -107,8 +111,11 @@ public struct FeedReadingSurface: View {
         }
     }
 
-    /// What this text is, and whether it is the whole article. A summary is a summary; a feed's body is what the
-    /// source chose to publish. Neither is presented as completeness, because the app cannot verify either.
+    /// What this text is, and what the app can say about it. A summary is a summary; a feed's body is what the
+    /// source chose to publish. Neither can be certified as the article, so the note states only that the source
+    /// supplied the text and that completeness was not confirmed — and names the site only when the card carries
+    /// an address the surface can actually offer. It never promises the article, extraction, or that the site is
+    /// reachable: none of those are established here.
     private var origin: some View {
         VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.tight) {
             Text(verbatim: content.origin.label)
@@ -116,7 +123,7 @@ public struct FeedReadingSurface: View {
                 .foregroundStyle(appearance.accent)
                 .accessibilityIdentifier("reading.origin")
             if content.isPartial {
-                Text("Conteúdo parcial: o artigo completo está no site.")
+                Text(verbatim: FeedReadingWording.note(offersSite: content.siteURL != nil))
                     .font(FeedDesignTokens.Typography.metadata)
                     .foregroundStyle(FeedDesignTokens.Palette.statusCaution)
                     .accessibilityIdentifier("reading.partial")

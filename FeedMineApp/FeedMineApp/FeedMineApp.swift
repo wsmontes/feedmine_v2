@@ -18,6 +18,9 @@ struct FeedMineApp: App {
     @State private var readerError: String?
     /// The lens hidden by a swipe, keyed by the selection it was hidden for: a new selection shows it again.
     @State private var hiddenLensSignature: String?
+    /// D7-A: whether the reader still owes an acknowledgement for a V1 upgrade. Set once when the surface
+    /// appears; cleared only by the reader's own action.
+    @State private var showsLegacyUpgradeNotice = false
     @Environment(\.scenePhase) private var phase
 
     init() {
@@ -194,6 +197,19 @@ struct FeedMineApp: App {
     /// *sheet's* own presentation, anchored on the sheet (`exportSheet`), not the feed's: the reader asks for it
     /// while the sheet is up, and a surface presented by a presenter that already has one up is deferred.
     @State private var sharedExport: SharedLink?
+    /// Presents the V1-upgrade notice on the window's topmost controller, which is above the reader's own
+    /// presented surface. The receipt is recorded **only** by the reader's acknowledgement.
+    @MainActor private func presentLegacyUpgradeNoticeIfOwed() {
+        guard !showsLegacyUpgradeNotice, let notice = composition.legacyUpgradeNotice else { return }
+        showsLegacyUpgradeNotice = true
+        LegacyUpgradeNoticePresenter.present(title: String(localized: "Da versão anterior"),
+            message: composition.legacyUpgradeNoticeText) { [composition] in
+            self.showsLegacyUpgradeNotice = false
+            composition.acknowledgeLegacyUpgradeNotice()
+            _ = notice
+        }
+    }
+
     /// T11: the onboarding gate and the curated feed's own hood.
     @State private var showsOnboarding = false
     /// What the reader answered in this session, so the block that asked shows the answer — and the way back —
@@ -263,6 +279,35 @@ struct FeedMineApp: App {
                                 editorialInvitation(for: card, index: index, previous: previous,
                                     association: association)
                             })
+                            // D4: the first screen's lifecycle is the host's, not the renderer's. The screen draws
+                            // `FeedScreenStore.firstScreenSurface`; here the host states the facts that decide it
+                            // (a window that was really prepared, the exposure, the run's bounded maximum wait) and
+                            // keeps the launch record in step with the surface that is actually drawn.
+                            .onAppear {
+                                prepareFirstScreen(of: association)
+                                reportFirstScreenSurface(of: association)
+                            }
+                            .onChange(of: association.store.renderedItems.isEmpty) { _, empty in
+                                if empty { prepareFirstScreen(of: association) }
+                                reportFirstScreenSurface(of: association)
+                            }
+                            .onChange(of: association.store.work) { _, _ in
+                                reportFirstScreenSurface(of: association)
+                            }
+                            .onChange(of: association.store.isSearching) { _, _ in
+                                reportFirstScreenSurface(of: association)
+                            }
+                            // The bounded maximum wait: the run's own tolerance for one operation (the number its
+                            // media window and byte budget already read) is how long a preparation may outlast the
+                            // content it already has. It is the last exit, not the intended one.
+                            .task(id: association.store.firstScreenSurface) {
+                                guard association.store.firstScreenSurface == .preparation else { return }
+                                let remaining = composition.firstScreenWait - association.store.firstScreenWaited
+                                if remaining > .zero { try? await Task.sleep(for: remaining) }
+                                guard !Task.isCancelled else { return }
+                                association.store.expireFirstScreenWait()
+                                reportFirstScreenSurface(of: association)
+                            }
                             .task(id: association.store.state.presentation?.window) {
                                 recordWindowFacts(of: association)
                             }
@@ -381,9 +426,12 @@ struct FeedMineApp: App {
                                     onOpenBox: { libraryPath.append(.box($0)) },
                                     onClose: { popSurface() })
                                     .navigationDestination(for: LibraryRoute.self) { route in
+                                        let _ = composition.association?.savedMediaRevision
                                         FeedSavedListView(
                                             articles: composition.association?.savedArticles(inBox: Self.boxID(route)) ?? [],
-                                            onOpen: { cardID in composition.association?.openSaved(cardID) })
+                                            onOpen: { cardID in composition.association?.openSaved(cardID) },
+                                            onRetry: { cardID in composition.association?.retrySavedMedia(cardID) })
+                                            .task { composition.association?.resumeSavedMedia() }
                                     }
                             } else {
                                 ProgressView("Abrindo as caixas de salvos")
@@ -432,8 +480,11 @@ struct FeedMineApp: App {
                 .navigationDestination(for: ReaderDestination.self) { destination in
                     switch destination {
                     case .saved:
+                        let _ = composition.association?.savedMediaRevision
                         FeedSavedListView(articles: composition.association?.savedArticles() ?? [],
-                            onOpen: { cardID in composition.association?.openSaved(cardID) })
+                            onOpen: { cardID in composition.association?.openSaved(cardID) },
+                            onRetry: { cardID in composition.association?.retrySavedMedia(cardID) })
+                            .task { composition.association?.resumeSavedMedia() }
                     default:
                         // Only destinations the host declares available can be reached (T5 rule).
                         EmptyView()
@@ -509,6 +560,17 @@ struct FeedMineApp: App {
                 .alert("Não foi possível atualizar", isPresented: Binding(get: { readerError != nil }, set: { if !$0 { readerError = nil } })) {
                     Button("OK") { readerError = nil }
                 } message: { Text(readerError ?? "") }
+            }
+            // D7-A: the first open after a V1 upgrade states what was carried and what this build still
+            // cannot open. Dismissing it records the presentation; the receipt keeps the counts.
+            // D7-A: the notice is presented by the host's own topmost view controller, not by a SwiftUI alert.
+            // Measured in the rehearsal: an alert hosted in this hierarchy is painted **behind** the reader's
+            // presented controller, so the reader saw it for under a second and every tap landed on the reader's
+            // own button behind it. `.task` covers the receipt that is already loaded; `.onChange` covers the one
+            // that loads after this surface first appears.
+            .task { presentLegacyUpgradeNoticeIfOwed() }
+            .onChange(of: composition.legacyUpgradeNotice != nil) { _, _ in
+                presentLegacyUpgradeNoticeIfOwed()
             }
             .task {
                 // U2: the reader stays in the app. The composition resolves the frozen target and
@@ -594,7 +656,18 @@ struct FeedMineApp: App {
                 }
                 #endif
             }
+            // R04: the system's memory-pressure signal keeps the reader's own band and releases the rest. It is a
+            // residency fact, not a presentation change: identity, order, anchor and geometry stay.
+            .onReceive(NotificationCenter.default.publisher(
+                for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                Task { await composition.trimResidencyForMemoryPressure() }
+            }
             .onChange(of: phase) { _, next in
+                if next == .inactive {
+                    // `.inactive` is the first half of leaving the screen: the foreground cadence stops here, before
+                    // the app can be suspended. The session's own lifecycle work stays on `.background`.
+                    Task { await composition.inactive() }
+                }
                 if next == .background {
                     #if os(iOS)
                     Self.requestBackgroundRefresh()
@@ -647,7 +720,67 @@ struct FeedMineApp: App {
     /// refuses raises no error and calls no completion, so a host that inferred the reader's state from
     /// `presentingViewController`, or that marked a page shown before it was, left the reader on screen with its
     /// close and its site controls wired to nothing.
-    struct ReaderHost: UIViewControllerRepresentable {
+    /// Presents the one-time V1-upgrade notice above whatever the app is showing — including presentations that
+/// happen *after* the notice (the reader takes the topmost controller within a second of launch, and an alert
+/// presented before it is covered by it: measured 2026-10-20, the alert was drawn at 0.3 s and gone under the
+/// reader's surface by 0.9 s, with every tap landing on the reader's own button). A dedicated window at alert
+/// level is above every controller presentation and survives the content swaps that happen during launch.
+@MainActor
+enum LegacyUpgradeNoticePresenter {
+    private static var current: NoticeWindow?
+
+    static func present(title: String, message: String, onAcknowledge: @escaping () -> Void) {
+        guard current == nil else { return }
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive })
+                ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first
+        else { return }
+        let window = NoticeWindow(windowScene: scene)
+        window.windowLevel = .alert + 1
+        window.rootViewController = NoticeHost { [weak window] in
+            window?.isHidden = true
+            current = nil
+            onAcknowledge()
+        }
+        window.frame = scene.coordinateSpace.bounds
+        window.isHidden = false
+        current = window
+        (window.rootViewController as? NoticeHost)?.showNotice(title: title, message: message)
+    }
+
+    final class NoticeWindow: UIWindow {}
+
+    /// The window's content: a transparent host that raises one alert and reports the reader's own
+    /// acknowledgement. Nothing here decides *when* the notice is owed; the app's receipt state does.
+    final class NoticeHost: UIViewController {
+        private let onAcknowledge: () -> Void
+        private var presented = false
+
+        init(onAcknowledge: @escaping () -> Void) {
+            self.onAcknowledge = onAcknowledge
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+            view.backgroundColor = .clear
+        }
+
+        func showNotice(title: String, message: String) {
+            guard !presented else { return }
+            presented = true
+            let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: String(localized: "Entendi"), style: .cancel) { [weak self] _ in
+                self?.onAcknowledge()
+            })
+            present(alert, animated: true)
+        }
+    }
+}
+
+struct ReaderHost: UIViewControllerRepresentable {
         /// The reader that is up, if any, plus a token that changes while it is up: the reader's content reads
         /// the live playback state, so the host must re-render it when that state changes instead of keeping the
         /// view it was presented with (a review measured a bar frozen at whatever it was built with).
@@ -876,10 +1009,20 @@ struct FeedMineApp: App {
     /// T11: V1's own gate — the reader meets the app before the feed, and what they answer becomes a feed.
     @ViewBuilder private var onboardingCover: some View {
         let options = composition.onboardingOptions()
-        ReaderOnboardingView(recipe: .neutral(languages: [Self.deviceLanguage]), isFirstRun: true,
+        // F02 §2.1: the language question starts from the device's own languages when the catalogue carries them,
+        // clearly editable — a suggestion, never an imposition. It is also what makes "Começar amplo" a usable
+        // entry: a first run that names no language leaves the discovery profile empty, and the feed would open on
+        // the empty-selection surface instead of discovering anything.
+        //
+        // The seed is the answer the host proposes, so it is marked as answered even when the device language is
+        // not among the offered chips: the surface then shows "Todos os idiomas" selected, and both broad actions
+        // save that state instead of writing "no answer yet" over it.
+        ReaderOnboardingView(
+            recipe: .neutral(languages: AppComposition.suggestedLanguages(from: options.languages),
+                hasLanguageAnswer: true),
+            isFirstRun: true,
             previewCards: composition.onboardingPreviewCards(),
             topics: options.topics, regions: options.regions, languages: options.languages,
-            deviceLanguage: Self.deviceLanguage,
             // NN-08: the reader's own sources can be imported at first contact without becoming a requirement.
             // The file flow (picker → preview → commit) is the app's own, presented by the host, so the gate
             // steps aside for it and this host brings it back when it ends. Asking writes nothing at all.
@@ -893,7 +1036,14 @@ struct FeedMineApp: App {
                 // The reader leaves the first run at once: the answers rebuild the session from the catalogue
                 // (a query measured in seconds), and nobody should be held on a cover while that happens.
                 showsOnboarding = false
-                Task { await composition.completeFirstRun(discovery: recipe) }
+                Task {
+                    // R18: the gate closes in the composition only when the answers are durable.
+                    if await composition.completeFirstRun(discovery: recipe) {
+                        showsOnboarding = false
+                    } else {
+                        readerError = String(localized: "Não foi possível salvar suas respostas. Tente novamente.")
+                    }
+                }
             },
             onClose: {
                 composition.completeOnboarding()
@@ -1056,6 +1206,23 @@ struct FeedMineApp: App {
             }))
     }
 
+    /// D4: the facts the first-screen decision needs from the host — whether a selection exists at all, and the bound
+    /// this run measured for one operation. Stated when the screen appears and whenever the window becomes empty
+    /// again; an empty window is what makes the hold legitimate (a durable restore was never prepared on this
+    /// screen). The decision itself is `FeedScreenStore.firstScreenSurface`, which the screen draws and this host's
+    /// launch record reads.
+    @MainActor private func prepareFirstScreen(of association: FeedAssociation) {
+        association.store.noteFirstScreenAppeared(hasSources: composition.hasSelectedSources,
+            maximumWait: composition.firstScreenWait)
+    }
+
+    /// The reading surface is on screen: state it where the launch record and the durability of the decision read it.
+    /// Called after every fact that can settle the question (appearance, a window arrival, the work state, the
+    /// search state, and the host's bounded wait).
+    @MainActor private func reportFirstScreenSurface(of association: FeedAssociation) {
+        association.store.reportFirstScreenSurfaceIfReading()
+    }
+
     /// The facts the invitation depends on, recorded once per window change — off the render path. The cards now
     /// carry their own source, so this is arithmetic over a value, not a database read per card.
     @MainActor private func recordWindowFacts(of association: FeedAssociation) {
@@ -1070,12 +1237,12 @@ struct FeedMineApp: App {
 
     /// The reader has met the app without answering anything: the shortcut out of the first run.
     private func completeOnboarding() async {
-        composition.completeOnboarding()
-        showsOnboarding = false
-    }
-
-    private static var deviceLanguage: String {
-        Locale.current.language.languageCode?.identifier ?? "en"
+        // R18: the surface closes only when the flag is durable; a refused write is reported, not claimed.
+        if composition.completeOnboarding() {
+            showsOnboarding = false
+        } else {
+            readerError = String(localized: "Não foi possível concluir o primeiro passo. Tente novamente.")
+        }
     }
 
     /// T11: V1's "open hood", over the feed the reader is on.
@@ -1302,8 +1469,21 @@ struct FeedMineApp: App {
             ReaderFilterLens(chips: chips,
                 onRemove: { chip in
                     guard let removal = chip.removal else { return }
-                    Task { try? await composition.applyFilter(filter.removing(removal),
-                        preset: composition.currentPreset) }
+                    Task {
+                        do {
+                            try await composition.applyFilter(filter.removing(removal),
+                                preset: composition.currentPreset)
+                        } catch {
+                            // R5: a raw error description is diagnostics, never the reader's copy. The failure
+                            // states whether the selection was saved, so a confirmed-but-not-presented filter
+                            // is never reported as "nothing happened".
+                            #if DEBUG
+                            print("filter removal failed: \(String(describing: error))")
+                            #endif
+                            readerError = (error as? ReaderFilterFailure)?.readerMessage
+                                ?? String(localized: "Não foi possível aplicar o filtro agora.")
+                        }
+                    }
                 },
                 onDismiss: { hiddenLensSignature = signature(of: filter, chips) })
         }
@@ -1346,7 +1526,15 @@ struct FeedMineApp: App {
                     .font(.caption2)
                     .foregroundStyle(.orange)
                     .accessibilityHidden(true)
+                // The wordmark is chrome, not reading text: it names the app and the reader never reads content
+                // through it. Left to scale to the accessibility categories it wrapped into three lines and took
+                // the header over — measured on the Release build at `accessibility-extra-extra-extra-large`
+                // (screenshot in `docs/reviews/evidence/2026-10-18-release-hitch/`), where "Feedmine" covered the
+                // whole chrome row. Capped at the default body size and kept on one line; every content text on the
+                // screen keeps scaling.
                 Text(verbatim: "Feedmine").font(.subheadline).fontWeight(.semibold)
+                    .lineLimit(1)
+                    .dynamicTypeSize(.xSmall ... .large)
                 if let label = activeContextLabel {
                     Text(verbatim: "·").font(.caption2).foregroundStyle(.secondary)
                     Text(verbatim: label)
@@ -1382,9 +1570,21 @@ struct FeedMineApp: App {
     private var launchBranch: FeedLaunchWitness.Branch {
         guard let association = composition.association else { return .launchProgress }
         guard composition.hasSelectedSources else { return .notAWaitSurface }
-        let rendered = association.store.renderedItems
-        guard rendered.isEmpty else { return .cards(rendered.count) }
-        return .feedAbsence(Self.absenceKind(association.store.state.work))
+        // D4: the branch is the surface the screen is drawing, read from the **one** decision both sides share
+        // (`FeedScreenStore.firstScreenSurface`). Cards that are still behind the preparation cover are not on
+        // screen, so they are not stated as cards; a search draws its own results surface and is not a wait.
+        switch association.store.firstScreenSurface {
+        case .search, .sourcesEmpty:
+            return .notAWaitSurface
+        case .preparation, .absence:
+            return .feedAbsence(Self.absenceKind(association.store.state.work))
+        case .reading:
+            let rendered = association.store.renderedItems
+            guard !rendered.isEmpty else {
+                return .feedAbsence(Self.absenceKind(association.store.state.work))
+            }
+            return .cards(rendered.count)
+        }
     }
 
     /// The work an absence surface states, as the short token the launch record carries.

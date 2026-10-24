@@ -69,6 +69,12 @@ public struct PublishedCard: Hashable, Sendable {
     public let media: PublishedMediaSet
     public let renderContract: RenderContract
     public let primaryAction: PublishedPrimaryAction?
+    /// D2: what the occurrence's own payload is, frozen with the card so a reload does not have to guess it from
+    /// the action kind. Nil means the card was published before the fact existed (unknown), never "audio".
+    public let mediaIdentity: PublishedMediaIdentity?
+    /// P10: the editorial facts this occurrence was published with. Frozen with identity and text; nil for history
+    /// written before the facts existed.
+    public let diversity: EditorialDiversityFact?
 
     public init?(
         id: PublicationCardID,
@@ -79,9 +85,21 @@ public struct PublishedCard: Hashable, Sendable {
         timestamp: PublishedTimestamp?,
         media: PublishedMediaSet,
         renderContract: RenderContract,
-        primaryAction: PublishedPrimaryAction?
+        primaryAction: PublishedPrimaryAction?,
+        mediaIdentity: PublishedMediaIdentity? = nil,
+        diversity: EditorialDiversityFact? = nil
     ) {
         guard renderContract.layout != .textOnly || media.primary == nil else { return nil }
+        // The two facts are one decision: a known audio card carries the in-app player, a known video or empty
+        // card never does. Unknown (nil, history written before the fact) stays permitted and stays unknown.
+        switch mediaIdentity {
+        case .some(.audio):
+            guard case .some(.mediaPlayback) = primaryAction else { return nil }
+        case .some(.video), .some(.none):
+            if case .some(.mediaPlayback) = primaryAction { return nil }
+        case nil:
+            break
+        }
         self.id = id
         self.origin = origin
         self.contentEntityID = contentEntityID
@@ -91,5 +109,7 @@ public struct PublishedCard: Hashable, Sendable {
         self.media = media
         self.renderContract = renderContract
         self.primaryAction = primaryAction
+        self.mediaIdentity = mediaIdentity
+        self.diversity = diversity
     }
 }

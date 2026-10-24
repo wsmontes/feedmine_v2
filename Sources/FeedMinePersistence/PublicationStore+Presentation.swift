@@ -116,12 +116,71 @@ extension PublicationStore {
         }
     }
 
+    /// R16: the published cards a bounded set of occurrences named, resolved in **one** query. A unified search
+    /// asks this once for its examined window instead of one scan per result.
+    public func cardIDs(originRecordIDs: [OriginRecordID]) throws -> [OriginRecordID: PublicationCardID] {
+        guard !originRecordIDs.isEmpty else { return [:] }
+        let keys = Set(originRecordIDs.map { PersistenceValueCoding.uuid($0.rawValue) }).sorted()
+        return try database.read { db in
+            guard keys.count <= db.maximumStatementArgumentCount - 1 else { throw PublicationStoreError.invalidCapacity }
+            let rows = try Row.fetchAll(db,
+                sql: "SELECT origin_record_id, id FROM published_cards WHERE origin_record_id IN ("
+                    + Array(repeating: "?", count: keys.count).joined(separator: ",") + ")",
+                arguments: StatementArguments(keys))
+            var result: [OriginRecordID: PublicationCardID] = [:]
+            for row in rows {
+                guard let origin = UUID(uuidString: row["origin_record_id"]),
+                    let card = UUID(uuidString: row["id"]) else { continue }
+                result[OriginRecordID(rawValue: origin)] = PublicationCardID(rawValue: card)
+            }
+            return result
+        }
+    }
+
     public func card(id: PublicationCardID) throws -> CardRecord? {
         try database.read { db in
             let key = PersistenceValueCoding.uuid(id.rawValue)
             let active = try Row.fetchOne(db, sql: "SELECT * FROM published_cards WHERE id = ?", arguments: [key])
             if let active { return try Self.decodeCard(active) }
             return try Row.fetchOne(db, sql: "SELECT * FROM retired_published_cards WHERE id = ?", arguments: [key]).map(Self.decodeCard)
+        }
+    }
+
+    /// P10/R17: the newest frozen editorial facts of an Edition, newest first. Rows written before the facts existed
+    /// contribute nothing (unknown), and nothing here consults the latest canonical revision.
+    public func recentDiversity(editionID: FeedEditionID, limit: Int) throws -> [EditorialDiversityFact] {
+        guard limit > 0 else { return [] }
+        return try database.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT c.diversity_facts FROM published_cards c
+                JOIN feed_segments s ON s.id = c.segment_id
+                WHERE s.edition_id = ? AND c.diversity_facts IS NOT NULL
+                ORDER BY s.ordinal DESC, c.ordinal DESC LIMIT ?
+                """, arguments: [PersistenceValueCoding.uuid(editionID.rawValue), limit])
+            return try rows.compactMap { row in
+                try PublicationStore.decodeDiversity(row["diversity_facts"] as String?)
+            }
+        }
+    }
+
+    /// P07: the published rows for a bounded set of ids in **one** read. Unified search resolves its saved
+    /// occurrences here instead of one query per bookmark as the list grows. Active rows win over retired ones.
+    public func cards(ids: [PublicationCardID]) throws -> [PublicationCardID: CardRecord] {
+        guard !ids.isEmpty else { return [:] }
+        let keys = Set(ids.map { PersistenceValueCoding.uuid($0.rawValue) }).sorted()
+        return try database.read { db in
+            guard keys.count <= db.maximumStatementArgumentCount - 1 else { throw PublicationStoreError.invalidCapacity }
+            let placeholders = Array(repeating: "?", count: keys.count).joined(separator: ",")
+            var result: [PublicationCardID: CardRecord] = [:]
+            for table in ["retired_published_cards", "published_cards"] {
+                let rows = try Row.fetchAll(db, sql: "SELECT * FROM \(table) WHERE id IN (\(placeholders))",
+                    arguments: StatementArguments(keys))
+                for row in rows {
+                    let card = try Self.decodeCard(row)
+                    result[card.id] = card
+                }
+            }
+            return result
         }
     }
 
@@ -142,6 +201,93 @@ extension PublicationStore {
                 return segment
             }
         }
+    }
+
+    /// Where one durable card identity lives in published history, and whether it can still be drawn.
+    ///
+    /// The reader's position is a **card**, and a card belongs to exactly one Edition. A durable record may spell
+    /// an Edition that was rebuilt afterwards (a new publication for the same context identity), so the Edition a
+    /// restore must read is the card's own — the one this read answers — and never the one a column happens to say
+    /// (2026-10-20: D10 admitted audio to the discovery pool, the reopen resolved the anchor against an Edition
+    /// whose segments no longer held it, and the reader landed at the top).
+    public struct CardLocation: Hashable, Sendable {
+        public let cardID: PublicationCardID
+        public let editionID: FeedEditionID
+        public let segmentID: FeedSegmentID
+        public let segmentOrdinal: Int
+        public let cardOrdinal: Int
+        /// False when the card is only kept in the Edition's archive (`retired_*`): its position is still known,
+        /// it can no longer be drawn, and the nearest surviving neighbour is what a restore may land on.
+        public let isLive: Bool
+    }
+
+    /// The card's Edition and position, live or archived. Nil means this database has never published the card.
+    public func location(ofCard cardID: PublicationCardID) throws -> CardLocation? {
+        try database.read { db in
+            let key = PersistenceValueCoding.uuid(cardID.rawValue)
+            if let row = try Row.fetchOne(db, sql: """
+                SELECT c.id AS card_id, c.ordinal AS card_ordinal, s.id AS segment_id,
+                    s.ordinal AS segment_ordinal, s.edition_id AS edition_id
+                FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+                WHERE c.id = ?
+                """, arguments: [key]) {
+                return try Self.location(row, live: true)
+            }
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT c.id AS card_id, c.ordinal AS card_ordinal, s.id AS segment_id,
+                    s.ordinal AS segment_ordinal, s.edition_id AS edition_id
+                FROM retired_published_cards c JOIN retired_feed_segments s ON s.id = c.segment_id
+                WHERE c.id = ?
+                """, arguments: [key]) else { return nil }
+            return try Self.location(row, live: false)
+        }
+    }
+
+    /// The nearest card of an Edition that can still be drawn **before** a position, else that Edition's first
+    /// card — the neighbour a restore may land on when the card at that position is no longer published. Nil means
+    /// the Edition holds no drawable card at all.
+    public func survivingCard(inEdition editionID: FeedEditionID, beforeSegment segmentOrdinal: Int,
+        cardOrdinal: Int) throws -> PublicationCardID? {
+        try database.read { db in
+            let key = PersistenceValueCoding.uuid(editionID.rawValue)
+            if let row = try Row.fetchOne(db, sql: """
+                SELECT c.id FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+                WHERE s.edition_id = ? AND (s.ordinal, c.ordinal) < (?, ?)
+                ORDER BY s.ordinal DESC, c.ordinal DESC LIMIT 1
+                """, arguments: [key, segmentOrdinal, cardOrdinal]) {
+                return PublicationCardID(rawValue: try PublicationValueCoding.uuid(row["id"], field: "id"))
+            }
+            return try Self.firstCard(editionKey: key, in: db)
+        }
+    }
+
+    /// The first card of an Edition that can still be drawn, or nil when it holds none.
+    public func firstCard(inEdition editionID: FeedEditionID) throws -> PublicationCardID? {
+        try database.read { db in
+            try Self.firstCard(editionKey: PersistenceValueCoding.uuid(editionID.rawValue), in: db)
+        }
+    }
+
+    private static func firstCard(editionKey: String, in db: Database) throws -> PublicationCardID? {
+        guard let row = try Row.fetchOne(db, sql: """
+            SELECT c.id FROM published_cards c JOIN feed_segments s ON s.id = c.segment_id
+            WHERE s.edition_id = ? ORDER BY s.ordinal ASC, c.ordinal ASC LIMIT 1
+            """, arguments: [editionKey]) else { return nil }
+        return PublicationCardID(rawValue: try PublicationValueCoding.uuid(row["id"], field: "id"))
+    }
+
+    private static func location(_ row: Row, live: Bool) throws -> CardLocation {
+        let fields = PublicationRecordFields(row)
+        let segmentOrdinal = try fields.integer("segment_ordinal"), cardOrdinal = try fields.integer("card_ordinal")
+        guard segmentOrdinal >= 0, cardOrdinal >= 0,
+            segmentOrdinal <= Int64(Int.max), cardOrdinal <= Int64(Int.max) else {
+            throw PublicationStoreError.corruption("card position")
+        }
+        return CardLocation(
+            cardID: PublicationCardID(rawValue: try fields.uuid("card_id")),
+            editionID: FeedEditionID(rawValue: try fields.uuid("edition_id")),
+            segmentID: FeedSegmentID(rawValue: try fields.uuid("segment_id")),
+            segmentOrdinal: Int(segmentOrdinal), cardOrdinal: Int(cardOrdinal), isLive: live)
     }
 
     public func cards(editionID: FeedEditionID, around anchorID: PublicationCardID, backwardCapacity: Int, forwardCapacity: Int) throws -> [CardRecord] {

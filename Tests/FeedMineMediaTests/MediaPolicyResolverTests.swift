@@ -81,11 +81,26 @@ final class MediaPolicyResolverTests: XCTestCase {
         // A declared side beyond the ceiling is still refused before any byte moves, even if the other side is tiny.
         XCTAssertEqual(MediaResolver.resolve([try candidate("bomb-tall", 10, 20_000)], policy: p), .textOnly(.noViableCandidate))
     }
-    func testDownloadBudgetFollowsMeasuredThroughputAndWait() throws {
-        XCTAssertEqual(try policy(conditions(rate: 200_000, wait: 2)).downloadByteBudget, 400_000)
-        XCTAssertEqual(try policy(conditions(rate: 50_000_000, wait: 10)).downloadByteBudget, 12_000_000)
-        XCTAssertEqual(try policy(conditions()).downloadByteBudget, 12_000_000)
-        XCTAssertEqual(try policy(conditions(rate: 1, wait: 0)).downloadByteBudget, 0)
+    func testAffordableBytesFollowMeasuredThroughputAndWait() throws {
+        XCTAssertEqual(try policy(conditions(rate: 200_000, wait: 2)).byteBudget.affordableBytes, 400_000)
+        XCTAssertEqual(try policy(conditions(rate: 50_000_000, wait: 10)).byteBudget.affordableBytes, 12_000_000)
+        XCTAssertEqual(try policy(conditions()).byteBudget.affordableBytes, 12_000_000)
+        XCTAssertEqual(try policy(conditions(rate: 1, wait: 0)).byteBudget.affordableBytes, 0)
+    }
+
+    /// The two questions stay apart: `affordableBytes` says what fits the wait (2000 B here) and
+    /// `safetyCeilingBytes` says what may be transferred at all (12 MB). Only the second refuses a file, so the
+    /// typical 3 MB image is attempted rather than settled as unavailable, and 13 MB is refused whatever the wait.
+    func testAffordabilityNeverRefusesAFileTheSafetyCeilingAdmits() throws {
+        let budget = try policy(conditions(rate: 1_000, wait: 2)).byteBudget
+        XCTAssertEqual(budget.affordableBytes, 2_000)
+        XCTAssertEqual(budget.safetyCeilingBytes, 12_000_000)
+        XCTAssertEqual(budget.waitSeconds, 2, "the wait is the attempt's time allowance")
+        XCTAssertFalse(budget.refuses(declaredLength: 3_000_000), "3 MB does not fit the wait, but it is not invalid")
+        XCTAssertTrue(budget.refuses(declaredLength: 13_000_000), "the safety ceiling is the only byte refusal")
+        XCTAssertEqual(try policy(conditions()).byteBudget.waitSeconds, nil as Double?,
+            "an unmeasured wait states no time allowance")
+        XCTAssertEqual(try policy(conditions()).byteBudget.source, .ceilingCap)
     }
     func testMeasuredFitDecidesHeroThumbnailOrUnsuitable() throws {
         let p = try policy(conditions(hero: 360, thumb: 100, scale: 3))

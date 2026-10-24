@@ -1,0 +1,23 @@
+# Candidate snapshot — 2026-10-19 (commit 46191649)
+
+recorded_at_utc: 2026-10-19T22:16:52Z
+branch: codex/v2-fluidez-capacidade
+head: 46191649ab1c7af779022207dd1f5faffbf866c6
+base: b0b961a049f82fece037363a6cb0e986d556330c
+candidate_commit: 46191649ab1c7af779022207dd1f5faffbf866c6
+diff_sha256: 68794cc06c66fb7afd12975a3d342cda287901c39644a3a5580459fce8b45cf3
+product_diff_sha256: 8b1475785400c84c4c295e2444f6c29d9b2233c92439b04a9407385e6b7e568f
+
+## Gates on these bytes
+
+- B01 20261019T212156Z PASS (475 registered, 974 contacted, 87 sources, 222 cards)
+- B02 20261019T213036Z PASS (200 cards)
+- B03 20261019T214314Z PASS (2786 advances, 2363 cards, 0 stalls, 2234 candidates, 0 pending)
+- B04 20261019T213644Z PASS (301 installations, 0 violations, 0 unstable, 1 not-measurable)
+- B05 20261019T214025Z PASS (7/7 measurements)
+- B06 NOT_RUN/BLOCKED (iPhone Offline)
+- Package 1518 tests, 1 skip, 0 failures; app host 158/0; UI 76 tests, 9 skipped, 11 assertion failures in 5 known environmental tests (real catalogue unavailable; SFSafariViewController chrome not exposed)
+
+## Notes
+- candidate.patch is `git diff b0b961a0 46191649 --binary`; it reproduces the committed candidate tree.
+- Nothing here approves publication.

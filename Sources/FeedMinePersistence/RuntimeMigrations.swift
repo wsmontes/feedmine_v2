@@ -559,6 +559,73 @@ public enum RuntimeMigrations {
                 CREATE INDEX reader_source_identity_current ON reader_source_identity(current_key);
                 """)
         }
+        // Durable saves: a membership is the *link*; this table states the availability of the link's content,
+        // so "saved" never implies a preparation that did not happen (owner directive 2026-10-17 §2). It is a
+        // separate row from `published_cards`: re-preparing media changes availability, never the publication.
+        // Derived state: retiring the published row retires its availability, so this table never becomes a second
+        // reason a historical card cannot be archived.
+        migrator.registerMigration("saved-media-availability-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE saved_media_availability (
+                    card_id TEXT PRIMARY KEY NOT NULL REFERENCES published_cards(id) ON DELETE CASCADE,
+                    availability TEXT NOT NULL
+                        CHECK (availability IN ('textOnly', 'pending', 'ready', 'failed', 'insufficientSpace')),
+                    updated_at REAL NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    CHECK (attempts >= 0)
+                );
+                -- Existing bookmarks get their honest state in one statement: a card published without media is
+                -- text-only; a card with a media key has not been prepared by this build yet. Nothing is claimed
+                -- as ready that was not verified.
+                INSERT INTO saved_media_availability (card_id, availability, updated_at, attempts)
+                SELECT DISTINCT b.card_id,
+                    CASE WHEN c.media_key IS NULL THEN 'textOnly' ELSE 'pending' END,
+                    CAST(strftime('%s', 'now') AS REAL), 0
+                FROM reader_bookmark_memberships b
+                JOIN published_cards c ON c.id = b.card_id;
+                """)
+        }
+        // P10/R17: the editorial facts frozen with an occurrence. Nullable on purpose: history written before this
+        // schema keeps its exact past, and the editorial context treats the absence as unknown.
+        migrator.registerMigration("publication-editorial-diversity-v1") { db in
+            try db.execute(sql: "ALTER TABLE published_cards ADD COLUMN diversity_facts TEXT")
+            try db.execute(sql: "ALTER TABLE retired_published_cards ADD COLUMN diversity_facts TEXT")
+        }
+        // D7-A: the V1 upgrade's receipt. V1's own `user.sqlite` stays the authority for what this build does
+        // not carry (saved articles, smart and curated feeds); this table states which generation was upgraded,
+        // what was imported, every reported skip with its reason, and whether the reader has been told.
+        // Additive only: no shipped row is rewritten, and the marker commits with the imported rows.
+        migrator.registerMigration("reader-legacy-upgrade-receipt-v1") { db in
+            try db.execute(sql: """
+                CREATE TABLE reader_legacy_upgrade (
+                    singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+                    source_path TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('completed', 'unsupported', 'failed')),
+                    ran_at REAL NOT NULL,
+                    failure_reason TEXT,
+                    imported_boxes INTEGER NOT NULL DEFAULT 0,
+                    imported_sources INTEGER NOT NULL DEFAULT 0,
+                    selected_sources INTEGER NOT NULL DEFAULT 0,
+                    imported_collections INTEGER NOT NULL DEFAULT 0,
+                    imported_collection_members INTEGER NOT NULL DEFAULT 0,
+                    notice_presented INTEGER NOT NULL DEFAULT 0 CHECK(notice_presented IN (0, 1))
+                );
+                CREATE TABLE reader_legacy_upgrade_skips (
+                    category TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    count INTEGER NOT NULL CHECK(count >= 0),
+                    PRIMARY KEY (category, reason)
+                );
+                """)
+        }
+        // D2 (PD-2026-10-20): a card states what its own payload is (audio, video, none). Nullable on purpose:
+        // rows written before this schema keep their exact past and read as unknown, and the projection never
+        // infers "audio" from `primary_action_kind`. No existing row is rewritten. Both card tables gain the
+        // column because history is archived by `INSERT ... SELECT *`, which needs the same column order.
+        migrator.registerMigration("publication-media-identity-v1") { db in
+            try db.execute(sql: "ALTER TABLE published_cards ADD COLUMN media_identity TEXT")
+            try db.execute(sql: "ALTER TABLE retired_published_cards ADD COLUMN media_identity TEXT")
+        }
         return migrator
     }
 
@@ -594,7 +661,8 @@ public enum RuntimeMigrations {
                 guard let source, let uuid = UUID(uuidString: source) else { continue }
                 request = .source(SourceID(rawValue: uuid))
             case "search":
-                guard let query, let search = SearchContext(query: query) else { continue }
+                // R14: an old row's text is a legacy literal (a stored negative-only query still reconstructs).
+                guard let query, let search = SearchContext(query: query, semantics: .legacyLiteral) else { continue }
                 request = .search(search)
             default: continue
             }

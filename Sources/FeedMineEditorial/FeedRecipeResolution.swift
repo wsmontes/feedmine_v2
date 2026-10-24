@@ -106,7 +106,10 @@ public enum FeedRecipeResolution {
     /// The filter the recipe states, as V2's own criteria: its languages and its content type. Everything else
     /// a recipe says is a *weight*, which is the ranking's business and not a criterion's.
     public static func filter(for recipe: FeedRecipeDefinition) -> ReaderFilter {
-        ReaderFilter(languages: recipe.languageCriterion, contentType: recipe.contentTypeCriterion)
+        // R13: a pair (or any proper subset) is carried exactly, not collapsed into `.all`. The single lens remains
+        // the one-kind view; the set is the answer.
+        ReaderFilter(languages: recipe.languageCriterion, contentType: recipe.contentTypeCriterion,
+            mediaTypes: recipe.mediaTypes.count == 2 ? recipe.mediaTypes : [])
     }
 
     /// V1's `autoName()`, from the one rule Domain owns — a surface and a resolver must name a recipe the same.

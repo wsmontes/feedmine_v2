@@ -3,7 +3,7 @@ import XCTest
 import FeedMineDomain
 import FeedMinePersistence
 import FeedMineMedia
-import FeedMineRuntime
+@testable import FeedMineRuntime
 
 /// PD-5/PD-6: definitive decisions permit text-only; pending work never does.
 final class MediaPrefetcherTests: XCTestCase {
@@ -58,7 +58,7 @@ final class MediaPrefetcherTests: XCTestCase {
         XCTAssertEqual(calls.all.count, 2)
     }
 
-    func testAllCandidatesFailingIsDesignedTextOnlyAndNotRetried() async throws {
+    func testAllCandidatesFailingHasNoPresentationAndIsNotRetried() async throws {
         let (db, assets) = try setup(), calls = Calls()
         let revision = try admit(db, urls: ["https://example.test/a.jpg"])
         let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
@@ -67,7 +67,9 @@ final class MediaPrefetcherTests: XCTestCase {
         await prefetcher.prefetchSupplyHead(limit: 10)
         XCTAssertEqual(calls.all.count, 1)
         XCTAssertNil(prefetcher.readiness.prepared(revision))
-        XCTAssertEqual(prefetcher.readiness.presentation(for: revision), .textOnly)
+        XCTAssertTrue(prefetcher.readiness.isSettled(revision), "a definitive failure is decided, not pending")
+        XCTAssertNil(prefetcher.readiness.presentation(for: revision),
+            "the image the card declared is not replaced by a text presentation")
     }
 
     func testOfflineConditionsFetchNothing() async throws {
@@ -108,7 +110,71 @@ extension MediaPrefetcherTests {
         XCTAssertNotNil(prefetcher.readiness.prepared(revision))
     }
 
-    /// Review F04: a timeout is retried after a delay; a definitive failure settles text-only.
+    private final class TransportGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        private var afterInvalidation = 0
+        private var invalidated = false
+        func record() {
+            lock.lock(); defer { lock.unlock() }
+            count += 1
+            if invalidated { afterInvalidation += 1 }
+        }
+        func invalidate() { lock.lock(); invalidated = true; lock.unlock() }
+        var started: Int { lock.lock(); defer { lock.unlock() }; return count }
+        var startsAfterInvalidation: Int { lock.lock(); defer { lock.unlock() }; return afterInvalidation }
+    }
+
+    /// P01/A2: close happens with more revisions queued than slots. The owner's fence must refuse every queued
+    /// start **before** the shared transport is invalidated; a fetch already authorized may still finish.
+    func testClosePreventsQueuedMediaFromStartingOnInvalidatedSession() async throws {
+        let (db, assets) = try setup(), hold = Hold(), gate = TransportGate(), png = self.png
+        let first = try admit(db, urls: ["https://example.test/a.png"])
+        let second = try admit(db, urls: ["https://example.test/b.png"])
+        let third = try admit(db, urls: ["https://example.test/c.png"])
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            fetch: { url, _ in
+                gate.record()
+                if url.lastPathComponent == "a.png" { await hold.wait() }
+                return png
+            }, conditions: { _ in Self.policy() })
+        let work = Task { await prefetcher.prefetch([first, second, third]) }
+        for _ in 0..<400 where gate.started == 0 { try await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertEqual(gate.started, 1, "premissa: a primeira revisão está em voo")
+        // Real close order: the owner refuses new starts before the transport dies.
+        let retired = await prefetcher.retire(budget: .milliseconds(100))
+        XCTAssertFalse(retired, "o fetch suspenso não drena dentro do orçamento")
+        gate.invalidate()
+        await hold.release()
+        _ = await work.value
+        XCTAssertEqual(gate.startsAfterInvalidation, 0,
+            "nenhuma revisão enfileirada pode criar tarefa na sessão invalidada")
+        XCTAssertEqual(gate.started, 1)
+    }
+
+    /// P01: the budget expiring is a statement of the drain, not permission. After a failed retirement the owner
+    /// still denies saved preparation and fresh prefetch calls.
+    func testRetirementTimeoutDoesNotAuthorizeLateTransportStarts() async throws {
+        let (db, assets) = try setup(), hold = Hold(), gate = TransportGate(), png = self.png
+        let first = try admit(db, urls: ["https://example.test/a.png"])
+        let queued = try admit(db, urls: ["https://example.test/b.png"])
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            fetch: { _, _ in gate.record(); await hold.wait(); return png },
+            conditions: { _ in Self.policy() })
+        let work = Task { await prefetcher.prefetch([first]) }
+        for _ in 0..<400 where gate.started == 0 { try await Task.sleep(nanoseconds: 5_000_000) }
+        let retired = await prefetcher.retire(budget: .milliseconds(50))
+        XCTAssertFalse(retired)
+        let saved = await prefetcher.prepareForSave(queued)
+        XCTAssertEqual(saved, .deferred, "a aposentadoria não autoriza preparo novo")
+        await prefetcher.prefetch([queued])
+        XCTAssertEqual(gate.started, 1, "o timeout da drenagem não reabre o fence")
+        await hold.release()
+        _ = await work.value
+        XCTAssertEqual(gate.started, 1)
+    }
+
+    /// Review F04: a timeout is retried after a delay; a definitive failure decides the image is unavailable.
     func testTransientFailureRetriesLaterDefinitiveSettles() async throws {
         let (db, assets) = try setup(), calls = Calls(), clock = Clock(), png = self.png
         final class Mode: @unchecked Sendable { var failure: (any Error)? = URLError(.timedOut) }
@@ -135,8 +201,43 @@ extension MediaPrefetcherTests {
         clock.now = 10_000
         await prefetcher.prefetch([other])
         XCTAssertEqual(calls.all.filter { $0.lastPathComponent == "gone.png" }.count, 1)
-        XCTAssertEqual(prefetcher.readiness.presentation(for: other), .textOnly)
+        XCTAssertNil(prefetcher.readiness.presentation(for: other),
+            "a definitively unavailable image is not published as a text card")
     }
+
+    /// The walk that examined a window is one-way: after a transient (`deadline`) attempt the revision is never
+    /// named by a later window again. The owner keeps its backoff, so an opportunity that names *other* revisions
+    /// must still make good on "retry later" — otherwise the story stays pending for the rest of the run and the
+    /// bounded re-offer queue can never present it.
+    func testTransientBackoffIsRetriedByAnOpportunityThatDoesNotNameTheRevision() async throws {
+        let (db, assets) = try setup(), calls = Calls(), clock = Clock(), png = self.png
+        final class Mode: @unchecked Sendable { var failuresLeft = 1 }
+        let mode = Mode()
+        let skipped = try admit(db, urls: ["https://example.test/skipped.png"])
+        let next = try admit(db, urls: ["https://example.test/next.png"])
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            transientRetryBaseSeconds: 30, monotonicSeconds: { clock.now },
+            fetch: { url, _ in
+                calls.add(url)
+                if url.lastPathComponent == "skipped.png", mode.failuresLeft > 0 {
+                    mode.failuresLeft -= 1
+                    throw MediaFetchFailure(.transient, reason: .deadline)
+                }
+                return png
+            }, conditions: { _ in Self.policy() })
+        // The examined window: its declared image runs out of the wait and stays pending.
+        await prefetcher.prefetch([skipped])
+        XCTAssertEqual(calls.all.map(\.lastPathComponent), ["skipped.png"])
+        XCTAssertNil(prefetcher.readiness.presentation(for: skipped))
+        // The cursor moved on: the next opportunity names a different revision only.
+        clock.now = 31
+        await prefetcher.prefetch([next])
+        XCTAssertEqual(calls.all.filter { $0.lastPathComponent == "skipped.png" }.count, 2,
+            "a cut attempt is transient: a later opportunity retries it even though the walk passed it")
+        XCTAssertNotNil(prefetcher.readiness.presentation(for: skipped))
+        XCTAssertNotNil(prefetcher.readiness.presentation(for: next))
+    }
+
     func testExplicitEditorialRevisionsIgnoreGlobalHeadAndDeduplicate() async throws {
         let (db, assets) = try setup(), calls = Calls(), png = self.png
         let unrelated = try admit(db, urls: ["https://example.test/unrelated.png"])
@@ -147,6 +248,22 @@ extension MediaPrefetcherTests {
         XCTAssertEqual(calls.all.map(\.lastPathComponent), ["next.png"])
         XCTAssertNotNil(prefetcher.readiness.prepared(next))
         XCTAssertNil(prefetcher.readiness.prepared(unrelated))
+    }
+
+    /// The index decides what a nil record **means** from the caller, never from a default. An image the card
+    /// declared and that could not be prepared is decided without a presentation; only a card that declares no
+    /// image is settled as text. `record` requires the flag, so the old failure mode — a future caller omitting it
+    /// and reading as "declared text", publishing `.textOnly` over a broken image — no longer compiles.
+    func testANilRecordIsTextOnlyOnlyWhenTheCallerDeclaresText() {
+        let index = MediaReadiness(), failed = OriginRevisionID(), designed = OriginRevisionID()
+        XCTAssertTrue(index.record(failed, nil, textDeclared: false))
+        XCTAssertTrue(index.record(designed, nil, textDeclared: true))
+        XCTAssertTrue(index.isSettled(failed)); XCTAssertTrue(index.isSettled(designed))
+        XCTAssertNil(index.presentation(for: failed),
+            "a recorded image failure has no presentation; it must never become a .textOnly card")
+        XCTAssertEqual(index.presentation(for: designed), .textOnly)
+        XCTAssertEqual(index.presentations(for: [failed, designed]), [designed: .textOnly],
+            "the atomic snapshot agrees with the per-revision answer")
     }
 
 }

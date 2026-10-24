@@ -1,0 +1,110 @@
+{
+  "build_commit": "67d49c86454b54372e7b237ad16070418f617700",
+  "build_source": "pristine worktree at 67d49c86 (/private/tmp/v1-rehearsal5/src) because the shared worktree was being edited mid-build by a sibling; the gitignored FeedMineApp/Resources/catalog.sqlite was copied in as a build input",
+  "layout": "as specified: V1 data at Library/Application Support/Feedmine, V2 Release over the same bundle id, no rename, no move, no deletion",
+  "container_before_install": "CDC95D40-4AA2-49E1-B9BB-E46D25446C25",
+  "container_after_install": "33991340-AB91-43C0-9E66-8EAAED2D7DD3",
+  "application_support_entries": [
+    "Feedmine"
+  ],
+  "runtime_sqlite_files_found": 1,
+  "receipt": [
+    {
+      "singleton_id": 1,
+      "source_path": "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/33991340-AB91-43C0-9E66-8EAAED2D7DD3/Library/Application Support/Feedmine/user.sqlite",
+      "status": "completed",
+      "ran_at": 1792525861.949945,
+      "failure_reason": null,
+      "imported_boxes": 1,
+      "imported_sources": 3,
+      "selected_sources": 2,
+      "imported_collections": 1,
+      "imported_collection_members": 2,
+      "notice_presented": 1
+    }
+  ],
+  "skips": [
+    {
+      "category": "savedArticles",
+      "reason": "notImportedInThisBuild",
+      "count": 2
+    }
+  ],
+  "counts": [
+    {
+      "table_name": "reader_imported_sources",
+      "rows": 3
+    },
+    {
+      "table_name": "reader_bookmark_lists",
+      "rows": 2
+    },
+    {
+      "table_name": "reader_bookmark_memberships",
+      "rows": 0
+    },
+    {
+      "table_name": "reader_collections",
+      "rows": 1
+    },
+    {
+      "table_name": "reader_collection_memberships",
+      "rows": 2
+    }
+  ],
+  "imported_sources": [
+    {
+      "key": "https://exemplo.test/arquivo/feed",
+      "request_url": "https://exemplo.test/arquivo/feed",
+      "title": "Arquivo Desligado"
+    },
+    {
+      "key": "https://exemplo.test/ciencia/feed.xml",
+      "request_url": "https://exemplo.test/ciencia/feed.xml",
+      "title": "Ciência Hoje"
+    },
+    {
+      "key": "https://exemplo.test/tecnologia/feed",
+      "request_url": "https://exemplo.test/tecnologia/feed?ref=v1",
+      "title": "Tecnologia"
+    }
+  ],
+  "bookmark_boxes": [
+    {
+      "id": "saved",
+      "name": "Saved",
+      "position": 0
+    },
+    {
+      "id": "v1:list:2",
+      "name": "Leituras longas",
+      "position": 1
+    }
+  ],
+  "collections": [
+    {
+      "id": "v1:collection:1",
+      "name": "Ciência e Tecnologia",
+      "position": 0
+    }
+  ],
+  "collection_members": [
+    {
+      "collection_id": "v1:collection:1",
+      "source_key": "https://exemplo.test/ciencia/feed.xml"
+    },
+    {
+      "collection_id": "v1:collection:1",
+      "source_key": "https://exemplo.test/tecnologia/feed"
+    }
+  ],
+  "notice": {
+    "notice_presented_without_tap_at_3s": 0,
+    "notice_presented_without_tap_at_13s": 0,
+    "alert_visible_at": "3 s and unchanged at ~13 s (identical screenshots)",
+    "acknowledgement": "window click at pixels (455,1230) in the window frame",
+    "notice_presented_after_tap": 1,
+    "after_tap": "alert window gone; onboarding surface exposed in the accessibility tree"
+  },
+  "second_launch": "receipt and every count identical; no duplicated row; notice not shown again"
+}

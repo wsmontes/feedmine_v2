@@ -181,6 +181,20 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
         guard case .executed(let results) = outcome else { throw FixtureError.unexpectedAction }
         return results
     }
+    /// The awaited shape of one finite round over the production entry point: the plan's durable results in plan
+    /// order, once the whole round settles. `.joining` is refused here on purpose — an opportunity that only joins
+    /// another owner's execution owns no results, and its own case pins that fact.
+    private func settle(_ cycle: RunwayAcquisitionCycle, _ intent: RunwayAcquisitionIntent,
+        eligibleTargets: [AcquisitionTarget], resources: AcquisitionPlanningResources,
+        preferUnattempted: Bool = false) async throws -> RunwayAcquisitionCycleOutcome {
+        switch try await cycle.start(intent, eligibleTargets: eligibleTargets, resources: resources,
+            preferUnattempted: preferUnattempted) {
+        case .round(let round): return .executed(try await round.completion.value)
+        case .joining: throw FixtureError.unexpectedAction
+        case .acceptedUnavailable(let disposition): return .acceptedUnavailable(disposition)
+        case .deferred(let disposition): return .deferred(disposition)
+        }
+    }
 
     func test01ExternalSupplyReopensLocalFirstAndPublishesSameEdition() async throws {
         let f = try fixture(), intent = try await intent(f)
@@ -189,7 +203,7 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
         XCTAssertEqual(try f.publication.segments(editionID: f.edition).count,1)
         let fake = CycleConnector(.batch([Self.observation(source: f.source)],checkpoint()))
         let cycle = RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake]))
-        let outcome = try await cycle.run(intent,eligibleTargets: [f.target],resources: resources())
+        let outcome = try await settle(cycle, intent,eligibleTargets: [f.target],resources: resources())
         let results = try executed(outcome); XCTAssertEqual(results.count,1); XCTAssertTrue(outcome.selectableSupplyChanged)
         let admitted = try XCTUnwrap(f.candidates().first)
         XCTAssertEqual(try f.publication.segments(editionID: f.edition).count,1)
@@ -215,12 +229,12 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
         let fake = CycleConnector(.finished,onPull: { _ in
             let snapshot = await f.runway.snapshot(); XCTAssertNil(snapshot.outstandingAcquisition)
         })
-        _ = try await RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake])).run(intent,eligibleTargets: [f.target],resources: resources())
+        _ = try await settle(RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake])),intent,eligibleTargets: [f.target],resources: resources())
         let pulls = await fake.pulls; XCTAssertEqual(pulls.count,1)
     }
     func test03NoEligibleTargetsAcknowledged() async throws {
         let f = try fixture(), intent = try await intent(f), fake = CycleConnector(.failure)
-        let outcome = try await RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake])).run(intent,eligibleTargets: [],resources: resources())
+        let outcome = try await settle(RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake])),intent,eligibleTargets: [],resources: resources())
         XCTAssertEqual(outcome,.acceptedUnavailable(.noEligibleTargets)); XCTAssertFalse(outcome.selectableSupplyChanged)
         let snapshot = await f.runway.snapshot(); XCTAssertNil(snapshot.outstandingAcquisition)
         let action = try await f.runway.reconsider(resources: Self.localResources(),at: time(6)); XCTAssertEqual(action,.none)
@@ -229,11 +243,11 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
     func test04ResourceDenialPreservesExactIntentUntilExplicitResourceChange() async throws {
         let f = try fixture(), intent = try await intent(f), fake = CycleConnector(.finished)
         let cycle = RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake]))
-        let denied = try await cycle.run(intent,eligibleTargets: [f.target],resources: resources(0))
+        let denied = try await settle(cycle, intent,eligibleTargets: [f.target],resources: resources(0))
         XCTAssertEqual(denied,.deferred(.resourceDenied)); XCTAssertFalse(denied.selectableSupplyChanged)
         let snapshot = await f.runway.snapshot(); XCTAssertEqual(snapshot.outstandingAcquisition,intent)
         let pulls = await fake.pulls; XCTAssertTrue(pulls.isEmpty)
-        let accepted = try await cycle.run(intent,eligibleTargets: [f.target],resources: resources())
+        let accepted = try await settle(cycle, intent,eligibleTargets: [f.target],resources: resources())
         XCTAssertEqual(try executed(accepted).count,1)
     }
     func test05ActiveGenerationConflictPreservesIntent() async throws {
@@ -243,7 +257,7 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
         await fake.waitForPull()
         let current = try f.authority.reconfigure(id: f.target.id,expectedGeneration: 1,connectorKind: .syndication,checkpoint: .preserve, authorizedSources: [f.source])
         let intent = try await intent(f)
-        let outcome = try await RunwayAcquisitionCycle(runway: f.runway,coordinator: coordinator).run(intent,eligibleTargets: [current],resources: resources())
+        let outcome = try await settle(RunwayAcquisitionCycle(runway: f.runway,coordinator: coordinator),intent,eligibleTargets: [current],resources: resources())
         XCTAssertEqual(outcome,.deferred(.activeGenerationConflict)); XCTAssertFalse(outcome.selectableSupplyChanged)
         let snapshot = await f.runway.snapshot(); XCTAssertEqual(snapshot.outstandingAcquisition,intent)
         let pulls = await fake.pulls; XCTAssertEqual(pulls.count,1)
@@ -257,7 +271,7 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
         try await f.runway.noteLocalSupplyChanged(scope: f.scope)
         // Inconsistent targets would throw Planner error if the stale gate did not run first.
         let inconsistent = AcquisitionTarget(id: f.target.id,connectorKind: .syndication,generation: 2,state: .enabled,checkpointRevision: 0,checkpoint: nil)!
-        do { _ = try await RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake])).run(intent,eligibleTargets: [f.target,inconsistent],resources: resources()); XCTFail("Expected stale intent") }
+        do { _ = try await settle(RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake])),intent,eligibleTargets: [f.target,inconsistent],resources: resources()); XCTFail("Expected stale intent") }
         catch { XCTAssertEqual(error as? RunwayAcquisitionCycleError,.staleIntent) }
         let pulls = await fake.pulls; XCTAssertTrue(pulls.isEmpty)
     }
@@ -265,7 +279,7 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
     // the snapshot and acknowledgement without a production synchronization hook.
     func test08CheckpointOnlyDoesNotReopenWalk() async throws {
         let f = try fixture(), intent = try await intent(f), fake = CycleConnector(.batch([],checkpoint()))
-        let outcome = try await RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake])).run(intent,eligibleTargets: [f.target],resources: resources())
+        let outcome = try await settle(RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake])),intent,eligibleTargets: [f.target],resources: resources())
         XCTAssertFalse(outcome.selectableSupplyChanged)
         let snapshot = await f.runway.snapshot(); XCTAssertNil(snapshot.outstandingAcquisition); XCTAssertTrue(snapshot.localSupplyExhausted)
         let action = try await f.runway.reconsider(resources: Self.localResources(),at: time(6)); XCTAssertEqual(action,.none)
@@ -273,14 +287,14 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
     func test09ExactReplayDoesNotReopenWalk() async throws {
         let f = try fixture(seedAnchor: true), before = try XCTUnwrap(f.candidates().first), intent = try await intent(f)
         let fake = CycleConnector(.batch([Self.observation(source: f.source,object: "anchor",time: 20)],nil))
-        let outcome = try await RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake])).run(intent,eligibleTargets: [f.target],resources: resources())
+        let outcome = try await settle(RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake])),intent,eligibleTargets: [f.target],resources: resources())
         XCTAssertFalse(outcome.selectableSupplyChanged); XCTAssertEqual(try f.candidates().map(\.originRevisionID),[before.originRevisionID])
         let snapshot = await f.runway.snapshot(); XCTAssertTrue(snapshot.localSupplyExhausted); XCTAssertNil(snapshot.outstandingAcquisition)
         let action = try await f.runway.reconsider(resources: Self.localResources(),at: time(6)); XCTAssertEqual(action,.none)
     }
     func test10ExecutionErrorAfterAckDoesNotRedemand() async throws {
         let f = try fixture(), intent = try await intent(f), fake = CycleConnector(.failure)
-        do { _ = try await RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake])).run(intent,eligibleTargets: [f.target],resources: resources()); XCTFail("Expected connector error") }
+        do { _ = try await settle(RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake])),intent,eligibleTargets: [f.target],resources: resources()); XCTFail("Expected connector error") }
         catch { XCTAssertEqual(error as? CycleConnector.Failure,.expected) }
         let snapshot = await f.runway.snapshot(); XCTAssertNil(snapshot.outstandingAcquisition)
         let action = try await f.runway.reconsider(resources: Self.localResources(),at: time(6)); XCTAssertEqual(action,.none)
@@ -290,7 +304,7 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
         let f = try fixture(), intent = try await intent(f)
         let second = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [f.source])
         let a = CycleConnector(.batch([Self.observation(source: f.source)],checkpoint())), b = CycleConnector(.failure)
-        do { _ = try await RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: a,second.id: b])).run(intent,eligibleTargets: [f.target,second],resources: resources(2)); XCTFail("Expected second error") }
+        do { _ = try await settle(RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: a,second.id: b])),intent,eligibleTargets: [f.target,second],resources: resources(2)); XCTFail("Expected second error") }
         catch { XCTAssertEqual(error as? CycleConnector.Failure,.expected) }
         XCTAssertEqual(try f.candidates().count,1); XCTAssertEqual(try f.authority.target(id: f.target.id)?.checkpointRevision,1)
         let snapshot = await f.runway.snapshot(); XCTAssertFalse(snapshot.localSupplyExhausted); XCTAssertNil(snapshot.outstandingAcquisition)
@@ -299,13 +313,16 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
     func test12ScopeSwitchDoesNotRollbackOrSignalUnrelatedScope() async throws {
         let f = try fixture(), intent = try await intent(f), fake = CycleConnector(), coordinator = f.coordinator([f.target.id: fake])
         let cycle = RunwayAcquisitionCycle(runway: f.runway,coordinator: coordinator)
-        let execution = Task { try await cycle.run(intent,eligibleTargets: [f.target],resources: resources()) }
+        let execution = Task { try await cycle.start(intent,eligibleTargets: [f.target],resources: resources()) }
         await fake.waitForPull()
         let b = RunwayScope(editionID: FeedEditionID(),contextKey: ContextKey(request: .source(SourceID())),editorialRevisionID: EditorialRevisionID())
         await f.runway.activate(b)
         let before = await f.runway.snapshot()
         let offered = await fake.offer(.batch([Self.observation(source: f.source)],checkpoint())); XCTAssertTrue(offered)
-        let outcome = try await execution.value; XCTAssertTrue(outcome.selectableSupplyChanged)
+        let start = try await execution.value
+        guard case .round(let round) = start else { return XCTFail("Expected an owned round") }
+        let results = try await round.completion.value
+        XCTAssertEqual(results.count,1); XCTAssertTrue(results[0].selectableSupplyChanged)
         XCTAssertEqual(try f.candidates().count,1)
         let after = await f.runway.snapshot(); XCTAssertEqual(after,before); XCTAssertEqual(after.scope,b)
     }
@@ -319,7 +336,7 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
             let action = try await f.runway.reconsider(resources: Self.localResources(),at: RunwayMonotonicTime(seconds: 6)!)
             guard case .runLocalSlice = action else { throw FixtureError.unexpectedAction }
         })
-        let results = try executed(await RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: a,second.id: b])).run(intent,eligibleTargets: [f.target,second],resources: resources(2)))
+        let results = try executed(try await settle(RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: a,second.id: b])),intent,eligibleTargets: [f.target,second],resources: resources(2)))
         XCTAssertEqual(results.map(\.targetID),[f.target.id,second.id]); XCTAssertTrue(results.allSatisfy(\.selectableSupplyChanged))
         let after = await f.runway.snapshot(); XCTAssertTrue(after.localSliceInFlight); XCTAssertTrue(after.pendingSupplyReset)
         XCTAssertEqual(try f.candidates().count,2)
@@ -333,21 +350,92 @@ final class RunwayAcquisitionCycleTests: XCTestCase {
             XCTAssertEqual(try f.candidates().map(\.headline),["A"])
             await journal.record("A settled"); await journal.record("B pull")
         })
-        let results = try executed(await RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: a,second.id: b])).run(intent,eligibleTargets: [f.target,second],resources: resources(2)))
+        let results = try executed(try await settle(RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: a,second.id: b])),intent,eligibleTargets: [f.target,second],resources: resources(2)))
         XCTAssertEqual(results.map(\.targetID),[f.target.id,second.id])
         let events = await journal.events; XCTAssertEqual(events,["A pull","A settled","B pull"])
     }
     func testDeactivationDuringExecutionKeepsCanonicalSupplyAndIgnoresOldNotification() async throws {
         let f = try fixture(), intent = try await intent(f), fake = CycleConnector()
         let cycle = RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake]))
-        let execution = Task { try await cycle.run(intent,eligibleTargets: [f.target],resources: resources()) }
+        let execution = Task { try await cycle.start(intent,eligibleTargets: [f.target],resources: resources()) }
         await fake.waitForPull()
         await f.runway.deactivate()
         let before = await f.runway.snapshot()
         let offered = await fake.offer(.batch([Self.observation(source: f.source)],checkpoint())); XCTAssertTrue(offered)
-        let outcome = try await execution.value; XCTAssertTrue(outcome.selectableSupplyChanged)
+        let start = try await execution.value
+        guard case .round(let round) = start else { return XCTFail("Expected an owned round") }
+        let results = try await round.completion.value
+        XCTAssertEqual(results.count,1); XCTAssertTrue(results[0].selectableSupplyChanged)
         XCTAssertEqual(try f.candidates().count,1)
         let after = await f.runway.snapshot(); XCTAssertNil(after.scope); XCTAssertEqual(after,before)
+    }
+    // P16: `start` is the production entry point. These cases pin, at the cycle level, what it must state on its
+    // own: the accepted plan and its durable results, a plan that only joins another owner's execution, and the
+    // per-result late fact while the round is still running.
+    func testStartAcceptedPlanStatesItsDurableResultsAndCompletion() async throws {
+        let f = try fixture(), intent = try await intent(f)
+        let fake = CycleConnector(.batch([Self.observation(source: f.source)],checkpoint()))
+        let cycle = RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: fake]))
+        let start = try await cycle.start(intent,eligibleTargets: [f.target],resources: resources())
+        guard case .round(let round) = start else { return XCTFail("Expected an owned round") }
+        let acknowledged = await f.runway.snapshot()
+        XCTAssertNil(acknowledged.outstandingAcquisition,"The plan is acknowledged before its first pull")
+        var streamed = round.results.makeAsyncIterator()
+        let first = await streamed.next()
+        XCTAssertEqual(first?.targetID,f.target.id); XCTAssertEqual(first?.selectableSupplyChanged,true)
+        let extra = await streamed.next()
+        XCTAssertNil(extra,"One durable result per planned item")
+        let results = try await round.completion.value
+        XCTAssertEqual(results.map(\.targetID),[f.target.id])
+        XCTAssertEqual(try f.candidates().count,1)
+        let settled = await f.runway.snapshot(); XCTAssertFalse(settled.localSupplyExhausted)
+    }
+    func testStartJoiningOnlyPlanStatesTheFactWithoutOwningTheExecution() async throws {
+        let f = try fixture(), fake = CycleConnector(), coordinator = f.coordinator([f.target.id: fake])
+        let bounds = AcquisitionWorkBounds(batchCapacity: 1,observationCapacityPerBatch: 8,byteCapacityPerBatch: 100)!
+        let running = Task { try await coordinator.execute(.start(target: f.target,bounds: bounds)) }
+        await fake.waitForPull()
+        let intent = try await intent(f)
+        let cycle = RunwayAcquisitionCycle(runway: f.runway,coordinator: coordinator)
+        let start = try await cycle.start(intent,eligibleTargets: [f.target],resources: resources())
+        guard case .joining = start else {
+            return XCTFail("A plan that only joins another owner's execution states the fact and returns")
+        }
+        let acknowledged = await f.runway.snapshot()
+        XCTAssertNil(acknowledged.outstandingAcquisition)
+        XCTAssertTrue(acknowledged.localSupplyExhausted,"The joiner owns no durable result to notify")
+        let pulls = await fake.pulls; XCTAssertEqual(pulls.count,1,"The joiner opens no second pull")
+        let offered = await fake.offer(.batch([Self.observation(source: f.source)],checkpoint())); XCTAssertTrue(offered)
+        let joined = try await running.value
+        XCTAssertEqual(joined.targetID,f.target.id)
+        let after = await f.runway.snapshot()
+        XCTAssertNil(after.outstandingAcquisition); XCTAssertTrue(after.localSupplyExhausted)
+    }
+    func testStartStatesEachSupplyChangingResultBeforeTheRoundSettles() async throws {
+        let f = try fixture(), intent = try await intent(f)
+        let second = try f.authority.register(id: AcquisitionTargetID(),connectorKind: .syndication, authorizedSources: [f.source])
+        let a = CycleConnector(.batch([Self.observation(source: f.source,object: "A")],checkpoint())), b = CycleConnector()
+        let (facts, factsContinuation) = AsyncStream<(AcquisitionTargetID, Bool)>.makeStream()
+        let cycle = RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: a,second.id: b]))
+        let start = try await cycle.start(intent,eligibleTargets: [f.target,second],resources: resources(2),
+            onDurableResult: { result, _ in factsContinuation.yield((result.targetID,result.selectableSupplyChanged)) })
+        guard case .round(let round) = start else { return XCTFail("Expected an owned round") }
+        var iterator = facts.makeAsyncIterator()
+        let first = await iterator.next()
+        XCTAssertEqual(first?.0,f.target.id,"The callback states each durable result as it settles")
+        XCTAssertEqual(first?.1,true)
+        // The first durable fact is already stated while the second target is still at its external boundary.
+        await b.waitForPull()
+        let pulled = await b.pulls; XCTAssertEqual(pulled.count,1)
+        let offered = await b.offer(.batch([Self.observation(source: f.source,object: "B")],checkpoint())); XCTAssertTrue(offered)
+        let results = try await round.completion.value
+        XCTAssertEqual(results.map(\.targetID),[f.target.id,second.id])
+        factsContinuation.finish()
+        let last = await iterator.next()
+        XCTAssertEqual(last?.0,second.id); XCTAssertEqual(last?.1,true)
+        let exhausted = await iterator.next()
+        XCTAssertNil(exhausted)
+        XCTAssertEqual(try f.candidates().count,2)
     }
 }
 
@@ -361,7 +449,7 @@ extension RunwayAcquisitionCycleTests {
             let bConnector = CycleConnector(.operational(.transport))
             let cConnector = CycleConnector(healthyFirst ? .operational(.remoteContent) : .batch([Self.observation(source: f.source)], checkpoint()))
             let cycle = RunwayAcquisitionCycle(runway: f.runway, coordinator: f.coordinator([f.target.id: aConnector, b.id: bConnector, c.id: cConnector]))
-            let outcome = try await cycle.run(intent, eligibleTargets: [f.target,b,c], resources: resources(3))
+            let outcome = try await settle(cycle, intent, eligibleTargets: [f.target,b,c], resources: resources(3))
             let results = try executed(outcome)
             XCTAssertEqual(results.map(\.targetID), [f.target.id,b.id,c.id])
             XCTAssertEqual(results[1].stop, .operationalFailure(.transport))
@@ -376,8 +464,8 @@ extension RunwayAcquisitionCycleTests {
         let f = try fixture(), intent = try await intent(f)
         let b = try f.authority.register(id: AcquisitionTargetID(), connectorKind: .syndication, authorizedSources: [f.source])
         let aConnector = CycleConnector(.cancelled), bConnector = CycleConnector(.failure)
-        let results = try executed(await RunwayAcquisitionCycle(runway: f.runway,
-            coordinator: f.coordinator([f.target.id:aConnector,b.id:bConnector])).run(intent, eligibleTargets:[f.target,b], resources:resources(2)))
+        let results = try executed(try await settle(RunwayAcquisitionCycle(runway: f.runway,
+            coordinator: f.coordinator([f.target.id:aConnector,b.id:bConnector])),intent, eligibleTargets:[f.target,b], resources:resources(2)))
         XCTAssertEqual(results.count,1); XCTAssertEqual(results[0].stop,.cancelled)
         let pulls = await bConnector.pulls; XCTAssertTrue(pulls.isEmpty)
     }
@@ -394,7 +482,7 @@ extension RunwayAcquisitionCycleTests {
             let bConnector = CycleConnector(.batch([Self.observation(source: f.source)],checkpoint()))
             let cConnector = CycleConnector(.finished)
             let cycle = RunwayAcquisitionCycle(runway: f.runway,coordinator: f.coordinator([f.target.id: aConnector,b.id: bConnector,c.id: cConnector]))
-            let outcome = try await cycle.run(intent,eligibleTargets: [f.target,b,c],resources: resources(3))
+            let outcome = try await settle(cycle,intent,eligibleTargets: [f.target,b,c],resources: resources(3))
             let results = try executed(outcome)
             XCTAssertEqual(results.map(\.targetID),[f.target.id,b.id,c.id])
             XCTAssertEqual(results[0].stop,.operationalFailure(category))

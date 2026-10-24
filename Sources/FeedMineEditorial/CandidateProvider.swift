@@ -20,6 +20,17 @@ public struct CandidateSupplyWindow: Hashable, Sendable {
     public let examinedCount: Int
     public let nextCursor: CandidateSupplyCursor?
     public let exhausted: Bool
+
+    /// A caller that composes one window out of several sources of candidates (the Runtime re-offers stories a
+    /// one-way walk passed) states the examined count and cursor of the walk that produced them, so progress stays
+    /// that walk's own fact and the composed candidates claim no position in it.
+    public init(candidates: [Candidate], examinedCount: Int, nextCursor: CandidateSupplyCursor?,
+        exhausted: Bool) {
+        self.candidates = candidates
+        self.examinedCount = examinedCount
+        self.nextCursor = nextCursor
+        self.exhausted = exhausted
+    }
 }
 
 public enum CandidateProviderError: Error, Equatable, Sendable {
@@ -81,10 +92,22 @@ public struct CandidateProvider: Sendable {
                 declaredBody: record.declaredBody, bodyObserved: record.bodyObserved)
         }.filter { eligibility.admits($0) }
         if case .search(let search) = plan.context.request {
-            let query = search.query.trimmingCharacters(in: .whitespacesAndNewlines)
-            candidates = candidates.filter { candidate in
-                [candidate.headline, candidate.summary].compactMap { $0 }.contains {
-                    $0.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX")) != nil
+            switch search.semantics {
+            case .legacyLiteral:
+                // The stored, pre-grammar meaning: one literal substring over headline or summary, exactly as it
+                // was always read. A legacy query is never reinterpreted by the new grammar.
+                let query = search.query.trimmingCharacters(in: .whitespacesAndNewlines)
+                candidates = candidates.filter { candidate in
+                    [candidate.headline, candidate.summary].compactMap { $0 }.contains {
+                        $0.range(of: query, options: [.caseInsensitive, .diacriticInsensitive],
+                            locale: Locale(identifier: "en_US_POSIX")) != nil
+                    }
+                }
+            case .termsV1:
+                // R14: the domain's own expression reads the same query the UI wrote.
+                guard let expression = search.expression else { candidates = []; break }
+                candidates = candidates.filter { candidate in
+                    expression.matches(fields: [candidate.headline, candidate.summary].compactMap { $0 })
                 }
             }
         }

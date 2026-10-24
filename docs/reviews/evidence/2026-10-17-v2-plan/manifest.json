@@ -1,0 +1,40 @@
+{
+  "base": "8fcfe37c6ff46b68b6754b25852bc1b47d825766",
+  "logs": [
+    {
+      "file": "feedmine-v2-baseline.log.gz",
+      "uncompressedSHA256": "e4fb3936bdf3f3cbde2791584ec7e20c1235ead3a76a648f91dd14aa504bc20b"
+    },
+    {
+      "file": "feedmine-v2-final-package.log.gz",
+      "uncompressedSHA256": "f6e0e9ffed13416b568718d23fbf9e4c05341942e52fea555edc290485a3f451"
+    },
+    {
+      "file": "feedmine-v2-membership-final.log.gz",
+      "uncompressedSHA256": "22151b2f2da98aee90ee91c67e8bad701b009f6fff58a94ec4dadad4838e2a97"
+    },
+    {
+      "file": "feedmine-v2-t1-composition.log.gz",
+      "uncompressedSHA256": "0426372b71b3747d1e14b37f0a3694d8468302bcd9a7887aad5d43eaa4972f55"
+    },
+    {
+      "file": "feedmine-v2-pristine-failures.log.gz",
+      "uncompressedSHA256": "23075ca33471028b5877f9777b6b2696c44f61b13cb576d24570babe14641000"
+    },
+    {
+      "file": "feedmine-v2-lifecycle-final.log.gz",
+      "uncompressedSHA256": "d8915e219bd722d83f38264b47f1386cc76093a4593263bc70401ced695c0ff8"
+    },
+    {
+      "file": "feedmine-v2-filter-en.log.gz",
+      "uncompressedSHA256": "ce6521dd270c1ab8de17ad0a94c39588df73f61c044fa9b31b466b4f273f74ed"
+    }
+  ],
+  "nativeResultBundles": [
+    "/tmp/feedmine-v2-t1-composition.xcresult",
+    "/tmp/feedmine-v2-pristine-failures.xcresult",
+    "/tmp/feedmine-v2-lifecycle-final.xcresult",
+    "/tmp/feedmine-v2-filter-en.xcresult"
+  ],
+  "productGates": "NOT_CERTIFIED"
+}

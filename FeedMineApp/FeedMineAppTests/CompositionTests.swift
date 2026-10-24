@@ -4,7 +4,7 @@ import UIKit
 import SwiftUI
 import Synchronization
 import CryptoKit
-import FeedMinePersistence
+@testable import FeedMinePersistence
 import FeedMineDomain
 import FeedMineRuntime
 import FeedMineUI
@@ -267,6 +267,12 @@ final class DiscoveryGate: @unchecked Sendable {
         }
     }
 
+    /// A read that has already arrived, or nil. It never waits: a gated read whose continuation is parked can
+    /// only be resumed by an answer, so a test that is done waiting must be able to walk away from it.
+    func takeArrivedRead() -> Read? {
+        lock.withLock { arrived.isEmpty ? nil : arrived.removeFirst() }
+    }
+
     /// Answers one read, which resumes the composition at exactly that point.
     func answer(_ read: Read, entries: [LegacyCatalogEntry],
         subjects: [SourceID: AppComposition.EditorialSubject]) {
@@ -274,16 +280,158 @@ final class DiscoveryGate: @unchecked Sendable {
     }
 }
 
+/// R01's controlled clock: the instant the reader produced each fact is a value the test owns, so coalescing can be
+/// proven **not** to turn the drain's own latency into reading velocity. Production passes the process uptime.
+final class IngressClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seconds: Double
+    /// Every read advances the clock a little, like the process uptime it replaces: a controller that measures a
+    /// slice's latency refuses a zero one, so a frozen clock would fail the launch for the wrong reason. The test
+    /// still owns the **large** intervals (`advance`), which is what the consumption arithmetic reads.
+    private let tick: Double
+    init(seconds: Double = 1_000, tick: Double = 0.001) { self.seconds = seconds; self.tick = tick }
+    func next() -> RunwayMonotonicTime {
+        lock.lock(); defer { lock.unlock() }
+        seconds += tick
+        return RunwayMonotonicTime(seconds: seconds)!
+    }
+    func advance(_ delta: Double) { lock.lock(); defer { lock.unlock() }; seconds += delta }
+}
+
+/// R02's controlled storage seam: every durable bookmark read arrives here and the test decides **when** and
+/// **what** it answers, so "installation performs no read" and "an older preparation cannot undo a confirmed
+/// toggle" are staged without sleeps or retries.
+final class BookmarkReadGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending: [CheckedContinuation<Set<PublicationCardID>, Never>] = []
+    private var total = 0
+
+    var read: @Sendable () async throws -> Set<PublicationCardID> {
+        { [self] in
+            await withCheckedContinuation { (continuation: CheckedContinuation<Set<PublicationCardID>, Never>) in
+                lock.lock(); pending.append(continuation); total += 1; lock.unlock()
+            }
+        }
+    }
+
+    /// How many reads the product requested so far.
+    var arrivals: Int { lock.lock(); defer { lock.unlock() }; return total }
+    /// How many are waiting for an answer.
+    var unanswered: Int { lock.lock(); defer { lock.unlock() }; return pending.count }
+
+    func answer(_ ids: Set<PublicationCardID>) {
+        lock.lock()
+        let next = pending.isEmpty ? nil : pending.removeFirst()
+        lock.unlock()
+        next?.resume(returning: ids)
+    }
+}
+
 @MainActor
 final class CompositionTests: XCTestCase {
 
     private func root(requestTimeout: TimeInterval = 60, directory: URL? = nil,
-        feeds: [TrustedFeed] = TrustedFeed.development) -> AppComposition {
+        feeds: [TrustedFeed] = TrustedFeed.development,
+        clock: IngressClock? = nil,
+        bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil) -> AppComposition {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureTransport.self]
         configuration.timeoutIntervalForRequest = requestTimeout
+        let now: @Sendable () -> RunwayMonotonicTime
+        if let clock { now = { clock.next() } }
+        else { now = { .init(seconds: ProcessInfo.processInfo.systemUptime)! } }
         return AppComposition(directory: directory ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
-            feeds: feeds, transportConfiguration: configuration)
+            feeds: feeds, transportConfiguration: configuration, monotonicNow: now,
+            bookmarkRead: bookmarkRead)
+    }
+
+    /// T1: exercise the real lifecycle and context composition around the existing owner.
+    func testForegroundPreservesLearnedConsumptionAndContextChangeStartsFresh() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 64 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let root = root()
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let initial = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertGreaterThan(initial.window.items.count, 3)
+        await association.viewport(.init(anchor: .init(cardID: initial.window.items[1].id, placement: .top)),
+            activity: .forward)
+        await association.viewport(.init(anchor: .init(cardID: initial.window.items[3].id, placement: .top)),
+            activity: .forward)
+        let runway = await association.driver.runway
+        let learned = await runway.snapshot()
+        XCTAssertGreaterThan(try XCTUnwrap(learned.consumption.cardsPerSecond), 0)
+
+        await root.inactive()
+        await root.background()
+        await root.foreground()
+        XCTAssertTrue(root.association === association)
+        let resumed = await runway.snapshot()
+        XCTAssertEqual(resumed.scope, learned.scope)
+        XCTAssertEqual(resumed.consumption.cardsPerSecond, learned.consumption.cardsPerSecond)
+
+        try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+        let replacement = try XCTUnwrap(root.association)
+        XCTAssertFalse(replacement === association)
+        let replacementRunway = await replacement.driver.runway
+        let fresh = await replacementRunway.snapshot()
+        XCTAssertNotEqual(fresh.scope, learned.scope)
+        XCTAssertNil(fresh.consumption.cardsPerSecond)
+        await root.inactive()
+        await replacement.close()
+    }
+
+    /// A real SQLite refusal installed for one test; no injected seam and no second architecture.
+    private func trigger(_ statements: [String], in directory: URL) throws {
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        try database.write { db in for statement in statements { try db.execute(sql: statement) } }
+    }
+
+    private func dropTriggers(_ names: [String], in directory: URL) throws {
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        try database.write { db in for name in names { try db.execute(sql: "DROP TRIGGER " + name) } }
+    }
+
+    /// A canonical occurrence with no media candidates: enough to publish a card that declares media, so the
+    /// saved preparation reaches its failure outcome without any network.
+    private func admitOccurrence(in database: RuntimeDatabase, headline: String = "H",
+        primaryLink: URL? = nil) throws -> (OriginRecordID, OriginRevisionID) {
+        let origin = OriginRecordID(), revision = OriginRevisionID()
+        let date = Date(timeIntervalSince1970: 100)
+        try ContentStore(database: database).commitCanonicalChange(.init(recordID: origin,
+            externalObjectIdentity: .init(connectorKind: .syndication, namespace: "media",
+                value: UUID().uuidString, role: .object),
+            revision: OriginRevision(id: revision, originRecordID: origin, externalVersionIdentity: nil,
+                headline: headline, summary: nil, bodyText: nil, authoredAt: date, modifiedAt: nil,
+                observedAt: date, language: nil, primaryLink: primaryLink, searchProjection: nil,
+                providerID: nil),
+            mediaCandidates: [], availability: .available, observedAt: date, expectedCurrent: .none,
+            currentUpdate: .useSuppliedRevision,
+            membershipMutations: [.upsert(sourceID: SourceID(), kind: .direct, observedAt: date)]))
+        return (origin, revision)
+    }
+
+    private func publishOccurrence(in database: RuntimeDatabase, origin: OriginRecordID,
+        revision: OriginRevisionID, mediaKey: String) throws -> PublicationStore.CardRecord {
+        let card = PublicationStore.CardRecord(id: PublicationCardID(), originRecordID: origin,
+            originRevisionID: revision, sourceID: nil, providerID: nil, sourceDisplayName: "Fonte",
+            providerDisplayName: nil, contentEntityID: nil, contentClusterID: nil, title: "Mídia salva",
+            primaryText: " texto ", timestampValue: nil, timestampKind: nil, mediaKey: mediaKey,
+            mediaPixelWidth: 2, mediaPixelHeight: 3, mediaMimeType: nil, renderLayout: "thumbnail",
+            renderMediaAspectRatio: 2.0 / 3.0, primaryActionKind: "externalURL",
+            primaryActionReference: "https://example.test/artigo")
+        let editorial = EditorialRevision(id: EditorialRevisionID(), contextKey: ContextKey(request: .main),
+            catalogGeneration: .init(rawValue: 1), userSelectionVersion: PolicyVersion(rawValue: 1),
+            eligibilityPolicyVersion: PolicyVersion(rawValue: 2), scoringPolicyVersion: PolicyVersion(rawValue: 1),
+            sequencingPolicyVersion: PolicyVersion(rawValue: 2), exposurePolicyVersion: PolicyVersion(rawValue: 2),
+            selectionSchemaVersion: .init(rawValue: 1))
+        let edition = PublicationStore.EditionRecord(id: FeedEditionID(), editorialRevision: editorial,
+            publicationSchemaVersion: 1, selectionSeed: 1, createdAt: Date(timeIntervalSince1970: 10))
+        let segment = PublicationStore.SegmentRecord(id: FeedSegmentID(), editionID: edition.id, ordinal: 0,
+            segmentSeed: 1, publicationSchemaVersion: 1, createdAt: Date(timeIntervalSince1970: 11),
+            cardIDs: [card.id])
+        try PublicationStore(database: database).createEdition(edition, firstSegment: segment, cards: [card])
+        return card
     }
 
     private func launched() async throws -> (AppComposition, FeedAssociation) {
@@ -302,11 +450,12 @@ final class CompositionTests: XCTestCase {
     /// `RunwayActivity.admitsForwardContent` accepts, so `.forward` observes the position and never extends
     /// the admitted list. The anchor is the admitted tail, so the append lands after it.
     private func produceAndAdmit(_ association: FeedAssociation) async throws {
-        _ = try await association.driver.drive(resources: FeedAssociation.resources)
+        _ = try await association.driver.drive(resources: association.resources)
         guard let anchor = association.store.state.presentation?.window.items.last else { return }
         await association.viewport(.init(anchor: .init(cardID: anchor.id, placement: .top)), activity: .explicitTailApproach)
     }
 
+    #if DEBUG
     func testDevelopmentProxyBlocksActualRSSTransport() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         DevelopmentNetworkBlock.apply(to: configuration)
@@ -323,6 +472,7 @@ final class CompositionTests: XCTestCase {
             XCTAssertEqual(failure.code, 310, "The closed HTTPS proxy must refuse the real connection")
         }
     }
+    #endif
 
     func testEmptyLaunchRecoversAtForegroundAfterCooldownWithoutReplacingAssociation() async throws {
         FixtureTransport.rejecting.withLock { $0 = true }
@@ -463,12 +613,20 @@ final class CompositionTests: XCTestCase {
     /// janela antiga levava para se esgotar, **nada** cresce a janela enquanto nada publica — nenhum caminho cresce a
     /// janela por tempo decorrido.
     ///
-    /// O que ele faz é o caminho do próprio produto: libera a **segunda publicação** na pista do runway por
-    /// `driver.activateCurrentPresentation` — a mesma ativação que `launch()` e um foreground fazem, sem o
-    /// `growAdmittedWindowIfPublished()` que os acompanha e sem chamar `viewport` nem `foreground`, os dois outros
-    /// chamadores de `admitPresentation(.publishedGrowth)`. O transporte controlado serve dois itens por fonte antes
-    /// da espera e vinte e quatro depois, então a primeira publicação não enche a janela (4 cartas de 17 possíveis,
-    /// pelo teto congelado) e a segunda publica cartas novas na reserva da mesma edição.
+    /// O que ele faz é o caminho do próprio produto: libera a **segunda publicação** por
+    /// `driver.submitViewport(activity: .explicitTailApproach)` — a oportunidade que o leitor oferece ao chegar à
+    /// cauda admitida e pedir mais — na mesma chamada que a associação faz (`FeedPresentationHandoff.submitViewport`)
+    /// e **sem** o `growAdmittedWindowIfPublished()` que a associação executa depois dela. É essa omissão que separa
+    /// as duas metades: as cartas novas só podem aparecer pelo recibo do segmento que o dreno entrega, e o caso
+    /// afirma que a janela ainda era a antiga **no instante em que o recibo chegou**.
+    ///
+    /// A ativação da pista (`activateCurrentPresentation`) não serve como instrumento, e a medição de 2026-10-17
+    /// explica por quê: ela reenvia a posição como `stationary`, e a medição seguinte registra **0 cartas/s**; com
+    /// taxa medida zero e nenhum sinal de cauda, `RunwayPolicy` responde `healthy` e a pista corretamente **não**
+    /// repõe nada — o leitor está parado e a reserva de 3 cartas diante dele não é um déficit. O transporte
+    /// controlado serve dois itens por fonte antes da espera e vinte e quatro depois, então a primeira publicação
+    /// não enche a janela (4 cartas de 17 possíveis, pelo teto congelado) e a segunda publica cartas novas na
+    /// reserva da mesma edição.
     ///
     /// Estratégia de espera, declarada: `Task.sleep` **só** para atravessar a janela antiga, que é o objeto do caso,
     /// e uma observação limitada a 3,0 s (a `waitUntil` deste arquivo) para o valor admitido mudar — nenhum timer
@@ -511,21 +669,69 @@ final class CompositionTests: XCTestCase {
             "premissa: com o transporte saudável não há prazo de retry local para disparar um foreground() na medida")
         XCTAssertNil(acquisitionResumeDeadline, "premissa: nem uma aquisição adiada para retomar")
 
-        // A segunda publicação: mais itens por fonte e a ativação da pista — sem viewport e sem foreground.
-        FixtureTransport.feedItemCount.withLock { $0 = 24 }
-        _ = try await association.driver.activateCurrentPresentation(resources: FeedAssociation.resources)
+        /// O que o pool canônico já admitiu — a resposta do transporte vira suprimento aqui, antes de publicar.
+        func admittedCandidates() throws -> Int {
+            try ContentStore(database: association.database)
+                .candidateWindow(sourceID: nil, after: nil, examinedCapacity: 500).records.count
+        }
+        func interceptedRequests() -> [String] {
+            FixtureTransport.requests.withLock { $0.filter { $0.contains("bbci.co.uk") } }
+        }
+        let candidatesBefore = try admittedCandidates()
+        XCTAssertEqual(candidatesBefore, 4,
+            "premissa: o transporte serviu dois itens por fonte e os quatro candidatos estão no pool canônico")
 
+        // O recibo, retido no destinatário: é ele o fato medido. O que a janela valia **na chegada** do recibo
+        // separa o crescimento causado por ele de um crescimento anterior.
+        var receipts: [PublicationReceipt] = []
+        var admittedWhenReceiptArrived: [Int] = []
+        let recipient = association.publicationRelay.receive
+        association.publicationRelay.receive = { receipt in
+            receipts.append(receipt)
+            admittedWhenReceiptArrived.append(association.store.state.presentation?.window.items.count ?? -1)
+            await recipient?(receipt)
+        }
+
+        // A segunda publicação: mais itens por fonte e a oportunidade de cauda do leitor, pela mesma chamada do
+        // driver que a associação faz — e sem o `growAdmittedWindowIfPublished()` que a acompanha.
+        let requestsBefore = interceptedRequests()
+        FixtureTransport.feedItemCount.withLock { $0 = 24 }
+        _ = try await association.driver.submitViewport(
+            .init(anchor: .init(cardID: anchor, placement: .top)), activity: .explicitTailApproach,
+            resources: association.resources)
+
+        // (1) A segunda resposta é outra: as fontes foram consultadas de novo, depois da resposta de dois itens.
+        // Quantas vezes é do dreno, não do caso — o que a premissa exige é que a segunda resposta tenha sido
+        // buscada, e o pool abaixo é a prova de que ela trouxe suprimento.
+        XCTAssertGreaterThan(interceptedRequests().count, requestsBefore.count,
+            "premissa: a oportunidade de cauda tem de consultar as fontes depois da resposta de dois itens")
+        // (2) Os candidatos novos foram admitidos ao pool canônico antes de qualquer carta publicada.
+        XCTAssertGreaterThan(try admittedCandidates(), candidatesBefore,
+            "premissa: a segunda resposta tinha de trazer candidatos novos, e eles foram admitidos")
+        // (3) A publicação concluiu: o segmento existe e o recibo chegou ao destinatário.
         let reservedAfter = try reservedAhead()
         XCTAssertGreaterThan(reservedAfter, reservedBefore,
             "premissa: a segunda publicação tem de chegar à reserva da edição \(editionID.rawValue.uuidString): "
                 + "cartas além da âncora \(reservedBefore) -> \(reservedAfter). Esta falha é a premissa, não o defeito do R6-E")
-
+        XCTAssertGreaterThan(try publication.segments(editionID: editionID).count, 1,
+            "premissa: a segunda publicação tem de existir como segmento durável antes da asserção visual")
+        XCTAssertFalse(receipts.isEmpty,
+            "premissa: o recibo da segunda publicação tem de chegar ao destinatário da edição vigente")
+        XCTAssertEqual(Set(receipts.map(\.editionID)), [editionID],
+            "premissa: todos os recibos da medida identificam a edição vigente")
+        // (4) O crescimento segue o recibo: o **primeiro** recibo encontrou a janela ainda antiga, e foi a entrega
+        // dele que a fez crescer. Um crescimento anterior à publicação tornaria esta lista diferente de `before`.
+        XCTAssertEqual(admittedWhenReceiptArrived.first, before.count,
+            "o crescimento não pode anteceder o recibo — o primeiro recibo tinha de encontrar a janela antiga, "
+                + "e encontrou \(String(describing: admittedWhenReceiptArrived.first)) cartas")
         _ = await Self.waitUntil(3) { admitted().count > before.count }
         XCTAssertGreaterThan(admitted().count, before.count,
             "uma publicação concluída depois da janela antiga (6,0 s) tem de crescer a janela admitida sem gesto: "
                 + "a reserva foi de \(reservedBefore) para \(reservedAfter) cartas além da âncora e a janela admitida "
                 + "ficou em \(admitted().count) cartas (antes: \(before.count), teto: \(ceiling)) — "
                 + root.diagnosticsForTheWiringTest(association))
+        XCTAssertEqual(Array(admitted().prefix(before.count)), before,
+            "o crescimento só anexa cartas já publicadas — a lista admitida anterior é preservada, na ordem")
         await association.close()
     }
 
@@ -543,7 +749,7 @@ final class CompositionTests: XCTestCase {
     /// em ordem:
     ///
     /// 1. **Retém** o recibo real de uma segunda publicação da edição que o leitor vai deixar (o mecanismo da
-    ///    R6-E: mais itens por fonte e a ativação da pista, que é o que conclui a fatia no dreno). É a suspensão
+    ///    R6-E: mais itens por fonte e a oportunidade de cauda do leitor, que é o que conclui a fatia no dreno). É a suspensão
     ///    nomeada, instanciada: a fatia concluiu, o recibo existe, e ainda não chegou ao host.
     /// 2. **Move o leitor** por um caminho do produto — `selectContext` — de modo que a edição acima fica superada
     ///    (a associação que a carregava está retirada) e a vigente é outra.
@@ -575,7 +781,10 @@ final class CompositionTests: XCTestCase {
         var leftBehind: [PublicationReceipt] = []
         superseded.publicationRelay.receive = { leftBehind.append($0) }
         FixtureTransport.feedItemCount.withLock { $0 = 8 }
-        _ = try await superseded.driver.activateCurrentPresentation(resources: FeedAssociation.resources)
+        let supersededAnchor = try XCTUnwrap(superseded.store.state.presentation).window.anchor.cardID
+        _ = try await superseded.driver.submitViewport(
+            .init(anchor: .init(cardID: supersededAnchor, placement: .top)), activity: .explicitTailApproach,
+            resources: superseded.resources)
         let stale = try XCTUnwrap(leftBehind.first,
             "premissa: a segunda publicação da edição que o leitor vai deixar tem de entregar um recibo")
         XCTAssertTrue(leftBehind.allSatisfy { $0.editionID == supersededEdition },
@@ -614,7 +823,9 @@ final class CompositionTests: XCTestCase {
         var currentEditionReceipts: [PublicationReceipt] = []
         live.publicationRelay.receive = { currentEditionReceipts.append($0) }
         FixtureTransport.feedItemCount.withLock { $0 = 24 }
-        _ = try await live.driver.activateCurrentPresentation(resources: FeedAssociation.resources)
+        _ = try await live.driver.submitViewport(
+            .init(anchor: .init(cardID: anchor, placement: .top)), activity: .explicitTailApproach,
+            resources: live.resources)
         XCTAssertFalse(currentEditionReceipts.isEmpty,
             "premissa: a segunda publicação da edição vigente tem de concluir e entregar um recibo")
         XCTAssertTrue(currentEditionReceipts.allSatisfy { $0.editionID == liveEdition },
@@ -645,6 +856,1090 @@ final class CompositionTests: XCTestCase {
                 + "\(reservedAfter) cartas além da âncora e a janela admitida ficou em \(admitted().count) cartas "
                 + "(antes: \(before.count), teto: \(ceiling)) — \(root.diagnosticsForTheWiringTest(live))")
         await live.close()
+    }
+
+    // MARK: - R20: atomic catalogue activation
+
+    /// The durable identity and the opened session are one outcome. A rebuild that throws after the key was
+    /// written must not leave the reader on a context whose session never opened: the previous identity returns in
+    /// memory and in the preferences, and the caller still receives the failure.
+    func testFailedActivationLeavesThePreviousContextAndKeyIntact() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 6 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        let before = root.currentContextKey
+        func durableKey() throws -> ContextKey? {
+            try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+                .load()?.activeContextKey
+        }
+        XCTAssertEqual(try durableKey(), before, "premissa: a chave da base está durável")
+
+        let search = try XCTUnwrap(SearchContext(query: "clima"))
+        let victim = ContextKey(request: .search(search))
+        struct ActivationRefused: Error {}
+        root.beforeBuildingSession = { key in if key == victim { throw ActivationRefused() } }
+        do {
+            try await root.activateSavedPreset(victim)
+            XCTFail("uma transição que não abriu a sessão não pode se declarar concluída")
+        } catch is ActivationRefused {}
+
+        XCTAssertEqual(root.currentContextKey, before, "a identidade anterior volta em memória")
+        XCTAssertEqual(try durableKey(), before, "e a chave durável volta com ela")
+        let restored = try XCTUnwrap(root.association)
+        XCTAssertEqual(restored.contextKey, before, "a sessão anterior foi reaberta, não deixada em nil")
+        XCTAssertNil(root.startupFailure)
+
+        // The seam is a failure injector only: with it clear, the same transition succeeds.
+        root.beforeBuildingSession = nil
+        try await root.activateSavedPreset(victim)
+        XCTAssertEqual(root.currentContextKey, victim)
+        XCTAssertEqual(try XCTUnwrap(root.association).contextKey, victim)
+        await root.association?.close()
+    }
+
+    // MARK: - R19: honest source and site actions
+
+    /// "Ver fonte" opens the source's **internal context**; it never presents the source's website, and the
+    /// reader's position in the previous context is restored by its own checkpoint on the way back.
+    func testViewSourceOpensInternalSourceContext() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let presentation = try XCTUnwrap(association.store.state.presentation)
+        let card = try XCTUnwrap(presentation.window.items.first?.id)
+        let record = try XCTUnwrap(PublicationStore(database: association.database).card(id: card))
+        let sourceID = try XCTUnwrap(record.sourceID, "premissa: a carta declara a fonte")
+        let origin = root.currentContextKey
+        let anchor = presentation.window.anchor
+        var opened: [URL] = []
+        root.onExternalURL = { opened.append($0) }
+
+        association.perform(.viewSource, cardID: card)
+        let switched = await Self.waitUntil(5) {
+            if case .source(sourceID) = root.currentContextKey.request { return true }
+            return false
+        }
+        XCTAssertTrue(switched, "Ver fonte abre o contexto interno da fonte")
+        XCTAssertTrue(opened.isEmpty, "Ver fonte não abre o site da fonte")
+
+        // Back to the previous context: its own checkpoint restores the promised position.
+        try await root.selectContext(origin.request)
+        let back = try XCTUnwrap(root.association)
+        XCTAssertEqual(back.store.state.presentation?.window.anchor, anchor)
+        XCTAssertEqual(back.store.state.presentation?.editionID, presentation.editionID)
+        await back.close()
+    }
+
+    /// The explicit website action is the card's declared link — a different action from "Ver fonte".
+    func testExplicitWebsiteActionOpensDeclaredURL() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let card = try XCTUnwrap(association.store.state.presentation?.window.items.first?.id)
+        let record = try XCTUnwrap(PublicationStore(database: association.database).card(id: card))
+        let declared = try XCTUnwrap(record.primaryActionReference.flatMap(URL.init(string:)))
+        var opened: [URL] = []
+        root.onExternalURL = { opened.append($0) }
+        association.perform(.open, cardID: card)
+        let delivered = await Self.waitUntil(5) { !opened.isEmpty }
+        XCTAssertTrue(delivered)
+        XCTAssertEqual(opened, [declared], "a ação de site abre exatamente o link declarado")
+        await association.close()
+    }
+
+    // MARK: - R18: first experience
+
+    /// A refused welcome write must not claim the reader has met the app: the flag is the only durable fact that
+    /// closes the first-run gate, and a later launch reads it.
+    func testWelcomePersistenceFailureDoesNotClaimCompletedOnboarding() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 4 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        XCTAssertTrue(root.needsOnboarding, "premissa: uma instalação nova ainda não viu o app")
+
+        try trigger(["""
+            CREATE TRIGGER welcome_boundary_reject_settings
+            BEFORE UPDATE ON reader_preferences
+            WHEN NEW.settings IS NOT OLD.settings
+            BEGIN SELECT RAISE(ABORT, 'welcome boundary: settings write refused'); END;
+            """], in: directory)
+        XCTAssertFalse(root.completeOnboarding(), "a recusa tem de ser devolvida ao chamador")
+        XCTAssertTrue(root.needsOnboarding, "a primeira execução não pode ser declarada concluída sem o registro")
+
+        try dropTriggers(["welcome_boundary_reject_settings"], in: directory)
+        XCTAssertTrue(root.completeOnboarding())
+        XCTAssertFalse(root.needsOnboarding)
+        // A later launch reads the durable flag, not this process's memory.
+        let relaunched = self.root(directory: directory)
+        XCTAssertFalse(relaunched.needsOnboarding)
+    }
+
+    // MARK: - R16: unified local search scopes
+
+    /// Each scope returns only its own real result kinds, computed from the authorities that own them: sources from
+    /// the catalogue, saved occurrences from the reader's bookmarks, articles from canonical local content. A
+    /// scope never presents results it did not query.
+    func testSearchScopesReturnOnlyTheirRealResultKinds() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let card = try XCTUnwrap(association.store.state.presentation?.window.items.first?.id)
+        try PublicationStore(database: association.database).toggleBookmark(cardID: card,
+            in: ReaderBookmarkList.defaultID, at: Date())
+
+        let contentsValue = await root.unifiedSearch("Published", scope: .contents, token: 1)
+        let contents = try XCTUnwrap(contentsValue)
+        XCTAssertTrue(contents.sources.isEmpty, "conteúdo não devolve fontes")
+        XCTAssertTrue(contents.all.allSatisfy { $0.kind == .saved || $0.kind == .article },
+            "só os tipos reais do escopo de conteúdo")
+        XCTAssertTrue(contents.saved.contains { $0.destination == .savedCard(card) },
+            "o salvo aparece com a ocorrência real")
+        XCTAssertFalse(contents.articles.isEmpty, "o artigo local aparece")
+
+        let sourcesValue = await root.unifiedSearch("Published", scope: .sources, token: 2)
+        let sources = try XCTUnwrap(sourcesValue)
+        XCTAssertTrue(sources.saved.isEmpty && sources.articles.isEmpty,
+            "o escopo de fontes não devolve conteúdo")
+        XCTAssertTrue(sources.all.allSatisfy { $0.kind == .source })
+
+        let bothValue = await root.unifiedSearch("Published", scope: .both, token: 3)
+        let both = try XCTUnwrap(bothValue)
+        var expected: Set<ReaderSearchResultKind> = [.saved, .article]
+        if !both.sources.isEmpty { expected.insert(.source) }
+        XCTAssertEqual(Set(both.all.map(\.kind)), expected)
+        await association.close()
+    }
+
+    /// A suspended completion for an older term/scope cannot replace a newer search at the surface.
+    func testStaleSearchCompletionCannotReplaceNewScope() async throws {
+        let store = ReaderSearchResultsStore()
+        let old = store.begin()
+        let current = store.begin()
+        let stale = ReaderSearchResults(query: "old", scope: .sources, token: old,
+            sources: [ReaderSearchResult(id: "s", kind: .source, title: "velho", subtitle: nil,
+                destination: .source(principal: "x", sourceID: nil))], saved: [], articles: [])
+        XCTAssertFalse(store.apply(stale), "uma conclusão antiga não substitui a busca nova")
+        XCTAssertNil(store.results)
+        let fresh = ReaderSearchResults(query: "new", scope: .contents, token: current,
+            sources: [], saved: [], articles: [ReaderSearchResult(id: "a", kind: .article, title: "novo",
+                subtitle: nil, destination: .article(cardID: nil, originRecordID: OriginRecordID()))])
+        XCTAssertTrue(store.apply(fresh))
+        XCTAssertEqual(store.results?.query, "new")
+        XCTAssertEqual(store.results?.scope, .contents)
+    }
+
+    /// A saved search states the expression and the scope in its durable key; reopening it offline runs the same
+    /// search over local authorities (no network is consulted by `unifiedSearch`).
+    func testSavedSearchReopensWithSameExpressionAndScopeOffline() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 30 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let expression = "fixture -19"
+        let search = try XCTUnwrap(SearchContext(query: expression))
+        let key = ContextKey(request: .search(search), searchScope: .contents)
+        let json = try XCTUnwrap(key.canonicalJSON())
+        let reopened = try XCTUnwrap(ContextKey.fromCanonicalJSON(json))
+        XCTAssertEqual(reopened, key, "a expressão e o escopo voltam idênticos do registro durável")
+        XCTAssertEqual(reopened.request, .search(search))
+        XCTAssertEqual(reopened.searchScope, .contents)
+
+        // Offline: the local authorities answer; no request is made by the search itself. The expression the
+        // durable key carries is the one executed — an existing test round-tripped the negative but searched only
+        // the positive term, so the exclusion was never proven end to end.
+        let before = FixtureTransport.requests.withLock { $0.count }
+        let resultsValue = await root.unifiedSearch(expression, scope: .contents, token: 1)
+        let results = try XCTUnwrap(resultsValue)
+        XCTAssertEqual(FixtureTransport.requests.withLock { $0.count }, before,
+            "a busca local não faz aquisição")
+        XCTAssertFalse(results.articles.isEmpty, "o conteúdo local responde offline")
+        XCTAssertTrue(results.articles.contains { $0.title.contains("Published fixture 11") },
+            "o termo positivo encontra os artigos; títulos \(results.articles.prefix(6).map(\.title))")
+        XCTAssertFalse(results.articles.contains { $0.title.contains("Published fixture 19") },
+            "o termo negado exclui o artigo a que se refere")
+        await association.close()
+    }
+
+    /// P07/A7: a matching article beyond the first 400-candidate window is reachable through the continuation the
+    /// result states. The first page is not presented as the whole universe.
+    func testLocalMatchBeyondFirst400IsReachable() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let store = ContentStore(database: database)
+        // The needle is the **oldest** occurrence, so the newest-first 400-row window does not contain it.
+        for index in 0..<450 {
+            let date = Date(timeIntervalSince1970: Double(index) + 1)
+            let origin = OriginRecordID(), revision = OriginRevisionID()
+            try store.commitCanonicalChange(.init(recordID: origin,
+                externalObjectIdentity: .init(connectorKind: .syndication, namespace: "p07",
+                    value: UUID().uuidString, role: .object),
+                revision: OriginRevision(id: revision, originRecordID: origin, externalVersionIdentity: nil,
+                    headline: index == 0 ? "needle story" : "filler \(index)", summary: nil, bodyText: nil,
+                    authoredAt: date, modifiedAt: nil, observedAt: date, language: nil, primaryLink: nil,
+                    searchProjection: nil, providerID: nil),
+                mediaCandidates: [], availability: .available, observedAt: date,
+                expectedCurrent: .none, currentUpdate: .useSuppliedRevision,
+                membershipMutations: [.upsert(sourceID: SourceID(), kind: .direct, observedAt: date)]))
+        }
+        let expression = try XCTUnwrap(SearchExpression(query: "needle"))
+        let first = await ReaderLocalSearch.run(expression: expression, scope: .contents, token: 1,
+            database: database, catalogueURL: nil, feeds: [])
+        XCTAssertTrue(first.articles.isEmpty, "a primeira janela não contém o resultado antigo")
+        let continuation = try XCTUnwrap(first.articleContinuation,
+            "a janela truncada declara a continuação em vez de um universo completo")
+        let second = await ReaderLocalSearch.run(expression: expression, scope: .contents, token: 2,
+            database: database, catalogueURL: nil, feeds: [], articleAfter: continuation)
+        XCTAssertEqual(second.articles.count, 1)
+        XCTAssertEqual(second.articles.first?.title, "needle story")
+    }
+
+    /// P07/E07: the **host's** continuation serves the next article page. The test above proves the reader
+    /// (`ReaderLocalSearch.run(articleAfter:)`); this one goes through `AppComposition.unifiedSearch(articleAfter:)`,
+    /// which is what the surface calls when the reader asks for more.
+    func testUnifiedSearchHostContinuationServesTheNextArticlePage() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let store = ContentStore(database: database)
+        for index in 0..<450 {
+            let date = Date(timeIntervalSince1970: Double(index) + 1)
+            let origin = OriginRecordID(), revision = OriginRevisionID()
+            try store.commitCanonicalChange(.init(recordID: origin,
+                externalObjectIdentity: .init(connectorKind: .syndication, namespace: "p07-host",
+                    value: UUID().uuidString, role: .object),
+                revision: OriginRevision(id: revision, originRecordID: origin, externalVersionIdentity: nil,
+                    headline: index == 0 ? "needle story" : "filler \(index)", summary: nil, bodyText: nil,
+                    authoredAt: date, modifiedAt: nil, observedAt: date, language: nil, primaryLink: nil,
+                    searchProjection: nil, providerID: nil),
+                mediaCandidates: [], availability: .available, observedAt: date,
+                expectedCurrent: .none, currentUpdate: .useSuppliedRevision,
+                membershipMutations: [.upsert(sourceID: SourceID(), kind: .direct, observedAt: date)]))
+        }
+        let root = root(directory: directory)
+        await root.launch()
+        let firstValue = await root.unifiedSearch("needle", scope: .contents, token: 1)
+        let first = try XCTUnwrap(firstValue)
+        XCTAssertFalse(first.articles.contains { $0.title == "needle story" },
+            "a primeira página não contém o resultado mais antigo")
+        let continuation = try XCTUnwrap(first.articleContinuation,
+            "a página truncada declara a continuação")
+        let secondValue = await root.unifiedSearch("needle", scope: .contents, token: 2,
+            articleAfter: continuation)
+        let second = try XCTUnwrap(secondValue)
+        XCTAssertTrue(second.articles.contains { $0.title == "needle story" },
+            "o host serve a página seguinte com o resultado antigo")
+        await root.association?.close()
+    }
+
+    /// P07/E07: the host's **source** page advances too. The first page declares truncation; page 1 returns a
+    /// disjoint set of sources from the shipped catalogue instead of repeating the first page.
+    func testUnifiedSearchHostSourcePageServesADisjointNextPage() async throws {
+        let (root, association) = try await launched()
+        let firstValue = await root.unifiedSearch("news", scope: .sources, token: 1)
+        let first = try XCTUnwrap(firstValue)
+        XCTAssertEqual(first.sources.count, 40, "a página é a declarada pelo host")
+        XCTAssertTrue(first.sourceTruncated, "o universo continua além da primeira página")
+        let secondValue = await root.unifiedSearch("news", scope: .sources, token: 2, sourcePage: 1)
+        let second = try XCTUnwrap(secondValue)
+        XCTAssertFalse(second.sources.isEmpty, "a segunda página existe")
+        XCTAssertTrue(Set(first.sources.map(\.id)).isDisjoint(with: Set(second.sources.map(\.id))),
+            "a continuação não repete a primeira página")
+        await association.close()
+    }
+
+    /// P07/E07: when the saved authority cannot be read, the failure is named and the content authority still
+    /// answers in the same page. An empty saved section is not evidence of absence.
+    func testSearchSavedAuthorityFailureIsExplicitAndContentStillAnswers() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        // Remove the authority's table after launch: the next saved read fails for real, not by injection.
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        try database.write { db in
+            try db.execute(sql: "DROP TABLE reader_bookmark_memberships")
+        }
+        let value = await root.unifiedSearch("fixture", scope: .both, token: 1)
+        let results = try XCTUnwrap(value)
+        XCTAssertTrue(results.failedAuthorities.contains(.saved),
+            "a autoridade de salvos que não pode ser lida é uma falha nomeada")
+        XCTAssertTrue(results.hasFailure)
+        XCTAssertFalse(results.articles.isEmpty, "a autoridade de conteúdo responde na mesma página")
+        await root.association?.close()
+    }
+
+    /// P07/E07: the content authority's failure is named too (the saved authority is the sibling case above).
+    func testSearchContentAuthorityFailureIsExplicit() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        // The content authority reads `selection_supply` first; removing that table makes its read fail for real,
+        // without touching the published rows the rest of the session relies on.
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        try database.write { db in
+            try db.execute(sql: "DROP TABLE selection_supply")
+        }
+        let value = await root.unifiedSearch("fixture", scope: .contents, token: 1)
+        let results = try XCTUnwrap(value)
+        XCTAssertTrue(results.failedAuthorities.contains(.content),
+            "a autoridade de conteúdo que não pode ser lida é uma falha nomeada")
+        XCTAssertTrue(results.hasFailure)
+        await root.association?.close()
+    }
+
+    /// P08/E07: opening a search result goes through the destination its authority named. A source destination
+    /// moves the reader to that source's context, not to a copy of the list.
+    func testOpeningASourceSearchResultSelectsThatSourceContext() async throws {
+        let (root, association) = try await launched()
+        let feed = TrustedFeed.development[0]
+        association.onSearchResult?(ReaderSearchResult(id: "source:" + feed.principal, kind: .source,
+            title: feed.displayName, subtitle: nil, destination: .source(principal: feed.principal,
+                sourceID: feed.sourceID)))
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline, root.currentContextKey.request != .source(feed.sourceID) {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(root.currentContextKey.request, .source(feed.sourceID),
+            "o destino da fonte abre o contexto daquela fonte")
+        await association.close()
+    }
+
+    /// P07/A7: an authority that cannot be read is an explicit failure, never an empty result. The other
+    /// authority still answers in the same page.
+    func testSearchFailureIsNotEmptyResult() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let date = Date(timeIntervalSince1970: 10)
+        let origin = OriginRecordID(), revision = OriginRevisionID()
+        try ContentStore(database: database).commitCanonicalChange(.init(recordID: origin,
+            externalObjectIdentity: .init(connectorKind: .syndication, namespace: "p07",
+                value: UUID().uuidString, role: .object),
+            revision: OriginRevision(id: revision, originRecordID: origin, externalVersionIdentity: nil,
+                headline: "comet story", summary: nil, bodyText: nil, authoredAt: date, modifiedAt: nil,
+                observedAt: date, language: nil, primaryLink: nil, searchProjection: nil, providerID: nil),
+            mediaCandidates: [], availability: .available, observedAt: date,
+            expectedCurrent: .none, currentUpdate: .useSuppliedRevision,
+            membershipMutations: [.upsert(sourceID: SourceID(), kind: .direct, observedAt: date)]))
+
+        // A file that is not a catalogue: the reader's source authority cannot answer.
+        let badCatalogue = directory.appendingPathComponent("not-a-catalogue.sqlite")
+        try Data("not sqlite".utf8).write(to: badCatalogue)
+        let expression = try XCTUnwrap(SearchExpression(query: "comet"))
+        let result = await ReaderLocalSearch.run(expression: expression, scope: .both, token: 1,
+            database: database, catalogueURL: badCatalogue, feeds: [])
+        XCTAssertEqual(result.failedAuthorities, [.catalogue])
+        XCTAssertTrue(result.hasFailure)
+        XCTAssertFalse(result.articles.isEmpty, "a autoridade de conteúdo ainda responde")
+
+        let absent = await ReaderLocalSearch.run(
+            expression: try XCTUnwrap(SearchExpression(query: "absent")), scope: .both, token: 2,
+            database: database, catalogueURL: badCatalogue, feeds: [])
+        XCTAssertTrue(absent.isEmpty)
+        XCTAssertTrue(absent.hasFailure, "vazio com falha não é prova de ausência")
+    }
+
+    /// P08: the reader's own search bar reaches the product surface. Submitting installs a real typed page from the
+    /// local authorities into the (rebuilt) search association's store.
+    func testReaderSearchShowsRealTypedSections() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let card = try XCTUnwrap(association.store.state.presentation?.window.items.first?.id)
+        try PublicationStore(database: association.database).toggleBookmark(cardID: card,
+            in: ReaderBookmarkList.defaultID, at: Date())
+        association.store.submitSearch("Published")
+        let ready = await Self.waitUntil(10) {
+            guard let search = root.association?.store.searchResults else { return false }
+            return !search.saved.isEmpty && !search.articles.isEmpty
+        }
+        XCTAssertTrue(ready, "a barra real instala a página tipada das autoridades locais")
+        let results = try XCTUnwrap(root.association?.store.searchResults)
+        XCTAssertEqual(results.scope, .both)
+        XCTAssertTrue(results.saved.contains { $0.destination == .savedCard(card) })
+        XCTAssertFalse(root.association?.store.isSearchingResults ?? true)
+
+        // The destinations the search names are executed by the host, not just labelled in the page.
+        var reading: FeedReadingContent?
+        root.onReading = { target in if case .local(let content) = target { reading = content } }
+        var externalURL: URL?
+        root.onExternalURL = { url in externalURL = url }
+        let savedResult = try XCTUnwrap(results.saved.first { result in
+            if case .savedCard = result.destination { return true }
+            return false
+        })
+        root.association?.store.selectSearchResult(savedResult)
+        let openedSaved = await Self.waitUntil(10) { reading != nil || externalURL != nil }
+        XCTAssertTrue(openedSaved, "o destino .savedCard abre o leitor pelo dono de salvos")
+
+        // An occurrence with no published card: the article destination must resolve the revision's own link.
+        let link = try XCTUnwrap(URL(string: "https://example.test/external-needle"))
+        _ = try admitOccurrence(in: association.database, headline: "external needle", primaryLink: link)
+        externalURL = nil
+        let articlePage = await root.unifiedSearch("needle", scope: .contents, token: 99)
+        let unpublished = try XCTUnwrap(articlePage?.articles.first { result in
+            if case .article(cardID: nil, originRecordID: _) = result.destination { return true }
+            return false
+        })
+        root.association?.store.selectSearchResult(unpublished)
+        let openedArticle = await Self.waitUntil(10) { externalURL != nil }
+        XCTAssertTrue(openedArticle, "o destino .article sem carta local abre o link da revisão, não um vazio")
+        XCTAssertEqual(externalURL, link)
+        await root.association?.close()
+    }
+
+    /// P08: a newer term/scope invalidates an older completion at the surface; it can never replace the page.
+    @MainActor
+    func testNewTermOrScopeRejectsStaleUICompletion() {
+        let store = FeedScreenStore { _, _ in }
+        let first = store.beginUnifiedSearch(term: "astro", scope: .both)
+        let old = ReaderSearchResults(query: "astro", scope: .both, token: first,
+            sources: [], saved: [], articles: [])
+        XCTAssertTrue(store.applyUnifiedSearch(old))
+        let second = store.beginUnifiedSearch(term: "astro", scope: .sources)
+        XCTAssertTrue(store.applyUnifiedSearch(old) == false, "uma conclusão do termo/escopo anterior não entra")
+        XCTAssertTrue(store.isSearchingResults)
+        let fresh = ReaderSearchResults(query: "astro", scope: .sources, token: second,
+            sources: [], saved: [], articles: [])
+        XCTAssertTrue(store.applyUnifiedSearch(fresh))
+        XCTAssertEqual(store.searchResults?.scope, .sources)
+    }
+
+    /// P08/P07: a saved search reopens offline with the same scope, and the launch installs its results without a
+    /// new submission.
+    func testSavedSearchReopensOfflineInSameScope() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let first = root(directory: directory)
+        await first.launch()
+        try await first.submitSearch("Published")
+        let key = first.currentContextKey
+        XCTAssertEqual(key.searchScope, .both, "sem escopo explícito, a busca usa o todo (normalizado na chave)")
+        await first.association?.close()
+
+        let second = root(directory: directory)
+        await second.launch()
+        let reopened = await Self.waitUntil(10) { second.association?.store.searchResults != nil }
+        XCTAssertTrue(reopened, "o contexto de busca durável abre já com os resultados locais")
+        XCTAssertEqual(second.currentContextKey, key)
+        XCTAssertEqual(second.association?.store.searchResults?.scope, key.searchScope ?? .both)
+        await second.association?.close()
+    }
+
+    // MARK: - R15: search origin, cancel and recoverable outcomes
+
+    /// Cancelling a search returns to the **exact** previous context: the same preset/filter key and the anchor the
+    /// origin's own checkpoint promised (the search session's retirement checkpointed the origin before closing).
+    func testCancelSearchRestoresExactPreviousContextAndAnchor() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 16 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let origin = root.currentContextKey
+        let edition = association.store.state.presentation?.editionID
+        let anchor = association.store.state.presentation?.window.anchor
+
+        try await root.submitSearch("Published")
+        guard case .search = root.currentContextKey.request else {
+            return XCTFail("premissa: a busca é o contexto vigente")
+        }
+        XCTAssertFalse(root.association === association, "a busca tem a própria associação")
+
+        await root.cancelSearch()
+        XCTAssertEqual(root.currentContextKey, origin, "o contexto anterior é restaurado inteiro")
+        let back = try XCTUnwrap(root.association)
+        XCTAssertEqual(back.store.state.presentation?.editionID, edition,
+            "a edição canônica do contexto anterior é a mesma")
+        XCTAssertEqual(back.store.state.presentation?.window.anchor, anchor,
+            "a âncora prometida vem do checkpoint do contexto anterior")
+        await back.close()
+    }
+
+    /// A search that fails **before** the durable write is not saved; a failure **after** it is saved but not
+    /// presented. The two outcomes are different, and the durable key states which one happened.
+    func testSavedSearchFailureDistinguishesWriteFromActivation() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        let before = root.currentContextKey
+        func durableKey() throws -> ContextKey? {
+            try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+                .load()?.activeContextKey
+        }
+
+        // A refused context write: nothing is saved, nothing changes.
+        try trigger(["""
+            CREATE TRIGGER search_boundary_reject_context
+            BEFORE UPDATE ON reader_preferences
+            WHEN NEW.active_context IS NOT OLD.active_context
+            BEGIN SELECT RAISE(ABORT, 'search boundary: context write refused'); END;
+            """], in: directory)
+        do {
+            try await root.submitSearch("Published")
+            XCTFail("a refused write must not be reported as saved")
+        } catch {
+            XCTAssertEqual((error as? ReaderSearchFailure)?.selectionIsSaved, false)
+        }
+        XCTAssertEqual(root.currentContextKey, before)
+        XCTAssertEqual(try durableKey(), before)
+        try dropTriggers(["search_boundary_reject_context"], in: directory)
+
+        // A refused retirement checkpoint: the key is durable, the presentation did not happen.
+        try trigger(["""
+            CREATE TRIGGER search_boundary_reject_checkpoint
+            BEFORE INSERT ON session_checkpoint
+            BEGIN SELECT RAISE(ABORT, 'search boundary: checkpoint write refused'); END;
+            """, """
+            CREATE TRIGGER search_boundary_reject_checkpoint_update
+            BEFORE UPDATE ON session_checkpoint
+            BEGIN SELECT RAISE(ABORT, 'search boundary: checkpoint write refused'); END;
+            """], in: directory)
+        do {
+            try await root.submitSearch("Published")
+            XCTFail("a failed activation after confirmation must be reported, never hidden")
+        } catch {
+            XCTAssertEqual((error as? ReaderSearchFailure)?.selectionIsSaved, true)
+        }
+        guard case .search = root.currentContextKey.request else {
+            return XCTFail("a confirmação durável continua identificada")
+        }
+        XCTAssertEqual(try durableKey(), root.currentContextKey,
+            "a busca confirmada é a chave durável, mesmo sem apresentação")
+        try dropTriggers(["search_boundary_reject_checkpoint", "search_boundary_reject_checkpoint_update"],
+            in: directory)
+
+        // Retrying the same intention presents it; the key is not duplicated.
+        try await root.submitSearch("Published")
+        XCTAssertEqual(try durableKey(), root.currentContextKey)
+        await root.association?.close()
+    }
+
+    /// R15/P2: changing the search scope is a durable context confirmation. A refused write leaves the context and
+    /// the surface where they were, and the reader sees the failure instead of a scope that was never saved.
+    func testRefusedScopeWriteKeepsTheSearchAndSurfacesTheFailure() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        try await root.submitSearch("Published")
+        let association = try XCTUnwrap(root.association)
+        let token = association.store.beginUnifiedSearch(term: "Published", scope: .both)
+        let page = ReaderSearchResults(query: "Published", scope: .both, token: token,
+            sources: [], saved: [], articles: [])
+        XCTAssertTrue(association.store.applyUnifiedSearch(page))
+        let before = root.currentContextKey
+        func durableKey() throws -> ContextKey? {
+            try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+                .load()?.activeContextKey
+        }
+
+        try trigger(["""
+            CREATE TRIGGER search_scope_reject_context
+            BEFORE UPDATE ON reader_preferences
+            WHEN NEW.active_context IS NOT OLD.active_context
+            BEGIN SELECT RAISE(ABORT, 'search scope: context write refused'); END;
+            """], in: directory)
+        association.store.setSearchScope(.sources)
+
+        let surfaced = await Self.waitUntil(5) {
+            association.store.toast?.text == "Não foi possível salvar a busca"
+        }
+        XCTAssertTrue(surfaced, "a recusa da escrita durável é visível ao leitor")
+        XCTAssertEqual(root.currentContextKey, before, "o contexto não muda sem confirmação durável")
+        XCTAssertEqual(try durableKey(), before, "a chave durável também não muda")
+        XCTAssertEqual(association.store.searchScope, .both, "a superfície volta ao escopo que o contexto tem")
+        XCTAssertEqual(association.store.searchResults?.scope, .both, "a página apresentada não foi trocada")
+        try dropTriggers(["search_scope_reject_context"], in: directory)
+
+        // The same intention can be retried once the write is durable again.
+        association.store.setSearchScope(.sources)
+        let changed = await Self.waitUntil(20) { root.currentContextKey.searchScope == .sources }
+        XCTAssertTrue(changed, "a intenção repetida, agora com escrita durável, muda o contexto")
+        await root.association?.close()
+    }
+
+    /// P2: a saved-media preparation whose durable write is refused reaches the reader — the row states failed
+    /// for this session and the retry says so — and a later attempt with a writable store records the real
+    /// failure durably instead of leaving an old pending state.
+    func testRefusedSavedMediaWriteIsShownOnTheRowAndRetryRecordsTheOutcome() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = root(directory: directory)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let (origin, revision) = try admitOccurrence(in: association.database)
+        let card = try publishOccurrence(in: association.database, origin: origin, revision: revision,
+            mediaKey: "sha256:" + String(repeating: "0", count: 64))
+        try PublicationStore(database: association.database).toggleBookmark(cardID: card.id,
+            in: ReaderBookmarkList.defaultID, at: Date())
+        XCTAssertEqual(association.savedArticles().map(\.id), [card.id])
+
+        try trigger(["""
+            CREATE TRIGGER refuse_saved_media_availability
+            BEFORE INSERT ON saved_media_availability
+            BEGIN SELECT RAISE(ABORT, 'availability write refused'); END;
+            """], in: directory)
+        association.retrySavedMedia(card.id)
+        let firstSettled = await Self.waitUntil(5) { association.savedMediaRevision > 0 }
+        XCTAssertTrue(firstSettled, "a preparação recusada chega à superfície")
+        XCTAssertEqual(association.savedArticles().first?.availability, .failed,
+            "a linha não continua mostrando o pending que a escrita recusada não gravou")
+        XCTAssertEqual(association.store.toast?.text, "Não foi possível preparar a mídia salva")
+        XCTAssertNil(try SavedMediaAvailabilityStore(database: association.database)
+            .availability(cardID: card.id), "nenhuma linha durável foi prometida")
+        try dropTriggers(["refuse_saved_media_availability"], in: directory)
+
+        association.store.dismissToast()
+        association.retrySavedMedia(card.id)
+        let secondSettled = await Self.waitUntil(5) { association.savedMediaRevision > 1 }
+        XCTAssertTrue(secondSettled, "a tentativa seguinte também chega à superfície")
+        XCTAssertEqual(association.savedArticles().first?.availability, .failed,
+            "a ocorrência declara mídia e nenhum candidato é preparável: a falha é durável")
+        XCTAssertEqual(try SavedMediaAvailabilityStore(database: association.database)
+            .availability(cardID: card.id)?.availability, .failed,
+            "com a escrita permitida, o estado real fica durável")
+        await association.close()
+    }
+
+    /// Returning from an article does not lose the search: the context and the reading position stay exactly where
+    /// the search left them.
+    func testReturningFromArticleRestoresSearch() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, _) = try await launched()
+        try await root.submitSearch("Published")
+        let search = try XCTUnwrap(root.association)
+        let key = root.currentContextKey
+        let anchor = search.store.state.presentation?.window.anchor
+        guard let card = search.store.state.presentation?.window.items.first?.id else {
+            return XCTFail("premissa: a busca publica cartas")
+        }
+        let target = try XCTUnwrap(search.readingTarget(card), "a carta da busca abre a leitura local")
+        search.onReading?(target)
+        XCTAssertEqual(root.currentContextKey, key, "abrir/voltar do artigo não troca o contexto da busca")
+        XCTAssertEqual(search.store.state.presentation?.window.anchor, anchor)
+        await search.close()
+    }
+
+    // MARK: - R11: context switches under load reuse canonical work
+
+    /// A→B→A with the science feed suspended and new supply arriving on the other: coming back must reuse the
+    /// canonical Edition and the promised position (the durable checkpoint), not repeat bytes through a fresh
+    /// publication. The bytes a valid edition already carries are used again; no anchor is invented.
+    func testContextSwitchUnderLoadReusesCanonicalWork() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 64 }
+        defer {
+            FixtureTransport.releaseScience()
+            FixtureTransport.feedItemCount.withLock { $0 = nil }
+        }
+        let (root, association) = try await launched()
+        let first = try XCTUnwrap(association.store.state.presentation)
+        let aEdition = first.editionID
+        let aAnchor = first.window.anchor
+
+        // The next opportunity is under load: the science feed suspends and the other brings a different response.
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        FixtureTransport.feedItemCount.withLock { $0 = 24 }
+
+        try await root.selectContext(.source(TrustedFeed.development[0].sourceID))
+        let b = try XCTUnwrap(root.association)
+        XCTAssertNotEqual(b.store.state.presentation?.editionID, aEdition,
+            "premissa: o contexto B tem a própria edição")
+
+        try await root.selectContext(.main)
+        let back = try XCTUnwrap(root.association)
+        XCTAssertFalse(back === b)
+        XCTAssertEqual(back.store.state.presentation?.editionID, aEdition,
+            "a volta a A reaproveita a edição canônica, sem republicar")
+        XCTAssertEqual(back.store.state.presentation?.window.anchor, aAnchor,
+            "e a posição prometida do checkpoint, não uma inventada")
+        XCTAssertFalse(back.store.state.presentation?.window.items.isEmpty ?? true)
+        await back.close()
+    }
+
+    // MARK: - R01: bounded viewport ingress
+
+    /// R01: the reader's callback records a fact and returns; it never awaits the producer and never creates one
+    /// task per event. With one feed suspended mid-acquisition, the capture's observation has to return **before**
+    /// the producer is released, and a burst of callbacks may not grow the pending work with the burst's size.
+    ///
+    /// The bounded summary keeps the earliest movement (the measurement anchor), the latest position and the newest
+    /// fact of each semantic kind — six slots in total. A `Task` per callback (the behavior this replaces) grew the
+    /// pending work by one per event; the mutation proof is recorded in the execution register.
+    func testScrollIngressDoesNotAwaitProducer() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 2 }
+        defer {
+            FixtureTransport.releaseScience()
+            FixtureTransport.feedItemCount.withLock { $0 = nil }
+        }
+        let (root, association) = try await launched()
+        let presentation = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertGreaterThan(presentation.window.items.count, 3)
+
+        // The next acquisition is the producer that suspends the consumer: the held feed is part of the supply the
+        // opportunity asks for, and the coordinator does not settle the round until it answers.
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        FixtureTransport.feedItemCount.withLock { $0 = 24 }
+
+        // The capture's own callback, exactly as the view calls it. It returns synchronously; the single consumer
+        // starts and suspends inside the held producer.
+        let tail = try XCTUnwrap(presentation.window.items.last?.id)
+        association.store.submitViewport(.init(anchor: .init(cardID: tail, placement: .top)),
+            activity: .explicitTailApproach, rendered: presentation)
+        XCTAssertGreaterThanOrEqual(association.pendingViewportIngressCount, 1,
+            "o callback tem de registrar o fato mesmo com o produtor suspenso")
+
+        // A burst of observations while the consumer is suspended: the pending work is the finite summary, not the
+        // burst. Every card the reader actually passed is exposed at ingress, before any delivery.
+        let burst = presentation.window.items.map(\.id)
+        for index in 0..<300 {
+            association.store.submitViewport(.init(anchor: .init(cardID: burst[index % burst.count],
+                placement: .top)), activity: index.isMultiple(of: 2) ? .forward : .backward, rendered: presentation)
+        }
+        XCTAssertLessThanOrEqual(association.pendingViewportIngressCount, 6,
+            "a rajada não pode crescer o trabalho pendente: são os slots finitos do resumo, não uma fila")
+        for id in Set(burst) {
+            XCTAssertTrue(association.editorialExposure.wasExposed(id),
+                "a exposição é do instante da captura: coalescer depois não pode perder uma carta vista")
+        }
+
+        FixtureTransport.releaseScience()
+        _ = await Self.waitUntil(10) { association.pendingViewportIngressCount == 0 }
+        XCTAssertEqual(association.pendingViewportIngressCount, 0,
+            "o consumo pendente termina quando os fatos terminam")
+        XCTAssertNotNil(association.store.state.presentation)
+        await association.close()
+    }
+
+    /// R01: a burst with movement, reversal and rest — delivered late — keeps the facts the product acts on: the
+    /// **last** position is the reader's, the advanced cards produce a real consumption measure (high-water moved),
+    /// every seen card is exposed, and the rest is recorded durably at the drawn position.
+    func testMovingObservationsRemainBoundedAndPreserveRest() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 64 }
+        defer {
+            FixtureTransport.releaseScience()
+            FixtureTransport.feedItemCount.withLock { $0 = nil }
+        }
+        let clock = IngressClock()
+        let root = root(clock: clock)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let presentation = try XCTUnwrap(association.store.state.presentation)
+        let items = presentation.window.items
+        XCTAssertGreaterThan(items.count, 8)
+        guard items.count > 8, let lastItem = items.last else {
+            XCTFail("premissa: a janela admitida precisa de mais de oito cartas — veio \(items.count)")
+            await association.close()
+            return
+        }
+
+        // The next acquisition is the producer that holds the consumer. The local slice cannot close the deficit
+        // once the tail opportunity asks for more and the held feed is the supply that would arrive.
+        FixtureTransport.feedItemCount.withLock { $0 = 2 }
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        clock.advance(0.5)
+        association.store.submitViewport(.init(anchor: .init(cardID: lastItem.id, placement: .top)),
+            activity: .explicitTailApproach, rendered: presentation)
+
+        // The burst: movement forward and backward across the admitted window, with the reader's own instants.
+        let burst = 200
+        for index in 0..<burst {
+            clock.advance(0.01)
+            association.store.submitViewport(.init(anchor: .init(cardID: items[index % items.count].id,
+                placement: .top)), activity: index.isMultiple(of: 2) ? .forward : .backward,
+                rendered: presentation)
+        }
+        XCTAssertLessThanOrEqual(association.pendingViewportIngressCount, 6,
+            "rajada de \(burst) avanços: o pendente é o resumo finito")
+
+        // The reader rests at a drawn position. Both streams carry it: the rest settles the session, and the drawn
+        // top is what a durable record may name.
+        let restIndex = items.count / 2
+        let rest = items[restIndex].id
+        clock.advance(0.01)
+        association.store.submitViewport(.init(anchor: .init(cardID: rest, placement: .top)),
+            activity: .stationary, rendered: presentation)
+        association.store.publishPresentedPosition(.init(cardID: rest, placement: .top), atRest: true)
+        XCTAssertLessThanOrEqual(association.pendingViewportIngressCount, 6)
+
+        FixtureTransport.releaseScience()
+        _ = await Self.waitUntil(15) { association.pendingViewportIngressCount == 0 }
+        XCTAssertEqual(association.pendingViewportIngressCount, 0)
+
+        // Last position: the rest fact is the newest, so the reader ends there.
+        let settled = try XCTUnwrap(association.store.state.presentation)
+        XCTAssertEqual(settled.window.anchor.cardID, rest,
+            "a última posição entregue tem de ser a do leitor — a ordem é a dos instantes de captura")
+        // High-water: the delivered movement measured a real advance; a coalesced delivery does not drop it.
+        let rate = await association.driver.runway.snapshot().consumption.cardsPerSecond
+        XCTAssertGreaterThan(try XCTUnwrap(rate), 0, "o avanço medido tem de sobreviver ao coalescing")
+        // Exposure: every card the reader passed is in the ledger.
+        for id in Set((0..<burst).map { items[$0 % items.count].id }) {
+            XCTAssertTrue(association.editorialExposure.wasExposed(id))
+        }
+        // Rest is durable at the drawn position, not at the window's own anchor.
+        let checkpoint = try XCTUnwrap(SessionStore(database: association.database)
+            .checkpoint(for: association.contextKey))
+        XCTAssertEqual(checkpoint.cardID, rest, "o repouso tem de ser gravado onde o desenho parou")
+        await association.close()
+    }
+
+    /// R01: the reader's instant is captured **at ingress**. A coalesced delivery is late by construction; if the
+    /// runway stamped the sample on delivery, the drain's own latency would become reading velocity. The clock is
+    /// controlled, so the expected rate is arithmetic, not a tolerance: two cards advanced over two seconds.
+    func testCoalescingPreservesCapturedConsumptionTiming() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 2 }
+        defer {
+            FixtureTransport.releaseScience()
+            FixtureTransport.feedItemCount.withLock { $0 = nil }
+        }
+        let clock = IngressClock()
+        let root = root(clock: clock)
+        await root.launch()
+        let association = try XCTUnwrap(root.association)
+        let presentation = try XCTUnwrap(association.store.state.presentation)
+        let items = presentation.window.items
+        XCTAssertGreaterThanOrEqual(items.count, 2)
+        guard let first = items.first, items.count >= 2 else {
+            XCTFail("premissa: a janela admitida precisa de duas cartas — veio \(items.count)")
+            await association.close()
+            return
+        }
+        let second = items[1]
+
+        // Suspend the producer for the opportunity that asks for more; the two movement facts below queue behind
+        // it and are delivered only after the release.
+        FixtureTransport.feedItemCount.withLock { $0 = 24 }
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        clock.advance(2)
+        association.store.submitViewport(.init(anchor: .init(cardID: first.id, placement: .top)),
+            activity: .explicitTailApproach, rendered: presentation)
+        XCTAssertGreaterThanOrEqual(association.pendingViewportIngressCount, 1)
+
+        clock.advance(2)
+        association.store.submitViewport(.init(anchor: .init(cardID: second.id, placement: .top)),
+            activity: .forward, rendered: presentation)
+        XCTAssertLessThanOrEqual(association.pendingViewportIngressCount, 6,
+            "o segundo fato é coalescido enquanto o consumidor está suspenso")
+
+        FixtureTransport.releaseScience()
+        _ = await Self.waitUntil(10) { association.pendingViewportIngressCount == 0 }
+        XCTAssertEqual(association.pendingViewportIngressCount, 0)
+
+        // The advance from the reader's first position to the second is one card, and the two facts were captured
+        // two seconds apart: 0.5 cards/s. A delivery-time stamp would make both samples share one instant (the
+        // second is rejected as non-monotonic) and the learned rate would not be this number.
+        let snapshot = await association.driver.runway.snapshot()
+        let rate = try XCTUnwrap(snapshot.consumption.cardsPerSecond)
+        XCTAssertEqual(rate, 0.5, accuracy: 0.01,
+            "a taxa é das capturas (1 carta / 2 s), não do tempo que o dreno levou para entregá-las")
+        await association.close()
+    }
+
+    // MARK: - R02: prepared installation and confirmed bookmarks
+
+    /// P06/A10: the production launch prepares the durable bookmark set **before** installing the first
+    /// projection. The reader's first list already carries it, and no second read is needed for that install.
+    func testFirstProductionInstallationCarriesPreparedBookmarks() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let gate = BookmarkReadGate()
+        let root = root(bookmarkRead: gate.read)
+        let durable = Set([PublicationCardID()])
+        let launch = Task { await root.launch() }
+        let arrived = await Self.waitUntil(5) { gate.arrivals == 1 }
+        XCTAssertTrue(arrived, "o primeiro install prepara os bookmarks antes de instalar")
+        gate.answer(durable)
+        await launch.value
+        let association = try XCTUnwrap(root.association)
+        XCTAssertNotNil(association.store.state.presentation)
+        XCTAssertEqual(association.store.bookmarkedIDs, durable,
+            "a primeira projeção já representa o conjunto durável")
+        // A window that **grows** during the launch is a new window and asks its own bounded refresh; that is the
+        // product's existing rule, not the installation reading storage. What matters is that the first projection
+        // already carried the set.
+        if gate.unanswered > 0 { gate.answer(durable) }
+        let settled = await Self.waitUntil(5) { gate.unanswered == 0 }
+        XCTAssertTrue(settled)
+        XCTAssertEqual(association.store.bookmarkedIDs, durable)
+        await association.close()
+    }
+
+    /// R02/P06: installation assigns **values**. A work-only report and a prepared package both complete while the
+    /// storage seam is suspended, and neither asks the storage or the preparer for anything.
+    func testInstallDoesNotReadDatabase() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let gate = BookmarkReadGate()
+        let root = root(bookmarkRead: gate.read)
+        let launch = Task { await root.launch() }
+        let prepared = await Self.waitUntil(5) { gate.arrivals == 1 }
+        XCTAssertTrue(prepared, "premissa: o launch prepara a leitura de bookmarks — off-main")
+        gate.answer([])
+        await launch.value
+        let association = try XCTUnwrap(root.association)
+        XCTAssertNotNil(association.store.state.presentation)
+        let card = try XCTUnwrap(association.store.state.presentation?.window.items.first?.id)
+        let readsBefore = gate.arrivals
+
+        // (1) A work report: the store installs the report and the installation consults no storage.
+        try association.install(PreparedFeedInstallation(state: association.store.state.reporting(.pending)))
+        XCTAssertEqual(association.store.work, .pending)
+        XCTAssertEqual(gate.arrivals, readsBefore, "instalar não pode ler o armazenamento")
+
+        // (2) A prepared package: the bookmark half is assigned from the value it carries — still no read.
+        try association.install(PreparedFeedInstallation(state: association.store.state,
+            bookmarks: .init(ids: [card], base: association.bookmarkMutationRevision)))
+        XCTAssertEqual(association.store.bookmarkedIDs, [card])
+        XCTAssertEqual(gate.arrivals, readsBefore, "instalar um pacote não chama o preparador")
+
+        gate.answer([card])
+        let answered = await Self.waitUntil(5) { gate.unanswered == 0 }
+        XCTAssertTrue(answered)
+        XCTAssertEqual(association.store.bookmarkedIDs, [card])
+        await association.close()
+    }
+
+    /// R02: the confirmed toggle is durable before the UI is told, and the preparation it outran cannot undo it.
+    /// One read is in flight; the reader saves; the stale answer arrives last. The stale answer is discarded
+    /// (its base is older than the confirmed revision), the one refreshed read is scheduled, and the confirmed set
+    /// wins. The same fence is exercised with an inverted completion and with a box deletion, which is delivered
+    /// through the same confirmed path.
+    func testOldBookmarkPreparationCannotUndoConfirmedToggle() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let gate = BookmarkReadGate()
+        let root = root(bookmarkRead: gate.read)
+        let launch = Task { await root.launch() }
+        let prepared = await Self.waitUntil(5) { gate.arrivals == 1 }
+        XCTAssertTrue(prepared, "premissa: a leitura do launch está preparada")
+        gate.answer([])
+        await launch.value
+        let association = try XCTUnwrap(root.association)
+        let card = try XCTUnwrap(association.store.state.presentation?.window.items.first?.id)
+        XCTAssertEqual(association.bookmarkMutationRevision, 0)
+
+        // Confirmed mutations: save, remove. Each durable write moves the revision before the UI sees a set.
+        association.store.perform(ReaderCardActionEvent(action: .save, cardID: card))
+        XCTAssertEqual(association.bookmarkMutationRevision, 1,
+            "o toggle confirmado move a revisão antes de a UI ver o conjunto")
+        let inFlight = await Self.waitUntil(5) { gate.unanswered == 1 }
+        XCTAssertTrue(inFlight, "a confirmação pede a leitura vigente")
+        association.store.perform(ReaderCardActionEvent(action: .save, cardID: card))
+        XCTAssertEqual(association.bookmarkMutationRevision, 2)
+        // The read prepared under revision 1 answers last, with a set that would wrongly re-save the card. It is
+        // older than the confirmed removal, so it cannot install — and it schedules the refreshed read.
+        gate.answer([card])
+        let refreshed = await Self.waitUntil(5) { gate.arrivals == 3 }
+        XCTAssertTrue(refreshed, "a resposta velha é descartada e o conjunto vigente é lido de novo")
+        XCTAssertEqual(association.store.bookmarkedIDs, [],
+            "a preparação antiga não pode desfazer a remoção confirmada")
+        gate.answer([])
+        let settled = await Self.waitUntil(5) { association.store.bookmarkedIDs.isEmpty && gate.unanswered == 0 }
+        XCTAssertTrue(settled)
+        XCTAssertEqual(association.store.bookmarkedIDs, [])
+        XCTAssertEqual(association.bookmarkMutationRevision, 2)
+
+        // Two boxes: a card lives in the default box and in a second one; deleting the second removes only its
+        // membership, and the deletion is delivered through the confirmed path.
+        let library = ReaderLibraryStore(database: association.database)
+        let box = try library.createBookmarkList(named: "Segunda")
+        try library.setBookmarkMembership(cardID: card, listID: ReaderBookmarkList.defaultID,
+            included: true, at: Date())
+        try library.setBookmarkMembership(cardID: card, listID: box.id, included: true, at: Date())
+        XCTAssertEqual(try library.bookmarkedCardIDs(inList: ReaderBookmarkList.defaultID), [card])
+        XCTAssertEqual(try library.bookmarkedCardIDs(inList: box.id), [card])
+        let boxes = try XCTUnwrap(root.makeBookmarkBoxesStore())
+        await boxes.delete(id: box.id)
+        XCTAssertEqual(association.bookmarkMutationRevision, 3,
+            "a exclusão de caixa é uma mutação confirmada da biblioteca")
+        let deletionRead = await Self.waitUntil(5) { gate.unanswered == 1 }
+        XCTAssertTrue(deletionRead, "a exclusão pede a leitura do conjunto vigente")
+        gate.answer(try library.bookmarkedCardIDs(inList: ReaderBookmarkList.defaultID))
+        let kept = await Self.waitUntil(5) { association.store.bookmarkedIDs == [card] }
+        XCTAssertTrue(kept, "apagar a segunda caixa mantém a carta salva na caixa padrão")
+        await association.close()
+    }
+
+    /// P10/R17: the production composition creates new Editions under the supported sequencing version and the
+    /// publication freezes each occurrence's editorial facts — the tie-break is no longer dormant.
+    func testNewEditionsCarrySupportedVersionAndFrozenDiversity() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let (root, association) = try await launched()
+        let presentation = try XCTUnwrap(association.store.state.presentation)
+        let store = PublicationStore(database: association.database)
+        let edition = try XCTUnwrap(try store.edition(id: presentation.editionID))
+        XCTAssertEqual(edition.editorialRevision.sequencingPolicyVersion.rawValue, 5,
+            "edições novas declaram a versão suportada de diversidade")
+        let record = try XCTUnwrap(try store.card(id: presentation.window.items[0].id))
+        let diversity = try XCTUnwrap(record.diversity, "a ocorrência carrega os fatos congelados")
+        XCTAssertFalse(diversity.sourceIDs.isEmpty)
+        XCTAssertTrue(try store.recentDiversity(editionID: presentation.editionID, limit: 16).contains(diversity),
+            "os fatos congelados entram no contexto editorial da edição")
+        await association.close()
+    }
+
+    /// P12: a saved occurrence survives force quit (a new composition over the same directory) and a disposable
+    /// cache purge, offline.
+    func testSavedArticleSurvivesForceQuitAndCachePurgeOffline() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let first = root(directory: directory)
+        await first.launch()
+        let association = try XCTUnwrap(first.association)
+        let card = try XCTUnwrap(association.store.state.presentation?.window.items.first)
+        try PublicationStore(database: association.database).toggleBookmark(cardID: card.id,
+            in: ReaderBookmarkList.defaultID, at: Date())
+        await association.close()
+
+        // Only disposable caches are purged; the library database is not personal-data loss.
+        for name in ["Caches", "URLCache"] {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
+        FixtureTransport.rejecting.withLock { $0 = true }
+        defer { FixtureTransport.rejecting.withLock { $0 = false } }
+        let second = root(directory: directory)
+        await second.launch()
+        let reopened = try XCTUnwrap(second.association)
+        XCTAssertTrue(reopened.savedArticles().map(\.id).contains(card.id),
+            "o salvo sobrevive ao encerramento e à limpeza de cache, mesmo offline")
+        XCTAssertTrue(try PublicationStore(database: reopened.database).bookmarkedCardIDs().contains(card.id))
+        await reopened.close()
+    }
+
+    /// P12/R15: the search context is declared durably before activation. A process that dies after that write
+    /// reopens on the declared context instead of rolling it back.
+    func testProcessDeathDuringPresetActivationRecoversDeclaredContext() async throws {
+        FixtureTransport.feedItemCount.withLock { $0 = 8 }
+        defer { FixtureTransport.feedItemCount.withLock { $0 = nil } }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let first = root(directory: directory)
+        await first.launch()
+        try await first.submitSearch("Published")
+        let declared = first.currentContextKey
+        // No close/checkpoint: the process is gone from the composition's point of view.
+        let reopened = root(directory: directory)
+        XCTAssertEqual(reopened.currentContextKey, declared,
+            "o contexto confirmado é a autoridade; a morte durante a ativação não o desfaz")
+        await reopened.launch()
+        XCTAssertEqual(reopened.currentContextKey, declared)
+        await reopened.association?.close()
     }
 
     // MARK: - PD10-P0A: public sync contract, through the production URL and the real composition root
@@ -1396,6 +2691,8 @@ final class CompositionTests: XCTestCase {
         XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 3)), .recencyAlternatingSourcesBySupplyShare)
         XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 4)), .recencyAlternatingSourcesByWeightedSupplyShare)
         XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 5)), .recencyDescending,
+            "v5's alternation shape is supplied by the composition that knows its scoring; the fallback is recency")
+        XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 6)), .recencyDescending,
             "an unknown future version is not v4")
         XCTAssertEqual(FeedAssociation.sequencingBehavior(for: PolicyVersion(rawValue: 99)), .recencyDescending)
     }
@@ -1455,7 +2752,9 @@ final class CompositionTests: XCTestCase {
         let root = root()
         await root.launch()
         let association = try XCTUnwrap(root.association)
-        XCTAssertEqual(association.policy.sequencingPolicyVersion, PolicyVersion(rawValue: 3))
+        // R17/A8: sequencing version 5 is the one that carries the diversity context; its neutral shape still
+        // resolves to the supply-share alternating behaviour asserted below.
+        XCTAssertEqual(association.policy.sequencingPolicyVersion, PolicyVersion(rawValue: 5))
         XCTAssertEqual(association.policy.sequencing, .recencyAlternatingSourcesBySupplyShare)
         let v2 = EditorialRevision(id: EditorialRevisionID(), contextKey: ContextKey(request: .main),
             catalogGeneration: CatalogGeneration(rawValue: 1), userSelectionVersion: PolicyVersion(rawValue: 2),
@@ -2408,6 +3707,198 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
+    /// Item C, the owner's decision: the first run **asks** the reader's language instead of inferring it from the
+    /// system. The answer is persisted as the discovery profile — the language scope acquisition reads — and the
+    /// next launch does not ask again. `Locale.current` is not on this path at all: the only language here is the
+    /// one the test (standing for the reader) wrote.
+    func testTheFirstRunAsksTheLanguageAndTheAnswerClosesIt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        XCTAssertTrue(composition.needsOnboarding, "a fresh reader meets the first run — the language question included")
+        await composition.launch()
+        XCTAssertTrue(try XCTUnwrap(composition.association).discoveryProfile.isEmpty,
+            "no language is inferred before the reader answers — not even the device's")
+
+        await composition.completeFirstRun(discovery: .neutral(languages: ["pt"]))
+
+        let stored = try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+            .load()
+        XCTAssertEqual(stored?.settings.discoveryProfile.languages, ["pt"], "the answer is the language scope")
+        XCTAssertEqual(stored?.settings.hasSeenOnboarding, true, "and it is the answer that closes the first run")
+        XCTAssertFalse(stored?.sourceKeys.contains { $0.hasPrefix("http") } ?? true,
+            "the answer never writes into the reader's own selection")
+        let association = try XCTUnwrap(composition.association)
+        XCTAssertEqual(association.discoveryProfile.languages, ["pt"],
+            "acquisition reads the answer as the scope it acquires in")
+        XCTAssertFalse(composition.needsOnboarding)
+        await association.close()
+
+        let secondLaunch = root(directory: directory)
+        XCTAssertFalse(secondLaunch.needsOnboarding, "a second launch does not ask again")
+        await secondLaunch.association?.close()
+    }
+
+    /// The settings surface writes through a backend of its own, and the feed reads a cached snapshot of the same
+    /// values on every candidate card of every render. A write through the surface has to reach that snapshot:
+    /// measured 2026-10-20, the reader re-enabled the suggestions in the preferences page and the feed kept
+    /// refusing every offer with `.hidden` for the rest of the session, because the composition never learned what
+    /// the database now held.
+    func testASettingsWriteThroughTheSurfaceReachesWhatTheFeedReads() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        await composition.launch()
+        let association = try XCTUnwrap(composition.association)
+        XCTAssertFalse(composition.editorialTipsHidden, "the reader has not hidden anything yet")
+        XCTAssertNil(composition.declaredLevel(forNode: "90_countries/brazil"),
+            "and has not answered about Brazil")
+
+        let store = try XCTUnwrap(composition.makeReaderSettingsStore())
+        await store.load()
+        await store.update { settings in
+            settings.editorialTipsHidden = true
+            settings.discoveryProfile.topicPreferences["topic:90_countries/brazil"] = .more
+        }
+
+        XCTAssertTrue(store.settings.editorialTipsHidden, "the surface shows what the backend accepted")
+        XCTAssertTrue(composition.editorialTipsHidden,
+            "the feed reads the value the settings surface wrote, without a relaunch")
+        XCTAssertEqual(composition.declaredLevel(forNode: "90_countries/brazil"), .more,
+            "and the per-subject answers cached beside it are the stored ones too")
+
+        // The same session, the same cadence the feed drives: hidden refuses, and only the composed value can
+        // change that.
+        let cadence = EditorialInvitationCadence()
+        cadence.setHidden(composition.editorialTipsHidden)
+        XCTAssertEqual(cadence.decision(subject: "90_countries/brazil", isAnswered: false, cardsTraversed: 400),
+            .hidden, "while hidden, the cadence refuses every card")
+
+        // Re-enable through the real adapter, as the preferences page does.
+        await store.update { $0.editorialTipsHidden = false }
+        XCTAssertFalse(store.settings.editorialTipsHidden)
+        XCTAssertFalse(composition.editorialTipsHidden,
+            "re-enabling in the surface reaches the feed's snapshot in the same session")
+        cadence.setHidden(composition.editorialTipsHidden)
+        XCTAssertNotEqual(cadence.decision(subject: "90_countries/brazil", isAnswered: false, cardsTraversed: 400),
+            .hidden, "and the cadence can place an offer again")
+        await association.close()
+    }
+
+    /// **D5**: "Falha ao atualizar o feed" may only speak for a feed update. A save, a copy, a share or opening a
+    /// card is a local action: it states itself, never the feed's failure, and never replaces what the reader had.
+    func testALocalActionFailureNeverSpeaksForTheFeed() {
+        XCTAssertNil(FeedAssociation.FailureOperation.feedRefresh.statement,
+            "the feed's own message belongs to the feed state, not to a toast")
+        let locals: [FeedAssociation.FailureOperation] = [.openCard, .save, .copy, .share]
+        let statements = locals.compactMap(\.statement)
+        XCTAssertEqual(statements.count, locals.count, "every local operation states itself")
+        XCTAssertEqual(Set(statements).count, statements.count, "and they are distinct, not one generic sentence")
+        for statement in statements {
+            XCTAssertNotEqual(statement, "Falha ao atualizar o feed",
+                "a local action may never present the feed's failure")
+        }
+        XCTAssertEqual(FeedAssociation.operation(for: .copyLink), .copy)
+        XCTAssertEqual(FeedAssociation.operation(for: .share), .share)
+        XCTAssertEqual(FeedAssociation.operation(for: .save), .save)
+        XCTAssertEqual(FeedAssociation.operation(for: .open), .openCard)
+        XCTAssertEqual(FeedAssociation.operation(for: .openMedia), .openCard)
+    }
+
+    /// The signal a write sends states **that** a write happened, not the value: the composition drops its cache,
+    /// so two writers reaching the main actor in either order cannot install an older value. A write the store
+    /// refuses sends nothing.
+    func testSettingsWritesAreAnnouncedOnlyWhenStored() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        _ = try ReaderPreferencesStore(database: database).initialize(sourceKeys: [])
+        let announcements = Mutex<Int>(0)
+        let adapter = ReaderSettingsBackendAdapter(database: database) {
+            announcements.withLock { $0 += 1 }
+        }
+        var first = ReaderSettings.standard
+        first.editorialTipsHidden = true
+        try await adapter.update(first)
+        var second = first
+        second.editorialTipsHidden = false
+        try await adapter.update(second)
+        XCTAssertEqual(announcements.withLock { $0 }, 2, "each accepted write is announced")
+
+        // The store now cannot accept a write at all: an attempt must throw and must not be announced.
+        try await database.write { db in try db.execute(sql: "DROP TABLE reader_preferences") }
+        var third = second
+        third.editorialTipsHidden = true
+        var refused = false
+        do { try await adapter.update(third) } catch { refused = true }
+        XCTAssertTrue(refused, "a write the store cannot accept throws")
+        XCTAssertEqual(announcements.withLock { $0 }, 2, "and a refused write states nothing")
+    }
+
+    /// The other answer to the same question: the reader skips. Nothing is named, so acquisition stays
+    /// unrestricted, the stored profile names nothing, and the `.main` context keeps the plain identity it always
+    /// had — the skip cannot change what the reader is reading.
+    func testSkippingTheLanguageQuestionLeavesAcquisitionUnrestricted() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let composition = root(directory: directory)
+        XCTAssertTrue(composition.needsOnboarding)
+        await composition.launch()
+
+        // What the gate's own way out writes: the neutral recipe, no language named.
+        await composition.completeFirstRun(discovery: .neutral())
+
+        let stored = try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+            .load()
+        XCTAssertEqual(stored?.settings.discoveryProfile.languages, [], "the skip names no language")
+        XCTAssertFalse(AppComposition.namesAnything(try XCTUnwrap(stored?.settings.discoveryProfile)),
+            "and it names nothing at all — a neutral profile is 'no answers yet'")
+        XCTAssertEqual(stored?.settings.hasSeenOnboarding, true)
+        let association = try XCTUnwrap(composition.association)
+        XCTAssertTrue(association.discoveryProfile.isEmpty, "so acquisition is unrestricted")
+        XCTAssertEqual(try XCTUnwrap(association.contextKey).filter.languages, [],
+            "the .main key still means the plain surface, exactly as before")
+        XCTAssertFalse(composition.needsOnboarding)
+        await association.close()
+
+        let secondLaunch = root(directory: directory)
+        XCTAssertFalse(secondLaunch.needsOnboarding, "a second launch does not ask again")
+        await secondLaunch.association?.close()
+    }
+
+    /// The explicit "Todos os idiomas" answer, with no place named ("Mundo todo"), is a profile and must reach
+    /// discovery. Before this, the empty language set was read as "no answer yet": `namesAnything` was false, the
+    /// stored recipe was ignored, the pool was empty and the reader landed on "Escolher fontes". The two facts are
+    /// now distinct — the gate's close still discovers nothing, the explicit answer searches the whole catalogue.
+    func testTheExplicitAllLanguagesAnswerReachesDiscovery() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        // No default feeds: this is the first run the surface's question exists for. The development feeds other
+        // cases seed would make `hasSelectedSources` true before any answer and hide the distinction being tested.
+        let composition = root(directory: directory, feeds: [])
+        await composition.launch()
+        XCTAssertFalse(composition.hasSelectedSources, "before any answer the reader selects sources")
+
+        await composition.completeFirstRun(discovery: .neutral(hasLanguageAnswer: true))
+
+        let stored = try ReaderPreferencesStore(database: try RuntimeDatabase(location: .init(directory: directory)))
+            .load()
+        XCTAssertEqual(stored?.settings.discoveryProfile.languages, [],
+            "the answer names no language restriction")
+        XCTAssertEqual(stored?.settings.discoveryProfile.hasLanguageAnswer, true,
+            "but it is an answer, not the absence of one")
+        XCTAssertTrue(AppComposition.namesAnything(try XCTUnwrap(stored?.settings.discoveryProfile)))
+        let association = try XCTUnwrap(composition.association)
+        XCTAssertFalse(association.discoveryProfile.isEmpty,
+            "discovery has the whole catalogue to work with")
+        XCTAssertTrue(association.discoveryProfile.namesAllLanguages)
+        XCTAssertEqual(association.discoveryProfile.languages, [], "and no language restriction was invented")
+        XCTAssertGreaterThanOrEqual(association.discovery.count, 50,
+            "the explicit answer reaches the pool instead of the empty selection surface")
+        XCTAssertTrue(composition.hasSelectedSources, "so the reader is not told to choose sources")
+        await association.close()
+    }
+
     /// F02, the door back to a feed of the reader's own: the rules are stated once in the discovery preferences and
     /// a feed is created from them — and **creating does not activate it, does not move the reading**, and the
     /// library keeps it. Opening it is the reader's own next step.
@@ -2618,13 +4109,15 @@ final class CompositionTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let trace = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 3)
-        for index in 0..<10 { trace.record("event", ["index": String(index)]) }
+        // A journey event on purpose: this case measures the hard ceiling itself, not the context reserve that
+        // protects journey events from context (the case below covers that partition).
+        for index in 0..<10 { trace.record("advance", ["index": String(index)]) }
         trace.flushAndWait()
         let url = directory.appendingPathComponent("trace.jsonl")
         let records = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map { line in
             try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         }
-        XCTAssertEqual(records.filter { $0["event"] as? String == "event" }.count, 3,
+        XCTAssertEqual(records.filter { $0["event"] as? String == "advance" }.count, 3,
             "the ceiling holds: only the events under it were written")
         let truncated = records.filter { $0["event"] as? String == "trace_truncated" }
         XCTAssertEqual(truncated.count, 2, "the first refusal, and the totals at flush")
@@ -2642,6 +4135,118 @@ final class CompositionTests: XCTestCase {
         let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").count
         trace.flushAndWait()
         XCTAssertEqual(try String(contentsOf: url, encoding: .utf8).split(separator: "\n").count, lines)
+    }
+
+    /// Measured failure, replayed. Bench run `20261021T033520Z` wrote 40.060 lines in 1.854 s and exhausted the
+    /// 40.000-line ceiling exactly at the last advance: the admission recorded right after it never reached the
+    /// file, and the oracle — which reads "advance with no admission in the following second" as a visible stall —
+    /// failed B03 on an artifact of the instrument, not on a stall of the feed. The event census below is that
+    /// run's own trace (`advance` 2.944, `admitted` 7.742, `candidate` 2.535, `position_checkpoint` 579,
+    /// `runway_completed` 2.871, context 23.389) replayed on one clock in the run's order: admissions before the
+    /// advance they make possible, and the admission that answers the last advance at the very end. The oracle's
+    /// own rule is applied to what the file retained, so the case proves the capture, not the product.
+    func testTheTraceRetainsTheJourneyUnderTheMeasuredBenchmarkLoad() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let trace = RunwayTrace(directory: directory, name: "trace.jsonl")
+        let start = Date(timeIntervalSince1970: 1_792_555_828)
+        // The run's own pace: 2.944 advances across 1.854 s.
+        let period = 1_854.0 / 2_944.0
+        let contextEvents = ["replenishment_requested", "replenishment_arrived", "window", "editorial_refusal",
+            "media_preparation_settled", "media_card_published", "frames", "replenishment_concluded"]
+        func moment(_ index: Int) -> Double { Double(index) * period }
+        func record(_ event: String, _ fields: [String: String] = [:], _ offset: Double) {
+            trace.record(event, fields, at: start.addingTimeInterval(offset))
+        }
+        // The run's whole-file context is 23.389 lines: these seven, 23.322 inside the walk, and 60 more at the
+        // tail — they are what crowded the journey's last admission out of the old ceiling.
+        record("host_started", [:], -0.50)
+        record("first_frame", [:], -0.40)
+        record("first_frame", [:], -0.30)
+        record("editorial_offer", [:], -0.20)
+        record("editorial_offer", [:], -0.10)
+        record("answer_applied", [:], -0.05)
+        record("answer_applied", [:], -0.02)
+        for index in 0..<2_944 {
+            let here = moment(index)
+            // 3 admissions per advance for the first 1.854, then 2; the last one waits until after the tail.
+            let admissionsHere = (index < 1_854 ? 3 : 2) - (index == 2_943 ? 1 : 0)
+            for _ in 0..<admissionsHere {
+                record("admitted", ["anchor": UUID().uuidString], here - 0.01)
+            }
+            if index < 2_535 { record("candidate", ["readiness": "textOnly"], here - 0.005) }
+            if index % 5 == 0, index < 2_895 {
+                record("position_checkpoint", ["anchor": UUID().uuidString, "placement": "top"], here - 0.004)
+            }
+            // The closure the journey instrument pairs with `advance`; 73 opportunities stay open in the run.
+            if index < 2_871 { record("runway_completed", ["activity": "forward"], here - 0.002) }
+            for step in 0..<(index < 2_714 ? 8 : 7) {
+                record(contextEvents[(index + step) % contextEvents.count], ["n": String(index)], here - 0.001)
+            }
+            record("advance", ["activity": "forward"], here)
+        }
+        for index in 0..<60 {
+            record("replenishment_arrived", ["tail": String(index)], moment(2_943) + 0.001 * Double(index))
+        }
+        record("admitted", ["anchor": UUID().uuidString], moment(2_943) + 0.002)
+        trace.flushAndWait()
+
+        let url = directory.appendingPathComponent("trace.jsonl")
+        let records = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").compactMap { line in
+            try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
+        }
+        XCTAssertEqual(records.count, 40_060, "the measured run fits the budget")
+        XCTAssertFalse(records.contains { $0["event"] as? String == "trace_truncated" },
+            "and it fits whole: no event of the measured run was refused")
+        let advances = records.filter { $0["event"] as? String == "advance" }
+            .compactMap { $0["at"] as? Double }
+        let admissions = records.filter { $0["event"] as? String == "admitted" }
+            .compactMap { $0["at"] as? Double }
+        XCTAssertEqual(advances.count, 2_944)
+        XCTAssertEqual(admissions.count, 7_742)
+        XCTAssertEqual(records.filter { $0["event"] as? String == "candidate" }.count, 2_535,
+            "every examined candidate keeps the readiness the clause reads")
+        XCTAssertEqual(records.filter { $0["event"] as? String == "runway_completed" }.count, 2_871,
+            "the closures the journey instrument pairs with advances are kept too: no false open opportunity")
+        // The oracle's rule, applied to the file: an advance with no admission in the following second is a stall.
+        var cursor = 0
+        var stalls = 0
+        for moment in advances {
+            while cursor < admissions.count, admissions[cursor] < moment { cursor += 1 }
+            if cursor == admissions.count || admissions[cursor] - moment >= 1.0 { stalls += 1 }
+        }
+        XCTAssertEqual(stalls, 0, "the advance that closed the run still has its admission beside it")
+    }
+
+    /// When the budget is under pressure, the partition decides **what** is lost: telemetry, never the journey.
+    /// Before it, context lines could take the whole ceiling and the last advance stood alone in the file — the
+    /// same shape that failed B03, at a scale that fits in a test. Context stops at two thirds of the budget, so
+    /// the reserve is still there when the journey needs it, and the refusal is announced rather than silent.
+    func testContextSaturationSpendsTheReserveBeforeTheJourneyEvidence() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let trace = RunwayTrace(directory: directory, name: "trace.jsonl", lineCeiling: 100)
+        for index in 0..<40 { trace.record("advance", ["index": String(index)]) }
+        for index in 0..<200 { trace.record("frames", ["index": String(index)]) }
+        trace.flushAndWait()
+        let url = directory.appendingPathComponent("trace.jsonl")
+        let records = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map { line in
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        }
+        let advances = records.filter { $0["event"] as? String == "advance" }
+        XCTAssertEqual(advances.count, 40, "the journey is whole")
+        XCTAssertEqual(Set(advances.compactMap { ($0["fields"] as? [String: String])?["index"] }),
+            Set((0..<40).map(String.init)), "every advance reached the file, in order")
+        XCTAssertEqual(records.filter { $0["event"] as? String == "frames" }.count, 26,
+            "context spends only what is left below two thirds of the ceiling")
+        let truncated = records.filter { $0["event"] as? String == "trace_truncated" }
+        let first = try XCTUnwrap(truncated.first?["fields"] as? [String: String])
+        XCTAssertEqual(first["reason"], "context_budget")
+        XCTAssertEqual(first["dropped_by_context"], "1")
+        XCTAssertEqual(first["dropped_by_ceiling"], "0")
+        let totals = try XCTUnwrap(truncated.last?["fields"] as? [String: String])
+        XCTAssertEqual(totals["dropped_by_context"], "174", "every refused context line is accounted for")
+        XCTAssertEqual(totals["written"], "66")
     }
 
     /// Codex's review, finding 2: an invitation is only true for a source the app **went and found** in this
@@ -3164,6 +4769,85 @@ final class CompositionTests: XCTestCase {
         XCTAssertTrue(a.subjects.isEmpty, "a read that arrives after the reader moved states nothing for A")
         XCTAssertTrue(a.discovery.isEmpty, "and A is not adopted: it brought nothing after it was retired")
         await b.close()
+    }
+
+    /// **Uma resposta não constrói uma segunda sessão, nem quando a construção está em curso.** O B04 (2026-10-18)
+    /// mediu o custo da versão anterior: a resposta chegava com `replacingSession` verdadeiro, o laço de
+    /// reconstrução repetia, o `FeedAssociation` era trocado **depois** do toque (novo store, nova `sequenceID`,
+    /// `position` de volta a 1), o `UIScrollView` era recriado e a carta sob o leitor andava 316 pt (610 → 294).
+    /// A resposta é uma preferência sobre a **próxima** descoberta; a construção em curso não é refeita por ela.
+    ///
+    /// A condição é determinística: `replaceSession()` constrói pelo construtor de `FeedAssociation`, e o
+    /// `DiscoveryGate` segura a leitura dessa construção — então a resposta cai comprovadamente **durante** ela.
+    /// O que se afirma é a **sessão**: uma construção (`sessionConstructions`, o único construtor) e uma única
+    /// troca de identidade. Sem a correção o laço pede uma segunda construção; responder a leitura dela faz a
+    /// asserção ser sobre a sessão construída, não sobre uma tarefa presa — e o contador anda dois.
+    @MainActor
+    func testAnAnswerWhileTheSessionIsBeingBuiltDoesNotConstructAnotherSession() async throws {
+        let directory = try await containerWithADurableWindow(answering: "04-technology-science")
+        print("B04TEST container prepared")
+        let entries = try catalogueEntriesOutsideTheWalkFirstPage()
+        let gate = DiscoveryGate()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureTransport.self]
+        configuration.timeoutIntervalForRequest = 60
+        let warm = AppComposition(directory: directory, feeds: TrustedFeed.development,
+            transportConfiguration: configuration, discoveryQuery: gate.query)
+
+        // O launch desta instância (com o portão na query de discovery): responder o que ele pedir, ou seguir.
+        let launching = Task { await warm.launch() }
+        if let launchRead = await readOrNil(gate, within: 20) {
+            print("B04TEST launch read")
+            gate.answer(launchRead, entries: [entries.first],
+                subjects: [entries.first.source.id: .init(nodeKey: "smoke/a", name: "Assunto A")])
+        }
+        let launched = XCTestExpectation(description: "launch conclui")
+        Task { await launching.value; launched.fulfill() }
+        await fulfillment(of: [launched], timeout: 30)
+        print("B04TEST launched constructions=\(warm.sessionConstructions) association=\(warm.association != nil)")
+
+        // Um perfil novo: a substituição seguinte lê discovery de verdade, e é essa leitura que o portão segura.
+        await warm.voteOnTopic(nodeKey: "90_countries/brazil", level: .more)
+        let replacing = Task { try? await warm.replaceSession() }
+        guard let buildRead = await readOrNil(gate, within: 20) else {
+            return XCTFail("a substituição não chegou a ler discovery; não há construção em curso para medir")
+        }
+        let constructionsAtBuild = warm.sessionConstructions
+        print("B04TEST build in flight constructions=\(constructionsAtBuild)")
+
+        // A resposta que costumava marcar `pendingRebuild`, caindo **enquanto** a construção está em curso.
+        await warm.voteOnTopic(nodeKey: "04-technology-science", level: .less)
+        print("B04TEST answer in flight returned")
+        gate.answer(buildRead, entries: [], subjects: [:])
+
+        // Sem a correção o laço pede outra construção; responder a leitura dela torna a asserção sobre a sessão
+        // construída. Com a correção não há segunda leitura (a corrida devolve nil).
+        if let secondBuildRead = await readOrNil(gate, within: 2) {
+            print("B04TEST second build read")
+            gate.answer(secondBuildRead, entries: [], subjects: [:])
+        }
+
+        let concluded = XCTestExpectation(description: "a substituição conclui")
+        Task { await replacing.value; concluded.fulfill() }
+        await fulfillment(of: [concluded], timeout: 20)
+        print("B04TEST done constructions=\(warm.sessionConstructions)")
+
+        XCTAssertEqual(warm.sessionConstructions, constructionsAtBuild + 1,
+            "a resposta não constrói outra sessão: uma construção para a substituição, nenhuma para a resposta")
+        XCTAssertNotNil(warm.association, "a substituição entregou a sessão — uma, e só uma")
+        try? await warm.association?.close()
+    }
+
+    /// A próxima leitura de discovery, ou `nil` quando nenhuma chega dentro do prazo. Consulta o portão **sem**
+    /// esperar continuamente: uma leitura presa só é retomada por uma resposta, e uma espera estruturada por ela
+    /// penduraria a suíte em vez de deixar a asserção falhar.
+    private func readOrNil(_ gate: DiscoveryGate, within seconds: Double) async -> DiscoveryGate.Read? {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if let read = gate.takeArrivedRead() { return read }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return gate.takeArrivedRead()
     }
 
 }

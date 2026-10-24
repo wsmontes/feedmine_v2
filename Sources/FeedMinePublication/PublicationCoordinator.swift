@@ -236,7 +236,8 @@ public struct PublicationCoordinator: Sendable {
             guard let card = PublishedCard(id: cardIDs[index], origin: draft.origin,
                 contentEntityID: draft.contentEntityID, contentClusterID: draft.contentClusterID,
                 text: draft.text, timestamp: draft.timestamp, media: draft.media,
-                renderContract: draft.renderContract, primaryAction: draft.primaryAction) else {
+                renderContract: draft.renderContract, primaryAction: draft.primaryAction,
+                mediaIdentity: draft.mediaIdentity, diversity: draft.diversity) else {
                 throw PublicationCoordinatorError.invalidPreparedCard(index: index)
             }
             return card

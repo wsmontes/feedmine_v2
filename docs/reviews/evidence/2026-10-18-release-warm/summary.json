@@ -1,0 +1,20 @@
+{
+ "release_evidence_status": "INVALID",
+ "reason": "Collected process was com.feedmine.development (Debug); archived Release Info.plist identifies com.feedmine.app. Metrics do not certify Release.",
+ "events": 64,
+ "kinds": {
+  "admitted": 7,
+  "window": 1,
+  "position_checkpoint": 1,
+  "replenishment_requested": 2,
+  "replenishment_arrived": 2,
+  "frames": 51
+ },
+ "first_admitted_wall_after_launch_s": 0.92,
+ "frame_windows": 51,
+ "late": 0,
+ "bad": 0,
+ "severe": 2,
+ "worst_ms": 175.9,
+ "budget_ms": "16.67"
+}

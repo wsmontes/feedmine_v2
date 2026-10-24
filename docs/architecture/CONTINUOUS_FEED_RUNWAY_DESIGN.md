@@ -3,6 +3,17 @@
 > **DOC CORRECTION — baseline técnica versus aceite atual (2026-10-10).** Propostas e fases 3J/3K abaixo são história de implementação; a aprovação vigente é [F05](../product/F05_CONTINUOUS_RUNWAY_PRODUCT_PRD.md), [F06](../product/F06_SACRED_FEED_CARD_READINESS_PRD.md), [PD-8/PD-9](../product/PRODUCT_DECISIONS_2026-10-09.md), [INV-16/17](PRODUCT_INVARIANTS.md) e **B03/B04 completos**, não um número de cards ou teste de ~4 minutos. O catálogo gerenciado vem do [repositório público Wawasoft](https://github.com/wawasoft/feed-repository) como autoridade ([PD-10](../product/PRODUCT_DECISIONS_2026-10-09.md)), enquanto a consulta periódica e a troca local são **background não bloqueante**. Um runway saudável não encerra exploração elegível; um candidato pendente sai da oportunidade de publicação, não do supply recuperável. Não tratar recursos limitados por operação ou rascunhos de design como quotas de produto.
 
 
+> **EMENDA DO DONO — 2026-10-17 — cadência de foreground (itens F e G).** As frases abaixo sobre "nenhum timer"
+> continuam valendo para **produção em background** e para o **motor de reposição**: nada é disparado por relógio no
+> escuro. O que o dono decidiu, e só isto, é que um app **ativo e visível** oferece **uma oportunidade de drive a cada
+> ≥ 10 s** — a mesma oportunidade de `foreground()` (a que reativa a apresentação corrente via
+> `activateCurrentPresentation`), nunca uma segunda pipeline, uma segunda observação ou um segundo dono da janela.
+> A cadência (`ForegroundDriveCadence`) começa na transição para `.active` e para em `.inactive` e em `.background`;
+> o intervalo é um **piso**, não um alvo, e nenhuma oportunidade é adiada para a próxima volta ao foreground.
+> Fechando o item F: a lista admitida tem um teto absoluto de **2000 cartas** (`FeedSession.maxAdmittedItems`),
+> aplicado depois do recorte relativo à âncora — guarda de **memória** do run, não forma de janela, alvo de runway ou
+> número de saúde. Abaixo dele, a cabeça mantida (decisão de 2026-10-13) não remove nada acima do leitor.
+
 ## Cross-cutting product rule — adaptive runway and continuing exploration (2026-10-10)
 
 Runway replenishment, candidate-work capacity, preparation, media and the opportunities for wider catalog acquisition all respond to **measured consumption, supply, resource headroom and replenishment cost**, rather than a constant page count, fixed article target, percentage or polling interval. Every bounded window and execution budget is operational and transient; a healthy runway does not mean catalog exploration is finished. With spare capacity and valid OS execution opportunities, continued acquisition should progressively cover lower-priority but eligible sources as well. Under memory, disk, network, energy or thermal pressure, protect the currently visible feed and its presentation-ready runway before speculative work. Do not introduce a competing scheduling system or claim indefinite iOS background execution. See [PD-8](../product/PRODUCT_DECISIONS_2026-10-09.md) and [INV-16](PRODUCT_INVARIANTS.md). These are product requirements, **not a claim that all historic phases implement them**.
@@ -247,7 +258,10 @@ Phase 3K4 — semantic AcquisitionDemand handoff — complete
 
 > Unknown coverage never becomes healthy merely because a probe ceiling was reached.
 
-> No timer drives replenishment.
+> No timer drives replenishment. (With the owner's amendment of 2026-10-17: the **foreground cadence** offers the
+> existing `foreground()` opportunity every ≥ 10 s while the app is active and visible, and stops on
+> `.inactive`/`.background`; that is the only clock, and it never runs in the background — see the amendment at the
+> top of this document.)
 
 RunwayPolicy evaluates explicit measured r/L facts with `ceil(r * L * safetyFactor)` and, while previously pressured, `ceil(r * (L * safetyFactor + releaseMarginSeconds))`. It introduces no fixed card/page target. Exact ready stock is compared directly; saturated stock remains a lower bound. A lower bound insufficient to prove coverage requests a separate larger bounded ready probe before local work. Reaching the resource ceiling preserves unknown coverage. Known zero rate and exact-zero/tail intent retain factual logical pressure without inventing a positive rate.
 
@@ -311,8 +325,12 @@ Local-first is mandatory whenever a lane can progress. Successful local progress
 > **Oportunidade de ciclo de vida.** Voltar do background não é mais o gesto do leitor que acorda o pipeline: o
 > foreground reativa a apresentação corrente (`FeedRunwayDriver.activateCurrentPresentation`), o mesmo mecanismo
 > do launch/restore, devolvendo ao runway a observação do leitor na âncora corrente (`.stationary`, sem evento de
-> viewport). A lane/observação que a ativação zera é contrato existente de `RunwayController.activate`
-> compartilhado com launch e restore.
+> viewport). A observação e a leitura pronta que essa ativação renova são da apresentação, não do escopo: a chave
+> de reativação é o `RunwayScope` inteiro (edição + contexto + revisão editorial). Reativar o **mesmo** escopo é
+> reentrada de foreground e preserva `consumptionSamples`/`latencySamples` e o progresso do walk — um tick a cada
+> 10 s que os zerasse devolveria o leitor ao bootstrap em toda ativação e desligaria a adaptação F05-R2/R3. Um
+> escopo diferente (outra edição, outro contexto ou outra revisão) continua sendo troca de escopo e reseta tudo;
+> `deactivate()` idem.
 
 This phase implements no planner, frontier, target, coordinator, connector or network execution. FeedSession wiring and background/UI work remain separate future gates. No next phase is started.
 

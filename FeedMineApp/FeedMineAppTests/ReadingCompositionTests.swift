@@ -166,12 +166,16 @@ final class ReadingCompositionTests: XCTestCase {
             ReadingFixture.generation.withLock { $0 += 1 }
             for _ in 0..<8 {
                 if association.store.state.presentation?.window.items.contains(where: { $0.id == first.id }) == false { break }
-                _ = try await association.driver.drive(resources: FeedAssociation.resources)
+                _ = try await association.driver.drive(resources: association.resources)
                 let tail = try XCTUnwrap(association.store.state.presentation?.window.items.last)
                 await association.viewport(.init(anchor: .init(cardID: tail.id, placement: .center)), activity: .explicitTailApproach)
                 try await Task.sleep(nanoseconds: 50_000_000)
             }
-            XCTAssertFalse(association.store.state.presentation?.window.items.contains(where: { $0.id == first.id }) == true)
+            // The owner's decision keeps the admitted head (`keepsAdmittedHead: true`): a card the reader has passed
+            // is never removed, so "canonical pruning" is not a state this configuration reaches. What the test
+            // proves is that the retained rendering may still open its card and that a retired owner cannot.
+            XCTAssertTrue(association.store.state.presentation?.window.items.contains(where: { $0.id == first.id }) == true,
+                "o topo mantido continua admitido por decisão do dono")
             var opens = 0
             association.onReading = { _ in opens += 1 }
             association.store.perform(.init(action: .open, cardID: first.id), rendered: rendered)

@@ -65,6 +65,16 @@ public enum FeedLaunchWitness {
     /// The first pass that carried the reader's own ready cards: how many, and when. One value, for the same reason.
     private static var firstCards: (count: Int, at: Double)?
 
+    /// The geometry of the **first exposed layout** — the cards on screen the moment the reading surface was first
+    /// shown (`FeedScreen`, `FeedFirstScreenGate`): how many distinct cards that layout carries, the bottom of the
+    /// lowest one in viewport coordinates and the viewport height. One value, written once, so the record can never
+    /// pair a content bottom with a different viewport or a different card count.
+    ///
+    /// It is deliberately **not** the first layout pass: the product holds the preparation surface over the cards
+    /// while the layout is proven, so a layout that was measured under the cover was never a first screen. The proof
+    /// must observe the exposure.
+    private static var firstExposure: (count: Int, contentBottom: Double, viewportHeight: Double)?
+
     /// The origin every fact is stated from. The app arms it at the very top of its own construction
     /// (`FeedMineApp.init`), so the record's numbers read as "milliseconds since this launch began".
     ///
@@ -91,6 +101,15 @@ public enum FeedLaunchWitness {
         }
     }
 
+    /// The geometry of the **first exposure**: the layout that is on screen when the reading surface is first shown.
+    /// `FeedScreen` states it once, at that moment, from the measurements it made under the preparation surface. The
+    /// first value is kept, so a later scroll or window change cannot rewrite what the first screen showed. The count
+    /// is a fact about that layout (its distinct cards), never a threshold: the criterion is the geometry.
+    public static func noteFirstExposure(cardCount: Int, contentBottom: Double, viewportHeight: Double) {
+        guard firstExposure == nil, cardCount > 0, contentBottom.isFinite, viewportHeight.isFinite else { return }
+        firstExposure = (cardCount, contentBottom, viewportHeight)
+    }
+
     private static func noteWaitSurface(_ kind: String) {
         let now = elapsedMilliseconds()
         waitPasses += 1
@@ -102,10 +121,14 @@ public enum FeedLaunchWitness {
     public static var record: String {
         let wait = firstWait
         let cards = firstCards
+        let exposure = firstExposure
         return "wait_passes=\(waitPasses) kind=\(wait?.kind ?? "none")"
             + " first_wait_ms=\(wait.map { clock($0.at) } ?? "n/a")"
             + " last_wait_ms=\(lastWaitAt.map(clock) ?? "n/a")"
             + " cards=\(cards?.count ?? 0) first_cards_ms=\(cards.map { clock($0.at) } ?? "n/a")"
+            + " content_bottom=\(exposure.map { clock($0.contentBottom) } ?? "n/a")"
+            + " viewport_height=\(exposure.map { clock($0.viewportHeight) } ?? "n/a")"
+            + " render_ready_cards=\(exposure?.count ?? 0)"
     }
 
     /// Whether the reader's first reading surface was already their feed: no wait surface was rendered at all, or
@@ -114,6 +137,22 @@ public enum FeedLaunchWitness {
         guard let cards = firstCards else { return false }
         guard let wait = firstWait else { return true }
         return wait.at > cards.at
+    }
+
+    /// The first pass that carried ready cards, as numbers. This is the same fact `record` prints; a criterion
+    /// test asserts it without parsing the line.
+    public static var firstCardsCount: Int? { firstCards?.count }
+    public static var firstCardsMilliseconds: Double? { firstCards?.at }
+
+    /// Clear the record. One process runs many launches — a test suite among them — and a witness that only ever
+    /// appends could not state *this* launch's facts. Diagnostics only: nothing reads it to decide anything.
+    public static func reset() {
+        waitPasses = 0
+        firstWait = nil
+        lastWaitAt = nil
+        firstCards = nil
+        firstExposure = nil
+        origin = nil
     }
 
     private static func elapsedMilliseconds() -> Double {

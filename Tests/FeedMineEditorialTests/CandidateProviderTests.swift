@@ -67,6 +67,24 @@ final class CandidateProviderTests: XCTestCase {
         }
     }
 
+    /// R14: the provider reads the same expression the UI wrote — positives across fields and exclusions —
+    /// while a legacy literal keeps the old single-substring meaning.
+    func testSearchExpressionReadsPositivesAcrossFieldsAndExclusions() throws {
+        try withProvider { store, provider in
+            let source = SourceID()
+            _ = try insert(1, source: source, into: store, headline: "Astronomia", summary: "Ciência aberta")
+            _ = try insert(2, source: source, into: store, headline: "Astronomia", summary: "Astrologia e ciência")
+            let current = try XCTUnwrap(SearchContext(query: "astronomia ciência -astrologia"))
+            let matched = try provider.candidates(for: plan(.search(current)), after: nil, examinedCapacity: 10)
+            XCTAssertEqual(matched.candidates.map(\.originRecordID), [origin(1)],
+                "ambos os positivos, em campos separados, e nenhum campo com o excluído")
+            let legacy = try XCTUnwrap(SearchContext(query: "astronomia ciência", semantics: .legacyLiteral))
+            let literal = try provider.candidates(for: plan(.search(legacy)), after: nil, examinedCapacity: 10)
+            XCTAssertTrue(literal.candidates.isEmpty,
+                "o literal antigo é uma substring única e não casa com campos separados")
+        }
+    }
+
     func testMainMapsIDsOptionalPayloadTimestampsAndWindowMetadata() throws {
         try withProvider { store, provider in
             let a = SourceID(), b = SourceID(), attribution = ProviderID()

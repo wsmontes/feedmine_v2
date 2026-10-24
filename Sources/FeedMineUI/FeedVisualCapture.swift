@@ -97,6 +97,13 @@ struct FeedVisualCapture {
     var renderOwner: ObjectIdentifier?
     var reading = false
     var positionID: PublicationCardID?
+    /// R04: a destination (programmatic jump or accessibility move) whose pixels are not ready yet. The surface
+    /// keeps drawing the current reading and applies this position only when the prepared value carries the pixels.
+    /// It is UI state, not a second admission: no window, published card or durable value lives here.
+    var pendingJump: PublicationCardID?
+    /// The one-shot token that started `pendingJump`. A preparation requested by the binding's echo (`false`) may
+    /// apply its prepared value locally, but only the caller that meant a jump may establish the position.
+    var pendingJumpExplicit = false
     #if DEBUG
     /// Traço de diagnóstico do capture, **desligado por padrão** (ordem do arquiteto): liga com
     /// `FEEDMINE_TRACE_CAPTURE=1`. A medição de posição precisa dele; a operação normal não paga o custo — uma

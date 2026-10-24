@@ -50,12 +50,14 @@ public struct PresentationAnchor: Hashable, Sendable {
 public struct FeedWindowSnapshot: Hashable, Sendable {
     public let items: [PresentationCard]
     public let anchor: PresentationAnchor
+    /// Built with the immutable window, shared by all viewport evidence through value semantics.
+    let admittedIDs: Set<PublicationCardID>
 
     public init?(items: [PresentationCard], anchor: PresentationAnchor) {
-        guard !items.isEmpty,
-            Set(items.map(\.id)).count == items.count,
-            items.contains(where: { $0.id == anchor.cardID }) else { return nil }
+        let ids = Set(items.map(\.id))
+        guard !items.isEmpty, ids.count == items.count, ids.contains(anchor.cardID) else { return nil }
         self.items = items
+        self.admittedIDs = ids
         self.anchor = anchor
     }
 
@@ -64,6 +66,7 @@ public struct FeedWindowSnapshot: Hashable, Sendable {
     init(publishedWindow: FeedWindow, decoder: PresentationImageDecoder? = nil,
         reusable: [PublicationCardID: PresentationCard] = [:]) {
         items = publishedWindow.cards.map { reusable[$0.id] ?? PresentationCard(publishedCard: $0, decoder: decoder) }
+        admittedIDs = Set(items.map(\.id))
         anchor = Self.anchor(for: publishedWindow.anchor)
     }
 
@@ -72,11 +75,21 @@ public struct FeedWindowSnapshot: Hashable, Sendable {
     /// head wider than the residency band decides per card whether to decode one, which the projection above cannot
     /// express — it is the band, not the window, that owns pixels.
     init?(items: [PresentationCard], publishedAnchor: FeedWindowAnchor) {
-        guard !items.isEmpty,
-            Set(items.map(\.id)).count == items.count,
-            items.contains(where: { $0.id == publishedAnchor.cardID }) else { return nil }
+        let ids = Set(items.map(\.id))
+        guard !items.isEmpty, ids.count == items.count, ids.contains(publishedAnchor.cardID) else { return nil }
         self.items = items
+        self.admittedIDs = ids
         self.anchor = Self.anchor(for: publishedAnchor)
+    }
+
+    // Membership is entirely derived; comparing or hashing it again adds work without changing identity.
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.anchor == rhs.anchor && lhs.items == rhs.items
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(anchor)
+        hasher.combine(items)
     }
 
     private static func anchor(for anchor: FeedWindowAnchor) -> PresentationAnchor {
@@ -85,12 +98,24 @@ public struct FeedWindowSnapshot: Hashable, Sendable {
 }
 
 /// Existence means retained local cards are ready for baseline presentation.
-/// Hero/thumbnail geometry can render placeholders without materialized media.
+/// An image card is admitted with decoded pixels; outside the pixel band its frozen geometry stays while the bitmap
+/// is released, and re-admission reconstructs it before the card is drawn.
 public struct FeedPresentationSnapshot: Hashable, Sendable {
     public let contextKey: ContextKey
     public let editionID: FeedEditionID
     public let window: FeedWindowSnapshot
     public let provenance: FeedProjectionProvenance
+    /// R03/R04 and restore: cards of this association whose local asset could not be reconstructed. An admitted card
+    /// keeps its identity, order, anchor and frozen geometry, and the fact lets the destination gate state
+    /// `unavailable` instead of asking for preparation forever. A restore whose durable anchor could not be redrawn
+    /// names that card here too, even though it is excluded from the window (the presented anchor is the closest
+    /// render-ready card) — the failure is stated, never hidden behind the substitute.
+    public let unavailableImageCardIDs: Set<PublicationCardID>
+    /// The reader's durable position this presentation could not redraw: the checkpoint's card, when its image
+    /// could not be reconstructed and the window had to open on the closest render-ready card. Nil when the
+    /// window's anchor is the reader's own position. A surface may state the unavailable position honestly; the
+    /// substitute is not the reader's card, and no exact resume can be claimed for it.
+    public let unavailablePositionCardID: PublicationCardID?
 
     init(restoredPublication: RestoredPublication, provenance: FeedProjectionProvenance) {
         self.init(contextKey: restoredPublication.edition.contextKey,
@@ -102,11 +127,15 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
             provenance: provenance)
     }
 
-    init(contextKey: ContextKey, editionID: FeedEditionID, window: FeedWindowSnapshot, provenance: FeedProjectionProvenance) {
+    init(contextKey: ContextKey, editionID: FeedEditionID, window: FeedWindowSnapshot,
+        provenance: FeedProjectionProvenance, unavailableImageCardIDs: Set<PublicationCardID> = [],
+        unavailablePositionCardID: PublicationCardID? = nil) {
         self.contextKey = contextKey
         self.editionID = editionID
         self.window = window
         self.provenance = provenance
+        self.unavailableImageCardIDs = unavailableImageCardIDs
+        self.unavailablePositionCardID = unavailablePositionCardID
     }
 }
 
@@ -115,11 +144,15 @@ public struct FeedPresentationSnapshot: Hashable, Sendable {
 public struct RenderedViewportEvidence: Sendable {
     public let observation: ViewportObservation
     public let isPositionReconciliation: Bool
+    /// The rendering accepted a requested destination that was ready (a programmatic/VoiceOver jump or the
+    /// prepared successor of one). Reconciliation alone is only a preparation/correction request; this is the fact
+    /// that lets the cursor owner end a restore's substitution, and only after the destination was accepted.
+    public let establishesPosition: Bool
     let ordinal: UInt64
     let contextKey: ContextKey
     let editionID: FeedEditionID
     let provenance: FeedProjectionProvenance
-    let admittedIDs: [PublicationCardID]
+    let admittedIDs: Set<PublicationCardID>
 
     public func belongs(to current: FeedPresentationSnapshot) -> Bool {
         contextKey == current.contextKey && editionID == current.editionID &&
@@ -130,10 +163,11 @@ public struct RenderedViewportEvidence: Sendable {
 }
 
 extension FeedPresentationSnapshot {
-    public func evidence(for observation: ViewportObservation, ordinal: UInt64 = 1, reconciliation: Bool = false) -> RenderedViewportEvidence? {
-        guard ordinal > 0, window.items.contains(where: { $0.id == observation.anchor.cardID }) else { return nil }
+    public func evidence(for observation: ViewportObservation, ordinal: UInt64 = 1, reconciliation: Bool = false,
+        establishesPosition: Bool = false) -> RenderedViewportEvidence? {
+        guard ordinal > 0, window.admittedIDs.contains(observation.anchor.cardID) else { return nil }
         return RenderedViewportEvidence(observation: observation, isPositionReconciliation: reconciliation,
-            ordinal: ordinal, contextKey: contextKey,
-            editionID: editionID, provenance: provenance, admittedIDs: window.items.map(\.id))
+            establishesPosition: establishesPosition, ordinal: ordinal, contextKey: contextKey,
+            editionID: editionID, provenance: provenance, admittedIDs: window.admittedIDs)
     }
 }

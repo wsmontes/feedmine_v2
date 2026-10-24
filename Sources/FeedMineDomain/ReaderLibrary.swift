@@ -114,31 +114,109 @@ public struct ReaderLibraryImport: Hashable, Sendable {
         }
     }
 
+    /// A V1 personal feed (`imported_source`): its canonical identity, the address to fetch and its title.
+    /// `select` carries V1's `enabled` flag: a disabled source is preserved but does not join the selection.
+    public struct Source: Hashable, Sendable {
+        public let key: String
+        public let requestURL: String
+        public let title: String
+        public let select: Bool
+        public init(key: String, requestURL: String, title: String, select: Bool) {
+            self.key = key; self.requestURL = requestURL; self.title = title; self.select = select
+        }
+    }
+
     public let bookmarkLists: [BookmarkList]
+    public let sources: [Source]
     public let collections: [Collection]
     public let presets: [Preset]
 
-    public init(bookmarkLists: [BookmarkList] = [], collections: [Collection] = [], presets: [Preset] = []) {
-        self.bookmarkLists = bookmarkLists; self.collections = collections; self.presets = presets
+    public init(bookmarkLists: [BookmarkList] = [], sources: [Source] = [], collections: [Collection] = [],
+        presets: [Preset] = []) {
+        self.bookmarkLists = bookmarkLists; self.sources = sources
+        self.collections = collections; self.presets = presets
     }
 
-    public var isEmpty: Bool { bookmarkLists.isEmpty && collections.isEmpty && presets.isEmpty }
+    public var isEmpty: Bool {
+        bookmarkLists.isEmpty && sources.isEmpty && collections.isEmpty && presets.isEmpty
+    }
 }
 
 /// What an import actually inserted. A second run of the same import reports zeroes: ids are stable, so a
-/// repeated or interrupted import can never duplicate a box, a collection or a preset.
+/// repeated or interrupted import can never duplicate a box, a source, a collection or a preset.
 public struct ReaderLibraryImportReport: Hashable, Sendable {
     public let insertedBookmarkLists: Int
+    public let insertedSources: Int
+    public let selectedSources: Int
     public let insertedCollections: Int
     public let insertedPresets: Int
     public let insertedMemberships: Int
 
-    public init(insertedBookmarkLists: Int, insertedCollections: Int, insertedPresets: Int,
-        insertedMemberships: Int) {
+    public init(insertedBookmarkLists: Int, insertedSources: Int = 0, selectedSources: Int = 0,
+        insertedCollections: Int, insertedPresets: Int, insertedMemberships: Int) {
         self.insertedBookmarkLists = insertedBookmarkLists
+        self.insertedSources = insertedSources
+        self.selectedSources = selectedSources
         self.insertedCollections = insertedCollections
         self.insertedPresets = insertedPresets
         self.insertedMemberships = insertedMemberships
+    }
+}
+
+/// One reported reason for rows the upgrade did not carry. Counts are never folded into a total without the
+/// reason that produced them: a skipped saved article and an unsupported schema are different facts.
+public struct ReaderLegacySkip: Hashable, Sendable {
+    public let category: String
+    public let reason: String
+    public let count: Int
+    public init(category: String, reason: String, count: Int) {
+        self.category = category; self.reason = reason; self.count = count
+    }
+}
+
+/// The durable receipt of the V1 upgrade: what was imported, what was skipped and why, and whether the reader
+/// has been told. It is written in the same transaction as the imported rows (an interrupted upgrade leaves
+/// neither) and is the marker that makes a second launch a no-op.
+public struct ReaderLegacyUpgradeReceipt: Hashable, Sendable {
+    public enum Status: String, Sendable {
+        /// The import committed. A second launch does not run it again.
+        case completed
+        /// The V1 schema generation is not the one this build can read. Nothing was written.
+        case unsupported
+        /// The import failed; no library rows or completed marker were committed.
+        case failed
+    }
+
+    public let sourcePath: String
+    public let status: Status
+    public let ranAt: Date
+    public let failureReason: String?
+    public let importedBoxes: Int
+    public let importedSources: Int
+    public let selectedSources: Int
+    public let importedCollections: Int
+    public let importedCollectionMembers: Int
+    public let skips: [ReaderLegacySkip]
+    public let noticePresented: Bool
+
+    public init(sourcePath: String, status: Status, ranAt: Date, failureReason: String? = nil,
+        importedBoxes: Int = 0, importedSources: Int = 0, selectedSources: Int = 0,
+        importedCollections: Int = 0, importedCollectionMembers: Int = 0,
+        skips: [ReaderLegacySkip] = [], noticePresented: Bool = false) {
+        self.sourcePath = sourcePath; self.status = status; self.ranAt = ranAt
+        self.failureReason = failureReason
+        self.importedBoxes = importedBoxes; self.importedSources = importedSources
+        self.selectedSources = selectedSources
+        self.importedCollections = importedCollections
+        self.importedCollectionMembers = importedCollectionMembers
+        self.skips = skips; self.noticePresented = noticePresented
+    }
+
+    public var skippedCount: Int { skips.reduce(0) { $0 + $1.count } }
+
+    /// Saved articles V1 held but this build does not import. They remain in `user.sqlite`; the notice says so.
+    public var inaccessibleSavedArticles: Int {
+        skips.filter { $0.category == "savedArticles" }.reduce(0) { $0 + $1.count }
     }
 }
 

@@ -1,0 +1,36 @@
+NOTICE — run 5, build 67d49c86, as-specified layout, 2026-10-20 12:51
+
+WHAT IS DRAWN
+`run-5-notice-window/notice-at-3s.png` (≈3 s after launch) and
+`run-5-notice-window/notice-still-up-at-13s-no-tap.png` (≈13 s, no tap anywhere) are the same frame,
+byte for byte: the notice stays up. It sits **above** the onboarding surface — "Build my feed",
+"Start broad", "Import OPML" and the close button are dimmed behind it — in its own window, not behind
+the reader.
+
+  Da versão anterior
+  Importados da versão anterior: caixas 1, fontes 3, coleções 1.
+  Ainda inacessíveis nesta versão: artigos salvos 2, marcadores inteligentes 0, feeds curados 0.
+  Eles permanecem no arquivo original da versão anterior.
+  [Entendi]
+
+That matches AppComposition.legacyUpgradeNoticeText for the receipt (boxes 1, sources 3, collections 1;
+savedArticles 2, smartFeeds 0, curatedFeeds 0).
+
+ACCESSIBILITY
+The notice lives in its own `UIWindow`, so the Simulator's accessibility bridge does not expose it: no
+"Entendi" element appears in `ax(all: true)` while it is on screen, and the window's AX tree lists only
+the Simulator chrome plus the onboarding underneath. Hittability was therefore proven with pointer input
+rather than AX.
+
+ACKNOWLEDGEMENT
+- No tap, at 3 s and at 13 s: `notice_presented` = **0**.
+- Window click at pixels (455, 1230) of the window frame — the centre of the "Entendi" bar measured in
+  `run-5-notice-window/window-frame-with-alert.png` — then, one second later: `notice_presented` = **1**.
+- `run-5-notice-window/after-tap-window-gone.png`: the notice window is gone and the onboarding surface
+  is fully visible; `ax(all: true)` then exposes its controls (Close, Build my feed, Start broad,
+  Import OPML), so the surface takes input again.
+- Second launch (`run-5-notice-window/second-launch-no-notice.png`): no notice, receipt and every count
+  identical, `notice_presented` stays 1.
+
+=> Acceptance met for the notice: it is painted at ≥2 s, still there at ~13 s with no tap, hittable with a
+   real pointer click, the flag flips only on that tap, and it does not come back on the next launch.

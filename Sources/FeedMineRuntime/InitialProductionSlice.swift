@@ -23,10 +23,21 @@ public struct InitialProductionSlice: Sendable {
     private let selectionEngine: SelectionEngine
     private let coordinator: PublicationCoordinator
     private let readiness: MediaReadiness?
+    /// The bounded memory of stories the first Edition's walk skipped while their media was pending. The first
+    /// opportunity of a launch walks several windows in a row, so a skip there would otherwise be permanent too.
+    private let reoffer: PendingMediaReconsideration?
+    private let contentStore: ContentStore
+    /// Optional evidence of the publication this slice concludes; nil records nothing. DEBUG-only at the point
+    /// of recording (the host passes nil in a shipping build).
+    private let trace: ReplenishmentTrace?
 
-    public init(database: RuntimeDatabase, readiness: MediaReadiness? = nil) {
+    public init(database: RuntimeDatabase, readiness: MediaReadiness? = nil,
+        reoffer: PendingMediaReconsideration? = nil, trace: ReplenishmentTrace? = nil) {
         self.readiness = readiness
-        candidateProvider = CandidateProvider(contentStore: ContentStore(database: database))
+        self.reoffer = reoffer
+        self.trace = trace
+        self.contentStore = ContentStore(database: database)
+        candidateProvider = CandidateProvider(contentStore: contentStore)
         selectionEngine = SelectionEngine()
         coordinator = PublicationCoordinator(database: database)
     }
@@ -82,8 +93,18 @@ public struct InitialProductionSlice: Sendable {
         guard request.policy.exposure == .excludePublishedRevisions || request.policy.exposure == .excludePublishedMaterial else {
             throw InitialProductionSliceError.automaticExposurePolicyRequired
         }
-        let window = try candidateProvider.candidates(for: request.plan,
+        // The structural walk this attempt advances; the first Edition publishes nothing yet, so the only facts the
+        // window needs are its own candidates.
+        let structural = try candidateProvider.candidates(for: request.plan,
             after: request.after, examinedCapacity: request.examinedCapacity)
+        // Same rule as the live walk: a story this walk skipped for pending media is re-offered here, after the
+        // structural candidates, and contributes nothing to what the walk reports as examined.
+        let reconsidered = try MediaSkippedSupply.reconsider(provider: candidateProvider, plan: request.plan,
+            editionID: request.editionID, structural: structural, readiness: readiness, reoffer: reoffer)
+        let window = reconsidered.candidates.isEmpty ? structural : CandidateSupplyWindow(
+            candidates: reconsidered.candidates + structural.candidates,
+            examinedCount: structural.examinedCount, nextCursor: structural.nextCursor,
+            exhausted: structural.exhausted)
         guard let exposure = SelectionExposureSnapshot(
             requestedOriginIDs: window.candidates.map(\.originRecordID), publishedOriginIDs: []) else {
             throw InitialProductionSliceError.invalidExposureFacts
@@ -96,25 +117,44 @@ public struct InitialProductionSlice: Sendable {
                 throw SelectionError.readinessCoverageMismatch
             }
             readinessFacts = facts
+            // The first Edition has published nothing, so no skip can already be settled by publication here.
+            MediaSkippedSupply.remember(structural: structural, editionID: request.editionID,
+                publishedOriginIDs: [], readiness: readiness, reoffer: reoffer)
         } else { readinessFacts = nil }
         let selection = try selectionEngine.select(plan: request.plan, policy: request.policy,
             window: window, exposure: exposure, after: nil, readiness: readinessFacts)
         // Examination advances through structural supply, independently of editorial holds.
         // A held candidate owns no occurrence or rank; a later supply reconsideration may
         // revisit it under fresh exposure and readiness facts without rewinding this walk.
-        let progress = LocalProductionProgress(examinedCount: window.examinedCount,
-            nextCursor: window.nextCursor, exhausted: window.exhausted)
-        guard !selection.orderedCandidates.isEmpty else { return .advancedWithoutPublication(progress) }
+        // The reconsidered set contributes candidates to this attempt and nothing to what the walk reports.
+        let progress = LocalProductionProgress(examinedCount: structural.examinedCount,
+            nextCursor: structural.nextCursor, exhausted: structural.exhausted)
+        guard !selection.orderedCandidates.isEmpty else {
+            reoffer?.forget(reconsidered.considered)
+            return .advancedWithoutPublication(progress)
+        }
         let prepared = try prepare(selection)
-        let drafts = try PublicationPreparation.drafts(selection: selection, inputs: prepared.inputs)
-        let publication = PublicationCoordinator.CreateRequest(selection: selection, drafts: drafts,
+        // An image-bearing candidate whose media is not prepared leaves this opportunity; the card is never
+        // published as text in its place (INV-17).
+        let plan = try PublicationPreparation.plan(selection: selection, publication: prepared)
+        guard !plan.drafts.isEmpty else {
+            reoffer?.forget(reconsidered.considered)
+            return .advancedWithoutPublication(progress)
+        }
+        let publication = PublicationCoordinator.CreateRequest(selection: plan.selection, drafts: plan.drafts,
             editionID: request.editionID, publicationSchemaVersion: request.publicationSchemaVersion,
             selectionSeed: request.selectionSeed, editionCreatedAt: request.editionCreatedAt,
             segmentID: request.segmentID, segmentSeed: request.segmentSeed,
-            segmentCreatedAt: request.segmentCreatedAt, cardIDs: prepared.cardIDs)
+            segmentCreatedAt: request.segmentCreatedAt, cardIDs: plan.cardIDs)
         switch try coordinator.createInitialEdition(.init(publication: publication,
             anchorPlacement: request.anchorPlacement, checkpointedAt: request.checkpointedAt)) {
-        case .published(let receipt): return .published(progress, receipt)
+        case .published(let receipt):
+            #if DEBUG
+            MediaPreparationTrace.recordPublished(plan.drafts, in: contentStore, to: trace)
+            #endif
+            // The attempt settled these skips: published, held by alternation, or excluded by a filter.
+            reoffer?.forget(reconsidered.considered)
+            return .published(progress, receipt)
         case .nothingToPublish: throw InitialProductionSliceError.inconsistentPublicationOutcome
         }
     }

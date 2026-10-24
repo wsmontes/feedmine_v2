@@ -203,6 +203,63 @@ final class RunwayControllerTests: XCTestCase {
         let snap = await sut.snapshot(); XCTAssertTrue(snap.localSupplyExhausted); XCTAssertFalse(snap.pendingSupplyReset)
     }
 
+    func testFreshSupplySurvivesEpisodePassAndServesThePendingHeadUnderHold() async throws {
+        let sut = controller(); _ = try await start(sut)
+        let seed = try await intent(sut, at: 10)
+        try await sut.completeLocalSlice(seed, outcome: outcome(seed, after: cursor(1)), at: time(11))
+
+        // Arm the head reconsideration, then take that head slice in flight. Selecting the head leaves the
+        // episode as the preferred next lane.
+        try await sut.noteLocalSupplyChanged(scope: scope())
+        let head = try await intent(sut, at: 12)
+        XCTAssertEqual(head.lane, .headReconsideration)
+
+        // A second supply fact arrives while the head slice is in flight. Fairness will choose the older episode
+        // lane first; the fresh authorization must survive that pass for the still-pending head.
+        try await sut.noteLocalSupplyChanged(scope: scope())
+        try await sut.completeLocalSlice(head, outcome: outcome(head, after: cursor(10)), at: time(13))
+
+        let healthy = observation(2, 2)
+        try await sut.submitObservation(healthy)
+        try await sut.acceptMeasurement(facts(healthy, amount: .exact(16),
+            from: observation(1, 0).anchorCardID, advance: .same))
+
+        let older = try await sut.reconsider(resources: resources(), at: time(14))
+        guard case .runLocalSlice(let episode) = older else { return XCTFail("Expected the fairness pass") }
+        XCTAssertEqual(episode.lane, .episode, "fairness walks the older lane before the pending head")
+        XCTAssertEqual(episode.after, cursor(1), "the older episode keeps its own progress")
+        try await sut.completeLocalSlice(episode, outcome: outcome(episode, after: cursor(2)), at: time(15))
+
+        let freshHead = try await sut.reconsider(resources: resources(), at: time(16))
+        guard case .runLocalSlice(let pendingHead) = freshHead else {
+            return XCTFail("healthy .hold must still serve the fresh head reconsideration")
+        }
+        XCTAssertEqual(pendingHead.lane, .headReconsideration)
+        XCTAssertNil(pendingHead.after, "the fresh head starts at the head, not at the old episode cursor")
+    }
+
+    func testFreshSupplyConsumedByResetEpisodeDoesNotAuthorizeSecondSlice() async throws {
+        let sut = controller(); _ = try await start(sut)
+        let first = try await intent(sut, at: 10)
+        try await sut.noteLocalSupplyChanged(scope: scope())
+        try await sut.completeLocalSlice(first, outcome: outcome(first, after: cursor(1), exhausted: true),
+            at: time(11))
+
+        let healthy = observation(2, 2)
+        try await sut.submitObservation(healthy)
+        try await sut.acceptMeasurement(facts(healthy, amount: .exact(16),
+            from: observation(1, 0).anchorCardID, advance: .same))
+
+        // selectLane()'s reset branch clears pendingReset and consumes the head on this episode slice.
+        let reset = try await intent(sut, at: 12)
+        XCTAssertEqual(reset.lane, .episode)
+        XCTAssertNil(reset.after)
+        try await sut.completeLocalSlice(reset, outcome: outcome(reset, after: cursor(2)), at: time(13))
+
+        let held = try await sut.reconsider(resources: resources(), at: time(14))
+        XCTAssertEqual(held, .none, "the reset episode consumed the only fresh authorization")
+    }
+
     func testUnknownBootstrapOnceAndExactZeroPressureCanContinueSeparateSlices() async throws {
         let sut = controller(), o = try await start(sut,amount: .exact(4))
         let first = try await intent(sut,at: 10)
@@ -273,6 +330,91 @@ final class RunwayControllerTests: XCTestCase {
         await sut.activate(scope(2))
         let nextScope = await sut.snapshot()
         XCTAssertNil(nextScope.consumption.cardsPerSecond)
+    }
+
+    /// Learns a 4 cards/s consumption and a 5 s runway on `scope()`: the state a foreground cadence must preserve.
+    /// The walk ends exhausted so the snapshot also carries progress that a reset would erase.
+    @discardableResult
+    private func learnFacts(_ sut: RunwayController, at base: Double) async throws -> RunwayObservation {
+        await sut.activate(scope())
+        let first = observation(1, base)
+        try await sut.submitObservation(first)
+        try await sut.acceptMeasurement(facts(first))
+        let moved = observation(2, base + 2)
+        try await sut.submitObservation(moved)
+        try await sut.acceptMeasurement(facts(moved, from: first.anchorCardID, advance: .forwardExact(8)))
+        let slice = try await intent(sut, at: base + 10)
+        try await sut.completeLocalSlice(slice, outcome: outcome(slice, after: cursor(1), exhausted: true, publish: true),
+            at: time(base + 15))
+        return moved
+    }
+
+    /// Five minutes of foreground at one tick every 10 s is thirty activations of the same scope. That is a
+    /// re-entry, not a scope change: the learned consumption/latency and the walk must survive every tick.
+    func testSameScopeReactivationOnEveryCadenceTickPreservesLearnedSamples() async throws {
+        let sut = controller(), moved = try await learnFacts(sut, at: 0)
+        let learned = await sut.snapshot()
+        XCTAssertEqual(learned.consumption.cardsPerSecond, 4)
+        XCTAssertEqual(learned.replenishment.p95Seconds, 5)
+        XCTAssertEqual(learned.lastCoverage, .logicalPressure)
+        XCTAssertTrue(learned.localSupplyExhausted)
+        for tick in 0..<30 {
+            let at = 20 + Double(tick) * 10
+            await sut.activate(scope())
+            try await sut.submitObservation(observation(2, at, activity: .stationary))
+            let snapshot = await sut.snapshot()
+            XCTAssertEqual(snapshot.consumption.cardsPerSecond, 4, "tick \(tick) must keep the learned rate")
+            XCTAssertEqual(snapshot.replenishment.p95Seconds, 5, "tick \(tick) must keep the measured runway")
+            XCTAssertEqual(snapshot.lastCoverage, learned.lastCoverage, "tick \(tick) must keep the decision state")
+            XCTAssertTrue(snapshot.localSupplyExhausted, "tick \(tick) must keep the walk progress")
+            XCTAssertEqual(snapshot.scope, scope())
+            XCTAssertEqual(snapshot.latestObservation, observation(2, at, activity: .stationary))
+        }
+        let ticked = await sut.snapshot()
+        XCTAssertEqual(moved.anchorCardID, ticked.latestObservation?.anchorCardID)
+        // The preserved rate still decides: 4 cards/s × 5 s beats the bootstrap reserve.
+        let last = observation(2, 20 + 29 * 10, activity: .stationary)
+        try await sut.acceptMeasurement(facts(last, from: last.anchorCardID, advance: .same))
+        let decision = try await sut.reconsider(resources: resources(), at: time(400))
+        guard case .requestAcquisition(let intent) = decision else { return XCTFail("Learned demand survived: \(decision)") }
+        XCTAssertEqual(intent.demand.pressure, .coverageDeficit(requiredCards: 20))
+        let decided = await sut.snapshot()
+        XCTAssertEqual(decided.lastCoverage, .pressured(requiredCards: 20))
+    }
+
+    /// The other half of the rule: a different edition, context or editorial revision is a genuine scope change and
+    /// still resets the learned facts, whatever route the reader took back to the previous scope.
+    func testDifferentEditionContextOrRevisionStillResetsLearnedSamples() async throws {
+        let sut = controller(), baseline = scope()
+        let variants = [
+            RunwayScope(editionID: FeedEditionID(rawValue: uuid(9)), contextKey: baseline.contextKey,
+                editorialRevisionID: baseline.editorialRevisionID),
+            RunwayScope(editionID: baseline.editionID, contextKey: ContextKey(request: .source(SourceID())),
+                editorialRevisionID: baseline.editorialRevisionID),
+            RunwayScope(editionID: baseline.editionID, contextKey: baseline.contextKey,
+                editorialRevisionID: EditorialRevisionID(rawValue: uuid(97))),
+        ]
+        var base = 0.0
+        for variant in variants {
+            try await learnFacts(sut, at: base)
+            base += 100
+            let learned = await sut.snapshot()
+            XCTAssertEqual(learned.consumption.cardsPerSecond, 4)
+            XCTAssertEqual(learned.replenishment.p95Seconds, 5)
+            await sut.activate(variant)
+            let reset = await sut.snapshot()
+            XCTAssertEqual(reset.scope, variant)
+            XCTAssertNil(reset.consumption.cardsPerSecond)
+            XCTAssertNil(reset.replenishment.p95Seconds)
+            XCTAssertNil(reset.latestObservation)
+            XCTAssertNil(reset.readyAhead)
+            XCTAssertFalse(reset.localSupplyExhausted, "A genuine scope change restarts the walk")
+            // Coming back is a change too: the previous scope's state was already discarded.
+            await sut.activate(baseline)
+            let back = await sut.snapshot()
+            XCTAssertNil(back.consumption.cardsPerSecond)
+            XCTAssertNil(back.replenishment.p95Seconds)
+        }
     }
 
     func testPublicationReMeasuresSameAnchorWithoutAnotherConsumptionSample() async throws {

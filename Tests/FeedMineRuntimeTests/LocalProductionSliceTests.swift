@@ -5,7 +5,7 @@ import FeedMinePersistence
 import FeedMineEditorial
 import FeedMinePublication
 import FeedMineMedia
-import FeedMineRuntime
+@testable import FeedMineRuntime
 
 private struct LocalSliceFixture: Sendable {
     let database: RuntimeDatabase
@@ -21,9 +21,10 @@ private struct LocalSliceFixture: Sendable {
             headline: n == 1 ? nil : n == 2 ? "" : " exact e\u{301} ",summary: "Summary \(n)",bodyText: nil,
             authoredAt: Date(timeIntervalSince1970: Double(version ?? n)),modifiedAt: nil,observedAt: Date(timeIntervalSince1970: 999),language: nil,primaryLink: nil,searchProjection: nil,providerID: nil)
     }
-    static func candidate(_ r: OriginRevision) -> Candidate {
+    static func candidate(_ r: OriginRevision, sources: [SourceID] = []) -> Candidate {
         Candidate(originRecordID: r.originRecordID,originRevisionID: r.id,headline: r.headline,summary: r.summary,
-            timestamp: CandidateTimestamp(value: r.authoredAt ?? r.observedAt,kind: r.authoredAt == nil ? .observed : .authored),language: r.language,providerID: r.providerID)
+            timestamp: CandidateTimestamp(value: r.authoredAt ?? r.observedAt,kind: r.authoredAt == nil ? .observed : .authored),language: r.language,providerID: r.providerID,
+            sourceIDs: Set(sources))
     }
     static func cardID(_ candidate: Candidate) -> PublicationCardID {
         let n = Int(candidate.originRevisionID.rawValue.uuidString.suffix(12),radix: 16)!
@@ -44,7 +45,9 @@ private struct LocalSliceFixture: Sendable {
             catalogGeneration: CatalogGeneration(rawValue: 1),userSelectionVersion: version,eligibilityPolicyVersion: version,scoringPolicyVersion: version,
             sequencingPolicyVersion: version,exposurePolicyVersion: version,selectionSchemaVersion: SelectionSchemaVersion(rawValue: 1))))
         editionID = FeedEditionID(rawValue: Self.uuid(41000))
-        let selected = SelectionResult(editorialRevision: plan.revision,orderedCandidates: initial.map(Self.candidate),supplyReport: SelectionSupplyReport(examinedCount: 0,nextCursor: nil,exhausted: true))
+        let selected = SelectionResult(editorialRevision: plan.revision,orderedCandidates: initial.map {
+            Self.candidate($0, sources: initialSource.map { [$0] } ?? [])
+        },supplyReport: SelectionSupplyReport(examinedCount: 0,nextCursor: nil,exhausted: true))
         let prepared = Self.prepared(selected, sourceID: initialSource)
         initialCardIDs = prepared.cardIDs
         _ = try PublicationCoordinator(database: database).createEdition(.init(selection: selected,
@@ -86,6 +89,19 @@ private final class LocalPreparationCalls: @unchecked Sendable {
     private var count = 0
     func mark() { lock.lock(); defer { lock.unlock() }; count += 1 }
     var value: Int { lock.lock(); defer { lock.unlock() }; return count }
+}
+
+/// What the slice said through the host's trace port, in order.
+private final class PublicationTrace: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [(event: String, fields: [String: String])] = []
+    var trace: ReplenishmentTrace { ReplenishmentTrace { [self] event, fields in
+        lock.lock(); storage.append((event, fields)); lock.unlock()
+    } }
+    func fields(_ event: String) -> [[String: String]] {
+        lock.lock(); defer { lock.unlock() }
+        return storage.filter { $0.event == event }.map(\.fields)
+    }
 }
 
 final class LocalProductionSliceTests: XCTestCase {
@@ -231,12 +247,12 @@ final class LocalProductionSliceTests: XCTestCase {
         try assertOnlyInitial(f)
         XCTAssertThrowsError(try slice.run(request) { selected in LocalPreparedPublication(inputs: [],cardIDs: LocalSliceFixture.prepared(selected).cardIDs) }) { XCTAssertEqual($0 as? PublicationPreparationError,.inputCountMismatch) }
         try assertOnlyInitial(f)
-        XCTAssertThrowsError(try slice.run(request) { selected in LocalPreparedPublication(inputs: LocalSliceFixture.prepared(selected).inputs,cardIDs: []) }) { XCTAssertEqual($0 as? PublicationCoordinatorError,.inputCountMismatch) }
+        XCTAssertThrowsError(try slice.run(request) { selected in LocalPreparedPublication(inputs: LocalSliceFixture.prepared(selected).inputs,cardIDs: []) }) { XCTAssertEqual($0 as? PublicationPreparationError,.inputCountMismatch) }
         try assertOnlyInitial(f)
         XCTAssertEqual(try published(slice.run(request) { LocalSliceFixture.prepared($0) }).1.cardIDs.count,1)
     }
 
-    func testUnavailableImageRefusesWithoutFallbackThenExplicitTextOnlySucceeds() throws {
+    func testUnavailableImageIsNotPublishedAndExplicitTextOnlySucceeds() throws {
         let f = try fixture(), revision = LocalSliceFixture.revision(1)
         try f.admit(revision)
         let media = try XCTUnwrap(MediaCandidate(id: MediaCandidateID(),originRevisionID: revision.id,role: .cardVisual,mediaClass: .image,
@@ -244,10 +260,53 @@ final class LocalProductionSliceTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let unavailable = try MediaPreparation(assetDirectory: directory).prepare(candidate: media,input: .unavailable)
         let slice = LocalProductionSlice(database: f.database), request = f.request()
-        XCTAssertThrowsError(try slice.run(request) { LocalSliceFixture.prepared($0,presentation: .image(unavailable,layout: .hero)) }) { XCTAssertEqual($0 as? PublicationPreparationError,.mediaNotUsable(index: 0)) }
+        let outcome = try slice.run(request) {
+            LocalSliceFixture.prepared($0,presentation: .image(unavailable,layout: .hero))
+        }
+        guard case .advancedWithoutPublication = outcome else {
+            return XCTFail("an image without prepared media must not publish as text")
+        }
         try assertOnlyInitial(f)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+        XCTAssertNil(try PublicationStore(database: f.database).card(id: LocalSliceFixture.cardID(LocalSliceFixture.candidate(revision))))
         XCTAssertEqual(try published(slice.run(request) { LocalSliceFixture.prepared($0) }).1.cardIDs.count,1)
+    }
+
+    /// INV-17: the unprepared image leaves this opportunity; the ready text candidate next to it publishes.
+    func testUnpreparedImageLeavesThePublishedSetAndTheTextNeighbourPublishes() throws {
+        let f = try fixture()
+        let image = LocalSliceFixture.revision(1), text = LocalSliceFixture.revision(2)
+        try f.admit(image)
+        try f.admit(text)
+        let media = try XCTUnwrap(MediaCandidate(id: MediaCandidateID(), originRevisionID: image.id,
+            role: .cardVisual, mediaClass: .image,
+            remoteURL: URL(string: "https://definitely.invalid/not-fetched")!, declaredMimeType: nil,
+            declaredPixelWidth: nil, declaredPixelHeight: nil))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let unavailable = try MediaPreparation(assetDirectory: directory).prepare(candidate: media, input: .unavailable)
+        let slice = LocalProductionSlice(database: f.database), request = f.request()
+        let outcome = try slice.run(request) { selected in
+            let inputs = selected.orderedCandidates.map { candidate -> PublicationPreparationInput in
+                let presentation: PublicationPresentation = candidate.originRevisionID == image.id
+                    ? .image(unavailable, layout: .hero) : .textOnly
+                return PublicationPreparationInput(
+                    origin: PublishedOrigin(originRecordID: candidate.originRecordID,
+                        originRevisionID: candidate.originRevisionID, sourceID: nil, providerID: candidate.providerID,
+                        sourceDisplayName: nil, providerDisplayName: nil),
+                    contentEntityID: nil, contentClusterID: nil, primaryAction: .localContentDetail,
+                    presentation: presentation)
+            }
+            return LocalPreparedPublication(inputs: inputs,
+                cardIDs: selected.orderedCandidates.map(LocalSliceFixture.cardID))
+        }
+        let (progress, receipt) = try published(outcome)
+        XCTAssertEqual(progress.examinedCount, 2, "both candidates were examined")
+        XCTAssertEqual(receipt.cardIDs,
+            [LocalSliceFixture.cardID(LocalSliceFixture.candidate(text))],
+            "only the ready text candidate is in the published set")
+        let store = PublicationStore(database: f.database)
+        XCTAssertNil(try store.card(id: LocalSliceFixture.cardID(LocalSliceFixture.candidate(image))),
+            "the unprepared image resolves no occurrence in its place")
     }
 
     func testConcurrentAppendDuringPreparationRejectsStaleSliceWithoutRetry() throws {
@@ -274,6 +333,55 @@ final class LocalProductionSliceTests: XCTestCase {
         guard case .advancedWithoutPublication(let progress) = outcome else { return XCTFail("Expected empty exhausted progress") }
         XCTAssertEqual(progress.examinedCount,0); XCTAssertNil(progress.nextCursor); XCTAssertTrue(progress.exhausted)
         try assertOnlyInitial(f)
+    }
+
+    /// The publication half of the evidence: each card that reaches history states the revision it froze, what
+    /// that revision's feed declared and whether the card carries media. The text card's declaration is `false`
+    /// and its media `none`; the image card's are `true` and `image`.
+    func testPublishedCardsRecordTheirDeclaredImageAndCarriedMedia() throws {
+        let f = try fixture()
+        let image = LocalSliceFixture.revision(1), text = LocalSliceFixture.revision(2)
+        let media = try XCTUnwrap(MediaCandidate(id: MediaCandidateID(), originRevisionID: image.id,
+            role: .cardVisual, mediaClass: .image, remoteURL: URL(string: "https://example.test/card.png")!,
+            declaredMimeType: "image/png", declaredPixelWidth: 2, declaredPixelHeight: 3))
+        try f.admit(image, media: [media])
+        try f.admit(text)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAEElEQVR4nGP4z8AARAwoFABE0AX7pM/egAAAAABJRU5ErkJggg==")!
+        let result = try MediaPreparation(assetDirectory: directory).prepare(candidate: media, input: .bytes(png))
+        guard case .usable = result.state else { return XCTFail("the fixture image must prepare") }
+        let recorder = PublicationTrace()
+        let slice = LocalProductionSlice(database: f.database, trace: recorder.trace)
+        let base = f.request(capacity: 2)
+        let request = LocalProductionSlice.Request(plan: base.plan, policy: base.policy,
+            editionID: base.editionID, after: base.after, examinedCapacity: base.examinedCapacity,
+            segmentID: base.segmentID, segmentSeed: base.segmentSeed,
+            segmentCreatedAt: base.segmentCreatedAt, readerAnchorCardID: base.readerAnchorCardID,
+            operation: FeedReplenishmentOperationID())
+        let (_, receipt) = try published(slice.run(request) { selection in
+            let inputs = selection.orderedCandidates.map { candidate -> PublicationPreparationInput in
+                let presentation: PublicationPresentation = candidate.originRevisionID == image.id
+                    ? .image(result, layout: .hero) : .textOnly
+                return PublicationPreparationInput(
+                    origin: PublishedOrigin(originRecordID: candidate.originRecordID,
+                        originRevisionID: candidate.originRevisionID, sourceID: nil,
+                        providerID: candidate.providerID, sourceDisplayName: nil, providerDisplayName: nil),
+                    contentEntityID: nil, contentClusterID: nil, primaryAction: .localContentDetail,
+                    presentation: presentation)
+            }
+            return LocalPreparedPublication(inputs: inputs,
+                cardIDs: selection.orderedCandidates.map(LocalSliceFixture.cardID))
+        })
+        XCTAssertEqual(receipt.cardIDs.count, 2)
+        let lines = recorder.fields(ReplenishmentEvent.mediaPublished)
+        XCTAssertEqual(lines.count, 2, "one line per published card")
+        let byRevision = Dictionary(uniqueKeysWithValues: lines.map { ($0["revision"] ?? "", $0) })
+        XCTAssertEqual(byRevision[image.id.rawValue.uuidString]?["declared_image"], "true")
+        XCTAssertEqual(byRevision[image.id.rawValue.uuidString]?["media"], "image")
+        XCTAssertEqual(byRevision[image.id.rawValue.uuidString]?["layout"], "hero")
+        XCTAssertEqual(byRevision[text.id.rawValue.uuidString]?["declared_image"], "false")
+        XCTAssertEqual(byRevision[text.id.rawValue.uuidString]?["media"], "none")
     }
 }
 
@@ -426,6 +534,116 @@ extension LocalProductionSliceTests {
         let again = try slice.run(f.request(exposure: .excludePublishedMaterial, segment: 46004, sequencing: .recencyAlternatingSources), prepare: prepare)
         guard case .advancedWithoutPublication = again else { return XCTFail("Recovered origin published twice") }
         XCTAssertEqual(try store.segments(editionID: f.editionID).count, 5)
+    }
+
+    /// B/H(b), spec "Estabilidade de coleta e UI": a media readiness transition is the local-supply fact that
+    /// reopens the runway's existing drive opportunity, and pending media is never published before it.
+    @MainActor
+    func testReadinessTransitionSchedulesTheDriveThatPublishesPendingMedia() async throws {
+        let f = try fixture(), held = HeldImage(), pending = LocalSliceFixture.revision(6)
+        addTeardownBlock { await held.release() }
+        let image = try XCTUnwrap(MediaCandidate(id: MediaCandidateID(), originRevisionID: pending.id,
+            role: .cardVisual, mediaClass: .image, remoteURL: URL(string: "https://example.test/pending.png")!,
+            declaredMimeType: "image/png", declaredPixelWidth: 2, declaredPixelHeight: 3))
+        try f.admit(pending, media: [image])
+        let assets = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: assets) }
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAEElEQVR4nGP4z8AARAwoFABE0AX7pM/egAAAAABJRU5ErkJggg==")!
+        let pendingCardID = LocalSliceFixture.cardID(LocalSliceFixture.candidate(pending))
+
+        // The reader's position and the runway are the real ones: no fake scheduler stands in for the
+        // notification `RunwayController` already owns.
+        let history = PublicationHistory(database: f.database)
+        try history.saveCursor(.init(editionID: f.editionID,
+            anchor: .init(cardID: f.initialCardIDs[0], placement: .center)), updatedAt: Date())
+        let scope = RunwayScope(editionID: f.editionID, contextKey: f.plan.context.key,
+            editorialRevisionID: f.plan.revision.id)
+        let runway = RunwayController(configuration: .init(
+            policyInputs: .init(safetyFactor: 1, releaseMarginSeconds: 0)!,
+            consumptionSampleLimit: 2, replenishmentSampleLimit: 2)!)
+        _ = try await FeedSession(publicationHistory: history)
+            .admitPresentation(.initial(.init(backwardCapacity: 0, forwardCapacity: 10)))
+        await runway.activate(scope)
+        let observation = RunwayObservation(editionID: f.editionID, anchorCardID: f.initialCardIDs[0],
+            sampledAt: .init(seconds: 0)!, activity: .stationary)
+        try await runway.submitObservation(observation)
+
+        let scheduled = expectation(description: "readiness scheduled the existing drive opportunity")
+        let media = MediaPrefetcher(database: f.database, assetDirectory: assets, concurrentDownloadLimit: 1,
+            fetch: { _, _ in await held.wait(); return png }, conditions: { _ in Self.mediaPolicy() },
+            onReadinessChanged: { revision in
+                guard revision == pending.id else { return }
+                try? await runway.noteLocalSupplyChanged(scope: scope)
+                scheduled.fulfill()
+            })
+        let readiness = media.readiness
+        await media.prefetch([pending.id], deadline: ProcessInfo.processInfo.systemUptime - 1)
+        XCTAssertNil(readiness.presentation(for: pending.id), "pending media has no presentation to publish")
+        XCTAssertNil(try PublicationStore(database: f.database).card(id: pendingCardID),
+            "pending media is never published before its readiness transition")
+
+        let sliceResources = RunwayResourceFacts(localWorkAllowed: true, examinedCandidateCapacity: 4,
+            readyProbeBound: 10, readyProbeCeiling: 10, forwardAdvanceProbeBound: 10, reserveCards: 10)!
+        let slice = LocalProductionSlice(database: f.database, readiness: readiness)
+        func measure() async throws {
+            try await runway.acceptMeasurement(.init(observation: observation,
+                readyAhead: history.readyAhead(editionID: f.editionID,
+                    anchorCardID: f.initialCardIDs[0], probeBound: 10),
+                advanceFromHighWater: nil))
+        }
+
+        // Before any transition: the pending head is suspended, and the bounded page proves exhaustion.
+        try await measure()
+        let firstIntent: RunwayLocalSliceIntent
+        guard case .runLocalSlice(let first) = try await runway.reconsider(resources: sliceResources,
+            at: .init(seconds: 1)!) else { return XCTFail("a fresh runway must offer its first local slice") }
+        firstIntent = first
+        let firstOutcome = try slice.run(f.request(capacity: 10, exposure: .excludePublishedMaterial, segment: 47_000)) { _ in
+            throw PreparationFailure.refused
+        }
+        guard case .advancedWithoutPublication(let progress) = firstOutcome else {
+            return XCTFail("unready media must suspend, never fall back to a text-only card")
+        }
+        XCTAssertTrue(progress.exhausted)
+        try await runway.completeLocalSlice(firstIntent, outcome: firstOutcome, at: .init(seconds: 2)!)
+        let exhaustedRunway = await runway.snapshot()
+        XCTAssertTrue(exhaustedRunway.localSupplyExhausted)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.editionID).flatMap(\.cardIDs),
+            f.initialCardIDs, "only the fixture's own card is published")
+        // Exhaustion alone is not a supply fact: the suspended head must not spin.
+        try await measure()
+        if case .runLocalSlice = try await runway.reconsider(resources: sliceResources, at: .init(seconds: 2.5)!) {
+            return XCTFail("exhaustion without a supply change must not schedule another drive")
+        }
+
+        // The transition: the held download settles, and the callback schedules the drive.
+        await held.release()
+        await fulfillment(of: [scheduled], timeout: 2)
+        XCTAssertNotNil(readiness.presentation(for: pending.id))
+        let reopened = await runway.snapshot()
+        XCTAssertFalse(reopened.localSupplyExhausted,
+            "readiness reopens the existing local-supply opportunity")
+
+        try await measure()
+        let intent: RunwayLocalSliceIntent
+        guard case .runLocalSlice(let next) = try await runway.reconsider(resources: sliceResources,
+            at: .init(seconds: 3)!) else { return XCTFail("the scheduled opportunity must run") }
+        intent = next
+        XCTAssertNil(intent.after)
+        let outcome = try slice.run(f.request(capacity: 10, exposure: .excludePublishedMaterial, segment: 47_001)) { selection in
+            LocalPreparedPublication(inputs: try selection.orderedCandidates.map { candidate in
+                PublicationPreparationInput(origin: .init(originRecordID: candidate.originRecordID,
+                    originRevisionID: candidate.originRevisionID, sourceID: nil, providerID: candidate.providerID,
+                    sourceDisplayName: "Caller Source", providerDisplayName: nil),
+                    contentEntityID: nil, contentClusterID: nil, primaryAction: .localContentDetail,
+                    presentation: try XCTUnwrap(readiness.presentation(for: candidate.originRevisionID)))
+            }, cardIDs: selection.orderedCandidates.map(LocalSliceFixture.cardID))
+        }
+        guard case .published(_, let receipt) = outcome else {
+            return XCTFail("the drive the transition scheduled must publish the pending card")
+        }
+        XCTAssertEqual(receipt.cardIDs, [pendingCardID])
+        XCTAssertNotNil(try PublicationStore(database: f.database).card(id: pendingCardID)?.mediaKey)
     }
 
     func testF06AllPendingWindowAdvancesWithoutCallingPreparationOrReservingSegment() async throws {
@@ -584,5 +802,252 @@ extension LocalProductionSliceTests {
             exposure: exposure, after: nil, readiness: stale)) {
             XCTAssertEqual($0 as? SelectionError, .readinessCoverageMismatch)
         }
+    }
+
+    /// P10/R17 (E07): the diversity facts the publication froze are read back from a **restored** database and the
+    /// engine's order follows them. The engine tests build the context by hand, and the store tests prove only the
+    /// row; this is the seam between the two — the gap the plan named as "falta comparação fim a fim entre
+    /// bancos/restaurações".
+    func testPersistedDiversityFactsSurviveRestorationAndDriveTheEngineOrder() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let sourceA = SourceID(), sourceB = SourceID()
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let f = try LocalSliceFixture(database: database, initial: [LocalSliceFixture.revision(900)],
+            initialSource: sourceA)
+        let live = try PublicationStore(database: database).recentDiversity(editionID: f.editionID, limit: 16)
+        XCTAssertFalse(live.isEmpty, "the publication froze the source fact")
+        XCTAssertTrue(live.contains { $0.sourceIDs.contains(sourceA) }, "the fact names the published source")
+        let restoredDatabase = try RuntimeDatabase(location: .init(directory: directory))
+        let restored = try PublicationStore(database: restoredDatabase).recentDiversity(editionID: f.editionID,
+            limit: 16)
+        XCTAssertEqual(restored, live, "uma restauração lê exatamente os fatos congelados")
+
+        let repeated = LocalSliceFixture.revision(7)
+        let fresh = LocalSliceFixture.revision(6)
+        try f.admit(repeated, source: sourceA)
+        try f.admit(fresh, source: sourceB)
+        let window = try CandidateProvider(contentStore: ContentStore(database: database)).candidates(for: f.plan,
+            after: nil, examinedCapacity: 10)
+        XCTAssertEqual(window.candidates.map(\.originRecordID),
+            [repeated.originRecordID, fresh.originRecordID], "the window is the newest first, before diversity")
+        let context = FeedContext(request: .main), v = PolicyVersion(rawValue: 1)
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key,
+            catalogGeneration: CatalogGeneration(rawValue: 1), userSelectionVersion: v,
+            eligibilityPolicyVersion: v, scoringPolicyVersion: v,
+            sequencingPolicyVersion: PolicyVersion(rawValue: 5), exposurePolicyVersion: v,
+            selectionSchemaVersion: SelectionSchemaVersion(rawValue: 1))
+        let plan = try XCTUnwrap(FeedPlan(context: context, revision: revision))
+        let policy = ResolvedSelectionPolicy(contextKey: revision.contextKey,
+            userSelectionVersion: revision.userSelectionVersion,
+            eligibilityPolicyVersion: revision.eligibilityPolicyVersion,
+            scoringPolicyVersion: revision.scoringPolicyVersion,
+            sequencingPolicyVersion: revision.sequencingPolicyVersion,
+            exposurePolicyVersion: revision.exposurePolicyVersion,
+            selectionSchemaVersion: revision.selectionSchemaVersion, eligibility: .structuralOnly, scoring: .equal,
+            sequencing: .recencyDescending, exposure: .none)
+        let varied = try SelectionEngine().select(plan: plan, policy: policy, window: window, exposure: nil,
+            after: nil, diversity: try XCTUnwrap(SelectionDiversityContext(recent: restored)))
+            .orderedCandidates.map(\.originRecordID)
+        XCTAssertEqual(varied, [fresh.originRecordID, repeated.originRecordID],
+            "o fato restaurado da fonte recente cede lugar à fonte nova")
+        let plain = try SelectionEngine().select(plan: plan, policy: policy, window: window, exposure: nil,
+            after: nil, diversity: nil).orderedCandidates.map(\.originRecordID)
+        XCTAssertEqual(plain, [repeated.originRecordID, fresh.originRecordID],
+            "sem os fatos, a ordem é a recência — o contexto restaurado é o que muda a ordem")
+    }
+
+    /// P09/R17 (E07): the same restored facts that reorder under version 5 leave an older Edition (version 4) exactly
+    /// in recency order. The comparison is the plan's "v5 e versões antigas" clause end to end: the facts come from
+    /// a restored database, not from a hand-built context.
+    func testRestoredDiversityFactsLeaveAnOlderSequencingEditionInRecencyOrder() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let sourceA = SourceID(), sourceB = SourceID()
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let f = try LocalSliceFixture(database: database, initial: [LocalSliceFixture.revision(900)],
+            initialSource: sourceA)
+        let restoredDatabase = try RuntimeDatabase(location: .init(directory: directory))
+        let restored = try PublicationStore(database: restoredDatabase).recentDiversity(editionID: f.editionID,
+            limit: 16)
+        XCTAssertTrue(restored.contains { $0.sourceIDs.contains(sourceA) },
+            "the restored fact names the published source")
+
+        let repeated = LocalSliceFixture.revision(9)
+        let fresh = LocalSliceFixture.revision(8)
+        try f.admit(repeated, source: sourceA)
+        try f.admit(fresh, source: sourceB)
+        let window = try CandidateProvider(contentStore: ContentStore(database: database)).candidates(for: f.plan,
+            after: nil, examinedCapacity: 10)
+        XCTAssertEqual(window.candidates.map(\.originRecordID),
+            [repeated.originRecordID, fresh.originRecordID], "the window is the newest first, before diversity")
+        let diversity = try XCTUnwrap(SelectionDiversityContext(recent: restored))
+
+        func order(sequenceVersion: UInt64) throws -> [OriginRecordID] {
+            let context = FeedContext(request: .main), v = PolicyVersion(rawValue: 1)
+            let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: context.key,
+                catalogGeneration: CatalogGeneration(rawValue: 1), userSelectionVersion: v,
+                eligibilityPolicyVersion: v, scoringPolicyVersion: v,
+                sequencingPolicyVersion: PolicyVersion(rawValue: sequenceVersion), exposurePolicyVersion: v,
+                selectionSchemaVersion: SelectionSchemaVersion(rawValue: 1))
+            let plan = try XCTUnwrap(FeedPlan(context: context, revision: revision))
+            let policy = ResolvedSelectionPolicy(contextKey: revision.contextKey,
+                userSelectionVersion: revision.userSelectionVersion,
+                eligibilityPolicyVersion: revision.eligibilityPolicyVersion,
+                scoringPolicyVersion: revision.scoringPolicyVersion,
+                sequencingPolicyVersion: revision.sequencingPolicyVersion,
+                exposurePolicyVersion: revision.exposurePolicyVersion,
+                selectionSchemaVersion: revision.selectionSchemaVersion, eligibility: .structuralOnly,
+                scoring: .equal, sequencing: .recencyDescending, exposure: .none)
+            return try SelectionEngine().select(plan: plan, policy: policy, window: window, exposure: nil,
+                after: nil, diversity: diversity).orderedCandidates.map(\.originRecordID)
+        }
+
+        XCTAssertEqual(try order(sequenceVersion: 4), [repeated.originRecordID, fresh.originRecordID],
+            "a versão 4 ignora os fatos congelados e mantém a recência")
+        XCTAssertEqual(try order(sequenceVersion: 5), [fresh.originRecordID, repeated.originRecordID],
+            "a versão 5 usa o fato restaurado e cede lugar à fonte nova")
+    }
+}
+
+extension LocalProductionSliceTests {
+    /// The measured production failure, stated as a difference of one fact: the walk is one-way, so a story skipped
+    /// while its media was pending never returns. The same supply and the same later opportunity run twice — once
+    /// with the bounded re-offer queue and once without it (the HEAD behaviour) — and only the queue publishes the
+    /// skipped story. No published card is rewritten either way.
+    func testSkippedPendingStoryBecomesReachableByALaterOpportunityWithoutMovingTheWalk() throws {
+        let skipped = LocalSliceFixture.revision(6)
+        let skippedCard = LocalSliceFixture.cardID(LocalSliceFixture.candidate(skipped))
+
+        func admitSupply(_ f: LocalSliceFixture) throws {
+            for n in [6, 4, 3, 2] { try f.admit(LocalSliceFixture.revision(n)) }
+        }
+        func recordReady(_ readiness: MediaReadiness, _ revisions: [Int]) {
+            for n in revisions {
+                readiness.record(LocalSliceFixture.revision(n).id, nil, textDeclared: true)
+            }
+        }
+
+        // HEAD: the walk passes the pending story and the cursor never comes back to it.
+        let head = try fixture(initial: [LocalSliceFixture.revision(1)])
+        try admitSupply(head)
+        let headReadiness = MediaReadiness()
+        recordReady(headReadiness, [1, 2, 3, 4])
+        let headSlice = LocalProductionSlice(database: head.database, readiness: headReadiness)
+        let headFirst = try published(headSlice.run(head.request(capacity: 2)) { LocalSliceFixture.prepared($0) })
+        XCTAssertEqual(headFirst.1.cardIDs,
+            [LocalSliceFixture.cardID(LocalSliceFixture.candidate(LocalSliceFixture.revision(4)))])
+        headReadiness.record(skipped.id, nil, textDeclared: true)
+        let headStore = PublicationStore(database: head.database)
+        let headLater = try published(headSlice.run(
+            head.request(capacity: 2, after: headFirst.0.nextCursor, segment: 44001)) { LocalSliceFixture.prepared($0) })
+        XCTAssertEqual(try headLater.1.cardIDs.map { try XCTUnwrap(headStore.card(id: $0)).originRevisionID },
+            [3, 2].map { LocalSliceFixture.revision($0).id })
+        XCTAssertNil(try headStore.card(id: skippedCard),
+            "HEAD behaviour: readiness cannot bring back a story the one-way walk already passed")
+
+        // With the queue: the same skip, the same cursor, and the story is published by the later opportunity.
+        let queued = try fixture(initial: [LocalSliceFixture.revision(1)])
+        try admitSupply(queued)
+        let readiness = MediaReadiness()
+        recordReady(readiness, [1, 2, 3, 4])
+        let reoffer = PendingMediaReconsideration()
+        let slice = LocalProductionSlice(database: queued.database, readiness: readiness, reoffer: reoffer)
+        let first = try published(slice.run(queued.request(capacity: 2)) { LocalSliceFixture.prepared($0) })
+        XCTAssertEqual(first.1.cardIDs,
+            [LocalSliceFixture.cardID(LocalSliceFixture.candidate(LocalSliceFixture.revision(4)))])
+        XCTAssertNil(try PublicationStore(database: queued.database).card(id: skippedCard))
+        XCTAssertEqual(reoffer.count, 1, "the skip is remembered instead of being lost with the cursor")
+        let store = PublicationStore(database: queued.database)
+        let beforeIDs = try store.segments(editionID: queued.editionID).flatMap(\.cardIDs)
+        let beforeCards = try beforeIDs.map { try XCTUnwrap(store.card(id: $0)) }
+
+        // The transition: the media fact the queue was waiting for.
+        readiness.record(skipped.id, nil, textDeclared: true)
+        let cursor = first.0.nextCursor
+        let window = try CandidateProvider(contentStore: ContentStore(database: queued.database))
+            .candidates(for: queued.plan, after: cursor, examinedCapacity: 2)
+        let later = try published(slice.run(
+            queued.request(capacity: 2, after: cursor, segment: 44001)) { LocalSliceFixture.prepared($0) })
+        XCTAssertEqual(later.0, LocalProductionProgress(examinedCount: window.examinedCount,
+            nextCursor: window.nextCursor, exhausted: window.exhausted),
+            "the reconsidered story never moves the structural cursor")
+        XCTAssertEqual(try later.1.cardIDs.map { try XCTUnwrap(store.card(id: $0)).originRevisionID },
+            [6, 3, 2].map { LocalSliceFixture.revision($0).id },
+            "the skipped story is published by a later opportunity")
+        XCTAssertEqual(try store.segments(editionID: queued.editionID).flatMap(\.cardIDs),
+            beforeIDs + later.1.cardIDs, "publication only extends the Edition")
+        XCTAssertEqual(try beforeIDs.map { try XCTUnwrap(store.card(id: $0)) }, beforeCards,
+            "an already-published card is never rewritten")
+        XCTAssertEqual(reoffer.count, 0, "the opportunity settled the skip")
+    }
+
+    /// PD-1 and the queue's own contract: finite, and an entry that can no longer be published leaves the queue
+    /// instead of being carried into every later opportunity.
+    func testReofferQueueIsBoundedAndDropsPublishedExpiredAndForeignEditionEntries() throws {
+        // Bound, stated by the value itself: the oldest skip is the one the ceiling gives up.
+        let queue = PendingMediaReconsideration(ceiling: 3)
+        let editionA = FeedEditionID(), editionB = FeedEditionID()
+        for n in 1...4 {
+            let revision = LocalSliceFixture.revision(n)
+            queue.remember(.init(editionID: editionA, originRecordID: revision.originRecordID,
+                originRevisionID: revision.id))
+        }
+        XCTAssertEqual(queue.count, 3)
+        XCTAssertEqual(queue.entries(for: editionA).map(\.originRevisionID),
+            [2, 3, 4].map { LocalSliceFixture.revision($0).id })
+        // An Edition whose walk this process no longer serves cannot publish its entries.
+        let foreign = LocalSliceFixture.revision(5)
+        queue.remember(.init(editionID: editionB, originRecordID: foreign.originRecordID,
+            originRevisionID: foreign.id))
+        XCTAssertEqual(queue.count, 1, "the previous Edition's entries are dead weight, not a second bound")
+        XCTAssertEqual(queue.entries(for: editionB).map(\.originRevisionID), [foreign.id])
+        XCTAssertTrue(queue.entries(for: editionA).isEmpty,
+            "another Edition's entries are discarded, never offered")
+
+        // Published and expired, through the slice that owns the offer.
+        let f = try fixture(initial: [LocalSliceFixture.revision(1)])
+        let publishedElsewhere = LocalSliceFixture.revision(6)
+        let expired = LocalSliceFixture.revision(7)
+        try f.admit(expired); try f.admit(publishedElsewhere)
+        let readiness = MediaReadiness()
+        readiness.record(LocalSliceFixture.revision(1).id, nil, textDeclared: true)
+        let reoffer = PendingMediaReconsideration()
+        let slice = LocalProductionSlice(database: f.database, readiness: readiness, reoffer: reoffer)
+        let first = try slice.run(f.request(capacity: 2)) { _ in throw PreparationFailure.refused }
+        guard case .advancedWithoutPublication = first else {
+            return XCTFail("both stories are pending, so nothing can be published")
+        }
+        XCTAssertEqual(reoffer.count, 2)
+
+        // 6 is published by another owner of this Edition; 7's revision is replaced, so the queued revision (and the
+        // readiness fact about it) can never become a card.
+        try f.externalAppend(publishedElsewhere)
+        let expiredCard = LocalSliceFixture.cardID(LocalSliceFixture.candidate(expired))
+        let replacement = OriginRevision(id: OriginRevisionID(),
+            originRecordID: expired.originRecordID, externalVersionIdentity: nil, headline: "Replaced",
+            summary: "Replaced", bodyText: nil, authoredAt: expired.authoredAt, modifiedAt: nil,
+            observedAt: expired.observedAt, language: nil, primaryLink: nil, searchProjection: nil,
+            providerID: nil)
+        try f.admit(replacement, previous: expired.id)
+        readiness.record(publishedElsewhere.id, nil, textDeclared: true)
+        readiness.record(expired.id, nil, textDeclared: true)
+
+        let store = PublicationStore(database: f.database)
+        let beforeIDs = try store.segments(editionID: f.editionID).flatMap(\.cardIDs)
+        // The queue is the only supply of this opportunity: the cursor is past every story in it.
+        let past = CandidateSupplyCursor(sortDate: Date(timeIntervalSince1970: 0), originRecordID: OriginRecordID())
+        let outcome = try slice.run(f.request(capacity: 2, after: past, segment: 44002)) {
+            LocalSliceFixture.prepared($0)
+        }
+        guard case .advancedWithoutPublication = outcome else {
+            return XCTFail("neither a published nor a superseded skip may become a card")
+        }
+        XCTAssertEqual(reoffer.count, 0, "published and expired skips are dropped")
+        XCTAssertEqual(try store.segments(editionID: f.editionID).flatMap(\.cardIDs), beforeIDs)
+        XCTAssertNil(try store.card(id: expiredCard))
+        XCTAssertEqual(try store.card(id: LocalSliceFixture.cardID(
+            LocalSliceFixture.candidate(publishedElsewhere)))?.originRevisionID, publishedElsewhere.id,
+            "the published card is the one another owner froze, not a second occurrence")
     }
 }

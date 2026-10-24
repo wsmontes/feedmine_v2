@@ -54,6 +54,9 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
     private let registrations: [SyndicationTargetRegistration]
     /// Explicitly selected sources remain reader-owned even if their managed catalogue row disappears.
     private let selectedSourceIDs: Set<SourceID>
+    /// What the composition knows about each source's catalogue quality/activity and (when measured) latency.
+    /// Empty is "no evidence": eligibility then keeps its supplied order.
+    private let targetSignals: [SourceID: AcquisitionTargetSignal]
     // Transient reference to the installed authority, independent of whether discovery is enabled.
     private let installation: CatalogInstallation?
     private let installedFingerprint: String?
@@ -71,7 +74,8 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
         discovery: ReaderDiscoveryTraversal? = nil,
         authorizedNonPublicOrigins: [URL] = [],
         selectedSourceIDs: Set<SourceID> = [],
-        installation: CatalogInstallation? = nil) throws {
+        installation: CatalogInstallation? = nil,
+        targetSignals: [SourceID: AcquisitionTargetSignal] = [:]) throws {
         guard redirectCapacity >= 0 else { throw SyndicationAcquisitionSnapshotError.invalidRedirectCapacity }
         var origins = Set<SyndicationAuthorizedOrigin>()
         for url in authorizedNonPublicOrigins {
@@ -111,6 +115,7 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
         self.database = database
         self.registrations = registrations
         self.selectedSourceIDs = selectedSourceIDs
+        self.targetSignals = targetSignals
         self.installation = installation
         self.installedFingerprint = installation?.activeFingerprint()
         self.session = session
@@ -181,7 +186,16 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
             }
         }
         var seen = Set<AcquisitionTargetID>()
-        return targets.filter { seen.insert($0.id).inserted }
+        let unique = targets.filter { seen.insert($0.id).inserted }
+        guard !targetSignals.isEmpty else { return unique }
+        // D (spec "Estabilidade de coleta e UI"): the composition orders what it supplies, before any planner
+        // sees it. `AcquisitionPlanner` is untouched — its contract is explicit that "Targets are never
+        // reordered by pressure" and that the supplied order remains priority. With no signals this returns
+        // `unique` unchanged, so the default is exactly the registration order.
+        let sourcesByTarget = Dictionary(uniqueKeysWithValues: registrations.map {
+            ($0.targetID, $0.bindings.map(\.sourceID))
+        })
+        return AcquisitionTargetOrdering.ordered(unique, sourcesByTarget: sourcesByTarget, signals: targetSignals)
     }
 
     func discoverySourceIDs(for context: FeedContext) throws -> Set<SourceID> {
@@ -239,6 +253,7 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
         database = original.database
         self.registrations = registrations
         selectedSourceIDs = original.selectedSourceIDs
+        targetSignals = original.targetSignals
         installation = original.installation
         installedFingerprint = original.installedFingerprint
         session = original.session
@@ -269,10 +284,27 @@ public struct SyndicationAcquisitionSnapshot: Sendable {
             bindings: registration.bindings, language: updated.language)
     }
 
-    // Page snapshots carry no traversal, so connector lookup cannot recurse into its owner.
-    func discoverySnapshot(registrations: [SyndicationTargetRegistration]) throws -> SyndicationAcquisitionSnapshot {
-        try SyndicationAcquisitionSnapshot(database: database, registrations: registrations,
-            session: session, redirectCapacity: redirectCapacity, now: now)
+    // Page snapshots carry no traversal, so connector lookup cannot recurse into its owner. They do carry every
+    // fact that decides *how* a target is fetched: the session, the redirect budget, the clock and the non-public
+    // origins the composition authorized. Dropping the last one made a benchmark/discovery run fetch only the
+    // association's first page: every target discovered later was refused as a non-public host before any request.
+    func discoverySnapshot(registrations: [SyndicationTargetRegistration]) -> SyndicationAcquisitionSnapshot {
+        SyndicationAcquisitionSnapshot(pageOf: self, registrations: registrations)
+    }
+
+    private init(pageOf original: SyndicationAcquisitionSnapshot,
+        registrations: [SyndicationTargetRegistration]) {
+        discovery = nil
+        database = original.database
+        self.registrations = registrations
+        selectedSourceIDs = original.selectedSourceIDs
+        targetSignals = original.targetSignals
+        installation = original.installation
+        installedFingerprint = original.installedFingerprint
+        session = original.session
+        redirectCapacity = original.redirectCapacity
+        authorizedNonPublicOrigins = original.authorizedNonPublicOrigins
+        now = original.now
     }
 
     internal var runtimeDatabase: RuntimeDatabase { database }

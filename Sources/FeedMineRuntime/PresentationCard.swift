@@ -31,6 +31,15 @@ public enum PresentationPrimaryActionKind: String, Hashable, Sendable {
     case localContentDetail
 }
 
+/// What the card's own payload is, as the frozen publication stated it. `nil` on the card means unknown: a card
+/// published before the fact existed. Unknown is never read as audio — that inference is exactly what made every
+/// video look like a podcast.
+public enum PresentationMediaIdentity: String, Hashable, Sendable {
+    case none
+    case audio
+    case video
+}
+
 /// Presentation is reconstructible; frozen publication remains the authority.
 /// Action targets and backend provenance deliberately do not cross this surface.
 public struct PresentationCard: Identifiable, Hashable, Sendable {
@@ -47,7 +56,11 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     public let layout: PresentationCardLayout
     public let mediaAspectRatio: Double?
     public let primaryActionKind: PresentationPrimaryActionKind?
-    /// Slot-sized local image ready to draw; nil renders the layout's frozen placeholder.
+    /// D2: the media kind the publication froze. Nil is unknown history — not audio, not video.
+    public let mediaIdentity: PresentationMediaIdentity?
+    /// Slot-sized local image ready to draw. An image card crossing admission always carries it; nil means either a
+    /// declared `.textOnly` card or a bitmap released outside the pixel band (already admitted, reconstructed before
+    /// it returns to the band).
     public let image: PresentationImage?
 
     /// Residency-only reconstruction: identical frozen values with different decoded pixels.
@@ -55,7 +68,8 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     init(id: PublicationCardID, title: String?, primaryText: String?, timestamp: PresentationTimestamp?,
         sourceID: SourceID?, sourceDisplayName: String?, providerDisplayName: String?,
         layout: PresentationCardLayout,
-        mediaAspectRatio: Double?, primaryActionKind: PresentationPrimaryActionKind?, image: PresentationImage?) {
+        mediaAspectRatio: Double?, primaryActionKind: PresentationPrimaryActionKind?,
+        mediaIdentity: PresentationMediaIdentity? = nil, image: PresentationImage?) {
         self.id = id
         self.title = title
         self.primaryText = primaryText
@@ -66,6 +80,7 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
         self.layout = layout
         self.mediaAspectRatio = mediaAspectRatio
         self.primaryActionKind = primaryActionKind
+        self.mediaIdentity = mediaIdentity
         self.image = image
     }
 
@@ -74,7 +89,8 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     func withDecodedImage(_ image: PresentationImage?) -> PresentationCard {
         PresentationCard(id: id, title: title, primaryText: primaryText, timestamp: timestamp, sourceID: sourceID,
             sourceDisplayName: sourceDisplayName, providerDisplayName: providerDisplayName, layout: layout,
-            mediaAspectRatio: mediaAspectRatio, primaryActionKind: primaryActionKind, image: image)
+            mediaAspectRatio: mediaAspectRatio, primaryActionKind: primaryActionKind,
+            mediaIdentity: mediaIdentity, image: image)
     }
 
     /// Releases only the bitmap. The slot keeps its frozen geometry, so nothing moves and the card is
@@ -84,6 +100,20 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
     /// A layout that was published with an image slot, whatever its residency state is right now.
     public var isImageBearing: Bool { layout != .textOnly }
 
+    /// The card may offer the in-app player. Only a card the publication *stated* as audio may: an unknown
+    /// identity is history written before the fact, and it is never inferred from `mediaPlayback`.
+    public var playsAudio: Bool { mediaIdentity == .audio }
+    /// The card states that its payload is a video, which this build opens at the origin, never in-app.
+    public var identifiesVideo: Bool { mediaIdentity == .video }
+
+    /// Whether this value may cross the feed's presentation boundary: a declared text card, or an image card with
+    /// the pixels it was published with. An image card with `image == nil` is either a residency release (already
+    /// admitted, outside the pixel band) or an occurrence whose media never became ready; it is never admitted,
+    /// and it is never rewritten as a text card under the same identity — that would certify a fallback the
+    /// published contract never made (`docs/product/2026-10-17-render-ready-admission-rule.md`).
+    public var isRenderReady: Bool { !isImageBearing || image != nil }
+
+    /// Residency projection (never admission): frozen values, pixels only when a decoder supplies them.
     init(publishedCard: PublishedCard, decoder: PresentationImageDecoder? = nil) {
         id = publishedCard.id
         title = publishedCard.text.title
@@ -111,6 +141,12 @@ public struct PresentationCard: Identifiable, Hashable, Sendable {
         case .externalURL: primaryActionKind = .externalURL
         case .mediaPlayback: primaryActionKind = .mediaPlayback
         case .localContentDetail: primaryActionKind = .localContentDetail
+        }
+        switch publishedCard.mediaIdentity {
+        case nil: mediaIdentity = nil
+        case .some(.none): mediaIdentity = .none
+        case .some(.audio): mediaIdentity = .audio
+        case .some(.video): mediaIdentity = .video
         }
         let projectedLayout = layout
         image = publishedCard.media.primary.flatMap { decoder?.image(key: $0.key, layout: projectedLayout) }

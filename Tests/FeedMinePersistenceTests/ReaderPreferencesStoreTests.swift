@@ -127,6 +127,34 @@ final class ReaderPreferencesStoreTests: XCTestCase {
         XCTAssertNil(reopened?.filterExpiry.expiresAt())
     }
 
+    /// The filter selection — identity and overlay window — is one durable write, so a refusal leaves neither
+    /// behind. A new key beside an old expiry is not a reachable state.
+    func testFilterSelectionWritesKeyAndExpiryAtomically() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try RuntimeDatabase(location: .init(directory: root))
+        let store = ReaderPreferencesStore(database: database)
+        let before = try store.initialize(sourceKeys: ["a"])
+        let key = ContextKey(request: .main, preset: .collection("c1"), filter: ReaderFilter(mood: .fun))
+        let expiry = ReaderFilterExpiry(isEnabled: true, startsAt: Date(timeIntervalSince1970: 1_700_000_000))
+        // A real SQLite refusal of the expiry column, which the single upsert also writes.
+        try database.write { db in
+            try db.execute(sql: """
+                CREATE TRIGGER reject_expiry_write BEFORE UPDATE ON reader_preferences
+                WHEN NEW.filter_set_at IS NOT OLD.filter_set_at
+                BEGIN SELECT RAISE(ABORT, 'refused'); END;
+                """)
+        }
+        XCTAssertThrowsError(try store.setFilterSelection(key, expiry: expiry))
+        let after = try XCTUnwrap(store.load())
+        XCTAssertEqual(after, before, "the refused write changes neither the key nor the expiry")
+        try database.write { db in try db.execute(sql: "DROP TRIGGER reject_expiry_write") }
+        let saved = try store.setFilterSelection(key, expiry: expiry)
+        XCTAssertEqual(saved.activeContextKey, key)
+        XCTAssertEqual(saved.filterExpiry, expiry)
+        XCTAssertEqual(try store.load(), saved, "an accepted write states both facts together")
+    }
+
     /// T6: the stored active context is the whole identity, and a row written before that (a bare request)
     /// still loads — as the default surface of the request it recorded.
     func testActiveContextCarriesTheWholeIdentityAndReadsLegacyRows() throws {

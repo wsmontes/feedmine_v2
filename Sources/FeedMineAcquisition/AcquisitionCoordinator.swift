@@ -46,6 +46,24 @@ public enum AcquisitionCoordinatorError: Error, Equatable, Sendable {
     case byteCapacityExceeded(limit: Int, actual: Int)
 }
 
+/// First-result-wins latch used by `settleInFlight` so the budget is a real bound, not a structural wait.
+private actor Settlement {
+    private var result: Bool?
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    func finish(_ value: Bool) {
+        guard result == nil else { return }
+        result = value
+        continuation?.resume(returning: value)
+        continuation = nil
+    }
+
+    func wait() async -> Bool {
+        if let result { return result }
+        return await withCheckedContinuation { continuation = $0 }
+    }
+}
+
 public actor AcquisitionCoordinator {
     private struct InFlight {
         let generation: UInt64
@@ -59,6 +77,10 @@ public actor AcquisitionCoordinator {
     public nonisolated let concurrentTargetLimit: Int
     private var selectionAfter: AcquisitionTargetID?
     private var inFlight: [AcquisitionTargetID: InFlight] = [:]
+    /// P01 retirement fence for the shared transport: while false, the coordinator starts no new execution (and a
+    /// pump adds no new work). A pull already authorized keeps running — its durable supply still counts — and a
+    /// joiner still reads that execution's result.
+    private var newStartsAllowed = true
     // One transient coverage fact per actually settled target, including empty/304/failure.
     // The coordinator is shared by cold and active-session work and lives for their association.
     // Checkpoints cannot represent an attempt that admitted nothing.
@@ -74,6 +96,34 @@ public actor AcquisitionCoordinator {
         self.backoff = backoff
         self.concurrentTargetLimit = max(1, concurrentTargetLimit)
         self.monotonicSeconds = monotonicSeconds
+    }
+
+    /// P01: closes or reopens the start fence for this association's shared transport owner. Suspending does not
+    /// stop work already authorized (R14's durable supply) and does not disturb a joiner reading it.
+    public func setNewStartsAllowed(_ allowed: Bool) {
+        newStartsAllowed = allowed
+    }
+
+    /// Retirement order, R20/close: a session's transport may only be invalidated after no authorized pull can
+    /// create another URL session task. Cancellation is requested first; the wait is bounded so a connector that
+    /// ignores it cannot hang retirement. Returns whether every authorized pull settled inside the budget.
+    @discardableResult
+    public func settleInFlight(budget: Duration = .seconds(2)) async -> Bool {
+        guard !inFlight.isEmpty else { return true }
+        let tasks = Array(inFlight.values.map(\.task))
+        for task in tasks { task.cancel() }
+        // The wait must not be structural: a pull that ignores cancellation would otherwise keep the task group
+        // (and therefore retirement) alive past the budget. Two unstructured observers race; the first wins.
+        let settlement = Settlement()
+        Task {
+            for task in tasks { _ = try? await task.value }
+            await settlement.finish(true)
+        }
+        Task {
+            try? await Task.sleep(for: budget)
+            await settlement.finish(false)
+        }
+        return await settlement.wait()
     }
 
     /// Targets whose recent consecutive operational failures put them in a cooling window.
@@ -136,19 +186,80 @@ public actor AcquisitionCoordinator {
         }
     }
 
-    /// Runs a finite plan through a sliding window of at most `concurrentTargetLimit` executions
-    /// (v1 lesson, commit 814b0a5e: refill per completion, never per chunk). Results are returned
-    /// in plan order; `onResult` sees each as it settles. A cancelled result stops starting new
-    /// work; fatal errors propagate. A limit of 1 is exactly sequential.
+    /// One settled execution, carried from the slot pump to the editorial consumer in completion order.
+    private struct IndexedResult: Sendable {
+        let index: Int
+        let result: AcquisitionExecutionResult
+    }
+
+    /// The settled results of one call, written by the pump and read by the caller. The order is the plan's: a result
+    /// that completed out of order still lands in its own slot.
+    private final class SettledResults: @unchecked Sendable {
+        private let lock = NSLock()
+        private var results: [Int: AcquisitionExecutionResult] = [:]
+        func record(index: Int, result: AcquisitionExecutionResult) {
+            lock.lock(); results[index] = result; lock.unlock()
+        }
+        func ordered(_ count: Int) -> [AcquisitionExecutionResult] {
+            lock.lock(); defer { lock.unlock() }
+            return (0..<count).compactMap { results[$0] }
+        }
+    }
+
+    /// Runs a finite plan through a sliding window of at most `concurrentTargetLimit` executions and reports each
+    /// result **as it settles**, in completion order. A cancelled result stops starting new work; a fatal error
+    /// propagates and cancels the siblings. A limit of 1 is exactly sequential.
+    ///
+    /// R05: the network slot pump and the result consumer are two structured children of one group. The pump yields
+    /// a settled, durable result to a stream whose backlog is bounded by the plan itself (one result per planned
+    /// work item can exist), then refills the freed slot immediately. It never awaits the consumer: a suspended
+    /// editorial callback cannot stop targets C and D from starting. The consumer drains the stream serially and
+    /// awaits the caller's callback, so no unbounded task per result is created. Results already settled stay
+    /// accounted for even when the callback fails or the round is cancelled.
     public nonisolated func executeConcurrently(_ work: [AcquisitionPlannedWork],
         operation: FeedReplenishmentOperationID? = nil, trace: ReplenishmentTrace? = nil,
         onResult: @escaping @Sendable (AcquisitionExecutionResult) async throws -> Void) async throws -> [AcquisitionExecutionResult] {
+        guard !work.isEmpty else { return [] }
         let limit = concurrentTargetLimit
-        return try await withThrowingTaskGroup(of: (Int, AcquisitionExecutionResult).self) { group in
+        let (stream, continuation) = AsyncStream.makeStream(of: IndexedResult.self,
+            bufferingPolicy: .bufferingOldest(work.count))
+        let settled = SettledResults()
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    // The durable outcome of each target is stated to the consumer here, before any editorial work;
+                    // the pump is free to keep the slot window full while the consumer is suspended.
+                    defer { continuation.finish() }
+                    try await self.settle(work, limit: limit, operation: operation, trace: trace,
+                        settled: settled, yield: { continuation.yield($0) })
+                }
+                group.addTask {
+                    for await item in stream { try await onResult(item.result) }
+                }
+                do {
+                    while let _ = try await group.next() {}
+                } catch {
+                    group.cancelAll()
+                    continuation.finish()
+                    throw error
+                }
+            }
+        } catch {
+            continuation.finish()
+            throw error
+        }
+        return settled.ordered(work.count)
+    }
+
+    /// The slot pump: at most `limit` executions, refilled on every settlement. Reporting is a yield, never an
+    /// `await` of the consumer.
+    private func settle(_ work: [AcquisitionPlannedWork], limit: Int,
+        operation: FeedReplenishmentOperationID?, trace: ReplenishmentTrace?,
+        settled: SettledResults, yield: @escaping @Sendable (IndexedResult) -> Void) async throws {
+        try await withThrowingTaskGroup(of: (Int, AcquisitionExecutionResult).self) { group in
             var next = 0, running = 0, stopped = false
-            var settled: [Int: AcquisitionExecutionResult] = [:]
             func startMore() {
-                while !stopped, running < limit, next < work.count {
+                while newStartsAllowed, !stopped, running < limit, next < work.count {
                     let index = next, item = work[index]
                     group.addTask { (index, try await self.execute(item, operation: operation, trace: trace)) }
                     next += 1; running += 1
@@ -158,13 +269,12 @@ public actor AcquisitionCoordinator {
             while let pair = try await group.next() {
                 let (index, result) = pair
                 running -= 1
-                settled[index] = result
-                try await onResult(result)
+                settled.record(index: index, result: result)
+                yield(IndexedResult(index: index, result: result))
                 if result.stop == .cancelled { stopped = true }
                 if !stopped { try Task.checkCancellation() }
                 startMore()
             }
-            return work.indices.compactMap { settled[$0] }
         }
     }
 
@@ -210,6 +320,12 @@ public actor AcquisitionCoordinator {
             }
             // Joiners share the original bounds/result and never remove execution ownership.
             return try await existing.task.value
+        }
+        // P01: a closed fence refuses to create the transport work, and says so as a cancelled execution rather
+        // than pretending a target was attempted.
+        guard newStartsAllowed else {
+            return AcquisitionExecutionResult(targetID: target.id, generation: target.generation,
+                stop: .cancelled, receipts: [])
         }
         guard case .start(_, let bounds) = work else {
             throw AcquisitionCoordinatorError.missingActiveExecution(target.id)

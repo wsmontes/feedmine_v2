@@ -11,6 +11,13 @@ import FeedMineRuntime
 
 /// F01's core: a profile of interests and languages turns into real sources from the bundled catalogue, without
 /// the reader naming a feed. Deterministic, bounded, and derived only from the catalogue's own labels.
+private final class SettledCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    func set(_ next: Int) { lock.withLock { value = next } }
+    var count: Int { lock.withLock { value } }
+}
+
 final class ReaderDiscoveryPoolTests: XCTestCase {
     private func catalog() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite")
@@ -39,12 +46,17 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
                     (13, 'https://science.pod/pod', 'Podcast', 'https://science.pod/pod', 'https://science.pod/pod', 'audio', 'pt', 95),
                     (14, 'https://sport.pt/feed', 'Sport PT', 'https://sport.pt/feed', 'https://sport.pt/feed', 'text', 'pt', 60),
                     (15, 'https://science.pt-two/feed', 'Ciência PT 2', 'https://science.pt-two/feed', 'https://science.pt-two/feed', 'text', 'pt-BR', 85),
-                    (16, 'https://both.xx/feed', 'Ciência e esporte', 'https://both.xx/feed', 'https://both.xx/feed', 'text', NULL, 50);
+                    (16, 'https://both.xx/feed', 'Ciência e esporte', 'https://both.xx/feed', 'https://both.xx/feed', 'text', NULL, 50),
+                    -- D10: the highest-quality source here is video, in the topic and language every discovery
+                    -- profile below names — so "video never enters the automatic pool" is a fact of the pool and
+                    -- not of a fixture that simply has none.
+                    (17, 'https://science.video/feed', 'Vídeo', 'https://science.video/feed', 'https://science.video/feed', 'video', 'pt', 99);
                 INSERT INTO catalog_placement (source_id, node_id, node_name, opml_file, sort_order) VALUES
                     (10, 2, 'Science', 'x.opml', 0), (11, 2, 'Science', 'x.opml', 1),
                     (12, 2, 'Science', 'x.opml', 2), (13, 2, 'Science', 'x.opml', 3),
                     (14, 3, 'Sport', 'y.opml', 0), (15, 2, 'Science', 'x.opml', 4),
-                    (16, 2, 'Science', 'x.opml', 5), (16, 3, 'Sport', 'y.opml', 1);
+                    (16, 2, 'Science', 'x.opml', 5), (16, 3, 'Sport', 'y.opml', 1),
+                    (17, 2, 'Science', 'x.opml', 6);
                 """)
         }
         return url
@@ -70,6 +82,46 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
 
     /// A target discovered from a catalogue entry must carry its declared language into the
     /// materialized registration, not rely on an outer snapshot to filter it a second time.
+    /// R13: a subject returned to "Normal" is not an exclusion. The pool includes the persisted topic again, and
+    /// the reader's own cycle (more → less → neutral) cannot leave a stale exclusion behind.
+    func testNeutralPreferenceDoesNotExcludePersistedTopic() throws {
+        let catalogURL = try catalog()
+        let builder = ReaderDiscoveryBuilder(catalogURL: catalogURL)
+        func pool(_ level: ReaderPreferenceLevel) throws -> [String] {
+            let recipe = FeedRecipeDefinition(languages: ["pt"],
+                topicPreferences: ["topic:topics/science": level])
+            return try builder.pool(for: ReaderDiscoveryProfile(recipe: recipe), limit: 50)
+                .entries.map(\.principal)
+        }
+        XCTAssertTrue(try pool(.neutral).contains("https://science.pt/feed"),
+            "neutral não exclui o assunto persistido")
+        XCTAssertTrue(try pool(.more).contains("https://science.pt/feed"))
+        XCTAssertFalse(try pool(.less).contains("https://science.pt/feed"),
+            "menos exclui uma fonte que só está nesse assunto")
+        XCTAssertEqual(ReaderPreferenceLevel.more.next(), .less)
+        XCTAssertEqual(ReaderPreferenceLevel.less.next(), .neutral)
+        XCTAssertTrue(try pool(.less.next()).contains("https://science.pt/feed"),
+            "voltar de menos para normal devolve a fonte")
+    }
+
+    /// R13: editorial keys (`media:`, `nature:`) are weights in their own namespace; they are not catalogue topic
+    /// nodes and must not become topic exclusions. A topic-keyed editorial answer still excludes its topic.
+    func testEditorialAndTopicKeysDoNotCollide() {
+        let recipe = FeedRecipeDefinition(languages: ["pt"],
+            topicPreferences: ["topic:topics/science": .more],
+            editorialPreferences: ["media:video": .less, "nature:paywall": .less])
+        let profile = ReaderDiscoveryProfile(recipe: recipe)
+        XCTAssertEqual(profile.topicNodeKeys, ["topics/science"])
+        XCTAssertTrue(profile.excludedTopicNodeKeys.isEmpty,
+            "chaves editoriais não viram nós de assunto")
+        XCTAssertEqual(recipe.weight(forKey: "media:video"), -1.5,
+            "o peso editorial continua valendo na ordenação")
+        XCTAssertEqual(recipe.weight(forKey: "nature:paywall"), -1.5)
+        let explicit = FeedRecipeDefinition(editorialPreferences: ["topic:topics/science": .less])
+        XCTAssertEqual(ReaderDiscoveryProfile(recipe: explicit).excludedTopicNodeKeys, ["topics/science"],
+            "uma resposta editorial com chave de assunto ainda exclui aquele assunto")
+    }
+
     func testD2TraversalCarriesEntryLanguageIntoAcquisitionEligibility() throws {
         let catalogURL = try catalog()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -220,36 +272,59 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
         _ = try await driver.drive(resources: resources)
         XCTAssertTrue(discovery.entries.isEmpty, "An inactive driver cannot advance discovery")
         _ = try await driver.activateCurrentPresentation(resources: resources)
+        for _ in 0..<200 where discovery.entries.count < 59 { try? await Task.sleep(for: .milliseconds(25)) }
         XCTAssertEqual(discovery.entries.count, 59, "One opportunity examines one page, including profile misses")
         let firstCards = try PublicationStore(database: database).segments(editionID: edition).flatMap(\.cardIDs)
         let firstSources = try Set(firstCards.compactMap { try PublicationStore(database: database).card(id: $0)?.sourceID })
-        let revoked = try XCTUnwrap(discovery.entries.first { !firstSources.contains($0.source.id) })
+        let revoked = try XCTUnwrap(discovery.entries.first {
+            !firstSources.contains($0.source.id) && $0.principal != "https://progress0124.test/feed"
+        })
         _ = try AcquisitionTargetAuthority(database: database).revoke(id: revoked.targetID, expectedGeneration: 1)
         _ = try await driver.drive(resources: resources)
+        for _ in 0..<200 where discovery.entries.count < 119 { try? await Task.sleep(for: .milliseconds(25)) }
         XCTAssertEqual(discovery.entries.count, 119)
         _ = try await driver.drive(resources: resources)
-        XCTAssertEqual(discovery.entries.count, 127)
+        for _ in 0..<200 where discovery.entries.count < 128 { try? await Task.sleep(for: .milliseconds(25)) }
+        // 125 progressive sources plus the three fixture sources the catalogue places in the reader's language as
+        // text or audio: the walk reaches every one of them, past the legacy 120 ceiling, and stops there.
+        XCTAssertEqual(discovery.entries.count, 128)
         XCTAssertTrue(discovery.exhausted)
         let entries = discovery.entries
+        XCTAssertTrue(entries.contains { $0.principal == "https://science.pod/pod" },
+            "the walk admits the audio source of the reader's language, not only its text sources")
         let targets = try acquisition.eligibleTargets(for: context)
-        XCTAssertEqual(targets.count, 126)
+        XCTAssertEqual(targets.count, 127)
         XCTAssertFalse(targets.contains { $0.id == revoked.targetID })
         XCTAssertTrue(targets.allSatisfy { acquisition.connector(for: $0) != nil })
-        let facts = await coordinator.selectionOpportunity { _, _, _, settled in
-            XCTAssertEqual(settled.count, 127)
-            return .disposition(.noEligibleTargets)
+        let settled = SettledCounter()
+        for _ in 0..<800 {
+            _ = await coordinator.selectionOpportunity { _, _, _, generations in
+                settled.set(generations.count)
+                return .disposition(.noEligibleTargets)
+            }
+            if settled.count >= targets.count { break }
+            try? await Task.sleep(for: .milliseconds(25))
         }
-        _ = facts
+        XCTAssertEqual(settled.count, targets.count)
         let beyond120 = try XCTUnwrap(entries.first { $0.principal == "https://progress0124.test/feed" })
+        for _ in 0..<800 where (try? ContentStore(database: database).candidateWindow(sourceID: beyond120.source.id,
+            after: nil, examinedCapacity: 200).records.count) != 1 {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
         XCTAssertEqual(try ContentStore(database: database).candidateWindow(sourceID: beyond120.source.id,
-            after: nil, examinedCapacity: 8).records.count, 1)
+            after: nil, examinedCapacity: 200).records.count, 1)
         // Newly acquired sources are eligible when measured runway pressure requests publication.
         let pressure = FeedRunwayDriverResources(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 32,
             readyProbeBound: 128, readyProbeCeiling: 256, forwardAdvanceProbeBound: 256, reserveCards: 128)!,
             acquisition: resources.acquisition, discoveryExaminedCapacity: 60)
         _ = try await driver.drive(resources: pressure)
-        let cards = try PublicationStore(database: database).segments(editionID: edition).flatMap(\.cardIDs)
-        let publishedSources = try Set(cards.compactMap { try PublicationStore(database: database).card(id: $0)?.sourceID })
+        var cards = try PublicationStore(database: database).segments(editionID: edition).flatMap(\.cardIDs)
+        var publishedSources = try Set(cards.compactMap { try PublicationStore(database: database).card(id: $0)?.sourceID })
+        for _ in 0..<200 where !publishedSources.contains(beyond120.source.id) {
+            try? await Task.sleep(for: .milliseconds(25))
+            cards = try PublicationStore(database: database).segments(editionID: edition).flatMap(\.cardIDs)
+            publishedSources = try Set(cards.compactMap { try PublicationStore(database: database).card(id: $0)?.sourceID })
+        }
         XCTAssertFalse(publishedSources.contains(revoked.source.id), "Revoked discovery sources cannot acquire new occurrences")
         XCTAssertTrue(publishedSources.contains(beyond120.source.id), "New pages extend selected-source eligibility")
         let finalPresentation = await session.currentPresentation()
@@ -392,6 +467,78 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
         XCTAssertGreaterThan(f.discovery.entries.count, firstPage, "The coalesced opportunity reached the pool")
         let snapshot = await f.session.currentPresentation()
         XCTAssertEqual(snapshot, f.initial, "Discovery cannot move or admit the reader's position")
+    }
+
+    @MainActor
+    func testStaleCallerBudgetIsNotInstalledIntoTheNextExecution() async throws {
+        let f = try await progressiveFixture(count: 5)
+        let pages = DiscoveryPageJournal(), media = MediaCallJournal()
+        let (ownerRelease, ownerSignal) = AsyncStream<Void>.makeStream()
+        defer { ownerSignal.finish() }
+        let (staleRelease, staleSignal) = AsyncStream<Void>.makeStream()
+        defer { staleSignal.finish() }
+        let (pageRelease, pageSignal) = AsyncStream<Void>.makeStream()
+        defer { pageSignal.finish() }
+        let runway = RunwayController(configuration: .init(policyInputs: .init(safetyFactor: 1, releaseMarginSeconds: 0)!,
+            consumptionSampleLimit: 2, replenishmentSampleLimit: 2)!)
+        let driver = try FeedRunwayDriver(session: f.session, runway: runway, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator,
+            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            makeSegmentIdentity: { .init(segmentID: .init(), segmentSeed: 1, segmentCreatedAt: Date())! },
+            prepare: Self.prepareDiscovery, selectedSourceCoverage: .init(selectedSourceCoverageFor: f.plan.context.key,
+                editorialRevisionID: f.plan.revision.id),
+            onDiscoveryPage: { _ in
+                // Pages 1 and 2 belong to the owner; page 3 is the new execution, kept active here.
+                if pages.record() == 3 { for await _ in pageRelease { break } }
+            },
+            makeMediaOpportunity: {
+                let call = media.next()
+                if call == 1 { for await _ in ownerRelease { break } }
+                if call == 2 { for await _ in staleRelease { break } }
+                return MediaPreparationOpportunity(waitSeconds: 0, startedAt: 0,
+                    prepare: { _, _ in media.prepare(call) })
+            })
+        let resources = FeedRunwayDriverResources(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 8,
+            readyProbeBound: 4, readyProbeCeiling: 8, forwardAdvanceProbeBound: 8, reserveCards: 1)!,
+            acquisition: .init(targetWorkCapacity: 2, batchCapacityPerNewExecution: 1,
+                observationCapacityPerBatch: 8, byteCapacityPerBatch: 100_000)!, discoveryExaminedCapacity: 3)
+
+        let owner = Task { try await driver.activateCurrentPresentation(resources: resources) }
+        var deadline = Date().addingTimeInterval(5)
+        while media.callCount < 1, Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(media.callCount, 1)
+        _ = try await driver.drive(resources: resources) // coalesces a caller and its page
+        ownerSignal.yield(())
+        _ = try await owner.value
+        deadline = Date().addingTimeInterval(5)
+        while media.callCount < 2, Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(media.callCount, 2, "the coalesced caller's budget is suspended")
+
+        let next = Task { try await driver.drive(resources: resources) }
+        deadline = Date().addingTimeInterval(5)
+        while media.callCount < 3 || pages.served < 3, Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(media.callCount, 3)
+        XCTAssertEqual(pages.served, 3, "the new execution is active on its page")
+
+        // The old budget returns while the new execution owns the scope. Wait until that return is processed.
+        let refreshesBefore = await driver.callerMediaRefreshCompletions
+        staleSignal.yield(())
+        deadline = Date().addingTimeInterval(5)
+        while await driver.callerMediaRefreshCompletions == refreshesBefore, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        let refreshesAfter = await driver.callerMediaRefreshCompletions
+        XCTAssertEqual(refreshesAfter, refreshesBefore + 1,
+            "the stale return was processed by finishCallerMediaRefresh")
+        media.clearPrepared()
+        await driver.noteMediaReadinessChanged()
+        pageSignal.yield(())
+        _ = try? await next.value
+        deadline = Date().addingTimeInterval(5)
+        while media.preparedCalls.isEmpty, Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertFalse(media.preparedCalls.contains(2),
+            "the stale call 2 budget must never be installed or used by the new execution")
+        XCTAssertTrue(media.preparedCalls.contains(3), "the new execution uses its own budget")
     }
 
     @MainActor
@@ -552,9 +699,14 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
             XCTAssertNotEqual(page.nextCursor, cursor)
             cursor = page.nextCursor
         }
-        XCTAssertEqual(keys.count, 253)
-        XCTAssertEqual(Set(keys).count, 253)
-        XCTAssertEqual(examined, 256, "Language misses consume examination capacity, not eligibility")
+        // 250 bulk sources plus the four base sources the catalogue places under the profile's topics in Portuguese
+        // as text or audio. The English, language-less, other-topic and video rows are misses, not entries; the
+        // video row is not even examined, since the pool never reads that kind (D10).
+        XCTAssertEqual(keys.count, 254)
+        XCTAssertEqual(Set(keys).count, 254, "no source is admitted twice across pages")
+        XCTAssertTrue(keys.contains("https://science.pod/pod"),
+            "the audio source is walked like any other: discovery is not a text-only internet")
+        XCTAssertEqual(examined, 257, "Language and media misses consume examination capacity, not eligibility")
     }
 
     func testEmptyFilteredPageAdvancesAndCursorCannotCrossProfiles() throws {
@@ -572,7 +724,9 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
             if page.exhausted { break }
             after = page.nextCursor
         }
-        XCTAssertEqual(Set(principals), ["https://science.pt/feed", "https://science.pt-two/feed"])
+        XCTAssertEqual(Set(principals), ["https://science.pod/pod", "https://science.pt-two/feed",
+            "https://science.pt/feed"],
+            "one-record pages still reach every candidate of the topic — audio beside text, never video")
         XCTAssertThrowsError(try builder.page(for: .init(languages: ["en"]), after: cursor, examinedCapacity: 1)) {
             XCTAssertEqual($0 as? ReaderDiscoveryError, .cursorScopeMismatch)
         }
@@ -583,17 +737,21 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
         XCTAssertThrowsError(try builder.page(for: profile, after: nil, examinedCapacity: 0))
     }
 
-    /// A profile of one topic and one language yields that topic's sources, in that language, as text — and only
-    /// those. A source the catalogue does not define the language for is not discovered by a language-constrained
-    /// profile: the pool must not invent relevance.
+    /// A profile of one topic and one language yields that topic's sources, in that language, as text **and**
+    /// audio — and only those (D10). A source the catalogue does not define the language for is not discovered by
+    /// a language-constrained profile: the pool must not invent relevance. The video source the fixture files in
+    /// exactly this topic and language never enters the automatic pool, even though the catalogue rates it above
+    /// every admitted source.
     func testAPoolIsTheTopicsSourcesInTheReadersLanguage() throws {
         let builder = ReaderDiscoveryBuilder(catalogURL: try catalog())
         let pool = try builder.pool(for: ReaderDiscoveryProfile(languages: ["pt"],
             topicNodeKeys: ["topics/science"]), limit: 10)
         XCTAssertEqual(pool.entries.map(\.principal),
-            ["https://science.pt/feed", "https://science.pt-two/feed"],
-            "ordered by the catalogue's own quality, with the region form of the language accepted")
-        XCTAssertEqual(pool.entries.count, 2)
+            ["https://science.pod/pod", "https://science.pt/feed", "https://science.pt-two/feed"],
+            "the topic's sources in the reader's language — audio beside text, ordered by the catalogue's own "
+                + "quality, with the region form of the language accepted")
+        XCTAssertFalse(pool.entries.contains { $0.principal == "https://science.video/feed" },
+            "video stays out of the automatic pool even as the catalogue's highest-quality match")
     }
 
     /// Deterministic: the same profile gives the same pool, in the same order, every time.
@@ -608,11 +766,42 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
     func testAProfileThatNamesNothingDiscoversNothing() throws {
         let builder = ReaderDiscoveryBuilder(catalogURL: try catalog())
         XCTAssertTrue(try builder.pool(for: ReaderDiscoveryProfile(), limit: 10).isEmpty)
-        // A language alone is a profile the catalogue can answer: every text source in it, whatever topic it is
-        // filed under — and still nothing the catalogue does not place in that language.
+        // A language alone is a profile the catalogue can answer: every text **and** audio source in it, whatever
+        // topic it is filed under — and still nothing the catalogue does not place in that language, nor any video.
         XCTAssertEqual(try builder.pool(for: ReaderDiscoveryProfile(languages: ["pt"], topicNodeKeys: []),
             limit: 10).entries.map(\.principal).sorted(),
-            ["https://science.pt-two/feed", "https://science.pt/feed", "https://sport.pt/feed"])
+            ["https://science.pod/pod", "https://science.pt-two/feed", "https://science.pt/feed",
+                "https://sport.pt/feed"],
+            "a language-only profile discovers text and audio alike, and never video")
+    }
+
+    /// "Todos os idiomas" is an answer, not the absence of one. The recipe carries it through `neutral()`, the
+    /// profile names the whole catalogue and the pool serves every eligible text/audio source — while a truly
+    /// unanswered profile still discovers nothing and a named language remains an absolute restriction.
+    func testTheExplicitAllLanguagesAnswerDiscoversWithoutNarrowingTheLanguage() throws {
+        let builder = ReaderDiscoveryBuilder(catalogURL: try catalog())
+        let unanswered = ReaderDiscoveryProfile(recipe: .neutral())
+        XCTAssertTrue(unanswered.isEmpty, "closing the gate answers nothing: still no discovery")
+        XCTAssertTrue(try builder.pool(for: unanswered, limit: 50).isEmpty)
+
+        let all = ReaderDiscoveryProfile(recipe: .neutral(hasLanguageAnswer: true))
+        XCTAssertFalse(all.isEmpty, "the explicit answer is a profile, even with an empty language set")
+        XCTAssertTrue(all.namesAllLanguages)
+        XCTAssertEqual(try builder.pool(for: all, limit: 50).entries.map(\.principal).sorted(),
+            ["https://both.xx/feed", "https://science.en/feed", "https://science.pod/pod",
+                "https://science.pt-two/feed", "https://science.pt/feed", "https://science.unknown/feed",
+                "https://sport.pt/feed"],
+            "all languages means every eligible text and audio source, whatever its topic or declared language")
+        XCTAssertFalse(try builder.pool(for: all, limit: 50).entries
+            .contains { $0.principal == "https://science.video/feed" },
+            "and still no video in the automatic pool (D10)")
+
+        let restricted = ReaderDiscoveryProfile(recipe: .neutral(languages: ["pt"]))
+        XCTAssertFalse(restricted.namesAllLanguages)
+        XCTAssertEqual(try builder.pool(for: restricted, limit: 50).entries.map(\.principal).sorted(),
+            ["https://science.pod/pod", "https://science.pt-two/feed", "https://science.pt/feed",
+                "https://sport.pt/feed"],
+            "a named language stays an absolute restriction, not a hint")
     }
 
     /// A language the catalogue has nothing for yields an empty pool rather than another language's sources.
@@ -622,12 +811,18 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
             topicNodeKeys: ["topics/science"]), limit: 10).isEmpty)
     }
 
-    /// The limit is a ceiling on the work, and it keeps the highest-quality sources.
+    /// The limit is a ceiling on the work, and it keeps the highest-quality sources regardless of kind: the audio
+    /// podcast outranks the text source, and the video source the catalogue rates above both is never a candidate
+    /// at all (D10).
     func testTheLimitIsRespectedAndKeepsQualityOrder() throws {
         let builder = ReaderDiscoveryBuilder(catalogURL: try catalog())
-        let pool = try builder.pool(for: ReaderDiscoveryProfile(languages: ["pt"], topicNodeKeys: ["topics"]),
-            limit: 1)
-        XCTAssertEqual(pool.entries.map(\.principal), ["https://science.pt/feed"])
+        let profile = ReaderDiscoveryProfile(languages: ["pt"], topicNodeKeys: ["topics"])
+        let pool = try builder.pool(for: profile, limit: 1)
+        XCTAssertEqual(pool.entries.map(\.principal), ["https://science.pod/pod"])
+        XCTAssertEqual(pool.entries.count, 1, "the limit remains a ceiling")
+        XCTAssertEqual(try builder.pool(for: profile, limit: 2).entries.map(\.principal),
+            ["https://science.pod/pod", "https://science.pt/feed"],
+            "quality orders the pool across kinds instead of exhausting text before audio")
     }
 
     /// F02's "menos desse assunto": a source the catalogue files **only** under the subject the reader asked for
@@ -647,6 +842,52 @@ final class ReaderDiscoveryPoolTests: XCTestCase {
         XCTAssertTrue(principals.contains("https://both.xx/feed"),
             "a source that is also filed under a wanted subject stays")
     }
+
+    /// **D10**: discovery draws from text **and** audio sources. A pool that admitted only text handed the reader
+    /// a text-only internet while the product promises "listen" (measured 2026-10-20: the pool default was
+    /// `["text"]` while the shipped catalogue carries 23.446 audio sources). Video sources stay out of the
+    /// automatic pool this round; an explicit override still decides its own set.
+    func testTheDefaultPoolAdmitsTextAndAudioButNotVideo() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("discovery-kinds-\(UUID().uuidString).sqlite")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        let queue = try DatabaseQueue(path: url.path)
+        try queue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE catalog_node (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, parent_id INTEGER,
+                    name TEXT NOT NULL, kind INTEGER NOT NULL, source_count INTEGER NOT NULL DEFAULT 0,
+                    child_count INTEGER NOT NULL DEFAULT 0, language TEXT);
+                CREATE TABLE catalog_source (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+                    declared_url TEXT NOT NULL, request_url TEXT NOT NULL, display_host TEXT, media_kind TEXT NOT NULL,
+                    language TEXT, site_url TEXT, description TEXT, tags TEXT, nature TEXT, activity TEXT,
+                    latest_item_at TEXT, quality_score INTEGER, default_enabled INTEGER NOT NULL DEFAULT 1,
+                    contact_email TEXT, contact_name TEXT, contact_source TEXT, contact_type TEXT);
+                CREATE TABLE catalog_placement (id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL, node_id INTEGER NOT NULL,
+                    node_name TEXT NOT NULL, opml_file TEXT NOT NULL, sort_order INTEGER NOT NULL, title_override TEXT,
+                    language_override TEXT, media_kind_override TEXT);
+                INSERT INTO catalog_node (id, key, parent_id, name, kind) VALUES (1, 'topics', NULL, 'Topics', 0);
+                INSERT INTO catalog_source (id, key, title, declared_url, request_url, media_kind, language, quality_score) VALUES
+                    (10, 'https://text.pt/feed', 'Texto', 'https://text.pt/feed', 'https://text.pt/feed', 'text', 'pt', 90),
+                    (11, 'https://audio.pt/pod', 'Podcast', 'https://audio.pt/pod', 'https://audio.pt/pod', 'audio', 'pt', 95),
+                    (12, 'https://video.pt/feed', 'Vídeo', 'https://video.pt/feed', 'https://video.pt/feed', 'video', 'pt', 99);
+                INSERT INTO catalog_placement (source_id, node_id, node_name, opml_file, sort_order) VALUES
+                    (10, 1, 'Topics', 'x.opml', 0), (11, 1, 'Topics', 'x.opml', 1), (12, 1, 'Topics', 'x.opml', 2);
+                """)
+        }
+        let profile = ReaderDiscoveryProfile(topicNodeKeys: ["topics"])
+        let defaulted = try ReaderDiscoveryBuilder(catalogURL: url).pool(for: profile, limit: 20)
+        let admitted = Set(defaulted.entries.map(\.principal))
+        XCTAssertTrue(admitted.contains("https://text.pt/feed"), "text sources are discovered")
+        XCTAssertTrue(admitted.contains("https://audio.pt/pod"),
+            "audio sources are discovered: a text-only pool is the defect D10 names")
+        XCTAssertFalse(admitted.contains("https://video.pt/feed"),
+            "video stays out of the automatic pool this round")
+
+        let explicit = try ReaderDiscoveryBuilder(catalogURL: url, mediaKinds: ["video"])
+            .pool(for: profile, limit: 20)
+        XCTAssertEqual(Set(explicit.entries.map(\.principal)), ["https://video.pt/feed"],
+            "an explicit kind set is honoured as stated")
+    }
 }
 
 /// Counts the catalogue pages one driver serves, so a test can hold the first one while an external
@@ -656,6 +897,16 @@ private final class DiscoveryPageJournal: @unchecked Sendable {
     private var recorded = 0
     func record() -> Int { lock.withLock { recorded += 1; return recorded } }
     var served: Int { lock.withLock { recorded } }
+}
+private final class MediaCallJournal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    private var prepared: [Int] = []
+    func next() -> Int { lock.withLock { calls += 1; return calls } }
+    func prepare(_ call: Int) { lock.withLock { prepared.append(call) } }
+    func clearPrepared() { lock.withLock { prepared.removeAll() } }
+    var callCount: Int { lock.withLock { calls } }
+    var preparedCalls: [Int] { lock.withLock { prepared } }
 }
 
 private final class ProgressiveDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {

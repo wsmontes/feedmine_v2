@@ -106,6 +106,10 @@ public struct PublicationStore: Sendable {
         public let renderMediaAspectRatio: Double?
         public let primaryActionKind: String?
         public let primaryActionReference: String?
+        /// D2: `audio`, `video` or `none`, frozen with the occurrence; nil for rows written before the fact existed.
+        public let mediaIdentity: String?
+        /// P10: editorial facts frozen with the occurrence; nil for rows written before the facts existed.
+        public let diversity: EditorialDiversityFact?
 
         public init(
             id: PublicationCardID,
@@ -128,7 +132,9 @@ public struct PublicationStore: Sendable {
             renderLayout: String,
             renderMediaAspectRatio: Double?,
             primaryActionKind: String?,
-            primaryActionReference: String?
+            primaryActionReference: String?,
+            mediaIdentity: String? = nil,
+            diversity: EditorialDiversityFact? = nil
         ) {
             self.id = id
             self.originRecordID = originRecordID
@@ -151,6 +157,8 @@ public struct PublicationStore: Sendable {
             self.renderMediaAspectRatio = renderMediaAspectRatio
             self.primaryActionKind = primaryActionKind
             self.primaryActionReference = primaryActionReference
+            self.mediaIdentity = mediaIdentity
+            self.diversity = diversity
         }
     }
 

@@ -16,12 +16,25 @@ import FeedMineUI
 import FeedMineComposition
 import FeedMineSyndication
 
+/// R15: a search submission states which half succeeded. A failure before the durable write is not saved; a failure
+/// after it is saved but not presented, and the reader can retry without duplicating anything.
+enum ReaderSearchFailure: Error, Equatable {
+    case unusableQuery
+    case notStored(detail: String)
+    case storedNotActivated(detail: String)
+
+    var selectionIsSaved: Bool { if case .storedNotActivated = self { true } else { false } }
+}
+
 @MainActor
 @Observable
 final class AppComposition {
     private(set) var association: FeedAssociation?
     /// The product-facing message the reader sees when the composition cannot start.
     private(set) var startupFailure: String?
+    /// D7-A: what the V1 upgrade carried and what remains inaccessible, owed to the reader on the first open
+    /// after the upgrade. Nil when no upgrade is pending or the reader has already dismissed it.
+    private(set) var legacyUpgradeNotice: ReaderLegacyUpgradeReceipt?
     /// The technical detail behind `startupFailure`: it belongs to diagnostics, never to the reader's copy
     /// (R5: a raw error description must not be shown as if it were product language).
     private(set) var startupFailureDetail: String?
@@ -33,6 +46,12 @@ final class AppComposition {
         #endif
     }
     private var replacingSession = false
+    /// The owner's decision of 2026-10-17 (item G): while the app is **active and visible**, the same
+    /// `foreground()` path is offered as a drive opportunity once every ≥ 10 s. `inactive()`/`background()` stop it;
+    /// it never runs in the background and adds no second pipeline.
+    @ObservationIgnored private let foregroundCadence = ForegroundDriveCadence()
+    /// Whether the app is active and visible right now — exactly the pair the cadence is allowed to drive under.
+    @ObservationIgnored private var foregroundActive = false
     /// One verification shared between foreground and a BGAppRefresh grant.
     @ObservationIgnored private var catalogueSyncInFlight = false
     private let directory: URL
@@ -44,7 +63,12 @@ final class AppComposition {
     /// `Bundle.main` lookup; one value, taken once at the top of `init`, is what makes the app read what
     /// `CatalogInstallation` verified instead of a lookup that merely happens to name the same file. `nil`
     /// stands for "this build carries no readable catalogue", stated rather than faked.
-    @ObservationIgnored private var catalogueSnapshot: CatalogSnapshot?
+    @ObservationIgnored private var catalogueSnapshot: CatalogSnapshot? {
+        // The language groups the filter lens offers are a fact about **this** asset. Tying the invalidation to
+        // the only stored value that names the asset means a future write of the snapshot cannot serve the previous
+        // catalogue's groups in silence (an earlier version cleared the cache by hand inside the activation).
+        didSet { catalogLanguages = nil }
+    }
     private var catalogueURL: URL? { catalogueSnapshot?.catalogueURL }
     @ObservationIgnored private var preferences: ReaderPreferencesStore?
     /// The reader's **real** exposures: the cards the visual capture actually presented as the reader's own
@@ -56,6 +80,9 @@ final class AppComposition {
     /// T6: the active identity — surface, preset, filter and search scope. The plain surface's key equals the
     /// pre-T6 identity, so nothing changes for a reader who never filters.
     private(set) var currentContextKey: ContextKey = ContextKey(request: .main)
+    /// R15: the context the reader came from when a search started. Its own checkpoint (written when the search
+    /// session retired it) is the promised position a cancel restores.
+    @ObservationIgnored private var searchOrigin: ContextKey?
     var currentContext: FeedContextRequest { currentContextKey.request }
     /// The filter the reader is **editing** — the lens criteria they chose plus whatever words the context
     /// itself carries. It is deliberately *not* the folded one: the sheet and the lens write what they are shown,
@@ -90,11 +117,22 @@ final class AppComposition {
         return Self.namesAnything(settings.discoveryProfile)
     }
     var currentPreset: ReaderPresetID { currentContextKey.preset }
+    /// D4: the bound the route to the reading surface is held under — the run's own measured tolerance for one
+    /// operation (`FeedAssociation.preparationWaitSeconds`), or its bootstrap value before the association exists.
+    /// The host executes the wait (it owns the clock); `FeedFirstScreenGate` judges the expiry along with the
+    /// measured layout.
+    var firstScreenWait: Duration {
+        .seconds(association?.preparationWaitSeconds ?? FeedAssociation.mediaWaitBootstrapSeconds)
+    }
     private var selectionVersion: UInt64 = 2
     private(set) var sourceOptions: [FeedSourceOption] = []
     @ObservationIgnored private var sourceSearchID = UUID()
     @ObservationIgnored private var sourceChoices: [SourceID: TrustedFeed] = [:]
     private let transportConfiguration: URLSessionConfiguration
+    /// A (spec "Estabilidade de coleta e UI"): the launch's acquisition parallelism, supplied by the host. The
+    /// default is the spec's 48; every association this composition builds receives this value, so a cold launch
+    /// and every replacement session plan with the same budget.
+    @ObservationIgnored var launchSettings: CollectionLaunchSettings = .init()
     /// U2: set once by the app host; every association receives it so the reader stays in-app.
     var onExternalURL: ((URL) -> Void)?
     /// U-reading: the reading the host presents for a card — text the app already holds, or the site. Kept apart
@@ -107,6 +145,8 @@ final class AppComposition {
     @ObservationIgnored let mediaAdapter = MediaPlaybackAdapter()
     /// T5: set once by the app host; the reader's chrome reports a destination, the host presents it.
     var onNavigate: ((ReaderDestination) -> Void)?
+    /// R15: the host restores the search origin; the association only forwards the intention.
+    var onCancelSearch: (() -> Void)?
 
     private func connecting(_ association: FeedAssociation) -> FeedAssociation {
         // T8: where this session's saves land. Resolved per save, so changing the preferred box takes effect
@@ -121,7 +161,46 @@ final class AppComposition {
         association.onReading = { [weak self] target in self?.onReading?(target) }
         // T5: the reader shell reports a destination; the host presents it. Nothing is resolved here.
         association.onNavigate = { [weak self] destination in self?.onNavigate?(destination) }
-        association.onSearch = { [weak self] term in self?.submitSearch(term) }
+        association.onCancelSearch = { [weak self] in
+            guard let self else { return }
+            Task { await self.cancelSearch() }
+        }
+        association.onOpenSource = { [weak self] sourceID in
+            guard let self else { return }
+            Task {
+                do { try await self.selectContext(.source(sourceID)) }
+                catch { self.association?.store.showToast(
+                    text: String(localized: "Não foi possível abrir a fonte"),
+                    systemImage: "exclamationmark.triangle") }
+            }
+        }
+        association.onSearch = { [weak self] term in
+            guard let self else { return }
+            Task {
+                do {
+                    try await self.submitSearch(term)
+                    // P1: `replaceSession` starts the unified page before the feed launch, so the surface appears
+                    // without waiting for the window the reader is not looking at.
+                } catch { self.reportSearchFailure(error) }
+            }
+        }
+        association.onSearchResult = { [weak self] result in self?.openSearchResult(result) }
+        association.onSearchPage = { [weak self] page, cursor in
+            guard let self else { return }
+            Task { await self.loadSearchPage(page, cursor: cursor) }
+        }
+        association.onSearchSourcePage = { [weak self] page, index in
+            guard let self else { return }
+            Task { await self.loadSearchSourcePage(page, index: index) }
+        }
+        association.onSearchScope = { [weak self] scope in
+            guard let self else { return }
+            Task { await self.changeSearchScope(scope) }
+        }
+        association.onSearchRetry = { [weak self] in
+            guard let self else { return }
+            Task { await self.rerunUnifiedSearch(scope: nil) }
+        }
         association.onShare = { [weak self] link in self?.onShare?(link) }
         // T9: a card's media action is resolved and played through the app-wide player.
         association.onMedia = { [weak self] cardID in
@@ -134,10 +213,25 @@ final class AppComposition {
 
     /// The languages the filter sheet offers, read from the shipped catalog through the T7 surface. One row per
     /// language, its regional variants kept as information; a missing asset yields none.
+    ///
+    /// **Read once per catalogue.** The catalogue's own reader states the contract this follows ("the caller
+    /// caches it, because nothing changes under a shipped asset"): the lens asks for these from a view body, so an
+    /// uncached read opened a `GRDB` queue on the asset, ran a `GROUP BY` through `sqlite`'s sorter — which spilled
+    /// to a temp file — and closed it again on the main actor for **every** body evaluation. Measured on the
+    /// Release build during a scroll (macOS `sample`, pid 99368): 64,3% of the main thread's on-CPU samples sat in
+    /// `filterLanguages › languageGroups › Row.fetchAll › sqlite3VdbeExec` (`vdbeSorterListToPMA`, `pwrite`,
+    /// `pread`), which is what the 80 ms frames and the 241 ms worst frame were made of. A failed or not-yet-
+    /// installed catalogue is **not** cached, so the first real answer is the one that sticks.
+    @ObservationIgnored private var catalogLanguages: [CatalogLanguageGroup]?
+
     func filterLanguages() -> [CatalogLanguageGroup] {
-        guard let association else { return [] }
-        let coordinator = SourceManagementCoordinator(catalogURL: catalogueURL, database: association.database)
-        return (try? coordinator.languageGroups()) ?? []
+        if let catalogLanguages { return catalogLanguages }
+        guard let association, let catalogueURL,
+            let groups = try? SourceManagementCoordinator(catalogURL: catalogueURL,
+                database: association.database).languageGroups()
+        else { return [] }
+        catalogLanguages = groups
+        return groups
     }
 
     /// T8: the box a new bookmark lands in. Nil in the preferences means the default box, which is what a
@@ -146,10 +240,168 @@ final class AppComposition {
         (try? preferences?.load())??.preferredBookmarkListID ?? ReaderBookmarkList.defaultID
     }
 
-    /// T5: one search submission is a context change, exactly like the sources menu.
-    private func submitSearch(_ term: String) {
-        guard let context = SearchContext(query: term) else { return }
-        Task { try? await selectContext(.search(context)) }
+    /// T5/R15: one search submission is a context change, exactly like the sources menu — with the confirmation
+    /// boundary made explicit. The key is persisted first; only then is memory changed and the session rebuilt.
+    func submitSearch(_ term: String) async throws {
+        guard let context = SearchContext(query: term) else { throw ReaderSearchFailure.unusableQuery }
+        let origin = currentContextKey
+        let key = ContextKey(request: .search(context), preset: currentContextKey.preset,
+            filter: resolvedFilter(at: Date()), searchScope: currentContextKey.searchScope)
+        guard let preferences else { throw ReaderSearchFailure.notStored(detail: "missing preferences") }
+        do { _ = try preferences.setContext(key) }
+        catch { throw ReaderSearchFailure.notStored(detail: String(describing: error)) }
+        searchOrigin = origin
+        currentContextKey = key
+        do { try await replaceSession() }
+        catch { throw ReaderSearchFailure.storedNotActivated(detail: String(describing: error)) }
+    }
+
+    /// R15: cancelling returns to the exact context the search started from — preset, filter, scope and the
+    /// promised position (its own durable checkpoint). A search that was never entered is a no-op.
+    func cancelSearch() async {
+        guard case .search = currentContextKey.request, let origin = searchOrigin else { return }
+        searchOrigin = nil
+        do {
+            guard let preferences else { throw ReaderPreferencesError.missingPreferences }
+            _ = try preferences.setContext(origin)
+            currentContextKey = origin
+            try await replaceSession()
+        } catch {
+            // The origin could not be restored; the search stays the durable, presented context and the reader is
+            // told so instead of being dropped somewhere invented.
+            association?.store.showToast(text: String(localized: "Não foi possível voltar ao feed anterior"),
+                systemImage: "exclamationmark.triangle")
+        }
+    }
+
+    private func reportSearchFailure(_ error: any Error) {
+        guard let failure = error as? ReaderSearchFailure else { return }
+        switch failure {
+        case .unusableQuery:
+            association?.store.showToast(text: String(localized: "Digite pelo menos um termo para buscar"),
+                systemImage: "magnifyingglass")
+        case .notStored:
+            association?.store.showToast(text: String(localized: "Não foi possível salvar a busca"),
+                systemImage: "exclamationmark.triangle")
+        case .storedNotActivated:
+            association?.store.showToast(text: String(localized: "A busca foi salva, mas não pôde ser aberta"),
+                systemImage: "exclamationmark.triangle")
+        }
+    }
+
+    // MARK: - P08: unified local search pages and destinations
+
+    /// Runs the first page of the current search context. The token comes from the surface, so a completion that
+    /// arrives after a newer term/scope is discarded there.
+    private func startUnifiedSearch(_ term: String) async {
+        guard let association else { return }
+        let scope = currentContextKey.searchScope ?? .both
+        let token = association.store.beginUnifiedSearch(term: term, scope: scope)
+        let results = await unifiedSearch(term, scope: scope, token: token)
+        if association === self.association, let results {
+            _ = association.store.applyUnifiedSearch(results)
+        } else {
+            association.store.failUnifiedSearch(token: token)
+        }
+    }
+
+    /// Appends one continuation page to the page the surface is showing. The token is the surface's current one, so
+    /// a page for an older query can never be appended.
+    private func loadSearchPage(_ page: ReaderSearchResults, cursor: ReaderSearchCursor?) async {
+        guard let association, let cursor, association.store.currentSearchToken() == page.token else { return }
+        let token = association.store.currentSearchToken()
+        guard let next = await unifiedSearch(page.query, scope: page.scope, token: token,
+            articleAfter: cursor) else {
+            association.store.failUnifiedSearch(token: token)
+            return
+        }
+        _ = association.store.appendSearchPage(next)
+    }
+
+    /// P08: a truncated source page advances with the same query and token; only the source section changes.
+    private func loadSearchSourcePage(_ page: ReaderSearchResults, index: Int) async {
+        guard let association, association.store.currentSearchToken() == page.token else { return }
+        guard let next = await unifiedSearch(page.query, scope: page.scope, token: page.token,
+            sourcePage: index) else {
+            association.store.failUnifiedSearch(token: page.token)
+            return
+        }
+        _ = association.store.appendSourcePage(next, index: index)
+    }
+
+    /// Re-runs the current search for a new scope or after a failure. A scope is part of the durable search key, so
+    /// the key is persisted and the session rebuilt before the new page is requested.
+    private func rerunUnifiedSearch(scope: ReaderSearchScope?) async {
+        guard let association, case .search(let search) = currentContextKey.request else { return }
+        let effective = scope ?? (currentContextKey.searchScope ?? .both)
+        let token = association.store.beginUnifiedSearch(term: search.query, scope: effective)
+        let results = await unifiedSearch(search.query, scope: effective, token: token)
+        if let results { _ = association.store.applyUnifiedSearch(results) }
+        else { association.store.failUnifiedSearch(token: token) }
+    }
+
+    private func changeSearchScope(_ scope: ReaderSearchScope) async {
+        guard case .search = currentContextKey.request, scope != (currentContextKey.searchScope ?? .both) else {
+            return
+        }
+        let key = ContextKey(request: currentContextKey.request, preset: currentContextKey.preset,
+            filter: currentContextKey.filter, searchScope: scope)
+        // R15: the same durable confirmation the submission uses. A refused write leaves the context and the
+        // surface where they were; only a durable key may change the search.
+        guard let preferences else {
+            association?.store.restoreSearchScope(currentContextKey.searchScope ?? .both)
+            reportSearchFailure(ReaderSearchFailure.notStored(detail: "missing preferences"))
+            return
+        }
+        do { _ = try preferences.setContext(key) }
+        catch {
+            association?.store.restoreSearchScope(currentContextKey.searchScope ?? .both)
+            reportSearchFailure(ReaderSearchFailure.notStored(detail: String(describing: error)))
+            return
+        }
+        currentContextKey = key
+        do { try await replaceSession() }
+        catch {
+            association?.store.showToast(text: String(localized: "Não foi possível trocar o escopo da busca"),
+                systemImage: "exclamationmark.triangle")
+            return
+        }
+        await rerunUnifiedSearch(scope: scope)
+    }
+
+    /// P08: a result opens the destination its authority named, through the existing owners.
+    private func openSearchResult(_ result: ReaderSearchResult) {
+        guard let association else { return }
+        switch result.destination {
+        case .source(_, let sourceID):
+            if let sourceID {
+                Task { [weak self] in
+                    do { try await self?.selectContext(.source(sourceID)) }
+                    catch {
+                        self?.association?.store.showToast(
+                            text: String(localized: "Não foi possível abrir a fonte"),
+                            systemImage: "exclamationmark.triangle")
+                    }
+                }
+            } else {
+                onNavigate?(.sources)
+            }
+        case .savedCard(let cardID):
+            association.openSaved(cardID)
+        case .article(let cardID, let originRecordID):
+            if let cardID {
+                association.openSaved(cardID)
+            } else {
+                let revision = try? ContentStore(database: association.database)
+                    .currentRevision(originRecordID: originRecordID)
+                if let url = revision?.primaryLink {
+                    onExternalURL?(url)
+                } else {
+                    association.store.showToast(text: String(localized: "Este conteúdo não está disponível"),
+                        systemImage: "exclamationmark.triangle")
+                }
+            }
+        }
     }
 
     /// F02/B01: **no starter selection.** A reader who has chosen nothing has nothing chosen — the bundled
@@ -165,7 +417,9 @@ final class AppComposition {
     /// forbids — and normal runs and release builds seed nothing.
     init(directory: URL? = nil, feeds: [TrustedFeed] = TrustedFeed.developmentSelection,
         transportConfiguration: URLSessionConfiguration? = nil,
-        discoveryQuery: DiscoveryQuery? = nil) {
+        discoveryQuery: DiscoveryQuery? = nil,
+        monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+        bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil) {
         let support = RuntimeDatabaseLocation.applicationSupport(
             FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).directory
         #if DEBUG
@@ -180,6 +434,8 @@ final class AppComposition {
         // nothing and gets the detached pass over the shipped catalogue. The same kind of seam the transport
         // already is: what the query returns is a value, and this composition owns when it is adopted.
         self.discoveryQuery = discoveryQuery ?? Self.liveDiscoveryQuery
+        self.monotonicNow = monotonicNow
+        self.bookmarkRead = bookmarkRead
         let config = transportConfiguration ?? .ephemeral
         if transportConfiguration == nil { config.timeoutIntervalForRequest = 20 }
         #if DEBUG
@@ -225,6 +481,21 @@ final class AppComposition {
                 // OMP C1: the repair path (toggleSource) needs preferences even if resolution fails.
                 self.preferences = preferences
                 var saved = try preferences.initialize(sourceKeys: feeds.map(\.principal))
+                // D7-A: the V1 upgrade runs on the first launch that finds a V1 container in this app's own
+                // container, after the preferences row exists (so an enabled V1 source can join the selection)
+                // and before any session reads the library. A second launch reads the completed marker and does
+                // nothing. Failure is recorded, never translated into an empty/default library.
+                let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+                switch LegacyV1Upgrade.runAtLaunch(applicationSupport: self.directory,
+                    documentsDirectory: documents, into: database) {
+                case .upgraded, .alreadyHandled:
+                    saved = (try? preferences.load()) ?? saved
+                case .failed(let reason):
+                    Self.log("legacy V1 upgrade failed: \(reason)")
+                case .noLegacyContainer:
+                    break
+                }
+                self.legacyUpgradeNotice = LegacyV1Upgrade.pendingNotice(in: database)
                 #if DEBUG
                 // T7 UI evidence: launch with no selected source at all, which is a state V1 allowed and
                 // stated with its own surface.
@@ -293,6 +564,15 @@ final class AppComposition {
 
     func launch() async {
         guard !replacingSession, startupFailure == nil else { return }
+        // P15: the anchor for the launch's own timing. `first_frame` states attach → presented frame; this states
+        // when the host started the launch, on the same clock, so a journey reads launch → first presented frame
+        // without a console and without guessing a process start from outside the sandbox. It is not the exec
+        // instant either: the gap between the process starting and this call stays unmeasured and is not claimed.
+        trace?.recordOnce("host_started", key: "host_started",
+            ["uptime_s": String(format: "%.3f", ProcessInfo.processInfo.systemUptime)])
+        // The anchor is written at once: like `first_frame`, it happens once per process, so waiting for the
+        // 64-line batch would lose it on a run that never backgrounds.
+        trace?.flush()
         let current: FeedAssociation
         // Whether this launch started from the window the previous interaction left — built synchronously in `init`
         // and therefore without discovery. What discovery brings arrives below, behind that window. (The adoption is
@@ -341,6 +621,11 @@ final class AppComposition {
                 current.adopt(read)
             }
         }
+        // P1: the search context must show its page without waiting for the feed window. The launch can wait on
+        // acquisition; the durable search is local and is the surface the reader asked for.
+        if association === current, case .search(let search) = currentContextKey.request {
+            await startUnifiedSearch(search.query)
+        }
         do {
             try await current.launch()
         } catch {
@@ -353,10 +638,41 @@ final class AppComposition {
         }
     }
 
+    /// The app is active and visible: the lifecycle transition. It states the pair the foreground cadence drives
+    /// under and arms the cadence, then takes the drive itself. The cadence then repeats **that drive**
+    /// (`association.foreground()`) every ≥ 10 s — never this composition pass, whose catalogue check has its own
+    /// durable clock and is not a runway opportunity. Only this method sets `foregroundActive`; `inactive()` and
+    /// `background()` clear it.
     func foreground() async {
+        foregroundActive = true
+        await startForegroundCadence()
         guard let association else { return }
         await association.foreground()
         await syncCatalogueIfDue()
+    }
+
+    /// `.inactive` is not yet background — the app can still be on screen during an app switch or a system prompt —
+    /// but it is not "active and visible" either, and that pair is exactly what the foreground cadence drives
+    /// under. The screen's own lifecycle work stays on `background()`.
+    func inactive() async {
+        foregroundActive = false
+        await foregroundCadence.stop()
+    }
+
+    private func startForegroundCadence() async {
+        await foregroundCadence.start { [weak self] in
+            await self?.foregroundCadenceOpportunity()
+        }
+    }
+
+    /// The cadence's one opportunity: the same feed drive a foreground takes — `association.foreground()`, the path
+    /// that re-activates the current presentation through `activateCurrentPresentation`. The catalogue sync stays
+    /// out on purpose: it has its own durable clock and is not a runway opportunity. The pair the cadence may run
+    /// under is re-checked here, so a wake delivered after `.inactive`/`.background` is dropped instead of undoing
+    /// that transition.
+    private func foregroundCadenceOpportunity() async {
+        guard foregroundActive, let association else { return }
+        await association.foreground()
     }
 
     /// The network opportunity is separate from the local bootstrap and from the first paint. A bundled
@@ -535,7 +851,16 @@ final class AppComposition {
         #endif
     }
 
+    /// R04: memory pressure is forwarded to the one association; no second residency model is created.
+    func trimResidencyForMemoryPressure() async {
+        await association?.trimResidencyForMemoryPressure()
+    }
+
     func background() async {
+        // The screen is gone: the cadence stops before anything else runs, so no opportunity is offered past this
+        // point. (`inactive()` already stopped it on the way here; a direct `.background` still stops it.)
+        foregroundActive = false
+        await foregroundCadence.stop()
         // V1's own moment for this (`FeedScreen` on `.background`): what the reader was listening to is written
         // before the app can be suspended, so a flush that never comes costs nothing.
         if mediaAdapter.state.item != nil { mediaAdapter.savePosition() }
@@ -660,17 +985,31 @@ final class AppComposition {
         }
     }
 
-    /// T6: an explicit filter transition. The selection is persisted first, then the association is rebuilt
-    /// around the new identity, so A→B→A finds A's own checkpoint and no old callback can install into B.
+    /// T6: an explicit filter transition. It is a **confirmation boundary**: the selection (identity and overlay
+    /// window together, one durable write) is confirmed first, and only then does memory change and the session
+    /// get rebuilt. A persistence failure therefore leaves the previous key, the previous expiry and the live
+    /// session exactly as they were; a failure after confirmation is reported as such and can be retried, because
+    /// the selection it names is already durable.
     func applyFilter(_ filter: ReaderFilter, preset: ReaderPresetID) async throws {
         let key = ContextKey(request: currentContextKey.request, preset: preset, filter: filter,
             searchScope: currentContextKey.searchScope)
-        guard key != currentContextKey else { return }
-        currentContextKey = key
-        _ = try preferences?.setContext(key)
+        // A confirmed selection whose presentation failed is retried: the live session is not the applied key.
+        guard key != currentContextKey || association?.contextKey != applied(key) else { return }
         // A new overlay selection starts the window again; a selection without overlay criteria has none.
-        _ = try preferences?.setFilterExpiry(filterExpiry(renewing: filter, at: Date()))
-        try await replaceSession()
+        let expiry = filterExpiry(renewing: filter, at: Date())
+        do {
+            guard let preferences else { throw ReaderPreferencesError.missingPreferences }
+            _ = try preferences.setFilterSelection(key, expiry: expiry)
+        } catch {
+            throw ReaderFilterFailure.persistenceFailed(detail: String(describing: error))
+        }
+        currentContextKey = key
+        do {
+            try await replaceSession()
+        } catch {
+            // The selection is durable and stays identified; the feed was not rebuilt around it.
+            throw ReaderFilterFailure.presentationFailed(detail: String(describing: error))
+        }
     }
 
     /// T6: the expiry record for a selection applied now. V1's four-hour rule covers the overlay criteria
@@ -728,6 +1067,17 @@ final class AppComposition {
 
     /// T8: activating a preset the reader saved. The stored key is the identity — including the search scope it
     /// was born from — so this is T6's transition with that key, and the library is never a second engine.
+    /// R20: a hook between persisting the new identity and opening its session. The failure path is the one this
+    /// transition must survive; nothing else may observe it, and it never changes a successful activation.
+    @ObservationIgnored var beforeBuildingSession: ((ContextKey) throws -> Void)?
+
+    /// Quantas sessões esta composição construiu. Uma substituição constrói uma; a resposta em curso costumava
+    /// pedir um segundo passe — e é essa segunda construção que o B04 mediu como movimento do leitor. DEBUG-only,
+    /// como o resto da instrumentação: a asserção é sobre reconstrução de sessão, não sobre leituras.
+    #if DEBUG
+    private(set) var sessionConstructions = 0
+    #endif
+
     func activateSavedPreset(_ key: ContextKey) async throws {
         guard !replacingSession, let preferences else { return }
         // An explicit transition happens when the identity changes *or* when the behaviour does: editing a recipe
@@ -738,17 +1088,38 @@ final class AppComposition {
             current.policy.scoringPolicyVersion.rawValue == version { return }
         replacingSession = true
         defer { replacingSession = false }
+        let previous = currentContextKey
         if let retired = association {
             _ = try await retired.session.checkpointCurrentPosition(at: Date())
             await retired.close()
         }
         association = nil
         currentContextKey = key
-        _ = try preferences.setContext(key)
-        let next = try await association(contextKey: key)
-        association = next
-        startupFailure = nil
-        try await next.launch()
+        do {
+            _ = try preferences.setContext(key)
+            try beforeBuildingSession?(key)
+            let next = try await association(contextKey: key)
+            association = next
+            startupFailure = nil
+            try await next.launch()
+        } catch let failure {
+            // R20: the durable identity and the opened session are one outcome. A rebuild that threw after the key
+            // was written must not leave the reader on an identity with no session: restore the previous context in
+            // memory and in the preferences, then reopen it. The caller still receives the original failure.
+            await association?.close()
+            association = nil
+            currentContextKey = previous
+            do {
+                _ = try preferences.setContext(previous)
+                let restored = try await association(contextKey: previous)
+                association = restored
+                startupFailure = nil
+                try await restored.launch()
+            } catch {
+                startupFailure = "Não foi possível abrir o feed local."
+            }
+            throw failure
+        }
         // Answers received during this constructor belong to the finished transition too.
         if pendingRebuild {
             replacingSession = false
@@ -760,13 +1131,25 @@ final class AppComposition {
     /// database the same way the rest of its surfaces do; there is one file, not a second store.
     func makeBookmarkBoxesStore() -> BookmarkBoxesStore? {
         guard let database = libraryDatabase() else { return nil }
-        return BookmarkBoxesStore(backend: ReaderBookmarkBoxesBackend(database: database))
+        // R02: a box deletion removes memberships, so the durable box mutation is delivered through the **same**
+        // confirmed path a save is: the association moves its revision and the one refresher re-reads the set.
+        return BookmarkBoxesStore(backend: ReaderBookmarkBoxesBackend(database: database,
+            onConfirmedChange: { [weak self] in
+                guard let self else { return }
+                await MainActor.run { self.association?.bookmarkMutationConfirmed() }
+            }))
     }
 
     /// T8: the collections surface's store, over the same library.
     func makeCollectionsStore() -> CollectionsStore? {
         guard let database = libraryDatabase() else { return nil }
         return CollectionsStore(backend: ReaderCollectionsBackend(database: database))
+    }
+
+    /// R16: the authorities a unified search reads, exposed to the search extension without widening the one
+    /// database owner or the resolved catalogue path.
+    func searchAuthorities() -> (database: RuntimeDatabase?, catalogue: URL?, feeds: [TrustedFeed]) {
+        (libraryDatabase(), catalogueURL, feeds)
     }
 
     /// One handle on the reader's database for every library surface; the file is opened the way the rest of
@@ -786,6 +1169,34 @@ final class AppComposition {
     /// The library boundary, for the reader's own actions on it.
     private func libraryCoordinator() -> ReaderLibraryCoordinator? {
         libraryDatabase().map(ReaderLibraryCoordinator.init(database:))
+    }
+
+    /// D7-A: the reader dismissed the first-open notice. The durable receipt is the record; the in-memory value
+    /// only decides whether this presentation is still owed.
+    func acknowledgeLegacyUpgradeNotice() {
+        if let database = libraryDatabase() {
+            try? ReaderLibraryStore(database: database).markLegacyUpgradeNoticePresented()
+        }
+        legacyUpgradeNotice = nil
+    }
+
+    /// What the first open tells the reader. It states the imported counts and what remains inaccessible in
+    /// this build; it never claims the upgrade is complete or that the library was lost.
+    var legacyUpgradeNoticeText: String {
+        guard let notice = legacyUpgradeNotice else { return "" }
+        if notice.status == .unsupported {
+            return String(localized: "Encontramos dados da versão anterior, mas este formato de biblioteca não pode ser lido por esta versão. Nada foi alterado no arquivo original.")
+        }
+        func count(_ category: String) -> Int {
+            notice.skips.filter { $0.category == category }.reduce(0) { $0 + $1.count }
+        }
+        return String(localized: """
+            Importados da versão anterior: caixas \(notice.importedBoxes), fontes \(notice.importedSources), \
+            coleções \(notice.importedCollections).
+            Ainda inacessíveis nesta versão: artigos salvos \(notice.inaccessibleSavedArticles), \
+            marcadores inteligentes \(count("smartFeeds")), feeds curados \(count("curatedFeeds")).
+            Eles permanecem no arquivo original da versão anterior.
+            """)
     }
 
     /// The reader's own sources — a pasted link, an imported file — as entries a session can be built from.
@@ -944,12 +1355,16 @@ final class AppComposition {
     }
 
     /// The reader has met the app: the flag is a preference, and setting it is what a later launch reads.
-    func completeOnboarding() {
-        guard let preferences, let current = try? preferences.load() else { return }
+    /// R18: the caller may only dismiss the first-run surface when this **returns true** — a refused write must not
+    /// be presented as a completed onboarding.
+    @discardableResult
+    func completeOnboarding() -> Bool {
+        guard let preferences, let current = try? preferences.load() else { return false }
         var settings = current.settings
         settings.hasSeenOnboarding = true
-        guard (try? preferences.setSettings(settings)) != nil else { return }
-        noteReaderSettingsWritten(settings)
+        guard (try? preferences.setSettings(settings)) != nil else { return false }
+        noteReaderSettingsWritten()
+        return true
     }
 
     /// F02's first run: the answers it collects (languages and places) become the reader's **discovery profile** —
@@ -957,14 +1372,38 @@ final class AppComposition {
     /// be activated and nothing has to be named: the reader enters the feed, and the subjects are answered inside
     /// it. The session is rebuilt so the answers take effect now, not on the next launch; because the identity is
     /// unchanged, that rebuild **restores** the reader's position rather than resetting it.
-    func completeFirstRun(discovery recipe: FeedRecipeDefinition) async {
+    @discardableResult
+    func completeFirstRun(discovery recipe: FeedRecipeDefinition) async -> Bool {
+        var stored = false
         if let preferences, let current = try? preferences.load() {
             var settings = current.settings
             settings.discoveryProfile = recipe
             settings.hasSeenOnboarding = true
-            if (try? preferences.setSettings(settings)) != nil { noteReaderSettingsWritten(settings) }
+            if (try? preferences.setSettings(settings)) != nil { noteReaderSettingsWritten(); stored = true }
         }
+        // R18: a refused write keeps the reader in the first run; rebuilding the session would present answers that
+        // are not durable.
+        guard stored else { return false }
         try? await replaceSession()
+        return true
+    }
+
+    /// F02 §2.1: the first run's language question starts from the device's own languages, when the catalogue
+    /// carries them — a suggestion the reader can take back, never an imposition. The catalogue's own choices are
+    /// primary subtags (`ReaderLanguageCode`), so the device's `pt-BR` answers the `pt` chip and `en-US` answers
+    /// `en`. The suggestion is also what gives the broad entry a usable answer: with no language named at all the
+    /// discovery profile is empty, `ReaderDiscoveryPool.pool` returns nothing, and the feed opens on the empty
+    /// selection surface (measured 2026-10-20).
+    nonisolated static func suggestedLanguages(from offered: [OnboardingLanguage],
+        preferred: [String] = ReaderContentFilterTemplate.preferredLanguages) -> [String] {
+        let offeredCodes = Set(offered.map(\.code))
+        var suggestion: [String] = []
+        for code in preferred {
+            let choice = ReaderLanguageCode.choice(code)
+            guard offeredCodes.contains(choice), !suggestion.contains(choice) else { continue }
+            suggestion.append(choice)
+        }
+        return suggestion
     }
 
     /// What the Composer can offer, from the catalogue the app already reads: its languages, and its own
@@ -1073,7 +1512,13 @@ final class AppComposition {
 
     /// T10: the settings surface's store, and the appearance the reader's own preferences imply right now.
     func makeReaderSettingsStore() -> ReaderSettingsStore? {
-        libraryDatabase().map { ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: $0)) }
+        libraryDatabase().map { database in
+            ReaderSettingsStore(backend: ReaderSettingsBackendAdapter(database: database) { [weak self] in
+                // The one place a settings write refreshes what the feed reads: the snapshot this composition
+                // caches for its per-card render path and the per-subject answers cached beside it.
+                self?.noteReaderSettingsWritten()
+            })
+        }
     }
 
     /// The content filters' own surface: the gate, the templates and the reader's words, over the same
@@ -1273,14 +1718,25 @@ final class AppComposition {
         // resolve the selected sources, policy and traversal *after* that await so they all agree about the
         // authority one new association is using.
         let initial = try sessionState(for: contextKey)
-        let profile = discoveryProfile(for: applied(initial.key))
+        var profile = discoveryProfile(for: applied(initial.key))
         let requestedFingerprint = catalogueSnapshot?.fingerprint
-        let read = await discoveryRead(profile: profile)
+        var read = await discoveryRead(profile: profile)
         let snapshot = catalogueSnapshot
         // Actor reentrancy can allow an activation *between* returning an old cached pool and
         // resuming this constructor. Do not combine that pool with the replacement snapshot.
         if requestedFingerprint != snapshot?.fingerprint {
             return try await association(contextKey: contextKey)
+        }
+        // An answer received while the detached read was running is behaviour, not identity (F02): the constructor
+        // is a boundary that answer must cross. Capturing the profile before the await and never looking again made
+        // the final association read the interests the reader had *before* answering — measured by
+        // `testAnswerDuring{Context,Preset,Replace}TransitionIsApplied`, which lands the answer exactly in this
+        // window. Bounded: each pass only runs when the profile really changed.
+        for _ in 0..<2 {
+            let current = discoveryProfile(for: applied(initial.key))
+            guard current != profile else { break }
+            profile = current
+            read = await discoveryRead(profile: profile)
         }
         let session = try sessionState(for: contextKey)
         if session.key != contextKey {
@@ -1303,13 +1759,18 @@ final class AppComposition {
         }
         let key = applied(session.key)
         let (scoring, version) = scoring(for: key)
-        return connecting(try FeedAssociation(directory: directory, feeds: session.feeds,
+        let association = try FeedAssociation(directory: directory, feeds: session.feeds,
             discovery: read?.feeds ?? [], subjects: read?.subjects ?? [:],
             configuration: transportConfiguration, trace: trace, database: libraryDatabase(),
             discoveryTraversal: discoveryTraversal(for: key, profile: profile, snapshot: catalogueSnapshot),
             contextKey: key, selectionVersion: selectionVersion, scoring: scoring, scoringVersion: version,
             catalogueURL: catalogueSnapshot?.catalogueURL, editorialExposure: editorialExposure,
-            discoveryProfile: profile, warmLaunch: warmLaunch))
+            discoveryProfile: profile, warmLaunch: warmLaunch, launchSettings: launchSettings,
+            monotonicNow: monotonicNow, bookmarkRead: bookmarkRead)
+        #if DEBUG
+        sessionConstructions += 1
+        #endif
+        return connecting(association)
     }
 
     /// The association a **warm** launch starts from — the same session `launch()` would build, built
@@ -1384,6 +1845,14 @@ final class AppComposition {
     /// settings, which are behaviour — never a context's identity, so a new answer cannot move the reader out of
     /// what they were reading. A curated feed then states its recipe, and anything else its own lens criteria.
     func discoveryProfile(for key: ContextKey) -> ReaderDiscoveryProfile {
+        #if DEBUG
+        // A UI fixture that must stay hermetic: discovery is what reaches arbitrary catalogue sources, and a
+        // transition test should not depend on the public network. This switch is DEBUG-only and named for the
+        // fixture; release builds never read it.
+        if ProcessInfo.processInfo.environment["FEEDMINE_DISABLE_DISCOVERY"] == "1" {
+            return ReaderDiscoveryProfile()
+        }
+        #endif
         if let stored = (try? preferences?.load())??.settings.discoveryProfile, Self.namesAnything(stored) {
             return Self.discoveryProfile(from: stored)
         }
@@ -1394,26 +1863,18 @@ final class AppComposition {
             topicNodeKeys: key.filter.taxonomyNodeIDs)
     }
 
-    /// Whether a stored recipe says anything at all: a neutral recipe is "no answers yet", not a profile.
+    /// Whether a stored recipe says anything at all: a neutral recipe is "no answers yet", not a profile. The
+    /// explicit **all languages** answer is a profile too — it names the whole catalogue — even though its
+    /// language set is empty.
     static func namesAnything(_ recipe: FeedRecipeDefinition) -> Bool {
         !recipe.languages.isEmpty || !recipe.topicPreferences.isEmpty || !recipe.editorialPreferences.isEmpty
+            || recipe.hasLanguageAnswer
     }
 
-    /// A recipe in the catalogue's vocabulary: `topic:<node>` keys, `more` as interest and `less` as exclusion.
+    /// A recipe in the catalogue's vocabulary. The rule lives on `ReaderDiscoveryProfile` so the onboarding answer
+    /// and the acquisition snapshot read it the same way (and a test can state it without the app host).
     static func discoveryProfile(from recipe: FeedRecipeDefinition) -> ReaderDiscoveryProfile {
-        var interested: Set<String> = [], excluded: Set<String> = []
-        for (key, level) in recipe.topicPreferences {
-            let node = key.hasPrefix("topic:") ? String(key.dropFirst("topic:".count)) : key
-            guard !node.isEmpty else { continue }
-            if level == .more { interested.insert(node) } else { excluded.insert(node) }
-        }
-        for (key, level) in recipe.editorialPreferences where level == .less {
-            let node = key.hasPrefix("topic:") ? String(key.dropFirst("topic:".count)) : key
-            guard !node.isEmpty else { continue }
-            excluded.insert(node)
-        }
-        return ReaderDiscoveryProfile(languages: Set(recipe.languages), topicNodeKeys: interested,
-            excludedTopicNodeKeys: excluded)
+        ReaderDiscoveryProfile(recipe: recipe)
     }
 
     /// F02's in-feed answer: the reader says where to explore more (or less) of, answering a card the app itself
@@ -1441,7 +1902,7 @@ final class AppComposition {
         settings.discoveryProfile.topicPreferences["topic:\(node)"] = level == .neutral ? nil : level
         do {
             _ = try preferences.setSettings(settings)
-            noteReaderSettingsWritten(settings)
+            noteReaderSettingsWritten()
         } catch {
             trace?.record("answer_failed", ["subject": node, "stage": "persist"])
             return false
@@ -1450,11 +1911,15 @@ final class AppComposition {
         // The line is made durable at once: a run that ends before the next viewport event must still be able to
         // show that the reader's answer was applied (architect, 2026-10-11).
         trace?.flush()
-        // A construction already in flight must read the answer it now holds. The rebuild loop re-reads the
-        // profile, so an answer that lands mid-construction asks for one more pass instead of being built away
-        // (Codex's finding 3). Nothing is rebuilt when nothing is being built — which is the case this change
-        // exists for: rebuilding the session moved the reader.
-        if replacingSession { pendingRebuild = true }
+        // **O leitor não se move por causa de uma resposta, nem quando uma construção está em curso.** A versão
+        // anterior pedia um passe extra ao laço quando a resposta chegava com `replacingSession` verdadeiro
+        // (`pendingRebuild = true`). Medido no B04 (2026-10-18): a construção em curso terminava **depois** do
+        // toque, o passe extra trocava o `FeedAssociation` (novo store, nova `sequenceID`, `position` de volta a 1),
+        // o `UIScrollView` era recriado e o offset nativo ia de 2052,3 para 2163,7 — a carta sob o leitor andava
+        // 316 pt (610 → 294), e o motorista atribuía o movimento à resposta. A resposta é uma preferência sobre a
+        // **próxima** descoberta: a sessão que já está sendo construída não precisa ser reconstruída por ela, e
+        // reconstruí-la custa a posição do leitor (o checkpoint carrega carta e colocação, não o offset dentro da
+        // carta). Nada é reconstruído por uma resposta, nunca.
         return true
     }
 
@@ -1506,9 +1971,11 @@ final class AppComposition {
         return settings
     }
 
-    /// A write just happened: the cache now holds exactly what the database holds, without reading it back.
-    private func noteReaderSettingsWritten(_ settings: ReaderSettings) {
-        readerSettingsSnapshot = settings
+    /// A write just happened. The cache is **dropped**, not overwritten with the writer's copy: two writers can
+    /// reach the main actor in either order, and a value carried across that boundary can be older than what the
+    /// database holds. Invalidation has no order to get wrong; the next read takes the stored value once.
+    private func noteReaderSettingsWritten() {
+        readerSettingsSnapshot = nil
         declaredLevels.removeAll(keepingCapacity: true)
     }
 
@@ -1551,7 +2018,7 @@ final class AppComposition {
         var settings = current.settings
         settings.editorialTipsHidden = hidden
         guard (try? preferences.setSettings(settings)) != nil else { return }
-        noteReaderSettingsWritten(settings)
+        noteReaderSettingsWritten()
     }
 
     /// What the feed may ask about: a subject with the catalogue's own name for it.
@@ -1624,6 +2091,12 @@ final class AppComposition {
         }.value
     }
     @ObservationIgnored private let discoveryQuery: DiscoveryQuery
+    /// The reader's instant for every runway sample (R01). A test injects a controlled clock, so coalescing
+    /// can be proven not to turn the drain's latency into reading velocity; production is the process uptime.
+    @ObservationIgnored private let monotonicNow: @Sendable () -> RunwayMonotonicTime
+    /// R02's test seam: the durable bookmark read. Nil means the product's detached read over the one library
+    /// database; a test suspends it to prove installation never calls it.
+    @ObservationIgnored private let bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)?
 
     /// What one profile's query answered, and the two facts the answer is about: the profile it was read for and
     /// the catalogue revision it read. **One value, returned** — it used to arrive as two pieces of composition
@@ -1697,14 +2170,22 @@ final class AppComposition {
         repeat {
             pendingRebuild = false
             let retired = association
-            association = nil
+            // Retire the old session only once its last position is durable: a checkpoint refusal leaves the
+            // reader's coherent session in place instead of a transition that shows nothing.
             if let retired {
                 _ = try await retired.session.checkpointCurrentPosition(at: Date())
                 await retired.close()
             }
+            association = nil
             let next = try await association(contextKey: currentContextKey)
             association = next
             startupFailure = nil
+            // P1: a search context is a surface, not a feed window. Start the unified page as soon as the store
+            // exists, before the feed launch (which can wait on acquisition for tens of seconds); otherwise the
+            // reader stares at the launch surface while the results are already available.
+            if case .search(let search) = currentContextKey.request {
+                await startUnifiedSearch(search.query)
+            }
             try await next.launch()
         } while pendingRebuild
     }
@@ -1718,8 +2199,34 @@ final class FeedAssociation {
     let driver: FeedRunwayDriver
     let coordinator: AcquisitionCoordinator
     let media: MediaPrefetcher
+    /// Owner directive 2026-10-17 §2: a save prepares the occurrence's media and records what the link can open.
+    @ObservationIgnored let savedMedia: SavedMediaCoordinator
+    /// P2: a preparation whose durable write was refused has no availability row to read. The failure is kept
+    /// here for the session so the saved row states it instead of an older/pending state, and the retry path
+    /// clears it when a durable outcome exists.
+    private var savedMediaFailures: Set<PublicationCardID> = []
+    /// Changes whenever a preparation settles, so the saved surface re-reads the rows it draws.
+    private(set) var savedMediaRevision = 0
     @ObservationIgnored private let tidy: MediaTidy
     @ObservationIgnored private let mediaWaitBudget: LiveValue<Double>
+    /// D4: the tolerance **this run** measured for one operation — the same number the media preparation window and
+    /// its byte budget read (`mediaWaitSeconds`: measured p95 × safety + margin, bounded by the transport's own
+    /// ceiling; the bootstrap value before any sample exists). The first screen reads it as the bound on how long
+    /// its preparation may outlast the cards it already has, so the wait is a measured fact and not a constant of
+    /// the UI.
+    var preparationWaitSeconds: Double { mediaWaitBudget.current }
+    /// P05: the volume capacity is sampled **off** the MainActor at causal lifecycle moments and read here as a
+    /// snapshot. The budget getter performs no filesystem I/O, so a viewport opportunity cannot freeze on a disk
+    /// query.
+    @ObservationIgnored private let storageCapacity = StageStorageCapacity {
+        (try? FileManager.default.temporaryDirectory
+            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            .volumeAvailableCapacityForImportantUsage).map { Int64($0) }
+    }
+    /// P05: useful production measured from concluded publications (cards / elapsed seconds). Nil until a second
+    /// publication exists; the policy treats absence as unknown, never as zero.
+    @ObservationIgnored private let usefulYield = LiveValue<Double?>(nil)
+    @ObservationIgnored private var lastPublication: (at: Double, cards: Int)?
     /// The display name preparation attributes a card with, read at the moment it prepares (`LiveValue`): discovery
     /// reaches a session more than once (the walk's pages while the reader reads, and the pool a warm launch adopts
     /// behind its window), so the map belongs to the association and not to one closure.
@@ -1739,6 +2246,8 @@ final class FeedAssociation {
     let editorialExposure: EditorialExposureLedger
     /// Structural bounds of this association's admitted presentation (plan T2/T3).
     let bounds: FeedPresentationBounds
+    /// A: this launch's acquisition parallelism, supplied by the composition that built the association.
+    @ObservationIgnored let launchSettings: CollectionLaunchSettings
     @ObservationIgnored private let maintainTail: @Sendable (PublicationStore.HiddenTailLease) async throws -> PublicationStore.TailSuccessionResult
     private let cold: ColdFeedBootstrap
     @ObservationIgnored private let relay: EvidenceRelay
@@ -1786,11 +2295,11 @@ final class FeedAssociation {
 
     @ObservationIgnored
     lazy var store: FeedScreenStore = FeedScreenStore(onViewport: { [weak self] observation, activity in
-        guard let self else { return }
-        Task { await self.viewport(observation, activity: activity) }
+        // R01: the callback records one fact and returns. It creates no task per event and awaits no producer;
+        // the association's single drain consumes the finite pending summary.
+        self?.receiveViewportIngress(observation, activity: activity, evidence: nil)
     }, onRenderedViewport: { [weak self] evidence, activity in
-        guard let self, self.active else { return }
-        Task { await self.viewport(evidence.observation, activity: activity, evidence: evidence) }
+        self?.receiveViewportIngress(evidence.observation, activity: activity, evidence: evidence)
     }, availableActions: Self.readerCardActions, onAction: { [weak self] event in
         guard let self, self.active else { return }
         switch event.action {
@@ -1800,26 +2309,44 @@ final class FeedAssociation {
         }
     }, availableDestinations: Self.readerDestinations(for: contextKey),
         onSubmitSearch: { [weak self] term in self?.onSearch?(term) },
+        onCancelSearch: { [weak self] in self?.onCancelSearch?() },
         onNavigate: { [weak self] destination in self?.onNavigate?(destination) },
         onPresentedPosition: { [weak self] anchor, atRest in
-            guard let self, self.active else { return }
-            Task { await self.notePresentedPosition(anchor, atRest: atRest) }
-        })
+            // The latest drawn position wins; the same single drain writes it off the callback.
+            self?.receivePresentedPositionIngress(anchor, atRest: atRest)
+        }, onSelectSearchResult: { [weak self] result in self?.onSearchResult?(result) },
+        onRequestSearchPage: { [weak self] page, cursor in self?.onSearchPage?(page, cursor) },
+        onRequestSourcePage: { [weak self] page, index in self?.onSearchSourcePage?(page, index) },
+        onSearchScopeChanged: { [weak self] scope in self?.onSearchScope?(scope) },
+        onRequestSearchAgain: { [weak self] in self?.onSearchRetry?() })
 
     /// T9: the card actions this host executes. Resolution is the action coordinator's (the occurrence's own
     /// frozen target); what happens next — a browser, a clipboard, a share sheet — is here, and nowhere near a
     /// renderer.
     func perform(_ action: ReaderCardAction, cardID: PublicationCardID) {
         Task {
-            // "View Source" is the source's own page, resolved here through the catalog: the coordinator refuses
-            // it because it needs the mapping this host holds (the card's source id names one of these feeds).
+            // R19: "Ver fonte" is the **internal** source context, not the source's website. The explicit website
+            // action is the card's own `.open`/link; the two never substitute for each other.
             if action == .viewSource {
-                guard let url = sourcePage(for: cardID) else {
-                    store.showToast(text: String(localized: "Não foi possível abrir a fonte"),
-                        systemImage: "exclamationmark.triangle")
+                let card: PublicationStore.CardRecord?
+                do { card = try PublicationStore(database: database).card(id: cardID) }
+            catch { reportFailure(error, operation: .openCard); return }
+                guard let sourceID = card?.sourceID else {
+                    store.showToast(text: String(localized: "Esta carta não declara uma fonte"),
+                        systemImage: "info.circle")
                     return
                 }
-                present(url, cardID)
+                guard feeds.contains(where: { $0.sourceID == sourceID }) else {
+                    store.showToast(text: String(localized: "Esta fonte não está no seu feed"),
+                        systemImage: "info.circle")
+                    return
+                }
+                guard let onOpenSource else {
+                    store.showToast(text: String(localized: "Esta fonte não está no seu feed"),
+                        systemImage: "info.circle")
+                    return
+                }
+                onOpenSource(sourceID)
                 return
             }
             do {
@@ -1830,17 +2357,18 @@ final class FeedAssociation {
                     if PlatformPasteboard.copy(text) {
                         store.showToast(text: String(localized: "Link copiado"), systemImage: "doc.on.doc")
                     } else {
-                        reportFailure(ReaderActionError.unusableReference(text))
+                        reportFailure(ReaderActionError.unusableReference(text), operation: .copy)
                     }
                 case .share(let payload):
                     onShare?(SharedLink(url: payload.url, subject: payload.subject))
                 case .media:
-                    // No card this pipeline publishes carries a playable target yet (PORT_LOG, T9): the surface
-                    // states that instead of opening a player on nothing.
-                    store.showToast(text: String(localized: "Mídia indisponível nesta compilação"),
-                        systemImage: "speaker.slash")
+                    // D1 (PD-2026-10-20): the card's own playable target is executed, not refused. The channel
+                    // already existed and was wired to the app-wide player; the surface simply answered with a
+                    // toast. The coordinator owns V1's tap behaviour and states its own reason when the card
+                    // carries nothing playable.
+                    onMedia?(cardID)
                 }
-            } catch { reportFailure(error) }
+            } catch { reportFailure(error, operation: Self.operation(for: action)) }
         }
     }
 
@@ -1866,8 +2394,51 @@ final class FeedAssociation {
         do {
             let publication = PublicationStore(database: database)
             try publication.toggleBookmark(cardID: cardID, in: preferredBookmarkListID(), at: Date())
-            store.installBookmarks(try publication.bookmarkedCardIDs())
-        } catch { reportFailure(error) }
+            // R02: the write above is the confirmation. The set the reader sees is read **off** the main actor by the
+            // one refresher, and the revision fence makes any older preparation older than this write.
+            bookmarkMutationConfirmed()
+            // Owner directive 2026-10-17 §2: the link and its content are one promise. A save starts the
+            // occurrence's media preparation and records what the link can open; an unsave clears the claim.
+            prepareSavedMediaAndPublish(cardID, announceFailure: false)
+        } catch { reportFailure(error, operation: .save) }
+    }
+
+    /// P2: every preparation settles into the saved surface. A refused durable write has no row, so its failure
+    /// is held for this session and stated on the row; the next attempt either records a durable state or fails
+    /// again, never leaving the reader with an older "pending" that nothing backs.
+    private func prepareSavedMediaAndPublish(_ cardID: PublicationCardID, announceFailure: Bool) {
+        Task { [savedMedia] in
+            let state = await savedMedia.prepareSavedMedia(cardID: cardID)
+            if state == .failed {
+                savedMediaFailures.insert(cardID)
+                if announceFailure {
+                    store.showToast(text: String(localized: "Não foi possível preparar a mídia salva"),
+                        systemImage: "exclamationmark.triangle")
+                }
+            } else {
+                savedMediaFailures.remove(cardID)
+                if state == .insufficientSpace {
+                    store.showToast(text: String(localized: "Sem espaço para preparar a mídia salva"),
+                        systemImage: "externaldrive.badge.exclamationmark")
+                }
+            }
+            savedMediaRevision &+= 1
+        }
+    }
+
+    /// A relaunch may have inherited saved units whose preparation was interrupted: resume a bounded few so the
+    /// availability shown on `Salvos` is the one that was actually reached, not the one a killed attempt assumed.
+    func resumeSavedMedia(limit: Int = 8) {
+        Task { [savedMedia] in
+            await savedMedia.resume(limit: limit)
+            savedMediaRevision &+= 1
+        }
+    }
+
+    /// The reader's retry on one saved row: the same preparation path the save used, so a failure that was
+    /// visible becomes an attempt — and only an outcome the store can hold becomes "available offline".
+    func retrySavedMedia(_ cardID: PublicationCardID) {
+        prepareSavedMediaAndPublish(cardID, announceFailure: true)
     }
 
     /// T8: which of V1's menu entries apply for this session's context. The entries, their order and their
@@ -1936,6 +2507,17 @@ final class FeedAssociation {
     /// T9: the share sheet a card's share action opens. The app presents it; the association never does.
     @ObservationIgnored var onShare: ((SharedLink) -> Void)?
     @ObservationIgnored var onSearch: ((String) -> Void)?
+    /// R15: cancelling a search is the host's intention to restore the origin; the association forwards it.
+    @ObservationIgnored var onCancelSearch: (() -> Void)?
+    /// R19: "Ver fonte" asks the host for the source's internal context; the association resolves no context.
+    @ObservationIgnored var onOpenSource: ((SourceID) -> Void)?
+    /// P08: the unified search surface reports selection, pagination, scope and retry to the composition that owns
+    /// the local authorities. The association resolves none of them.
+    @ObservationIgnored var onSearchResult: ((ReaderSearchResult) -> Void)?
+    @ObservationIgnored var onSearchPage: ((ReaderSearchResults, ReaderSearchCursor?) -> Void)?
+    @ObservationIgnored var onSearchSourcePage: ((ReaderSearchResults, Int) -> Void)?
+    @ObservationIgnored var onSearchScope: ((ReaderSearchScope) -> Void)?
+    @ObservationIgnored var onSearchRetry: (() -> Void)?
 
     /// Review F10: resolve the frozen action target from published history and open it.
     /// The URL never crosses the UI boundary; only the card identity does.
@@ -2009,13 +2591,19 @@ final class FeedAssociation {
         guard let publication = try? PublicationStore(database: database),
             let ids = try? (listID.map { (try? ReaderLibraryStore(database: database).bookmarkedCardIDs(inList: $0)) }
                 ?? publication.bookmarkedCardIDs()) ?? [] else { return [] }
+        // One read for every row's persisted availability; the row states what the owner recorded, never a guess
+        // made while drawing. A card without a row (written before this build reached it) claims nothing as
+        // available: `media_key IS NULL` is a published fact, everything else is pending.
+        let recorded = (try? SavedMediaAvailabilityStore(database: database).availabilities()) ?? [:]
         return ids
             .compactMap { id -> FeedSavedArticle? in
                 guard let card = try? publication.card(id: id) else { return nil }
                 let title = card.title ?? card.primaryText ?? ""
                 guard !title.isEmpty else { return nil }
+                let availability = FeedSavedArticle.availability(recorded: recorded[id]?.availability,
+                    hasPublishedMedia: card.mediaKey != nil, failedInThisSession: savedMediaFailures.contains(id))
                 return FeedSavedArticle(id: card.id, title: title, source: card.sourceDisplayName,
-                    timestamp: card.timestampValue)
+                    timestamp: card.timestampValue, availability: availability)
             }
             .sorted { left, right in
                 let leftDate = left.timestamp ?? .distantPast
@@ -2057,6 +2645,22 @@ final class FeedAssociation {
             keepsAdmittedHead: true)
     }
 
+    /// The restore's own statement, as one log line. The window a restore installs already starts at the card the
+    /// reader left (or at the neighbour it names); this is how that fact reaches the run's record instead of being
+    /// inferred from geometry (`PublicationHistory.RestoredPosition`).
+    nonisolated static func statement(of position: RestoredPosition) -> String {
+        switch position {
+        case .exact(let card):
+            "restore: the reader's card \(card.rawValue.uuidString) is published; the window starts there"
+        case .nearestNeighbour(let withdrawn, let landed):
+            "restore: the reader's card \(withdrawn.rawValue.uuidString) is no longer published; "
+                + "landing on its nearest surviving neighbour \(landed.rawValue.uuidString)"
+        case .unknownCard(let landed):
+            "restore: the reader's card is not in this database; landing on the edition's first surviving card "
+                + landed.rawValue.uuidString
+        }
+    }
+
     /// T6: whether a restored Edition may be shown for the identity the reader is on. It must belong to that
     /// identity — a foreign filter, preset or search scope is a silent swap, even when the policy versions
     /// happen to match — and it must have been published under the current selection, eligibility *and scoring*
@@ -2083,16 +2687,62 @@ final class FeedAssociation {
         }
     }
 
-    static var resources: FeedRunwayDriverResources {
-        .init(runway: .init(localWorkAllowed: true, examinedCandidateCapacity: 32,
+    /// D (spec "Estabilidade de coleta e UI"): the catalogue facts the composition orders acquisition by. Keyed
+    /// by the same `SourceID` its registrations use. A feed the catalogue does not describe contributes nothing,
+    /// and a launch with no readable catalogue contributes nothing at all — the supplied registration order is
+    /// then the order the planner receives.
+    static func targetSignals(catalogueURL: URL?, feeds: [TrustedFeed]) -> [SourceID: AcquisitionTargetSignal] {
+        guard let catalogueURL, let catalogue = try? LegacyCatalogReader(catalogURL: catalogueURL) else { return [:] }
+        var signals: [SourceID: AcquisitionTargetSignal] = [:]
+        for feed in feeds {
+            guard let facts = try? catalogue.rankingFacts(key: feed.principal), facts.hasEvidence else { continue }
+            signals[feed.sourceID] = .init(catalogueQualityScore: facts.qualityScore,
+                catalogueActivity: facts.activity,
+                // No per-target latency is measured yet; the type accepts one, and the score treats absence as
+                // neutral rather than inventing a number.
+                measuredLatencySeconds: nil)
+        }
+        return signals
+    }
+
+    /// A (spec "Estabilidade de coleta e UI"): the one place this association's planning budgets are chosen.
+    /// `initialParallelism` is caller-supplied; `AcquisitionPlanningResources` itself keeps no default (its
+    /// contract: "All four resource capacities … have no defaults"). The socket ceiling is applied where the
+    /// coordinator is built, from the same settings value.
+    var resources: FeedRunwayDriverResources {
+        // R09/P05: the opportunity's budgets come from the one policy, fitted to the pressure facts the platform
+        // can state now. Nothing measured → the documented bootstrap (48/8/32/1 MB); pressure only reduces, an
+        // explicit zero stays zero, and local reading is never turned off. Every fact here is an in-memory snapshot:
+        // the volume read happens in `storageCapacity.refresh()` on a background executor.
+        let budget = StageBudgetPolicy.budget(pressure: stagePressureFacts(), settings: launchSettings)
+        return .init(runway: .init(localWorkAllowed: budget.localWorkAllowed,
+            examinedCandidateCapacity: budget.examinedCandidateCapacity,
             readyProbeBound: 32, readyProbeCeiling: 256, forwardAdvanceProbeBound: 256,
             // F01/§5.3: the reserve exists so the reader can walk into the window the session materialised, so the
             // bootstrap coverage **is** that window — derived here, not restated. `RunwayPolicy` uses it only while
             // consumption/replenishment facts are unknown (Codex's reserve review, 2026-10-10); once they are
             // measured it derives the target from the measured rate and p95, and this number stops applying.
             reserveCards: Self.forwardWindowCards)!,
-            acquisition: .init(targetWorkCapacity: 2, batchCapacityPerNewExecution: 1,
-                observationCapacityPerBatch: 32, byteCapacityPerBatch: 1_000_000)!)
+            acquisition: budget.acquisition)
+    }
+
+    /// The pressure the platform states now. Thermal, low-power and the network path are in-memory platform facts;
+    /// free storage and useful yield are snapshots written by their owners (off the MainActor / on publication).
+    /// Absence stays absence, never a guess and never a zero.
+    private func stagePressureFacts() -> StagePressureFacts? {
+        let thermal: StagePressureFacts.Level
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: thermal = .nominal
+        case .fair: thermal = .fair
+        case .serious: thermal = .serious
+        case .critical: thermal = .critical
+        @unknown default: thermal = .serious
+        }
+        let path = NetworkPathObserver.shared.current
+        let constrained = path == .constrained || path == .expensive || path == .unavailable
+        return .init(thermal: thermal, lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            networkConstrained: constrained, freeStorageBytes: storageCapacity.current,
+            usefulCardsPerSecond: usefulYield.current)
     }
 
     init(directory: URL, feeds: [TrustedFeed], discovery: [TrustedFeed] = [],
@@ -2103,15 +2753,25 @@ final class FeedAssociation {
         contextKey: ContextKey = ContextKey(request: .main), selectionVersion: UInt64 = 2,
         scoring: ResolvedSelectionPolicy.ScoringBehavior = .equal, scoringVersion: UInt64 = 1,
         catalogueURL: URL?, editorialExposure: EditorialExposureLedger,
-        discoveryProfile: ReaderDiscoveryProfile = .init(), warmLaunch: Bool = false) throws {
+        discoveryProfile: ReaderDiscoveryProfile = .init(), warmLaunch: Bool = false,
+        launchSettings: CollectionLaunchSettings = .init(),
+        monotonicNow: @escaping @Sendable () -> RunwayMonotonicTime = { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+        bookmarkRead: (@Sendable () async throws -> Set<PublicationCardID>)? = nil) throws {
         self.trace = trace
+        self.monotonicNow = monotonicNow
         self.catalogueURL = catalogueURL
         self.editorialExposure = editorialExposure
         self.discoveryProfile = discoveryProfile
+        self.launchSettings = launchSettings
         // The host and its replacement sessions share one writer; retiring async work cannot
         // contend with a preference write through a second pool for the same file.
         let db = try sharedDatabase ?? RuntimeDatabase(location: .init(directory: directory))
         database = db
+        self.bookmarkRead = bookmarkRead ?? {
+            try await Task.detached(priority: .userInitiated) {
+                try PublicationStore(database: db).bookmarkedCardIDs()
+            }.value
+        }
         // T8: the context this session reads and writes, kept so the menu can state what applies to it.
         self.contextKey = contextKey
         self.feeds = feeds
@@ -2131,6 +2791,9 @@ final class FeedAssociation {
             try checkpoints.clearCheckpoint(for: contextKey)
             saved = nil
         }
+        // Where the restore landed is stated, never implied: a card that left published history lands on its
+        // nearest surviving neighbour, and the run's log says which card was lost and where the window starts.
+        if let restored = saved { Self.log(Self.statement(of: restored.position)) }
         let v = PolicyVersion(rawValue: 1)
         // T11: a curated feed's ranking is part of the behavior the Edition was published under, so an edit to
         // the recipe (which keeps the identity) is a new revision and never reuses an older checkpoint.
@@ -2141,10 +2804,16 @@ final class FeedAssociation {
         // reappear. A behavior change is a new EditorialRevision, and a restored Edition keeps the behavior
         // its own revision names.
         let alternating = PolicyVersion(rawValue: 2)
-        let sequencingVersion: PolicyVersion
+        // P10/R17: new Editions state the **supported** sequencing version. Version 5 keeps the same alternation
+        // shape the previous versions described (by scoring) and adds the frozen-diversity tie-break; the shape is
+        // resolved below, never inferred from a number this build does not know.
+        let sequencingVersion = PolicyVersion(rawValue: 5)
+        let shapedSequencing: ResolvedSelectionPolicy.SequencingBehavior
         switch scoring {
-        case .equal: sequencingVersion = PolicyVersion(rawValue: 3)
-        case .weighted(let weights): sequencingVersion = weights.isEmpty ? PolicyVersion(rawValue: 3) : PolicyVersion(rawValue: 4)
+        case .equal: shapedSequencing = .recencyAlternatingSourcesBySupplyShare
+        case .weighted(let weights):
+            shapedSequencing = weights.isEmpty ? .recencyAlternatingSourcesBySupplyShare
+                : .recencyAlternatingSourcesByWeightedSupplyShare
         }
         let revision = try saved?.edition.editorialRevision ?? EditorialRevision(
             // The revision identity carries every version that changes what an Edition was published
@@ -2164,7 +2833,9 @@ final class FeedAssociation {
         guard let plan = FeedPlan(context: context, revision: revision) else {
             throw FeedRunwayDriverError.policyContextMismatch
         }
-        let sequencing = Self.sequencingBehavior(for: revision.sequencingPolicyVersion)
+        // v5's shape is the one its scoring implies; an older Edition keeps the behavior its own revision named.
+        let sequencing = revision.sequencingPolicyVersion.rawValue == 5
+            ? shapedSequencing : Self.sequencingBehavior(for: revision.sequencingPolicyVersion)
         // What this session may read from: the reader's own selection **plus** the sources discovery found for
         // their profile. The reader's selection stays what it was — the sources screen and the context menu still
         // show exactly what they chose — while the feed is supplied by the open internet the catalogue describes.
@@ -2263,33 +2934,54 @@ final class FeedAssociation {
             session: transport, redirectCapacity: 4, discovery: discoveryTraversal,
             authorizedNonPublicOrigins: authorizedNonPublicOrigins,
             selectedSourceIDs: Set(feeds.map(\.sourceID)),
-            installation: CatalogInstallation(appDirectory: directory))
+            installation: CatalogInstallation(appDirectory: directory),
+            targetSignals: Self.targetSignals(catalogueURL: catalogueURL, feeds: supply))
         self.acquisition = acquisition
         // H2: a feed that keeps failing cools down for a doubling window that starts at what one
         // failed attempt may already cost (the request timeout) and is capped by the resource
-        // timeout. Targets run through a sliding window sized by this device's cores.
+        // timeout. Targets run through a sliding window sized by the launch's own parallelism,
+        // conservatively capped (`CollectionLaunchSettings.maximumConcurrentTargets`) so a bad
+        // configuration cannot open 48 sockets at once.
         let backoff = AcquisitionBackoffPolicy(baseSeconds: configuration.timeoutIntervalForRequest,
             ceilingSeconds: max(configuration.timeoutIntervalForRequest, configuration.timeoutIntervalForResource))
         let coordinator = acquisition.makeCoordinator(backoff: backoff,
-            concurrentTargetLimit: max(2, ProcessInfo.processInfo.activeProcessorCount))
+            concurrentTargetLimit: launchSettings.concurrentTargetLimit)
         self.coordinator = coordinator
         // PD-5/PD-6 media pipeline: one download owner, device-measured policy, slot-sized decoding.
         let assetDirectory = directory.appendingPathComponent("Media", isDirectory: true)
         let device = DeviceMediaConditions.currentOnMain()
         let readiness = MediaReadiness()
+        // One bounded memory of the stories a one-way walk skipped for pending media, shared by the first screen
+        // and the live feed: a skip recorded before the reader's first store is ready must still be reachable by the
+        // opportunity that runs after it, because that opportunity examines a different window.
+        let reoffer = PendingMediaReconsideration()
         let fetcher = MediaHTTPFetcher(session: transport)
         // F06-G/PD-6: one derived tolerance feeds both the preparation window and the byte budget below. The media
         // layer used to be handed a fixed 5 s here while the window was computed elsewhere — two numbers for one
         // fact. The box is what makes them one: the window writes the measured value, and every later policy read
-        // (which is how `downloadByteBudget` = measured rate × wait is computed) sees it.
+        // (which is how `MediaPolicy.byteBudget` = measured rate × wait is computed) sees it.
         let mediaWaitBudget = LiveValue(Self.mediaWaitBootstrapSeconds)
         self.mediaWaitBudget = mediaWaitBudget
+        // B/§3: the prefetcher is built before the driver exists, so its readiness callback points at this
+        // relay; the association points the relay at its own drive opportunity once every stored property is
+        // set (below). Nothing here decides anything beyond "a readiness transition happened".
+        let readinessRelay = MediaReadinessRelay()
+        // The replenishment port. The points live in the library modules, which must not know the host's trace:
+        // one adapter is built here, beside the trace itself, and handed to the owners of the points. With no
+        // trace it is `nil`, and the modules behave exactly as they did before the port existed. It is built
+        // before the media owner because the media preparation path also reports through it (DEBUG only there).
+        let replenishment: ReplenishmentTrace? = trace.map { sink in
+            ReplenishmentTrace { event, fields in sink.record(event, fields) }
+        }
         let media = MediaPrefetcher(database: db, assetDirectory: assetDirectory, readiness: readiness,
             concurrentDownloadLimit: max(2, ProcessInfo.processInfo.activeProcessorCount / 2),
-            fetch: { try await fetcher.fetch($0, byteCeiling: $1) },
+            fetch: { try await fetcher.fetch($0, budget: $1) },
             conditions: { rate in DeviceMediaConditions.policy(device: device, measuredBytesPerSecond: rate,
-                assetDirectory: assetDirectory, waitBudgetSeconds: mediaWaitBudget.current) })
+                assetDirectory: assetDirectory, waitBudgetSeconds: mediaWaitBudget.current) },
+            onReadinessChanged: { _ in await readinessRelay.deliver() },
+            mediaTrace: replenishment)
         self.media = media
+        savedMedia = SavedMediaCoordinator(database: db, assetDirectory: assetDirectory, prefetcher: media)
         tidy = MediaTidy(assetDirectory: assetDirectory, prefetcher: media, freeStorageBytes: {
             try? FileManager.default.temporaryDirectory
                 .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
@@ -2317,23 +3009,15 @@ final class FeedAssociation {
         // adopts its pool behind the reader's own window (`adopt(_:)`).
         let names = LiveValue(Dictionary(uniqueKeysWithValues: supply.map { ($0.sourceID, $0.displayName) }))
         self.names = names
-        // T9: the playable payload a card's tap should use, read from the candidate the feed declared.
-        let playback: @Sendable (OriginRevisionID) -> URL? = { revision in
+        // T9/D2: the playable payload a card's tap should use, read from the candidate the feed declared. The
+        // candidate (not just its URL) is what states whether the enclosure is audio or video.
+        let playback: @Sendable (OriginRevisionID) -> MediaCandidate? = { revision in
             // `try?` flattens the store's own optional: a nil here means "no playable payload declared".
-            guard let playable = try? ContentStore(database: db).playbackCandidate(originRevisionID: revision) else {
-                return nil
-            }
-            return playable.remoteURL
+            (try? ContentStore(database: db).playbackCandidate(originRevisionID: revision)) ?? nil
         }
         // The trace is a value: the preparation closure is `@Sendable` and may run off the main actor.
-        let prepare: @Sendable (SelectionResult) -> LocalPreparedPublication = {
-            Self.prepare($0, readiness: readiness, names: names.current, trace: trace, playback: playback)
-        }
-        // The replenishment port. The three points live in the library modules, which must not know the host's
-        // trace: one adapter is built here, beside the trace itself, and handed to the owners of the points. With
-        // no trace it is `nil`, and the modules behave exactly as they did before the port existed.
-        let replenishment: ReplenishmentTrace? = trace.map { sink in
-            ReplenishmentTrace { event, fields in sink.record(event, fields) }
+        let prepare: @Sendable (SelectionResult) throws -> LocalPreparedPublication = {
+            try Self.prepare($0, readiness: readiness, names: names.current, trace: trace, playback: playback)
         }
         // The runway is built before the media closures because they read its **measured** tolerance. §5.3/PD-6:
         // the media window is a per-operation limit, computed from facts this process already measures — the
@@ -2376,7 +3060,7 @@ final class FeedAssociation {
         }
         maintainTail = { lease in
             let opportunity = await makeMediaOpportunity()
-            return try await HiddenTailMaintenance(database: db).run(plan: plan, policy: policy, lease: lease, examinedCapacity: 256,
+            return try await HiddenTailMaintenance(database: db, trace: replenishment).run(plan: plan, policy: policy, lease: lease, examinedCapacity: 256,
                 prefetch: { await opportunity.prepare($0) }, prepare: prepare)
         }
         // §5.3 (Codex's page review): a discovery page updates the **metadata** that preparation consults — the names
@@ -2402,11 +3086,12 @@ final class FeedAssociation {
         self.publicationRelay = publicationRelay
         driver = try FeedRunwayDriver(session: session, runway: runway, plan: plan, policy: policy,
             acquisition: acquisition, coordinator: coordinator,
-            monotonicNow: { .init(seconds: ProcessInfo.processInfo.systemUptime)! },
+            monotonicNow: monotonicNow,
             makeSegmentIdentity: { .init(segmentID: FeedSegmentID(), segmentSeed: 1, segmentCreatedAt: Date())! },
             prepare: prepare,
             selectedSourceCoverage: .init(selectedSourceCoverageFor: plan.context.key, editorialRevisionID: plan.revision.id),
-            readiness: readiness, onDiscoveryPage: onDiscoveryPage, makeMediaOpportunity: makeMediaOpportunity,
+            readiness: readiness, reoffer: reoffer, onDiscoveryPage: onDiscoveryPage,
+            makeMediaOpportunity: makeMediaOpportunity,
             trace: replenishment, onPublication: { receipt in await publicationRelay.deliver(receipt) })
         let relay = EvidenceRelay()
         self.relay = relay
@@ -2419,7 +3104,8 @@ final class FeedAssociation {
             // **same** factory the runway driver uses (one owner for the derived budget, `mediaWaitSeconds`), which
             // is what makes the first screen and the live feed agree on "prepared" — the quality Codex's page review
             // named: two different views of what is ready is how a suspended candidate becomes a text-only card.
-            readiness: readiness, onDiscoveryPage: onDiscoveryPage, makeMediaOpportunity: makeMediaOpportunity)
+            readiness: readiness, reoffer: reoffer, trace: replenishment, onDiscoveryPage: onDiscoveryPage,
+            makeMediaOpportunity: makeMediaOpportunity)
         targetNames = Dictionary(uniqueKeysWithValues: feeds.map { ($0.targetID, $0.displayName) })
         let provider = CandidateProvider(contentStore: ContentStore(database: db))
         admittedHeadlines = { (try? provider.candidates(for: plan, after: nil, examinedCapacity: 12))?.candidates.compactMap(\.headline) ?? [] }
@@ -2428,6 +3114,10 @@ final class FeedAssociation {
         // being built, so it holds a value that outlives the initializer and is pointed at the association once
         // there is one.
         publicationRelay.receive = { [weak self] receipt in await self?.publicationConcluded(receipt) }
+        // B/§3: every stored property is set, so the media relay can now name this association's own drive
+        // opportunity. The transition notifies the runway exactly as a committed acquisition does; the next
+        // drive is the existing one, and nothing is published from the callback.
+        readinessRelay.install { [weak self] in await self?.noteMediaReadinessChanged() }
         // The reader's window reaches the screen **here**, before this launch has drawn anything: it is the whole
         // point of a warm start. The handoff and the store keep their own validation, and a later `.initial`
         // admission returns this same projection, so installing it again is a no-op by the store's own rule.
@@ -2512,11 +3202,15 @@ final class FeedAssociation {
         return min(max(p95 * inputs.safetyFactor + inputs.releaseMarginSeconds, 0), ceiling)
     }
 
+    /// A selected candidate without a presentation is an internal contradiction: it must be loud, never a
+    /// silent text-only fallback for an image the card declared.
+    nonisolated enum PreparationError: Error, Equatable { case candidateWithoutPresentation(OriginRevisionID) }
+
     /// PD-5: each card is drawn with a prepared image or designed text-only — never "missing" one.
     /// Attribution (source id/name) is frozen into the card, which also feeds PD-4 adjacency.
     nonisolated private static func prepare(_ selection: SelectionResult, readiness: MediaReadiness,
         names: [SourceID: String], trace: RunwayTrace? = nil,
-        playback: (OriginRevisionID) -> URL? = { _ in nil }) -> LocalPreparedPublication {
+        playback: (OriginRevisionID) -> MediaCandidate? = { _ in nil }) throws -> LocalPreparedPublication {
         // F06-A: the selection has **already** been restricted to candidates with a legitimate presentation (the
         // slice takes the readiness facts as selection input, before ordering). What arrives here is publishable —
         // and the inputs must stay aligned one-for-one with the selection, or the runtime refuses the batch
@@ -2534,18 +3228,23 @@ final class FeedAssociation {
                 // A selected candidate that cannot be presented is an internal contradiction: it must be loud.
                 "reason": presented ? "presentable" : "selected-without-presentation"])
         }
-        return .init(inputs: selection.orderedCandidates.map { candidate in
+        return .init(inputs: try selection.orderedCandidates.map { candidate in
+            guard let presentation = snapshot[candidate.originRevisionID] else {
+                throw PreparationError.candidateWithoutPresentation(candidate.originRevisionID)
+            }
             let source = candidate.sourceIDs.sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }.first { names[$0] != nil }
                 ?? candidate.sourceIDs.first
+            // F10/T9/D2: one decision states both facts — the card's identity (audio, video or none), read from
+            // the enclosure's own class, and the one action it may carry. An audio episode plays from its
+            // enclosure; a video item opens its article at the origin; anything else opens its article.
+            let decision = PublishedMediaDecision.resolve(playback: playback(candidate.originRevisionID),
+                link: candidate.primaryLink)
             return .init(origin: .init(originRecordID: candidate.originRecordID, originRevisionID: candidate.originRevisionID,
                 sourceID: source, providerID: candidate.providerID, sourceDisplayName: source.flatMap { names[$0] },
                 providerDisplayName: nil),
                 contentEntityID: nil, contentClusterID: nil,
-                // F10/T9: V1's precedence, stated once — an episode plays from the enclosure its feed
-                // declared, and every other card opens its article.
-                primaryAction: playback(candidate.originRevisionID).map { .mediaPlayback($0) }
-                    ?? candidate.primaryLink.map { .externalURL($0) },
-                presentation: snapshot[candidate.originRevisionID] ?? .textOnly)
+                primaryAction: decision.primaryAction, mediaIdentity: decision.identity,
+                presentation: presentation)
         }, cardIDs: selection.orderedCandidates.map { _ in PublicationCardID() })
     }
 
@@ -2554,16 +3253,11 @@ final class FeedAssociation {
     nonisolated static func readinessLabel(_ readiness: MediaReadiness,
         for revision: OriginRevisionID) -> String {
         if readiness.prepared(revision) != nil { return "prepared" }
-        return readiness.isSettled(revision) ? "textOnly" : "pending"
+        guard readiness.isSettled(revision) else { return "pending" }
+        // Settled with a presentation is a declared text card; settled without one is unavailable media, which
+        // leaves the publication queue (INV-17). Neither is "prepared".
+        return readiness.presentation(for: revision) == .textOnly ? "textOnly" : "unavailable"
     }
-
-    /// The window the bookmark set was read for. A bookmark belongs to the reader's own cards, and the reader's own
-    /// toggle installs the set directly; a scroll advance that moved only the anchor has not changed them. Reading
-    /// the database per advance is a synchronous SQLite read on the main actor — exactly what V1's own rule keeps
-    /// off the scroll path (`docs/release/review-feed-responsiveness-build-5.md`: nothing per tick that memory can
-    /// already answer).
-    @ObservationIgnored private var bookmarksReadFor: (edition: FeedEditionID?, context: ContextKey?,
-        ids: [PublicationCardID]) = (nil, nil, [])
 
     /// Mede o que o dono sente e a suíte não vê (decisão de 2026-10-14). O trace da corrida passa a ter, por
     /// segundo, quantos quadros passaram do orçamento e qual foi o pior — o **hitch ratio** que julga cada mudança
@@ -2573,7 +3267,13 @@ final class FeedAssociation {
     /// único canal que uma jornada física tem neste Mac, e um relato do dono precisa deixar rastro. Nada de um
     /// segundo relógio: o amostrador pega carona neste, e é `nil` fora do DEBUG e com a chave desligada.
     @ObservationIgnored private lazy var frameMeter = FeedFrameMeter(
-        record: { [weak self] event, fields in self?.trace?.record(event, fields) },
+        record: { [weak self] event, fields in
+            self?.trace?.record(event, fields)
+            // `first_frame` is stated once per process and never repeated, so it cannot wait for the 64-line batch:
+            // a run killed before that batch would lose the only fact that says the display had delivered a frame.
+            // Every other event repeats by nature; this one does not.
+            if event == "first_frame" { self?.trace?.flush() }
+        },
         journey: journeySampler())
 
     /// O amostrador da jornada. `nil` é o caso de Release e o caso de fábrica: o medidor não pergunta nada e não
@@ -2620,19 +3320,32 @@ final class FeedAssociation {
     }
     #endif
 
-    func install(_ received: FeedPresentationState) throws {
+    /// R02: installation validates and assigns **values**. It performs no storage read, opens no database and awaits
+    /// no preparation; the bookmark half is a prepared value whose base is checked against the confirmed revision.
+    /// A package prepared before a reader's own save/remove is recognised as older and cannot undo it.
+    ///
+    /// A window that changed without a prepared bookmark half asks the single bounded refresher for one read; the
+    /// position itself is installed immediately, so the reader never waits for the library.
+    func install(_ prepared: PreparedFeedInstallation) throws {
         FeedFlowCounters.installAttempts += 1
         guard active else { throw FeedPresentationStateError.projectionSequenceMismatch }
-        do { try store.install(received); FeedFlowCounters.installAccepts += 1 }
+        do { try store.install(prepared.state); FeedFlowCounters.installAccepts += 1 }
         catch { FeedFlowCounters.installRejects += 1; throw error }
         // O feed está em tela: a partir daqui o intervalo entre quadros é medido e escrito no trace.
         frameMeter.start()
         let installed = store.state.presentation
-        let window = (edition: installed?.editionID, context: installed?.contextKey,
-            ids: installed?.window.items.map(\.id) ?? [])
-        if window != bookmarksReadFor {
-            bookmarksReadFor = window
-            store.installBookmarks(try PublicationStore(database: database).bookmarkedCardIDs())
+        let window = BookmarkWindowKey(store.state)
+        if let bookmarks = prepared.bookmarks {
+            if bookmarks.base == bookmarkMutationRevision {
+                confirmedBookmarks = bookmarks.ids
+                store.installBookmarks(bookmarks.ids)
+                bookmarksPreparedFor = window
+            } else {
+                // The confirmed set is newer than this preparation; it wins, and the window gets one fresh read.
+                scheduleBookmarkRefresh()
+            }
+        } else if window != bookmarksPreparedFor {
+            scheduleBookmarkRefresh()
         }
         if let snapshot = installed {
             // Com o diagnóstico ligado, a instalação também diz **quais** cartas ela admitiu, na ordem — é o que
@@ -2656,6 +3369,12 @@ final class FeedAssociation {
                 "tail": snapshot.window.items.last?.id.rawValue.uuidString ?? "",
                 "anchor": snapshot.window.anchor.cardID.rawValue.uuidString])
         }
+    }
+
+    /// Every caller that carries no bookmark half keeps this spelling: the state is installed exactly as before and
+    /// a changed window schedules the one bounded bookmark read.
+    func install(_ received: FeedPresentationState) throws {
+        try install(PreparedFeedInstallation(state: received))
     }
 
     /// F05/R4 + R6-E: the runtime — never a reader gesture, never the clock — extends the admitted window with
@@ -2710,7 +3429,24 @@ final class FeedAssociation {
         else { return }
         Self.log("publication concluded edition=\(receipt.editionID.rawValue.uuidString) "
             + "segment=\(receipt.segmentID.rawValue.uuidString) ordinal=\(receipt.segmentOrdinal)")
+        // P05: the stage's **useful** yield is measured where it happens — cards that became a published segment,
+        // over the elapsed time since the previous one. Two data points are required; the policy never reads a
+        // single sample as a rate.
+        let now = monotonicNow().seconds
+        if let last = lastPublication {
+            let elapsed = now - last.at
+            if elapsed > 0, receipt.cardIDs.count > 0 {
+                usefulYield.set(Double(receipt.cardIDs.count) / elapsed)
+            }
+        }
+        lastPublication = (now, receipt.cardIDs.count)
         await growAdmittedWindowIfPublished()
+    }
+
+    /// B/§3: the prefetcher's transition is a local-supply fact. The driver notifies the runway; it does not
+    /// publish, admit or start a second pipeline here.
+    private func noteMediaReadinessChanged() async {
+        await driver.noteMediaReadinessChanged()
     }
 
     /// PO 2026-10-14: the end of the reader's eligible offer is stated only from the full settled evidence the
@@ -2741,6 +3477,12 @@ final class FeedAssociation {
     /// and one opportunity goes out now, through the same path the reader's foreground uses.
     func retryNow() async {
         guard active else { return }
+        #if DEBUG
+        // The deterministic recovery journey: with `FEEDMINE_FAIL_FIRST_FEED_ATTEMPT=1` the app's own fixture
+        // transport fails until this point, and the reader's retry is what restores it. In every other run this is
+        // a no-op (the flag is off), and no product path reads it.
+        DevelopmentLocalFeeds.allowRecovery()
+        #endif
         retryTask?.cancel()
         retryTask = nil
         await foreground()
@@ -2750,9 +3492,16 @@ final class FeedAssociation {
         guard active, !launching else { return }
         launching = true
         defer { launching = false }
+        // P05: the volume capacity is read once, off the MainActor, before the first budget that can use it.
+        await storageCapacity.refresh()
+        // P06/A10: the first projection the reader sees already carries the durable bookmark set, prepared here
+        // **before** installing it. A failed read keeps the previous set (there is none on a first launch) instead
+        // of confirming an empty library; the base revision protects a concurrent confirmed toggle.
+        let preparedBookmarks = await prepareBookmarksForInstallation()
         let restored = try await session.admitPresentation(.initial(bounds))
         if let restored {
-            try install(FeedPresentationHandoff.receive(snapshot: restored, into: store.state))
+            try install(.init(state: FeedPresentationHandoff.receive(snapshot: restored, into: store.state),
+                bookmarks: preparedBookmarks))
             Self.log("local restore before HTTP")
         } else {
             // PD-3: show real evidence of content arriving while the first Edition is prepared.
@@ -2770,9 +3519,10 @@ final class FeedAssociation {
             let outcome = try await cold.run(identity: .init(editionID: FeedEditionID(), publicationSchemaVersion: .init(rawValue: 1),
                 selectionSeed: 1, editionCreatedAt: now, segmentID: FeedSegmentID(), segmentSeed: 1,
                 segmentCreatedAt: now, anchorPlacement: .top, checkpointedAt: now)!,
-                resources: .init(localExaminedCapacity: 32, acquisition: Self.resources.acquisition)!,
+                resources: .init(localExaminedCapacity: 32, acquisition: resources.acquisition)!,
                 backwardCapacity: 8, forwardCapacity: 16, keepsAdmittedHead: true)
-            try install(FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state))
+            try install(.init(state: FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state),
+                bookmarks: preparedBookmarks))
             Self.log("cold bootstrap settled")
             if case .published = outcome {
                 // R6/E-F: the bootstrap's own publication is a fact, and the window follows it here — before the
@@ -2790,8 +3540,9 @@ final class FeedAssociation {
             }
             coldRetryAt = nil
         }
-        let snapshot = try await driver.activateCurrentPresentation(resources: Self.resources)
-        try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
+        let snapshot = try await driver.activateCurrentPresentation(resources: resources)
+        try install(.init(state: FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state),
+            bookmarks: preparedBookmarks))
         try await installSettledEligibleOffer()
         // R5/S5: nothing is armed here, and nothing needs to be. A reopen shows exactly what the reader left — the
         // window installed above is the projection of their own checkpoint — and the window that does grow is the
@@ -2803,6 +3554,263 @@ final class FeedAssociation {
     /// Review M7: a stationary reader produces no new observation, so a failed local slice would
     /// otherwise never be retried. One opportunity is scheduled at the controller's eligibility time.
     @ObservationIgnored private var retryTask: Task<Void, Never>?
+
+    // MARK: - Bounded viewport ingress (R01)
+
+    /// One viewport fact as it arrived at the reader's callback, **before** any suspension. `sampledAt` is the
+    /// reader's own instant: the runway measures consumption over the intervals between samples, so a fact that is
+    /// delivered late by coalescing must still say when the reader produced it. `ordinal` is the ingress order.
+    private struct IngressViewportFact: Sendable {
+        let observation: ViewportObservation
+        let activity: RunwayActivity
+        let evidence: RenderedViewportEvidence?
+        let sampledAt: RunwayMonotonicTime
+        let ordinal: UInt64
+        var isReconciliation: Bool { evidence?.isPositionReconciliation == true }
+    }
+
+    /// The **finite** summary of one drain's pending work. It is not "the last event": the earliest movement is
+    /// kept as the measurement anchor (dropping it would lose the interval the reader's rate is measured over),
+    /// the last event is kept as the final position, and the newest of each semantic kind the runway can act on
+    /// (reversal, explicit tail approach, rest, local reconciliation) survives even when a later event of another
+    /// kind arrives. Every slot holds one fact, so the pending work is bounded by the number of kinds — never by
+    /// the size of the burst.
+    private struct PendingViewportIngress {
+        var firstMovement: IngressViewportFact?
+        var latest: IngressViewportFact?
+        var latestBackward: IngressViewportFact?
+        var latestTailApproach: IngressViewportFact?
+        var latestRest: IngressViewportFact?
+        var latestReconciliation: IngressViewportFact?
+        var presentedPosition: (anchor: PresentationAnchor, atRest: Bool)?
+
+        var isEmpty: Bool {
+            firstMovement == nil && latest == nil && latestBackward == nil && latestTailApproach == nil
+                && latestRest == nil && latestReconciliation == nil && presentedPosition == nil
+        }
+
+        /// What a test can read while the consumer is suspended: the occupied slots, never the burst length.
+        var count: Int {
+            [firstMovement, latest, latestBackward, latestTailApproach, latestRest, latestReconciliation]
+                .compactMap { $0 }.count + (presentedPosition == nil ? 0 : 1)
+        }
+
+        mutating func record(_ fact: IngressViewportFact) {
+            if fact.isReconciliation {
+                latestReconciliation = fact
+                return
+            }
+            if firstMovement == nil { firstMovement = fact }
+            latest = fact
+            switch fact.activity {
+            case .backward: latestBackward = fact
+            case .explicitTailApproach: latestTailApproach = fact
+            case .stationary: latestRest = fact
+            case .forward: break
+            }
+        }
+
+        mutating func takePresentedPosition() -> (anchor: PresentationAnchor, atRest: Bool)? {
+            defer { presentedPosition = nil }
+            return presentedPosition
+        }
+
+        /// The next fact in reader-time order: the semantic slots are delivered by their own capture instant, so
+        /// the runway's strictly increasing `sampledAt` holds even when a burst mixed directions. Ties (the same
+        /// instant from the same callback stream) break on the ingress ordinal.
+        mutating func takeNext() -> IngressViewportFact? {
+            let slots: [IngressViewportFact?] = [firstMovement, latest, latestBackward, latestTailApproach,
+                latestRest, latestReconciliation]
+            guard let next = slots.compactMap({ $0 })
+                .min(by: { ($0.sampledAt.seconds, $0.ordinal) < ($1.sampledAt.seconds, $1.ordinal) }) else {
+                return nil
+            }
+            if firstMovement?.ordinal == next.ordinal { firstMovement = nil }
+            if latest?.ordinal == next.ordinal { latest = nil }
+            if latestBackward?.ordinal == next.ordinal { latestBackward = nil }
+            if latestTailApproach?.ordinal == next.ordinal { latestTailApproach = nil }
+            if latestRest?.ordinal == next.ordinal { latestRest = nil }
+            if latestReconciliation?.ordinal == next.ordinal { latestReconciliation = nil }
+            return next
+        }
+
+        mutating func removeAll() {
+            firstMovement = nil; latest = nil; latestBackward = nil; latestTailApproach = nil
+            latestRest = nil; latestReconciliation = nil; presentedPosition = nil
+        }
+    }
+
+    /// The reader's facts waiting for the single consumer. `@ObservationIgnored`: ingress bookkeeping must never
+    /// re-evaluate a view.
+    @ObservationIgnored private var viewportIngress = PendingViewportIngress()
+    /// The one consumer of `viewportIngress`. A callback records and returns; it never creates a task per event.
+    @ObservationIgnored private var viewportDrain: Task<Void, Never>?
+    @ObservationIgnored private var viewportDrainGeneration: UInt64 = 0
+    @ObservationIgnored private var ingressOrdinal: UInt64 = 0
+    /// Production authorization for the drain. Background ends it (the reader is no longer on screen) and
+    /// foreground restores it; `close()` ends it for good through `active`.
+    @ObservationIgnored private var ingressAuthorized = true
+    /// The reader's instant, as the host defines it. A test injects a controlled clock; production is uptime.
+    @ObservationIgnored private let monotonicNow: @Sendable () -> RunwayMonotonicTime
+
+    /// What a test can read while the consumer is suspended (R01): the bounded pending summary, never the burst.
+    var pendingViewportIngressCount: Int { viewportIngress.count }
+
+    // MARK: - Prepared bookmark installation (R02)
+
+    /// The durable set the reader confirmed: the last set installed from a read whose base was current, or the one a
+    /// confirmed save/box deletion produced. `bookmarkMutationRevision` moves exactly when a mutation commits
+    /// durably, which is what lets an older preparation be recognised as older instead of overwriting it.
+    @ObservationIgnored private var confirmedBookmarks: Set<PublicationCardID> = []
+    @ObservationIgnored private(set) var bookmarkMutationRevision: UInt64 = 0
+    /// The single bounded read of the durable set. A projection install never awaits it: installation assigns what
+    /// was prepared and a changed window asks for one refresh.
+    @ObservationIgnored private var bookmarkRefreshTask: Task<Void, Never>?
+    /// The window whose bookmarks are already prepared, so a position without a material difference publishes
+    /// nothing and reads nothing while the handoff keeps feeding runway/production.
+    @ObservationIgnored private var bookmarksPreparedFor: BookmarkWindowKey?
+    /// Reads the durable bookmark set **off the main actor**. A test suspends this to prove installation does not
+    /// call it; the product reads through the one library database, detached.
+    @ObservationIgnored private let bookmarkRead: @Sendable () async throws -> Set<PublicationCardID>
+
+    /// P06: prepare the bookmark half off the caller, before a new presentation is installed. The revision is read
+    /// **before** the storage read, so a toggle confirmed while the read is in flight makes the package older and
+    /// it cannot undo that toggle. A failure returns nil: the previous set is kept, never an empty "confirmed" one.
+    private func prepareBookmarksForInstallation() async -> PreparedFeedInstallation.Bookmarks? {
+        let base = bookmarkMutationRevision
+        do { return .init(ids: try await bookmarkRead(), base: base) }
+        catch { return nil }
+    }
+
+    /// P06: the membership key is O(1). The admitted window only grows or shrinks at its ends (append/prepend) or is
+    /// replaced as a whole, so edition, context, count and both endpoints identify it without rebuilding the id
+    /// array on every position-only install.
+    private struct BookmarkWindowKey: Equatable {
+        let editionID: FeedEditionID?
+        let contextKey: ContextKey?
+        let count: Int
+        let first: PublicationCardID?
+        let last: PublicationCardID?
+        init(_ state: FeedPresentationState) {
+            editionID = state.presentation?.editionID
+            contextKey = state.presentation?.contextKey
+            count = state.presentation?.window.items.count ?? 0
+            first = state.presentation?.window.items.first?.id
+            last = state.presentation?.window.items.last?.id
+        }
+    }
+
+    /// A confirmed mutation of the reader's library that can change the bookmark set (a save/remove, a box
+    /// deletion). The durable write precedes it; the refresh is the one bounded read, and the revision is the fence
+    /// every older preparation is checked against.
+    func bookmarkMutationConfirmed() {
+        guard active else { return }
+        bookmarkMutationRevision &+= 1
+        scheduleBookmarkRefresh()
+    }
+
+    private func scheduleBookmarkRefresh() {
+        guard active, bookmarkRefreshTask == nil else { return }
+        let window = BookmarkWindowKey(store.state)
+        let base = bookmarkMutationRevision
+        let read = bookmarkRead
+        bookmarkRefreshTask = Task { [weak self] in
+            let ids: Set<PublicationCardID>?
+            do { ids = try await read() } catch { ids = nil }
+            guard let self else { return }
+            self.bookmarkRefreshTask = nil
+            guard let ids, self.active else { return }
+            if base == self.bookmarkMutationRevision {
+                self.confirmedBookmarks = ids
+                self.store.installBookmarks(ids)
+                self.bookmarksPreparedFor = window
+            } else {
+                // A newer confirmation exists. Its own request may have coalesced into this read; the stale answer
+                // is discarded and the current state is read once more.
+                self.scheduleBookmarkRefresh()
+            }
+        }
+    }
+
+    /// R04: the system asks for bytes. Keep the reader's own band and release the rest — identity, order, anchor,
+    /// geometry and the durable payload do not change. The trimmed value is installed so the pixels are really let
+    /// go (the store holds its own copy of the cards).
+    func trimResidencyForMemoryPressure() async {
+        do {
+            guard try await session.trimResidencyForMemoryPressure() else { return }
+            guard let trimmed = await session.currentPresentation() else { return }
+            try install(FeedPresentationHandoff.receive(snapshot: trimmed, into: store.state))
+        } catch { reportFailure(error) }
+    }
+
+    /// Records one viewport fact in the finite summary and lets the **single** consumer do the work. Called from
+    /// the store's own callback, so the capture returns immediately and the producer is never awaited here.
+    func receiveViewportIngress(_ observation: ViewportObservation, activity: RunwayActivity,
+        evidence: RenderedViewportEvidence?) {
+        guard active, ingressAuthorized else { return }
+        if evidence?.isPositionReconciliation != true {
+            // Exposure is a fact of the reader's own callback: coalescing later must not lose the cards the reader
+            // actually saw between two delivered opportunities.
+            editorialExposure.expose(observation.anchor.cardID)
+            #if DEBUG
+            viewportReceived += 1
+            #endif
+        }
+        ingressOrdinal &+= 1
+        viewportIngress.record(.init(observation: observation, activity: activity, evidence: evidence,
+            sampledAt: monotonicNow(), ordinal: ingressOrdinal))
+        startViewportDrain()
+    }
+
+    /// Records the drawn position. It is a position, not a production opportunity: the latest one wins and is
+    /// delivered by the same single consumer.
+    func receivePresentedPositionIngress(_ anchor: PresentationAnchor, atRest: Bool) {
+        guard active, ingressAuthorized else { return }
+        viewportIngress.presentedPosition = (anchor, atRest)
+        startViewportDrain()
+    }
+
+    private func startViewportDrain() {
+        guard viewportDrain == nil, active, ingressAuthorized else { return }
+        viewportDrainGeneration &+= 1
+        let generation = viewportDrainGeneration
+        viewportDrain = Task { [weak self] in
+            await self?.consumeViewportIngress()
+            guard let self, self.viewportDrainGeneration == generation else { return }
+            self.viewportDrain = nil
+            // A fact that arrived between the last take and releasing ownership must not be stranded; with no
+            // suspension between these lines, the check cannot race an ingress on the main actor.
+            if !self.viewportIngress.isEmpty { self.startViewportDrain() }
+        }
+    }
+
+    /// The single consumer: positions first (they are cheap and idempotent), then the semantic facts in reader-time
+    /// order. It stops as soon as the association retires or background revokes production.
+    private func consumeViewportIngress() async {
+        while true {
+            guard active, ingressAuthorized, !Task.isCancelled else { return }
+            if let position = viewportIngress.takePresentedPosition() {
+                await notePresentedPosition(position.anchor, atRest: position.atRest)
+                continue
+            }
+            guard let fact = viewportIngress.takeNext() else { return }
+            await viewport(fact.observation, activity: fact.activity, evidence: fact.evidence,
+                sampledAt: fact.sampledAt)
+        }
+    }
+
+    /// Ends the drain's authorization and its pending work, keeping the **promised drawing position**: the reader's
+    /// last presented anchor is delivered before the checkpoint, because a suspension must not lose where they were.
+    private func revokeViewportIngress() async {
+        ingressAuthorized = false
+        viewportDrain?.cancel()
+        viewportDrain = nil
+        viewportDrainGeneration &+= 1
+        if let position = viewportIngress.takePresentedPosition() {
+            await notePresentedPosition(position.anchor, atRest: position.atRest)
+        }
+        viewportIngress.removeAll()
+    }
     /// Review F09: only a visible association may drive the feed. Background and close revoke it.
     @ObservationIgnored private var visible = true
     /// F16: when the next cold attempt may run if no first Edition exists yet.
@@ -2878,7 +3886,8 @@ final class FeedAssociation {
     }
 
     func viewport(_ observation: ViewportObservation, activity: RunwayActivity,
-        evidence: RenderedViewportEvidence? = nil) async {
+        evidence: RenderedViewportEvidence? = nil,
+        sampledAt: RunwayMonotonicTime? = nil) async {
         do {
             guard active else { throw FeedPresentationStateError.projectionSequenceMismatch }
             if let evidence {
@@ -2888,10 +3897,9 @@ final class FeedAssociation {
             // at. It is recorded before the handoff, because the reader's exposure happened whether or not the
             // publication side accepted the opportunity.
             if evidence?.isPositionReconciliation != true {
+                // Direct callers keep the exposure fact here; the store path already recorded it at ingress.
+                // The ledger is idempotent, so a coalesced fact is never counted twice.
                 editorialExposure.expose(observation.anchor.cardID)
-                #if DEBUG
-                viewportReceived += 1
-                #endif
             }
             if evidence?.isPositionReconciliation != true {
                 Self.log("viewport forwarded activity=\(activity) anchor=\(observation.anchor.cardID)")
@@ -2900,7 +3908,8 @@ final class FeedAssociation {
                 Self.log("viewport opportunity sent to driver")
             }
             let received = try await FeedPresentationHandoff.submitViewport(observation, activity: activity,
-                resources: Self.resources, driver: driver, into: store.state, evidence: evidence,
+                resources: resources, driver: driver, into: store.state, evidence: evidence,
+                sampledAt: sampledAt,
                 onCommitted: { [weak self] committed in
                     await MainActor.run {
                         guard let self, self.active else { return }
@@ -3016,13 +4025,31 @@ final class FeedAssociation {
         case .some(.keptExactRecord(let cardID)):
             Self.log("settled position kept exact anchor=\(cardID.rawValue.uuidString)")
             trace?.record("position_kept_exact", ["anchor": cardID.rawValue.uuidString])
+        case .some(.keptUnavailablePosition(let cardID)):
+            Self.log("settled position kept unavailable anchor=\(cardID.rawValue.uuidString)")
+            trace?.record("position_kept_unavailable", ["anchor": cardID.rawValue.uuidString])
         case .some(.nothingToRecord), .some(.alreadyDurable), .some(.withinWindow), .none:
             return
         }
+        // O registro é durável antes deste evento: se o processo morre antes do próximo flush, um checkpoint que
+        // existe no SQLite desaparecia do trace e a reabertura deixava de ter prova. O custo é o mesmo upsert de
+        // uma linha, e este caminho escreve no máximo 3 vezes por minuto em movimento (`settledPositionDebounceWindow`).
+        trace?.flush()
     }
 
+    /// The feed drive opportunity. Two callers take it, and they are the same path on purpose: the lifecycle's
+    /// `.active` transition and the foreground cadence (`ForegroundDriveCadence`, owner's decision of 2026-10-17),
+    /// which offers it again every ≥ 10 s while the app is active and visible. Nothing here is a second pipeline, and
+    /// a drive with nothing to do is a no-op.
     func foreground() async {
         visible = true
+        // A resumed screen starts a new measurement window for useful yield as well.
+        lastPublication = nil
+        // R01: the reader is back on screen; the single ingress may drive again.
+        ingressAuthorized = true
+        // P05: a lifecycle opportunity, not a poll: the volume may have changed while the app was away, and the
+        // read stays off the MainActor.
+        await storageCapacity.refresh()
         // O outro lado do par: `background()` para o medidor com a tela, porque o que interessa é o que o leitor
         // sente enquanto rola. Sem esta linha, a medição só voltava por tabela — pelo `install()` que o restore ou
         // a reativação da apresentação corrente alcançam —, e um foreground que não passa por ali (falha no
@@ -3039,7 +4066,11 @@ final class FeedAssociation {
                 // Recovery without replacing the association; a presentation that already exists is
                 // never extended here — returning to the app shows exactly what the reader left.
                 if let restored = try await session.admitPresentation(.restore(bounds)) {
-                    try install(FeedPresentationHandoff.receive(snapshot: restored, into: store.state))
+                    // P06: the recovering projection is a new window; its bookmark half is prepared before it is
+                    // installed, through the same path launch uses.
+                    try install(.init(
+                        state: FeedPresentationHandoff.receive(snapshot: restored, into: store.state),
+                        bookmarks: await prepareBookmarksForInstallation()))
                 }
                 if await session.currentPresentation() == nil {
                     try await launch()
@@ -3053,14 +4084,16 @@ final class FeedAssociation {
             // runway a observação do próprio leitor (`.stationary`, sem gesto, sem mudar a lista admitida) e
             // então o trabalho decide. INV-04: o runway antecipa o consumo; rolar não é o que acorda o pipeline
             // (diretiva de execução V2, linha 86).
-            let snapshot = try await driver.activateCurrentPresentation(resources: Self.resources)
+            let snapshot = try await driver.activateCurrentPresentation(resources: resources)
             try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
             // O fim é decidido antes desta leitura (mesma razão do `viewport`): uma publicação concluída já cresceu a
             // janela pelo fato, e o fim não se reinstala por cima disso.
             try await installSettledEligibleOffer()
             // A mesma oportunidade do leitor que o `viewport` oferece, no outro caminho por onde ele volta à tela: é
             // aqui que a reserva publicada enquanto ele não tinha tela — a cauda oculta sucedida no `background()` —
-            // é materializada. Não é relógio: nada dispara isto por tempo decorrido.
+            // é materializada. A chamada não inventa um fato: o que a autoriza é haver publicação concluída
+            // (`admitPresentation(.publishedGrowth)` é um no-op sem espaço), e a cadência de foreground só repete a
+            // **oportunidade** — ela nunca é a razão pela qual uma carta entra.
             await growAdmittedWindowIfPublished()
             await scheduleLocalRetryIfNeeded()
         } catch { reportFailure(error); await scheduleLocalRetryIfNeeded() }
@@ -3068,8 +4101,18 @@ final class FeedAssociation {
 
     func background() async {
         visible = false
+        // P1: a late durable fact must not start a new coverage pass with the foreground resources. The
+        // authorized round keeps running; only the door to a new opportunity is closed until foreground.
+        await driver.suspendForBackground()
         retryTask?.cancel()
         retryTask = nil
+        // Wall-clock gaps are not production time: the next publication must establish a new baseline instead of
+        // reading a near-zero yield after the pause as measured throughput.
+        lastPublication = nil
+        // R01: a suspensão encerra a autorização de produção do ingresso. As oportunidades pendentes não devem
+        // rodar fora da tela; a **posição prometida** (o último desenho) é entregue antes do checkpoint, porque
+        // ela é onde o leitor estava e não uma oportunidade de produção.
+        await revokeViewportIngress()
         // O medidor de quadros para com a tela: o que interessa é o que o leitor sente enquanto rola.
         frameMeter.stop()
         guard active else { return }
@@ -3083,6 +4126,9 @@ final class FeedAssociation {
             // PD-5: the screen is not visible now, so the house can be tidied: complete media for
             // the next cards and bring local media under the device-derived budget. Seen and visible
             // cards are never changed.
+            // Saved units first: a save whose preparation was interrupted (or that failed for space) is the
+            // reader's explicit intent, and the background window is when the app may work without showing it.
+            await savedMedia.resume(limit: 8)
             let visible = Set(store.state.presentation?.window.items.compactMap { $0.image?.key } ?? [])
             // The tidy's budget is what the system actually grants while the screen is off, less one media
             // operation's tolerance as the margin — never `timeoutIntervalForRequest / 4`, which was a configured
@@ -3111,6 +4157,10 @@ final class FeedAssociation {
 
     func close() async {
         cold.cancel()
+        viewportDrain?.cancel()
+        viewportDrain = nil
+        viewportDrainGeneration &+= 1
+        viewportIngress.removeAll()
         if let edition = store.state.presentation?.editionID {
             try? PublicationStore(database: database).setVisibility(editionID: edition, visible: true)
         }
@@ -3118,20 +4168,67 @@ final class FeedAssociation {
         visible = false
         retryTask?.cancel()
         await driver.deactivate()
+        // R20: `deactivate` deliberately leaves authorized pulls running (their durable supply still counts).
+        // Invalidating the transport before they settle lets a pull create a URL session task on an invalidated
+        // session — a hard NSException, not a thrown error. Order retirement: cancel, drain, then invalidate.
+        // P01: the media owner shares this transport and used to keep starting queued revisions after close. Its
+        // fence is closed before the drain, so a timeout can never license a late start.
+        _ = await media.retire()
+        _ = await coordinator.settleInFlight()
         transport.invalidateAndCancel()
     }
 
-    func reportFailure(_ error: any Error) {
+    /// What the failing operation was. Only a **feed update** may present the feed's own failure state: a save, a
+    /// copy, a share or opening a card is a local action, and telling the reader "Falha ao atualizar o feed" for it
+    /// is a false statement about what failed (PD-2026-10-20 D5). Local actions state themselves in a toast and
+    /// never touch the presented feed, so what the reader already had is not replaced by a report about something
+    /// else.
+    enum FailureOperation: Equatable {
+        case feedRefresh
+        case openCard
+        case save
+        case copy
+        case share
+
+        /// The reader's words for this operation's failure. The feed's own message is deliberately absent: it
+        /// belongs to `.feedRefresh` only, which is rendered as the feed's work state.
+        var statement: String? {
+            switch self {
+            case .feedRefresh: return nil
+            case .openCard: return String(localized: "Não foi possível abrir esta carta")
+            case .save: return String(localized: "Não foi possível salvar")
+            case .copy: return String(localized: "Não foi possível copiar")
+            case .share: return String(localized: "Não foi possível compartilhar")
+            }
+        }
+    }
+
+    /// Which statement a failed card action owes the reader. Only a feed update may speak for the feed; a
+    /// copy, a save, a share or opening a card answer for themselves (PD-2026-10-20 D5).
+    nonisolated static func operation(for action: ReaderCardAction) -> FailureOperation {
+        switch action {
+        case .copyLink: return .copy
+        case .share: return .share
+        case .save: return .save
+        case .open, .viewSource, .addSourceToCollection, .openMedia: return .openCard
+        }
+    }
+
+    func reportFailure(_ error: any Error, operation: FailureOperation = .feedRefresh) {
         if let rejection = error as? FeedPresentationStateError {
             Self.log("projection rejected \(rejection)")
             return // typed structural rejection is logged; never install an alternative result/work.
         }
         guard active else { return }
-        Self.log("execution failure \(String(describing: error))")
+        Self.log("execution failure \(String(describing: error)) operation=\(String(describing: operation))")
+        if let statement = operation.statement {
+            store.showToast(text: statement, systemImage: "exclamationmark.triangle")
+            return
+        }
         // PO/R3: a connection failure is stated as such — and only when the transport proved one.
         let work: FeedPresentationState.Work = Self.isConnectionFailure(error)
             ? .unreachable
-            : .failed(message: "Falha ao atualizar o feed")
+            : .failed(message: String(localized: "Falha ao atualizar o feed"))
         do { try install(store.state.reporting(work)) }
         catch { Self.log("failure reporting rejected \(String(describing: error))") }
     }
@@ -3194,7 +4291,7 @@ struct DeviceMediaConditions: Sendable {
             network: NetworkPathObserver.shared.current, measuredBytesPerSecond: measuredBytesPerSecond,
             // Supplied, never assumed: one image may cost the host as much time as the runway already tolerates for
             // one feed request, and that tolerance is measured (§5.3/PD-6, F06-G). The byte budget follows from it
-            // and the measured rate inside `MediaPolicy.downloadByteBudget`.
+            // and the measured rate inside `MediaPolicy.byteBudget`.
             waitBudgetSeconds: waitBudgetSeconds, freeStorageBytes: free, lowPowerMode: info.isLowPowerModeEnabled, thermal: thermal),
             // Decode-bomb and stream safety ceilings (v1 hardened: 12 MB, 12k px side, 50 MP).
             let ceilings = MediaSafetyCeilings(maximumDownloadBytes: 12_000_000, maximumPixelSide: 12_000,
@@ -3258,4 +4355,18 @@ final class LiveValue<Value: Sendable>: @unchecked Sendable {
     var current: Value { lock.lock(); defer { lock.unlock() }; return value }
     func update(_ transform: (inout Value) -> Void) { lock.lock(); defer { lock.unlock() }; transform(&value) }
     func set(_ new: Value) { update { $0 = new } }
+}
+
+/// B/§3: the media prefetcher is built before its driver, so its readiness callback must not capture the
+/// association. It points here; once every stored property is set, the association installs the one closure this
+/// relay will call — the same local-supply notification a committed acquisition gives the runway. Nothing in it
+/// decides anything, and it holds no state beyond that closure.
+final class MediaReadinessRelay: @unchecked Sendable {
+    private let lock = NSLock()
+    private var receive: (@Sendable () async -> Void)?
+    func install(_ receive: @escaping @Sendable () async -> Void) { lock.withLock { self.receive = receive } }
+    func deliver() async {
+        let receive = lock.withLock { self.receive }
+        await receive?()
+    }
 }

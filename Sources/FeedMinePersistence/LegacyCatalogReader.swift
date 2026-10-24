@@ -53,6 +53,32 @@ public struct LegacyCatalogSourceRecord: Hashable, Sendable {
     }
 }
 
+/// P07: one bounded page of expression-matched sources plus the fact that the page is not the whole universe.
+public struct LegacyCatalogSourceSearch: Hashable, Sendable {
+    public let records: [LegacyCatalogSourceRecord]
+    public let truncated: Bool
+    public init(records: [LegacyCatalogSourceRecord], truncated: Bool) {
+        self.records = records; self.truncated = truncated
+    }
+}
+
+/// The catalogue facts an acquisition order reads, and only them. `source(key:)` predates the ranking and stays
+/// exactly as it was, so this narrow lookup cannot change any existing reader's record.
+public struct LegacyCatalogRankingFacts: Hashable, Sendable {
+    public let key: String
+    /// 0…100, the catalogue's technical-quality claim.
+    public let qualityScore: Int?
+    /// `prolific`, `active`, `quiet`, `dormant` — V1's own activity classes.
+    public let activity: String?
+
+    public init(key: String, qualityScore: Int?, activity: String?) {
+        self.key = key; self.qualityScore = qualityScore; self.activity = activity
+    }
+
+    /// Whether the catalogue said anything a ranking can use. Absence is not zero.
+    public var hasEvidence: Bool { qualityScore != nil || activity != nil }
+}
+
 /// One language as the catalogue declares it, with the counts T6's sheet must show. `und`/empty is a real
 /// bucket in this data (27,741 of 77,443 sources) and is never presented as a language a reader can pick.
 public struct LegacyCatalogLanguageRecord: Hashable, Sendable {
@@ -430,6 +456,19 @@ public struct LegacyCatalogReader: Sendable {
         } }
     }
 
+    /// The quality/activity facts one source contributes to the composition's acquisition order. Nil means the
+    /// catalogue does not describe the key; no rank is invented for it.
+    public func rankingFacts(key: String) throws -> LegacyCatalogRankingFacts? {
+        try Self.wrap { try queue.read { db in
+            guard let row = try Row.fetchOne(db,
+                sql: "SELECT key, quality_score, activity FROM catalog_source WHERE key = ?", arguments: [key]) else {
+                return nil
+            }
+            return LegacyCatalogRankingFacts(key: row["key"], qualityScore: row["quality_score"],
+                activity: row["activity"])
+        } }
+    }
+
     /// Bounded literal name/key lookup; values never become SQL syntax. Result order is v1's catalog
     /// sort key (`04-catalog-editorial.md`: default_enabled, 100 - quality, title) after titles that
     /// start with the query; key breaks ties. It orders search results only; it is not feed ranking.
@@ -447,6 +486,49 @@ public struct LegacyCatalogReader: Sendable {
                 """, arguments: ["%" + escaped + "%", "%" + escaped + "%", escaped + "%", min(limit, 100)])
         } }
         return try keys.compactMap { try source(key: $0) }
+    }
+
+    /// P07/R14: the catalogue search consumes the **same expression** the rest of the product does. The old method
+    /// applied the whole query as one literal LIKE, so a valid source whose positives land in different fields
+    /// (title + taxonomy), whose title carries diacritics, or whose match sits beyond the literal pre-filter was
+    /// discarded before the grammar could see it. Ranking is still v1's; the filter is the expression's.
+    public func matchingSources(expression: SearchExpression, limit: Int,
+        offset: Int = 0) throws -> LegacyCatalogSourceSearch {
+        guard limit > 0 else { return .init(records: [], truncated: false) }
+        let skip = max(0, offset)
+        let prefixTerm = expression.terms.first ?? ""
+        let escapedPrefix = prefixTerm
+            .replacingOccurrences(of: "!", with: "!!")
+            .replacingOccurrences(of: "%", with: "!%")
+            .replacingOccurrences(of: "_", with: "!_") + "%"
+        // No text predicate here: folding happens in Swift with the domain's own normalizer, so a source is never
+        // lost to SQLite's ASCII-only LIKE before the expression reads it. The scan is bounded by the catalogue's
+        // own row order and stops as soon as one match beyond the page is found.
+        let candidates = try Self.wrap { try queue.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT s.key AS key, s.title AS title, COALESCE(s.tags, '') AS tags,
+                    (SELECT group_concat(n.key, ' ') FROM catalog_placement p
+                        JOIN catalog_node n ON n.id = p.node_id WHERE p.source_id = s.id) AS node_keys
+                FROM catalog_source s WHERE s.media_kind = 'text'
+                ORDER BY (s.title LIKE ? ESCAPE '!' OR s.key LIKE ? ESCAPE '!') DESC,
+                    s.default_enabled DESC, s.quality_score IS NULL, s.quality_score DESC, s.title, s.key
+                """, arguments: [escapedPrefix, escapedPrefix])
+        } }
+        var keys: [String] = []
+        var seen = 0
+        var truncated = false
+        for row in candidates {
+            guard let key = row["key"] as String?, let title = row["title"] as String? else { continue }
+            let tags = (row["tags"] as String?) ?? ""
+            let nodeKeys = (row["node_keys"] as String?) ?? ""
+            guard expression.matches(fields: [title, tags, nodeKeys, key]) else { continue }
+            if seen < skip { seen += 1; continue }
+            seen += 1
+            if keys.count >= limit { truncated = true; break }
+            keys.append(key)
+        }
+        return LegacyCatalogSourceSearch(records: try keys.compactMap { try source(key: $0) },
+            truncated: truncated)
     }
 
     // MARK: - Metadata (T6's sheet, T7's taxonomy and regions)

@@ -1152,6 +1152,16 @@
         }
       }
     },
+    "Em quais idiomas você quer ler?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Which languages do you want to read in?"
+          }
+        }
+      }
+    },
     "Entendido. Vamos excluir %@ das próximas descobertas.": {
       "localizations": {
         "en": {
@@ -3018,6 +3028,38 @@
         }
       }
     },
+    "Texto fornecido pela fonte. Não foi possível confirmar que este texto está completo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text supplied by the source. This text could not be confirmed as complete."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texto fornecido pela fonte. Não foi possível confirmar que este texto está completo."
+          }
+        }
+      }
+    },
+    "Texto fornecido pela fonte. Não foi possível confirmar que este texto está completo. A versão no site pode conter mais conteúdo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text supplied by the source. This text could not be confirmed as complete. The version on the site may contain more."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texto fornecido pela fonte. Não foi possível confirmar que este texto está completo. A versão no site pode conter mais conteúdo."
+          }
+        }
+      }
+    },
     "Texto simples": {
       "localizations": {
         "en": {
@@ -3096,6 +3138,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Play"
+          }
+        }
+      }
+    },
+    "O card em que você parou não está disponível; abrimos no card mais próximo.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The card where you stopped is unavailable; we opened the closest card."
+          }
+        }
+      }
+    },
+    "Este conteúdo não está disponível": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This content is unavailable"
           }
         }
       }

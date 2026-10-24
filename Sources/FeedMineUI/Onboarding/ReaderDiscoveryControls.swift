@@ -53,25 +53,66 @@ public struct ReaderDiscoveryControls: View {
         }
     }
 
+    /// The reader's language answer as the control set writes it. Choosing names the language; choosing it again
+    /// takes it back, and taking the **last** one back is a real answer — "todos os idiomas" — not a blocked tap:
+    /// the empty set is the state acquisition already reads as "whichever language the catalogue has".
+    public static func choosing(_ code: String, in recipe: FeedRecipeDefinition) -> FeedRecipeDefinition {
+        var next = recipe
+        let choice = ReaderLanguageCode.choice(code)
+        if next.languages.contains(choice) {
+            next.languages.removeAll { $0 == choice }
+        } else {
+            next.languages.append(choice)
+        }
+        next.hasLanguageAnswer = true
+        return next
+    }
+
+    /// The reader's explicit "all languages": the empty set, selected like any other answer so a reader who
+    /// chose it can see that they did. It is a real answer — the widest language scope the reader can name — and
+    /// taking the **last** language back is never a blocked tap.
+    public static func namingNoLanguage(in recipe: FeedRecipeDefinition) -> FeedRecipeDefinition {
+        var next = recipe
+        next.languages = []
+        // The empty set is the answer, not the absence of one: discovery must search the whole catalogue instead
+        // of reading "nothing to look for".
+        next.hasLanguageAnswer = true
+        return next
+    }
+
+    /// Whether the "all languages" chip is the reader's selected answer. An older stored recipe with no answer
+    /// decodes an empty language set too; showing the chip selected there would claim an answer discovery does not
+    /// have.
+    public static func namesAllLanguages(_ recipe: FeedRecipeDefinition) -> Bool {
+        recipe.hasLanguageAnswer && recipe.languages.isEmpty
+    }
+
     private var languageControl: some View {
-        OnboardingSection(title: String(localized: "Idiomas")) {
+        // F02 §2.1: the first run starts from the device's own languages when the catalogue carries them, clearly
+        // editable — the host seeds `recipe` with that suggestion, and the chip states it as selected. The
+        // settings page keeps the plain heading, because the answer there is a value to adjust, not a question.
+        OnboardingSection(title: scope == .firstRun
+            ? String(localized: "Em quais idiomas você quer ler?")
+            : String(localized: "Idiomas"),
+            identifier: scope == .firstRun ? "\(identifierPrefix)-language-question" : nil) {
             let available = languages.isEmpty
                 ? recipe.languages.map { OnboardingLanguage(recipeCode: $0) }
                 : languages
             VStack(alignment: .leading, spacing: 8) {
+                // The way out of the question, stated where the question is: an answer that names no language,
+                // selected like any other answer so the reader who skipped can see that they did.
+                Button {
+                    recipe = Self.namingNoLanguage(in: recipe)
+                } label: {
+                    chip(String(localized: "Todos os idiomas"), isOn: Self.namesAllLanguages(recipe))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("\(identifierPrefix)-languages-unrestricted")
                 FlowRow(items: available) { language in
                     let isOn = recipe.languages.contains(language.code)
                     HStack(spacing: 4) {
                         Button {
-                            var next = recipe
-                            if isOn {
-                                // V1 kept at least one language: removing the last one is not a state it allowed.
-                                guard next.languages.count > 1 else { return }
-                                next.languages.removeAll { $0 == language.code }
-                            } else {
-                                next.languages = next.languages + [language.code]
-                            }
-                            recipe = next
+                            recipe = Self.choosing(language.code, in: recipe)
                         } label: {
                             chip(language.name, isOn: isOn)
                         }

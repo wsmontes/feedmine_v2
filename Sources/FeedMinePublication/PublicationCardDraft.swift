@@ -13,10 +13,17 @@ public struct PublicationCardDraft: Hashable, Sendable {
     public let media: PublishedMediaSet
     public let renderContract: RenderContract
     public let primaryAction: PublishedPrimaryAction?
+    /// D2: the media kind carried from the enclosure. Nil for the drafts written before the fact existed.
+    public let mediaIdentity: PublishedMediaIdentity?
+    /// P10/R17: the editorial facts frozen with the occurrence. Nil means the publication predates them (or the
+    /// candidate knew nothing); the past is never rewritten from the latest canonical revision.
+    public let diversity: EditorialDiversityFact?
 
     public init?(origin: PublishedOrigin, contentEntityID: ContentEntityID?, contentClusterID: ContentClusterID?,
         text: PublishedText, timestamp: PublishedTimestamp?, media: PublishedMediaSet,
-        renderContract: RenderContract, primaryAction: PublishedPrimaryAction?) {
+        renderContract: RenderContract, primaryAction: PublishedPrimaryAction?,
+        mediaIdentity: PublishedMediaIdentity? = nil,
+        diversity: EditorialDiversityFact? = nil) {
         guard renderContract.layout != .textOnly || media.primary == nil else { return nil }
         self.origin = origin
         self.contentEntityID = contentEntityID
@@ -26,5 +33,7 @@ public struct PublicationCardDraft: Hashable, Sendable {
         self.media = media
         self.renderContract = renderContract
         self.primaryAction = primaryAction
+        self.mediaIdentity = mediaIdentity
+        self.diversity = diversity
     }
 }

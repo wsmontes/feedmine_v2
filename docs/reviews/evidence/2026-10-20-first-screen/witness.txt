@@ -1,0 +1,1 @@
+wait_passes=4 kind=launch-progress first_wait_ms=653 last_wait_ms=929 cards=1 first_cards_ms=1144 content_bottom=141 viewport_height=730 render_ready_cards=1

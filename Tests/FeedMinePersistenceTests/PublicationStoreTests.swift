@@ -21,12 +21,14 @@ enum StorageFixture {
         .init(id: FeedEditionID(), editorialRevision: revision ?? self.revision(), publicationSchemaVersion: version,
             selectionSeed: UInt64.max, createdAt: Date(timeIntervalSince1970: 123.25))
     }
-    static func card(id: PublicationCardID = PublicationCardID()) -> PublicationStore.CardRecord {
+    static func card(id: PublicationCardID = PublicationCardID(),
+        diversity: EditorialDiversityFact? = nil) -> PublicationStore.CardRecord {
         .init(id: id, originRecordID: OriginRecordID(), originRevisionID: OriginRevisionID(), sourceID: nil, providerID: nil,
             sourceDisplayName: "Frozen News", providerDisplayName: nil, contentEntityID: nil, contentClusterID: nil,
             title: "", primaryText: " exact text ", timestampValue: nil, timestampKind: nil,
             mediaKey: " ", mediaPixelWidth: 300, mediaPixelHeight: 200, mediaMimeType: "image/test",
-            renderLayout: "hero", renderMediaAspectRatio: 1.0, primaryActionKind: nil, primaryActionReference: nil)
+            renderLayout: "hero", renderMediaAspectRatio: 1.0, primaryActionKind: nil, primaryActionReference: nil,
+            diversity: diversity)
     }
     static func segment(_ edition: PublicationStore.EditionRecord, _ cards: [PublicationStore.CardRecord], ordinal: UInt64 = 0, version: UInt64? = nil) -> PublicationStore.SegmentRecord {
         .init(id: FeedSegmentID(), editionID: edition.id, ordinal: ordinal, segmentSeed: UInt64.max,
@@ -63,6 +65,35 @@ final class PublicationStoreTests: XCTestCase {
         let raw = try database.read { try String.fetchOne($0, sql: "SELECT id FROM feed_editions") }
         XCTAssertEqual(raw, edition.id.rawValue.uuidString.lowercased())
         XCTAssertEqual(try database.read { try Int64.fetchOne($0, sql: "SELECT selection_seed FROM feed_editions") }, -1)
+    }
+
+    /// P10/R17: the editorial facts are frozen with the occurrence, survive a reopen, and a row published before
+    /// them stays absent (unknown) instead of being reconstructed from the latest canonical revision.
+    func testEditorialDiversityFactsAreFrozenAndSurviveRelaunch() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let store = PublicationStore(database: database)
+        let edition = StorageFixture.edition()
+        let source = SourceID(), provider = ProviderID(rawValue: UUID())
+        let fact = EditorialDiversityFact(sourceIDs: [source], providerID: provider, subjects: ["space", "science"])
+        let modern = StorageFixture.card(diversity: fact), legacy = StorageFixture.card()
+        try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [modern, legacy]),
+            cards: [modern, legacy])
+
+        XCTAssertEqual(try store.card(id: modern.id), modern, "o fato volta idêntico com a carta")
+        XCTAssertNil(try store.card(id: legacy.id)?.diversity, "uma carta antiga continua desconhecida")
+        XCTAssertEqual(try store.recentDiversity(editionID: edition.id, limit: 16), [fact])
+
+        let reopened = try RuntimeDatabase(location: .init(directory: directory))
+        XCTAssertEqual(try PublicationStore(database: reopened).recentDiversity(editionID: edition.id, limit: 16),
+            [fact], "o contexto editorial sobrevive ao reinício sem consultar a revisão canônica")
+
+        let other = StorageFixture.edition()
+        let old = StorageFixture.card()
+        try store.createEdition(other, firstSegment: StorageFixture.segment(other, [old]), cards: [old])
+        XCTAssertEqual(try store.recentDiversity(editionID: other.id, limit: 16), [],
+            "uma publicação anterior ao esquema permanece sem fatos")
     }
 
     func testValidationRejectsInvalidOrdinalsSchemaEmptyAndCardOrder() throws {
@@ -323,6 +354,32 @@ extension PublicationStoreTests {
             contentEntityID: nil,contentClusterID: nil,title: "New revision",primaryText: nil,
             timestampValue: nil,timestampKind: nil,mediaKey: nil,mediaPixelWidth: nil,mediaPixelHeight: nil,
             mediaMimeType: nil,renderLayout: "textOnly",renderMediaAspectRatio: nil,primaryActionKind: nil,primaryActionReference: nil)
+    }
+
+    /// R14: a pre-identity edition row carries only the search text. Decoding it rebuilds a **legacy literal**
+    /// (a negative-only old query still reconstructs) with the historical surface identity — never a grammar parse.
+    func testAFlattenedSearchEditionDecodesAsLegacyLiteral() throws {
+        let db = try StorageFixture.database(self), store = PublicationStore(database: db)
+        let search = try XCTUnwrap(SearchContext(query: "-astrologia", semantics: .legacyLiteral))
+        let v = PolicyVersion(rawValue: 1)
+        let key = ContextKey(request: .search(search))
+        let revision = EditorialRevision(id: EditorialRevisionID(), contextKey: key,
+            catalogGeneration: CatalogGeneration(rawValue: 1), userSelectionVersion: v,
+            eligibilityPolicyVersion: v, scoringPolicyVersion: v, sequencingPolicyVersion: v,
+            exposurePolicyVersion: v, selectionSchemaVersion: SelectionSchemaVersion(rawValue: 1))
+        let edition = PublicationStore.EditionRecord(id: FeedEditionID(), editorialRevision: revision,
+            publicationSchemaVersion: 1, selectionSeed: 1, createdAt: Date(timeIntervalSince1970: 10))
+        let card = StorageFixture.card()
+        try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, [card]), cards: [card])
+        // Simulate the row format before `context_key_json`/`context_identity` existed.
+        try db.write { try $0.execute(sql: "UPDATE feed_editions SET context_key_json = '', context_identity = ''") }
+        let read = try XCTUnwrap(store.edition(id: edition.id))
+        guard case .search(let decoded) = read.editorialRevision.contextKey.request else {
+            return XCTFail("expected a search context")
+        }
+        XCTAssertEqual(decoded.semantics, .legacyLiteral)
+        XCTAssertEqual(decoded.query, "-astrologia")
+        XCTAssertEqual(read.editorialRevision.contextKey.surfaceIdentity, "search:-astrologia")
     }
 
     func test3R5InitialAndAtomicInitialRejectDuplicateOriginsWithoutAnyWrites() throws {

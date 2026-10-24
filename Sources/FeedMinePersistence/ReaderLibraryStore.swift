@@ -307,19 +307,59 @@ public struct ReaderLibraryStore: Sendable {
         }
     }
 
+    /// The facts the upgrade receipt is written from. Counts in the receipt are the transaction's own report,
+    /// never a second tally taken afterwards.
+    public struct LegacyUpgradeWrite: Hashable, Sendable {
+        public let sourcePath: String
+        public let status: ReaderLegacyUpgradeReceipt.Status
+        public let failureReason: String?
+        public let skips: [ReaderLegacySkip]
+        public init(sourcePath: String, status: ReaderLegacyUpgradeReceipt.Status,
+            failureReason: String? = nil, skips: [ReaderLegacySkip] = []) {
+            self.sourcePath = sourcePath; self.status = status
+            self.failureReason = failureReason; self.skips = skips
+        }
+    }
+
     /// Applies a whole library in one transaction. Imported items are appended after what the reader already
     /// has, in the imported order, so an import can never reorder or overwrite existing library items; items
     /// whose id already exists are skipped, which is what makes a repeated or interrupted import idempotent.
-    public func apply(_ import: ReaderLibraryImport, at date: Date) throws -> ReaderLibraryImportReport {
+    ///
+    /// `legacyUpgrade` writes the durable receipt in the **same** transaction: an interrupted upgrade commits
+    /// neither the imported rows nor a marker claiming they landed.
+    public func apply(_ import: ReaderLibraryImport, legacyUpgrade: LegacyUpgradeWrite? = nil,
+        at date: Date) throws -> ReaderLibraryImportReport {
         let time = try PersistenceValueCoding.date(date, field: "added_at")
         return try database.write { db in
-            var lists = 0, collections = 0, presets = 0, memberships = 0
+            var lists = 0, sources = 0, selectedSources = 0, collections = 0, presets = 0, memberships = 0
             for list in `import`.bookmarkLists {
                 guard try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_bookmark_lists WHERE id = ?)",
                     arguments: [list.id]) == false else { continue }
                 try db.execute(sql: "INSERT INTO reader_bookmark_lists (id, name, position) VALUES (?, ?, ?)",
                     arguments: [list.id, list.name, Self.nextListPosition(db)])
                 lists += 1
+            }
+            // V1's personal feeds: the canonical key is the primary key, so a second run adds nothing. Their
+            // selection is a union with whatever the reader already chose — an upgrade never removes a source.
+            for source in `import`.sources {
+                try db.execute(sql: """
+                    INSERT INTO reader_imported_sources (key, request_url, title, imported_at) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(key) DO NOTHING
+                    """, arguments: [source.key, source.requestURL, source.title, time])
+                sources += db.changesCount
+            }
+            let selected = `import`.sources.filter(\.select).map(\.key)
+            if !selected.isEmpty,
+                let row = try Row.fetchOne(db, sql: "SELECT source_keys, selection_version FROM reader_preferences WHERE singleton_id = 1") {
+                let current = Set(try JSONDecoder().decode([String].self, from: row["source_keys"] as Data))
+                let union = current.union(selected)
+                if union != current {
+                    let version: Int64 = row["selection_version"]
+                    guard version < Int64.max else { throw ReaderLibraryError.missingLibraryItem }
+                    try db.execute(sql: "UPDATE reader_preferences SET source_keys = ?, selection_version = ? WHERE singleton_id = 1",
+                        arguments: [try JSONEncoder().encode(union.sorted()), version + 1])
+                    selectedSources = union.count - current.count
+                }
             }
             for collection in `import`.collections {
                 guard try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM reader_collections WHERE id = ?)",
@@ -348,13 +388,104 @@ public struct ReaderLibraryStore: Sendable {
                     try JSONEncoder().encode(preset.key), try preset.recipe.map { try JSONEncoder().encode($0) }])
                 presets += 1
             }
-            return ReaderLibraryImportReport(insertedBookmarkLists: lists, insertedCollections: collections,
-                insertedPresets: presets, insertedMemberships: memberships)
+            let report = ReaderLibraryImportReport(insertedBookmarkLists: lists, insertedSources: sources,
+                selectedSources: selectedSources, insertedCollections: collections, insertedPresets: presets,
+                insertedMemberships: memberships)
+            if let legacyUpgrade {
+                try Self.writeLegacyUpgrade(legacyUpgrade, report: report, at: date, in: db)
+            }
+            return report
         }
     }
 
     private static func nextListPosition(_ db: Database) throws -> Int {
         try Int.fetchOne(db, sql: "SELECT COALESCE(MAX(position) + 1, 0) FROM reader_bookmark_lists") ?? 0
+    }
+
+    // MARK: - V1 upgrade receipt (D7-A)
+
+    private static func writeLegacyUpgrade(_ write: LegacyUpgradeWrite,
+        report: ReaderLibraryImportReport, at date: Date, in db: Database) throws {
+        let time = try PersistenceValueCoding.date(date, field: "ran_at")
+        try db.execute(sql: """
+            INSERT INTO reader_legacy_upgrade
+                (singleton_id, source_path, status, ran_at, failure_reason, imported_boxes, imported_sources,
+                 selected_sources, imported_collections, imported_collection_members, notice_presented)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            ON CONFLICT(singleton_id) DO UPDATE SET
+                source_path = excluded.source_path,
+                status = excluded.status,
+                ran_at = excluded.ran_at,
+                failure_reason = excluded.failure_reason,
+                imported_boxes = excluded.imported_boxes,
+                imported_sources = excluded.imported_sources,
+                selected_sources = excluded.selected_sources,
+                imported_collections = excluded.imported_collections,
+                imported_collection_members = excluded.imported_collection_members,
+                notice_presented = 0
+            """, arguments: [write.sourcePath, write.status.rawValue, time, write.failureReason,
+            report.insertedBookmarkLists, report.insertedSources, report.selectedSources,
+            report.insertedCollections, report.insertedMemberships])
+        try db.execute(sql: "DELETE FROM reader_legacy_upgrade_skips")
+        for skip in write.skips where skip.count > 0 {
+            try db.execute(sql: """
+                INSERT INTO reader_legacy_upgrade_skips (category, reason, count) VALUES (?, ?, ?)
+                """, arguments: [skip.category, skip.reason, skip.count])
+        }
+    }
+
+    /// The durable upgrade receipt: nil when no V1 container has ever been upgraded in this database.
+    public func legacyUpgradeReceipt() throws -> ReaderLegacyUpgradeReceipt? {
+        try database.read { db in
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT * FROM reader_legacy_upgrade WHERE singleton_id = 1
+                """) else { return nil }
+            let skips = try Row.fetchAll(db, sql: """
+                SELECT category, reason, count FROM reader_legacy_upgrade_skips ORDER BY category, reason
+                """).map { ReaderLegacySkip(category: $0["category"], reason: $0["reason"], count: $0["count"]) }
+            return ReaderLegacyUpgradeReceipt(
+                sourcePath: row["source_path"],
+                status: ReaderLegacyUpgradeReceipt.Status(rawValue: row["status"]) ?? .failed,
+                ranAt: Date(timeIntervalSince1970: row["ran_at"]),
+                failureReason: row["failure_reason"],
+                importedBoxes: row["imported_boxes"],
+                importedSources: row["imported_sources"],
+                selectedSources: row["selected_sources"],
+                importedCollections: row["imported_collections"],
+                importedCollectionMembers: row["imported_collection_members"],
+                skips: skips,
+                noticePresented: (row["notice_presented"] as Int64) != 0)
+        }
+    }
+
+    /// Records that the reader has been told. It never rewrites the counts or the marker: the notice is a
+    /// separate fact from the upgrade.
+    @discardableResult
+    public func markLegacyUpgradeNoticePresented() throws -> Bool {
+        try database.write { db in
+            try db.execute(sql: """
+                UPDATE reader_legacy_upgrade SET notice_presented = 1 WHERE singleton_id = 1
+                """)
+            return db.changesCount > 0
+        }
+    }
+
+    /// A failed attempt is recorded, but a completed upgrade is never overwritten by a later failure.
+    public func recordLegacyUpgradeFailure(sourcePath: String, reason: String, at date: Date) throws {
+        if let existing = try legacyUpgradeReceipt(), existing.status == .completed { return }
+        let time = try PersistenceValueCoding.date(date, field: "ran_at")
+        try database.write { db in
+            try db.execute(sql: """
+                INSERT INTO reader_legacy_upgrade
+                    (singleton_id, source_path, status, ran_at, failure_reason)
+                VALUES (1, ?, 'failed', ?, ?)
+                ON CONFLICT(singleton_id) DO UPDATE SET
+                    source_path = excluded.source_path,
+                    status = 'failed',
+                    ran_at = excluded.ran_at,
+                    failure_reason = excluded.failure_reason
+                """, arguments: [sourcePath, time, reason])
+        }
     }
 
     // MARK: - Imported sources (T10)

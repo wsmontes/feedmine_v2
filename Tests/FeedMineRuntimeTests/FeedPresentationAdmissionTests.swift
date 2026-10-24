@@ -18,10 +18,15 @@ final class FeedPresentationAdmissionTests: XCTestCase {
 
         /// Publishes `cards[4...5]` as a second segment: production after the initial admission.
         func publishTail() throws {
-            let segment = try XCTUnwrap(FeedSegment(id: FeedSegmentID(), editionID: edition.id, ordinal: 1,
-                segmentSeed: 2, publicationSchemaVersion: edition.publicationSchemaVersion,
-                createdAt: edition.createdAt, cardIDs: Array(cards[4...5]).map(\.id)))
-            let values = try PublicationPersistenceMapping.records(segment: segment, cards: Array(cards[4...5]))
+            try publish(Array(cards[4...5]), ordinal: 1)
+        }
+
+        /// Committed publication after the initial admission, as segment `ordinal`.
+        func publish(_ cards: [PublishedCard], ordinal: UInt64) throws {
+            let segment = try XCTUnwrap(FeedSegment(id: FeedSegmentID(), editionID: edition.id, ordinal: ordinal,
+                segmentSeed: UInt64(ordinal + 1), publicationSchemaVersion: edition.publicationSchemaVersion,
+                createdAt: edition.createdAt, cardIDs: cards.map(\.id)))
+            let values = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
             try PublicationStore(database: database).appendSegment(values.0, cards: values.1)
         }
 
@@ -52,6 +57,31 @@ final class FeedPresentationAdmissionTests: XCTestCase {
         return .init(database: database, edition: edition, cards: cards,
             session: FeedSession(publicationHistory: .init(database: database)),
             bounds: .init(backwardCapacity: backwardCapacity, forwardCapacity: forwardCapacity))
+    }
+
+    /// An Edition long enough for the absolute cap: `total` published cards in one segment, the durable cursor at
+    /// `anchorIndex` (kept-head restore therefore starts at the Edition's own first card). One segment, so the read
+    /// is the same bounded range seek a production restore uses.
+    private func longFixture(total: Int, anchorIndex: Int) throws -> Fixture {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let database = try RuntimeDatabase(location: .init(directory: directory))
+        let edition = WarmPresentationFixture.edition()
+        let cards = try (0..<total).map {
+            try WarmPresentationFixture.card(layout: .textOnly, action: nil, title: "P\($0)")
+        }
+        let segment = try XCTUnwrap(FeedSegment(id: FeedSegmentID(), editionID: edition.id, ordinal: 0,
+            segmentSeed: 1, publicationSchemaVersion: edition.publicationSchemaVersion,
+            createdAt: edition.createdAt, cardIDs: cards.map(\.id)))
+        let values = try PublicationPersistenceMapping.records(segment: segment, cards: cards)
+        try PublicationStore(database: database).createEdition(PublicationPersistenceMapping.record(edition),
+            firstSegment: values.0, cards: values.1)
+        try PublicationHistory(database: database).saveCursor(.init(editionID: edition.id,
+            anchor: .init(cardID: cards[anchorIndex].id, placement: .center)),
+            updatedAt: Date(timeIntervalSince1970: 20))
+        return .init(database: database, edition: edition, cards: cards,
+            session: FeedSession(publicationHistory: .init(database: database)),
+            bounds: .init(backwardCapacity: 1, forwardCapacity: 2))
     }
 
     private func observation(_ card: PublishedCard, placement: PresentationAnchorPlacement = .center) -> ViewportObservation {
@@ -187,6 +217,66 @@ final class FeedPresentationAdmissionTests: XCTestCase {
             "The same anchored bound cuts both ends: the far card leaves while the cut one returns")
     }
 
+    /// PD-9/INV-17: an image without local pixels is not admitted, and it must not hide the ready cards behind it.
+    /// The forward read is bounded but progressive: a run of unprepared images longer than the frozen forward
+    /// capacity is skipped in local windows, and the ready text after it enters in published order.
+    func testForwardScrollAdmitsReadyCardsBehindUnpreparedImages() async throws {
+        let f = try fixture()
+        let before = try await admitted(f.session, .initial(f.bounds))
+        XCTAssertEqual(before.window.items.map(\.id), Array(f.cards[1...3]).map(\.id))
+        let images = try (0..<5).map {
+            try WarmPresentationFixture.card(layout: .hero, action: nil, title: "I\($0)")
+        }
+        let texts = try (0..<2).map {
+            try WarmPresentationFixture.card(layout: .textOnly, action: nil, title: "T\($0)")
+        }
+        // Five unprepared images, then two ready text cards: the run is longer than `forwardCapacity`.
+        try f.publish(images + texts, ordinal: 1)
+        let saved = try PublicationHistory(database: f.database).savedCursor()
+        XCTAssertEqual(saved?.anchor.cardID, f.cards[2].id, "premise: the durable cursor starts on a text card")
+
+        let observed = observation(f.cards[3], placement: .top)
+        _ = try await f.session.submitViewport(observed)
+        let forward = try await admitted(f.session, .forwardScroll(observed))
+
+        let expected = [f.cards[2].id, f.cards[3].id] + texts.map(\.id)
+        XCTAssertEqual(forward.window.items.map(\.id), expected,
+            "the ready text after the unprepared images enters, in order; no image is admitted")
+        XCTAssertTrue(Set(forward.window.items.map(\.id)).isDisjoint(with: Set(images.map(\.id))),
+            "an image with no local pixels never enters the admitted list and is never shown as text")
+        XCTAssertEqual(forward.window.anchor, .init(cardID: f.cards[3].id, placement: .top),
+            "the admission keeps the reader's anchor")
+        let kept = before.window.items.filter { expected.contains($0.id) }
+        XCTAssertEqual(Array(forward.window.items.prefix(kept.count)), kept,
+            "already admitted cards keep identity, order and projection")
+        XCTAssertEqual(forward.provenance.sequenceID, before.provenance.sequenceID)
+        XCTAssertGreaterThan(forward.provenance.position, before.provenance.position)
+        XCTAssertEqual(try PublicationHistory(database: f.database).savedCursor(), saved,
+            "admitting returned cards never moves the durable cursor")
+        // The walk reached the real end; repeating allocates nothing.
+        let repeated = try await admitted(f.session, .forwardScroll(observed))
+        XCTAssertEqual(repeated, forward)
+    }
+
+    /// The same walk at the real end of the Edition: unprepared images with no ready card after them leave the
+    /// presentation exactly as observed, and the admission terminates.
+    func testForwardScrollAtRealEndWithoutReadyCardsKeepsThePresentation() async throws {
+        let f = try fixture()
+        _ = try await admitted(f.session, .initial(f.bounds))
+        let images = try (0..<5).map {
+            try WarmPresentationFixture.card(layout: .hero, action: nil, title: "I\($0)")
+        }
+        try f.publish(images, ordinal: 1)
+        let saved = try PublicationHistory(database: f.database).savedCursor()
+        let observed = observation(f.cards[3], placement: .top)
+        let observedSnapshot = try await recorded(f.session, observed)
+        let forward = try await admitted(f.session, .forwardScroll(observed))
+        XCTAssertEqual(forward, observedSnapshot,
+            "with nothing ready ahead the screen is preserved, not replaced by an end state")
+        XCTAssertEqual(forward.window.anchor, .init(cardID: f.cards[3].id, placement: .top))
+        XCTAssertEqual(try PublicationHistory(database: f.database).savedCursor(), saved)
+    }
+
     /// Decisão do dono (2026-10-13): a lista pode **manter a cabeça**. Continua limitada à frente, mas nada acima
     /// do leitor é removido — é o comportamento da V1, e é o que deixa o corretor de offset sem nada a corrigir.
     /// O default preserva a regra do arquiteto (limitada nos dois sentidos), provada logo acima.
@@ -320,5 +410,56 @@ final class FeedPresentationAdmissionTests: XCTestCase {
         let admitted = try await session.admitPresentation(.forwardScroll(.init(anchor: .init(
             cardID: PublicationCardID(), placement: .center))))
         XCTAssertNil(admitted)
+    }
+
+    /// F (dono, 2026-10-17): a lista admitida tem um **teto absoluto** de 2000 cartas, e ele é guarda de memória,
+    /// não forma de janela. A cabeça mantida não tem outro teto: a admissão que ultrapassa 2000 corta as cartas
+    /// **mais antigas** e conserva intactos a âncora do leitor, a reserva à frente e a ordem do resto.
+    func testAdmittedWindowTrimsTheKeptHeadAtTheAbsoluteCap() async throws {
+        XCTAssertEqual(FeedSession.maxAdmittedItems, 2000, "o teto decidido pelo dono é 2000")
+        let total = 2100
+        let anchorIndex = total - 10
+        let f = try longFixture(total: total, anchorIndex: anchorIndex)
+        let bounds = FeedPresentationBounds(backwardCapacity: f.bounds.backwardCapacity,
+            forwardCapacity: f.bounds.forwardCapacity, keepsAdmittedHead: true)
+        let before = try await admitted(f.session, .initial(bounds))
+        XCTAssertEqual(before.window.items.count, anchorIndex + 1 + f.bounds.forwardCapacity,
+            "premissa: a cabeça da edição sozinha já passa do teto")
+        XCTAssertEqual(before.window.items.first?.id, f.cards[0].id)
+        XCTAssertGreaterThan(before.window.items.count, FeedSession.maxAdmittedItems)
+        let observed = observation(f.cards[anchorIndex + 1], placement: .top)
+        _ = try await f.session.submitViewport(observed)
+        let forward = try await admitted(f.session, .forwardScroll(observed))
+        let keptLastIndex = anchorIndex + 1 + f.bounds.forwardCapacity
+        let overflow = keptLastIndex + 1 - FeedSession.maxAdmittedItems
+        XCTAssertEqual(forward.window.items.count, FeedSession.maxAdmittedItems,
+            "a lista admitida para no teto do dono")
+        XCTAssertEqual(forward.window.items.map(\.id), Array(f.cards[overflow...keptLastIndex]).map(\.id),
+            "o teto corta as cartas mais antigas e nada mais: ordem, âncora e reserva à frente ficam")
+        XCTAssertEqual(forward.window.anchor, .init(cardID: f.cards[anchorIndex + 1].id, placement: .top),
+            "a carta do leitor não é uma das que saem")
+        let anchorPosition = try XCTUnwrap(forward.window.items.firstIndex { $0.id == f.cards[anchorIndex + 1].id })
+        XCTAssertEqual(forward.window.items.count - anchorPosition - 1, f.bounds.forwardCapacity,
+            "a reserva à frente continua exatamente a congelada")
+    }
+
+    /// Abaixo do teto nada acima do leitor é removido: a guarda do item F não é uma segunda regra de janela.
+    func testBelowTheAbsoluteCapTheKeptHeadKeepsEveryCardBehindTheReader() async throws {
+        let total = 1500
+        let anchorIndex = total - 10
+        let f = try longFixture(total: total, anchorIndex: anchorIndex)
+        let bounds = FeedPresentationBounds(backwardCapacity: f.bounds.backwardCapacity,
+            forwardCapacity: f.bounds.forwardCapacity, keepsAdmittedHead: true)
+        let before = try await admitted(f.session, .initial(bounds))
+        XCTAssertEqual(before.window.items.count, anchorIndex + 1 + f.bounds.forwardCapacity)
+        let observed = observation(f.cards[anchorIndex + 1], placement: .top)
+        _ = try await f.session.submitViewport(observed)
+        let forward = try await admitted(f.session, .forwardScroll(observed))
+        let grown = Array(f.cards[0...(anchorIndex + 1 + f.bounds.forwardCapacity)])
+        XCTAssertLessThan(grown.count, FeedSession.maxAdmittedItems, "premissa: a lista continua abaixo do teto")
+        XCTAssertEqual(forward.window.items.map(\.id), grown.map(\.id),
+            "com a cabeça mantida, cada carta que o leitor já passou continua na lista")
+        XCTAssertEqual(forward.window.items.first?.id, f.cards[0].id,
+            "a cabeça não anda enquanto o teto não é alcançado")
     }
 }

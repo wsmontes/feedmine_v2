@@ -1,7 +1,9 @@
 // Owns the concrete HTTP transport for remote card media: one bounded GET per call.
-// Runtime's MediaPrefetcher owns when and what to fetch; this value only moves bytes safely.
-// v1 lessons: enforce the byte ceiling *while streaming* (a missing or lying Content-Length
+// Runtime's MediaPrefetcher owns when, what and for how long to fetch; this value only moves bytes safely.
+// v1 lessons: enforce the safety ceiling *while streaming* (a missing or lying Content-Length
 // cannot exhaust memory), refuse non-image responses, never follow https→http downgrades.
+// The attempt's byte budget is read for one fact only: the safety ceiling. How much fits the wait is the owner's
+// time allowance, never a byte refusal — a 3 MB image is fetched even when 500 KB fit the wait used to refuse it.
 // Failures are classified (review F04): definitive ones settle a card as text-only; transient
 // ones let the media owner try again later.
 // Review R15: feed-supplied locators are untrusted. Only publicly routable hosts are contacted,
@@ -9,6 +11,7 @@
 
 import Foundation
 import FeedMineDomain
+import FeedMineMedia
 import FeedMineRuntime
 
 public struct MediaHTTPFetcher: Sendable {
@@ -16,31 +19,44 @@ public struct MediaHTTPFetcher: Sendable {
 
     public init(session: URLSession) { self.session = session }
 
-    public func fetch(_ url: URL, byteCeiling: Int) async throws -> Data {
-        guard let host = url.host, NetworkHostPolicy.isPubliclyRoutable(host) else { throw MediaFetchFailure.definitive }
+    public func fetch(_ url: URL, budget: MediaByteBudget) async throws -> Data {
+        guard let host = url.host, NetworkHostPolicy.isPubliclyRoutable(host) else {
+            throw MediaFetchFailure(.definitive, reason: .privateHost)
+        }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         request.setValue("image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8", forHTTPHeaderField: "Accept")
         let (bytes, response) = try await session.bytes(for: request, delegate: MediaRedirectGuard(original: url))
         defer { bytes.task.cancel() }
-        guard let http = response as? HTTPURLResponse else { throw MediaFetchFailure.transient }
-        if url.scheme?.lowercased() == "https", http.url?.scheme?.lowercased() == "http" {
-            throw MediaFetchFailure.definitive
+        guard let http = response as? HTTPURLResponse else {
+            throw MediaFetchFailure(.transient, reason: .transport)
         }
-        if let final = http.url?.host, !NetworkHostPolicy.isPubliclyRoutable(final) { throw MediaFetchFailure.definitive }
+        if url.scheme?.lowercased() == "https", http.url?.scheme?.lowercased() == "http" {
+            throw MediaFetchFailure(.definitive, reason: .httpDowngrade)
+        }
+        if let final = http.url?.host, !NetworkHostPolicy.isPubliclyRoutable(final) {
+            throw MediaFetchFailure(.definitive, reason: .privateHost)
+        }
         switch http.statusCode {
         case 200..<300: break
-        case 408, 425, 429, 500..<600: throw MediaFetchFailure.transient
-        default: throw MediaFetchFailure.definitive
+        case 408, 425, 429, 500..<600:
+            throw MediaFetchFailure(.transient, reason: .status(http.statusCode))
+        default:
+            throw MediaFetchFailure(.definitive, reason: .status(http.statusCode))
         }
         let type = http.value(forHTTPHeaderField: "Content-Type")?.lowercased()
         if let type, !type.hasPrefix("image/") && !type.hasPrefix("application/octet-stream") {
-            throw MediaFetchFailure.definitive
+            throw MediaFetchFailure(.definitive, reason: .notAnImage)
         }
-        if http.expectedContentLength > Int64(byteCeiling) { throw MediaFetchFailure.definitive }
+        // Only the safety ceiling refuses a file. Fitting the wait is the owner's time allowance, not this bound.
+        if budget.refuses(declaredLength: http.expectedContentLength) {
+            throw MediaFetchFailure(.definitive, reason: .overCeiling)
+        }
         var data = Data()
         if http.expectedContentLength > 0 { data.reserveCapacity(Int(http.expectedContentLength)) }
         for try await byte in bytes {
-            guard data.count < byteCeiling else { throw MediaFetchFailure.definitive }
+            guard data.count < budget.safetyCeilingBytes else {
+                throw MediaFetchFailure(.definitive, reason: .overCeiling)
+            }
             data.append(byte)
         }
         return data

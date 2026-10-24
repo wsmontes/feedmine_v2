@@ -1,0 +1,24 @@
+Executed 2 tests, with 0 failures (0 unexpected) in 53.983 (53.985) seconds
+Executed 7 tests, with 1 test skipped and 0 failures (0 unexpected) in 506.994 (506.999) seconds
+Executed 2 tests, with 0 failures (0 unexpected) in 38.890 (38.892) seconds
+Executed 5 tests, with 5 tests skipped and 0 failures (0 unexpected) in 0.282 (0.287) seconds
+Executed 1 test, with 4 failures (0 unexpected) in 554.754 (554.756) seconds
+Executed 1 test, with 0 failures (0 unexpected) in 19.039 (19.041) seconds
+Executed 46 tests, with 1 test skipped and 8 failures (0 unexpected) in 1946.496 (1946.536) seconds
+Executed 1 test, with 0 failures (0 unexpected) in 26.606 (26.608) seconds
+Executed 9 tests, with 1 test skipped and 0 failures (0 unexpected) in 70.650 (70.658) seconds
+Executed 74 tests, with 8 tests skipped and 12 failures (0 unexpected) in 3217.694 (3217.769) seconds
+Executed 74 tests, with 8 tests skipped and 12 failures (0 unexpected) in 3217.694 (3217.772) seconds
+** TEST FAILED **
+Test Case '-[FeedMineUITests.EditorialOfferBudgetUITests testTheOfferBudgetHoldsOnTheRealCatalogue]' failed (554.754 seconds).
+Test Case '-[FeedMineUITests.FeedMineUITests testRealCatalogueCardsStayReachableByScrolling]' failed (433.108 seconds).
+Test Case '-[FeedMineUITests.FeedMineUITests testReopenMeasurementColdAndWarmWithTheOnboardingAlreadyConcluded]' failed (410.821 seconds).
+Test Case '-[FeedMineUITests.FeedMineUITests testU2SavedListAndInAppReaderPreserveTheSession]' failed (48.753 seconds).
+Test Case '-[FeedMineUITests.ArticleReadingDiagnosisUITests testTheAccidentalBookmarkIsRemovedThroughTheAppsOwnControl]' skipped (154.600 seconds).
+Test Case '-[FeedMineUITests.DiscoveryBenchmarkTests testB01DiscoveryWithoutASubscription]' skipped (0.077 seconds).
+Test Case '-[FeedMineUITests.DiscoveryBenchmarkTests testB02RelevanceAndVariety]' skipped (0.059 seconds).
+Test Case '-[FeedMineUITests.DiscoveryBenchmarkTests testB03ThirtyMinuteRunway]' skipped (0.051 seconds).
+Test Case '-[FeedMineUITests.DiscoveryBenchmarkTests testB04PresentedFeedIsSacred]' skipped (0.048 seconds).
+Test Case '-[FeedMineUITests.DiscoveryBenchmarkTests testB05ContextsReopenOfflineAndSaved]' skipped (0.047 seconds).
+Test Case '-[FeedMineUITests.FeedMineUITests testPreparePersistentScaleSoakThroughCountryCascade]' skipped (0.076 seconds).
+Test Case '-[FeedMineUITests.ReadingSurfaceUITests testStoredContentIsReadableWithTheDeviceActuallyOffline]' skipped (0.149 seconds).

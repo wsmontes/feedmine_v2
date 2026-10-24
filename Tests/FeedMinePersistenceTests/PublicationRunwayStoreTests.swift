@@ -22,6 +22,12 @@ final class PublicationRunwayStoreTests: XCTestCase {
             if entry.hasPrefix("sqlite_autoindex_media_candidates") { return "media_candidates_constraints" }
             if entry.hasPrefix("media_candidates:") { return "media_candidates" }
             if entry.hasPrefix("media_candidates_one_playback") { return "media_candidates_one_playback" }
+            // P10 added one nullable column to the card tables; its type/absence is asserted in
+            // `schemaBeforeAvailability`, and the rest of each definition stays byte-compared.
+            if entry.hasPrefix("published_cards:") || entry.hasPrefix("retired_published_cards:") {
+                return entry.replacingOccurrences(of: ", diversity_facts TEXT", with: "")
+                    .replacingOccurrences(of: ", media_identity TEXT", with: "")
+            }
             return entry
         })
     }
@@ -59,6 +65,18 @@ final class PublicationRunwayStoreTests: XCTestCase {
             ["context_identity", "context_key", "context_key_json", "edition_id", "card_id", "anchor_placement", "updated_at"])
         XCTAssertEqual(try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('feed_editions') ORDER BY cid").suffix(2),
             ["context_identity", "context_key_json"])
+        for table in ["published_cards", "retired_published_cards"] {
+            let diversity = try XCTUnwrap(Row.fetchOne(db, sql: "SELECT type, \"notnull\", dflt_value, pk FROM pragma_table_info('\(table)') WHERE name = 'diversity_facts'"))
+            XCTAssertEqual(diversity["type"] as String, "TEXT")
+            XCTAssertEqual(diversity["notnull"] as Int, 0)
+            XCTAssertNil(diversity["dflt_value"] as String?)
+            XCTAssertEqual(diversity["pk"] as Int, 0)
+            let identity = try XCTUnwrap(Row.fetchOne(db, sql: "SELECT type, \"notnull\", dflt_value, pk FROM pragma_table_info('\(table)') WHERE name = 'media_identity'"))
+            XCTAssertEqual(identity["type"] as String, "TEXT")
+            XCTAssertEqual(identity["notnull"] as Int, 0, "history without the fact stays NULL, never defaulted")
+            XCTAssertNil(identity["dflt_value"] as String?)
+            XCTAssertEqual(identity["pk"] as Int, 0)
+        }
         return Set(Self.normalizeRebuiltDefinitions(schema).map { entry in
             if entry == origin { return entry.replacingOccurrences(of: addition, with: "") }
             if entry == revision { return entry.replacingOccurrences(of: fingerprintSuffix, with: "") }
@@ -244,7 +262,9 @@ final class PublicationRunwayStoreTests: XCTestCase {
             XCTAssertEqual(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"), ["runtime-foundation-v1","publication-restore-v1","canonical-supply-v1","canonical-media-candidates-v1","publication-exposure-index-v1","acquisition-target-authority-v1","publication-origin-exposure-index-v1","origin-availability-precedence-v1","acquisition-target-sources-v1","reader-contexts-v1","publication-reading-state-v1","publication-media-use-v1","reader-context-identity-v1","reader-filter-expiry-v1","reader-library-v1","reader-preferred-box-v1","media-playback-candidate-v1",
                 "reader-settings-v1","reader-imported-sources-v1","reader-curated-recipe-v1",
                 "reader-curated-recipe-revision-v1","reader-playback-positions-v1",
-                 "content-fingerprint-generation-v2","reader-source-identity-v1"])
+                 "content-fingerprint-generation-v2","reader-source-identity-v1","saved-media-availability-v1",
+                 "publication-editorial-diversity-v1","reader-legacy-upgrade-receipt-v1",
+                 "publication-media-identity-v1"])
         }
     }
 
@@ -448,12 +468,57 @@ extension PublicationRunwayStoreTests {
                 "reader_source_identity_current:CREATE INDEX reader_source_identity_current ON reader_source_identity(current_key)",
                 "sqlite_autoindex_reader_source_identity_1:"
             ]
+            // Owner directive 2026-10-17 §2: the saved link's content availability is its own table. Availability
+            // changes with preparation; `published_cards` never does.
+            let savedAvailabilityObjects: Set<String> = [
+                """
+                saved_media_availability:CREATE TABLE saved_media_availability (
+                    card_id TEXT PRIMARY KEY NOT NULL REFERENCES published_cards(id) ON DELETE CASCADE,
+                    availability TEXT NOT NULL
+                        CHECK (availability IN ('textOnly', 'pending', 'ready', 'failed', 'insufficientSpace')),
+                    updated_at REAL NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    CHECK (attempts >= 0)
+                )
+                """,
+                "sqlite_autoindex_saved_media_availability_1:"
+            ]
+            // D7-A: the V1 upgrade receipt, additive only. The two tables state what the upgrade carried and
+            // every reported skip; nothing here rewrites a shipped row.
+            let legacyUpgradeObjects: Set<String> = [
+                """
+                reader_legacy_upgrade:CREATE TABLE reader_legacy_upgrade (
+                    singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+                    source_path TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('completed', 'unsupported', 'failed')),
+                    ran_at REAL NOT NULL,
+                    failure_reason TEXT,
+                    imported_boxes INTEGER NOT NULL DEFAULT 0,
+                    imported_sources INTEGER NOT NULL DEFAULT 0,
+                    selected_sources INTEGER NOT NULL DEFAULT 0,
+                    imported_collections INTEGER NOT NULL DEFAULT 0,
+                    imported_collection_members INTEGER NOT NULL DEFAULT 0,
+                    notice_presented INTEGER NOT NULL DEFAULT 0 CHECK(notice_presented IN (0, 1))
+                )
+                """,
+                """
+                reader_legacy_upgrade_skips:CREATE TABLE reader_legacy_upgrade_skips (
+                    category TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    count INTEGER NOT NULL CHECK(count >= 0),
+                    PRIMARY KEY (category, reason)
+                )
+                """,
+                "sqlite_autoindex_reader_legacy_upgrade_skips_1:"
+            ]
             XCTAssertEqual(priorDefinitions.subtracting(normalizedBefore),
                 Set([originIndex, authorityTable, authorityIndex]).union(contextual)
-                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects))
+                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects)
+                    .union(savedAvailabilityObjects).union(legacyUpgradeObjects))
             XCTAssertEqual(Self.normalizeRebuiltDefinitions(schemaAfter).subtracting(normalizedBefore),
                 Set([originIndex, originDefinition, revisionDefinition, authorityTable, authorityIndex]).union(contextual)
-                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects))
+                    .union(mediaRebuild).union(fingerprintObjects).union(identityObjects)
+                    .union(savedAvailabilityObjects).union(legacyUpgradeObjects))
             XCTAssertEqual(try String.fetchAll(db,sql: "SELECT name FROM pragma_index_info('published_cards_origin_record_segment') ORDER BY seqno"),["origin_record_id","segment_id"])
             XCTAssertEqual(try Int.fetchOne(db,sql: "SELECT \"unique\" FROM pragma_index_list('published_cards') WHERE name='published_cards_origin_record_segment'"),0)
             let details = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql, arguments: arguments).map { $0["detail"] as String }

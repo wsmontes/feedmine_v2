@@ -23,6 +23,10 @@ public enum SettledPositionRecording: Hashable, Sendable {
     /// is **exact** (the card the viewport starts at, `.top`, same Edition): nothing was written and the exact
     /// record stands (lead, 2026-10-14). `cardID` is what the record holds.
     case keptExactRecord(cardID: PublicationCardID)
+    /// The restore could not present the reader's durable card and opened on a substitute; this automatic
+    /// statement named the substitute (or another card the restore itself placed), not a reader move. Nothing was
+    /// written, and the durable record still names the reader's card — `cardID` is what the record holds.
+    case keptUnavailablePosition(cardID: PublicationCardID)
 }
 
 public actor FeedSession {
@@ -33,6 +37,24 @@ public actor FeedSession {
     /// Cards whose decoded pixels were released to bound residency. They are re-decoded from the same
     /// local asset when the reader comes back to them; their frozen descriptor never changed.
     private var releasedImageCards: Set<PublicationCardID> = []
+    /// What a restore could not present: the durable card and the card the restored window had to present instead.
+    /// While it exists the reader has not deliberately moved, so an automatic position statement names a
+    /// substitute — the rendering's own layout — and must not replace the durable record. A deliberate observation
+    /// on another admitted card ends the protection: that is the reader establishing a new position.
+    private var restoredSubstitution: (durable: PublicationCardID, presented: PublicationCardID)?
+    /// R03: cards whose bitmap was released and whose reconstruction failed because the local asset is gone. They
+    /// keep their admitted identity, order, anchor and frozen geometry (the published placeholder), and they are not
+    /// retried on every observation: the unavailable destination is stated once, not spun on.
+    ///
+    /// **It is also the restore's memory of what the checkpoint could not redraw.** A durable anchor whose asset is
+    /// absent after a process death is excluded from the restored window (render-ready admission), so its identity
+    /// lives only in the durable record; the projection reports it here so the failure is stated, and the fact
+    /// survives the next observation instead of being discarded with the excluded card.
+    private var unrecoverableImageCards: Set<PublicationCardID> = []
+    /// R03: the anchor of the last residency decision. Its band is kept alive with the current one, because the
+    /// surface reveals the region the reader was **just** looking at before the runtime receives the next
+    /// observation — releasing it there is an empty slot at the instant of exposure. Bounded: at most two bands.
+    private var previousResidencyAnchor: PublicationCardID?
     /// The projection sequence this actor publishes under. It is fixed for the life of a session — a screen
     /// refuses a projection from another sequence — so a warm start that projected the reader's own window
     /// **before** this actor existed hands its sequence here rather than letting a second one begin.
@@ -50,7 +72,10 @@ public actor FeedSession {
 
     /// Composition-only exception: accepts the semantic Publication boundary.
     /// UI consumes Runtime presentation results without importing Publication.
-    /// With a decoder, projected cards carry slot-sized local images; without one they render placeholders.
+    /// With a decoder, projected cards carry slot-sized local images. An image card whose pixels cannot be decoded —
+    /// bytes absent or corrupt, or a composition built without a decoder — is not admitted at all: it is neither an
+    /// image slot waiting for bytes nor a `.textOnly` card under the same identity, and the ready cards around it are
+    /// admitted normally (INV-17).
     ///
     /// `warmStart` is a window already read and projected from this context's durable checkpoint by
     /// `FeedSession.warmStart(...)`, for a host that must have the reader's own feed **before its first frame**
@@ -64,6 +89,11 @@ public actor FeedSession {
         guard let warmStart else { return }
         state = warmStart.projection.state
         releasedImageCards = warmStart.projection.releasedImageCards
+        unrecoverableImageCards = warmStart.projection.snapshot.unavailableImageCardIDs
+        if let durable = warmStart.projection.snapshot.unavailablePositionCardID {
+            restoredSubstitution = (durable, warmStart.projection.snapshot.window.anchor.cardID)
+        }
+        previousResidencyAnchor = warmStart.projection.snapshot.window.anchor.cardID
         projectionSequenceID = warmStart.projection.sequenceID
         projectionPosition = warmStart.projection.position
         // The window is admitted: `.initial` is the admission that installs a session's first presentation once,
@@ -132,7 +162,11 @@ public actor FeedSession {
     /// Recording an observation moves the logical anchor and marks exposure. Evidence of a still
     /// rendered previous window may rematerialize its already-admitted local IDs; it cannot
     /// publish or acquire content. Ordinary admission remains an explicit operation.
-    public func submitViewport(_ observation: ViewportObservation, from evidence: RenderedViewportEvidence? = nil) throws -> FeedPresentationSnapshot? {
+    /// `deliberate` states that this observation is a reader move (a real gesture, a jump, an accessibility
+    /// navigation), not the rendering's own layout settling. It is the fact that ends a restore's substitution
+    /// protection: only a deliberate move to another admitted card establishes a new position.
+    public func submitViewport(_ observation: ViewportObservation, from evidence: RenderedViewportEvidence? = nil,
+        deliberate: Bool = false) throws -> FeedPresentationSnapshot? {
         guard let original = state else { return nil }
         if let evidence {
             guard evidence.observation == observation, evidence.belongs(to: original.presentation),
@@ -141,7 +175,7 @@ public actor FeedSession {
             if !original.presentation.window.items.contains(where: { $0.id == observation.anchor.cardID }) {
                 // The reader is still looking at a previous presentation from this same association.
                 // Re-read only locally published IDs already admitted by one of these two values.
-                let allowed = Set(original.presentation.window.items.map(\.id) + evidence.admittedIDs)
+                let allowed = original.presentation.window.admittedIDs.union(evidence.admittedIDs)
                 // Com a cabeça mantida, a releitura tem de alcançar **toda** carta já admitida; com a regra do
                 // arquiteto basta a capacidade congelada. O filtro abaixo continua mantendo exatamente as
                 // identidades admitidas, então alargar a leitura não admite nada de novo.
@@ -151,7 +185,7 @@ public actor FeedSession {
                     backwardCapacity: kept,
                     forwardCapacity: original.bounds.forwardCapacity)
                 let cards = history.cards.filter { allowed.contains($0.id) }
-                    .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+                    .compactMap { Self.admitted($0, decoder: imageDecoder) }
                 guard let window = FeedWindowSnapshot(items: cards, anchor: observation.anchor) else { return nil }
                 let restored = try projectWindow(contextKey: original.presentation.contextKey,
                     editionID: original.presentation.editionID, window: window)
@@ -162,11 +196,26 @@ public actor FeedSession {
         guard let current = state else { return nil }
         let items = current.presentation.window.items
         guard items.contains(where: { $0.id == observation.anchor.cardID }) else { return current.presentation }
+        // A deliberate move to another admitted card is the reader establishing a new position: the restore's
+        // substitute no longer speaks for them. The layout's own observations (`deliberate == false`) never end it —
+        // the first automatic observation after a restore must not be mistaken for a gesture.
+        var substitutionCleared = false
+        if deliberate, let substitution = restoredSubstitution,
+            observation.anchor.cardID != substitution.presented {
+            restoredSubstitution = nil
+            // The rendering's last automatic top was the substitute. Until the host states the next presented
+            // top, a milestone must fall back to the window anchor the deliberate move produced — not write the
+            // stale substitute.
+            presentedPosition = nil
+            // The snapshot still carries the substitute's position fact; the projection below must state its end
+            // even when this move changed neither the anchor nor residency.
+            substitutionCleared = true
+        }
         try publicationHistory.markSeen(editionID: current.presentation.editionID, cardID: observation.anchor.cardID)
         let (bounded, residencyChanged) = try boundedResidency(items: items,
             editionID: current.presentation.editionID, around: observation.anchor.cardID, bounds: current.bounds)
         let anchorChanged = observation.anchor != current.presentation.window.anchor
-        guard anchorChanged || residencyChanged else { return current.presentation }
+        guard anchorChanged || residencyChanged || substitutionCleared else { return current.presentation }
         guard let window = FeedWindowSnapshot(items: bounded, anchor: observation.anchor) else { return current.presentation }
         let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
             editionID: current.presentation.editionID, window: window)
@@ -189,11 +238,30 @@ public actor FeedSession {
         guard let anchorIndex = items.firstIndex(where: { $0.id == anchorCardID }) else { return (items, false) }
         let first = max(0, anchorIndex - bounds.backwardCapacity)
         let last = min(items.count - 1, anchorIndex + bounds.forwardCapacity)
-        let inside = first...last
-        // Cards that must hand their pixels back: outside the band, still holding an image.
-        let leaving = items.indices.filter { !inside.contains($0) && items[$0].image != nil }
-        // Cards that come back into the band having released theirs.
-        let returning = inside.filter { releasedImageCards.contains(items[$0].id) }
+        // R03: the region to protect is the union of the current band and the band the reader was at before this
+        // decision. A reverse gesture (or an accessibility move, or a bounce) can reveal the previous region
+        // **before** this observation reaches the runtime; releasing those bitmaps there is a slot that draws
+        // empty at the instant of exposure. The union is at most two bands, so residency stays bounded.
+        let previousBand: ClosedRange<Int>? = previousResidencyAnchor.flatMap { id in
+            guard let index = items.firstIndex(where: { $0.id == id }) else { return nil }
+            return max(0, index - bounds.backwardCapacity)...min(items.count - 1, index + bounds.forwardCapacity)
+        }
+        // R03/P04: the region to protect is the **union** of the current band and the band the reader was at
+        // before. Taking the convex hull of two distant bands protected the gap between them: its ids were released
+        // from the restore, so every one of them was decoded again on a long jump, and memory/decode grew with the
+        // distance the comment promises is irrelevant.
+        let bands = Self.mergedBands([first...last, previousBand].compactMap { $0 })
+        // The decision has run for this anchor, whatever it concluded: the next observation's "previous" is this one.
+        previousResidencyAnchor = anchorCardID
+        func isProtected(_ index: Int) -> Bool { bands.contains { $0.contains(index) } }
+        // Cards that must hand their pixels back: outside every revealable region, still holding an image.
+        let leaving = items.indices.filter { !isProtected($0) && items[$0].image != nil }
+        // Cards that come back into a revealable region having released theirs. An asset already known to be gone is
+        // not decoded again: it keeps its placeholder and the session does not spin on it.
+        let returning = items.indices.filter {
+            isProtected($0) && releasedImageCards.contains(items[$0].id)
+                && !unrecoverableImageCards.contains(items[$0].id)
+        }
         guard !leaving.isEmpty || !returning.isEmpty else { return (items, false) }
         var next = items
         for index in leaving {
@@ -201,20 +269,78 @@ public actor FeedSession {
             releasedImageCards.insert(next[index].id)
         }
         if !returning.isEmpty, let imageDecoder {
-            // One read for the band, and only the returning cards are rebuilt from it.
-            let published = try publicationHistory.window(editionID: editionID,
-                around: FeedWindowAnchor(cardID: items[first].id, placement: .center),
-                backwardCapacity: 0, forwardCapacity: last - first)
-            let decoded = Dictionary(uniqueKeysWithValues: published.cards.map {
-                ($0.id, PresentationCard(publishedCard: $0, decoder: imageDecoder))
-            })
-            for index in returning {
-                guard let fresh = decoded[items[index].id] else { continue }
-                next[index] = fresh
-                releasedImageCards.remove(items[index].id)
+            // Read each band alone, never the interval between them, and decode **only** the ids that are actually
+            // returning: a card that never left the band already holds the pixels it was published with.
+            let returningIDs = Set(returning.map { items[$0].id })
+            let indexByID = Dictionary(uniqueKeysWithValues: items.indices.map { (items[$0].id, $0) })
+            for band in bands {
+                let published = try publicationHistory.window(editionID: editionID,
+                    around: FeedWindowAnchor(cardID: items[band.lowerBound].id, placement: .center),
+                    backwardCapacity: 0, forwardCapacity: band.count - 1)
+                for card in published.cards where returningIDs.contains(card.id) {
+                    guard let index = indexByID[card.id] else { continue }
+                    let fresh = PresentationCard(publishedCard: card, decoder: imageDecoder)
+                    releasedImageCards.remove(card.id)
+                    if fresh.isRenderReady {
+                        next[index] = fresh
+                    } else {
+                        // MUTATION (red proof): the old exclusion of a failed reconstruction.
+                        unrecoverableImageCards.insert(card.id)
+                    }
+                }
             }
         }
         return (next, true)
+    }
+
+    /// Sorted, coalesced index ranges. Adjacent bands are one region; distant ones stay apart so the gap is never
+    /// read or decoded.
+    private static func mergedBands(_ ranges: [ClosedRange<Int>]) -> [ClosedRange<Int>] {
+        var merged: [ClosedRange<Int>] = []
+        for range in ranges.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            if let last = merged.last, range.lowerBound <= last.upperBound + 1 {
+                merged[merged.count - 1] = last.lowerBound...max(last.upperBound, range.upperBound)
+            } else {
+                merged.append(range)
+            }
+        }
+        return merged
+    }
+
+    /// R04: memory pressure keeps the reader's own reading and releases everything else. The current band around
+    /// the anchor **keeps its pixels** — the card the reader is on and the cards beside it must draw at once — and
+    /// the previous band's protection (R03) is dropped, because the system is asking for bytes. Identity, order,
+    /// anchor, geometry and the durable payload do not change; only residency does. Releasing pixels outside the
+    /// reader's own band is exactly what the running session already did before R03 added the second band.
+    ///
+    /// Returns whether anything was released, so a pressure signal with nothing to release allocates nothing.
+    @discardableResult
+    public func trimResidencyForMemoryPressure() throws -> Bool {
+        guard let current = state else { return false }
+        let items = current.presentation.window.items
+        guard let anchorIndex = items.firstIndex(where: { $0.id == current.presentation.window.anchor.cardID })
+        else { return false }
+        let first = max(0, anchorIndex - current.bounds.backwardCapacity)
+        let last = min(items.count - 1, anchorIndex + current.bounds.forwardCapacity)
+        var next = items
+        var changed = false
+        for index in items.indices where !(first...last).contains(index) {
+            guard next[index].image != nil else { continue }
+            next[index] = next[index].releasingDecodedImage()
+            releasedImageCards.insert(next[index].id)
+            changed = true
+        }
+        guard changed else { return false }
+        guard let window = FeedWindowSnapshot(items: next, anchor: current.presentation.window.anchor) else {
+            return false
+        }
+        let snapshot = try projectWindow(contextKey: current.presentation.contextKey,
+            editionID: current.presentation.editionID, window: window)
+        state = FeedSessionState(editorialRevisionID: current.editorialRevisionID,
+            presentation: snapshot, bounds: current.bounds)
+        // The pressure decision is the last residency decision: the next observation protects this band only.
+        previousResidencyAnchor = snapshot.window.anchor.cardID
+        return true
     }
 
     /// Extends the admitted prefix with already-published cards that follow the admitted tail.
@@ -226,18 +352,42 @@ public actor FeedSession {
     /// current anchor (an older gesture cannot reinstall a position a newer one already left), the
     /// append is ordered and deduplicated, and the batch is bounded by the frozen forward bound.
     /// *When* a gesture deserves an admission is the UI's demand decision, not a ratio here.
+    ///
+    /// Read progressively past unavailable images (PD-9/INV-17), in local windows bounded by the space still
+    /// available after the anchor. Stop when that space is filled or history ends; never accumulate refused cards
+    /// or decode an extension that the anchored bound would discard.
     private func admitForwardScroll(_ observation: ViewportObservation) throws -> FeedPresentationSnapshot? {
         guard let current = state else { return nil }
         guard current.presentation.window.anchor == observation.anchor else { return current.presentation }
         let items = current.presentation.window.items
-        guard let tail = items.last else { return current.presentation }
-        let published = try publicationHistory.window(editionID: current.presentation.editionID,
-            around: FeedWindowAnchor(cardID: tail.id, placement: .center),
-            backwardCapacity: 0, forwardCapacity: current.bounds.forwardCapacity)
-        let admitted = Set(items.map(\.id))
-        let extensionCards = published.cards.dropFirst().filter { !admitted.contains($0.id) }
-            .prefix(current.bounds.forwardCapacity)
-            .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+        guard let tail = items.last,
+            let anchorIndex = items.firstIndex(where: { $0.id == observation.anchor.cardID }) else {
+            return current.presentation
+        }
+        let capacity = max(0, current.bounds.forwardCapacity - (items.count - anchorIndex - 1))
+        guard capacity > 0 else { return current.presentation }
+        var admitted = Set(items.map(\.id))
+        var extensionCards: [PresentationCard] = []
+        extensionCards.reserveCapacity(capacity)
+        var cursor = tail.id
+        while extensionCards.count < capacity {
+            let published = try publicationHistory.window(editionID: current.presentation.editionID,
+                around: FeedWindowAnchor(cardID: cursor, placement: .center),
+                backwardCapacity: 0, forwardCapacity: capacity)
+            // The first card is the cursor itself; the rest are what follows it in published order.
+            let ahead = published.cards.dropFirst()
+            guard let last = ahead.last else { break }
+            for card in ahead where !admitted.contains(card.id) {
+                guard let ready = Self.admitted(card, decoder: imageDecoder) else { continue }
+                admitted.insert(ready.id)
+                extensionCards.append(ready)
+                if extensionCards.count == capacity { break }
+            }
+            // A short window exhausted the forward side: no further read could return another card.
+            guard ahead.count == capacity else { break }
+            // The store only returns cards strictly after the cursor, so this is forward progress.
+            cursor = last.id
+        }
         guard !extensionCards.isEmpty else { return current.presentation }
         // O teto vale para a janela inteira, **nas duas direções** (decisão do arquiteto): crescer para frente sem
         // limite também é defeito. O corte é em volta da âncora, então ordem, identidade, âncora e posição ficam, e
@@ -256,12 +406,23 @@ public actor FeedSession {
         return snapshot
     }
 
+    /// The absolute bound on the admitted list — a **memory guard**, not a window shape (owner's item F,
+    /// 2026-10-17). It is deliberately high: no reading session reaches it, so it never acts as a page, a runway
+    /// target or a health number; what it bounds is the one quantity `keepsAdmittedHead` leaves unbounded — a reader
+    /// who reads a very long Edition in a single session grows the list monotonically, one admitted card at a time.
+    /// Below it the kept head behaves exactly as the 2026-10-13 decision states.
+    public static let maxAdmittedItems = 2000
+
     /// Keeps the admitted list bounded **around the anchor**: at most `backwardCapacity` cards before it and
     /// `forwardCapacity` after it, which is what the presentation was installed with. The architect separated the
     /// two claims and he is right: every admission obeying the bound *locally* does not bound the list — prepending
     /// pushes the anchor right, appending grows the tail, and over a long navigation either end accumulates. Cards
     /// cut here stay **reachable**: the next admission near that end reads them from the store again, so leaving the
     /// window is not losing the content. The anchor itself is never cut — it is inside `first...last` by construction.
+    ///
+    /// The anchor-relative trim is followed by the **absolute** cap: a kept head has no other ceiling, so a list
+    /// that would exceed `maxAdmittedItems` drops its oldest cards — never the reader's own card, never the reserve
+    /// ahead of it, and never anything at all below the cap.
     private func boundedToTotalWindow(_ items: [PresentationCard], around anchorCardID: PublicationCardID,
         bounds: FeedPresentationBounds) -> [PresentationCard] {
         guard let anchorIndex = items.firstIndex(where: { $0.id == anchorCardID }) else { return items }
@@ -270,8 +431,18 @@ public actor FeedSession {
         // content above them and the offset corrector has nothing to hide. The forward reserve is bounded either way.
         let first = bounds.keepsAdmittedHead ? 0 : max(0, anchorIndex - bounds.backwardCapacity)
         let last = min(items.count - 1, anchorIndex + bounds.forwardCapacity)
-        guard first > 0 || last < items.count - 1 else { return items }
-        return Array(items[first...last])
+        let windowCount = last - first + 1
+        guard windowCount > Self.maxAdmittedItems else {
+            guard first > 0 || last < items.count - 1 else { return items }
+            return Array(items[first...last])
+        }
+        // The cap runs **after** that trim and drops the oldest: with the head kept, `first` is the Edition's own
+        // first admitted card, so the cards beyond the cap are the ones furthest above the reader. `min` keeps the
+        // reader's own card when a caller declares a forward reserve that by itself passes the cap — the anchor is
+        // never one of the cards that leave.
+        let dropped = windowCount - Self.maxAdmittedItems
+        let keepFrom = first + min(dropped, anchorIndex - first)
+        return Array(items[keepFrom...last])
     }
 
     /// Prepends already-published cards that precede the admitted head, after a real backward movement of the
@@ -302,7 +473,7 @@ public actor FeedSession {
         // the suffix keeps the cards closest to the head — the reader's next step back, not the far end of history.
         let extensionCards = published.cards.dropLast().filter { !admitted.contains($0.id) }
             .suffix(allowed)
-            .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+            .compactMap { Self.admitted($0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
         let (bounded, _) = try boundedResidency(
             items: boundedToTotalWindow(extensionCards + items, around: observation.anchor.cardID,
@@ -340,7 +511,7 @@ public actor FeedSession {
         let admitted = Set(items.map(\.id))
         let extensionCards = published.cards.dropFirst().filter { !admitted.contains($0.id) }
             .prefix(allowed - items.count)
-            .map { PresentationCard(publishedCard: $0, decoder: imageDecoder) }
+            .compactMap { Self.admitted($0, decoder: imageDecoder) }
         guard !extensionCards.isEmpty else { return current.presentation }
         let anchor = current.presentation.window.anchor
         // Mesma regra do arquiteto, e agora num lugar só: o teto vale para a janela inteira nas duas direções.
@@ -355,6 +526,14 @@ public actor FeedSession {
         state = FeedSessionState(editorialRevisionID: current.editorialRevisionID, presentation: snapshot,
             bounds: current.bounds)
         return snapshot
+    }
+
+    /// The admission boundary: a published card yields a presentation only when it is render-ready. An image
+    /// card whose media cannot be decoded is excluded from the window — it is never converted to a text card under
+    /// the same identity, and the ready candidates around it are admitted normally (INV-17).
+    private static func admitted(_ card: PublishedCard, decoder: PresentationImageDecoder?) -> PresentationCard? {
+        let projected = PresentationCard(publishedCard: card, decoder: decoder)
+        return projected.isRenderReady ? projected : nil
     }
 
     /// Rejects unusable structural bounds before any state is consulted, so a repeat admission
@@ -383,8 +562,14 @@ public actor FeedSession {
             return nil
         }
         releasedImageCards.formUnion(projected.releasedImageCards)
+        unrecoverableImageCards.formUnion(projected.snapshot.unavailableImageCardIDs)
+        if let durable = projected.snapshot.unavailablePositionCardID {
+            restoredSubstitution = (durable, projected.snapshot.window.anchor.cardID)
+        }
         projectionPosition = projected.position
         state = projected.state
+        // R03: the restored band is the band the surface will reveal first; the next observation protects it too.
+        previousResidencyAnchor = projected.snapshot.window.anchor.cardID
         return projected.snapshot
     }
 
@@ -423,12 +608,18 @@ public actor FeedSession {
             try publicationHistory.markSeen(editionID: restored.edition.id,
                 cardID: restored.cursor.anchor.cardID)
             var released: Set<PublicationCardID> = []
-            let window = projectedWindow(restored.window, bounds: bounds, imageDecoder: imageDecoder,
-                released: &released)
+            var unavailable: Set<PublicationCardID> = []
+            guard let window = projectedWindow(restored.window, bounds: bounds, imageDecoder: imageDecoder,
+                released: &released, unavailable: &unavailable) else { return nil }
             let next = try FeedProjectionProvenance.nextPosition(after: position)
+            // The durable card and the presented anchor are different facts. When the reader's own card could not
+            // be redrawn, the window opens on the closest render-ready card and says which position it stands for.
+            let durable = restored.cursor.anchor.cardID
+            let substituted = durable != window.anchor.cardID && unavailable.contains(durable) ? durable : nil
             let snapshot = FeedPresentationSnapshot(contextKey: restored.edition.contextKey,
                 editionID: restored.edition.id, window: window,
-                provenance: .init(sequenceID: sequenceID, position: next))
+                provenance: .init(sequenceID: sequenceID, position: next),
+                unavailableImageCardIDs: unavailable, unavailablePositionCardID: substituted)
             return FeedCheckpointProjection(
                 state: FeedSessionState(editorialRevisionID: restored.edition.editorialRevision.id,
                     presentation: snapshot, bounds: bounds),
@@ -436,28 +627,59 @@ public actor FeedSession {
         }
 
         private static func projectedWindow(_ published: FeedWindow, bounds: FeedPresentationBounds,
-            imageDecoder: PresentationImageDecoder?, released: inout Set<PublicationCardID>) -> FeedWindowSnapshot {
-            // FeedWindow guarantees its anchor is one of its cards; a window without a numbered band would have no
-            // outside to release, so the plain projection is the total answer.
+            imageDecoder: PresentationImageDecoder?, released: inout Set<PublicationCardID>,
+            unavailable: inout Set<PublicationCardID>) -> FeedWindowSnapshot? {
+            // FeedWindow guarantees its anchor is one of its cards; a window without a numbered band has no outside
+            // to release, so every card crosses the admission gate and nothing is admitted as a placeholder.
             guard let anchorIndex = published.cards.firstIndex(where: { $0.id == published.anchor.cardID }) else {
-                return FeedWindowSnapshot(publishedWindow: published, decoder: imageDecoder, reusable: [:])
+                let items = published.cards.compactMap { card -> PresentationCard? in
+                    let value = FeedSession.admitted(card, decoder: imageDecoder)
+                    if value == nil, imageDecoder != nil { unavailable.insert(card.id) }
+                    return value
+                }
+                return FeedWindowSnapshot(items: items, publishedAnchor: published.anchor)
             }
             let first = max(0, anchorIndex - bounds.backwardCapacity)
             let last = min(published.cards.count - 1, anchorIndex + bounds.forwardCapacity)
             var items: [PresentationCard] = []
             items.reserveCapacity(published.cards.count)
             for (index, card) in published.cards.enumerated() {
+                let value: PresentationCard?
                 if first...last ~= index {
-                    items.append(PresentationCard(publishedCard: card, decoder: imageDecoder))
+                    value = FeedSession.admitted(card, decoder: imageDecoder)
+                    // The band is what a restore decodes: an image card refused here is a card whose local asset
+                    // could not be reconstructed now. The refusal is stated, never hidden behind the substitute.
+                    if value == nil, imageDecoder != nil { unavailable.insert(card.id) }
+                } else if imageDecoder == nil {
+                    // Nothing can reconstruct pixels in this composition, so an outside-band image card has no
+                    // presentation now or later: it is not admitted anywhere in the window.
+                    value = FeedSession.admitted(card, decoder: nil)
                 } else {
                     // Fora da faixa: os valores congelados ficam, os pixels voltam.
                     let outside = PresentationCard(publishedCard: card)
                     released.insert(outside.id)
-                    items.append(outside)
+                    value = outside
                 }
+                if let value { items.append(value) }
             }
-            return FeedWindowSnapshot(items: items, publishedAnchor: published.anchor)
-                ?? FeedWindowSnapshot(publishedWindow: published, decoder: imageDecoder, reusable: [:])
+            // The window must name the reader's position among presented values. When the published anchor is one
+            // of the excluded cards, the closest **render-ready** card carries the same placement: a card whose
+            // pixels were released outside the band is not a value the restore may draw before preparation, and an
+            // image card admitted without pixels would be the empty first frame the owner's rule forbids.
+            var anchorID = published.anchor.cardID
+            if !items.contains(where: { $0.id == anchorID }) {
+                let ready = items.filter(\.isRenderReady)
+                let following = ready.first { candidate in
+                    guard let position = published.cards.firstIndex(where: { $0.id == candidate.id }) else {
+                        return false
+                    }
+                    return position > anchorIndex
+                }
+                guard let fallback = following ?? ready.last else { return nil }
+                anchorID = fallback.id
+            }
+            return FeedWindowSnapshot(items: items,
+                publishedAnchor: FeedWindowAnchor(cardID: anchorID, placement: published.anchor.placement))
         }
     }
 
@@ -465,11 +687,26 @@ public actor FeedSession {
     /// An unchanged effective projection retains its exact provenance, even after another read.
     private func projectWindow(contextKey: ContextKey, editionID: FeedEditionID,
         window: FeedWindowSnapshot) throws -> FeedPresentationSnapshot {
+        // The unavailable fact is **not** limited to `window.admittedIDs`: a durable anchor whose asset could not
+        // be reconstructed is excluded from the window (the owner's render-ready rule), so the intersection would
+        // discard the very fact the restore just recorded, and the surface would never state the failure.
+        //
+        // A card that is render-ready in this window was reconstructed after all: the decision ends **durably**.
+        // Merely hiding it from this projection would make the same card unavailable again when its bitmap is
+        // released outside the band — and `boundedResidency` would never reconstruct it, because the set still
+        // refuses the retry. A release is residency, not a new media failure.
+        let available = Set(window.items.lazy.filter(\.isRenderReady).map(\.id))
+        unrecoverableImageCards.subtract(available)
+        let unavailable = unrecoverableImageCards
+        let unavailablePosition = restoredSubstitution?.durable
         if let current = state?.presentation, current.contextKey == contextKey,
-            current.editionID == editionID, current.window == window { return current }
+            current.editionID == editionID, current.window == window,
+            current.unavailableImageCardIDs == unavailable,
+            current.unavailablePositionCardID == unavailablePosition { return current }
         let next = try FeedProjectionProvenance.nextPosition(after: projectionPosition)
         let snapshot = FeedPresentationSnapshot(contextKey: contextKey, editionID: editionID, window: window,
-            provenance: .init(sequenceID: projectionSequenceID, position: next))
+            provenance: .init(sequenceID: projectionSequenceID, position: next),
+            unavailableImageCardIDs: unavailable, unavailablePositionCardID: unavailablePosition)
         projectionPosition = next
         return snapshot
     }
@@ -483,8 +720,14 @@ public actor FeedSession {
     /// `PresentationProjectionOrderingTests.testO15ReopenStartsIndependentMemorySequenceAndPreservesHistory` pin it.
     /// The rule that keeps an incomplete statement from replacing an exact record belongs to the **automatic**
     /// boundary, which fires from the rendering on its own — `recordSettledPosition(at:settled:)`.
+    ///
+    /// **One exception is not a position the caller chose:** while a restore stands on a substitute because the
+    /// reader's own card could not be redrawn, the current position names that substitute. Writing it on a
+    /// lifecycle milestone would lose the reader's card without any reader move, so the write is refused (false)
+    /// and the durable record keeps its card. A deliberate move ends the protection first.
     public func checkpointCurrentPosition(at date: Date) throws -> Bool {
         guard let current = state else { return false }
+        if restoredSubstitution != nil { return false }
         let anchor = recordedPosition(of: current)
         try publicationHistory.saveCursor(
             SessionCursor(editionID: current.presentation.editionID, anchor: anchor), updatedAt: date)
@@ -571,6 +814,12 @@ public actor FeedSession {
     @discardableResult
     public func recordSettledPosition(at date: Date, settled: Bool = false) throws -> SettledPositionRecording {
         guard let current = state else { return .nothingToRecord }
+        // The rendering's own position, before any deliberate reader move, is the substitute a restore had to
+        // present — not a position the reader established. Keeping the durable record is what lets the original
+        // card come back when its asset does.
+        if let substitution = restoredSubstitution {
+            return .keptUnavailablePosition(cardID: substitution.durable)
+        }
         let anchor = recordedPosition(of: current)
         if let durable = durablePosition {
             if durable.anchor == anchor { return .alreadyDurable }

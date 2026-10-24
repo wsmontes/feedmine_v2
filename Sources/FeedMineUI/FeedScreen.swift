@@ -60,15 +60,51 @@ public struct FeedScreen: View {
                 lens: { if let lens { lens } }) {
                 FeedSourcesEmptyStateView(appearance: appearance, onChooseSources: onChooseSources)
             }
-        } else if !store.renderedItems.isEmpty {
+        // A search context is a surface of its own: the feed window is intentionally empty while the reader is
+        // searching, but the shell — and its results page — must still be mounted. Without this the app kept the
+        // loading surface over a search that had already completed.
+        } else if store.isSearching || !store.renderedItems.isEmpty {
             ReaderShell(store: store, appearance: appearance, status: { statusChip },
                 lens: { if let lens { lens } }) {
                 feedBody
+            }
+            // While the cover is up, the laid-out cards are not on screen: they are measured, not shown, and
+            // the accessibility tree must say the same thing the pixels do.
+            .accessibilityHidden(drawsPreparationCover)
+            // D4: the transition from preparation to reading is held by the **measured layout**, not by the
+            // arrival of a first card. The cards are laid out here (that is what measurement needs) and the
+            // preparation surface stays over them until they reach the viewport bottom. The judge is
+            // `FeedFirstScreenGate`; nothing about publication, admission or the cards changes.
+            .overlay {
+                if drawsPreparationCover {
+                    preparationSurface
+                        .transition(.opacity)
+                }
             }
         } else {
             FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
                 onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() })
         }
+    }
+
+    /// Whether the preparation surface is covering the laid-out cards this pass.
+    ///
+    /// Both facts are read together on purpose: `firstScreenReading` is the observable that changes when a
+    /// **measurement** — not a new card — settles the transition, so the cover leaves on the same pass the decision
+    /// changes, and `firstScreenSurface` is the decision itself (the screen and the host's launch record read this
+    /// one value, never two opinions). The lifecycle that states those facts (the host's timeout and the appearance
+    /// of a window) belongs to the host: this view renders, it executes nothing.
+    private var drawsPreparationCover: Bool {
+        !store.firstScreenReading && store.firstScreenSurface == .preparation
+    }
+
+    /// The preparation surface as a cover: the same honest surface the launch already draws (its copy is the
+    /// work state's own), filled and opaque so the reader never sees a half-composed screen beneath it.
+    private var preparationSurface: some View {
+        FeedLoadingView(work: store.work, onTryAgain: { onTryAgain() },
+            onAdjustInterests: { onAdjustInterests() }, onChooseSources: { onChooseSources() })
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.background)
     }
 
     /// The chip states the reader's situation. The host can replace it (T5 hook) because the host owns
@@ -119,6 +155,12 @@ public struct FeedScreen: View {
                                     #if DEBUG
                                     FeedVisualCapture.probeGuards += 1
                                     #endif
+                                    // D4: the layout is the evidence. Each laid-out card's own bottom (in the
+                                    // scroll view's coordinates, so the list's spacing and the card's slot are
+                                    // already inside it) and the viewport height the scroll view measured are what
+                                    // `FeedFirstScreenGate` judges. Recorded in every build: it is the decision.
+                                    store.noteFirstScreenLayout(cardID: card.id,
+                                        contentBottom: proof.frame.maxY, viewportHeight: proof.height)
                                     #if canImport(UIKit)
                                     if capture.nativeScrollOffset.observe(proof) {
                                         return
@@ -152,9 +194,11 @@ public struct FeedScreen: View {
                     #endif
                     .modifier(NativeFeedTargets())
                     // U1-F: one FeedScreen for every device; wide displays keep a readable column
-                    // instead of stretching editorial text across the window.
-                    .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
+                    // instead of stretching editorial text across the window. The cap is the **last** frame:
+                    // expanding first and capping second keeps the drawn content inside the column (the reverse
+                    // order re-expanded it to the scroll content width: 730.25 pt against 700 on iPad landscape).
                     .frame(maxWidth: .infinity)
+                    .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
                 }
                 .modifier(NativeFeedViewport(capture: $capture, store: store))
                 #if DEBUG && canImport(UIKit)
@@ -179,8 +223,8 @@ public struct FeedScreen: View {
                         endOfContentBlock(items: items)
                     }
                     .padding(FeedDesignTokens.Spacing.page)
-                    .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
                     .frame(maxWidth: .infinity)
+                    .frame(maxWidth: FeedDesignTokens.Measurement.readableContentWidth)
                 }
                 // T3: work feedback is an overlay of constant height that never takes touches, so the
                 // scroll viewport keeps exactly the geometry the reader was admitted into.
@@ -201,7 +245,14 @@ public struct FeedScreen: View {
             FeedEndOfContentView(appearance: appearance,
                 onExploreSubjects: { onAdjustInterests() },
                 onWidenSources: { onChooseSources() },
-                onReturnToStart: { capture.positionID = items.first?.id })
+                onReturnToStart: {
+                    // P03/A3: this is a position intention like any other. Assigning `capture.positionID` here
+                    // bypassed the binding's setter and exposed a released head without preparing its pixels.
+                    guard let first = items.first?.id,
+                        let presented = capture.interaction.presentation(for: store) else { return }
+                    FeedPositionRequest.apply(first, presented: presented, capture: &capture, store: store,
+                        explicit: true)
+                })
         }
     }
 }

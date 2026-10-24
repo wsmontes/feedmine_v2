@@ -68,7 +68,8 @@ public struct SelectionEngine: Sendable {
     /// PD-4 alternation also holds across segment boundaries.
     public func select(plan: FeedPlan, policy: ResolvedSelectionPolicy,
         window: CandidateSupplyWindow, exposure: SelectionExposureSnapshot?,
-        after neighbor: SelectionNeighbor?, readiness: SelectionReadinessSnapshot? = nil) throws -> SelectionResult {
+        after neighbor: SelectionNeighbor?, readiness: SelectionReadinessSnapshot? = nil,
+        diversity: SelectionDiversityContext? = nil) throws -> SelectionResult {
         guard policy.matches(plan.revision) else { throw SelectionError.policyMismatch }
         guard Set(window.candidates.map(\.originRecordID)).count == window.candidates.count else {
             throw SelectionError.duplicateCandidateIdentity
@@ -120,6 +121,25 @@ public struct SelectionEngine: Sendable {
             guard !weights.isEmpty else { return 1 }
             return candidate.sourceIDs.compactMap { weights[$0] }.max() ?? 1
         }
+        // R17/A8: the diversity behavior exists in the **explicitly supported** sequencing version 5 only. An
+        // unknown version — or an older one restored from disk — keeps exactly the order it was published under,
+        // and the context is ignored; a version this build does not know never inherits newer behavior.
+        let diversityContext = plan.revision.sequencingPolicyVersion.rawValue == 5 ? diversity : nil
+        // A9: the dimensions are decided once per **same-relevance group**, not per pair and not across weights. A
+        // pair-wise skip made the comparator non-transitive; a set-wide decision would let one low-weight candidate
+        // remove a dimension from the high-weight group it is never compared with.
+        var diversityKeys: [OriginRevisionID: [Int]] = [:]
+        if let diversityContext {
+            for group in Dictionary(grouping: readyEligible, by: { weight($0) }).values {
+                let dimensions = diversityContext.comparableDimensions(for: group)
+                guard !dimensions.isEmpty else { continue }
+                for candidate in group {
+                    if let key = diversityContext.repetitionKey(for: candidate, dimensions: dimensions) {
+                        diversityKeys[candidate.originRevisionID] = key
+                    }
+                }
+            }
+        }
         let ordered: [Candidate]
         switch policy.sequencing {
         case .recencyDescending, .recencyAlternatingSources, .recencyAlternatingSourcesBySupplyShare,
@@ -127,6 +147,12 @@ public struct SelectionEngine: Sendable {
             ordered = readyEligible.sorted { left, right in
                 let leftWeight = weight(left), rightWeight = weight(right)
                 if leftWeight != rightWeight { return leftWeight > rightWeight }
+                // After eligibility and relevance, prefer the candidate whose **group-comparable** dimensions repeat
+                // least in the recent published window. Fixed-width keys keep the order strict and transitive.
+                if let leftKey = diversityKeys[left.originRevisionID],
+                    let rightKey = diversityKeys[right.originRevisionID], leftKey != rightKey {
+                    return leftKey.lexicographicallyPrecedes(rightKey)
+                }
                 if left.timestamp.value != right.timestamp.value {
                     return left.timestamp.value > right.timestamp.value
                 }

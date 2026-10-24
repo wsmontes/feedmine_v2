@@ -14,6 +14,7 @@ import FeedMineSyndication
 /// The site and its feed are served by the app's own debug fixture, so no test touches the network. What is
 /// under test is the real path: `ReaderAddFeedStore` → `ReaderAddFeedAdapter` → `FeedLinkResolver` →
 /// `reader_imported_sources` → `TrustedFeed.resolveAvailable` → the runtime.
+#if DEBUG
 @MainActor
 final class AddFeedTests: XCTestCase {
     private func directory() -> URL {
@@ -79,7 +80,7 @@ final class AddFeedTests: XCTestCase {
             "the session must ask for the feed the reader added; it asked for \(AddFeedFixtureSite.recordedRequests())")
         let published = await Self.waitUntil(20) { association.store.state.presentation != nil }
         XCTAssertTrue(published, "the added feed must publish a first Edition")
-        _ = try await association.driver.drive(resources: FeedAssociation.resources)
+        _ = try await association.driver.drive(resources: association.resources)
         let cards = try XCTUnwrap(association.store.state.presentation).window.items
         XCTAssertFalse(cards.isEmpty, "the feed the reader just added must produce cards")
         XCTAssertTrue(cards.contains { $0.sourceDisplayName == AddFeedFixtureSite.siteTitle },
@@ -306,3 +307,4 @@ final class AddFeedTests: XCTestCase {
             ReaderSourceIdentity.entry(mineOnly)?.source.id, "the same identity after a relaunch")
     }
 }
+#endif

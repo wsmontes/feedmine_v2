@@ -29,6 +29,30 @@ final class CatalogInstallationTests: XCTestCase {
             bundledCatalogue: catalogue, bundledManifest: manifestURL, now: { clock })
     }
 
+    /// P11: two offers racing on the same directory cannot leave the older revision active. The compare and the
+    /// commit are one serialized decision, and the revision is re-checked at commit.
+    func testConcurrentOffersCannotCommitOlderRevisionLast() throws {
+        let installation = installation()
+        _ = try XCTUnwrap(installation.bootstrap())
+        let newer = try makeCatalogue(in: root.appendingPathComponent("race-6"), sources: 3, revision: 6)
+        let newest = try makeCatalogue(in: root.appendingPathComponent("race-7"), sources: 3, revision: 7)
+        let newerManifest = try manifestData(for: newer, revision: 6)
+        let newestManifest = try manifestData(for: newest, revision: 7)
+        let start = DispatchSemaphore(value: 0), group = DispatchGroup()
+        for (data, catalogue) in [(newerManifest, newer), (newestManifest, newest)] {
+            group.enter()
+            DispatchQueue.global().async {
+                start.wait()
+                _ = installation.install(manifestData: data, catalogue: catalogue)
+                group.leave()
+            }
+        }
+        start.signal(); start.signal()
+        XCTAssertEqual(group.wait(timeout: .now() + 30), .success)
+        XCTAssertEqual(installation.activeSnapshot()?.revision, 7,
+            "a revisão mais nova deve ser a ativa, independentemente da ordem de commit")
+    }
+
     // MARK: - Valid, idempotent, offline
 
     func testAVerifiedBundledSnapshotIsInstalledAndReadLocally() throws {

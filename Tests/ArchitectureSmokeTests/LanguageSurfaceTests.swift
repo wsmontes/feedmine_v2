@@ -58,6 +58,35 @@ final class LanguageSurfaceTests: XCTestCase {
         XCTAssertEqual(OnboardingLanguage(recipeCode: "und").name, "Idioma não declarado")
     }
 
+    /// Item C: the first run asks, and the answer is the reader's — including the answer that names nothing. The
+    /// last chip can be taken back (that is the skip), and the skip is a state, not a blocked tap: an empty set is
+    /// the unrestricted scope, never a language inferred from the device.
+    func testTheLanguageStepStartsUnansweredAndTheLastAnswerIsTheSkip() {
+        XCTAssertTrue(FeedRecipeDefinition.neutral().languages.isEmpty,
+            "the first run starts with no answer — nothing is inferred for the reader")
+        XCTAssertFalse(FeedRecipeDefinition.neutral().hasLanguageAnswer,
+            "no answer yet is not the all-languages answer")
+        let chosen = ReaderDiscoveryControls.choosing("pt-BR", in: .neutral())
+        XCTAssertEqual(chosen.languages, ["pt"], "the answer is the language, normalized")
+        XCTAssertTrue(chosen.hasLanguageAnswer)
+        let back = ReaderDiscoveryControls.choosing("pt", in: chosen)
+        XCTAssertTrue(back.languages.isEmpty, "taking the last answer back is how the reader skips")
+        XCTAssertTrue(back.hasLanguageAnswer, "and taking the last chip back is still an answer")
+        let skipped = ReaderDiscoveryControls.namingNoLanguage(in: chosen)
+        XCTAssertTrue(skipped.languages.isEmpty, "and the skip is one explicit answer")
+        XCTAssertTrue(skipped.hasLanguageAnswer, "the empty set is 'all languages', not 'no answer yet'")
+        XCTAssertEqual(ReaderDiscoveryControls.namingNoLanguage(in: .neutral(languages: ["en", "pt"])).languages,
+            [], "the skip clears a whole selection, not only the last chip")
+        // An older stored recipe with no answer has an empty set too; the chip must not claim an answer the
+        // profile does not have.
+        XCTAssertFalse(ReaderDiscoveryControls.namesAllLanguages(.neutral()),
+            "an unanswered recipe does not select 'Todos os idiomas'")
+        XCTAssertTrue(ReaderDiscoveryControls.namesAllLanguages(.neutral(hasLanguageAnswer: true)),
+            "the explicit answer selects it")
+        XCTAssertFalse(ReaderDiscoveryControls.namesAllLanguages(.neutral(languages: ["pt"])),
+            "a named language is not the all-languages answer")
+    }
+
     /// The expansion is information: the row's own identity is the language, so a variant cannot be selected as
     /// if it were a narrower filter.
     func testVariantsAreInformationAndCarryCounts() throws {

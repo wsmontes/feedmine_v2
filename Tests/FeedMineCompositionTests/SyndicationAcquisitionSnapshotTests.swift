@@ -484,6 +484,38 @@ extension SyndicationAcquisitionSnapshotTests {
         }
         XCTAssertEqual(http.calls,0)
     }
+    /// B03: discovery installs pages **after** the association's first registrations. Their connectors must carry the
+    /// composition's authorized non-public origins too; otherwise the benchmark transport is refused for every target
+    /// discovered later, and only the first page's sources can ever be fetched.
+    func testK05DiscoveryPageConnectorKeepsAuthorizedBenchmarkOrigin() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let catalog = try makeCatalogue(in: root.appendingPathComponent("catalog"), sources: 1, revision: 5)
+        let fixture = response(url: URL(string: "http://127.0.0.1:8757/feed.xml")!)
+        let queue = try DatabaseQueue(path: catalog.path)
+        try await queue.write { db in
+            try db.execute(sql: "UPDATE catalog_source SET request_url = ? WHERE id = 1",
+                arguments: [fixture.url.absoluteString])
+        }
+        let key = ContextKey(request: .main)
+        let traversal = ReaderDiscoveryTraversal(builder: ReaderDiscoveryBuilder(catalogURL: catalog),
+            profile: .init(languages: ["pt"]), contextKey: key)
+        let snapshot = try SyndicationAcquisitionSnapshot(database: try database(), registrations: [],
+            session: session(), redirectCapacity: 0, discovery: traversal,
+            authorizedNonPublicOrigins: [URL(string: "http://127.0.0.1:8757")!])
+        let context = FeedContext(key: key)
+        _ = try snapshot.advanceDiscovery(for: context, examinedCapacity: 8)
+        let target = try XCTUnwrap(snapshot.eligibleTargets(for: context).first)
+        let connector = try XCTUnwrap(snapshot.connector(for: target))
+        let pull = FeedConnectorPull(targetID: target.id, targetGeneration: target.generation,
+            checkpointRevision: target.checkpointRevision, checkpoint: nil,
+            observationCapacity: 4, byteCapacity: 100_000)!
+        guard case .batch = try await connector.pull(pull) else {
+            return XCTFail("a discovery page must reach the authorized benchmark origin")
+        }
+        XCTAssertEqual(fixture.calls, 1, "the page's connector contacted the authorized origin")
+    }
+
     func testK05InvalidAuthorizedOriginRefusesSnapshot() throws {
         let db = try database()
         for raw in ["https://example.test","ftp://10.77.0.1/feed","http://user:pw@10.77.0.1:8757",

@@ -14,8 +14,15 @@ import FeedMineUI
 
 public struct ReaderBookmarkBoxesBackend: BookmarkBoxesBackend {
     private let database: RuntimeDatabase
+    /// R02: delivered **after** a durable mutation that can change the bookmark set (a box deletion removes its
+    /// memberships). The composition routes it through the same confirmed path a save uses, so one revision fences
+    /// every older preparation. Nil — the default — keeps the surface a pure boxes backend.
+    private let onConfirmedChange: (@Sendable () async -> Void)?
 
-    public init(database: RuntimeDatabase) { self.database = database }
+    public init(database: RuntimeDatabase, onConfirmedChange: (@Sendable () async -> Void)? = nil) {
+        self.database = database
+        self.onConfirmedChange = onConfirmedChange
+    }
 
     public func boxes() async throws -> [BookmarkBoxRow] {
         let library = ReaderLibraryStore(database: database)
@@ -38,7 +45,8 @@ public struct ReaderBookmarkBoxesBackend: BookmarkBoxesBackend {
     }
 
     public func delete(id: String) async throws {
-        _ = try ReaderLibraryStore(database: database).deleteBookmarkList(id: id)
+        let removed = try ReaderLibraryStore(database: database).deleteBookmarkList(id: id)
+        if removed { await onConfirmedChange?() }
     }
 
     public func reorder(ids: [String]) async throws {

@@ -3,6 +3,7 @@ import SwiftUI
 import OSLog
 #endif
 import FeedMineRuntime
+import FeedMineDomain
 
 @available(iOS 18, macOS 15, *)
 struct NativeFeedViewport: ViewModifier {
@@ -26,6 +27,19 @@ struct NativeFeedViewport: ViewModifier {
             capture.interaction.presentation(for: store)?.window == presented.window &&
             current.contextKey == presented.contextKey && current.editionID == presented.editionID &&
             current.provenance.sequenceID == presented.provenance.sequenceID
+    }
+
+    /// R04: the binding's own updates. This is an echo of the rendered position (first layout, a published window
+    /// change, a gesture); it may prevent an empty slot by asking for the destination band, but it is **not** a
+    /// reader intention and never establishes a position. Callers that mean a jump call `FeedPositionRequest.apply`
+    /// with `explicit: true`.
+    private func observePosition(_ id: PublicationCardID, presented: FeedPresentationSnapshot) {
+        FeedPositionRequest.apply(id, presented: presented, capture: &capture, store: store, explicit: false)
+    }
+
+    /// Applies a position that was waiting for its pixels, or states that the destination is unavailable.
+    private func settlePendingJump() {
+        FeedPositionRequest.settle(&capture, store: store)
     }
 
     // Card bounds use the container viewport; visibleRect may also include safe-area insets.
@@ -52,9 +66,9 @@ struct NativeFeedViewport: ViewModifier {
             .scrollPosition(id: Binding(get: {
                 capture.positionID ?? presented?.window.anchor.cardID
             }, set: { id in
-                guard matchesScope, let id, presented?.window.items.contains(where: { $0.id == id }) == true else { return }
-                capture.positionID = id
-                capture.motion.readerCardID = id
+                guard matchesScope, let id, let presented,
+                    presented.window.items.contains(where: { $0.id == id }) else { return }
+                observePosition(id, presented: presented)
             }))
             .onScrollPhaseChange { oldPhase, phase, context in
                 #if DEBUG
@@ -155,6 +169,12 @@ struct NativeFeedViewport: ViewModifier {
             }
             .onChange(of: store.state.presentation?.window) { _, _ in
                 capture.interaction.noteIncoming(store)
+                settlePendingJump()
+            }
+            // A failed reconstruction preserves the card and the window; only the unavailable fact changes. Without
+            // observing it, the pending jump would keep waiting for a preparation the session already concluded.
+            .onChange(of: store.state.presentation?.unavailableImageCardIDs) { _, _ in
+                settlePendingJump()
             }
             .onChange(of: ObjectIdentifier(store), initial: true) { _, _ in
                 capture.renderOwner = ObjectIdentifier(store)
@@ -186,9 +206,94 @@ struct NativeFeedViewport: ViewModifier {
     }
 }
 
+/// One place where a position is accepted, deferred or refused (R04/P03). The scroll binding uses it
+/// **observationally** (`explicit: false`); a caller that means a jump passes the one-shot `explicit` token
+/// ("Voltar ao início", and the prepared successor). No caller may assign the position directly, because a
+/// released head would be exposed without its pixels.
+@MainActor
+enum FeedPositionRequest {
+    /// The destination was accepted: the position is applied **and** stated to the host as an established position.
+    /// A reconciliation request alone is only a preparation/correction; the cursor owner must not end a restore's
+    /// substitution until the destination itself is ready and the position is applied.
+    private static func accept(_ id: PublicationCardID, presented: FeedPresentationSnapshot,
+        capture: inout FeedVisualCapture, store: FeedScreenStore) {
+        capture.pendingJump = nil
+        capture.pendingJumpExplicit = false
+        capture.positionID = id
+        capture.motion.readerCardID = id
+        store.submitViewport(.init(anchor: .init(cardID: id, placement: .top)),
+            activity: .stationary, rendered: presented, reconciliation: true,
+            establishesPosition: true)
+    }
+
+    /// `explicit` is the one-shot token from a caller that means a jump ("Voltar ao início", and the prepared
+    /// successor that caller started). The scroll binding passes false: first layout, a published window change,
+    /// a gesture echo and a restore never create intention. An explicit jump is accepted even when it targets the
+    /// window's own anchor; only the caller's token decides.
+    static func apply(_ id: PublicationCardID, presented: FeedPresentationSnapshot,
+        capture: inout FeedVisualCapture, store: FeedScreenStore, explicit: Bool = false) {
+        switch FeedDestinationGate.readiness(of: id, in: presented) {
+        case .ready where explicit:
+            accept(id, presented: presented, capture: &capture, store: store)
+        case .ready:
+            // Layout/window/gesture echo: the position is applied locally; the driver's real-movement observation
+            // owns the durable fact. No stationary viewport is submitted here.
+            capture.pendingJump = nil
+            capture.pendingJumpExplicit = false
+            capture.positionID = id
+            capture.motion.readerCardID = id
+        case .notAdmitted:
+            capture.pendingJump = nil
+            capture.pendingJumpExplicit = false
+            capture.positionID = id
+            capture.motion.readerCardID = id
+        case .needsPreparation:
+            // A request for the destination band is not a completed move: keep the current reading and the
+            // restore's protection until `settle` sees the prepared destination ready.
+            capture.pendingJump = id
+            capture.pendingJumpExplicit = explicit
+            store.submitViewport(.init(anchor: .init(cardID: id, placement: .top)),
+                activity: .stationary, rendered: presented, reconciliation: true, establishesPosition: false)
+        case .unavailableAfterPreparation:
+            capture.pendingJump = nil
+            capture.pendingJumpExplicit = false
+        }
+    }
+
+    static func settle(_ capture: inout FeedVisualCapture, store: FeedScreenStore) {
+        guard let destination = capture.pendingJump else { return }
+        switch FeedDestinationGate.readinessAfterPreparation(of: destination, in: store.state.presentation) {
+        case .ready where capture.pendingJumpExplicit:
+            guard let presented = store.state.presentation else { return }
+            // The pending destination was a requested jump; its accepted value is the position to establish.
+            accept(destination, presented: presented, capture: &capture, store: store)
+        case .ready:
+            // The preparation was requested by a layout/window/animation echo. Apply the prepared value locally;
+            // it never establishes a position and cannot end a restore's substitution.
+            capture.pendingJump = nil
+            capture.pendingJumpExplicit = false
+            capture.positionID = destination
+            capture.motion.readerCardID = destination
+        case .unavailableAfterPreparation:
+            capture.pendingJump = nil
+            capture.pendingJumpExplicit = false
+            store.showToast(text: String(localized: "Este conteúdo não está disponível"),
+                systemImage: "exclamationmark.triangle")
+        case .needsPreparation, .notAdmitted:
+            break
+        }
+    }
+}
+
 @available(iOS 18, macOS 15, *)
 struct NativeFeedTargets: ViewModifier {
     func body(content: Content) -> some View {
-        content.scrollTargetLayout().padding().coordinateSpace(name: "feed-visual-content")
+        // Keep the page margins around the content, but not above its first card: `scrollPosition(id:)` aligns an
+        // anchored card to the viewport's top edge. A top margin would make the very same card land 16 pt lower when
+        // the reader returns from above (the first topmost card sits after the padding), so geometry would not be
+        // preserved at ±1 pt (E03). Horizontal and bottom margins remain the design's own.
+        content.scrollTargetLayout()
+            .padding([.horizontal, .bottom])
+            .coordinateSpace(name: "feed-visual-content")
     }
 }

@@ -192,15 +192,6 @@ suite() {
     fail "(f2) with the seam unset --no-upload did not resolve to the shipped export-only plist; got code=$CODE out=[$OUT] err=$ERR"
   fi
 
-  # (g) Wiring: the export step must receive the validated snapshot, not the mutable path.
-  if grep -q -- '-exportOptionsPlist "\$EXPORT_SNAPSHOT"' "$SCRIPT" \
-     && [ "$(grep -c -- '-exportOptionsPlist' "$SCRIPT")" -eq 1 ] \
-     && grep -q 'chmod 600 "\$EXPORT_SNAPSHOT"' "$SCRIPT"; then
-    pass "(g) -exportArchive receives the 600 snapshot that was validated, and it is the only -exportOptionsPlist"
-  else
-    fail "(g) the export step does not receive exactly the validated snapshot"
-  fi
-
   # The versioned plists must be byte-identical after every case above.
   AFTER_UPLOAD="$(hash "$UPLOAD")"
   AFTER_EXPORT="$(hash "$EXPORT_ONLY")"

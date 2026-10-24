@@ -88,13 +88,35 @@ def device_processes(scratch):
         raise RuntimeError(f'devicectl process discovery failed ({result.returncode})')
     return json.loads(path.read_text())['result']['runningProcesses']
 
-def target_pids(processes):
+def target_pids(processes, container=None):
     found = []
     for item in processes:
         executable = str(item.get('executable', ''))
-        if re.search(r'/FeedMine\.app/FeedMine$', executable):
-            found.append(int(item['processIdentifier']))
+        if not re.search(r'/FeedMine\.app/FeedMine$', executable):
+            continue
+        # Only the benchmark app's own container. The owner's TestFlight app and the product development build
+        # also run a `FeedMine.app/FeedMine`, and refusing because the reader happens to be open is not this
+        # gate's business (measured 2026-10-20: three runs refused while com.feedmine.app was in the foreground).
+        if container and not executable.startswith(container):
+            continue
+        found.append(int(item['processIdentifier']))
     return sorted(set(found))
+
+def app_container(scratch, bundle_id):
+    """The installed container URL of the benchmark app, or None when it is not installed."""
+    path = scratch / 'apps-preflight.json'
+    result = command(['xcrun', 'devicectl', 'device', 'info', 'apps', '--device', udid,
+                      '--json-output', str(path)], scratch/'devicectl-apps.log', timeout=60)
+    if result.returncode or not path.exists():
+        return None
+    try:
+        apps = json.loads(path.read_text())['result']['apps']
+    except (ValueError, KeyError):
+        return None
+    for app in apps:
+        if app.get('bundleIdentifier') == bundle_id:
+            return str(app.get('url') or app.get('installationURL') or '') or None
+    return None
 
 def missing(reason, commands=None):
     ans = {'status':'NOT_MEASURED', 'reason':reason}
@@ -293,13 +315,16 @@ errors=status['errors']
 with tempfile.TemporaryDirectory(prefix='feedmine-b06-control-') as d:
     temp=pathlib.Path(d)
     try:
-        initial=target_pids(device_processes(temp))
-        if initial: raise RuntimeError('REFUSED: FeedMine already running on device: '+str(initial))
+        initial=target_pids(device_processes(temp), app_container(temp, app_id))
+        if initial: raise RuntimeError('REFUSED: the benchmark app is already running on device: '+str(initial))
         tmpl=command(['xcrun','xctrace','list','templates'],temp/'templates.log',timeout=45)
         if tmpl.returncode: raise RuntimeError('xctrace list templates failed')
         # Human-readable names from installed Xcode; not static schema names.
         available={line.strip().strip('"') for line in tmpl.stdout.splitlines()}
-        requested={'hitches':'Animation Hitches','resources':'Activity Monitor','energy':'Energy Log'}
+        # Energy is recorded with the installed `Power Profiler` template: `Energy Log` does not exist in
+        # Xcode 26.6 (`xcrun xctrace list templates`, 2026-10-20), and the 2026-10-20T050511Z run reported
+        # energy NOT_MEASURED for exactly that reason. A template that does not exist cannot measure anything.
+        requested={'hitches':'Animation Hitches','resources':'Activity Monitor','energy':'Power Profiler'}
         if requested['hitches'] not in available:
             raise RuntimeError('Animation Hitches template unavailable; cannot record required B06 frames')
         for key,name in requested.items():
@@ -329,7 +354,7 @@ with tempfile.TemporaryDirectory(prefix='feedmine-b06-control-') as d:
         while runner.poll() is None:
             if validate and pid is None and time.monotonic()>=attach_deadline:
                 raise RuntimeError('Validation could not attach to FeedMine within 6 minutes of run setup')
-            found=target_pids(device_processes(temp))
+            found=target_pids(device_processes(temp), app_container(temp, app_id))
             with (out/'pid-samples.jsonl').open('a') as f:
                 f.write(json.dumps({'at':now(),'pids':found})+'\n')
             if len(found)>1: raise RuntimeError('Ambiguous target process PIDs: '+str(found))

@@ -28,9 +28,13 @@ public struct ReaderDiscoveryProfile: Hashable, Sendable {
     /// under these is not discovered. A source that is also filed under something the reader wants stays — one
     /// answer about a subject must not delete a source that covers two.
     public let excludedTopicNodeKeys: Set<String>
+    /// The reader explicitly named **all languages**. An empty `languages` set alone is not this fact: it is also
+    /// "no answer yet", which discovers nothing. With this flag the profile carries no language restriction and
+    /// still searches — the widest scope the reader can name, not the absence of discovery.
+    public let namesAllLanguages: Bool
 
     public init(languages: Set<String> = [], topicNodeKeys: Set<String> = [],
-        excludedTopicNodeKeys: Set<String> = []) {
+        excludedTopicNodeKeys: Set<String> = [], namesAllLanguages: Bool = false) {
         // A profile matches a source's own declaration by language, so both sides are the same vocabulary here:
         // a regional selection (`pt-BR`) answers the same rows as the language it belongs to.
         self.languages = ReaderLanguageCode.choices(languages)
@@ -38,10 +42,47 @@ public struct ReaderDiscoveryProfile: Hashable, Sendable {
             .filter { !$0.isEmpty })
         self.excludedTopicNodeKeys = Set(excludedTopicNodeKeys
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+        self.namesAllLanguages = namesAllLanguages && self.languages.isEmpty
     }
 
-    /// A profile that names nothing discovers nothing: the plain feed stays the reader's own selection.
-    public var isEmpty: Bool { languages.isEmpty && topicNodeKeys.isEmpty }
+    /// A profile that names nothing discovers nothing: the plain feed stays the reader's own selection. Naming
+    /// **all languages** is not "nothing": the reader answered, and the pool must serve the whole catalogue.
+    public var isEmpty: Bool {
+        languages.isEmpty && topicNodeKeys.isEmpty && !namesAllLanguages
+    }
+}
+
+public extension ReaderDiscoveryProfile {
+    /// The reader's own answer — the recipe the first run and the preferences page keep — in the catalogue's
+    /// vocabulary: `topic:<node>` placements with `more` as interest and `less` as an exclusion, the editorial
+    /// answers that only exclude, and the content languages. One mapping, so the onboarding answer, the settings
+    /// page and discovery cannot read the same recipe differently.
+    init(recipe: FeedRecipeDefinition) {
+        var interested: Set<String> = [], excluded: Set<String> = []
+        for (key, level) in recipe.topicPreferences {
+            let node = key.hasPrefix("topic:") ? String(key.dropFirst("topic:".count)) : key
+            guard !node.isEmpty else { continue }
+            // R13: `.neutral` is the absence of an answer — it must neither interest nor exclude. The previous
+            // `else` branch folded it into the exclusion set, so a reader who returned a subject to Normal kept
+            // hiding it.
+            switch level {
+            case .more: interested.insert(node)
+            case .less: excluded.insert(node)
+            case .neutral: break
+            }
+        }
+        for (key, level) in recipe.editorialPreferences where level == .less {
+            // R13: subject and editorial namespaces stay distinct. An editorial answer (`media:`, `nature:`) is a
+            // weight, not a catalogue node; only an explicitly topic-keyed editorial answer excludes a topic.
+            guard key.hasPrefix("topic:") else { continue }
+            let node = String(key.dropFirst("topic:".count))
+            guard !node.isEmpty else { continue }
+            excluded.insert(node)
+        }
+        self.init(languages: Set(recipe.languages), topicNodeKeys: interested,
+            excludedTopicNodeKeys: excluded,
+            namesAllLanguages: recipe.hasLanguageAnswer && recipe.languages.isEmpty)
+    }
 }
 
 /// A bounded, deterministic set of sources for one profile.
@@ -90,11 +131,15 @@ public struct ReaderDiscoveryBuilder: Sendable {
     /// How many source keys one pool may look up: the ceiling that keeps a profile query cheap while leaving room
     /// for the language and media filters to drop what the reader did not ask for.
     private let keyCeiling: Int
-    /// Only sources whose feed this build can play as text: a pool for discovery is about reading.
+    /// The source kinds a discovery pool may draw from. Text **and** audio: a reader who asks for discovery
+    /// must not be handed a text-only internet, and the product promises "listen" as well as "read"
+    /// (PD-2026-10-20 D10). Video sources stay out of the automatic pool this round — a video source the reader
+    /// already follows keeps working with its items identified; it is not discovered on their behalf.
+    /// What an item **is** comes from its own enclosure, never from this source-level kind.
     private let mediaKinds: Set<String>
 
     public init(catalogURL: URL, perTopicCeiling: Int = 2_000, keyCeiling: Int = 4_000,
-        mediaKinds: Set<String> = ["text"]) {
+        mediaKinds: Set<String> = ["text", "audio"]) {
         self.catalogURL = catalogURL
         self.perTopicCeiling = perTopicCeiling
         self.keyCeiling = keyCeiling

@@ -55,7 +55,9 @@ public struct FeedItemCardView: View, Equatable {
     }
 
     private var isLandscape: Bool { horizontalSizeClass == .regular }
-    private var isAudio: Bool { card.primaryActionKind == .mediaPlayback }
+    /// D2: only a card the publication stated as audio may draw the Podcast badge, the audio placeholder and the
+    /// in-app play control. An unknown identity is never inferred as audio from the action kind.
+    private var isAudio: Bool { card.playsAudio }
 
     public var body: some View {
         Group {
@@ -126,6 +128,7 @@ public struct FeedItemCardView: View, Equatable {
                     .fontWeight(appearance.titleWeight)
                     .lineLimit(2)
                     .foregroundStyle(isRead ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                    .accessibilityIdentifier("card.title")
                     .padding(.horizontal, appearance.contentPadding)
                     // Keyed on the reserved slot, never on whether bytes arrived: a late image must not move
                     // this line or anything below it.
@@ -199,6 +202,7 @@ public struct FeedItemCardView: View, Equatable {
                 .fontWeight(appearance.titleWeight)
                 .lineLimit(2)
                 .foregroundStyle(isRead ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                .accessibilityIdentifier("card.title")
                 .padding(.top, 4)
 
             if let summary = card.primaryText, !summary.isEmpty {
@@ -240,6 +244,13 @@ public struct FeedItemCardView: View, Equatable {
                 : TapGesture().onEnded { emit(.open) })
             .overlay { mediaOverlay }
             .overlay(alignment: .topTrailing) { bookmarkOverlay }
+            // The slot states which of its two states it is in: a decoded bitmap fills it, or the frozen
+            // placeholder does. The container form (never a plain identifier) keeps the bookmark control
+            // inside it queryable and leaves VoiceOver focusing the control, not the drawing.
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(card.image?.cgImage != nil
+                ? "\(card.id.rawValue.uuidString)-media-image"
+                : "\(card.id.rawValue.uuidString)-media-slot")
     }
 
     @ViewBuilder private var decodedImage: some View {
@@ -315,7 +326,26 @@ public struct FeedItemCardView: View, Equatable {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
-            if isAudio { mediaBadge(String(localized: "Podcast"), color: .purple) }
+            if isAudio || card.identifiesVideo { MediaIdentityBadge(identity: card.mediaIdentity) }
+
+            // D1: "hear" has to work with a finger. The play action used to exist only as an accessibility action
+            // on the body, and a text-only audio card has no hero to tap, so a normal tap opened the article and
+            // the player was unreachable (measured 2026-10-20 on the published catalogue: three audio cards, all
+            // textOnly, zero plays). A visible control on the metadata row gives every audio card the same touch
+            // path, in addition to the accessibility action that stays where it was.
+            if isAudio, availableActions.contains(.openMedia) {
+                Button { emit(.openMedia) } label: {
+                    Label(String(localized: "Tocar"), systemImage: "play.fill")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("card.play")
+                .accessibilityLabel(String(localized: "Tocar episódio"))
+            }
 
             Spacer(minLength: 0)
 
@@ -411,17 +441,6 @@ public struct FeedItemCardView: View, Equatable {
             .frame(width: appearance.accentBarWidth)
             .padding(.vertical, verticalInset)
             .padding(.leading, appearance.accentBarInset)
-    }
-
-    private func mediaBadge(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(.caption2)
-            .fontWeight(.heavy)
-            .foregroundStyle(color)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(color.opacity(0.1))
-            .clipShape(Capsule())
     }
 
     /// The same menu V1 offered, minus the two controls that need a resolved URL or a rendered image:

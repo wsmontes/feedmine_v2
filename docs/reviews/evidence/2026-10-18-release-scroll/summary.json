@@ -1,0 +1,20 @@
+{
+  "bundleID": "com.feedmine.app",
+  "simulator": "0C20960F-4E63-4E9E-B8A8-5CF55C884F42",
+  "configuration": "Release",
+  "fixture": "12 text-only cards, SQLite backup from dedicated Debug container; no Release DEBUG flags",
+  "gestureInterval": {"start": 1792333069.849, "end": 1792333097.248},
+  "gestures": {"forward": 12, "reverse": 12},
+  "frameWindows": 27,
+  "frames": 1474,
+  "late": 8,
+  "bad": 6,
+  "severe": 37,
+  "worst_ms": 241.2,
+  "limitations": [
+    "Short text-only smoke; gestures include time at feed ends",
+    "Not first-render latency measurement",
+    "No VoiceOver or bitmap exposure proof",
+    "Simulator host/input overhead not separated from product"
+  ]
+}

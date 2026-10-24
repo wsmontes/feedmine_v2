@@ -63,8 +63,9 @@ final class MediaDeclaredDimensionTests: XCTestCase {
         XCTAssertEqual(layout, .hero)
     }
 
-    /// A candidate that really is as small as declared is measured once and settles as designed text-only.
-    func testDeclaredTinyThatIsReallyTinySettlesTextOnlyAfterOneMeasurement() async throws {
+    /// A candidate that really is as small as declared is measured once, and the image the card declared is
+    /// unavailable: it leaves the publication queue instead of becoming a text card.
+    func testDeclaredTinyThatIsReallyTinyHasNoPresentationAfterOneMeasurement() async throws {
         let (db, assets) = try setup(), calls = Calls(), tiny = self.tiny
         let revision = try admit(db, url: "https://example.test/tiny.png", declaredWidth: 2, declaredHeight: 3)
         let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
@@ -73,6 +74,8 @@ final class MediaDeclaredDimensionTests: XCTestCase {
         await prefetcher.prefetch([revision])
         XCTAssertEqual(calls.all.count, 1)
         XCTAssertNil(prefetcher.readiness.prepared(revision))
-        XCTAssertEqual(prefetcher.readiness.presentation(for: revision), .textOnly)
+        XCTAssertTrue(prefetcher.readiness.isSettled(revision))
+        XCTAssertNil(prefetcher.readiness.presentation(for: revision),
+            "an unsuitable image is unpublished work, not a designed text card")
     }
 }

@@ -17,7 +17,7 @@ public struct FeedItemRowView: View, Equatable {
         self.isRead = isRead
     }
 
-    private var isAudio: Bool { card.primaryActionKind == .mediaPlayback }
+    private var isAudio: Bool { card.playsAudio }
 
     public var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -55,6 +55,9 @@ public struct FeedItemRowView: View, Equatable {
                         .fontWeight(.medium)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    if card.playsAudio || card.identifiesVideo {
+                        MediaIdentityBadge(identity: card.mediaIdentity)
+                    }
                     Text(verbatim: "·").font(.caption2).foregroundStyle(.tertiary)
                     Text(verbatim: FeedItemCardView.formatted(card.timestamp?.value))
                         .font(.caption2)

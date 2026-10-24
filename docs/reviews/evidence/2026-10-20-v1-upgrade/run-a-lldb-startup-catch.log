@@ -1,0 +1,39 @@
+(lldb) command source -s 0 '/tmp/lldb7.txt'
+Executing commands in '/tmp/lldb7.txt'.
+(lldb) process attach --pid 28053
+Process 28053 stopped
+* thread #1, stop reason = signal SIGSTOP
+    frame #0: 0x0000000106cec9c0 dyld`_dyld_start
+dyld`_dyld_start:
+->  0x106cec9c0 <+0>:  mov    x0, sp
+    0x106cec9c4 <+4>:  and    sp, x0, #0xfffffffffffffff0
+    0x106cec9c8 <+8>:  mov    x29, #0x0                 ; =0 
+    0x106cec9cc <+12>: mov    x30, #0x0                 ; =0 
+Target 0: (FeedMine) stopped.
+Executable binary set to "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Bundle/Application/1D07BC2F-1EBF-4A34-B759-DC8707379517/FeedMine.app/FeedMine".
+Architecture set to: arm64-apple-ios-simulator.
+(lldb) breakpoint set --file AppComposition.swift --line 528
+Breakpoint 1: where = FeedMine`AppComposition.init(directory:feeds:transportConfiguration:discoveryQuery:monotonicNow:bookmarkRead:) + 5356 at AppComposition.swift:528:40, address = 0x000000010503bbd0
+(lldb) continue
+warning: FeedMine was compiled with optimization - stepping may behave oddly; variables may not be available.
+Process 28053 resuming
+Process 28053 stopped
+* thread #1, queue = 'com.apple.main-thread', stop reason = breakpoint 1.1
+    frame #0: 0x000000010503bbd0 FeedMine`AppComposition.init(directory=<unavailable>, feeds=<unavailable>, transportConfiguration=<unavailable>, discoveryQuery=<unavailable>, monotonicNow=<unavailable>, bookmarkRead=nil) at AppComposition.swift:528:40 [opt]
+   525 	                selectionVersion = saved.selectionVersion
+   526 	            } catch {
+   527 	                startupFailure = "Não foi possível carregar suas fontes."
+-> 528 	                startupFailureDetail = String(describing: error)
+    	                                       ^
+   529 	                Self.log("startup failure loading the source selection: \(String(describing: error))")
+   530 	            }
+   531 	        }
+Target 0: (FeedMine) stopped.
+(lldb) po error
+warning: `po` was unsuccessful, running `p` instead
+(Error)  (error = 0x00000001074fd700)
+(lldb) frame variable error
+(Error) error = (error = 0x00000001074fd700)
+(lldb) detach
+Process 28053 detached
+(lldb) quit

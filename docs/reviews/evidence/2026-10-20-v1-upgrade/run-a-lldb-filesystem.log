@@ -1,0 +1,32 @@
+(lldb) command source -s 0 '/tmp/lldb12.txt'
+Executing commands in '/tmp/lldb12.txt'.
+(lldb) process attach --pid 28053
+Process 28053 stopped
+* thread #1, queue = 'com.apple.main-thread', stop reason = signal SIGSTOP
+    frame #0: 0x000000010696cb70 libsystem_kernel.dylib`mach_msg2_trap + 8
+libsystem_kernel.dylib`mach_msg2_trap:
+->  0x10696cb70 <+8>: ret    
+
+libsystem_kernel.dylib`macx_swapon:
+    0x10696cb74 <+0>: mov    x16, #-0x30               ; =-48 
+    0x10696cb78 <+4>: svc    #0x80
+    0x10696cb7c <+8>: ret    
+Target 0: (FeedMine) stopped.
+Executable binary set to "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Bundle/Application/1D07BC2F-1EBF-4A34-B759-DC8707379517/FeedMine.app/FeedMine".
+Architecture set to: arm64-apple-ios-simulator.
+(lldb) expr -l swift -- import Foundation
+(lldb) expr -l swift -O -- { do { try FileManager.default.createDirectory(at: URL(fileURLWithPath: "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/0C601A5B-880F-4E81-9856-A0BE2726DC38/Library/Application Support/FeedMine", isDirectory: true), withIntermediateDirectories: true); return "CREATE OK" } catch { return "CREATE ERR: " + String(describing: error) } }()
+CREATE ERR: Error Domain=NSCocoaErrorDomain Code=512 "The file “FeedMine” couldn’t be saved in the folder “Application Support”." UserInfo={NSFilePath=/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/0C601A5B-880F-4E81-9856-A0BE2726DC38/Library/Application Support/FeedMine, NSURL=file:///Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/0C601A5B-880F-4E81-9856-A0BE2726DC38/Library/Application%20Support/FeedMine, NSUnderlyingError=0x11ab589c0 {Error Domain=NSPOSIXErrorDomain Code=5 "Input/output error"}}
+
+(lldb) expr -l swift -O -- { do { let h = try FileHandle(forWritingTo: URL(fileURLWithPath: "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/0C601A5B-880F-4E81-9856-A0BE2726DC38/Library/Application Support/FeedMine/probe.txt")); try h.close(); return "WRITE OK" } catch { return "WRITE ERR: " + String(describing: error) } }()
+WRITE ERR: Error Domain=NSCocoaErrorDomain Code=4 "The file “probe.txt” doesn’t exist." UserInfo={NSFilePath=/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/0C601A5B-880F-4E81-9856-A0BE2726DC38/Library/Application Support/FeedMine/probe.txt, NSUnderlyingError=0x11ab58870 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+
+(lldb) expr -l swift -O -- { do { _ = try Data(contentsOf: URL(fileURLWithPath: "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/0C601A5B-880F-4E81-9856-A0BE2726DC38/Library/Application Support/Feedmine/user.sqlite")); return "READ V1 OK" } catch { return "READ V1 ERR: " + String(describing: error) } }()
+READ V1 OK
+
+(lldb) expr -l swift -O -- { do { _ = try Data(contentsOf: URL(fileURLWithPath: "/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/0C601A5B-880F-4E81-9856-A0BE2726DC38/Library/Application Support/FeedMine/user.sqlite")); return "READ V1(FeedMine) OK" } catch { return "READ V1(FeedMine) ERR: " + String(describing: error) } }()
+READ V1(FeedMine) ERR: Error Domain=NSCocoaErrorDomain Code=260 "The file “user.sqlite” couldn’t be opened because there is no such file." UserInfo={NSFilePath=/Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/0C601A5B-880F-4E81-9856-A0BE2726DC38/Library/Application Support/FeedMine/user.sqlite, NSURL=file:///Users/wagnersilvamontes/Library/Developer/CoreSimulator/Devices/B89B80FE-6B5D-423E-B1F4-519F1AB0737F/data/Containers/Data/Application/0C601A5B-880F-4E81-9856-A0BE2726DC38/Library/Application%20Support/FeedMine/user.sqlite, NSUnderlyingError=0x11ab58960 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+
+(lldb) detach
+Process 28053 detached
+(lldb) quit
