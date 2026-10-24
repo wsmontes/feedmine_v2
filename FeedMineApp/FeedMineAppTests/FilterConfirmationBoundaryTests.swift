@@ -4,6 +4,7 @@ import Synchronization
 import GRDB
 import FeedMineDomain
 import FeedMinePersistence
+import FeedMineAcquisition
 import FeedMineUI
 @testable import FeedMinePersistence
 @testable import FeedMine
@@ -504,6 +505,53 @@ final class FilterConfirmationBoundaryTests: XCTestCase {
         try await root.activateConfirmedFilter()
         XCTAssertEqual(root.association?.contextKey, aKey)
         await root.association?.close()
+    }
+
+    /// The screen belongs to the valid latest association before the captured old one is closed. The fixture
+    /// keeps a real request of the old session at the transport gate, so `retired.close()` reaches its actual
+    /// `settleInFlight` wait. At that instant the installed key — not just the final key — must already be the
+    /// confirmed selection; retiring first left the old association on screen while the replacement was ready.
+    func testValidLatestIsInstalledBeforeTheCapturedOldCloseSettles() async throws {
+        let (root, old, directory) = try await launched()
+        FixtureTransport.holdingAll.withLock { $0 = true }
+        FixtureTransport.allEntered.withLock { $0 = 0 }
+        defer { FixtureTransport.releaseAll() }
+        let feed = try XCTUnwrap(old.feeds.first)
+        let target = try XCTUnwrap(AcquisitionTargetAuthority(database: old.database)
+            .target(id: feed.targetID))
+        let bounds = try XCTUnwrap(AcquisitionWorkBounds(batchCapacity: 1,
+            observationCapacityPerBatch: 12, byteCapacityPerBatch: 8_000_000))
+        let refresh = Task {
+            try? await old.coordinator.execute(.start(target: target, bounds: bounds))
+        }
+        let enteredDeadline = Date().addingTimeInterval(5)
+        while Date() < enteredDeadline, FixtureTransport.allEntered.withLock({ $0 }) == 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(FixtureTransport.allEntered.withLock { $0 }, 0,
+            "the old session really has a request in flight")
+        // New requests answer normally from here; the held old one stays at the gate for the retirement.
+        FixtureTransport.holdingAll.withLock { $0 = false }
+
+        let filter = ReaderFilter(mood: .fun)
+        let confirmed = readerKey(root: root, filter: filter)
+        let activation = Task { @MainActor in
+            try await root.applyFilter(filter, preset: .everything)
+        }
+        let retiredDeadline = Date().addingTimeInterval(10)
+        while Date() < retiredDeadline, old.active {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(old.active, "the captured old association really began retiring")
+        XCTAssertEqual(root.association?.contextKey, confirmed,
+            "the valid latest owns the screen before the captured old close settles")
+        XCTAssertFalse(root.association === old, "the old association is not what the screen presents")
+
+        FixtureTransport.releaseAll()
+        try await activation.value
+        XCTAssertEqual(root.association?.contextKey, confirmed)
+        await root.association?.close()
+        await refresh.value
     }
 
     /// The production lens model must describe the presented association, not the confirmed key, while the

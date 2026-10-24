@@ -2278,10 +2278,20 @@ final class AppComposition {
                         if superseded() { continue }
                         throw error
                     }
-                    await retired.close()
+                }
+                // The checkpoint crossed an await and a newer confirmation can commit during it. Revalidate with
+                // no await between this fence and the assignment: the association the screen gets is the key that
+                // is current at the instant of installation, never the one that was current before retirement.
+                guard next.contextKey == applied(currentContextKey) else {
+                    await next.close()
+                    continue
                 }
                 association = next
                 startupFailure = nil
+                // Retire the captured old association only after the valid latest owns the screen. Its close can
+                // await the driver, media and coordinator settlement; doing it before the assignment left the old
+                // association on screen while an already-valid replacement was ready.
+                if let retired { await retired.close() }
             } else {
                 let retired = association
                 // Retire the old session only once its last position is durable: a checkpoint refusal leaves the

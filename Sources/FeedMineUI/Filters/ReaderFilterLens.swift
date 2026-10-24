@@ -71,6 +71,9 @@ public struct ReaderFilterLens: View {
                             .foregroundStyle(appearance.accent)
                         }
                         .buttonStyle(.plain)
+                        // The pointer gate above is not a semantic one: assistive technology must also see the
+                        // pending chips as disabled, not as removable controls that silently do nothing.
+                        .disabled(!isInteractive)
                         .accessibilityIdentifier("lens-chip-\(chip.id)")
                         .accessibilityLabel(String(localized: "Remover \(chip.label)"))
                     }

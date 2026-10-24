@@ -1878,14 +1878,9 @@ struct ReaderHost: UIViewControllerRepresentable {
                 Text(verbatim: "Feedmine").font(.subheadline).fontWeight(.semibold)
                     .lineLimit(1)
                     .dynamicTypeSize(.xSmall ... .large)
-                if let label = activeContextLabel {
-                    Text(verbatim: "·").font(.caption2).foregroundStyle(.secondary)
-                    Text(verbatim: label)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .accessibilityIdentifier("reader-context-label")
-                } else if composition.isFilterHandoffPending {
+                // The handoff marker belongs to every filter context, including source/search, whose label
+                // previously won the slot and hid the fact that the screen still shows the prior feed.
+                if composition.isFilterHandoffPending {
                     Text(verbatim: String(localized: "· Feed anterior"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -1893,6 +1888,13 @@ struct ReaderHost: UIViewControllerRepresentable {
                         .accessibilityIdentifier("reader-context-prior")
                         .accessibilityLabel(Text(verbatim: String(localized:
                             "Feed anterior; a nova seleção está sendo apresentada")))
+                } else if let label = activeContextLabel {
+                    Text(verbatim: "·").font(.caption2).foregroundStyle(.secondary)
+                    Text(verbatim: label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("reader-context-label")
                 } else if association.active {
                     Text(verbatim: "· \(association.store.state.work.shortDescription)")
                         .font(.caption2)
