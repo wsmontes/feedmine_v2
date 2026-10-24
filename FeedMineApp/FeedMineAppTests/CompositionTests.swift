@@ -1267,7 +1267,7 @@ final class CompositionTests: XCTestCase {
         XCTAssertNil(root.startupFailure)
         let science = try XCTUnwrap(TrustedFeed.development.first { $0.principal == "bbc-science" })
         let other = try XCTUnwrap(TrustedFeed.development.first { $0.sourceID != science.sourceID })
-        let selectionBefore = root.feeds.map(\.sourceID).sorted()
+        let selectionBefore = root.feeds.map(\.principal).sorted()
 
         FixtureTransport.holdingScience.withLock { $0 = true }
         defer { FixtureTransport.releaseScience() }
@@ -1283,7 +1283,7 @@ final class CompositionTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? ReaderContextSwitchError, .inProgress)
         }
-        XCTAssertEqual(root.feeds.map(\.sourceID).sorted(), selectionBefore,
+        XCTAssertEqual(root.feeds.map(\.principal).sorted(), selectionBefore,
             "the refused toggle did not change the reader's selection")
         XCTAssertEqual(root.currentContextKey.request, .source(science.sourceID),
             "the refused toggle did not disturb the in-flight destination")
@@ -1292,7 +1292,9 @@ final class CompositionTests: XCTestCase {
         _ = try? await transition.value
         XCTAssertFalse(root.contextSwitchInProgress, "readiness clears when the replacement finishes")
 
-        // Enabled after completion: the same toggle now runs instead of refusing.
+        // Enabled after completion: the same toggle now runs instead of refusing. As in the selection test, the
+        // catalogue choices are refreshed the way the product's own selection surface does.
+        try await root.searchSources("")
         try await root.toggleSource(other.sourceID)
         await root.association?.close()
     }
