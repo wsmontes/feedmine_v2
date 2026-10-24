@@ -271,6 +271,16 @@ presets). O alerta "Filtro salvo" oferece "Tentar novamente" chamando `activateC
 `4fdea9d8`. Não há prova de UI/dispositivo (NOT_RUN), nem PASS global NF-07; rede comum que apenas não publica
 não é tratada como exceção. `filterExpiry(renewing:at:)` foi preservado.
 
+**Correção de lente/pending (2026-10-24, commit `2c97a6d0`):** a lente e o chip descrevem a associação
+**apresentada** (`filterSelectionForLens`), não a chave confirmada durante o handoff; o slot existente mostra
+"Feed anterior" e a lente fica não interativa enquanto a seleção anterior está na tela. Enquanto a confirmação
+durável está pendente, o sheet desabilita lista/edição/dismiss interativo e o store recusa edições/reentrada
+(`isApplying`); o teste segura o `onApply` e prova que a edição tardia é rejeitada, o duplo apply não abre
+segundo writer e o draft confirmado é aplicado. Provas: `surface-nf03-ui-green-1792856573699296000` 12/12;
+mutação P2 (restaurar só o throw antigo) falhou o mesmo A→B→A com `sessionConstructions == 1`
+(`surface-nf03-p2-red-1792856940828667000`) e o restore byte-exact passou
+(`surface-nf03-p2-green-1792857021957633000`). A UI/dispositivo continua NOT_RUN; não é PASS global NF-07.
+
 **Preparação NF-03 (2026-10-24; nenhuma correção declarada):** caminho 55 confirmado `AppComposition.swift:1007-1030` → `replaceSession` `:2183-2207` → `next.launch()`, com `FilterSheetView.swift:316` aguardando `await store.apply()` antes de `onDone`. Próximo discriminante obrigatório: HTTP de launch suspenso **após** a persistência; feedback/fechamento visíveis antes de liberar; falha de gravação mantém a folha com erro recuperável; A→B→A prova a última seleção e nenhuma publicação superada. Requer teste de falha real no owner AppComposition e build iOS; bloqueado pelo orçamento atual. Não iniciar a produção NF-03 sem esse teste.
 
 ## NF-04 — A cauda deve comunicar o trabalho verdadeiro
