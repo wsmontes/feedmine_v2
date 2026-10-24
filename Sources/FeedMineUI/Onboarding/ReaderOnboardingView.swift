@@ -263,17 +263,12 @@ public struct ReaderOnboardingView: View {
     }
 
     @ViewBuilder private var previewZone: some View {
+        // Nothing is drawn before there is something real to show. The first run used to draw two grey blocks here
+        // (the "retângulos cinza" the owner reported on 2026-10-11 and again on 2026-10-24): they held no content,
+        // said nothing, and read as media that had failed. A preview either shows the reader's own published cards
+        // or it does not exist.
         VStack(alignment: .leading, spacing: FeedDesignTokens.Spacing.tight) {
-            if previewCards.isEmpty {
-                HStack(spacing: FeedDesignTokens.Spacing.tight) {
-                    ForEach(0..<2, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: FeedDesignTokens.Radius.card, style: .continuous)
-                            .fill(.quaternary)
-                            .frame(height: 120)
-                    }
-                }
-                .accessibilityIdentifier("composer-preview-skeleton")
-            } else {
+            if !previewCards.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: FeedDesignTokens.Spacing.tight) {
                         ForEach(Array(previewCards.prefix(3).enumerated()), id: \.offset) { _, card in
