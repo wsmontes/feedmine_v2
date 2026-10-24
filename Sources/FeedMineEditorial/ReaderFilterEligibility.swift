@@ -35,6 +35,7 @@ public struct ReaderFilterEligibility: Hashable, Sendable {
     /// True when this candidate may enter selection.
     public func admits(_ candidate: Candidate) -> Bool {
         if !admitsSources(candidate) { return false }
+        if !admitsDeclaredScript(candidate) { return false }
         if !admitsLanguage(candidate) { return false }
         if !admitsMood(candidate) { return false }
         return !hides(candidate)
@@ -48,9 +49,30 @@ public struct ReaderFilterEligibility: Hashable, Sendable {
         return !candidate.sourceIDs.isDisjoint(with: restrictedSourceIDs)
     }
 
+    /// A story whose own readable text is written in a script its document cannot be speaking is not admitted, for
+    /// any reader. This is an integrity rule, not a preference: the measured defect was a channel that declared `en`
+    /// and published a Russian advertisement, and the reader who had selected only English received it. Absence of a
+    /// declaration, an unknown language or mixed text is no evidence, and no evidence admits.
+    private func admitsDeclaredScript(_ candidate: Candidate) -> Bool {
+        let text = readableText(of: candidate)
+        guard !text.isEmpty else { return true }
+        return ReaderLanguageScript.admits(text, declaredLanguage: candidate.language)
+    }
+
+    /// What a candidate actually shows: its headline and summary. The body is not read — a story may quote another
+    /// language inside its text, and that is not a fact about the card the reader sees first.
+    private func readableText(of candidate: Candidate) -> String {
+        [candidate.headline, candidate.summary].compactMap { $0 }.joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func admitsLanguage(_ candidate: Candidate) -> Bool {
         let languages = ReaderLanguageCode.choices(filter.languages)
         guard enforced.contains(.languages), !languages.isEmpty else { return true }
+        // The reader's choice is enforced on the text as well as on the declaration: a document that declares a
+        // language the reader did not choose has already failed, and one that declares a chosen language but shows
+        // an incompatible script is the same defect from the other side.
+        guard ReaderLanguageScript.admits(readableText(of: candidate), languages: languages) else { return false }
         guard let language = candidate.language?.trimmingCharacters(in: .whitespacesAndNewlines),
             !language.isEmpty else { return false }
         // The choice is the language, not the code: a filter that named `pt` admits `pt-BR` and `pt-PT`, exactly

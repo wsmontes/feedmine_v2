@@ -94,4 +94,29 @@ final class ReaderFilterEligibilityTests: XCTestCase {
         XCTAssertFalse(eligibility.isUnrestricted)
         XCTAssertTrue(ReaderFilterEligibility(filter: .unrestricted, restrictedSourceIDs: []).isUnrestricted)
     }
+
+    /// The measured defect of 2026-10-24: a catalogue channel declared `en` and published "Архитектура капитала",
+    /// and a reader who had chosen only English received it. A story cannot be speaking a language its own text is
+    /// not written in, whoever the reader is — this is integrity, not preference.
+    func testADeclaredEnglishStoryWrittenInAnotherScriptIsNeverAdmitted() {
+        let russian = candidate(language: "en", headline: "Архитектура капитала",
+            summary: "За этой цифрой стоят сделки. +45 454 USDT за неделю на BTC…")
+        XCTAssertFalse(ReaderFilterEligibility.unfiltered.admits(russian))
+        XCTAssertFalse(ReaderFilterEligibility(filter: ReaderFilter(languages: ["en"])).admits(russian))
+        XCTAssertFalse(ReaderFilterEligibility(filter: ReaderFilter(languages: ["en", "pt"])).admits(russian))
+        // The same rule answers the reader's own choice from the text, not only from the declaration.
+        let mislabeledButLatin = candidate(language: "en", headline: "Cómo EE.UU. se ha convertido en una gerontocracia")
+        XCTAssertTrue(ReaderFilterEligibility.unfiltered.admits(mislabeledButLatin),
+            "Latin script is no evidence against an English declaration; the minimal rule does not claim to tell them apart")
+    }
+
+    /// A Russian story declared as Russian is admitted to a reader who chose Russian too, and rejected for a reader
+    /// who chose only English.
+    func testARussianStoryFollowsTheDeclaredLanguageAndTheChosenSet() {
+        let story = candidate(language: "ru", headline: "Архитектура капитала", summary: "Российская экономика")
+        XCTAssertTrue(ReaderFilterEligibility.unfiltered.admits(story))
+        XCTAssertTrue(ReaderFilterEligibility(filter: ReaderFilter(languages: ["en", "ru"])).admits(story))
+        XCTAssertTrue(ReaderFilterEligibility(filter: ReaderFilter(languages: ["ru"])).admits(story))
+        XCTAssertFalse(ReaderFilterEligibility(filter: ReaderFilter(languages: ["en"])).admits(story))
+    }
 }
