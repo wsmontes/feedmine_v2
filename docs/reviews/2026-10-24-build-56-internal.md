@@ -58,3 +58,31 @@ O resultado, comparado arquivo a arquivo com o catálogo que vinha sendo usado:
 Conteúdo idêntico; só o selo de compilação difere, que é o que o próprio bootstrap declara
 esperar. Portanto build 56 embarca o mesmo conjunto de fontes sobre o qual B01–B05 e as
 medições de 77.443 fontes foram tomadas — não um dataset novo.
+
+## Apêndice — o funil de imagem, medido com identidade de revisão
+
+Execução única (Debug, contêiner limpo, English, catálogo publicado, 3 minutos, parâmetros
+atuais), casando o traço de preparação com as cartas publicadas **por revisão**, não por
+contagem agregada:
+
+| Medida | Valor |
+|---|---|
+| Cartas publicadas | 941 |
+| Publicadas com `media_key` | 303 (32,2%) |
+| Tentativas com imagem declarada | 558 |
+| Chegaram a `ready-image` | 276 |
+| Morreram em `deadline` | 280 (50,2%) |
+| `ready-image` publicadas | **276 de 276** |
+| `ready-image` não publicadas | **0** |
+
+Conclusão medida: não existe perda entre preparação e publicação — toda revisão que ficou
+pronta virou carta com imagem. A perda está inteiramente na preparação: metade das tentativas
+que declaravam imagem é cortada pelo prazo.
+
+Correção de método, registrada porque quase virou conclusão errada: a primeira passada desse
+mesmo join deu interseção zero. Era diferença de caixa no UUID — o traço grava maiúsculas, o
+banco grava minúsculas. Normalizado, o resultado é o da tabela.
+
+O que o leitor vê hoje: nos salvos há rótulo por linha (`Mídia indisponível`, `Mídia pendente`);
+no feed, não. Uma carta cuja imagem foi cortada pelo prazo é indistinguível de uma fonte que
+não declara imagem.
