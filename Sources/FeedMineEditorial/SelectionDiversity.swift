@@ -18,12 +18,22 @@ public enum SelectionDiversityDimension: CaseIterable, Hashable, Sendable {
 }
 
 public struct SelectionDiversityContext: Hashable, Sendable {
-    /// Newest first, bounded by the caller. Empty is not a context (nil is).
+    /// Newest first, bounded by the caller. Empty is not a context (nil is). v5 comparator input.
     public let recent: [EditorialDiversityFact]
+    /// Newest first, complete active-Edition positions for v6, including nil holes for cards without facts.
+    /// Empty for the preserved v5 initializer.
+    public let publishedPositions: [EditorialDiversityFact?]
 
     public init?(recent: [EditorialDiversityFact]) {
         guard !recent.isEmpty else { return nil }
         self.recent = recent
+        self.publishedPositions = []
+    }
+
+    public init?(publishedPositions: [EditorialDiversityFact?]) {
+        guard !publishedPositions.isEmpty else { return nil }
+        self.recent = []
+        self.publishedPositions = publishedPositions
     }
 
     /// The dimensions this **set** of candidates all know. A dimension known by only some of them is excluded for

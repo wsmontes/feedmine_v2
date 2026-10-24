@@ -15,10 +15,14 @@ public struct EditorialDiversityFact: Hashable, Codable, Sendable {
     public let providerID: ProviderID?
     /// Declared-subject identities (the publisher's own vocabulary). Empty is absence of evidence.
     public let subjects: [String]
+    /// Payload kind frozen with the occurrence. nil is an old/unknown fact; `.none` is a known absence.
+    public let mediaKind: EditorialMediaKind?
 
-    public init(sourceIDs: [SourceID], providerID: ProviderID?, subjects: [String]) {
+    public init(sourceIDs: [SourceID], providerID: ProviderID?, subjects: [String],
+        mediaKind: EditorialMediaKind? = nil) {
         self.sourceIDs = sourceIDs.sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
         self.providerID = providerID
         self.subjects = subjects
+        self.mediaKind = mediaKind
     }
 }

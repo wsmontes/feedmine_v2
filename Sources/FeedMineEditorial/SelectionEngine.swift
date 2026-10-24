@@ -143,7 +143,7 @@ public struct SelectionEngine: Sendable {
         let ordered: [Candidate]
         switch policy.sequencing {
         case .recencyDescending, .recencyAlternatingSources, .recencyAlternatingSourcesBySupplyShare,
-             .recencyAlternatingSourcesByWeightedSupplyShare:
+             .recencyAlternatingSourcesByWeightedSupplyShare, .maximumDistance:
             ordered = readyEligible.sorted { left, right in
                 let leftWeight = weight(left), rightWeight = weight(right)
                 if leftWeight != rightWeight { return leftWeight > rightWeight }
@@ -162,6 +162,17 @@ public struct SelectionEngine: Sendable {
                 return left.originRevisionID.rawValue.uuidString.lowercased()
                     > right.originRevisionID.rawValue.uuidString.lowercased()
             }
+        }
+        // v6 is explicit to revision 6 and the maximum-distance behavior. An unknown future version never
+        // inherits it: it falls through to the preserved legacy paths below.
+        if plan.revision.sequencingPolicyVersion.rawValue == 6, policy.sequencing == .maximumDistance {
+            let positions = diversity?.publishedPositions ?? []
+            let sequenced = MaximumDistanceSequencing.sequence(ordered, positions: positions,
+                after: neighbor, singleSourceContext: Self.isSingleSource(plan.context.request))
+            return SelectionResult(editorialRevision: plan.revision,
+                orderedCandidates: sequenced.placed,
+                supplyReport: Self.report(window: window, held: sequenced.held,
+                    placedAny: !sequenced.placed.isEmpty))
         }
         // PD-4: a single-source context is exempt by definition; other contexts alternate when the
         // resolved sequencing behavior says so (a behavior change is a new EditorialRevision, and an
@@ -187,7 +198,7 @@ public struct SelectionEngine: Sendable {
             case .recencyAlternatingSourcesByWeightedSupplyShare:
                 alternated = SourceAlternation.applyByWeightedSupplyShare(ordered, after: neighbor,
                     countingSources: countedSources, weights: weights)
-            case .recencyDescending:
+            case .recencyDescending, .maximumDistance:
                 alternated = (ordered, [])
             }
         }
