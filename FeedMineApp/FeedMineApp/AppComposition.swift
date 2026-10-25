@@ -3816,8 +3816,15 @@ final class FeedAssociation {
                 segmentCreatedAt: now, anchorPlacement: .top, checkpointedAt: now)!,
                 resources: .init(localExaminedCapacity: 32, acquisition: resources.acquisition)!,
                 backwardCapacity: 8, forwardCapacity: 16, keepsAdmittedHead: true)
-            try install(.init(state: FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state),
-                bookmarks: preparedBookmarks))
+            // The early first-presentation handoff may already have driven and admitted growth while slower
+            // bootstrap sources were pending. Its original snapshot must not replace that newer projection.
+            let received: FeedPresentationState
+            if case .published = outcome, let current = await session.currentPresentation() {
+                received = try FeedPresentationHandoff.receive(snapshot: current, into: store.state).reporting(.idle)
+            } else {
+                received = try FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state)
+            }
+            try install(.init(state: received, bookmarks: preparedBookmarks))
             Self.log("cold bootstrap settled")
             if case .published(let snapshot) = outcome {
                 // PM-028A §3: the same publication the evidence above already marked; marking it again is
@@ -4204,7 +4211,17 @@ final class FeedAssociation {
         // R6-E: this case is the publication fact — the snapshot it installed is the outcome of the segment
         // `InitialProductionSlice` published, and the window that already existed for it is filled here, while the
         // slower feeds are still answering behind the badge.
-        if concludedPublication { await growAdmittedWindowIfPublished() }
+        if concludedPublication {
+            await growAdmittedWindowIfPublished()
+            // B03: the first screen exists now, although cold.run is still awaiting slower sources. Supply
+            // notifications alone cannot drive without an observation. Use the same stationary activation as
+            // launch/foreground immediately after installation, rather than waiting for the bootstrap to settle.
+            guard active, visible, ingressAuthorized else { return }
+            do {
+                let snapshot = try await driver.activateCurrentPresentation(resources: resources)
+                try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
+            } catch { reportFailure(error) }
+        }
     }
 
     func viewport(_ observation: ViewportObservation, activity: RunwayActivity,

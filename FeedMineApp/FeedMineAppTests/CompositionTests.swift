@@ -584,6 +584,36 @@ final class CompositionTests: XCTestCase {
         await association.close()
     }
 
+    /// B03: the first installed screen must seed and drive the runway while cold acquisition is still pending.
+    /// This uses the association's real evidence recipient, without a viewport event or foreground timer.
+    func testFirstPresentationDrivesRunwayBeforeHeldBootstrapFinishes() async throws {
+        FixtureTransport.holdingScience.withLock { $0 = true }
+        defer { FixtureTransport.releaseScience() }
+        let root = root()
+        let launch = Task { await root.launch() }
+        for _ in 0..<500 where root.association?.store.state.presentation == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let association = try XCTUnwrap(root.association)
+        let first = try XCTUnwrap(association.store.state.presentation)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        var observed = await association.driver.runway.snapshot()
+        while observed.lastCoverage == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+            observed = await association.driver.runway.snapshot()
+        }
+        XCTAssertTrue(FixtureTransport.holdingScience.withLock { $0 }, "bootstrap still has a held source")
+        XCTAssertEqual(observed.latestObservation?.anchorCardID, first.window.anchor.cardID)
+        XCTAssertEqual(observed.latestObservation?.activity, .stationary)
+        XCTAssertNotNil(observed.lastCoverage, "the first presentation must reach observation → drive within 1 s")
+        FixtureTransport.releaseScience()
+        await launch.value
+        XCTAssertNil(root.startupFailure, "late bootstrap settlement must not replay an obsolete projection")
+        let current = await association.session.currentPresentation()
+        XCTAssertEqual(association.store.state.presentation, current)
+        await association.close()
+    }
+
     func testFastFeedPublishesBeforeHeldFeedAndIdleReserveAlternates() async throws {
         FixtureTransport.holdingScience.withLock { $0 = true }
         defer { FixtureTransport.releaseScience() }

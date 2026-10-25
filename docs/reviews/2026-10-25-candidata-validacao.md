@@ -78,6 +78,18 @@ O teste de integração do app deve manter uma fonte suspensa e exigir observaç
 avaliação do runway dentro de 1 s da instalação, sem gesto nem tick periódico.
 Essa hipótese ainda requer nova medição B03 no simulador do dono.
 
+Implementação nesta sessão: `receive(.published)` ativa a apresentação e dirige o runway
+logo após instalar e marcar a publicação, usando `activateCurrentPresentation`. O retorno
+tardio do bootstrap recebe a projeção corrente da sessão, preservando qualquer crescimento.
+Não foi adicionada espera nem alterado o intervalo periódico de foreground.
+
+Verificação: `swift build` passou; `swift test` passou com **1.716 testes, 1 skipped,
+0 falhas**. O parse Swift do host e de `CompositionTests.swift` passou. O novo
+`testFirstPresentationDrivesRunwayBeforeHeldBootstrapFinishes` pertence ao alvo iOS:
+foi escrito, mas **não executado** (a restrição desta sessão exclui `xcodebuild` e
+simulador; o SwiftPM não compila o host). Portanto o orçamento de 1 s e o resultado B03
+ainda não são uma medição pós-correção. `bench/**` não foi alterado.
+
 ## Medição no catálogo real (180 s, contêiner novo, English, rede pública)
 
 | Métrica | Base congelada | Reserva sem limite | Candidata |
