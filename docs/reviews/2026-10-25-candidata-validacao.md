@@ -40,6 +40,14 @@ Em todas as corridas as paradas são **um único aglomerado de ~3 s no começo d
 entre 1792929550,8 e 1792929553,8), contadas uma vez por avanço que caiu dentro dele; em duas corridas houve também
 uma parada isolada no fim da janela. Nenhuma no meio do regime permanente.
 
+**O intervalo medido tem nome (traço de piso 64):** o bootstrap frio publica **12 cartas em t=10,04 s** e admite a
+lista em 10,23 s; a **primeira fatia do próprio runway só é pedida em t=15,93 s** (`required 64, ready 10`). Entre
+10,9 s e 15,9 s não há publicação, admissão nem pedido de fatia — o leitor consome as 12 cartas do bootstrap a 3/s e
+fica sem nada. O aglomerado do B03 é esse **vão de entrega bootstrap → runway** (~5,9 s), não regime permanente, e por
+isso nenhum parâmetro de steady state (limite por oportunidade 16/32/48, piso 32/64) o moveu. A correção seguinte
+pertence a esse handoff (acionar a cadência do runway imediatamente após a publicação inicial / na primeira
+observação), não à reserva nem ao limite de lote.
+
 ## Medição no catálogo real (180 s, contêiner novo, English, rede pública)
 
 | Métrica | Base congelada | Reserva sem limite | Candidata |
