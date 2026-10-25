@@ -58,63 +58,34 @@ voo. O limite de publicação por oportunidade não muda isso (16/32/48 → 6/7/
 
 ## Auditoria de superfícies e vídeo em uso real (25/out)
 
-**Vídeo, feed real (`feeds.twit.tv/twit_video_hd.xml`, rede pública):** as quatro cláusulas de produto passam na
-candidata — 2 cartas publicadas, ambas com selo **Vídeo**; nenhum `card.play` e nenhum "Tocar" dentro do frame
-(D2); tocar abre o navegador in-app no link do próprio item, com destino casado por host (`twit.tv`) e manchete do
-leitor igual à do item. O caminho de identidade de vídeo funciona ponta a ponta; o que a janela de 180 s no catálogo
-público não mostrou foi uma **carta** de vídeo, porque a fila não chegou a essas fontes.
+**Vídeo, feed real (`feeds.twit.tv/twit_video_hd.xml`, rede pública):** 2 cartas publicadas, ambas com selo **Vídeo**;
+nenhum `card.play` e nenhum "Tocar" no frame (D2); tocar abre o navegador in-app no link do próprio item, destino
+casado por host (`twit.tv`) e manchete do leitor igual à do item. O caminho de identidade de vídeo funciona ponta a
+ponta. O que a janela de 180 s no catálogo público não mostrou foi uma **carta** de vídeo — a fila não chegou a essas
+fontes.
 
-**Regressão de medição — NÃO atribuir ao produto até ser medida (controle verde):** depois de fechar o navegador, a carta que o leitor deixou **não
-está mais no feed** na candidata — `return restored=false`, leitura de frame `(0,0,440,956)` e 75 s de buscas por
-identidade sem nenhum resultado. No controle pré-mudança (`3eee1935`) a mesma jornada passa em 39 s com
-`restored=true`. A diferença entre os dois braços é a cadência de publicação (a candidata publica ~1.159 cartas em
-180 s contra 68–80 históricos): enquanto o leitor está no navegador, o app continua publicando e a janela admitida
-muda; ao voltar, a âncora não é mais a mesma. É a promessa do B04 ("o feed apresentado é sagrado") num cenário que o
-B04 não cobre — com um navegador no meio. É o **segundo custo comportamental confirmado do volume de publicação**,
-ao lado das paradas do B03: as cláusulas 1–4 do vídeo passam no feed real, a restauração de posição falha. O que está provado é que **a jornada não consegue fechar o Safari modal**: medido com
-instrumentação temporária, depois do toque em "Close" o controle de URL do Safari continua presente e o `webView`
-também, por 30 s, enquanto toda consulta de árvore responde em 90–250 ms; no braço verde (build 54, Safari embutido)
-as duas consultas ficam falsas na primeira iteração e a jornada passa em 39 s. O `Close` que o teste toca resolve na
-árvore do app, não no processo do `SafariViewService`, então o toque não fecha o Safari modal. Consequência honesta:
-o retorno **do produto** depois de um fechamento real está **não medido** — não provado quebrado. A correção é do
-instrumento (fechar pelo processo do SafariViewService, ou por gesto de coordenada com espera própria), sem afrouxar
-a cláusula de mesma carta / mesmo frame.
+**Retorno do navegador — resolvido como defeito de instrumento, produto medido PASS.** A cláusula "a mesma carta no
+mesmo frame" falhava porque o fechamento do site por `tap` de acessibilidade **não fecha o Safari modal**: o controle
+`Close` resolve na árvore do app hospedeiro e o Safari continua na tela. Medido com instrumentação temporária: depois
+do toque, o controle de URL do Safari e o `webView` seguem presentes por 30 s, enquanto toda consulta de árvore
+responde em 90–250 ms. Bisseção: a *medição* quebrou em `67d78212` (apresentação modal do site; o pai `3eee1935`
+passa em 39 s); `d6ef2452`, `c24c3e15`, `031b27d3`, `1f4f0ee8` e `cb282bcf` falham igual — o produto não é o autor.
 
-**Atribuição por bisseção (executada, cada ponto com build próprio):** `3eee1935` (build 54) **PASS** em 39 s;
-`67d78212` ("present the site modally and never leave the upgrade notice blocking", 21/out) **FAIL** em 107 s — e
-`67d78212^` é exatamente `3eee1935`, **PASS** em 39 s. Também falham, de forma idêntica: `d6ef2452` (base do trabalho
-desta sessão, antes de qualquer commit meu), `c24c3e15`, `031b27d3`, `1f4f0ee8` e `cb282bcf`. Ou seja: **a regressão
-é de 67d78212**, anterior a v6, à reserva, ao limite de publicação e à correção do instrumento. O defeito está na
-apresentação modal do site introduzida ali, não no cálculo de posição.
-
-Duas tentativas de correção foram feitas e **revertidas** por não mudarem o resultado: (a) suspender a produção ao
-abrir o site (checkpoint + `suspendForBackground`, retomada no fechamento); (b) manter o leitor vivo ao fechar o site
-(não chamar `onFinish`). Ambas compilaram e falharam o mesmo teste do mesmo jeito. O que falta medir é por que, no
-braço que falha, o app fica ~75 s sem responder a consultas de árvore (snapshot sem nenhum elemento), enquanto o
-braço verde fecha em 39 s.
-
-**Hipótese com assinatura (não confirmada):** no braço que falha, as três mensagens de "Failed to get matching
-snapshot" aparecem entre t=32 s e t=106 s, e ~75 s é exatamente três tempos-limite de consulta de ~25 s — ou seja, a
-árvore do app pode estar *pendurada* enquanto o `SFSafariViewController` modal está na frente (serviço remoto), não
-o app parado. Se for isso, o defeito é **de instrumento**: o commit 67d78212 trocou a apresentação embutida pela
-modal (exigência da Apple) e a jornada, como está escrita, consulta a árvore do app com o Safari modal na frente.
-O discriminador barato para a próxima sessão é medir uma consulta de árvore com o Safari aberto e comparar com o
-mesmo instante no build 54: se a consulta estoura nos dois, é instrumento; se só no novo, é o produto.
+Correção no instrumento (`VideoCardJourneyUITests.closeReader`): fechar com um **toque real por coordenada** no frame
+do controle, com espera própria pelo desaparecimento do Safari; a asserção não mudou. Resultado: `restored=true`, duas
+corridas seguidas de **36,7 s**. Duas tentativas anteriores no produto (suspender a produção ao abrir o site; manter o
+leitor ao fechar) foram revertidas por não mudarem nada — o produto já estava correto.
 
 **Cobertura de controles:** 127 dos 199 `accessibilityIdentifier` da UI são referenciados por testes; os 72 restantes
-incluem templates interpolados (idiomas, regiões, tipos de mídia) e controles de folhas secundárias (seletor de
-coleção, colar endereço, rejeição de feed, disponibilidade de catálogo). Não foi feita varredura manual de cada um:
-o que está provado é o caminho do leitor (feed, leitor, menu, adicionar feed, navegador) e o de vídeo.
-
-0. **Âncora perdida ao voltar do navegador** (P1, medido com controle verde): jornada de vídeo no feed real —
-   candidata `restored=false`, 75 s sem encontrar a identidade da carta; controle `3eee1935` `restored=true` em 39 s.
-   Correlação forte com a cadência de publicação; a correção é a mesma frente do item 2 (limitar a taxa de
-   oportunidades / a cauda oculta), e depois repetir esta jornada.
+incluem templates interpolados (idiomas, regiões, tipos de mídia) e folhas secundárias. Provados em execução: feed,
+leitor, menu, adicionar feed, navegador e a carta de vídeo.
 
 ## Aberto (produto)
 
 1. **B03 — 7 paradas de 1 s** contadas pelo oráculo, que são **dois eventos**: um hiccup de ~3 s dentro da rajada
-   sintética e uma parada isolada no fim da janela; mecanismo traçado, correção não feita.
+   sintética e uma parada isolada no fim da janela. Causa **medida**: cadência de admissão — em toda janela de parada
+   há 0 publicações e 0 instalações de lista, as fatias terminam em ≤340 ms e os quadros seguem a 39–60 fps. Correção
+   não feita; o limite por oportunidade já foi refutado (16/32/48 → 6/7/8).
 2. **Volume de publicação**: 1.159 cartas em 180 s contra 68–80 históricos. `HiddenTailMaintenance` seleciona sem
    limite (`examinedCapacity: 256`) e a taxa de oportunidades é alta (≈3,1 fatias/s no traço real). O campo
    `coverage` registrado nessas requisições diz `healthy` em 520 de 532 casos com `ready: at_least(32)` — valor que,

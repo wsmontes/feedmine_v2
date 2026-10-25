@@ -561,14 +561,25 @@ final class VideoCardJourneyUITests: XCTestCase {
     /// A volta do navegador: o controle de fechar do Safari (o botão que o `SFSafariViewController` desenha) ou o
     /// gesto. Só conta como volta quando o conteúdo web não está mais na árvore.
     private func closeReader(_ app: XCUIApplication) {
-        if app.buttons["reading.close"].exists {
-            app.buttons["reading.close"].tap()
-        } else {
-            for label in ["Fechar", "Close", "Done", "Concluído"] {
-                let button = app.buttons[label].firstMatch
-                if button.exists && button.isHittable { button.tap(); break }
-            }
+        // Measured 2026-10-25: with the site presented modally (`67d78212`), an accessibility `tap` on "Close"
+        // resolves in the *host's* tree and never dismisses the page — Safari's own URL control stayed present for
+        // the whole 30 s wait while every other query answered in <250 ms. A real touch at the control's frame does
+        // reach the remote view, so the dismissal is a coordinate tap; the assertion below is unchanged.
+        var tapped = false
+        for label in ["Fechar", "Close", "Done", "Concluído"] {
+            let button = app.buttons[label].firstMatch
+            guard button.exists else { continue }
+            let frame = button.frame
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+                .withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
+            tapped = true
+            break
         }
+        if !tapped, app.buttons["reading.close"].exists {
+            app.buttons["reading.close"].tap()
+        }
+        let safariDeadline = Date().addingTimeInterval(20)
+        while Date() < safariDeadline, app.buttons["URL"].exists { Thread.sleep(forTimeInterval: 0.3) }
         let deadline = Date().addingTimeInterval(30)
         while Date() < deadline {
             if !app.staticTexts["reading.headline"].exists && !app.webViews.firstMatch.exists {
