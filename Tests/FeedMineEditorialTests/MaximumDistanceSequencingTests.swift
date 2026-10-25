@@ -198,6 +198,21 @@ final class MaximumDistanceSequencingTests: XCTestCase {
         XCTAssertEqual(decodedNew.subjects, ["space"])
     }
 
+    /// Positions with no frozen fact are holes, not omissions: a card published without a fact still consumed a
+    /// position, so the distance that decides the order counts it. Newest-first, the history is `audio` at
+    /// position 1 and `video` 9,999 positions back; a non-nil-only read would tie both at 1 and let input order
+    /// decide. Input order deliberately puts audio first, so only hole counting can move video ahead.
+    func testHistoryHolesCountTowardsDistanceAtQueueScale() throws {
+        var positions: [EditorialDiversityFact?] = [fact(.audio)]
+        positions.append(contentsOf: Array(repeating: nil, count: 9_997))
+        positions.append(fact(.video))
+        let repeatedAudio = candidate(1, kind: .audio, time: 20)
+        let repeatedVideo = candidate(2, kind: .video, time: 20)
+        let result = try select([repeatedAudio, repeatedVideo], positions: positions)
+        XCTAssertEqual(ids(result), [repeatedVideo.originRecordID, repeatedAudio.originRecordID],
+            "the video repetition is 9,999 positions away; the audio one is 1")
+    }
+
     func testUnknownFutureVersionDoesNotInheritV6() throws {
         let repeated = candidate(1, kind: .audio, time: 30)
         let novel = candidate(2, kind: EditorialMediaKind.none, time: 20)

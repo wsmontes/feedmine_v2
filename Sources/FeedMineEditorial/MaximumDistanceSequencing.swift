@@ -30,13 +30,13 @@ enum MaximumDistanceSequencing {
         var sourceSeen: [SourceID: Int] = [:]
         for (index, position) in positions.enumerated() {
             guard let position else { continue }
-            let distance = index + 1
-            if let kind = position.mediaKind, typeSeen[kind] == nil { typeSeen[kind] = distance }
+            let relative = -1 - index
+            if let kind = position.mediaKind, typeSeen[kind] == nil { typeSeen[kind] = relative }
             for subject in position.subjects where subjectSeen[subject] == nil {
-                subjectSeen[subject] = distance
+                subjectSeen[subject] = relative
             }
             for source in position.sourceIDs where sourceSeen[source] == nil {
-                sourceSeen[source] = distance
+                sourceSeen[source] = relative
             }
         }
 
@@ -47,6 +47,7 @@ enum MaximumDistanceSequencing {
 
         var remaining = Array(ordered.indices)
         var placed: [Candidate] = []
+        var current = 0
         while !remaining.isEmpty {
             let compatible = singleSourceContext ? remaining : remaining.filter {
                 SourceAlternation.compatible(previous, ordered[$0])
@@ -56,8 +57,8 @@ enum MaximumDistanceSequencing {
             var pool = compatible
             for dimension in 0..<3 {
                 let scored = pool.map { index in
-                    (index, distance(facts[index], dimension: dimension, typeSeen: typeSeen,
-                        subjectSeen: subjectSeen, sourceSeen: sourceSeen))
+                    (index, distance(facts[index], dimension: dimension, current: current,
+                        typeSeen: typeSeen, subjectSeen: subjectSeen, sourceSeen: sourceSeen))
                 }
                 let known = scored.compactMap { $0.1 }
                 guard let maximum = known.max() else { continue }
@@ -70,31 +71,29 @@ enum MaximumDistanceSequencing {
             previous = SelectionNeighbor(sourceIDs: chosen.sourceIDs, providerID: chosen.providerID)
 
             let chosenFacts = facts[chosenIndex]
-            bump(&typeSeen); bump(&subjectSeen); bump(&sourceSeen)
-            if let kind = chosenFacts.type { typeSeen[kind] = 1 }
-            for subject in chosenFacts.subjects { subjectSeen[subject] = 1 }
-            for source in chosenFacts.sources { sourceSeen[source] = 1 }
+            if let kind = chosenFacts.type { typeSeen[kind] = current }
+            for subject in chosenFacts.subjects { subjectSeen[subject] = current }
+            for source in chosenFacts.sources { sourceSeen[source] = current }
+            current += 1
         }
         return (placed, remaining.map { ordered[$0] })
     }
 
-    private static func distance(_ facts: Facts, dimension: Int,
+    private static func distance(_ facts: Facts, dimension: Int, current: Int,
         typeSeen: [EditorialMediaKind: Int], subjectSeen: [String: Int],
         sourceSeen: [SourceID: Int]) -> Int? {
         switch dimension {
         case 0:
-            guard let kind = facts.type else { return nil }
-            return typeSeen[kind] ?? Int.max
+            guard let kind = facts.type, let last = typeSeen[kind] else { return facts.type == nil ? nil : Int.max }
+            return current - last
         case 1:
             guard !facts.subjects.isEmpty else { return nil }
-            return facts.subjects.map { subjectSeen[$0] ?? Int.max }.min()
+            guard let last = facts.subjects.compactMap({ subjectSeen[$0] }).max() else { return Int.max }
+            return current - last
         default:
             guard !facts.sources.isEmpty else { return nil }
-            return facts.sources.map { sourceSeen[$0] ?? Int.max }.min()
+            guard let last = facts.sources.compactMap({ sourceSeen[$0] }).max() else { return Int.max }
+            return current - last
         }
-    }
-
-    private static func bump<Key: Hashable>(_ map: inout [Key: Int]) {
-        for key in Array(map.keys) { map[key]! += 1 }
     }
 }
