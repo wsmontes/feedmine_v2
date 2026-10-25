@@ -106,6 +106,13 @@ public struct SyndicationTranslator: Sendable {
                 let playable = Self.playback(enclosure.url, base: base, mimeType: enclosure.type) {
                 media.append(playable)
             }
+            // Spec 2026-10-24 §2.2: at most one playback per revision, and the item's own enclosure is its
+            // canonical payload, so a video `media:content` declares only when the enclosure claimed nothing.
+            if !media.contains(where: { $0.role == .playback }),
+                let video = Self.contentPlayback((item.media?.contents ?? []) + (item.media?.group?.contents ?? []),
+                    base: base) {
+                media.append(video)
+            }
             let body = Self.readableBody(item.content?.encoded)
             return observation(object, title: item.title, summary: item.description, body: body,
                 bodySourceElement: body == nil ? nil : "content:encoded", fingerprintGeneration: 2,
@@ -143,6 +150,13 @@ public struct SyndicationTranslator: Sendable {
                 for enclosure in item.links ?? [] where enclosure.attributes?.rel?.lowercased() == "enclosure" {
                     if let playable = Self.playback(enclosure.attributes?.href, base: base,
                         mimeType: enclosure.attributes?.type) { media.append(playable) }
+                }
+                // Spec 2026-10-24 §2.2: at most one playback per revision, and the entry's own enclosure is its
+                // canonical payload, so a video `media:content` declares only when the enclosure claimed nothing.
+                if !media.contains(where: { $0.role == .playback }),
+                    let video = Self.contentPlayback((item.media?.contents ?? []) + (item.media?.group?.contents ?? []),
+                        base: base) {
+                    media.append(video)
                 }
                 // Atom src is an external resource, not content provided by the feed.
                 let contentType = (item.content?.attributes?.type ?? "text").lowercased()
@@ -293,13 +307,55 @@ public struct SyndicationTranslator: Sendable {
         }
     }
     /// `media:content` entries that are images by medium or MIME type; audio/video are not card visuals.
+    /// An entry that declares video (`declaresVideo`) is never admitted here, so one element cannot be both a
+    /// card visual and a payload.
     private static func contents(_ values: [MediaContent]?, base: URL?) -> [AcquisitionMediaCandidateClaim] {
         (values ?? []).compactMap { value in
-            guard let attributes = value.attributes,
+            guard let attributes = value.attributes, !declaresVideo(value),
                 attributes.medium?.lowercased() == "image" || SyndicationMediaLocator.isImageMIMEType(attributes.type) else { return nil }
             return media(attributes.url, base: base, width: attributes.width, height: attributes.height,
                 mimeType: SyndicationMediaLocator.isImageMIMEType(attributes.type) ? attributes.type : nil)
         }
+    }
+
+    /// What the live YouTube Atom feed still declares as its video's `type`: a container no player here takes,
+    /// named by the publisher as a video nonetheless.
+    private static let flashVideoMIMEType = "application/x-shockwave-flash"
+
+    /// `media:content` declares a video when it says `medium="video"`, names a `video/*` MIME, or names the Flash
+    /// type YouTube emits. The medium is the publisher's own word and wins over a contradictory MIME on the same
+    /// element.
+    private static func declaresVideo(_ value: MediaContent) -> Bool {
+        guard let attributes = value.attributes else { return false }
+        if attributes.medium?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "video" { return true }
+        guard let type = declaredMediaType(attributes.type) else { return false }
+        return type.hasPrefix("video/") || type == flashVideoMIMEType
+    }
+
+    /// The MIME type a `media:content` `type` attribute names, compared as the media type it declares:
+    /// lowercased and without parameters (`video/mp4; codecs=avc1` still names MP4). nil when it declares none.
+    private static func declaredMediaType(_ type: String?) -> String? {
+        guard let type else { return nil }
+        let essence = (type.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return essence.isEmpty ? nil : essence
+    }
+
+    /// The video payload a `media:content` list declares, at most one: the first admissible declaration in
+    /// document order, so replaying one document always yields the same claim. The caller passes the item's own
+    /// lists in document order and only asks when no enclosure already claimed playback (spec 2026-10-24 §2.2).
+    /// Audio `media:content` is deliberately not read: an episode's audio comes from its enclosure, and that
+    /// behaviour is unchanged.
+    private static func contentPlayback(_ values: [MediaContent], base: URL?) -> AcquisitionMediaCandidateClaim? {
+        for value in values {
+            guard let attributes = value.attributes, declaresVideo(value),
+                let url = SyndicationMediaLocator.resolve(attributes.url, base: base, allowingPlayableMedia: true) else {
+                continue
+            }
+            return .init(role: .playback, mediaClass: .video, remoteURL: url, declaredMimeType: attributes.type,
+                declaredPixelWidth: nil, declaredPixelHeight: nil)
+        }
+        return nil
     }
     private static func htmlImage(_ html: String?, base: URL?) -> AcquisitionMediaCandidateClaim? {
         SyndicationMediaLocator.firstContentImage(inHTML: html, base: base).flatMap { media($0.absoluteString) }
