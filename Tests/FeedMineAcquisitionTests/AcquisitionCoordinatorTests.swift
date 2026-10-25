@@ -29,9 +29,20 @@ private actor PullGate {
     }
 }
 
+private final class PullEntrySignal: @unchecked Sendable {
+    private let expectation: XCTestExpectation
+
+    init(_ expectation: XCTestExpectation) { self.expectation = expectation }
+
+    func signal() { expectation.fulfill() }
+}
+
 private struct IgnoringCancellationConnector: FeedConnector {
     let gate: PullGate
+    let entry: PullEntrySignal
+
     func pull(_ request: FeedConnectorPull) async throws -> FeedConnectorEvent {
+        entry.signal()
         await gate.wait()
         return .finished
     }
@@ -553,24 +564,24 @@ extension AcquisitionCoordinatorTests {
     /// settled** inside the budget instead of blocking retirement forever.
     func testSettleInFlightBoundsTheWaitForAPullThatIgnoresCancellation() async throws {
         let f = try fixture(), gate = PullGate()
-        let coordinator = f.coordinator(IgnoringCancellationConnector(gate: gate))
+        let entered = expectation(description: "the authorized pull reached the gate")
+        let connector = IgnoringCancellationConnector(gate: gate, entry: PullEntrySignal(entered))
+        let coordinator = f.coordinator(connector)
         let execution = await enter(coordinator, start(f))
-        var began = false
-        for _ in 0..<400 {
-            if !(await coordinator.activeExecutions()).isEmpty { began = true; break }
-            await Task.yield()
+        // The execute-entry barrier is before the worker reaches pull. Wait for the pull's own entry, bounded,
+        // so cancellation cannot be observed in the legitimate pre-pull window.
+        let reached = await XCTWaiter.fulfillment(of: [entered], timeout: 5)
+        guard reached == .completed else {
+            await gate.release()
+            _ = try? await execution.value
+            return XCTFail("premissa: o pull autorizado entrou no gate")
         }
-        XCTAssertTrue(began, "premissa: o pull autorizado está em voo")
         let settled = await coordinator.settleInFlight(budget: .milliseconds(80))
         XCTAssertFalse(settled, "um pull que ignora cancelamento não pode ser declarado assentado")
         await gate.release()
         _ = try? await execution.value
-        var emptied = false
-        for _ in 0..<400 {
-            if await coordinator.activeExecutions().isEmpty { emptied = true; break }
-            await Task.yield()
-        }
-        XCTAssertTrue(emptied)
+        let active = await coordinator.activeExecutions()
+        XCTAssertTrue(active.isEmpty)
     }
 
     /// A pull that respects cancellation settles inside the budget: the transport can be invalidated after it.
