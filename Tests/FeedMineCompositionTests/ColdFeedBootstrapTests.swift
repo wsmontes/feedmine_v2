@@ -1014,4 +1014,56 @@ extension ColdFeedBootstrapTests {
         XCTAssertEqual(accounted.published, 2)
         XCTAssertEqual(accounted.persistedBytes, 0, "publication released every retained share")
     }
+
+    /// P2 (review): the first publication commits its whole Segment while the installed window projects only the
+    /// anchor and the frozen forward capacity (up to 32 cards committed, anchor + 16 projected). The reserve must be
+    /// marked with the complete committed set — the receipt's own record in the store — and never with the
+    /// projection, or the cards outside it stay `.ready`, charged against depth and retained bytes for stories the
+    /// Edition already carries.
+    func testColdPublicationMarksTheCommittedSegmentNotTheProjection() async throws {
+        let f = try fixture(), id = identity()
+        try Self.seed(f.database, source: f.source, count: 20, time: 100)
+        let reserve = PreparedReserve(targetDepth: 32, lowWaterMark: 16)
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) },
+            makeMediaOpportunity: {
+                // The media pipeline's own conclusions, told in the reserve's terms: the first screen's revisions are
+                // prepared before the publication that follows.
+                MediaPreparationOpportunity(waitSeconds: 4, startedAt: 100) { revisions, _ in
+                    for revision in await reserve.plan(offer: revisions) {
+                        await reserve.markPreparing(revision, attempt: 0)
+                        _ = await reserve.settle(revision, outcome: .prepared(hasImage: false), persistedBytes: 512)
+                    }
+                }
+            })
+        let snapshot = try published(await bootstrap.run(identity: id, resources: resources(local: 32),
+            backwardCapacity: 0, forwardCapacity: 2))
+        // The opportunity's request is fire-and-forget by design: wait for the conclusion it caused, not for time.
+        for _ in 0..<500_000 {
+            if await reserve.snapshot().ready >= 20 { break }
+            await Task.yield()
+        }
+        let prepared = await reserve.snapshot()
+        XCTAssertEqual(prepared.ready, 20, "premissa: o primeiro ecrã tinha as apresentações preparadas")
+        XCTAssertEqual(prepared.persistedBytes, 20 * 512)
+
+        let publication = PublicationStore(database: f.database)
+        let committed = try publication.segments(editionID: snapshot.editionID).flatMap(\.cardIDs)
+        XCTAssertGreaterThan(committed.count, snapshot.window.items.count,
+            "the publication committed more cards than the installed window projects")
+
+        // What `markReservePublished` does with the bootstrap's outcome: the Edition's committed Segments, not the
+        // window it happens to show.
+        await reserve.markPublished(committedIn: snapshot.editionID, in: f.database)
+        for cardID in committed {
+            let revision = try XCTUnwrap(publication.card(id: cardID)?.originRevisionID)
+            let phase = await reserve.phase(of: revision)
+            XCTAssertTrue(phase == .published || phase == .exhausted(.superseded),
+                "a revision the Edition committed cannot keep competing: \(phase)")
+        }
+        let accounted = await reserve.snapshot()
+        XCTAssertEqual(accounted.ready, 0, "every prepared revision of a published card left the reserve")
+        XCTAssertEqual(accounted.persistedBytes, 0, "publication released every retained share")
+        XCTAssertEqual(accounted.published, 20)
+    }
 }

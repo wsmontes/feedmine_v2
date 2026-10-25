@@ -419,4 +419,22 @@ extension PreparedReserve {
         guard !revisions.isEmpty else { return }
         markPublished(revisions)
     }
+
+    /// Everything the Edition has **committed**, not the projection a presentation happens to show. A cold bootstrap
+    /// can commit its whole first Segment while the installed window projects only the anchor and the forward
+    /// capacity (`ColdFeedBootstrap` selects up to 32 cards; the presentation shows anchor + 16). Marking the window
+    /// left the cards outside it `.ready`, charged against depth and retained bytes for stories the feed already
+    /// carries. The store's Segments are the publication's own committed record — the same facts the receipt names —
+    /// and the projection is never read here.
+    public func markPublished(committedIn editionID: FeedEditionID, in database: RuntimeDatabase) {
+        let publication = PublicationStore(database: database)
+        guard let segments = try? publication.segments(editionID: editionID) else { return }
+        let cardIDs = segments.flatMap(\.cardIDs)
+        guard !cardIDs.isEmpty else { return }
+        // One read for every committed card, so a long Edition does not cost one query per card at launch.
+        let cards = (try? publication.cards(ids: cardIDs)) ?? [:]
+        let revisions = cardIDs.compactMap { cards[$0]?.originRevisionID }
+        guard !revisions.isEmpty else { return }
+        markPublished(revisions)
+    }
 }

@@ -4133,11 +4133,11 @@ final class FeedAssociation {
     /// Edition arrives as evidence (`receive`) and as `launch`'s outcome; a hidden-tail succession publishes inside
     /// the store and hands back only its disposition. The revisions those committed cards carry leave the reserve's
     /// competition here, so no path can leave a prepared presentation occupying depth and bytes for a card the feed
-    /// already shows.
+    /// already shows. The publication commits up to 32 cards while the installed window projects only the anchor and
+    /// the forward capacity, so the marking reads the Edition's committed Segments — the receipt's own record — and
+    /// never infers the set from the window it happens to show.
     private func markReservePublished(_ snapshot: FeedPresentationSnapshot) async {
-        let cards = snapshot.window.items
-        guard !cards.isEmpty else { return }
-        await reserve.markPublished(cardIDs: cards.map(\.id), in: database)
+        await reserve.markPublished(committedIn: snapshot.editionID, in: database)
     }
 
     /// PD-3: reduce pipeline evidence into the preparation screen value.
