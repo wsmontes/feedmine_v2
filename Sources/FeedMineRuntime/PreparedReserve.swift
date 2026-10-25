@@ -81,6 +81,9 @@ public actor PreparedReserve {
         public let persistedBytes: Int
         /// Settles `.prepared` that arrived for a revision that was not `.preparing`: completions past a window.
         public let lateCompletions: Int
+        /// Attempts whose window ended while the prefetcher still owns them. They hold capacity until their outcome
+        /// arrives, so a closed window cannot free the slots of work that is still downloading.
+        public let outstanding: Int
         /// Published cards whose revision came from the durable deferral page — the stories the one-way walk had
         /// skipped for want of media and reconsideration recovered (PM-028A/PM-029).
         public let reconsideredPublished: Int
@@ -88,7 +91,8 @@ public actor PreparedReserve {
         public let reconsideredWithImage: Int
 
         public init(ready: Int, preparing: Int, pending: Int, deferred: Int, exhausted: Int, published: Int,
-            persistedBytes: Int, lateCompletions: Int, reconsideredPublished: Int, reconsideredWithImage: Int) {
+            persistedBytes: Int, lateCompletions: Int, reconsideredPublished: Int, reconsideredWithImage: Int,
+            outstanding: Int = 0) {
             self.ready = ready
             self.preparing = preparing
             self.pending = pending
@@ -99,6 +103,7 @@ public actor PreparedReserve {
             self.lateCompletions = lateCompletions
             self.reconsideredPublished = reconsideredPublished
             self.reconsideredWithImage = reconsideredWithImage
+            self.outstanding = outstanding
         }
     }
 
@@ -131,6 +136,17 @@ public actor PreparedReserve {
     /// Hysteresis latch: set when topping up begins, cleared when the target depth is reached. Kept in the actor
     /// because the band has no meaning between two independent calls.
     private var refilling = false
+    /// Attempts whose window ended while the prefetcher still owns them (PM-028A §4.3): the download outlived the
+    /// slice that authorised it, so its slot stays taken until the outcome arrives. Without this, a closed window
+    /// freed every slot at once and the next opportunity authorised a second full batch over running work.
+    private var outstanding: Set<OriginRevisionID> = []
+    /// Opportunities refused at the target depth since the last publication. Prepared depth must not permanently veto
+    /// the work that unblocks selection (PD-4), so one refusal is treated as "a publication may still be on its way"
+    /// and a second one authorises a bounded batch above the target (see `plan`).
+    private var depthRefusals = 0
+    /// The bounded set one opportunity may authorise above the target when the prepared reserve cannot be published.
+    /// It is the reader's forward window (16): enough to reach another source, never a second reserve.
+    private let unblockingBatch = 16
 
     public init(targetDepth: Int = 96, lowWaterMark: Int = 64, maxAttempts: Int = 3,
         persistedByteBudget: Int = 96 << 20, retryDelays: [Double] = [1, 4, 16],
@@ -153,24 +169,55 @@ public actor PreparedReserve {
     /// and `.exhausted` never are. When the retained-byte budget is exhausted nothing new is emitted — and nothing
     /// already ready is dropped: evicting a prepared presentation would demand re-materialising it, which is phase 2
     /// and not this delivery.
+    ///
+    /// `targetDepth` counts **authorised work**, not only what is already prepared: a revision with an attempt in
+    /// flight, or one whose window closed while the prefetcher still owns it (`windowClosed(_:outstanding:)`), takes
+    /// its slot until the outcome arrives. Counting `.ready` alone let a window close and free all 96 slots while 96
+    /// downloads were still running, so the next opportunity authorised another full batch on top of them.
+    ///
+    /// Prepared depth must not permanently veto the work that unblocks selection (PD-4). When the reserve is full and
+    /// two consecutive opportunities are refused at the target depth with no publication in between, one bounded
+    /// batch (`unblockingBatch`) is authorised above it. That is the deadlock where the edition tail shares a source
+    /// with every ready revision: `MaximumDistanceSequencing` holds them all, nothing publishes, nothing is marked
+    /// published, and without this the reserve could never drain.
     public func plan(offer: [OriginRevisionID]) -> [OriginRevisionID] {
-        let readyCount = phases.values.reduce(into: 0) { count, phase in
-            if case .ready = phase { count += 1 }
+        var readyCount = 0, preparingCount = 0
+        for phase in phases.values {
+            switch phase {
+            case .ready: readyCount += 1
+            case .preparing: preparingCount += 1
+            default: break
+            }
         }
-        guard readyCount < targetDepth else {
+        // What this reserve has authorised and has not seen conclude: prepared, in flight, and still owned by the
+        // prefetcher after its window ended.
+        let admitted = readyCount + preparingCount + outstanding.count
+        guard targetDepth > 0 else {
             refilling = false
             return []
         }
+        let full = readyCount >= targetDepth
+        if full, depthRefusals == 0 {
+            // The first refusal states the observation and waits: a publication of what is already ready may be on its
+            // way, and authorising more before it concludes is how the reserve would overshoot.
+            depthRefusals += 1
+            refilling = false
+            return []
+        }
+        // A second refusal with nothing published: the prepared reserve cannot be placed right now, so the depth may
+        // not keep refusing the work that would unblock selection. Bounded by the forward window.
+        let unblocking = full
+        let ceiling = unblocking ? targetDepth + unblockingBatch : targetDepth
         // The budget refuses new work. `.pending` stays `.pending`, so the revision is reconsidered when room exists.
         guard retainedBytes < persistedByteBudget else { return [] }
         // Hysteresis: while the reserve is in its dead band and no top-up is under way, this opportunity adds nothing.
-        guard refilling || readyCount <= lowWaterMark else { return [] }
-        refilling = true
+        guard unblocking || refilling || admitted <= lowWaterMark else { return [] }
+        if !unblocking { refilling = true }
         let now = clock()
         var planned: [OriginRevisionID] = []
         var seen = Set<OriginRevisionID>()
         for revision in offer {
-            guard readyCount + planned.count < targetDepth else { break }
+            guard admitted + planned.count < ceiling else { break }
             guard retainedBytes < persistedByteBudget else { break }
             guard seen.insert(revision).inserted else { continue }
             switch phases[revision] {
@@ -185,6 +232,8 @@ public actor PreparedReserve {
                 continue
             }
         }
+        // Authorising work answers the observation; the next refusal starts the count again.
+        if !planned.isEmpty { depthRefusals = 0 }
         return planned
     }
 
@@ -209,11 +258,17 @@ public actor PreparedReserve {
     /// The window that started these attempts ended at its deadline without a decision, while their work is still
     /// owned by the prefetcher. They return to `.deferred` (nothing was decided, so no attempt is spent), which is
     /// what makes the completion that arrives later a **late** completion instead of an unobservable one.
-    public func windowClosed(_ revisions: [OriginRevisionID]) {
+    ///
+    /// `outstanding` are the revisions whose work the prefetcher still owns: it outlived the window and will settle
+    /// them, so they keep their slot until that outcome arrives. A revision this window marked `.preparing` that is
+    /// **not** outstanding attempted nothing the prefetcher will answer for — it refused it (a cooling backoff, a
+    /// revision already settled) — and returns to waiting without holding capacity.
+    public func windowClosed(_ revisions: [OriginRevisionID], outstanding: Set<OriginRevisionID> = []) {
         let retryAt = clock() + retryDelay(afterSpent: 1)
         for revision in revisions {
             guard case .preparing? = phases[revision] else { continue }
             phases[revision] = .deferred(retryAt: retryAt)
+            if outstanding.contains(revision) { self.outstanding.insert(revision) }
         }
     }
 
@@ -230,6 +285,8 @@ public actor PreparedReserve {
             // unsettles it — not a slower failure, not a duplicate completion.
             return false
         case .pending, .preparing, .deferred:
+            // Whatever the attempt concluded, its slot is answerable from here on.
+            outstanding.remove(revision)
             switch outcome {
             case .prepared(let hasImage):
                 let wasPreparing: Bool = if case .preparing = current { true } else { false }
@@ -274,6 +331,10 @@ public actor PreparedReserve {
     /// prepared-but-unpublished asset): the file stays exactly where the existing retention rules put it, and the
     /// reserve stops counting it, so a long session cannot fill the budget with cards the reader already has.
     public func markPublished(_ revision: OriginRevisionID) {
+        // A publication is the drain the depth policy waits for: the observation that nothing can be placed ends
+        // here, whatever the revision's own phase was.
+        depthRefusals = 0
+        outstanding.remove(revision)
         switch phases[revision] ?? .pending {
         case .ready(let hasImage):
             phases[revision] = .published
@@ -333,7 +394,7 @@ public actor PreparedReserve {
         return Snapshot(ready: ready, preparing: preparing, pending: pending, deferred: deferred,
             exhausted: exhausted, published: published, persistedBytes: retainedBytes,
             lateCompletions: lateCompletions, reconsideredPublished: reconsideredPublished,
-            reconsideredWithImage: reconsideredWithImage)
+            reconsideredWithImage: reconsideredWithImage, outstanding: outstanding.count)
     }
 
     /// The delay that follows the attempt that spent count `spent` (one-based). A revision whose failures outlast

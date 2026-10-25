@@ -334,4 +334,64 @@ final class PreparedReserveTests: XCTestCase {
         let publishedPhase = await reserve.phase(of: published)
         XCTAssertEqual(publishedPhase, .pending)
     }
+
+    /// P1 (review): ready depth must not permanently veto the work that unblocks selection. When the edition tail
+    /// shares a source with every ready revision, `MaximumDistanceSequencing` holds them all — nothing publishes,
+    /// nothing is marked published, and a plan that refuses everything at the target would leave the reserve unable to
+    /// drain. One bounded batch above the target is what the deadlock needs.
+    func testFullReserveAuthorizesABoundedUnblockingBatchWhenNothingPublishes() async {
+        let clock = Clock(), reserve = reserve(clock, targetDepth: 2, lowWaterMark: 1)
+        let blocked = (0..<2).map { _ in revision() }, unblocking = revision()
+        _ = await reserve.plan(offer: blocked)
+        for revision in blocked {
+            await reserve.markPreparing(revision, attempt: 0)
+            _ = await reserve.settle(revision, outcome: .prepared(hasImage: true), persistedBytes: 10)
+        }
+        // Every ready revision is PD-4-blocked by the tail. The first refusal may still be a publication on its way.
+        let firstRefusal = await reserve.plan(offer: blocked + [unblocking])
+        XCTAssertEqual(firstRefusal, [], "one refusal at the target waits for the publication that may be coming")
+        // Nothing published in between: the depth may no longer refuse the revision that unblocks selection.
+        let unblocked = await reserve.plan(offer: blocked + [unblocking])
+        XCTAssertEqual(unblocked, [unblocking], "a bounded batch above the target is authorized")
+        await reserve.markPreparing(unblocking, attempt: 0)
+        _ = await reserve.settle(unblocking, outcome: .prepared(hasImage: true), persistedBytes: 10)
+        // The story publishes, and the blocked revisions leave with it.
+        await reserve.markPublished(blocked + [unblocking])
+        let snapshot = await reserve.snapshot()
+        XCTAssertEqual(snapshot.ready, 0, "the reserve drained instead of holding the deadlock")
+        XCTAssertEqual(snapshot.published, 3)
+        XCTAssertEqual(snapshot.persistedBytes, 0, "publication released every retained share")
+    }
+
+    /// P4 (review): a closed window frees no slot while the prefetcher still owns the attempt. Counting `.ready`
+    /// alone let a window close with every download still running, so the next opportunity authorized a second full
+    /// batch on top of the first and the reserve overshot both depth and bytes.
+    func testClosedWindowWithOutstandingWorkDoesNotAuthorizeASecondBatch() async {
+        let clock = Clock(), reserve = reserve(clock, targetDepth: 2, lowWaterMark: 0)
+        let first = (0..<2).map { _ in revision() }, second = (0..<2).map { _ in revision() }
+        let opening = await reserve.plan(offer: first)
+        XCTAssertEqual(opening, first)
+        for revision in first { await reserve.markPreparing(revision, attempt: 0) }
+        await reserve.windowClosed(first, outstanding: Set(first))
+        var snapshot = await reserve.snapshot()
+        XCTAssertEqual(snapshot.outstanding, 2)
+        XCTAssertEqual(snapshot.ready, 0)
+        let held = await reserve.plan(offer: second)
+        XCTAssertEqual(held, [], "outstanding work holds the depth")
+        // Time does not free the slot: only the outcome does.
+        clock.advance(600)
+        let stillHeld = await reserve.plan(offer: second)
+        XCTAssertEqual(stillHeld, [], "an ended window's work is not due again by time")
+        // The outcomes arrive: the capacity moves and the late completion is still counted.
+        _ = await reserve.settle(first[0], outcome: .prepared(hasImage: true), persistedBytes: 5)
+        snapshot = await reserve.snapshot()
+        XCTAssertEqual(snapshot.outstanding, 1)
+        XCTAssertEqual(snapshot.lateCompletions, 1, "a completion past its window is still a late completion")
+        _ = await reserve.settle(first[1], outcome: .prepared(hasImage: true), persistedBytes: 5)
+        let filled = await reserve.plan(offer: second)
+        XCTAssertEqual(filled, [], "two ready presentations fill the depth")
+        await reserve.markPublished(first)
+        let reopened = await reserve.plan(offer: second)
+        XCTAssertEqual(reopened, second, "publication reopens the plan")
+    }
 }
