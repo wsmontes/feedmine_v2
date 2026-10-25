@@ -250,6 +250,71 @@ extension MediaPrefetcherTests {
         XCTAssertNil(prefetcher.readiness.prepared(unrelated))
     }
 
+    /// P3 (review): a retry the owner would start on its own is an attempt the depth and byte policy never planned,
+    /// so it runs only when the reserve authorises it. Without an authoriser the owner answers for itself — the
+    /// behaviour every caller had before the reserve existed.
+    func testAutomaticRetryRunsOnlyWhenTheReserveAuthorizesIt() async throws {
+        let (db, assets) = try setup(), calls = Calls(), clock = Clock(), png = self.png
+        final class Mode: @unchecked Sendable { var failure: (any Error)? = URLError(.timedOut) }
+        final class Gate: @unchecked Sendable { var allows = false; var asked = 0 }
+        let mode = Mode(), gate = Gate()
+        let revision = try admit(db, urls: ["https://example.test/a.png"])
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            transientRetryBaseSeconds: 10, monotonicSeconds: { clock.now },
+            fetch: { url, _ in calls.add(url); if let failure = mode.failure { throw failure }; return png },
+            conditions: { _ in Self.policy() },
+            authorizeRetries: { due in
+                gate.asked += 1
+                return gate.allows ? due : []
+            })
+        await prefetcher.prefetch([revision])
+        XCTAssertEqual(calls.all.count, 1)
+        XCTAssertEqual(gate.asked, 0, "the caller's own list is not a retry and asks for no authorisation")
+
+        clock.now = 10; mode.failure = nil
+        let refused = await prefetcher.prefetch([])
+        XCTAssertEqual(refused, [], "an unauthorised retry is not work this window charges")
+        XCTAssertEqual(calls.all.count, 1, "an unauthorised retry downloads nothing")
+        XCTAssertEqual(gate.asked, 1)
+
+        gate.allows = true
+        let authorised = await prefetcher.prefetch([])
+        XCTAssertEqual(authorised, [revision], "the authorised retry is what the window accepted")
+        XCTAssertEqual(calls.all.count, 2)
+        XCTAssertNotNil(prefetcher.readiness.prepared(revision))
+    }
+
+    /// P3 (review): a failure is a conclusion about an attempt, so the reserve must hear it; conditions that forbade
+    /// the work are a conclusion too, but they spend nothing.
+    func testAttemptConclusionsAreReportedInTheReserveVocabulary() async throws {
+        let (db, assets) = try setup()
+        actor Recorder {
+            private(set) var outcomes: [(OriginRevisionID, PreparedReserve.SettleOutcome)] = []
+            func add(_ revision: OriginRevisionID, _ outcome: PreparedReserve.SettleOutcome) {
+                outcomes.append((revision, outcome))
+            }
+        }
+        let recorder = Recorder()
+        let failing = try admit(db, urls: ["https://example.test/failing.png"])
+        let unreachable = try admit(db, urls: ["https://example.test/unreachable.png"])
+        let prefetcher = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            fetch: { _, _ in throw URLError(.timedOut) }, conditions: { _ in Self.policy() },
+            onAttemptSettled: { revision, outcome in await recorder.add(revision, outcome) })
+        await prefetcher.prefetch([failing])
+        var outcomes = await recorder.outcomes
+        XCTAssertEqual(outcomes.count, 1)
+        XCTAssertEqual(outcomes.first?.1, .transientFailure, "a timed-out fetch spent an attempt")
+
+        let offline = MediaPrefetcher(database: db, assetDirectory: assets, concurrentDownloadLimit: 1,
+            fetch: { _, _ in XCTFail("Offline conditions fetch nothing"); return Data() },
+            conditions: { _ in Self.policy(network: .unavailable) },
+            onAttemptSettled: { revision, outcome in await recorder.add(revision, outcome) })
+        await offline.prefetch([unreachable])
+        outcomes = await recorder.outcomes
+        XCTAssertEqual(outcomes.count, 2)
+        XCTAssertEqual(outcomes.last?.1, .conditionsUnavailable, "nothing was attempted, so nothing is spent")
+    }
+
     /// The index decides what a nil record **means** from the caller, never from a default. An image the card
     /// declared and that could not be prepared is decided without a presentation; only a card that declares no
     /// image is settled as text. `record` requires the flag, so the old failure mode — a future caller omitting it

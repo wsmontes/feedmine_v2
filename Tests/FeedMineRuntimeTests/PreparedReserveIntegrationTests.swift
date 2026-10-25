@@ -19,10 +19,13 @@ final class PreparedReserveIntegrationTests: XCTestCase {
         private var opened: Set<String> = []
         private var waiters: [String: [CheckedContinuation<Void, Never>]] = [:]
         private let holds: Set<String>
+        /// Paths the transport answers as a transient failure: the network, not the image, is what went wrong.
+        private let failures: Set<String>
         private let png: Data
 
-        init(holds: Set<String> = [], png: Data) {
+        init(holds: Set<String> = [], failures: Set<String> = [], png: Data) {
             self.holds = holds
+            self.failures = failures
             self.png = png
         }
 
@@ -36,6 +39,7 @@ final class PreparedReserveIntegrationTests: XCTestCase {
                     waiters[name, default: []].append(continuation)
                 }
             }
+            if failures.contains(name) { throw URLError(.timedOut) }
             return name == "broken.jpg" ? Data("not an image".utf8) : png
         }
 
@@ -99,13 +103,24 @@ final class PreparedReserveIntegrationTests: XCTestCase {
 
     private func prefetcher(_ db: RuntimeDatabase, assets: URL, transport: Transport, readiness: MediaReadiness,
         reserve: PreparedReserve,
+        monotonicSeconds: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime },
+        transientRetryBaseSeconds: Double = 30,
         onTransition: (@Sendable (OriginRevisionID) async -> Void)? = nil) -> MediaPrefetcher {
         MediaPrefetcher(database: db, assetDirectory: assets, readiness: readiness, concurrentDownloadLimit: 2,
+            transientRetryBaseSeconds: transientRetryBaseSeconds, monotonicSeconds: monotonicSeconds,
             fetch: { url, _ in try await transport.fetch(url) },
             conditions: { _ in Self.policy() },
             onReadinessChanged: { revision in
                 await Self.settleFromReadiness(revision, readiness: readiness, reserve: reserve)
                 await onTransition?(revision)
+            },
+            // The two channels the app wires: an attempt that ends without a presentation is spent by the reserve,
+            // and a retry the owner would start on its own runs only where the reserve planned it.
+            onAttemptSettled: { revision, outcome in await reserve.settle(revision, outcome: outcome) },
+            authorizeRetries: { due in
+                let planned = await reserve.plan(offer: due)
+                for revision in planned { await reserve.markPreparing(revision, attempt: 0) }
+                return planned
             })
     }
 
@@ -117,8 +132,8 @@ final class PreparedReserveIntegrationTests: XCTestCase {
         offer: [OriginRevisionID], deadline: Double) async -> [OriginRevisionID] {
         let planned = await reserve.plan(offer: offer)
         for revision in planned { await reserve.markPreparing(revision, attempt: 0) }
-        await prefetcher.prefetch(planned, deadline: deadline)
-        await reserve.windowClosed(planned)
+        let owned = await prefetcher.prefetch(planned, deadline: deadline)
+        await reserve.windowClosed(planned, outstanding: Set(owned))
         return planned
     }
 
@@ -268,5 +283,57 @@ final class PreparedReserveIntegrationTests: XCTestCase {
         XCTAssertEqual(snapshot.ready, 1)
         let untouched = await reserve.phase(of: revisions[1])
         XCTAssertEqual(untouched, .pending, "a revision beyond the depth is left untouched, not decided")
+    }
+
+    /// P3 (review): the attempt budget must be reachable from the prefetcher's own conclusions. Only
+    /// `onReadinessChanged` used to reach the reserve, and a transient failure produces no readiness transition — so
+    /// `.attemptsSpent` could never happen and the owner's internal retries bypassed the plan. Two real transport
+    /// failures, through the same two channels the app wires, exhaust the revision.
+    func testTwoTransientFailuresReachAttemptsSpentThroughThePrefetcher() async throws {
+        let (db, assets) = try setup()
+        let (_, revision) = try admit(db, urls: ["https://example.test/flaky.png"])
+        let readiness = MediaReadiness()
+        let reserve = PreparedReserve(targetDepth: 8, lowWaterMark: 4, maxAttempts: 2, retryDelays: [0])
+        let transport = Transport(failures: ["flaky.png"], png: png)
+        let clock = Clock()
+        let media = prefetcher(db, assets: assets, transport: transport, readiness: readiness, reserve: reserve,
+            monotonicSeconds: { clock.now }, transientRetryBaseSeconds: 0.5)
+        let deadline = ProcessInfo.processInfo.systemUptime + 30
+
+        let first = await opportunity(reserve, media, offer: [revision], deadline: deadline)
+        XCTAssertEqual(first, [revision])
+        var phase = await reserve.phase(of: revision)
+        guard case .deferred = phase else {
+            return XCTFail("the first attempt was spent, so the revision waits for its retry: \(phase)")
+        }
+        var snapshot = await reserve.snapshot()
+        XCTAssertEqual(snapshot.exhausted, 0, "one attempt is not the budget")
+
+        // The owner's own backoff has expired: the attempt it would start is authorised by the plan first.
+        clock.now = 1
+        let second = await opportunity(reserve, media, offer: [revision], deadline: deadline)
+        XCTAssertEqual(second, [revision])
+        phase = await reserve.phase(of: revision)
+        XCTAssertEqual(phase, .exhausted(.attemptsSpent), "the second real failure exhausted the revision")
+        snapshot = await reserve.snapshot()
+        XCTAssertEqual(snapshot.exhausted, 1)
+
+        // Exhausted is final: the owner's due retry is refused, not started, even long after the backoff.
+        clock.now = 600
+        let third = await opportunity(reserve, media, offer: [revision], deadline: deadline)
+        XCTAssertEqual(third, [])
+        let calls = await transport.calledPaths
+        XCTAssertEqual(calls, ["flaky.png", "flaky.png"], "two real attempts; the third was never authorised")
+        XCTAssertNil(readiness.presentation(for: revision), "a transient failure never decides the card")
+    }
+
+    /// A clock the prefetcher's backoff reads, so "later" is a value the test moves rather than time it waits for.
+    private final class Clock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0.0
+        var now: Double {
+            get { lock.lock(); defer { lock.unlock() }; return value }
+            set { lock.lock(); value = newValue; lock.unlock() }
+        }
     }
 }

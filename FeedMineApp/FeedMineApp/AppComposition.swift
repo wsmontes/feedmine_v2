@@ -3171,7 +3171,19 @@ final class FeedAssociation {
                 await FeedAssociation.settleReserve(revision, readiness: readiness, reserve: reserve)
                 await readinessRelay.deliver()
             },
-            mediaTrace: replenishment)
+            mediaTrace: replenishment,
+            // PM-028A §2 rule 1: an attempt that ends without a presentation is spent by the reserve. Only this
+            // channel can say so — `onReadinessChanged` fires on a decision, and a transient failure produces none,
+            // which is why the attempt budget was unreachable.
+            onAttemptSettled: { revision, outcome in await reserve.settle(revision, outcome: outcome) },
+            // A retry whose backoff expired is an attempt the editorial walk will never offer again. It runs only
+            // when the reserve plans it, and the plan's answer is what marks it in flight, exactly as the
+            // opportunity's own list does.
+            authorizeRetries: { due in
+                let planned = await reserve.plan(offer: due)
+                for revision in planned { await reserve.markPreparing(revision, attempt: 0) }
+                return planned
+            })
         self.media = media
         savedMedia = SavedMediaCoordinator(database: db, assetDirectory: assetDirectory, prefetcher: media)
         tidy = MediaTidy(assetDirectory: assetDirectory, prefetcher: media, freeStorageBytes: {
@@ -3255,11 +3267,14 @@ final class FeedAssociation {
                 // again, and the persisted-byte budget refuses new work without dropping what is prepared.
                 let planned = await reserve.plan(offer: revisions)
                 for revision in planned { await reserve.markPreparing(revision, attempt: 0) }
-                await media.prefetch(planned, deadline: deadline)
+                // PM-028A §4.3: whatever the prefetcher accepted it still owns when the deadline ends, so those
+                // attempts keep their slot until their outcome arrives. A revision it refused (a cooling backoff,
+                // one already settled) answered nothing and hands its slot back with the window.
+                let owned = await media.prefetch(planned, deadline: deadline)
                 // The opportunity's window is over. Whatever the prefetcher is still running is no longer this
                 // window's in-flight work: a completion that arrives later is taken as `.ready` and counted as a
                 // late completion (PM-028A §4.3), which is the fact the depth policy exists to make visible.
-                await reserve.windowClosed(planned)
+                await reserve.windowClosed(planned, outstanding: Set(owned))
                 // F05/F06: **when a candidate's media becomes ready** is one of the facts a run is judged on — a
                 // pending candidate that recovers is exactly what the suspension rule promises. Codex's review: a
                 // level-triggered event fires again on later queries and proves nothing; what a run needs is the
@@ -3282,6 +3297,9 @@ final class FeedAssociation {
                     "exhausted": String(depth.exhausted),
                     "published": String(depth.published),
                     "late_completions": String(depth.lateCompletions),
+                    // Attempts whose window ended while the prefetcher still owns them: they are why a depth of
+                    // `ready + preparing + outstanding` can exceed what the reader sees prepared.
+                    "outstanding": String(depth.outstanding),
                     "persisted_bytes": String(depth.persistedBytes),
                     "reconsidered_published": String(depth.reconsideredPublished),
                     "reconsidered_with_image": String(depth.reconsideredWithImage),

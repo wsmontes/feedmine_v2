@@ -196,10 +196,15 @@ public struct MediaFetchFailure: Error, Hashable, Sendable {
 struct MediaPreparationAttempt: Sendable {
     let outcome: MediaPreparationOutcome
     let reason: MediaFetchFailureReason?
+    /// `true` when the attempt stopped without answering for the media — the owner was retired, or the window that
+    /// started it was cancelled. It is never reported as an attempt's outcome: the media did not fail, the window
+    /// ended, so nothing was spent.
+    let unfinished: Bool
 
-    init(_ outcome: MediaPreparationOutcome, reason: MediaFetchFailureReason? = nil) {
+    init(_ outcome: MediaPreparationOutcome, reason: MediaFetchFailureReason? = nil, unfinished: Bool = false) {
         self.outcome = outcome
         self.reason = reason
+        self.unfinished = unfinished
     }
 }
 
@@ -325,6 +330,14 @@ public actor MediaPrefetcher {
     /// wait — that is `MediaPrefetcher`'s time allowance, and its outcome is transient.
     public typealias Fetch = @Sendable (_ url: URL, _ budget: MediaByteBudget) async throws -> Data
     public typealias Conditions = @Sendable (_ measuredBytesPerSecond: Double?) -> MediaPolicy?
+    /// What one attempt concluded, told in the reserve's own terms. Only the ends that do **not** become a
+    /// presentation are reported here (`.transientFailure` spent an attempt, `.conditionsUnavailable` attempted
+    /// nothing): a presentation is already reported through `onReadinessChanged`.
+    public typealias AttemptSettlement = @Sendable (OriginRevisionID, PreparedReserve.SettleOutcome) async -> Void
+    /// Which of this owner's own retries may run now. The revisions whose backoff expired are `later` attempts the
+    /// editorial walk will never name again, so the owner asks the reserve before it starts them: an unauthorised
+    /// retry would be a download the depth and byte policy never planned. Nil means this owner answers for itself.
+    public typealias RetryAuthorization = @Sendable ([OriginRevisionID]) async -> [OriginRevisionID]
 
     public nonisolated let readiness: MediaReadiness
     private let contentStore: ContentStore
@@ -335,6 +348,8 @@ public actor MediaPrefetcher {
     private let transientRetryBaseSeconds: Double
     private let monotonicSeconds: @Sendable () -> Double
     private let onReadinessChanged: (@Sendable (OriginRevisionID) async -> Void)?
+    private let onAttemptSettled: AttemptSettlement?
+    private let authorizeRetries: RetryAuthorization?
     /// One entry per revision with work in progress: the single-flight owner both supply and saved preparation
     /// join. It replaces the set of in-flight ids so a save can wait for the same download instead of starting
     /// a second one.
@@ -357,13 +372,17 @@ public actor MediaPrefetcher {
         preparation: MediaPreparation? = nil,
         fetch: @escaping Fetch, conditions: @escaping Conditions,
         onReadinessChanged: (@Sendable (OriginRevisionID) async -> Void)? = nil,
-        mediaTrace: ReplenishmentTrace? = nil) {
+        mediaTrace: ReplenishmentTrace? = nil,
+        onAttemptSettled: AttemptSettlement? = nil,
+        authorizeRetries: RetryAuthorization? = nil) {
         self.readiness = readiness
         contentStore = ContentStore(database: database)
         self.preparation = preparation ?? MediaPreparation(assetDirectory: assetDirectory)
         self.fetch = fetch
         self.conditions = conditions
         self.onReadinessChanged = onReadinessChanged
+        self.onAttemptSettled = onAttemptSettled
+        self.authorizeRetries = authorizeRetries
         self.concurrentDownloadLimit = max(1, concurrentDownloadLimit)
         self.transientRetryBaseSeconds = transientRetryBaseSeconds.isFinite && transientRetryBaseSeconds > 0 ? transientRetryBaseSeconds : 30
         self.monotonicSeconds = monotonicSeconds
@@ -396,16 +415,22 @@ public actor MediaPrefetcher {
     /// Prepares media for the newest `limit` supply items not yet settled. Returns when all chosen
     /// items settled, or when `deadline` (monotonic seconds) passes — unfinished downloads keep
     /// running (owned by this actor, single-flight via `running`) and only help later selections.
-    public func prefetchSupplyHead(limit: Int, deadline: Double? = nil) async {
+    @discardableResult
+    public func prefetchSupplyHead(limit: Int, deadline: Double? = nil) async -> [OriginRevisionID] {
         guard !retired, limit > 0,
-            let window = try? contentStore.candidateWindow(sourceID: nil, after: nil, examinedCapacity: limit) else { return }
-        await prefetch(window.records.map(\.originRevisionID), deadline: deadline)
+            let window = try? contentStore.candidateWindow(sourceID: nil, after: nil, examinedCapacity: limit) else { return [] }
+        return await prefetch(window.records.map(\.originRevisionID), deadline: deadline)
     }
 
     /// Prepares media for an explicit, priority-ordered list of revisions (review F05: the next
     /// editorial candidates). Same deadline contract as `prefetchSupplyHead`.
-    public func prefetch(_ ordered: [OriginRevisionID], deadline: Double? = nil) async {
-        guard !retired else { return }
+    ///
+    /// Returns the revisions **this owner accepted**: the caller's own that survived its filters, plus the retries
+    /// `authorizeRetries` allowed. An accepted revision whose attempt outlives `deadline` is still owned here — that
+    /// is what lets the window that authorised it keep its slot until the outcome arrives.
+    @discardableResult
+    public func prefetch(_ ordered: [OriginRevisionID], deadline: Double? = nil) async -> [OriginRevisionID] {
+        guard !retired else { return [] }
         let now = monotonicSeconds()
         var seen = Set<OriginRevisionID>()
         var revisions = ordered.filter { revision in
@@ -421,24 +446,39 @@ public actor MediaPrefetcher {
         // revisions whose backoff has expired are therefore attempted by whichever opportunity runs next, after
         // the caller's own list: this path keeps no second clock and no new state, only the backoff it already
         // held.
+        //
+        // They are retries, not a new offer: the reserve authorised the attempts it planned, so one of its own
+        // conclusions is what decides whether another attempt is due. Without an authorizer this owner answers for
+        // itself, which is what it did before the reserve existed.
         let due = transientRetryAt
             .filter { $0.value <= now && !readiness.isSettled($0.key) && running[$0.key] == nil }
             .map(\.key)
             .sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
-        revisions += due.filter { seen.insert($0).inserted }
+        let retries: [OriginRevisionID]
+        if let authorizeRetries, !due.isEmpty {
+            let authorised = Set(await authorizeRetries(due))
+            retries = due.filter { authorised.contains($0) }
+        } else {
+            retries = due
+        }
+        revisions += retries.filter { seen.insert($0).inserted }
         #if DEBUG
         // Every revision handed to the path is one it considers for publication; the first instant is what the
         // settlement line measures its elapsed time from.
         mediaWitness?.consider(revisions)
         #endif
-        guard !revisions.isEmpty else { return }
+        guard !revisions.isEmpty else { return [] }
         let work = Task { await self.prepareAll(revisions) }
-        guard let deadline else { await work.value; return }
+        guard let deadline else {
+            await work.value
+            return revisions
+        }
         let wait = deadline - ProcessInfo.processInfo.systemUptime
-        guard wait > 0 else { return }
+        guard wait > 0 else { return revisions }
         // Review F03: never join the unstructured work. Whichever finishes first — the work or the
         // deadline — resumes the caller exactly once; the work keeps running independently.
         await Self.firstOf(work, orSeconds: wait)
+        return revisions
     }
 
     private static func firstOf(_ work: Task<Void, Never>, orSeconds wait: Double) async {
@@ -488,13 +528,21 @@ public actor MediaPrefetcher {
         // An image the card declared could not be prepared: it settles without a presentation, which keeps it out
         // of the current publication queue (INV-17). It is never published as a text card in its place.
         case .unavailable: await settle(revision, nil, textDeclared: false)
-        case .deferred: return
+        case .deferred:
+            // Conditions forbade the work (offline, thermally forbidden, no wait at all): nothing was attempted, so
+            // nothing is spent — but the window that authorised the attempt is over, and the reserve has to know that
+            // the slot is answerable. An attempt the owner abandoned (retirement, a cancelled window) is not an
+            // answer about the media and is never reported.
+            if !attempt.unfinished { await onAttemptSettled?(revision, .conditionsUnavailable) }
         case .failed, .insufficientSpace:
             // Network or storage trouble is not a statement about the occurrence: offer it again after a
             // growing delay instead of settling it as designed text-only.
             let failures = (transientFailures[revision] ?? 0) + 1
             transientFailures[revision] = failures
             transientRetryAt[revision] = monotonicSeconds() + transientRetryBaseSeconds * pow(2, Double(min(failures - 1, 16)))
+            // PM-028A §2 rule 1: the reserve spends the attempt it authorised. Without this, a failure the
+            // prefetcher retried on its own would never reach the attempt budget at all.
+            await onAttemptSettled?(revision, .transientFailure)
         }
     }
 
@@ -516,7 +564,7 @@ public actor MediaPrefetcher {
     /// One attempt per revision at a time, shared by supply and saved preparation. A caller that arrives while
     /// work is running waits for that work rather than starting a competing download.
     private func acquireSingleFlight(_ revision: OriginRevisionID) async -> MediaPreparationAttempt {
-        guard !retired else { return MediaPreparationAttempt(.deferred) }
+        guard !retired else { return MediaPreparationAttempt(.deferred, unfinished: true) }
         // Only the owner of the work removes it. A joiner that removed it after resuming could erase a *newer*
         // task registered in the same revision, and the next caller would start a second download.
         if let work = running[revision] { return await work.value }
@@ -565,7 +613,7 @@ public actor MediaPrefetcher {
         var definitiveReason: MediaFetchFailureReason?
         var transientReason: MediaFetchFailureReason?
         for candidate in [first] + fallbacks {
-            if Task.isCancelled { return MediaPreparationAttempt(.deferred) }
+            if Task.isCancelled { return MediaPreparationAttempt(.deferred, unfinished: true) }
             let started = ProcessInfo.processInfo.systemUptime
             let remaining = allowanceEnds.map { $0 - monotonicSeconds() }
             let bytes: Data
@@ -603,6 +651,9 @@ public actor MediaPrefetcher {
             }
             return MediaPreparationAttempt(.ready(.init(result: result, fit: fit, byteCount: bytes.count)))
         }
+        // A cancelled attempt answered nothing about the media: retirement or the end of the window cut it, and the
+        // error it saw on the way out is the cancellation, not the image's verdict.
+        if Task.isCancelled { return MediaPreparationAttempt(.deferred, unfinished: true) }
         // A volume that could not hold the chosen image is the most specific fact, and the one the reader can
         // act on; then a failed attempt; only then "this occurrence's declared media is unusable".
         if sawSpace { return MediaPreparationAttempt(.insufficientSpace, reason: .insufficientSpace) }
