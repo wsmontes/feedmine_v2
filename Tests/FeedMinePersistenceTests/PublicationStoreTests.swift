@@ -96,6 +96,29 @@ final class PublicationStoreTests: XCTestCase {
             "uma publicação anterior ao esquema permanece sem fatos")
     }
 
+    func testDiversityPositionsReturnCompleteActiveEditionWithNilHoles() throws {
+        let database = try StorageFixture.database(self)
+        let store = PublicationStore(database: database)
+        let edition = StorageFixture.edition(), source = SourceID()
+        var cards: [PublicationStore.CardRecord] = []
+        for index in 0..<20 {
+            let fact: EditorialDiversityFact? = index % 3 == 0
+                ? EditorialDiversityFact(sourceIDs: [source], providerID: nil,
+                    subjects: ["s\(index)"], mediaKind: .audio)
+                : nil
+            cards.append(StorageFixture.card(diversity: fact))
+        }
+        try store.createEdition(edition, firstSegment: StorageFixture.segment(edition, cards), cards: cards)
+
+        let positions = try store.diversityPositions(editionID: edition.id)
+        XCTAssertEqual(positions.count, 20, "no LIMIT and nil facts are holes, not omissions")
+        XCTAssertEqual(positions, cards.reversed().map(\.diversity), "newest segment/card first")
+        XCTAssertEqual(positions.compactMap { $0 }.count, 7)
+        XCTAssertEqual(try store.recentDiversity(editionID: edition.id, limit: 16),
+            Array(cards.reversed().compactMap(\.diversity).prefix(16)),
+            "the old bounded non-nil recent16 read is unchanged")
+    }
+
     func testValidationRejectsInvalidOrdinalsSchemaEmptyAndCardOrder() throws {
         let database = try StorageFixture.database(self)
         let store = PublicationStore(database: database)

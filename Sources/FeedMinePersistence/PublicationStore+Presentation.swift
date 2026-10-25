@@ -163,6 +163,24 @@ extension PublicationStore {
         }
     }
 
+    /// v6: complete ACTIVE-Edition positions, newest first, including rows whose frozen fact is nil. One read, no
+    /// LIMIT, no NULL filter and no canonical join. Retired segments are not part of the active queue.
+    public func diversityPositions(editionID: FeedEditionID) throws -> [EditorialDiversityFact?] {
+        try database.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT c.diversity_facts FROM published_cards c
+                JOIN feed_segments s ON s.id = c.segment_id
+                WHERE s.edition_id = ?
+                ORDER BY s.ordinal DESC, c.ordinal DESC
+                """, arguments: [PersistenceValueCoding.uuid(editionID.rawValue)])
+            return try rows.map { row in
+                let raw: String? = row["diversity_facts"]
+                guard let raw, !raw.isEmpty else { return nil }
+                return try PublicationStore.decodeDiversity(raw)
+            }
+        }
+    }
+
     /// P07: the published rows for a bounded set of ids in **one** read. Unified search resolves its saved
     /// occurrences here instead of one query per bookmark as the list grows. Active rows win over retired ones.
     public func cards(ids: [PublicationCardID]) throws -> [PublicationCardID: CardRecord] {

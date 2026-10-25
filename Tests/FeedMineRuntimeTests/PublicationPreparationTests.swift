@@ -12,20 +12,22 @@ final class PublicationPreparationTests: XCTestCase {
     private func uuid(_ number: Int) -> UUID {
         UUID(uuidString: String(format: "00000000-0000-0000-0000-%012x", number))!
     }
-    private func candidate(_ number: Int) -> Candidate {
+    private func candidate(_ number: Int, mediaKind: EditorialMediaKind? = nil) -> Candidate {
         Candidate(originRecordID: OriginRecordID(rawValue: uuid(number)),
             originRevisionID: OriginRevisionID(rawValue: uuid(100 + number)),
             headline: number == 1 ? nil : number == 2 ? "" : " e\u{301}\n ",
             summary: number == 1 ? "" : number == 2 ? nil : " Exact Summary ",
             timestamp: CandidateTimestamp(value: Date(timeIntervalSince1970: Double(100 - number) + 0.25),
                 kind: number % 2 == 0 ? .observed : .authored), language: nil,
-            providerID: number == 1 ? nil : ProviderID(rawValue: uuid(200 + number)))
+            providerID: number == 1 ? nil : ProviderID(rawValue: uuid(200 + number)),
+            mediaKind: mediaKind)
     }
-    private func selection(_ candidates: [Candidate]) -> SelectionResult {
+    private func selection(_ candidates: [Candidate], version: UInt64 = 1) -> SelectionResult {
         SelectionResult(editorialRevision: EditorialRevision(id: EditorialRevisionID(rawValue: uuid(800)),
             contextKey: ContextKey(request: .main), catalogGeneration: CatalogGeneration(rawValue: 1),
             userSelectionVersion: PolicyVersion(rawValue: 1), eligibilityPolicyVersion: PolicyVersion(rawValue: 1),
-            scoringPolicyVersion: PolicyVersion(rawValue: 1), sequencingPolicyVersion: PolicyVersion(rawValue: 1),
+            scoringPolicyVersion: PolicyVersion(rawValue: 1),
+            sequencingPolicyVersion: PolicyVersion(rawValue: version),
             exposurePolicyVersion: PolicyVersion(rawValue: 1), selectionSchemaVersion: SelectionSchemaVersion(rawValue: 1)),
             orderedCandidates: candidates,
             supplyReport: SelectionSupplyReport(examinedCount: 41, nextCursor: nil, exhausted: false))
@@ -38,11 +40,11 @@ final class PublicationPreparationTests: XCTestCase {
             sourceDisplayName: " Frozen Source ", providerDisplayName: "")
     }
     private func input(_ candidate: Candidate, presentation: PublicationPresentation = .textOnly,
-        mismatch: String? = nil) -> PublicationPreparationInput {
+        mismatch: String? = nil, mediaIdentity: PublishedMediaIdentity? = nil) -> PublicationPreparationInput {
         PublicationPreparationInput(origin: origin(candidate, mismatch: mismatch),
             contentEntityID: ContentEntityID(rawValue: uuid(400)),
             contentClusterID: ContentClusterID(rawValue: uuid(500)), primaryAction: .localContentDetail,
-            presentation: presentation)
+            mediaIdentity: mediaIdentity, presentation: presentation)
     }
     private func root() -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -64,6 +66,29 @@ final class PublicationPreparationTests: XCTestCase {
         XCTAssertThrowsError(try body(), file: file, line: line) {
             XCTAssertEqual($0 as? PublicationPreparationError, expected, file: file, line: line)
         }
+    }
+
+    /// v6 freezes the actual published input identity, not the candidate hint. v5 keeps nil and its old JSON.
+    func testMediaKindFreezesActualPublishedInputOnlyForV6() throws {
+        let candidate = candidate(7, mediaKind: .video)
+        let cases: [(PublishedMediaIdentity, EditorialMediaKind)] = [
+            (.audio, .audio), (.video, .video), (.none, EditorialMediaKind.none),
+        ]
+        for (identity, expected) in cases {
+            let draft = try XCTUnwrap(PublicationPreparation.drafts(
+                selection: selection([candidate], version: 6),
+                inputs: [input(candidate, mediaIdentity: identity)]).first)
+            XCTAssertEqual(draft.diversity?.mediaKind, expected,
+                "the published input identity is authoritative, even when the candidate hint differs")
+        }
+        let legacy = try XCTUnwrap(PublicationPreparation.drafts(
+            selection: selection([candidate], version: 5),
+            inputs: [input(candidate, mediaIdentity: .audio)]).first)
+        XCTAssertNil(legacy.diversity?.mediaKind, "v5 facts stay nil")
+        let decoded = try JSONDecoder().decode(EditorialDiversityFact.self,
+            from: try JSONEncoder().encode(XCTUnwrap(legacy.diversity)))
+        XCTAssertNil(decoded.mediaKind)
+        XCTAssertEqual(decoded, legacy.diversity)
     }
 
     func testTextOnlyUsesExactOrderedSelectionWithoutAnyMediaWork() throws {

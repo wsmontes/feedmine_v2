@@ -209,6 +209,11 @@ public struct PublicationHistory: Sendable {
         try publicationStore.recentDiversity(editionID: editionID, limit: limit)
     }
 
+    /// v6: complete active-Edition positions, newest first, with nil holes preserved.
+    public func diversityPositions(editionID: FeedEditionID) throws -> [EditorialDiversityFact?] {
+        try publicationStore.diversityPositions(editionID: editionID)
+    }
+
     /// Persists a logical cursor for an explicit session checkpoint milestone.
     public func saveCursor(_ cursor: SessionCursor, updatedAt: Date) throws {
         try sessionStore.saveCheckpoint(PublicationPersistenceMapping.checkpoint(cursor, updatedAt: updatedAt))

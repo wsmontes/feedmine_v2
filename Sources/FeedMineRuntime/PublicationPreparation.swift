@@ -92,6 +92,20 @@ public enum PublicationPreparation {
         case .authored: timestampKind = .authored
         case .observed: timestampKind = .observed
         }
+        // v6 freezes the actual published payload identity. The candidate hint may differ; the input is what
+        // the occurrence publishes. v5 and older keep the fact unchanged (nil). Explicit .none is a known
+        // absence, not Optional.none.
+        let frozenMediaKind: EditorialMediaKind?
+        if selection.editorialRevision.sequencingPolicyVersion.rawValue == 6 {
+            switch input.mediaIdentity {
+            case .some(.audio): frozenMediaKind = .audio
+            case .some(.video): frozenMediaKind = .video
+            case .some(.none): frozenMediaKind = EditorialMediaKind.none
+            case .none: frozenMediaKind = nil
+            }
+        } else {
+            frozenMediaKind = nil
+        }
         guard let draft = PublicationCardDraft(origin: input.origin, contentEntityID: input.contentEntityID,
             contentClusterID: input.contentClusterID,
             text: PublishedText(title: candidate.headline, primaryText: candidate.summary),
@@ -100,7 +114,7 @@ public enum PublicationPreparation {
             mediaIdentity: input.mediaIdentity,
             // P10: frozen at publication from the candidate's own facts — never from the latest canonical revision.
             diversity: EditorialDiversityFact(sourceIDs: Array(candidate.sourceIDs), providerID: candidate.providerID,
-                subjects: candidate.topics.identities.map(\.key))) else {
+                subjects: candidate.topics.identities.map(\.key), mediaKind: frozenMediaKind)) else {
             throw PublicationPreparationError.invalidDraft(index: index)
         }
         return draft

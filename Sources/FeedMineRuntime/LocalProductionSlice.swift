@@ -144,8 +144,24 @@ public struct LocalProductionSlice: Sendable {
         }
         // P10/R17: diversity reads the facts the **publication** froze, newest first, in the same Edition. A legacy
         // row has no fact and contributes nothing; the engine enables the tie-break only for the supported version.
-        let recentDiversity = try publicationHistory.recentDiversity(editionID: request.editionID, limit: 16)
-        let diversity = SelectionDiversityContext(recent: recentDiversity)
+        // v6 uses the complete active-Edition positions (nil holes) in one read; v5 keeps the exact bounded recent16
+        // path. A v6 opportunity with no offer or no ready revision does not read history at all.
+        let maximumDistance = request.plan.revision.sequencingPolicyVersion.rawValue == 6
+            && request.policy.sequencing == .maximumDistance
+        let diversity: SelectionDiversityContext?
+        if maximumDistance {
+            let hasOffer = !window.candidates.isEmpty
+            let hasReady = readinessFacts?.readyRevisionIDs.isEmpty != true
+            if hasOffer, hasReady {
+                let positions = try publicationHistory.diversityPositions(editionID: request.editionID)
+                diversity = SelectionDiversityContext(publishedPositions: positions)
+            } else {
+                diversity = nil
+            }
+        } else {
+            let recentDiversity = try publicationHistory.recentDiversity(editionID: request.editionID, limit: 16)
+            diversity = SelectionDiversityContext(recent: recentDiversity)
+        }
         // PD-4: the Edition tail precedes this segment, so alternation holds across segments.
         let selection = try selectionEngine.select(plan: request.plan, policy: request.policy,
             window: window, exposure: exposure,
