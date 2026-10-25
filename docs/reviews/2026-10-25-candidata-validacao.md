@@ -85,7 +85,15 @@ Duas tentativas de correção foram feitas e **revertidas** por não mudarem o r
 abrir o site (checkpoint + `suspendForBackground`, retomada no fechamento); (b) manter o leitor vivo ao fechar o site
 (não chamar `onFinish`). Ambas compilaram e falharam o mesmo teste do mesmo jeito. O que falta medir é por que, no
 braço que falha, o app fica ~75 s sem responder a consultas de árvore (snapshot sem nenhum elemento), enquanto o
-braço verde fecha em 39 s — isso pede inspeção da árvore de acessibilidade durante a transição, não outro palpite.
+braço verde fecha em 39 s.
+
+**Hipótese com assinatura (não confirmada):** no braço que falha, as três mensagens de "Failed to get matching
+snapshot" aparecem entre t=32 s e t=106 s, e ~75 s é exatamente três tempos-limite de consulta de ~25 s — ou seja, a
+árvore do app pode estar *pendurada* enquanto o `SFSafariViewController` modal está na frente (serviço remoto), não
+o app parado. Se for isso, o defeito é **de instrumento**: o commit 67d78212 trocou a apresentação embutida pela
+modal (exigência da Apple) e a jornada, como está escrita, consulta a árvore do app com o Safari modal na frente.
+O discriminador barato para a próxima sessão é medir uma consulta de árvore com o Safari aberto e comparar com o
+mesmo instante no build 54: se a consulta estoura nos dois, é instrumento; se só no novo, é o produto.
 
 **Cobertura de controles:** 127 dos 199 `accessibilityIdentifier` da UI são referenciados por testes; os 72 restantes
 incluem templates interpolados (idiomas, regiões, tipos de mídia) e controles de folhas secundárias (seletor de
