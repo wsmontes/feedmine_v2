@@ -3031,6 +3031,17 @@ final class FeedAssociation {
         // autorização não pode ter). O que a execução nomeia é a origem; portas fora do padrão contam, e um valor
         // só com host — sem esquema ou sem porta — **não autoriza nada**, porque autorizar "o host em qualquer
         // porta e em qualquer esquema" é autorizar mais do que a execução declarou.
+        // **Instrumento, não catálogo.** O runner do benchmark injeta uma exceção ATS no Info.plist do build
+        // instrumentado (`NSAllowsLocalNetworking`, ver bench/run.sh); o build de produto não carrega nenhuma. Em
+        // DEBUG essa marca — que vem do build, não de uma linha de catálogo — autoriza a origem loopback fixa do
+        // próprio transporte do benchmark. Sem isso o app recusa cada endpoint do corpus como não-publicamente-
+        // roteável e o gate mede um app sem rede (medido em 2026-10-24: 767 alvos registrados, 0 fontes buscadas).
+        let benchmarkTransportOrigin: [URL] = {
+            guard let ats = Bundle.main.object(forInfoDictionaryKey: "NSAppTransportSecurity") as? [String: Any],
+                ats["NSAllowsLocalNetworking"] as? Bool == true,
+                let origin = URL(string: "http://127.0.0.1:8757") else { return [] }
+            return [origin]
+        }()
         let declared: [URL] = {
             guard let named = ProcessInfo.processInfo.environment["FEEDMINE_BENCH_TRANSPORT_ORIGIN"]?
                 .trimmingCharacters(in: .whitespaces), !named.isEmpty else { return [] }
@@ -3047,7 +3058,7 @@ final class FeedAssociation {
         // query, fragmento ou credenciais NÃO é limpo até virar origem — é recusado inteiro. Sanear esconderia
         // que a execução declarou algo que não é uma origem, e autorizar o resto seria autorizar mais do que ela
         // disse. Sem esquema http(s), sem host ou sem porta também não autoriza: a porta faz parte da origem.
-        let authorizedNonPublicOrigins = declared.compactMap { endpoint -> URL? in
+        let authorizedNonPublicOrigins = (declared + benchmarkTransportOrigin).compactMap { endpoint -> URL? in
             guard let parts = URLComponents(url: endpoint, resolvingAgainstBaseURL: false),
                 let scheme = parts.scheme?.lowercased(), ["http", "https"].contains(scheme),
                 let host = parts.host, !host.isEmpty, parts.port != nil,
