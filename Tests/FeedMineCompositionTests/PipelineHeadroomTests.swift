@@ -9,8 +9,9 @@ import FeedMineEditorial
 import FeedMineRuntime
 
 /// R09: the stage budgets are an explicit function of **measured** pressure. The bootstrap keeps the documented
-/// 48 plan / 8 sockets / 32 examined / 1 MB; pressure may only reduce work, never below one eligible target, and
-/// never turns local reading off. Fairness is asserted as progress of an eligible target, not as created tasks.
+/// 48 plan / 8 sockets / 128 examined / 1 MB (PM-028A/PM-029 scaled the examined ladder to the prepared reserve's
+/// depth); pressure may only reduce work, never below one eligible target, and never turns local reading off.
+/// Fairness is asserted as progress of an eligible target, not as created tasks.
 final class PipelineHeadroomTests: XCTestCase {
     private func demand() -> AcquisitionDemand {
         AcquisitionDemand(contextKey: ContextKey(request: .main), editorialRevisionID: EditorialRevisionID(),
@@ -72,13 +73,14 @@ final class PipelineHeadroomTests: XCTestCase {
         let starved = StageBudgetPolicy.budget(pressure: facts(useful: 0.4), settings: settings)
         let everyday = StageBudgetPolicy.budget(pressure: facts(useful: 1.5), settings: settings)
         let burst = StageBudgetPolicy.budget(pressure: facts(useful: 3.5), settings: settings)
-        XCTAssertEqual(starved.examinedCandidateCapacity, 8)
-        XCTAssertEqual(everyday.examinedCandidateCapacity, 16)
-        XCTAssertEqual(burst.examinedCandidateCapacity, 32)
+        // PM-029: the same ladder at the reserve's depth — 32/64/128 instead of 8/16/32.
+        XCTAssertEqual(starved.examinedCandidateCapacity, 32)
+        XCTAssertEqual(everyday.examinedCandidateCapacity, 64)
+        XCTAssertEqual(burst.examinedCandidateCapacity, 128)
         XCTAssertEqual(starved.acquisition.targetWorkCapacity, burst.acquisition.targetWorkCapacity,
             "a mesma configuração autoriza o mesmo plano; só o trabalho medido se ajusta")
         let unknown = StageBudgetPolicy.budget(pressure: facts(), settings: settings)
-        XCTAssertEqual(unknown.examinedCandidateCapacity, 32, "ausência de medida não é rendimento zero")
+        XCTAssertEqual(unknown.examinedCandidateCapacity, 128, "ausência de medida não é rendimento zero")
     }
 
     /// P05: computing a budget is a snapshot read. The volume is sampled off the MainActor at a lifecycle moment,
@@ -116,13 +118,36 @@ final class PipelineHeadroomTests: XCTestCase {
         XCTAssertLessThan(critical.acquisition.targetWorkCapacity, serious.acquisition.targetWorkCapacity)
         XCTAssertGreaterThanOrEqual(critical.acquisition.targetWorkCapacity, 1,
             "a pressão não zera a autorização: um elegível ainda progride")
-        XCTAssertGreaterThanOrEqual(critical.examinedCandidateCapacity, 8)
+        XCTAssertGreaterThanOrEqual(critical.examinedCandidateCapacity, 32)
         XCTAssertTrue(critical.localWorkAllowed, "pressão não desliga a leitura local")
         XCTAssertGreaterThanOrEqual(try plannedTargets(critical), 1)
         XCTAssertLessThanOrEqual(nominal.acquisition.targetWorkCapacity,
             CollectionLaunchSettings.defaultInitialParallelism)
         XCTAssertLessThanOrEqual(critical.acquisition.byteCapacityPerBatch,
             nominal.acquisition.byteCapacityPerBatch)
+    }
+
+    /// PM-028A/PM-029: the examined window is scaled to the prepared reserve's depth **and** still follows the
+    /// thermal ladder. The PM authorized 128 per slice without lifting the existing resource limits, so every
+    /// pressured rung sits strictly below the nominal ceiling.
+    func testThermalPressureReducesTheExaminedWindowBelowTheReserveDepth() {
+        let nominal = StageBudgetPolicy.budget(pressure: facts(thermal: .nominal), settings: .init())
+        let fair = StageBudgetPolicy.budget(pressure: facts(thermal: .fair), settings: .init())
+        let serious = StageBudgetPolicy.budget(pressure: facts(thermal: .serious), settings: .init())
+        let critical = StageBudgetPolicy.budget(pressure: facts(thermal: .critical), settings: .init())
+        XCTAssertEqual(StageBudgetPolicy.preparedReserveDepth, 128)
+        XCTAssertEqual(nominal.examinedCandidateCapacity, 128)
+        XCTAssertEqual(fair.examinedCandidateCapacity, 64)
+        XCTAssertEqual(serious.examinedCandidateCapacity, 48)
+        XCTAssertEqual(critical.examinedCandidateCapacity, 32)
+        XCTAssertLessThan(fair.examinedCandidateCapacity, nominal.examinedCandidateCapacity,
+            "the thermal ladder still reduces examination under pressure")
+        XCTAssertLessThan(critical.examinedCandidateCapacity, serious.examinedCandidateCapacity)
+        // Low power is its own reduction, never an exemption from it.
+        let lowPower = StageBudgetPolicy.budget(pressure: facts(lowPower: true), settings: .init())
+        XCTAssertEqual(lowPower.examinedCandidateCapacity, 48,
+            "low power caps examination at the serious rung, below the nominal 128")
+        XCTAssertLessThan(lowPower.examinedCandidateCapacity, nominal.examinedCandidateCapacity)
     }
 
     /// No new facts means no invented work: the empty offer keeps its disposition across opportunities; the same
