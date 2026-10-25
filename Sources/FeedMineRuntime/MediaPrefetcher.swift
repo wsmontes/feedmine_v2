@@ -20,6 +20,10 @@ public final class MediaReadiness: @unchecked Sendable {
     public struct Ready: Hashable, Sendable {
         public let result: MediaPreparationResult
         public let fit: MediaSlotFit
+        /// The exact bytes this presentation's asset retains on disk (PM-028A §4.2: the prepared reserve's budget is
+        /// retained **persisted** asset, never decoded memory). It is the size of the input the materializer
+        /// published — a fact of the same write, so reading it costs no second file read and copies no bytes.
+        public let byteCount: Int
     }
     private let lock = NSLock()
     private var ready: [OriginRevisionID: Ready] = [:]
@@ -597,7 +601,7 @@ public actor MediaPrefetcher {
                 }
                 continue
             }
-            return MediaPreparationAttempt(.ready(.init(result: result, fit: fit)))
+            return MediaPreparationAttempt(.ready(.init(result: result, fit: fit, byteCount: bytes.count)))
         }
         // A volume that could not hold the chosen image is the most specific fact, and the one the reader can
         // act on; then a failed attempt; only then "this occurrence's declared media is unusable".
