@@ -3066,10 +3066,19 @@ final class FeedAssociation {
         // próprio transporte do benchmark. Sem isso o app recusa cada endpoint do corpus como não-publicamente-
         // roteável e o gate mede um app sem rede (medido em 2026-10-24: 767 alvos registrados, 0 fontes buscadas).
         let benchmarkTransportOrigin: [URL] = {
-            guard let ats = Bundle.main.object(forInfoDictionaryKey: "NSAppTransportSecurity") as? [String: Any],
-                ats["NSAllowsLocalNetworking"] as? Bool == true,
-                let origin = URL(string: "http://127.0.0.1:8757") else { return [] }
-            return [origin]
+            guard let ats = Bundle.main.object(forInfoDictionaryKey: "NSAppTransportSecurity") as? [String: Any]
+            else { return [] }
+            // The runner also names the transport's host in the ATS exception it injects, and on a physical device
+            // that host is this Mac's LAN address, not loopback. Reading the keys keeps one channel for both modes:
+            // whatever host the build declares it may reach, on the transport's own fixed port.
+            let domains = (ats["NSExceptionDomains"] as? [String: Any])?.keys.filter { !$0.isEmpty } ?? []
+            var origins = Set<URL>()
+            for host in domains where !host.contains("/") && !host.contains(":") {
+                if let origin = URL(string: "http://\(host):8757") { origins.insert(origin) }
+            }
+            if origins.isEmpty, ats["NSAllowsLocalNetworking"] as? Bool == true,
+                let loopback = URL(string: "http://127.0.0.1:8757") { origins.insert(loopback) }
+            return Array(origins)
         }()
         let declared: [URL] = {
             guard let named = ProcessInfo.processInfo.environment["FEEDMINE_BENCH_TRANSPORT_ORIGIN"]?

@@ -19,10 +19,12 @@ Branch `product/reserve-20261024`, topo `ca532f25`
 As sete paradas não vêm da profundidade da reserva. Três corridas, mesmo tree, só o limite de publicação diferente:
 16 → 6 paradas, 32 → 7, 48 → 8 (3.405 / 3.393 / 3.424 avanços). Duas hipóteses refutadas com número, não com opinião.
 
-O que o traço mostra: **seis das sete paradas caem nos primeiros 15 s** (a rajada inicial do replay, 3 avanços/s) e
-uma em 30:22. Nas janelas há centenas de `editorial_refusal` com `tooSoon(cardsRemaining: 4)` — o app está examinando
-e recusando a oferta do F02 enquanto o leitor avança, e a admissão só chega junto com a publicação seguinte, 1–2 s
-depois. Fica registrado com o traço; a correção exige instrumentar a cadência de publicação na rajada inicial.
+O que o traço mostra: **seis das sete paradas são um único evento de ~3 s** (avanços em epochs
+1792910048,6–1792910051,8, contados uma vez por avanço que caiu dentro do hiccup) e **uma parada isolada em 30:22**
+(epoch 1792911859,2). Nas janelas há centenas de `editorial_refusal` com `tooSoon(cardsRemaining: 4)` — o app está
+examinando e recusando a oferta do F02 enquanto o leitor avança, e a admissão só chega junto com a publicação
+seguinte, 1–2 s depois. As duas ocorrências caem dentro de rajadas sintéticas de 3 cartas/s; nenhuma é no meio do
+regime permanente. Fica registrado com o traço; a correção exige instrumentar a cadência de publicação na rajada.
 
 ## Medição no catálogo real (180 s, contêiner novo, English, rede pública)
 
@@ -48,10 +50,19 @@ depois. Fica registrado com o traço; a correção exige instrumentar a cadênci
 
 ## Aberto (produto)
 
-1. **B03 — 7 paradas de 1 s**, concentradas na rajada inicial; mecanismo traçado, correção não feita.
+1. **B03 — 7 paradas de 1 s** contadas pelo oráculo, que são **dois eventos**: um hiccup de ~3 s dentro da rajada
+   sintética e uma parada isolada no fim da janela; mecanismo traçado, correção não feita.
 2. **Volume de publicação**: 1.159 cartas em 180 s contra 68–80 históricos. `HiddenTailMaintenance` seleciona sem
-   limite (`examinedCapacity: 256`) e 551 das 578 requisições locais ocorreram com cobertura `healthy`.
+   limite (`examinedCapacity: 256`) e a taxa de oportunidades é alta (≈3,1 fatias/s no traço real). O campo
+   `coverage` registrado nessas requisições diz `healthy` em 520 de 532 casos com `ready: at_least(32)` — valor que,
+   pela própria política, deveria resultar em `hold`; portanto **a instrumentação registra uma cobertura que não é a
+   que produziu a ação**. Isso é um achado de instrumentação a investigar, não prova de que o runway esteja sadio
+   pedindo fatia: a causa verificada do volume é a cauda oculta sem limite mais a taxa de oportunidades.
 3. **Primeira tela** toda de áudio (4 fontes); primeira imagem pronta a 13,0 s, primeira publicação a 5,7 s.
 4. **Vídeo**: 14 claims `playback/video`, nenhuma carta publicada na janela.
 5. **Armazenamento**: 335 MB de mídia em 3 min; teto de retenção é decisão de produto.
 6. **Build 57**: não preparado — B03 vermelho, B06 bloqueado por aparelho travado, autorização não dada.
+7. **P1 residual (não fechado)**: o lote de desbloqueio é limitado a `targetDepth + 16`; se as 16 revisões extras
+   também forem incompatíveis com a cauda por PD-4, a preparação para ali e só a aquisição pode trazer outra fonte.
+   É o limite decidido (o PM proibiu preparação ilimitada), mas não é prova de liveness — fica registrado como
+   pendência, não como "P1 resolvido".
