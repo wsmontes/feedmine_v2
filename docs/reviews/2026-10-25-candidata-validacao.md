@@ -31,8 +31,14 @@ regime permanente.
 a 39–60 fps nas mesmas janelas, com o pior quadro entre 96 e 194 ms, nunca ~1 s. Não é fatia lenta: as 175 fatias do
 traço têm mediana **215 ms**, p99 **291 ms** e máxima **340 ms**. Ou seja, a pausa é **cadência de admissão sob a
 rajada de 3 avanços/s**: o leitor avança mais rápido do que uma nova admissão chega quando nenhuma publicação está em
-voo. O limite de publicação por oportunidade não muda isso (16/32/48 → 6/7/8 paradas), o que é coerente: o problema
-é o intervalo entre publicações, não o tamanho de cada uma.
+voo. O limite de publicação por oportunidade não muda isso (16/32/48 → 6/7/8 paradas), e elevar o piso da reserva
+publicada de 32 para 64 (a rajada documentada consome 60 cartas em 20 s) também não: **6 paradas**, contra 7 no piso
+32. Quatro valores refutados com número, o que é coerente com a leitura de que o problema é o intervalo entre
+publicações num instante específico, não o alvo nem o tamanho do lote.
+
+Em todas as corridas as paradas são **um único aglomerado de ~3 s no começo do traço** (nesta última, todas as 6
+entre 1792929550,8 e 1792929553,8), contadas uma vez por avanço que caiu dentro dele; em duas corridas houve também
+uma parada isolada no fim da janela. Nenhuma no meio do regime permanente.
 
 ## Medição no catálogo real (180 s, contêiner novo, English, rede pública)
 
