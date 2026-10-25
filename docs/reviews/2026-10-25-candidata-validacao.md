@@ -52,6 +52,32 @@ Tentativa medida e revertida: acordar o runway explicitamente após a publicaç�
 `reconsider` devolve `.none` sem `latestObservation`, e a primeira observação só existe quando a janela é
 apresentada e medida. O vão não é falta de aviso: é a **cadência de observação após a primeira apresentação**.
 
+### B03 — diagnóstico do ingresso após a primeira apresentação
+
+No traço `bench/run/20261025T123146Z`, usando `host_started.mono` como origem:
+primeiros `candidate` em **10,055 s**, primeira instalação `admitted` em **10,243 s**,
+primeiro `window` com 12 cartas em **10,368 s**, primeira `replenishment_requested`
+em **15,941 s** (ready 10). Há eventos `advance` desde **11,682 s**; portanto a
+presença de callback do viewport não prova que o controlador já recebeu uma observação válida.
+
+O encadeamento no código explica o intervalo: `ColdFeedBootstrap.run` entrega
+`.published(snapshot)` dentro de `executeConcurrently`, mas só retorna depois do
+conjunto de fontes. `FeedAssociation.receive(.published)` instala a apresentação;
+`launch()` só chama `driver.activateCurrentPresentation` depois de `cold.run`
+retornar. É essa ativação que ativa o scope e submete a observação estacionária.
+O primeiro layout pronto não submete viewport estacionário (`FeedPositionRequest.apply`,
+`.ready`); reconciliações visuais também retornam antes de alimentar o runway.
+A oportunidade periódica espera 10 s e `foreground()` retorna durante `launching`.
+Já `finishViewport` não ativa o scope: um gesto anterior à ativação não substitui o handoff.
+
+A intervenção mínima é entregar a ativação existente junto da primeira apresentação
+instalada, sem aguardar as fontes lentas, e preservar a projeção corrente quando o
+bootstrap finalmente retornar (seu snapshot inicial pode ter ficado antigo).
+Não há motivo medido para alterar reserva, lote, piso, PD-4 ou prontidão de imagem.
+O teste de integração do app deve manter uma fonte suspensa e exigir observação e
+avaliação do runway dentro de 1 s da instalação, sem gesto nem tick periódico.
+Essa hipótese ainda requer nova medição B03 no simulador do dono.
+
 ## Medição no catálogo real (180 s, contêiner novo, English, rede pública)
 
 | Métrica | Base congelada | Reserva sem limite | Candidata |
