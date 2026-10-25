@@ -48,6 +48,32 @@ regime permanente. Fica registrado com o traço; a correção exige instrumentar
   autorização do benchmark cobre feeds, não mídia. Os gates validam admissão, ordem e estabilidade; imagem é
   validada pela medição no catálogo real.
 
+## Auditoria de superfícies e vídeo em uso real (25/out)
+
+**Vídeo, feed real (`feeds.twit.tv/twit_video_hd.xml`, rede pública):** as quatro cláusulas de produto passam na
+candidata — 2 cartas publicadas, ambas com selo **Vídeo**; nenhum `card.play` e nenhum "Tocar" dentro do frame
+(D2); tocar abre o navegador in-app no link do próprio item, com destino casado por host (`twit.tv`) e manchete do
+leitor igual à do item. O caminho de identidade de vídeo funciona ponta a ponta; o que a janela de 180 s no catálogo
+público não mostrou foi uma **carta** de vídeo, porque a fila não chegou a essas fontes.
+
+**Regressão encontrada (P1, com controle verde):** depois de fechar o navegador, a carta que o leitor deixou **não
+está mais no feed** na candidata — `return restored=false`, leitura de frame `(0,0,440,956)` e 75 s de buscas por
+identidade sem nenhum resultado. No controle pré-mudança (`3eee1935`) a mesma jornada passa em 39 s com
+`restored=true`. A diferença entre os dois braços é a cadência de publicação (a candidata publica ~1.159 cartas em
+180 s contra 68–80 históricos): enquanto o leitor está no navegador, o app continua publicando e a janela admitida
+muda; ao voltar, a âncora não é mais a mesma. É a promessa do B04 ("o feed apresentado é sagrado") num cenário que o
+B04 não cobre — com um navegador no meio.
+
+**Cobertura de controles:** 127 dos 199 `accessibilityIdentifier` da UI são referenciados por testes; os 72 restantes
+incluem templates interpolados (idiomas, regiões, tipos de mídia) e controles de folhas secundárias (seletor de
+coleção, colar endereço, rejeição de feed, disponibilidade de catálogo). Não foi feita varredura manual de cada um:
+o que está provado é o caminho do leitor (feed, leitor, menu, adicionar feed, navegador) e o de vídeo.
+
+0. **Âncora perdida ao voltar do navegador** (P1, medido com controle verde): jornada de vídeo no feed real —
+   candidata `restored=false`, 75 s sem encontrar a identidade da carta; controle `3eee1935` `restored=true` em 39 s.
+   Correlação forte com a cadência de publicação; a correção é a mesma frente do item 2 (limitar a taxa de
+   oportunidades / a cauda oculta), e depois repetir esta jornada.
+
 ## Aberto (produto)
 
 1. **B03 — 7 paradas de 1 s** contadas pelo oráculo, que são **dois eventos**: um hiccup de ~3 s dentro da rajada
