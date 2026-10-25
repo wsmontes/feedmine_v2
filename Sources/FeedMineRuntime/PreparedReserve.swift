@@ -13,9 +13,10 @@ import FeedMineDomain
 /// which revisions deserve remote work now.
 ///
 /// The split the PM asked for (PM-028A §4.2) is explicit in the stored facts: this actor holds **persisted** bytes
-/// only (`persistedBytes`, the size of the materialised asset the revision already has on disk). It holds no
-/// decoded-image memory and no in-flight download: those two belong to `MediaReadiness` and `MediaPrefetcher`, and
-/// counting them here would be a second, diverging measurement of the same work.
+/// only (`persistedBytes`, the size of the materialised asset a revision in the reserve already has on disk, handed
+/// back when that revision publishes or exhausts). It holds no decoded-image memory and no in-flight download: those
+/// two belong to `MediaReadiness` and `MediaPrefetcher`, and counting them here would be a second, diverging
+/// measurement of the same work.
 ///
 /// Every phase transition is explicit and idempotent, because a media attempt can end before, at, or long after the
 /// deadline of the slice that started it:
@@ -74,13 +75,20 @@ public actor PreparedReserve {
         public let deferred: Int
         public let exhausted: Int
         public let published: Int
-        /// The assets this reserve's revisions retain on disk, as reported by their settlements.
+        /// The assets the revisions **still in the reserve** retain on disk, as reported by their settlements. A
+        /// revision that is published or exhausted releases its share: its persisted file stays where the existing
+        /// retention rules put it, but it no longer consumes the reserve's budget.
         public let persistedBytes: Int
         /// Settles `.prepared` that arrived for a revision that was not `.preparing`: completions past a window.
         public let lateCompletions: Int
+        /// Published cards whose revision came from the durable deferral page — the stories the one-way walk had
+        /// skipped for want of media and reconsideration recovered (PM-028A/PM-029).
+        public let reconsideredPublished: Int
+        /// Of those, the ones that published **with** an image.
+        public let reconsideredWithImage: Int
 
         public init(ready: Int, preparing: Int, pending: Int, deferred: Int, exhausted: Int, published: Int,
-            persistedBytes: Int, lateCompletions: Int) {
+            persistedBytes: Int, lateCompletions: Int, reconsideredPublished: Int, reconsideredWithImage: Int) {
             self.ready = ready
             self.preparing = preparing
             self.pending = pending
@@ -89,6 +97,8 @@ public actor PreparedReserve {
             self.published = published
             self.persistedBytes = persistedBytes
             self.lateCompletions = lateCompletions
+            self.reconsideredPublished = reconsideredPublished
+            self.reconsideredWithImage = reconsideredWithImage
         }
     }
 
@@ -107,8 +117,17 @@ public actor PreparedReserve {
     private var phases: [OriginRevisionID: Phase] = [:]
     /// Attempts already spent per revision (PM-028A §2 rule 1 reads this, never the caller's attempt index alone).
     private var spentAttempts: [OriginRevisionID: Int] = [:]
+    /// The persisted bytes **each** revision in the reserve holds, so a revision that leaves the reserve can hand
+    /// its share back. The asset itself is untouched by that release: the existing retention rules own the file.
+    private var retainedBytesByRevision: [OriginRevisionID: Int] = [:]
+    /// The retained total the budget reads: the sum of what the revisions currently in the reserve reported.
     private var retainedBytes = 0
     private var lateCompletions = 0
+    /// Revisions the durable deferral page offered (PM-028A/PM-029): a story the one-way walk skipped for want of
+    /// media, which this reserve therefore had to recover rather than meet in its structural window.
+    private var reconsidered: Set<OriginRevisionID> = []
+    private var reconsideredPublished = 0
+    private var reconsideredWithImage = 0
     /// Hysteresis latch: set when topping up begins, cleared when the target depth is reached. Kept in the actor
     /// because the band has no meaning between two independent calls.
     private var refilling = false
@@ -215,21 +234,29 @@ public actor PreparedReserve {
             case .prepared(let hasImage):
                 let wasPreparing: Bool = if case .preparing = current { true } else { false }
                 phases[revision] = .ready(hasImage: hasImage)
-                retainedBytes += max(0, persistedBytes)
+                // The budget reads what the revisions **still in the reserve** hold. Nothing unsettles a ready
+                // revision, so its share is written once; `markPublished`/exhaustion hands it back.
+                let bytes = max(0, persistedBytes)
+                retainedBytesByRevision[revision] = bytes
+                retainedBytes += bytes
                 if !wasPreparing { lateCompletions += 1 }
                 return true
             case .transientFailure:
                 // PM-028A §2 rule 1: the attempt is spent; the last one exhausts instead of retrying forever.
                 let spent = (spentAttempts[revision] ?? 0) + 1
                 spentAttempts[revision] = spent
-                phases[revision] = spent < maxAttempts
-                    ? .deferred(retryAt: clock() + retryDelay(afterSpent: spent))
-                    : .exhausted(.attemptsSpent)
+                if spent < maxAttempts {
+                    phases[revision] = .deferred(retryAt: clock() + retryDelay(afterSpent: spent))
+                } else {
+                    phases[revision] = .exhausted(.attemptsSpent)
+                    releaseRetainedBytes(revision)
+                }
                 return true
             case .definitiveFailure:
                 // Rule 2: declared media that cannot be prepared is final on the first answer, and spending attempts
                 // on it would delay the rest of the same offer.
                 phases[revision] = .exhausted(.mediaInvalid)
+                releaseRetainedBytes(revision)
                 return true
             case .conditionsUnavailable:
                 // Rule 3: nothing was attempted, so nothing is spent; the first backoff bounds the next ask.
@@ -242,15 +269,44 @@ public actor PreparedReserve {
     /// The revision left in an edition. A ready revision becomes `.published`; anything else that was still waiting
     /// to compete was published through another path and is `.exhausted(.superseded)` — one publication per
     /// revision, and a published revision never comes back to the reserve.
+    ///
+    /// Leaving the reserve releases that revision's share of the persisted-byte budget (PM-028A §4.2 governs
+    /// prepared-but-unpublished asset): the file stays exactly where the existing retention rules put it, and the
+    /// reserve stops counting it, so a long session cannot fill the budget with cards the reader already has.
     public func markPublished(_ revision: OriginRevisionID) {
         switch phases[revision] ?? .pending {
-        case .ready:
+        case .ready(let hasImage):
             phases[revision] = .published
+            if reconsidered.remove(revision) != nil {
+                reconsideredPublished += 1
+                if hasImage { reconsideredWithImage += 1 }
+            }
+            releaseRetainedBytes(revision)
         case .published, .exhausted:
             return
         case .pending, .preparing, .deferred:
             phases[revision] = .exhausted(.superseded)
+            reconsidered.remove(revision)
+            releaseRetainedBytes(revision)
         }
+    }
+
+    /// The revisions a durable deferral page offered this cycle: stories the one-way walk skipped while their media
+    /// was pending, which only reconsideration can bring back (PM-028A/PM-029). Marking is session-scoped and only
+    /// ever feeds the two comparison counters; no decision reads it.
+    public func noteReconsidered(_ revisions: [OriginRevisionID]) {
+        for revision in revisions {
+            // A revision the reserve already published cannot be "recovered and published" a second time.
+            if case .published? = phases[revision] { continue }
+            reconsidered.insert(revision)
+        }
+    }
+
+    /// Hands a revision's retained share back to the budget. The persisted asset is untouched: eviction belongs to
+    /// the existing retention rules, never to this accounting.
+    private func releaseRetainedBytes(_ revision: OriginRevisionID) {
+        guard let bytes = retainedBytesByRevision.removeValue(forKey: revision) else { return }
+        retainedBytes = max(0, retainedBytes - bytes)
     }
 
     public func markPublished(_ revisions: [OriginRevisionID]) {
@@ -276,7 +332,8 @@ public actor PreparedReserve {
         }
         return Snapshot(ready: ready, preparing: preparing, pending: pending, deferred: deferred,
             exhausted: exhausted, published: published, persistedBytes: retainedBytes,
-            lateCompletions: lateCompletions)
+            lateCompletions: lateCompletions, reconsideredPublished: reconsideredPublished,
+            reconsideredWithImage: reconsideredWithImage)
     }
 
     /// The delay that follows the attempt that spent count `spent` (one-based). A revision whose failures outlast

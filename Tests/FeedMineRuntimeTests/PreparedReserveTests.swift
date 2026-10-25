@@ -58,7 +58,8 @@ final class PreparedReserveTests: XCTestCase {
         let snapshot = await reserve.snapshot()
         XCTAssertEqual(snapshot.published, 1)
         XCTAssertEqual(snapshot.ready, 0)
-        XCTAssertEqual(snapshot.persistedBytes, 120, "the retained asset is not re-counted by the ignored settle")
+        XCTAssertEqual(snapshot.persistedBytes, 0,
+            "publishing hands the retained share back, and the ignored settle cannot re-add it")
     }
 
     /// Rule 6: published through another path, so it is superseded rather than left waiting to compete.
@@ -173,12 +174,71 @@ final class PreparedReserveTests: XCTestCase {
         XCTAssertEqual(waitingPhase, .pending, "the refused revision stays pending, not exhausted")
         snapshot = await reserve.snapshot()
         XCTAssertEqual(snapshot.ready, 1, "nothing already prepared is dropped")
-        // Publishing a prepared card does not hand the budget back in this version: its bytes are still retained.
-        await reserve.markPublished(prepared)
+    }
+
+    /// PM-028A §4.2: the budget governs prepared-but-**unpublished** asset. Publishing hands that revision's share
+    /// back and reopens the plan, so a long session cannot fill the budget with cards the reader already has; the
+    /// published revision itself never returns to preparation.
+    func testPublishingReleasesTheRetainedBytesAndReopensTheBudget() async {
+        let clock = Clock()
+        let reserve = reserve(clock, targetDepth: 4, lowWaterMark: 4, persistedByteBudget: 500)
+        let old = revision(), fresh = revision()
+        _ = await reserve.plan(offer: [old])
+        await reserve.markPreparing(old, attempt: 0)
+        _ = await reserve.settle(old, outcome: .prepared(hasImage: true), persistedBytes: 500)
+        let blocked = await reserve.plan(offer: [fresh])
+        XCTAssertEqual(blocked, [], "the reserve is full of retained asset")
+
+        await reserve.markPublished(old)
+        var snapshot = await reserve.snapshot()
+        XCTAssertEqual(snapshot.persistedBytes, 0, "the published revision handed its share back")
+        XCTAssertEqual(snapshot.published, 1)
+        let reopened = await reserve.plan(offer: [fresh])
+        XCTAssertEqual(reopened, [fresh], "the released budget authorizes new work again")
+
+        // A published revision is never prepared again, even if an offer still names it.
+        let publishedOld = await reserve.plan(offer: [old])
+        XCTAssertEqual(publishedOld, [])
+        let lateSettle = await reserve.settle(old, outcome: .prepared(hasImage: true), persistedBytes: 500)
+        XCTAssertFalse(lateSettle, "a published revision ignores later settlements")
         snapshot = await reserve.snapshot()
-        XCTAssertEqual(snapshot.persistedBytes, 500)
-        let afterPublish = await reserve.plan(offer: [waiting])
-        XCTAssertEqual(afterPublish, [], "the retained bytes still occupy the budget")
+        XCTAssertEqual(snapshot.persistedBytes, 0, "and it cannot re-add bytes to a budget it left")
+    }
+
+    /// PM-029: the two comparison counters count only cards that were **recovered** (a durable deferral row marked by
+    /// the owner) and then published, and among them the ones that carried an image.
+    func testReconsiderationCountersCountOnlyRecoveredPublishedCards() async {
+        let clock = Clock(), reserve = reserve(clock)
+        let recoveredWithImage = revision(), recoveredText = revision(), structural = revision()
+        await reserve.noteReconsidered([recoveredWithImage, recoveredText])
+        for revision in [recoveredWithImage, recoveredText, structural] {
+            _ = await reserve.plan(offer: [revision])
+            await reserve.markPreparing(revision, attempt: 0)
+        }
+        _ = await reserve.settle(recoveredWithImage, outcome: .prepared(hasImage: true), persistedBytes: 10)
+        _ = await reserve.settle(recoveredText, outcome: .prepared(hasImage: false), persistedBytes: 0)
+        _ = await reserve.settle(structural, outcome: .prepared(hasImage: true), persistedBytes: 10)
+        var snapshot = await reserve.snapshot()
+        XCTAssertEqual(snapshot.reconsideredPublished, 0, "nothing is counted before it publishes")
+
+        for revision in [recoveredWithImage, recoveredText, structural] {
+            await reserve.markPublished(revision)
+        }
+        snapshot = await reserve.snapshot()
+        XCTAssertEqual(snapshot.reconsideredPublished, 2, "only the deferral-page stories are recovered")
+        XCTAssertEqual(snapshot.reconsideredWithImage, 1, "one of them published with an image")
+        XCTAssertEqual(snapshot.published, 3)
+        // Publishing the same revision again cannot count it twice.
+        await reserve.markPublished(recoveredWithImage)
+        snapshot = await reserve.snapshot()
+        XCTAssertEqual(snapshot.reconsideredPublished, 2)
+        // A story that was recovered but published from `.pending` (another path) is not "recovered and published".
+        let superseded = revision()
+        await reserve.noteReconsidered([superseded])
+        await reserve.markPublished(superseded)
+        snapshot = await reserve.snapshot()
+        XCTAssertEqual(snapshot.reconsideredPublished, 2)
+        XCTAssertEqual(snapshot.exhausted, 1)
     }
 
     /// `targetDepth` bounds one plan, and the band between the low water mark and the target is where the reserve
