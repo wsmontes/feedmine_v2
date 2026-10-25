@@ -141,6 +141,12 @@ public actor PreparedReserve {
     /// slice that authorised it, so its slot stays taken until the outcome arrives. Without this, a closed window
     /// freed every slot at once and the next opportunity authorised a second full batch over running work.
     private var outstanding: Set<OriginRevisionID> = []
+    /// What `plan` returned and `markPreparing`/`settle` have not taken over yet. A slot is spent **when it is
+    /// granted**, not when the caller's loop reaches `markPreparing`: `MediaPreparationOpportunity.request` can run
+    /// two opportunities concurrently, and counting only `.ready`/`.preparing`/`outstanding` let both plans see the
+    /// same free room and each authorise a batch against it. A revision in `outstanding` is never re-planned: its
+    /// first settlement owns it, so `markPreparing` cannot put one revision in `.preparing` and `outstanding` at once.
+    private var authorised: Set<OriginRevisionID> = []
     /// Opportunities refused at the target depth since the last publication. Prepared depth must not permanently veto
     /// the work that unblocks selection (PD-4), so one refusal is treated as "a publication may still be on its way"
     /// and a second one authorises a bounded batch above the target (see `plan`).
@@ -172,15 +178,20 @@ public actor PreparedReserve {
     /// and not this delivery.
     ///
     /// `targetDepth` counts **authorised work**, not only what is already prepared: a revision with an attempt in
-    /// flight, or one whose window closed while the prefetcher still owns it (`windowClosed(_:outstanding:)`), takes
-    /// its slot until the outcome arrives. Counting `.ready` alone let a window close and free all 96 slots while 96
-    /// downloads were still running, so the next opportunity authorised another full batch on top of them.
+    /// flight, one whose window closed while the prefetcher still owns it (`windowClosed(_:outstanding:)`), or one a
+    /// previous plan already handed out that has not started (`markPreparing` has not taken it over), takes its slot
+    /// until it concludes. Counting `.ready` alone let a window close and free all 96 slots while 96 downloads were
+    /// still running, so the next opportunity authorised another full batch on top of them. Counting the return of
+    /// `plan` at the moment it is granted is what makes two concurrent opportunities share one ceiling instead of
+    /// each seeing the same free room.
     ///
     /// Prepared depth must not permanently veto the work that unblocks selection (PD-4). When the reserve is full and
     /// two consecutive opportunities are refused at the target depth with no publication in between, one bounded
     /// batch (`unblockingBatch`) is authorised above it. That is the deadlock where the edition tail shares a source
     /// with every ready revision: `MaximumDistanceSequencing` holds them all, nothing publishes, nothing is marked
-    /// published, and without this the reserve could never drain.
+    /// published, and without this the reserve could never drain. The bound is the intended one: if the whole extra
+    /// batch is also incompatible with the tail, preparation stops there and acquisition keeps running — the PM
+    /// forbade unbounded preparation.
     public func plan(offer: [OriginRevisionID]) -> [OriginRevisionID] {
         var readyCount = 0, preparingCount = 0
         for phase in phases.values {
@@ -190,9 +201,10 @@ public actor PreparedReserve {
             default: break
             }
         }
-        // What this reserve has authorised and has not seen conclude: prepared, in flight, and still owned by the
-        // prefetcher after its window ended.
-        let admitted = readyCount + preparingCount + outstanding.count
+        // What this reserve has authorised and has not seen conclude: prepared and in flight, the work the
+        // prefetcher still owns after its window ended, and the revisions a plan has handed out whose attempt has
+        // not started. A grant reserves its slot here, so two plans cannot both spend the same free room.
+        let admitted = readyCount + preparingCount + outstanding.count + authorised.count
         guard targetDepth > 0 else {
             refilling = false
             return []
@@ -217,21 +229,33 @@ public actor PreparedReserve {
         let now = clock()
         var planned: [OriginRevisionID] = []
         var seen = Set<OriginRevisionID>()
+        var granted = 0
         for revision in offer {
-            guard admitted + planned.count < ceiling else { break }
-            guard retainedBytes < persistedByteBudget else { break }
+            // Work the prefetcher still owns after its window is not offered again. Re-planning it while its first
+            // attempt runs would name the same revision twice: once in the new flight and once in `outstanding`.
+            guard !outstanding.contains(revision) else { continue }
             guard seen.insert(revision).inserted else { continue }
+            guard retainedBytes < persistedByteBudget else { break }
+            // A revision an earlier plan already handed out still holds its slot, so emitting it again spends no
+            // new room. A revision that would be granted now has to fit under the ceiling at the moment it is
+            // granted: a second opportunity running before either marks its work sees the first's reservations.
+            let alreadyAuthorised = authorised.contains(revision)
+            let eligible: Bool
             switch phases[revision] {
-            case .none:
-                phases[revision] = .pending
-                planned.append(revision)
-            case .pending?:
-                planned.append(revision)
-            case .deferred(let retryAt)? where retryAt <= now:
-                planned.append(revision)
-            case .deferred?, .preparing?, .ready?, .published?, .exhausted?:
-                continue
+            case .none, .pending?:
+                eligible = true
+            case .deferred(let retryAt)?:
+                eligible = retryAt <= now
+            case .preparing?, .ready?, .published?, .exhausted?:
+                eligible = false
             }
+            // An ineligible revision costs nothing and does not stop the loop: the offer is the walk's order, and a
+            // ready card in front of a waiting one must not consume the room the waiting one needs.
+            guard eligible else { continue }
+            guard alreadyAuthorised || admitted + granted < ceiling else { break }
+            if phases[revision] == nil { phases[revision] = .pending }
+            if authorised.insert(revision).inserted { granted += 1 }
+            planned.append(revision)
         }
         // Authorising work answers the observation; the next refusal starts the count again.
         if !planned.isEmpty { depthRefusals = 0 }
@@ -250,6 +274,9 @@ public actor PreparedReserve {
         case .preparing(let current) where current == max(0, attempt):
             return
         case .pending, .deferred, .preparing:
+            // The work this plan reserved has started: from here the phase itself counts its slot, so the
+            // authorisation no longer does.
+            authorised.remove(revision)
             let index = max(0, attempt)
             spentAttempts[revision] = max(spentAttempts[revision] ?? 0, index)
             phases[revision] = .preparing(attempt: index)
@@ -267,6 +294,9 @@ public actor PreparedReserve {
     public func windowClosed(_ revisions: [OriginRevisionID], outstanding: Set<OriginRevisionID> = []) {
         let retryAt = clock() + retryDelay(afterSpent: 1)
         for revision in revisions {
+            // The opportunity that carried this authorisation is over. A revision whose work never started hands
+            // its reserved slot back here, so a cancelled or refused slice cannot hold depth no window will close.
+            authorised.remove(revision)
             guard case .preparing? = phases[revision] else { continue }
             phases[revision] = .deferred(retryAt: retryAt)
             if outstanding.contains(revision) { self.outstanding.insert(revision) }
@@ -287,6 +317,7 @@ public actor PreparedReserve {
             return false
         case .pending, .preparing, .deferred:
             // Whatever the attempt concluded, its slot is answerable from here on.
+            authorised.remove(revision)
             outstanding.remove(revision)
             switch outcome {
             case .prepared(let hasImage):
@@ -335,6 +366,7 @@ public actor PreparedReserve {
         // A publication is the drain the depth policy waits for: the observation that nothing can be placed ends
         // here, whatever the revision's own phase was.
         depthRefusals = 0
+        authorised.remove(revision)
         outstanding.remove(revision)
         switch phases[revision] ?? .pending {
         case .ready(let hasImage):

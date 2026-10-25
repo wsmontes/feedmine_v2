@@ -394,4 +394,88 @@ final class PreparedReserveTests: XCTestCase {
         let reopened = await reserve.plan(offer: second)
         XCTAssertEqual(reopened, second, "publication reopens the plan")
     }
+
+    /// P2 (review): the return of `plan` **is** the reservation. `MediaPreparationOpportunity.request` can run two
+    /// opportunities concurrently, and each of them calls `plan` before either loop reaches `markPreparing`. Counting
+    /// only `.ready`/`.preparing`/`outstanding` let both plans see the same free room and each grant a batch into it.
+    func testConcurrentPlansCannotSpendTheSameFreeRoom() async {
+        let clock = Clock()
+        let reserve = reserve(clock, targetDepth: 96, lowWaterMark: 64, persistedByteBudget: 1 << 20)
+        // A first opportunity below the low water mark latches the top-up band, exactly as production does.
+        _ = await reserve.plan(offer: [])
+        let ready = (0..<80).map { _ in revision() }
+        for revision in ready {
+            _ = await reserve.settle(revision, outcome: .prepared(hasImage: false))
+        }
+        let first = (0..<32).map { _ in revision() }, second = (0..<32).map { _ in revision() }
+        async let one = reserve.plan(offer: first)
+        async let two = reserve.plan(offer: second)
+        let (grantedOne, grantedTwo) = await (one, two)
+        XCTAssertEqual(grantedOne.count + grantedTwo.count, 16,
+            "80 ready leaves 16 free slots to the target, granted once and not once per opportunity")
+        XCTAssertTrue(Set(grantedOne).isDisjoint(with: Set(grantedTwo)),
+            "no revision is authorised by both opportunities")
+    }
+
+    /// P2 (review): on a full reserve the bounded unblocking batch is granted **once**. Two authorising plans
+    /// separated by an opportunity that authorises nothing used to each receive 16 while their work was still
+    /// unmarked: 96 ready + 16 + 16 authorised 128 against the ceiling of `targetDepth + 16` = 112.
+    func testAFullReserveGrantsTheUnblockingBatchOnce() async {
+        let clock = Clock()
+        let reserve = reserve(clock, targetDepth: 96, lowWaterMark: 64, persistedByteBudget: 1 << 20)
+        let ready = (0..<96).map { _ in revision() }
+        let opening = await reserve.plan(offer: ready)
+        XCTAssertEqual(opening.count, 96)
+        for revision in ready {
+            await reserve.markPreparing(revision, attempt: 0)
+            _ = await reserve.settle(revision, outcome: .prepared(hasImage: false))
+        }
+        // The first refusal waits for the publication that may be on its way.
+        let firstRefusal = await reserve.plan(offer: ready)
+        XCTAssertEqual(firstRefusal, [])
+        let firstBatch = (0..<16).map { _ in revision() }
+        let granted = await reserve.plan(offer: firstBatch)
+        XCTAssertEqual(granted, firstBatch, "the bounded batch above the target is authorised")
+        // An opportunity that authorises nothing does not reopen the room the first grant already spent.
+        let refusal = await reserve.plan(offer: ready)
+        XCTAssertEqual(refusal, [])
+        let secondBatch = (0..<16).map { _ in revision() }
+        let secondGrant = await reserve.plan(offer: secondBatch)
+        XCTAssertEqual(secondGrant, [],
+            "the second batch would authorise 128 against the promised ceiling of 112")
+    }
+
+    /// P2 (review): a revision whose window closed while the prefetcher still owns the attempt is not planned again
+    /// when the retry timestamp passes. The first attempt is still running; planning it again lets `markPreparing`
+    /// name one revision in `.preparing` and in `outstanding` at once, counting it twice. Only its own settlement
+    /// frees it.
+    func testPlanDoesNotReauthorizeARevisionWhoseWorkIsOutstanding() async {
+        let clock = Clock(), reserve = reserve(clock, targetDepth: 2, lowWaterMark: 0), revision = revision()
+        let planned = await reserve.plan(offer: [revision])
+        XCTAssertEqual(planned, [revision])
+        await reserve.markPreparing(revision, attempt: 0)
+        await reserve.windowClosed([revision], outstanding: [revision])
+        var snapshot = await reserve.snapshot()
+        XCTAssertEqual(snapshot.outstanding, 1)
+        XCTAssertEqual(snapshot.preparing, 0)
+
+        clock.advance(1)
+        var reoffered = await reserve.plan(offer: [revision])
+        XCTAssertEqual(reoffered, [],
+            "the deferred retry timestamp is not a reason to plan work the prefetcher still owns")
+        clock.advance(600)
+        reoffered = await reserve.plan(offer: [revision])
+        XCTAssertEqual(reoffered, [],
+            "time never frees a revision whose attempt is running; only its outcome does")
+
+        // The original attempt concludes: one presentation, never a second flight.
+        let settled = await reserve.settle(revision, outcome: .prepared(hasImage: false))
+        XCTAssertTrue(settled)
+        snapshot = await reserve.snapshot()
+        XCTAssertEqual(snapshot.outstanding, 0)
+        XCTAssertEqual(snapshot.ready, 1)
+        XCTAssertEqual(snapshot.preparing, 0)
+        reoffered = await reserve.plan(offer: [revision])
+        XCTAssertEqual(reoffered, [], "the settled revision is not offered again")
+    }
 }
