@@ -153,7 +153,11 @@ public actor FeedRunwayDriver {
         onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)? = nil,
         makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil,
         trace: ReplenishmentTrace? = nil,
-        onPublication: (@Sendable (PublicationReceipt) async -> Void)? = nil) throws {
+        onPublication: (@Sendable (PublicationReceipt) async -> Void)? = nil,
+        // The host's publication cap for one opportunity: the runway's own published-reserve target. Nil keeps the
+        // uncapped behavior; a capped slice that leaves ready candidates behind reports the walk it started from,
+        // so the next opportunity publishes the following block instead of the walk passing cards nobody published.
+        publicationLimit: Int? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw FeedRunwayDriverError.policyContextMismatch }
         if let demand = selectedSourceCoverage {
             guard demand.contextKey == plan.context.key, demand.editorialRevisionID == plan.revision.id,
@@ -167,7 +171,7 @@ public actor FeedRunwayDriver {
         self.reoffer = reoffer
         publicationHistory = PublicationHistory(database: acquisition.runtimeDatabase)
         localProductionSlice = LocalProductionSlice(database: acquisition.runtimeDatabase, readiness: readiness,
-            reoffer: reoffer, trace: trace)
+            reoffer: reoffer, trace: trace, publicationLimit: publicationLimit)
         acquisitionCycle = RunwayAcquisitionCycle(runway: runway, coordinator: coordinator, trace: trace)
         self.coordinator = coordinator
         self.trace = trace

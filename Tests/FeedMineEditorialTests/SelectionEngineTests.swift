@@ -14,13 +14,13 @@ final class SelectionEngineTests: XCTestCase {
             timestamp: CandidateTimestamp(value: Date(timeIntervalSince1970: time), kind: kind),
             language: "pt-BR", providerID: ProviderID(rawValue: uuid(99)))
     }
-    private func plan(catalog: UInt64 = 1) throws -> FeedPlan {
+    private func plan(catalog: UInt64 = 1, sequencing: UInt64 = 4) throws -> FeedPlan {
         let context = FeedContext(request: .main)
         return try XCTUnwrap(FeedPlan(context: context, revision: EditorialRevision(
             id: EditorialRevisionID(rawValue: uuid(100)), contextKey: context.key,
             catalogGeneration: CatalogGeneration(rawValue: catalog), userSelectionVersion: PolicyVersion(rawValue: 1),
             eligibilityPolicyVersion: PolicyVersion(rawValue: 2), scoringPolicyVersion: PolicyVersion(rawValue: 3),
-            sequencingPolicyVersion: PolicyVersion(rawValue: 4), exposurePolicyVersion: PolicyVersion(rawValue: 5),
+            sequencingPolicyVersion: PolicyVersion(rawValue: sequencing), exposurePolicyVersion: PolicyVersion(rawValue: 5),
             selectionSchemaVersion: SelectionSchemaVersion(rawValue: 6))))
     }
     private func policy(_ revision: EditorialRevision, mismatch: Int? = nil, exposure: ResolvedSelectionPolicy.ExposureBehavior = .none) -> ResolvedSelectionPolicy {
@@ -295,5 +295,114 @@ final class SelectionEngineTests: XCTestCase {
         let same = [sourced(1, time: 10, 1), sourced(2, time: 9, 1)]
         XCTAssertEqual(origins(try SelectionEngine().select(plan: plan, policy: policy(plan.revision), window: window(same))),
             same.map(\.originRecordID))
+    }
+
+    // MARK: - Publication cap
+
+    /// Newest first, so the window order and the recency order agree and the rewind position is a stated card.
+    private func sequential(_ count: Int) -> [Candidate] {
+        (1...count).map { candidate($0, time: Double(1_000 - $0)) }
+    }
+
+    func testPublicationLimitPublishesThePrefixAndReportsTheRestAsHeld() throws {
+        let plan = try plan(), input = sequential(40)
+        let cursor = CandidateSupplyCursor(sortDate: Date(timeIntervalSince1970: 1),
+            originRecordID: input[39].originRecordID)
+        let supplied = window(input, count: 40, cursor: cursor, exhausted: true)
+        let engine = SelectionEngine()
+        let all = try engine.select(plan: plan, policy: policy(plan.revision), window: supplied)
+        XCTAssertEqual(all.orderedCandidates.count, 40)
+        let capped = try engine.select(plan: plan, policy: policy(plan.revision), window: supplied,
+            publicationLimit: 16)
+        XCTAssertEqual(capped.orderedCandidates, Array(all.orderedCandidates.prefix(16)))
+        // The twenty-four the cap deferred stay reachable: the cursor rewinds to the last card published, not to
+        // the position the window's own walk reached.
+        XCTAssertEqual(capped.supplyReport.nextCursor, CandidateSupplyCursor(sortDate: input[15].timestamp.value,
+            originRecordID: input[15].originRecordID))
+        XCTAssertEqual(capped.supplyReport.examinedCount, 40)
+        XCTAssertFalse(capped.supplyReport.exhausted)
+    }
+
+    func testTheNextCappedOpportunityPublishesTheNextBlockWithoutRepublishing() throws {
+        let plan = try plan(), input = sequential(40), ids = input.map(\.originRecordID)
+        let automatic = policy(plan.revision, exposure: .excludePublishedRevisions)
+        let engine = SelectionEngine()
+        var published: Set<OriginRecordID> = []
+        var blocks: [[OriginRecordID]] = []
+        for _ in 0..<3 {
+            let exposure = try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: ids,
+                publishedOriginIDs: published))
+            let result = try engine.select(plan: plan, policy: automatic,
+                window: window(input, count: 40, exhausted: true), exposure: exposure, publicationLimit: 16)
+            let block = result.orderedCandidates.map(\.originRecordID)
+            XCTAssertTrue(published.isDisjoint(with: block), "a capped opportunity never republishes a card")
+            published.formUnion(block)
+            blocks.append(block)
+        }
+        XCTAssertEqual(blocks.map(\.count), [16, 16, 8])
+        XCTAssertEqual(published, Set(ids), "the cap defers candidates; it never drops them from eligibility")
+    }
+
+    func testPD4AlternationHoldsAcrossTheCapBoundary() throws {
+        let plan = try plan()
+        let input = [sourced(1, time: 10, 1), sourced(2, time: 9, 2), sourced(3, time: 8, 1),
+            sourced(4, time: 7, 2), sourced(5, time: 6, 3), sourced(6, time: 5, 1), sourced(7, time: 4, 2),
+            sourced(8, time: 3, 3)]
+        let base = alternating(plan.revision)
+        let policy = ResolvedSelectionPolicy(contextKey: base.contextKey,
+            userSelectionVersion: base.userSelectionVersion, eligibilityPolicyVersion: base.eligibilityPolicyVersion,
+            scoringPolicyVersion: base.scoringPolicyVersion, sequencingPolicyVersion: base.sequencingPolicyVersion,
+            exposurePolicyVersion: base.exposurePolicyVersion, selectionSchemaVersion: base.selectionSchemaVersion,
+            eligibility: .structuralOnly, scoring: .equal, sequencing: .recencyAlternatingSources,
+            exposure: .excludePublishedRevisions)
+        let ids = input.map(\.originRecordID), supplied = window(input, count: 8, exhausted: true)
+        let engine = SelectionEngine()
+        let first = try engine.select(plan: plan, policy: policy, window: supplied,
+            exposure: try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: ids, publishedOriginIDs: [])),
+            publicationLimit: 4)
+        XCTAssertEqual(first.orderedCandidates.count, 4)
+        let second = try engine.select(plan: plan, policy: policy, window: supplied,
+            exposure: try XCTUnwrap(SelectionExposureSnapshot(requestedOriginIDs: ids,
+                publishedOriginIDs: Set(first.orderedCandidates.map(\.originRecordID)))),
+            after: SelectionNeighbor(sourceIDs: first.orderedCandidates[3].sourceIDs, providerID: nil),
+            publicationLimit: 4)
+        XCTAssertEqual(second.orderedCandidates.count, 4)
+        let sequence = first.orderedCandidates + second.orderedCandidates
+        for (a, b) in zip(sequence, sequence.dropFirst()) {
+            XCTAssertTrue(a.sourceIDs.isDisjoint(with: b.sourceIDs), "PD-4 holds across the cap boundary")
+        }
+        XCTAssertEqual(Set(sequence.map(\.originRecordID)).count, 8)
+    }
+
+    func testPublicationLimitCapsTheMaximumDistanceWalk() throws {
+        let plan = try plan(sequencing: 6)
+        let base = policy(plan.revision)
+        let maximumDistance = ResolvedSelectionPolicy(contextKey: base.contextKey,
+            userSelectionVersion: base.userSelectionVersion, eligibilityPolicyVersion: base.eligibilityPolicyVersion,
+            scoringPolicyVersion: base.scoringPolicyVersion, sequencingPolicyVersion: base.sequencingPolicyVersion,
+            exposurePolicyVersion: base.exposurePolicyVersion, selectionSchemaVersion: base.selectionSchemaVersion,
+            eligibility: .structuralOnly, scoring: .equal, sequencing: .maximumDistance, exposure: .none)
+        let input = sequential(12)
+        let result = try SelectionEngine().select(plan: plan, policy: maximumDistance,
+            window: window(input, count: 12), publicationLimit: 5)
+        XCTAssertEqual(result.orderedCandidates.count, 5)
+        XCTAssertFalse(result.supplyReport.exhausted)
+    }
+
+    func testCallersWithoutAPublicationLimitPublishExactlyAsBefore() throws {
+        for version in 2...5 {
+            let plan = try plan(sequencing: UInt64(version)), input = sequential(40)
+            let supplied = window(input, count: 40)
+            let engine = SelectionEngine(), baseline = policy(plan.revision)
+            let before = try engine.select(plan: plan, policy: baseline, window: supplied)
+            XCTAssertEqual(before.orderedCandidates.count, 40)
+            XCTAssertEqual(before.supplyReport,
+                SelectionSupplyReport(examinedCount: 40, nextCursor: nil, exhausted: false))
+            let explicitNil = try engine.select(plan: plan, policy: baseline, window: supplied, exposure: nil,
+                after: nil, readiness: nil, diversity: nil, publicationLimit: nil)
+            XCTAssertEqual(explicitNil, before)
+            let wider = try engine.select(plan: plan, policy: baseline, window: supplied, publicationLimit: 64)
+            XCTAssertEqual(wider, before, "a cap that does not bite changes nothing")
+        }
     }
 }

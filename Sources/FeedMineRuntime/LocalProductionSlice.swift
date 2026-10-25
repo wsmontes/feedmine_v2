@@ -21,6 +21,22 @@ public struct LocalProductionProgress: Hashable, Sendable {
     public let examinedCount: Int
     public let nextCursor: CandidateSupplyCursor?
     public let exhausted: Bool
+
+    /// The walk a publication reports. A capped opportunity that left ready candidates behind (the publication cap,
+    /// and PD-4 holding inside a capped walk) must not advance past them: the walk is one-way, so the next window
+    /// would start after cards nobody published. Reporting the position the opportunity started from re-examines the
+    /// same window, and exposure excludes what was just published, so the next slice publishes the following block
+    /// and nothing is skipped, dropped or republished. An uncapped walk keeps the old progress exactly.
+    static func afterPublication(_ selection: SelectionResult, examining structural: CandidateSupplyWindow,
+        from after: CandidateSupplyCursor?, publicationLimit: Int?) -> LocalProductionProgress {
+        let heldSomething = selection.supplyReport.nextCursor != structural.nextCursor
+            || selection.supplyReport.exhausted != structural.exhausted
+        guard (publicationLimit ?? 0) > 0, heldSomething else {
+            return LocalProductionProgress(examinedCount: structural.examinedCount,
+                nextCursor: structural.nextCursor, exhausted: structural.exhausted)
+        }
+        return LocalProductionProgress(examinedCount: structural.examinedCount, nextCursor: after, exhausted: false)
+    }
 }
 
 public enum LocalProductionSliceOutcome: Hashable, Sendable {
@@ -46,14 +62,19 @@ public struct LocalProductionSlice: Sendable {
     private let reoffer: PendingMediaReconsideration?
     /// Optional evidence of the replenishment attempt this slice executes; nil records nothing.
     private let trace: ReplenishmentTrace?
+    /// How many cards one opportunity may publish, stated by the host from the runway's own published-reserve
+    /// target. Nil (every v2–v5 caller and any host that does not cap) keeps the previous behavior.
+    private let publicationLimit: Int?
 
     /// Existing callers may supply their own intentional presentations. Media-dependent callers
     /// must inject the same readiness index used by their preparation closure.
     public init(database: RuntimeDatabase, readiness: MediaReadiness? = nil,
-        reoffer: PendingMediaReconsideration? = nil, trace: ReplenishmentTrace? = nil) {
+        reoffer: PendingMediaReconsideration? = nil, trace: ReplenishmentTrace? = nil,
+        publicationLimit: Int? = nil) {
         self.readiness = readiness
         self.reoffer = reoffer
         self.trace = trace
+        self.publicationLimit = publicationLimit
         contentStore = ContentStore(database: database)
         candidateProvider = CandidateProvider(contentStore: contentStore)
         selectionEngine = SelectionEngine()
@@ -166,12 +187,14 @@ public struct LocalProductionSlice: Sendable {
         let selection = try selectionEngine.select(plan: request.plan, policy: request.policy,
             window: window, exposure: exposure,
             after: try neighbor(editionID: request.editionID, tail: facts.observedTailCardID),
-            readiness: readinessFacts, diversity: diversity)
+            readiness: readinessFacts, diversity: diversity, publicationLimit: publicationLimit)
         // Examination advances through structural supply, independently of editorial holds.
         // A held candidate owns no occurrence or rank; a later supply reconsideration may
         // revisit it under fresh exposure and readiness facts without rewinding this walk.
         // The reconsidered set is not part of that walk: it adds candidates to this opportunity and nothing to
         // `examinedCount` or `nextCursor`, so a re-offered story never moves the cursor, not even backwards.
+        // A publication that hits the publication cap is the one case that reports the walk it started from
+        // instead (`afterPublication`): a capped opportunity leaves ready supply behind, and the walk must not pass it.
         let progress = LocalProductionProgress(examinedCount: structural.examinedCount,
             nextCursor: structural.nextCursor, exhausted: structural.exhausted)
         // Nothing published settles nothing: a selection emptied by editorial hold, or a preparation that
@@ -209,7 +232,8 @@ public struct LocalProductionSlice: Sendable {
             reoffer?.forget(reconsidered.considered.filter {
                 publishedRevisions.contains($0.originRevisionID)
             })
-            return .published(progress, receipt)
+            return .published(LocalProductionProgress.afterPublication(selection, examining: structural,
+                from: request.after, publicationLimit: publicationLimit), receipt)
         case .nothingToPublish: throw LocalProductionSliceError.inconsistentPublicationOutcome
         }
     }

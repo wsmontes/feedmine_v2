@@ -224,6 +224,28 @@ final class InitialProductionSliceTests: XCTestCase {
         }
     }
 
+    /// The first publication obeys the same cap as the live walk: it publishes at most the reserve target and leaves
+    /// the rest ready, reporting the walk it started from so nothing is passed over. No card is republished, and the
+    /// deferred stories stay in canonical supply for the next opportunity.
+    func testPublicationCapLimitsTheFirstPublicationAndLeavesTheRestReady() throws {
+        let f = try fixture(40)
+        let outcome = try InitialProductionSlice(database: f.database, publicationLimit: 16)
+            .run(f.request(capacity: 64)) { InitialSliceFixture.prepared($0) }
+        let (progress, receipt) = try published(outcome)
+        XCTAssertEqual(receipt.cardIDs.count, 16)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.editionID)
+            .flatMap(\.cardIDs).count, 16)
+        // Ready supply was left behind: the walk did not advance past the twenty-four deferred stories.
+        XCTAssertNil(progress.nextCursor)
+        XCTAssertFalse(progress.exhausted)
+        let offered = try CandidateProvider(contentStore: ContentStore(database: f.database))
+            .candidates(for: f.plan, after: nil, examinedCapacity: 64).candidates
+        XCTAssertEqual(offered.count, 40, "a capped first publication drops nothing from supply")
+        let deferred = InitialSliceFixture.candidate(InitialSliceFixture.revision(1))
+        XCTAssertNil(try PublicationStore(database: f.database)
+            .card(id: InitialSliceFixture.cardID(deferred)))
+    }
+
     private static func mediaPolicy() -> MediaPolicy? {
         guard let conditions = MediaDeviceConditions(heroSlotPointWidth: 2, thumbnailSlotPointWidth: 1,
             screenScale: 1, network: .unconstrained, measuredBytesPerSecond: nil, waitBudgetSeconds: nil,
@@ -232,5 +254,4 @@ final class InitialProductionSliceTests: XCTestCase {
                 maximumPixelCount: 10_000_000) else { return nil }
         return MediaPolicy(conditions: conditions, ceilings: ceilings)
     }
-
 }

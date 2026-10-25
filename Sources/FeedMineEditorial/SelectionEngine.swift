@@ -55,21 +55,30 @@ public struct SelectionEngine: Sendable {
     public init() {}
 
     public func select(plan: FeedPlan, policy: ResolvedSelectionPolicy,
-        window: CandidateSupplyWindow) throws -> SelectionResult {
-        try select(plan: plan, policy: policy, window: window, exposure: nil)
+        window: CandidateSupplyWindow, publicationLimit: Int? = nil) throws -> SelectionResult {
+        try select(plan: plan, policy: policy, window: window, exposure: nil,
+            publicationLimit: publicationLimit)
     }
 
     public func select(plan: FeedPlan, policy: ResolvedSelectionPolicy,
-        window: CandidateSupplyWindow, exposure: SelectionExposureSnapshot?) throws -> SelectionResult {
-        try select(plan: plan, policy: policy, window: window, exposure: exposure, after: nil)
+        window: CandidateSupplyWindow, exposure: SelectionExposureSnapshot?,
+        publicationLimit: Int? = nil) throws -> SelectionResult {
+        try select(plan: plan, policy: policy, window: window, exposure: exposure, after: nil,
+            publicationLimit: publicationLimit)
     }
 
     /// `after` is the card that will precede this selection in history (the Edition tail), so
     /// PD-4 alternation also holds across segment boundaries.
+    ///
+    /// `publicationLimit` caps how many cards **this opportunity** publishes. Nil (every v2–v5 caller and any
+    /// caller that does not cap) keeps the previous behavior exactly. The candidates past the cap are held the way
+    /// the engine already holds a PD-4 candidate: they stay in the supply report so the caller's cursor rewinds to
+    /// the first one and the next opportunity publishes them. Nothing is skipped, dropped or republished.
     public func select(plan: FeedPlan, policy: ResolvedSelectionPolicy,
         window: CandidateSupplyWindow, exposure: SelectionExposureSnapshot?,
         after neighbor: SelectionNeighbor?, readiness: SelectionReadinessSnapshot? = nil,
-        diversity: SelectionDiversityContext? = nil) throws -> SelectionResult {
+        diversity: SelectionDiversityContext? = nil,
+        publicationLimit: Int? = nil) throws -> SelectionResult {
         guard policy.matches(plan.revision) else { throw SelectionError.policyMismatch }
         guard Set(window.candidates.map(\.originRecordID)).count == window.candidates.count else {
             throw SelectionError.duplicateCandidateIdentity
@@ -169,10 +178,8 @@ public struct SelectionEngine: Sendable {
             let positions = diversity?.publishedPositions ?? []
             let sequenced = MaximumDistanceSequencing.sequence(ordered, positions: positions,
                 after: neighbor, singleSourceContext: Self.isSingleSource(plan.context.request))
-            return SelectionResult(editorialRevision: plan.revision,
-                orderedCandidates: sequenced.placed,
-                supplyReport: Self.report(window: window, held: sequenced.held,
-                    placedAny: !sequenced.placed.isEmpty))
+            return Self.result(plan: plan, window: window,
+                placed: sequenced.placed, held: sequenced.held, publicationLimit: publicationLimit)
         }
         // PD-4: a single-source context is exempt by definition; other contexts alternate when the
         // resolved sequencing behavior says so (a behavior change is a new EditorialRevision, and an
@@ -202,13 +209,29 @@ public struct SelectionEngine: Sendable {
                 alternated = (ordered, [])
             }
         }
-        return SelectionResult(editorialRevision: plan.revision, orderedCandidates: alternated.placed,
-            supplyReport: Self.report(window: window, held: alternated.held, placedAny: !alternated.placed.isEmpty))
+        return Self.result(plan: plan, window: window, placed: alternated.placed, held: alternated.held,
+            publicationLimit: publicationLimit)
     }
 
     private static func isSingleSource(_ request: FeedContextRequest) -> Bool {
         if case .source = request { return true }
         return false
+    }
+
+    /// One opportunity publishes at most `publicationLimit` cards. The candidates past the cap are held exactly as a
+    /// PD-4 candidate is — they leave `orderedCandidates` and the supply report names them, so the caller's cursor
+    /// rewinds to the first one instead of walking past a card nobody published. A cap that does not bite, a
+    /// non-positive cap and nil all keep the previous result untouched.
+    private static func result(plan: FeedPlan, window: CandidateSupplyWindow, placed: [Candidate],
+        held: [Candidate], publicationLimit: Int?) -> SelectionResult {
+        let capped: (placed: [Candidate], held: [Candidate])
+        if let publicationLimit, publicationLimit > 0, placed.count > publicationLimit {
+            capped = (Array(placed.prefix(publicationLimit)), Array(placed.dropFirst(publicationLimit)) + held)
+        } else {
+            capped = (placed, held)
+        }
+        return SelectionResult(editorialRevision: plan.revision, orderedCandidates: capped.placed,
+            supplyReport: Self.report(window: window, held: capped.held, placedAny: !capped.placed.isEmpty))
     }
 
     /// Held candidates must stay reachable. When something was placed, progress is guaranteed (the

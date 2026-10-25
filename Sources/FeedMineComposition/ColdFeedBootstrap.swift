@@ -142,7 +142,10 @@ public struct ColdFeedBootstrap: Sendable {
         reoffer: PendingMediaReconsideration? = nil,
         trace: ReplenishmentTrace? = nil,
         onDiscoveryPage: (@Sendable ([LegacyCatalogEntry]) async -> Void)? = nil,
-        makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil) throws {
+        makeMediaOpportunity: (@Sendable () async -> MediaPreparationOpportunity)? = nil,
+        // The same cap the live walk uses: the first publication may not publish more cards than the reserve target
+        // the host states. Nil keeps the uncapped first publication; a capped one leaves the rest ready.
+        publicationLimit: Int? = nil) throws {
         guard policy.contextKey == plan.context.key else { throw ColdFeedBootstrapError.policyContextMismatch }
         self.makeMediaOpportunity = makeMediaOpportunity
         self.onDiscoveryPage = onDiscoveryPage
@@ -153,7 +156,7 @@ public struct ColdFeedBootstrap: Sendable {
         self.acquisition = acquisition
         self.coordinator = coordinator
         initialProductionSlice = InitialProductionSlice(database: acquisition.runtimeDatabase, readiness: readiness,
-            reoffer: reoffer, trace: trace)
+            reoffer: reoffer, trace: trace, publicationLimit: publicationLimit)
         self.prepare = prepare
     }
 

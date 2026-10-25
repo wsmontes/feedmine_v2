@@ -383,6 +383,45 @@ final class LocalProductionSliceTests: XCTestCase {
         XCTAssertEqual(byRevision[text.id.rawValue.uuidString]?["declared_image"], "false")
         XCTAssertEqual(byRevision[text.id.rawValue.uuidString]?["media"], "none")
     }
+
+    /// One opportunity may publish at most the reserve target. The rest stays ready: the walk reports the position
+    /// it started from instead of passing the cards nobody published, and the next opportunity publishes the
+    /// following block. A fourth opportunity finds nothing, so the cap defers cards without dropping or repeating one.
+    func testPublicationCapPublishesTheReserveThenTheRestWithoutRepublishingOrDropping() throws {
+        let f = try fixture()
+        for n in 1...40 { try f.admit(LocalSliceFixture.revision(n)) }
+        let slice = LocalProductionSlice(database: f.database, publicationLimit: 16)
+        var cards: [PublicationCardID] = []
+        for (index, segment) in [44001, 44002, 44003].enumerated() {
+            let outcome = try slice.run(f.request(capacity: 64, segment: segment)) { LocalSliceFixture.prepared($0) }
+            let (progress, receipt) = try published(outcome)
+            XCTAssertEqual(receipt.cardIDs.count, [16, 16, 8][index])
+            XCTAssertTrue(Set(receipt.cardIDs).isDisjoint(with: cards), "a capped opportunity never republishes")
+            cards += receipt.cardIDs
+            if index < 2 {
+                // Ready supply is left behind: the walk did not advance past the cards the cap deferred.
+                XCTAssertNil(progress.nextCursor)
+                XCTAssertFalse(progress.exhausted)
+            } else {
+                XCTAssertTrue(progress.exhausted, "the last block drains the examined window")
+            }
+        }
+        XCTAssertEqual(Set(cards).count, 40)
+        let settled = try slice.run(f.request(capacity: 64, segment: 44004)) { _ in throw PreparationFailure.refused }
+        guard case .advancedWithoutPublication(let progress) = settled else { return XCTFail("Expected a drained walk") }
+        XCTAssertTrue(progress.exhausted)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: f.editionID)
+            .flatMap(\.cardIDs).count, 41)
+    }
+
+    func testWithoutAPublicationLimitOneOpportunityPublishesEveryReadyCandidate() throws {
+        let f = try fixture()
+        for n in 1...40 { try f.admit(LocalSliceFixture.revision(n)) }
+        let (progress, receipt) = try published(LocalProductionSlice(database: f.database)
+            .run(f.request(capacity: 64)) { LocalSliceFixture.prepared($0) })
+        XCTAssertEqual(receipt.cardIDs.count, 40)
+        XCTAssertTrue(progress.exhausted)
+    }
 }
 
 extension LocalProductionSliceTests {

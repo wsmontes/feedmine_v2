@@ -3353,7 +3353,11 @@ final class FeedAssociation {
             selectedSourceCoverage: .init(selectedSourceCoverageFor: plan.context.key, editorialRevisionID: plan.revision.id),
             readiness: readiness, reoffer: reoffer, onDiscoveryPage: onDiscoveryPage,
             makeMediaOpportunity: makeMediaOpportunity,
-            trace: replenishment, onPublication: { receipt in await publicationRelay.deliver(receipt) })
+            trace: replenishment, onPublication: { receipt in await publicationRelay.deliver(receipt) },
+            // The publication cap is the runway's own published-reserve target: one opportunity publishes at most
+            // what the reserve exists to hold ahead of the reader. The rest stays ready and eligible, so the next
+            // opportunity publishes it — a burst that publishes every ready candidate was the defect this states away.
+            publicationLimit: Self.forwardWindowCards)
         let relay = EvidenceRelay()
         self.relay = relay
         cold = try ColdFeedBootstrap(session: session, plan: plan, policy: policy,
@@ -3366,7 +3370,10 @@ final class FeedAssociation {
             // is what makes the first screen and the live feed agree on "prepared" — the quality Codex's page review
             // named: two different views of what is ready is how a suspended candidate becomes a text-only card.
             readiness: readiness, reoffer: reoffer, trace: replenishment, onDiscoveryPage: onDiscoveryPage,
-            makeMediaOpportunity: makeMediaOpportunity)
+            makeMediaOpportunity: makeMediaOpportunity,
+            // The first publication obeys the same cap: at most the reserve target in one opportunity, with the
+            // remainder left ready (R6-E then grows the admitted window from what was published, not from a burst).
+            publicationLimit: Self.forwardWindowCards)
         targetNames = Dictionary(uniqueKeysWithValues: feeds.map { ($0.targetID, $0.displayName) })
         let provider = CandidateProvider(contentStore: ContentStore(database: db))
         admittedHeadlines = { (try? provider.candidates(for: plan, after: nil, examinedCapacity: 12))?.candidates.compactMap(\.headline) ?? [] }

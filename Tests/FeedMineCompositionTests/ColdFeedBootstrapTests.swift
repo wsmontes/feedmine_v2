@@ -461,6 +461,22 @@ final class ColdFeedBootstrapTests: XCTestCase {
         try await assertPublished(f, identity: id, snapshot: snapshot)
         XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: id.editionID).first?.cardIDs, cards)
     }
+    /// The cold bootstrap states the same cap: the first publication carries at most the reserve target, the rest
+    /// stays in canonical supply, and the edition is not grown by a burst.
+    func testPublicationCapLimitsTheFirstPublicationAtTheCompositionBoundary() async throws {
+        let f = try fixture(), id = identity()
+        try Self.seed(f.database, source: f.source, count: 40, time: 100)
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) },
+            publicationLimit: 16)
+        let snapshot = try published(await bootstrap.run(identity: id, resources: resources(local: 40),
+            backwardCapacity: 0, forwardCapacity: 16))
+        XCTAssertEqual(snapshot.window.items.count, 16)
+        XCTAssertEqual(try PublicationStore(database: f.database).segments(editionID: id.editionID)
+            .flatMap(\.cardIDs).count, 16)
+        XCTAssertEqual(try canonical(f).count, 40, "the deferred stories stay in canonical supply")
+        XCTAssertEqual(f.http.calls, 0, "local supply publishes before any fetch")
+    }
     func testC11AcquisitionFailureSettlesOnce() async throws {
         let failure = URLError(.cannotConnectToHost), f = try fixture(error: failure), id = identity()
         guard case .noPublicationAfterAcquisition(_, let results) = try await run(f, identity: id) else {

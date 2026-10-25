@@ -30,12 +30,17 @@ public struct InitialProductionSlice: Sendable {
     /// Optional evidence of the publication this slice concludes; nil records nothing. DEBUG-only at the point
     /// of recording (the host passes nil in a shipping build).
     private let trace: ReplenishmentTrace?
+    /// How many cards the first publication may publish, stated by the host from the runway's own
+    /// published-reserve target. Nil (every v2–v5 caller and any host that does not cap) keeps the previous behavior.
+    private let publicationLimit: Int?
 
     public init(database: RuntimeDatabase, readiness: MediaReadiness? = nil,
-        reoffer: PendingMediaReconsideration? = nil, trace: ReplenishmentTrace? = nil) {
+        reoffer: PendingMediaReconsideration? = nil, trace: ReplenishmentTrace? = nil,
+        publicationLimit: Int? = nil) {
         self.readiness = readiness
         self.reoffer = reoffer
         self.trace = trace
+        self.publicationLimit = publicationLimit
         self.contentStore = ContentStore(database: database)
         candidateProvider = CandidateProvider(contentStore: contentStore)
         selectionEngine = SelectionEngine()
@@ -130,11 +135,14 @@ public struct InitialProductionSlice: Sendable {
                 publishedOriginIDs: [], readiness: readiness, reoffer: reoffer)
         } else { readinessFacts = nil }
         let selection = try selectionEngine.select(plan: request.plan, policy: request.policy,
-            window: window, exposure: exposure, after: nil, readiness: readinessFacts)
+            window: window, exposure: exposure, after: nil, readiness: readinessFacts,
+            publicationLimit: publicationLimit)
         // Examination advances through structural supply, independently of editorial holds.
         // A held candidate owns no occurrence or rank; a later supply reconsideration may
         // revisit it under fresh exposure and readiness facts without rewinding this walk.
         // The reconsidered set contributes candidates to this attempt and nothing to what the walk reports.
+        // A publication that hits the publication cap reports the walk it started from instead
+        // (`afterPublication`): the first publication leaves ready supply behind, and the walk must not pass it.
         let progress = LocalProductionProgress(examinedCount: structural.examinedCount,
             nextCursor: structural.nextCursor, exhausted: structural.exhausted)
         // An opportunity that publishes nothing settles nothing: the reconsidered story stays eligible.
@@ -164,7 +172,8 @@ public struct InitialProductionSlice: Sendable {
             reoffer?.forget(reconsidered.considered.filter {
                 publishedRevisions.contains($0.originRevisionID)
             })
-            return .published(progress, receipt)
+            return .published(LocalProductionProgress.afterPublication(selection, examining: structural,
+                from: request.after, publicationLimit: publicationLimit), receipt)
         case .nothingToPublish: throw InitialProductionSliceError.inconsistentPublicationOutcome
         }
     }
