@@ -974,3 +974,44 @@ extension ColdFeedBootstrapTests {
         }
     }
 }
+
+extension ColdFeedBootstrapTests {
+    /// P2 (review): the cold bootstrap publishes the first Edition itself — `launch()` receives the outcome and no
+    /// driver receipt exists to act on. The reserve must mark the revisions those committed cards carry, or every
+    /// prepared presentation of the first screen keeps `.ready` occupancy and retained bytes for cards the feed
+    /// already shows, and the depth policy counts them as work still worth doing.
+    func testColdPublicationLeavesNoReadyReserveOccupancy() async throws {
+        let f = try fixture(), id = identity()
+        try Self.seed(f.database, source: f.source, count: 2, time: 100)
+        let reserve = PreparedReserve(targetDepth: 8, lowWaterMark: 4)
+        let bootstrap = try ColdFeedBootstrap(session: f.session, plan: f.plan, policy: f.policy,
+            acquisition: f.acquisition, coordinator: f.coordinator, prepare: { Self.prepared($0) },
+            makeMediaOpportunity: {
+                // The media pipeline's own conclusion, told in the reserve's terms: the first screen's revisions are
+                // prepared before it publishes.
+                MediaPreparationOpportunity(waitSeconds: 4, startedAt: 100) { revisions, _ in
+                    for revision in await reserve.plan(offer: revisions) {
+                        await reserve.markPreparing(revision, attempt: 0)
+                        _ = await reserve.settle(revision, outcome: .prepared(hasImage: false), persistedBytes: 512)
+                    }
+                }
+            })
+        let snapshot = try published(await bootstrap.run(identity: id, resources: resources(local: 8),
+            backwardCapacity: 0, forwardCapacity: 2))
+        XCTAssertEqual(snapshot.window.items.count, 2)
+        // The opportunity's request is fire-and-forget by design: wait for the conclusion it caused, not for time.
+        for _ in 0..<200_000 {
+            if await reserve.snapshot().ready > 0 { break }
+            await Task.yield()
+        }
+        let prepared = await reserve.snapshot()
+        XCTAssertEqual(prepared.ready, 2, "premissa: o primeiro ecrã tinha as duas apresentações preparadas")
+        XCTAssertEqual(prepared.persistedBytes, 1_024)
+        // What `launch()` does with the outcome the bootstrap returned (`markReservePublished`).
+        await reserve.markPublished(cardIDs: snapshot.window.items.map(\.id), in: f.database)
+        let accounted = await reserve.snapshot()
+        XCTAssertEqual(accounted.ready, 0, "a card the edition shows no longer occupies the reserve")
+        XCTAssertEqual(accounted.published, 2)
+        XCTAssertEqual(accounted.persistedBytes, 0, "publication released every retained share")
+    }
+}

@@ -3308,8 +3308,21 @@ final class FeedAssociation {
         }
         maintainTail = { lease in
             let opportunity = await makeMediaOpportunity()
-            return try await HiddenTailMaintenance(database: db, trace: replenishment).run(plan: plan, policy: policy, lease: lease, examinedCapacity: 256,
+            let result = try await HiddenTailMaintenance(database: db, trace: replenishment).run(plan: plan, policy: policy, lease: lease, examinedCapacity: 256,
                 prefetch: { await opportunity.prepare($0) }, prepare: prepare)
+            // PM-028A §3: a succeeded hidden tail publishes inside the store and hands back only its disposition —
+            // no receipt reaches this association. The cards after the lease's high water are the suffix that
+            // succession just committed (the pre-read set the maintenance itself examined), so their revisions
+            // leave the reserve here. Without this they stay `.ready` forever, holding depth and bytes for cards
+            // the edition already carries.
+            if result == .applied {
+                let publication = PublicationStore(database: db)
+                let committed = (try? publication.cards(editionID: lease.editionID,
+                    around: lease.highWaterCardID, backwardCapacity: 0, forwardCapacity: 257))?
+                    .dropFirst().map(\.originRevisionID) ?? []
+                if !committed.isEmpty { await reserve.markPublished(committed) }
+            }
+            return result
         }
         // §5.3 (Codex's page review): a discovery page updates the **metadata** that preparation consults — the names
         // a card is attributed with — and nothing else. It does not change the resolved policy (what the reader chose
@@ -3790,7 +3803,10 @@ final class FeedAssociation {
             try install(.init(state: FeedPresentationHandoff.receive(coldOutcome: outcome, into: store.state),
                 bookmarks: preparedBookmarks))
             Self.log("cold bootstrap settled")
-            if case .published = outcome {
+            if case .published(let snapshot) = outcome {
+                // PM-028A §3: the same publication the evidence above already marked; marking it again is
+                // idempotent and covers a launch whose evidence delivery was cut short.
+                await markReservePublished(snapshot)
                 // R6/E-F: the bootstrap's own publication is a fact, and the window follows it here — before the
                 // driver's activation below, which can await media and acquisition for a long time on the shipped
                 // catalogue (measured: minutes, while the reserve already held 22 published cards). Where a
@@ -4113,6 +4129,17 @@ final class FeedAssociation {
         await foreground()
     }
 
+    /// PM-028A §3: a publication the reserve did not drive still commits cards. The cold bootstrap's own first
+    /// Edition arrives as evidence (`receive`) and as `launch`'s outcome; a hidden-tail succession publishes inside
+    /// the store and hands back only its disposition. The revisions those committed cards carry leave the reserve's
+    /// competition here, so no path can leave a prepared presentation occupying depth and bytes for a card the feed
+    /// already shows.
+    private func markReservePublished(_ snapshot: FeedPresentationSnapshot) async {
+        let cards = snapshot.window.items
+        guard !cards.isEmpty else { return }
+        await reserve.markPublished(cardIDs: cards.map(\.id), in: database)
+    }
+
     /// PD-3: reduce pipeline evidence into the preparation screen value.
     private func receive(_ evidence: ColdFeedEvidence) async {
         guard active, var progress = preparation else { return }
@@ -4146,6 +4173,11 @@ final class FeedAssociation {
             do {
                 try install(FeedPresentationHandoff.receive(snapshot: snapshot, into: store.state))
                 concludedPublication = true
+                // PM-028A §3: the bootstrap's own publication is the first path that publishes without a driver
+                // receipt. Its cards commit right here, so the reserve marks the revisions they carry before the
+                // slower feeds answer — otherwise those revisions keep `.ready` occupancy and retained bytes the
+                // reserve will never hand back.
+                await markReservePublished(snapshot)
             }
             catch { Self.log("early publication rejected") }
         }
